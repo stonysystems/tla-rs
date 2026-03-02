@@ -40,8 +40,18 @@ verus! {
     {
         assert(ps.environment.nextStep is LEnvStepHostIos);
         assert(ps.environment.nextStep->ios.contains(LIoOp::Send{s:p}));
-        let (idx, ios) = choose |idx:int, ios:Seq<RslIo>| RslNextOneReplica(ps, ps_, idx, ios) && ios.contains(LIoOp::Send{s:p});
-        assume(RslNextOneReplica(ps, ps_, idx, ios) && ios.contains(LIoOp::Send{s:p}));
+        // The ios from the environment step are exactly what was used in the transition
+        let ios = ps.environment.nextStep->ios;
+        // From RslNext + nextStep is LEnvStepHostIos, we know a replica or external took this step.
+        // The actor's ios == nextStep->ios, and since p.src is a replica, it must be RslNextOneReplica.
+        let actor = ps.environment.nextStep->actor;
+        // RslNext gives: exists |idx, ios| RslNextOneReplica(ps, ps_, idx, ios) or external or env.
+        // Since nextStep is LEnvStepHostIos, env is excluded. External requires !replica_ids.contains(actor).
+        // From LEnvironment_PerformIos: ios.contains(Send{s:p}) and IsValidLIoOp(Send{s:p}, actor, env)
+        // gives p.src == actor. Since replica_ids.contains(p.src), we have replica_ids.contains(actor),
+        // so external is excluded. Thus RslNextOneReplica(ps, ps_, idx, ios) for some idx with
+        // replica_ids[idx] == actor.
+        let idx = choose |idx:int| RslNextOneReplica(ps, ps_, idx, ios);
         assert(RslNextOneReplica(ps, ps_, idx, ios));
         assert(ps.environment.nextStep == LEnvStep::LEnvStepHostIos{actor:ps.constants.config.replica_ids[idx], ios:ios});
         assert(LEnvironment_Next(ps.environment, ps_.environment));
@@ -78,9 +88,9 @@ verus! {
     {
         assert(ps.environment.nextStep is LEnvStepHostIos);
         assert(ps.environment.nextStep->ios.contains(LIoOp::Send{s:p}));
-        let (idx, ios) = choose |idx:int, ios:Seq<RslIo>| RslNextOneReplica(ps, ps_, idx, ios) && ios.contains(LIoOp::Send{s:p});
+        let ios = ps.environment.nextStep->ios;
+        let idx = choose |idx:int| RslNextOneReplica(ps, ps_, idx, ios);
         let nextActionIndex = ps.replicas[idx].nextActionIndex;
-        assume(RslNextOneReplica(ps, ps_, idx, ios) && ios.contains(LIoOp::Send{s:p}));
         assert(RslNextOneReplica(ps, ps_, idx, ios));
         assert(ps.environment.nextStep == LEnvStep::LEnvStepHostIos{actor:ps.constants.config.replica_ids[idx], ios:ios});
         assert(LEnvironment_Next(ps.environment, ps_.environment));
@@ -93,9 +103,6 @@ verus! {
 
         let pkts = ExtractSentPacketsFromIos(ios);
         lemma_ExtractSentPacketsFromIos(ios);
-        // assume(forall |p:RslPacket| pkts.contains(p) <==> ios.contains(LIoOp::Send{s:p}));
-        // // assert(forall |p:RslPacket| pkts.contains(p) ==> p.msg is RslMessage2a);
-        // assert(ios.contains(LIoOp::Send{s:p}));
         assert(pkts.contains(p));
         assert(p.msg is RslMessage2a);
 
@@ -133,9 +140,9 @@ verus! {
     {
         assert(ps.environment.nextStep is LEnvStepHostIos);
         assert(ps.environment.nextStep->ios.contains(LIoOp::Send{s:p}));
-        let (idx, ios) = choose |idx:int, ios:Seq<RslIo>| RslNextOneReplica(ps, ps_, idx, ios) && ios.contains(LIoOp::Send{s:p});
+        let ios = ps.environment.nextStep->ios;
+        let idx = choose |idx:int| RslNextOneReplica(ps, ps_, idx, ios);
         let nextActionIndex = ps.replicas[idx].nextActionIndex;
-        assume(RslNextOneReplica(ps, ps_, idx, ios) && ios.contains(LIoOp::Send{s:p}));
         assert(RslNextOneReplica(ps, ps_, idx, ios));
         assert(ps.environment.nextStep == LEnvStep::LEnvStepHostIos{actor:ps.constants.config.replica_ids[idx], ios:ios});
         assert(LEnvironment_Next(ps.environment, ps_.environment));
@@ -146,7 +153,6 @@ verus! {
         assert(p.src == ps.constants.config.replica_ids[idx]);
         assert(0 <= idx < ps.constants.config.replica_ids.len());
 
-        // assert(nextActionIndex == 0);
         let pkts = ExtractSentPacketsFromIos(ios);
         lemma_ExtractSentPacketsFromIos(ios);
         assert(pkts.contains(p));
@@ -181,9 +187,9 @@ verus! {
     {
         assert(ps.environment.nextStep is LEnvStepHostIos);
         assert(ps.environment.nextStep->ios.contains(LIoOp::Send{s:p}));
-        let (idx, ios) = choose |idx:int, ios:Seq<RslIo>| RslNextOneReplica(ps, ps_, idx, ios) && ios.contains(LIoOp::Send{s:p});
+        let ios = ps.environment.nextStep->ios;
+        let idx = choose |idx:int| RslNextOneReplica(ps, ps_, idx, ios);
         let nextActionIndex = ps.replicas[idx].nextActionIndex;
-        assume(RslNextOneReplica(ps, ps_, idx, ios) && ios.contains(LIoOp::Send{s:p}));
         assert(RslNextOneReplica(ps, ps_, idx, ios));
         assert(ps.environment.nextStep == LEnvStep::LEnvStepHostIos{actor:ps.constants.config.replica_ids[idx], ios:ios});
         assert(LEnvironment_Next(ps.environment, ps_.environment));
@@ -238,10 +244,9 @@ verus! {
     {
         assert(ps.environment.nextStep is LEnvStepHostIos);
         assert(ps.environment.nextStep->ios.contains(LIoOp::Send{s:p}));
-        let (idx, ios) = choose |idx: int, ios: Seq<RslIo>|
-            RslNextOneReplica(ps, ps_prime, idx, ios) && ios.contains(LIoOp::Send{s:p});
+        let ios = ps.environment.nextStep->ios;
+        let idx = choose |idx:int| RslNextOneReplica(ps, ps_prime, idx, ios);
         let nextActionIndex = ps.replicas[idx].nextActionIndex;
-        assume(RslNextOneReplica(ps, ps_prime, idx, ios) && ios.contains(LIoOp::Send{s:p}));
         assert(RslNextOneReplica(ps, ps_prime, idx, ios));
         assert(ps.environment.nextStep == LEnvStep::LEnvStepHostIos{actor:ps.constants.config.replica_ids[idx], ios:ios});
         assert(LEnvironment_Next(ps.environment, ps_prime.environment));

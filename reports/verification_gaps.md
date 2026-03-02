@@ -1,6 +1,18 @@
-# Verification Gaps Report (2026-03-02, Post-Phase 32)
+# Verification Gaps Report (2026-03-01, Post-Phase 32)
 
 Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping related items.
+
+## Changes (2026-03-01): Proof hardening — 8 common_proof assumes eliminated
+
+- **packet_sending.rs**: 5 assumes eliminated — replaced `choose + assume(RslNextOneReplica(...))` pattern
+  with direct `nextStep->ios` extraction + `choose |idx| RslNextOneReplica(ps, ps_, idx, ios)`.
+  Proof: RslNextEnvironment excluded by `nextStep is LEnvStepHostIos`; RslNextOneExternal excluded
+  by `replica_ids.contains(p.src)` + `IsValidLIoOp(Send{s:p}, actor, _)` → `p.src == actor`.
+- **chosen.rs**: 2 assumes eliminated — `choose` witnesses for QuorumOf2bs indices proven valid
+  by asserting `indices.len() > 0` from `LMinQuorumSize >= 1` + `WellFormedLConfiguration`.
+- **requests.rs**: 1 assume eliminated — `assume(s.drop_first().len() < s.len())` replaced with
+  `assert(...)` (trivially true for Seq).
+- RSL common_proof assume count: 23 → 15
 
 ## Changes from Phase 32
 
@@ -144,9 +156,9 @@ Root cause breakdown (remaining 27 `external_body` in impl/generated/common):
 - **Generated helpers** (3): hashset_insert, filter, unreachable_value
 - **Minus overlapping count** (-8): trusted lemma primitives counted in both categories
 
-Refinement proof assume() breakdown (23 total, separate from external_body):
+Refinement proof assume() breakdown (15 total, separate from external_body):
 - 1 in formerly-external_body functions (detailed in §5)
-- 22 in pre-existing Dafny→Verus port helpers (§5 bottom)
+- 14 in pre-existing Dafny→Verus port helpers (§5 bottom)
 
 ---
 
@@ -163,21 +175,20 @@ Of the original 5 targeted `assume()` inside formerly-external_body functions, *
 |---|------|----------|--------|------------|
 | 1 | `refinement_proof/requests.rs:78` | `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage` | `assume(b[i].environment.sentPackets.contains(p))` | Received packet membership in next-step sentPackets |
 
-Additionally, 22 `assume()` statements exist in pre-existing helper functions (never were external_body).
+Additionally, 14 `assume()` statements exist in pre-existing helper functions (never were external_body).
 These are inherited from the Dafny→Verus port, distributed across:
-- `common_proof/packet_sending.rs` (5): RslNextOneReplica membership
 - `common_proof/quorum.rs` (5): set cardinality, intersection properties
 - `common_proof/message2b.rs` (4): action identification, vote monotonicity
 - `common_proof/message2a.rs` (3): vote monotonicity, ballot identity
-- `common_proof/chosen.rs` (2): choose witness membership (lemma_ChosenQuorumsMatchValue)
 - `common_proof/message1b.rs` (2): contradiction cases in inductive steps
-- `common_proof/requests.rs` (1): seq drop_first length
 
-47 base-case assumes eliminated across message2a.rs, message2b.rs, message1b.rs by proving
-vacuous truth: `sentPackets.len() == 0` at init contradicts packet membership requires,
-and `votes == Map::empty()` at init contradicts votes.contains_key requires.
+Previously eliminated:
+- 47 base-case assumes (message2a.rs, message2b.rs, message1b.rs): vacuous truth proofs
+- 5 packet_sending.rs assumes: direct nextStep->ios extraction
+- 2 chosen.rs assumes: choose witness from non-empty set
+- 1 requests.rs assume: trivial seq property
 
-Total `assume()` across RSL proof files: 23 (1 in formerly-external_body + 22 in pre-existing helpers).
+Total `assume()` across RSL proof files: 15 (1 in formerly-external_body + 14 in pre-existing helpers).
 
 ---
 

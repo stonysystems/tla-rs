@@ -75,14 +75,24 @@ verus! {
     {
         lemma_ConstantsAllConsistent(b, c, i);
 
-        let idx1 = choose|idx1: int| q1.indices.contains(idx1);
-        let idx2 = choose|idx2: int| q2.indices.contains(idx2);
+        // Both quorum index sets are non-empty (size >= LMinQuorumSize >= 1)
+        assert(q1.indices.len() >= LMinQuorumSize(b[i].constants.config));
+        assert(q2.indices.len() >= LMinQuorumSize(b[i].constants.config));
+        assert(q1.indices.len() > 0) by {
+            assert(WellFormedLConfiguration(c.config));
+            assert(LMinQuorumSize(c.config) >= 1);
+        }
+        assert(q2.indices.len() > 0) by {
+            assert(WellFormedLConfiguration(c.config));
+            assert(LMinQuorumSize(c.config) >= 1);
+        }
+        // Extract witnesses from non-empty sets
+        let idx1 = q1.indices.choose();
+        let idx2 = q2.indices.choose();
         let p1_2b = q1.packets[idx1];
         let p2_2b = q2.packets[idx2];
         assert(forall |idx:int| q1.indices.contains(idx) ==> b[i].environment.sentPackets.contains(q1.packets[idx]));
         assert(forall |idx:int| q2.indices.contains(idx) ==> b[i].environment.sentPackets.contains(q2.packets[idx]));
-        assume(q1.indices.contains(idx1));
-        assume(q2.indices.contains(idx2));
         let p1_2a = lemma_2bMessageHasCorresponding2aMessage(b, c, i, p1_2b);
         let p2_2a = lemma_2bMessageHasCorresponding2aMessage(b, c, i, p2_2b);
 
