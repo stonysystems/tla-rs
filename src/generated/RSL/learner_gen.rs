@@ -282,8 +282,10 @@ ensures
         CMessage::CMessage2b { bal_2b, opn_2b, val_2b } => (*bal_2b, *opn_2b, val_2b),
         _ => { return unreachable_value(); },
     };
-    let (src_in_config, _) = s.constants.all.config.CGetReplicaIndex(&packet.src);
+    let (src_in_config, src_idx) = s.constants.all.config.CGetReplicaIndex(&packet.src);
     proof {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
         // s.valid() implies s.max_ballot_seen.valid()
         assert(s.max_ballot_seen.valid());
         // packet.valid() implies packet.msg.valid(), and packet.msg is CMessage2b
@@ -293,18 +295,39 @@ ensures
         assert((packet.msg)->bal_2b.valid());
         assert(bal_2b == (packet.msg)->bal_2b);
         assert(bal_2b.valid());
+        assert(crequestbatch_is_valid(val_2b));
     }
     let result = if !src_in_config || CBalLt(&bal_2b, &s.max_ballot_seen) {
         // Branch 1: not a valid replica or old ballot — no change
         s.clone_up_to_view()
     } else if CBalLt(&s.max_ballot_seen, &bal_2b) {
         // Branch 2: higher ballot — reset with singleton map
+        let src_clone = packet.src.clone_up_to_view();
+        let ghost ghost_src = src_clone;
+        proof { assert(ghost_src.abstractable()); }
         let mut senders = HashSet::new();
-        senders.insert(packet.src.clone_up_to_view());
+        senders.insert(src_clone);
+        proof {
+            assert(senders@ =~= Set::<EndPoint>::empty().insert(ghost_src));
+        }
         let tup = CLearnerTuple {
             received_2b_message_senders: senders,
             candidate_learned_value: clone_request_batch_up_to_view(val_2b),
         };
+        proof {
+            assert(tup.received_2b_message_senders@ =~= Set::<EndPoint>::empty().insert(ghost_src));
+            assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+                implies p.abstractable()
+            by {
+                assert(Set::<EndPoint>::empty().insert(ghost_src).contains(p));
+            }
+            assert forall |i: int| 0 <= i < tup.candidate_learned_value.len()
+                implies (#[trigger] tup.candidate_learned_value[i]).valid()
+            by {}
+            assert(crequestbatch_is_valid(&tup.candidate_learned_value));
+            assert(tup.abstractable());
+            assert(tup.valid());
+        }
         let mut new_state: CLearnerState = HashMap::new();
         new_state.insert(opn_2b, tup);
         CLearner {
@@ -314,12 +337,32 @@ ensures
         }
     } else if !s.unexecuted_learner_state.contains_key(&opn_2b) {
         // Branch 3: same ballot, new opn — insert new entry
+        let src_clone = packet.src.clone_up_to_view();
+        let ghost ghost_src = src_clone;
+        proof { assert(ghost_src.abstractable()); }
         let mut senders = HashSet::new();
-        senders.insert(packet.src.clone_up_to_view());
+        senders.insert(src_clone);
+        proof {
+            assert(senders@ =~= Set::<EndPoint>::empty().insert(ghost_src));
+        }
         let tup = CLearnerTuple {
             received_2b_message_senders: senders,
             candidate_learned_value: clone_request_batch_up_to_view(val_2b),
         };
+        proof {
+            assert(tup.received_2b_message_senders@ =~= Set::<EndPoint>::empty().insert(ghost_src));
+            assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+                implies p.abstractable()
+            by {
+                assert(Set::<EndPoint>::empty().insert(ghost_src).contains(p));
+            }
+            assert forall |i: int| 0 <= i < tup.candidate_learned_value.len()
+                implies (#[trigger] tup.candidate_learned_value[i]).valid()
+            by {}
+            assert(crequestbatch_is_valid(&tup.candidate_learned_value));
+            assert(tup.abstractable());
+            assert(tup.valid());
+        }
         let mut new_state = clone_clearnerstate(&s.unexecuted_learner_state);
         new_state.insert(opn_2b, tup);
         CLearner {
@@ -340,6 +383,27 @@ ensures
                 received_2b_message_senders: new_senders,
                 candidate_learned_value: clone_request_batch_up_to_view(&existing.candidate_learned_value),
             };
+            proof {
+                // existing is valid from s.valid()
+                assert(s.unexecuted_learner_state@.contains_key(opn_2b));
+                assert(s.unexecuted_learner_state@[opn_2b].valid());
+                assert(crequestbatch_is_valid(&existing.candidate_learned_value));
+                // Senders: old senders were abstractable + new sender is abstractable
+                assert(packet.src.abstractable());
+                assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)
+                    implies p.abstractable()
+                by {
+                    if existing.received_2b_message_senders@.contains(p) {
+                        assert(s.unexecuted_learner_state@[opn_2b].abstractable());
+                    }
+                }
+                assert forall |i: int| 0 <= i < tup.candidate_learned_value.len()
+                    implies (#[trigger] tup.candidate_learned_value[i]).valid()
+                by {}
+                assert(crequestbatch_is_valid(&tup.candidate_learned_value));
+                assert(tup.abstractable());
+                assert(tup.valid());
+            }
             let mut new_state = clone_clearnerstate(&s.unexecuted_learner_state);
             new_state.insert(opn_2b, tup);
             CLearner {
@@ -350,8 +414,92 @@ ensures
         }
     };
     proof {
-        assume(result.valid());
-        assume(LLearnerProcess2b(s@, result@, packet@));
+        broadcast use Set::lemma_set_map_insert_commute;
+        broadcast use crate::common::native::io_s::axiom_endpoint_view;
+
+        let ghost ss = s@;
+        let ghost pp = packet@;
+
+        // CGetReplicaIndex bridge: found → spec config contains packet@.src
+        if src_in_config {
+            assert(s.constants.all.config.CIsReplicaIndex(src_idx, packet.src));
+            // CIsReplicaIndex gives 0 <= src_idx < config.replica_ids.len() && config.replica_ids@[src_idx as int] == packet.src
+            assert(s.constants.all.config.replica_ids@[src_idx as int] == packet.src);
+            // Seq.map indexing: config@.replica_ids[i] == config.replica_ids@[i]@
+            assert(s.constants.all.config@.replica_ids[src_idx as int] == packet@.src);
+            // Provides existential witness for Seq.contains
+            assert(ss.constants.all.config.replica_ids.contains(pp.src));
+        }
+
+        if !src_in_config || BalLt(bal_2b@, s.max_ballot_seen@) {
+            // Branch 1: no-op — result = s.clone_up_to_view()
+            assert(result@ == ss);
+            assert(LLearnerProcess2b(ss, result@, pp));
+        } else if BalLt(s.max_ballot_seen@, bal_2b@) {
+            // Branch 2: higher ballot — singleton map
+            // tup.valid() was proven inline before HashMap insert
+            let ghost tup = result.unexecuted_learner_state@[opn_2b];
+            lemma_abstractify_singleton_clearnerstate(result.unexecuted_learner_state, opn_2b, tup);
+
+            // tup@ matches spec: senders = set![packet@.src], value = msg->val_2b
+            assert(Set::<EndPoint>::empty().map(|e: EndPoint| e@) =~= Set::<AbstractEndPoint>::empty());
+            assert(tup@.received_2b_message_senders =~= set![pp.src]);
+            assert(tup@.candidate_learned_value =~= pp.msg->val_2b);
+
+            assert(result@.constants == ss.constants);
+            assert(result@.max_ballot_seen == pp.msg->bal_2b);
+            assert(result@.unexecuted_learner_state =~= map![pp.msg->opn_2b => tup@]);
+            assert(LLearnerProcess2b(ss, result@, pp));
+        } else if !s.unexecuted_learner_state@.contains_key(opn_2b) {
+            // Branch 3: same ballot, new opn — insert
+            let ghost tup = result.unexecuted_learner_state@[opn_2b];
+            lemma_abstractify_clearnerstate_insert(
+                s.unexecuted_learner_state, result.unexecuted_learner_state, opn_2b, tup);
+
+            assert(Set::<EndPoint>::empty().map(|e: EndPoint| e@) =~= Set::<AbstractEndPoint>::empty());
+            assert(tup@.received_2b_message_senders =~= set![pp.src]);
+            assert(tup@.candidate_learned_value =~= pp.msg->val_2b);
+
+            assert(result@.constants == ss.constants);
+            assert(result@.max_ballot_seen == pp.msg->bal_2b);
+            assert(result@.unexecuted_learner_state =~=
+                ss.unexecuted_learner_state.insert(pp.msg->opn_2b, tup@));
+            assert(LLearnerProcess2b(ss, result@, pp));
+        } else {
+            // Branches 4-5: existing entry at opn_2b
+            let ghost existing_tup = s.unexecuted_learner_state@[opn_2b];
+            let ghost has_sender = existing_tup.received_2b_message_senders@.contains(packet.src);
+
+            if has_sender {
+                // Branch 4: duplicate sender — no-op
+                assert(result@ == ss);
+                // Bridge: concrete HashSet.contains → spec Set contains (via Set.map + injectivity)
+                assert(ss.unexecuted_learner_state[pp.msg->opn_2b]
+                    .received_2b_message_senders.contains(pp.src));
+                assert(LLearnerProcess2b(ss, result@, pp));
+            } else {
+                // Branch 5: add sender to existing entry
+                // tup.valid() was proven inline before HashMap insert
+                let ghost tup = result.unexecuted_learner_state@[opn_2b];
+                lemma_abstractify_clearnerstate_insert(
+                    s.unexecuted_learner_state, result.unexecuted_learner_state, opn_2b, tup);
+
+                // Senders: old senders + new sender
+                assert(tup@.received_2b_message_senders =~=
+                    ss.unexecuted_learner_state[pp.msg->opn_2b].received_2b_message_senders
+                    + set![pp.src]);
+                assert(tup@.candidate_learned_value =~=
+                    ss.unexecuted_learner_state[pp.msg->opn_2b].candidate_learned_value);
+
+                assert(result@.constants == ss.constants);
+                assert(result@.max_ballot_seen == ss.max_ballot_seen);
+                assert(!ss.unexecuted_learner_state[pp.msg->opn_2b]
+                    .received_2b_message_senders.contains(pp.src));
+                assert(result@.unexecuted_learner_state =~=
+                    ss.unexecuted_learner_state.insert(pp.msg->opn_2b, tup@));
+                assert(LLearnerProcess2b(ss, result@, pp));
+            }
+        }
     }
     result
 }
