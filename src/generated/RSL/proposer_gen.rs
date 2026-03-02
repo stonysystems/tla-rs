@@ -572,6 +572,7 @@ ensures
 pub exec fn CProposerNominateNewValueAndSend2a(s: &CProposer, clock: &u64, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
+    s.next_operation_number_to_propose < s.constants.all.params.max_integer_val,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
@@ -611,7 +612,7 @@ ensures
         request_queue: new_queue,
         max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
         next_operation_number_to_propose: {
-            proof { assume(opn < u64::MAX); }
+            // opn < max_integer_val (from requires) and max_integer_val: u64 <= u64::MAX
             opn + 1
         },
         received_1b_packets: clone_hashset(&s.received_1b_packets),
@@ -763,6 +764,7 @@ pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_poi
 requires
     s.valid(),
     !LAllAcceptorsHadNoProposal(s@.received_1b_packets, s.next_operation_number_to_propose as int),
+    s.next_operation_number_to_propose < s.constants.all.params.max_integer_val,
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
@@ -921,7 +923,7 @@ ensures
         request_queue: clone_request_queue(&s.request_queue),
         max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
         next_operation_number_to_propose: {
-            proof { assume(opn < u64::MAX); }
+            // opn < max_integer_val (from requires) and max_integer_val: u64 <= u64::MAX
             opn + 1
         },
         received_1b_packets: clone_hashset(&s.received_1b_packets),
@@ -1050,6 +1052,16 @@ ensures
             assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
         }
         return r;
+    }
+
+    // CProposerCanNominateUsingOperationNumber passed => LProposerCanNominateUsingOperationNumber holds
+    // which includes LtUpperBound(opn, max_integer_val), i.e., opn < max_integer_val
+    proof {
+        assert(LProposerCanNominateUsingOperationNumber(s@, *log_truncation_point as int, opn as int));
+        // Unfold: LtUpperBound(opn as int, s@.constants.all.params.max_integer_val)
+        // s@.constants.all.params.max_integer_val = UpperBound::UpperBoundFinite{n: s.constants.all.params.max_integer_val as int}
+        // So: opn as int < s.constants.all.params.max_integer_val as int
+        assert(opn < s.constants.all.params.max_integer_val);
     }
 
     // Branch 2: old value exists — nominate old
