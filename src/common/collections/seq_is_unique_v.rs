@@ -16,11 +16,9 @@ verus! {
         forall |i: int, j: int| #![trigger s[i], s[j]] 0 <= i && i < s.len() && 0 <= j && j < s.len() && s[i] == s[j] ==> i == j
     }
 
-    #[verifier::external_body]
     pub fn do_vec_u8s_match(e1: &Vec<u8>, e2: &Vec<u8>) -> (eq: bool)
         ensures
             eq == (e1@ == e2@),
-            eq == (e1 == e2),
     {
         if e1.len() != e2.len() {
             assert (e1@.len() != e2@.len());
@@ -36,6 +34,7 @@ verus! {
                 e1.len() == e2.len(),
                 forall |j: int| 0 <= j && j < i ==> e1@[j] == e2@[j],
                 forall |j: int| 0 <= j && j < i ==> e1[j] == e2[j],
+            decreases e1.len() - i,
         {
             if e1[i] != e2[i] {
                 return false;
@@ -50,13 +49,28 @@ verus! {
         return true;
     }
 
-    #[verifier::external_body]
     pub fn do_end_points_match(e1: &EndPoint, e2: &EndPoint) -> (eq: bool)
         ensures
             eq == (e1@ == e2@),
             eq == (e1 == e2),
     {
-        do_vec_u8s_match(&e1.id, &e2.id)
+        let result = do_vec_u8s_match(&e1.id, &e2.id);
+        proof {
+            broadcast use crate::common::native::io_s::axiom_endpoint_view;
+            if result {
+                assert(e1.id@ == e2.id@);
+                assert(e1@ == e2@);
+                assert(*e1 == *e2);
+            } else {
+                if e1@ == e2@ {
+                    // e1@ == e2@ means AbstractEndPoint{id: e1.id@} == AbstractEndPoint{id: e2.id@}
+                    // which means e1.id@ == e2.id@, contradicting result == false
+                    assert(e1.id@ == e2.id@);
+                    assert(false);
+                }
+            }
+        }
+        result
     }
 
     // Translates Impl/Common/CmdLineParser.i.dfy :: test_unique
