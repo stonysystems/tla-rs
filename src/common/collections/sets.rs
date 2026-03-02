@@ -42,7 +42,6 @@ verus! {
             &&& forall |i: int| s.contains(i) ==> m >= i
         })
     {
-        reveal(intsetmax);
     }
 
     #[verifier::external_body]

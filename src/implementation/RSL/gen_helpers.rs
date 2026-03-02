@@ -132,9 +132,6 @@ pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &C
     ensures
         res == (forall |op: CPacket| received_1b_packets@.contains(op) ==> op.src@ != pkt.src@),
 {
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
     let mut res = true;
     for p in received_1b_packets.iter() {
         if p.src == pkt.src {
@@ -154,9 +151,6 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
         creplycache_is_valid(&result),
         abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
 {
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
     let mut result: HashMap<EndPoint, CReply> = HashMap::new();
     for reply in replies.iter() {
         result.insert(reply.client.clone(), reply.clone());

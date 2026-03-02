@@ -361,9 +361,6 @@ impl CReplica{
         ensures
             res ==> forall |op:CPacket| s@.contains(op) ==> op.src@ != pkt.src@
     {
-        broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::hash_map::group_hash_map_axioms;
-        broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
         let mut res = true;
         let m_iter = s.iter();
         assert(m_iter@.0 == 0);

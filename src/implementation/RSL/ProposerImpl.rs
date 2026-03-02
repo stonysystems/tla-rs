@@ -262,8 +262,8 @@ impl CProposer{
         ensures
             forall |x:RslPacket| s2@.map(|p:CPacket| p@).contains(x) ==> x.msg is RslMessage1b,
     {
-        assert forall |x:CPacket| s2@.contains(x) ==> s1.contains(x@) by{
-            assume(s2@.contains(x));
+        assert forall |x:CPacket| s2@.contains(x) implies s1.contains(x@) by{
+            // With `implies`, the antecedent s2@.contains(x) is automatically assumed
             if !s1.contains(x@) {
                 let s2_minus = s2@.remove(x);
                 assume(s2@.finite());
