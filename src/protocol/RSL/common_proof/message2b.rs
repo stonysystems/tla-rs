@@ -294,7 +294,6 @@ verus! {
         assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
         assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
         assert(ios[0] is Receive);
-        // assert(ios[0]->r.dst == e.nextStep->actor);
         assert(recv.dst == e.nextStep->actor);
         assert(e.nextStep->actor == c.config.replica_ids[idx]);
 
@@ -310,7 +309,6 @@ verus! {
         assert(e.sentPackets.contains(ios[0]->r));
 
         let p = ios[0]->r;
-        // let p = arbitrary();
         assert(b[i].environment.sentPackets.contains(p));
         assert(c.config.replica_ids.contains(p.src));
         if p.msg is RslMessage1b {
@@ -433,8 +431,18 @@ verus! {
         let pkts = ExtractSentPacketsFromIos(ios);
         lemma_ExtractSentPacketsFromIos(ios);
 
-        assume(recv.msg is RslMessage2a); // why? this two should be true, since 2b pkt exists in b[i], not in b[i-1]
-        assume(LAcceptorProcess2a(s, s_, recv, pkts));
+        // From lemma_ActionThatSends2bIsProcess2a we know:
+        //   LReplicaNextProcess2a(rep, rep_, recv, pkts)
+        // In LReplicaNextProcess2a, the else branch gives sent_packets == empty(),
+        // but pkts.contains(p) (p is a 2b packet), so we must be in the if branch.
+        // The if branch gives LAcceptorProcess2a(s, s_, recv, pkts).
+        assert(LReplicaNextProcess2a(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, recv, pkts));
+        // The else branch of LReplicaNextProcess2a would give pkts == empty(), contradicting pkts.contains(p).
+        // So we're in the if branch, which gives LAcceptorProcess2a.
+        assert(LAcceptorProcess2a(s, s_, recv, pkts));
+        // recv.msg must be RslMessage2a because the dispatch in LReplicaNextProcessPacketWithoutReadingClock
+        // matched on recv.msg to call LReplicaNextProcess2a.
+        assert(recv.msg is RslMessage2a);
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));

@@ -397,7 +397,26 @@ verus! {
 
             assert(ios.contains(LIoOp::Send{s:p_1b}));
             assert(b[i].environment.sentPackets.contains(p_1b));
-            assume(false); // why?
+            // Both p_1b and p_2b appeared new in this step (not in b[i-1].sentPackets).
+            // The action is Process1a (via lemma_ActionThatSends1bIsProcess1a).
+            // LAcceptorProcess1a produces sent_packets = seq![1b_packet] in the if-branch.
+            // So ExtractSentPacketsFromIos(ios) only contains the 1b packet.
+            // For p_2b to appear new, ios must contain Send{s:p_2b}.
+            // But ExtractSentPacketsFromIos(ios) = pkts only contains the 1b.
+            // Since p_2b.msg is RslMessage2b != RslMessage1b, p_2b is not in pkts.
+            // Contradiction: p_2b can't appear new without being sent in the ios.
+            assert(!b[i-1].environment.sentPackets.contains(p_2b));
+            // p_2b must have been sent in the ios for it to appear in b[i].sentPackets
+            assert(LReplicaNextProcessPacketWithoutReadingClock(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, ios));
+            assert(LReplicaNextProcess1a(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, ios[0]->r, pkts));
+            assert(LAcceptorProcess1a(s, s_, ios[0]->r, pkts));
+            // In the if-branch of LAcceptorProcess1a, pkts == seq![1b_packet]
+            // In the else-branch, pkts == empty() but we know pkts.contains(p_1b), contradiction
+            // Either way, p_2b (a 2b message) is not in pkts
+            assert(!pkts.contains(p_2b));
+            // But p_2b not in b[i-1].sentPackets and not sent in ios means not in b[i].sentPackets
+            // Contradiction with requires b[i].sentPackets.contains(p_2b)
+            assert(false);
         }
     }
   }
@@ -606,7 +625,19 @@ verus! {
             } else {
                 let (acceptor_idx, ios) = lemma_ActionThatSends1bIsProcess1a(b[i - 1], b[i], p_1b);
                 assert(ios.contains(LIoOp::Send{s:p_1b}));
-                assume(false); //why?
+                // Both p_1b and p_2b appeared new in this step.
+                // The action is Process1a which only sends 1b packets.
+                // p_2b (a 2b message) can't have been sent in this step.
+                let pkts = ExtractSentPacketsFromIos(ios);
+                lemma_ExtractSentPacketsFromIos(ios);
+                assert(!b[i-1].environment.sentPackets.contains(p_2b));
+                assert(LReplicaNextProcessPacketWithoutReadingClock(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, ios));
+                assert(LReplicaNextProcess1a(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, ios[0]->r, pkts));
+                assert(LAcceptorProcess1a(b[i-1].replicas[acceptor_idx].replica.acceptor, b[i].replicas[acceptor_idx].replica.acceptor, ios[0]->r, pkts));
+                // LAcceptorProcess1a: pkts == seq![1b_packet] or pkts == empty()
+                // Either way, p_2b (a 2b message) is not in pkts
+                assert(!pkts.contains(p_2b));
+                assert(false);
             }
         }
     }

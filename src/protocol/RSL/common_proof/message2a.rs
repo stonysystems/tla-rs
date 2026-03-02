@@ -246,15 +246,20 @@ verus! {
         if !s.votes.contains_key(opn) {
             assert(nextActionIndex == 0 || nextActionIndex == 4);
             if nextActionIndex == 4 {
-                // assert(RemoveVotesBeforeLogTruncationPoint)
-                assume(forall |opn| s_.votes.contains_key(opn) ==> s.votes.contains_key(opn)); // why?
+                // Action 4 = LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints
+                // → LAcceptorTruncateLog → either s_ == s or RemoveVotesBeforeLogTruncationPoint
+                // RemoveVotesBeforeLogTruncationPoint ensures: votes_.contains_key(opn) ==> votes.contains_key(opn)
+                // So no new keys are added, contradicting !s.votes.contains_key(opn) && s_.votes.contains_key(opn).
+                let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
                 assert(false);
             }
             assert(nextActionIndex == 0);
             let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
             let p = ios[0]->r;
             if p.msg is RslMessage1b {
-                assume(forall |opn| s_.votes.contains_key(opn) ==> s.votes.contains_key(opn)); //why?
+                // Processing 1b calls LReplicaNextProcess1b → LAcceptorTruncateLog
+                // → either s_ == s or RemoveVotesBeforeLogTruncationPoint
+                // No new vote keys are added, contradicting !s.votes.contains_key(opn) && s_.votes.contains_key(opn).
                 assert(false);
             }
             assert(p.msg is RslMessage2a);
@@ -585,8 +590,11 @@ verus! {
         assert(LProposerMaybeNominateValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts));
         lemma_max_balISent1aHasMeAsProposer(b, c, i - 1, idx);
 
-        pkts.contains(p);
-        assume(p.msg->bal_2a == s.max_ballot_i_sent_1a); // why?
+        assert(pkts.contains(p));
+        // LProposerMaybeNominateValueAndSend2a → LBroadcastToEveryone(_, _, RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, ...}, pkts)
+        // All packets in pkts have msg->bal_2a == s.max_ballot_i_sent_1a. In non-sending branches, pkts is empty.
+        let j = choose |j:int| 0 <= j < pkts.len() && pkts[j] == p;
+        assert(p.msg->bal_2a == s.max_ballot_i_sent_1a);
 
         assert(p.msg->bal_2a.seqno >= 0);
         assert(0 <= p.msg->bal_2a.proposer_id);

@@ -545,12 +545,52 @@ verus! {
         }
     }
 
-    #[verifier(external_body)]
-    // #[verifier(opaque)]
     pub proof fn ExtractSentPacketsFromIos_Ensures2(ios:Seq<RslIo>)
         ensures forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) ==> ExtractSentPacketsFromIos(ios).contains(p)
+        decreases ios.len()
     {
-        assume(forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) ==> ExtractSentPacketsFromIos(ios).contains(p));
+        if ios.len() == 0 {
+            // Empty ios: no Send operations, so the implication is vacuously true.
+        } else {
+            ExtractSentPacketsFromIos_Ensures2(ios.drop_first());
+
+            let first = ios[0];
+            let rest = ios.drop_first();
+
+            assert forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) implies ExtractSentPacketsFromIos(ios).contains(p) by {
+                if ios.contains(LIoOp::Send{s:p}) {
+                    // Either the Send{s:p} is ios[0] or in ios.drop_first()
+                    if first == (LIoOp::Send{s:p}) {
+                        // ios[0] is Send{s:p}
+                        assert(first is Send);
+                        let rest_pkts = ExtractSentPacketsFromIos(rest);
+                        let front_pkts = seq![first->s];
+                        assert(ExtractSentPacketsFromIos(ios) == front_pkts + rest_pkts);
+                        assert(front_pkts[0] == p);
+                        assert(front_pkts.contains(p));
+                        SeqConcatenate(front_pkts, rest_pkts);
+                        assert((front_pkts + rest_pkts).contains(p));
+                    } else {
+                        // Send{s:p} is in rest (ios[0] != Send{s:p}, so witness idx >= 1)
+                        let send_io = LIoOp::Send{s:p};
+                        let idx = choose |idx:int| 0 <= idx < ios.len() && ios[idx] == send_io;
+                        assert(idx >= 1);
+                        assert(rest[idx - 1] == ios[idx]);
+                        assert(rest.contains(LIoOp::Send{s:p}));
+                        assert(ExtractSentPacketsFromIos(rest).contains(p));
+                        if first is Send {
+                            let rest_pkts = ExtractSentPacketsFromIos(rest);
+                            let front_pkts = seq![first->s];
+                            assert(ExtractSentPacketsFromIos(ios) == front_pkts + rest_pkts);
+                            SeqConcatenate(front_pkts, rest_pkts);
+                            assert((front_pkts + rest_pkts).contains(p));
+                        } else {
+                            assert(ExtractSentPacketsFromIos(ios) == ExtractSentPacketsFromIos(rest));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub proof fn SeqConcatenate<T>(s1:Seq<T>, s2:Seq<T>)

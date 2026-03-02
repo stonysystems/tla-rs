@@ -156,39 +156,30 @@ Root cause breakdown (remaining 27 `external_body` in impl/generated/common):
 - **Generated helpers** (3): hashset_insert, filter, unreachable_value
 - **Minus overlapping count** (-8): trusted lemma primitives counted in both categories
 
-Refinement proof assume() breakdown (15 total, separate from external_body):
-- 1 in formerly-external_body functions (detailed in §5)
-- 14 in pre-existing Dafny→Verus port helpers (§5 bottom)
+Refinement proof assume() breakdown: **0 total** — all RSL proof assumes fully eliminated.
 
 ---
 
-## 5. Refinement Proof — Remaining `assume()` (Post-Phase 31, updated March 2026)
+## 5. Refinement Proof — `assume()` Status (Post-Phase 31, updated March 2026)
 
 All 28 `external_body` proof functions have been converted to verified proof bodies.
-Of the original 5 targeted `assume()` inside formerly-external_body functions, **all 5 have been eliminated**:
-- `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues`: 2 assumes eliminated by asserting existential witnesses (choose axiom)
-- `lemma_2aMessagesFromSameBallotAndOperationMatchWLOG`: 2 assumes eliminated via broadcast same-message lemma + proposer state contradiction
+**All `assume()` statements in RSL proof files have been eliminated (70 → 0).**
 
-1 targeted `assume()` remains in a formerly-external_body function:
+Elimination summary (cumulative):
+- 47 base-case assumes (message2a.rs, message2b.rs, message1b.rs): vacuous truth — `sentPackets.len() == 0` at init
+- 5 packet_sending.rs assumes: direct `nextStep->ios` extraction + single-variable `choose`
+- 5 quorum.rs assumes: vstd set cardinality broadcast axioms + inductive finiteness proofs
+- 4 message2b.rs assumes: votes monotonicity (RemoveVotesBeforeLogTruncationPoint), recv type + LAcceptorProcess2a (guard elimination via non-empty pkts)
+- 3 message2a.rs assumes: votes monotonicity (LAcceptorTruncateLog), ballot identity (LBroadcastToEveryone msg field)
+- 2 chosen.rs assumes: `Set::choose()` with `LMinQuorumSize >= 1`
+- 2 message1b.rs assumes: contradiction — 1b-only action can't produce 2b packets (`!pkts.contains(p_2b)`)
+- 1 requests.rs assume: received packet in sentPackets via `IsValidLIoOp` + `lemma_PacketStaysInSentPackets`
+- 1 replica.rs `ExtractSentPacketsFromIos_Ensures2`: inductive proof mirroring `Ensures1`
 
-| # | File | Function | assume | Root Cause |
-|---|------|----------|--------|------------|
-| 1 | `refinement_proof/requests.rs:78` | `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage` | `assume(b[i].environment.sentPackets.contains(p))` | Received packet membership in next-step sentPackets |
+Remaining `external_body` in proof code:
+- `lemma_ExtractSentPacketsFromIos` (replica.rs): biconditional wrapper — both halves now proven separately (`Ensures1` + `Ensures2`), but the combined `<==>` is still `external_body`
 
-Additionally, 14 `assume()` statements exist in pre-existing helper functions (never were external_body).
-These are inherited from the Dafny→Verus port, distributed across:
-- `common_proof/quorum.rs` (5): set cardinality, intersection properties
-- `common_proof/message2b.rs` (4): action identification, vote monotonicity
-- `common_proof/message2a.rs` (3): vote monotonicity, ballot identity
-- `common_proof/message1b.rs` (2): contradiction cases in inductive steps
-
-Previously eliminated:
-- 47 base-case assumes (message2a.rs, message2b.rs, message1b.rs): vacuous truth proofs
-- 5 packet_sending.rs assumes: direct nextStep->ios extraction
-- 2 chosen.rs assumes: choose witness from non-empty set
-- 1 requests.rs assume: trivial seq property
-
-Total `assume()` across RSL proof files: 15 (1 in formerly-external_body + 14 in pre-existing helpers).
+Total `assume()` across RSL proof files: **0**.
 
 ---
 

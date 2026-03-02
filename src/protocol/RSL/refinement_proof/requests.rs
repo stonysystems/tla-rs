@@ -75,7 +75,10 @@ verus! {
         {
             let p = ios[0]->r;
             assert(IsValidLIoOp(ios[0], c.config.replica_ids[idx], b[i-1].environment));
-            assume(b[i].environment.sentPackets.contains(p));
+            // ios[0] is Receive (from nextActionIndex==0, LReplicaNextProcessPacket).
+            // IsValidLIoOp for Receive gives match_ios_recv → sentPackets.contains(p).
+            assert(b[i-1].environment.sentPackets.contains(p));
+            lemma_PacketStaysInSentPackets(b, c, i-1, i, p);
             return p;
         }
 
