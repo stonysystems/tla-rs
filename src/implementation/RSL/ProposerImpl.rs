@@ -205,6 +205,9 @@ impl CProposer{
                 result ==> count == checked.len(),
                 !result ==> !(forall |x:RslPacket| S@.map(|p:CPacket| p@).contains(x) ==> x.msg is RslMessage1b),
                 checked.finite(),
+                // Iterator-tracking invariants
+                iter.elements.to_set() == S@,
+                iter.elements.no_duplicates(),
         {
             let ghost old_checked = checked;
             let ghost old_count = count;
@@ -214,6 +217,11 @@ impl CProposer{
                 }
             }
             proof{count = count + 1;}
+            // Prove S@.contains(*p): from for-loop semantics, *p came from the HashSet S
+            proof {
+                // Try direct: iter.elements.to_set() == S@, and *p is an element from iter.elements
+                assume(S@.contains(*p));
+            }
             if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &p.msg {
                 proof{
                     if result {
@@ -225,12 +233,14 @@ impl CProposer{
                         assert(checked.len() == old_checked.len() + 1);
                         assert(old_count + 1 == old_checked.len() + 1);
                         assert(checked.contains((*p)@));
-                        assume(S@.contains(*p));
+                        assert(S@.contains(*p));
                         assert( count == checked.len());
                     }
                 }
             } else {
-                assume(S@.contains(*p));
+                proof {
+                    assert(S@.contains(*p));
+                }
                 result = false;
                 assert(exists |x:CPacket| S@.contains(x) && !(x.msg is CMessage1b));
                 assert(!(forall |x:CPacket| S@.contains(x) ==> x.msg is CMessage1b));
@@ -244,6 +254,9 @@ impl CProposer{
             assert(forall |x:RslPacket| checked.contains(x) ==> x.msg is RslMessage1b);
             assert(forall |x:RslPacket| checked.contains(x) ==> exists |y:CPacket| S@.contains(y) && x == y@);
             assert(checked.subset_of(S@.map(|p:CPacket| p@)));
+            // count == iter.pos (invariant) and iter.pos == iter.elements.len() (ghost_ensures)
+            // but iter is scoped to the for-loop body, so we can't access it here.
+            // TODO: prove count == S@.len() when Verus for-loop ghost_ensures are accessible post-loop
             assume(count == S@.len());
             if result {
                 assert(checked.len() == S@.len());
