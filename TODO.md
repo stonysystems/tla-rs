@@ -9432,3 +9432,119 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 - [x] **30.4.4**: Verus verification passes (627 verified, 0 errors)
 - [x] **30.4.5**: Raft benchmark unchanged — no runtime behavior changes (only external_body removal and dead code deletion)
 - [x] **30.4.6**: `reports/verification_gaps.md` updated with new counts (36 → 27 real gaps)
+
+---
+
+## Phase 31: RSL Refinement Proof — Eliminate external_body Proof Functions
+
+**Goal**: The RSL refinement proof (`src/protocol/RSL/refinement_proof/`) contains 20 `external_body` proof functions, and the supporting `common_proof/` has 8 more (total 28). These are trusted stubs inherited from the Dafny→Verus port. Fill in real proof bodies so Verus mechanically verifies them, reducing the trusted base.
+
+**Scope**: 28 external_body proof fns across 8 files:
+- `refinement_proof/chosen.rs` (4): `lemma_GetSequenceOfRequestBatches`, `lemma_GetMaximalQuorumOf2bsSequenceWithinBound`, `lemma_TwoMaximalQuorumsOf2bsMatch`, `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence`
+- `refinement_proof/requests.rs` (5): `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`, `lemma_RequestInRequestsReceivedPrevEpochsHasCorrespondingRequestMessage`, `lemma_RequestInRequestQueueHasCorrespondingRequestMessage`, `lemma_RequestIn2aMessageHasCorrespondingRequestMessage`, `lemma_DecidedRequestWasSentByClient`
+- `refinement_proof/execution.rs` (6): `lemma_AppStateAlwaysValid`, `lemma_TransferredStateAlwaysValid`, `lemma_ReplySentIsAllowed`, `lemma_ReplyInReplyCacheIsAllowed`, `lemma_ReplyInAppStateSupplyIsAllowed`, `lemma_ReplySentViaExecutionIsAllowed`
+- `refinement_proof/refinement.rs` (5): `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState`, `lemma_LastProduceIntermediateAbstractStateProducesAbstractState`, `lemma_GetBehaviorRefinementForBehaviorOfOneStep`, `lemma_DemonstrateRslSystemNextWhenBatchesAdded`, `lemma_GetBehaviorRefinement`
+- `common_proof/chosen.rs` (3): quorum agreement core lemmas
+- `common_proof/message2a.rs` (1), `common_proof/quorum.rs` (2), `common_proof/learner_state.rs` (2)
+
+**Strategy**: Start from leaf lemmas (no dependencies on other external_body lemmas) and work upward. Each lemma typically requires induction on behavior step `i` with case analysis on which protocol action fired.
+
+### 31.1 Triage and dependency analysis
+- [ ] Map the call graph of all 28 external_body proof fns: which lemma calls which. Identify leaf lemmas (no external_body dependencies) as starting points
+- [ ] For each lemma, annotate estimated difficulty (simple induction / complex case split / requires new invariants) and document in `docs/refinement_proof_plan.md`
+- [ ] Classify lemmas as: (A) straightforward induction, (B) needs auxiliary invariants to be stated first, (C) likely irreducible in current Verus (e.g., requires features Verus doesn't support yet)
+
+### 31.2 common_proof leaf lemmas (8 lemmas)
+- [ ] Fill in proof body for `common_proof/chosen.rs` lemmas (3): quorum intersection / agreement properties — these are the Paxos safety core
+- [ ] Fill in proof body for `common_proof/quorum.rs` lemmas (2): quorum membership reasoning
+- [ ] Fill in proof body for `common_proof/learner_state.rs` lemmas (2): learner state consistency
+- [ ] Fill in proof body for `common_proof/message2a.rs` lemma (1): 2a message lineage
+
+### 31.3 refinement_proof/chosen.rs (4 lemmas)
+- [ ] `lemma_GetSequenceOfRequestBatches`: straightforward structural induction on `qs`
+- [ ] `lemma_GetMaximalQuorumOf2bsSequenceWithinBound`: recursive construction — induction on bound with `IsValidQuorumOf2bs` decision at each slot
+- [ ] `lemma_TwoMaximalQuorumsOf2bsMatch`: induction on sequence length, using `lemma_ChosenQuorumsMatchValue` per slot
+- [ ] `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence`: induction using uniqueness of chosen values
+
+### 31.4 refinement_proof/requests.rs (5 lemmas)
+- [ ] `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`: induction on `i`, case split on election actions
+- [ ] `lemma_RequestInRequestsReceivedPrevEpochsHasCorrespondingRequestMessage`: similar induction, epoch boundary handling
+- [ ] `lemma_RequestInRequestQueueHasCorrespondingRequestMessage`: induction on `i`, case split on proposer actions
+- [ ] `lemma_RequestIn2aMessageHasCorrespondingRequestMessage`: complex — traces request origin through 1b→2a message chain
+- [ ] `lemma_DecidedRequestWasSentByClient`: combines above lemmas with quorum extraction
+
+### 31.5 refinement_proof/execution.rs (6 lemmas)
+- [ ] `lemma_AppStateAlwaysValid`: induction on `i`, case split on action index (receive vs execute), main workhorse
+- [ ] `lemma_TransferredStateAlwaysValid`: induction on `i`, traces AppStateSupply packets
+- [ ] `lemma_ReplySentIsAllowed`: induction on `i`, case split action 0 (reply cache) vs action 6 (fresh execution)
+- [ ] `lemma_ReplyInReplyCacheIsAllowed`: induction on `i`, reply cache update tracking
+- [ ] `lemma_ReplyInAppStateSupplyIsAllowed`: induction on `i`, AppStateSupply packet lineage
+- [ ] `lemma_ReplySentViaExecutionIsAllowed`: combines AppStateAlwaysValid + DecidedOperationWasChosen + HandleRequestBatch reasoning
+
+### 31.6 refinement_proof/refinement.rs (5 lemmas)
+- [ ] `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState`: algebraic — unfold definitions, `drop_last` + batch boundary
+- [ ] `lemma_LastProduceIntermediateAbstractStateProducesAbstractState`: algebraic — similar, full batch completion
+- [ ] `lemma_GetBehaviorRefinementForBehaviorOfOneStep`: base case — construct 1-element abstract behavior from init state
+- [ ] `lemma_DemonstrateRslSystemNextWhenBatchesAdded`: induction on number of new batches, chains per-batch refinement
+- [ ] `lemma_GetBehaviorRefinement`: top-level — induction on behavior length, assembles all components
+
+### 31.7 Verification and cleanup
+- [ ] Run full Verus verification after each sub-phase, ensure no regressions
+- [ ] Update `reports/verification_gaps.md` with new external_body counts
+- [ ] Run transpiler test suite to confirm no collateral damage
+
+---
+
+## Phase 32: Raft Safety Refinement Proof
+
+**Goal**: Write a full safety refinement proof for the Raft protocol, analogous to RSL's `refinement_proof/`. Prove that any valid Raft distributed execution corresponds to a sequential log of committed commands — i.e., the Raft consensus mechanism refines a simple replicated state machine.
+
+**Context**: The existing `raft_refinement.rs` only proves composite→atomic step decomposition. This phase adds the real safety argument: extracting the committed log prefix from majority agreement and showing it corresponds to a deterministic sequential execution.
+
+**Key differences from RSL**:
+- RSL uses Multi-Paxos (ballots, 1a/1b/2a/2b messages, operation numbers) → Raft uses terms, log replication, leader election
+- RSL's "chosen" = quorum of 2b votes at each slot → Raft's "committed" = leader's commit_index backed by majority match_index
+- RSL has explicit proposer/acceptor/learner/executor roles → Raft combines these into leader/follower/candidate
+- Raft's log matching property (if two logs agree at an index, they agree on all preceding entries) is a key invariant with no RSL counterpart
+- Raft's election safety (at most one leader per term) replaces RSL's ballot uniqueness
+
+### 32.1 Define abstract state machine and refinement relation
+- [ ] Define `RaftSystemState` (abstract sequential state): `committed_log: Seq<int>`, `app_state: AppState`, `requests: Set<Request>`, `replies: Set<Reply>`
+- [ ] Define `RaftSystemInit`, `RaftSystemNext` (abstract transitions: append one entry to committed log, execute it)
+- [ ] Define `RaftSystemRefinement` relation: every committed entry in the abstract log corresponds to a log entry agreed upon by a majority of servers in the concrete system
+- [ ] Place in `src/protocol/Raft/refinement_proof/state_machine.rs`
+
+### 32.2 Key invariants
+- [ ] **Election Safety**: at most one leader per term — `forall |i, j| servers[i].role == Leader && servers[j].role == Leader && servers[i].current_term == servers[j].current_term ==> i == j`
+- [ ] **Log Matching**: if two servers have the same term at the same index, all preceding entries match — `forall |i, j, k| servers[i].log[k].term == servers[j].log[k].term ==> forall |m| m <= k ==> servers[i].log[m] == servers[j].log[m]`
+- [ ] **Leader Completeness**: if an entry is committed in term T, it appears in the log of every leader in term > T
+- [ ] **State Machine Safety**: if a server has applied entry at index i, no other server applies a different entry at index i
+- [ ] Place invariant definitions in `src/protocol/Raft/refinement_proof/invariants.rs`
+
+### 32.3 Invariant induction proofs
+- [ ] Prove Election Safety is inductive: case split on `LTimeout` (new election), `LGrantVote` (vote granting), `LBecomeLeader` (leader promotion)
+- [ ] Prove Log Matching is inductive: case split on `LFollowerAppendEntries` (log append), `LClientRequest` (leader append). Core argument: AppendEntries RPC includes `prev_log_index` + `prev_log_term` check
+- [ ] Prove Leader Completeness: requires Election Safety + Log Matching + quorum intersection. A new leader's log must overlap with the previous commit quorum, so it contains all committed entries
+- [ ] Prove State Machine Safety: follows from Leader Completeness + Log Matching — committed entries are never overwritten
+
+### 32.4 Committed log extraction
+- [ ] Define `GetCommittedLog(behavior, i)` — extract the committed log prefix at step `i`: the log up to `commit_index` of the current leader (or any server whose `commit_index` is backed by majority `match_index`)
+- [ ] Prove committed log is a prefix chain: `GetCommittedLog(b, i)` is a prefix of `GetCommittedLog(b, i+1)` (committed entries are never revoked). Uses Leader Completeness
+- [ ] Prove committed log entries are unique: if entry at index k is committed, all servers that have index k agree on its value. Uses Log Matching invariant
+- [ ] Place in `src/protocol/Raft/refinement_proof/committed.rs`
+
+### 32.5 Request tracing and execution validity
+- [ ] Prove every committed entry traces to a client request (`LClientRequest` action that appended it to the leader's log)
+- [ ] Prove execution consistency: any server applying committed entries produces the same app state as sequential execution of the committed log
+- [ ] Place in `src/protocol/Raft/refinement_proof/requests.rs` and `execution.rs`
+
+### 32.6 Top-level refinement theorem
+- [ ] Assemble: given valid Raft behavior (`LInit` + `LNext`), construct abstract `RaftSystemState` behavior via `GetCommittedLog` folded through app state machine
+- [ ] Prove `RaftSystemBehaviorRefinementCorrect`: pointwise refinement relation holds, and each abstract step is a valid `RaftSystemNext`
+- [ ] Place in `src/protocol/Raft/refinement_proof/refinement.rs`
+
+### 32.7 Verification and testing
+- [ ] Run Verus verification on all new proof files
+- [ ] Minimize external_body usage — aim for fully mechanized proofs where possible (learn from Phase 31 RSL experience)
+- [ ] Add transpiler tests for new proof modules if applicable
+- [ ] Update `reports/verification_gaps.md` with Raft proof coverage
