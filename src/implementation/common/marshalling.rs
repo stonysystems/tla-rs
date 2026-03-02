@@ -237,27 +237,20 @@ impl Marshalable for bool {
     1
   }
 
-  #[verifier(external_body)]
   exec fn serialize(&self, data: &mut Vec<u8>)
     // req, ens from trait
   {
-    let s = vec![*self as u8];
-    let mut i: usize = 0;
     data.push(*self as u8);
-
-    // proof {
-    //   assert(self.ghost_serialize().subrange(0, i as int) =~= self.ghost_serialize());
-    // }
+    proof {
+      assert(data@.subrange(0, old(data)@.len() as int) =~= old(data)@);
+      assert(data@.subrange(old(data)@.len() as int, data@.len() as int) =~= self.ghost_serialize());
+    }
   }
 
   #[verifier(external_body)]
   exec fn deserialize(data: &Vec<u8>, start: usize) -> (res: Option<(Self, usize)>)
     // req, ens from trait
   {
-    // proof {
-    //   lemma_auto_spec_u64_to_from_le_bytes();
-    // }
-
     if data.len() < 1 {
       return None;
     }
@@ -265,32 +258,45 @@ impl Marshalable for bool {
       return None;
     }
     let end = start + 1;
-
     let v = data[start] != 0;
-
     Some((v, end))
   }
 
-  #[verifier(external_body)]
   proof fn lemma_serialization_is_not_a_prefix_of(&self, other: &Self)
     // req, ens from trait
   {
-    // lemma_auto_spec_u64_to_from_le_bytes();
     assert(other.ghost_serialize().subrange(0, self.ghost_serialize().len() as int) =~= other.ghost_serialize());
+    assert(true as u8 == 1u8) by(compute_only);
+    assert(false as u8 == 0u8) by(compute_only);
+    // Index into the length-1 serializations to get scalar bytes
+    let s0 = self.ghost_serialize()[0];
+    let o0 = other.ghost_serialize()[0];
+    assert(s0 == (*self as u8));
+    assert(o0 == (*other as u8));
+    // *self != *other (from !view_equal), so bytes differ
+    assert(s0 != o0);
   }
 
-  #[verifier(external_body)]
   proof fn lemma_same_views_serialize_the_same(self: &Self, other: &Self)
     // req, ens from trait
   {
-    // lemma_auto_spec_u64_to_from_le_bytes();
   }
 
-  #[verifier(external_body)]
   proof fn lemma_serialize_injective(self: &Self, other: &Self)
     // req, ens from trait
   {
-    // lemma_auto_spec_u64_to_from_le_bytes();
+    assert(true as u8 == 1u8) by(compute_only);
+    assert(false as u8 == 0u8) by(compute_only);
+    // ghost_serialize()[0] gives the byte value
+    let s0 = self.ghost_serialize()[0];
+    let o0 = other.ghost_serialize()[0];
+    // From requires: ghost_serialize are equal, so their bytes match
+    assert(s0 == o0);
+    // s0 == *self as u8 (from ghost_serialize definition)
+    assert(s0 == (*self as u8));
+    assert(o0 == (*other as u8));
+    // Therefore *self as u8 == *other as u8
+    // With compute_only facts, case analysis gives *self == *other
   }
 }
 
