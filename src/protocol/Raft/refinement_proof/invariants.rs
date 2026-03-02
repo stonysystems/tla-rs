@@ -692,7 +692,7 @@ verus! {
 
     /// Helper: LNext preserves log for most branches (only LClientRequest
     /// and LFollowerAppendEntries modify the log).
-    proof fn lemma_lnext_log_preserved_or_extended(s: LState, s_: LState, c: LConstants)
+    pub proof fn lemma_lnext_log_preserved_or_extended(s: LState, s_: LState, c: LConstants)
         requires LNext(s, s_, c)
         ensures
             // The log is either unchanged or extended by exactly one entry

@@ -268,32 +268,139 @@ verus! {
         }
     }
 
-    /// max_commit_index_seq is achieved by some server
+    /// max_commit_index_seq is achieved by some server (when commit_indices are non-negative)
     pub proof fn lemma_max_commit_seq_achieved(states: Seq<LState>)
-        requires states.len() > 0
+        requires
+            states.len() > 0,
+            forall |j: int| 0 <= j < states.len() ==> states[j].commit_index >= 0,
         ensures exists |j: int| 0 <= j < states.len()
             && states[j].commit_index == max_commit_index_seq(states)
         decreases states.len()
     {
-        if states.len() == 1 {
-            // Only one server; it achieves the max
-            assert(states[0].commit_index == max_commit_index_seq(states));
-        } else {
-            let n = states.len();
-            let sub = states.subrange(0, n - 1);
-            let last_commit = states[n - 1].commit_index;
-            let rest_max = max_commit_index_seq(sub);
+        let n = states.len();
+        let sub = states.subrange(0, n - 1);
+        let last_commit = states[n - 1].commit_index;
+        let rest_max = max_commit_index_seq(sub);
 
+        if n == 1 {
+            // max_commit_index_seq(states) = max(states[0].commit_index, 0)
+            // Since commit_index >= 0, max(commit_index, 0) == commit_index
+            assert(states[0].commit_index >= 0);
+            // rest_max = max_commit_index_seq(empty subrange) = 0
+            assert(sub.len() == 0);
+            // max = if last_commit > rest_max { last_commit } else { rest_max }
+            // Since last_commit >= 0 == rest_max, we have max == last_commit
+            if last_commit > rest_max {
+                assert(max_commit_index_seq(states) == last_commit);
+            } else {
+                // last_commit <= 0 and last_commit >= 0, so last_commit == 0 == rest_max
+                assert(last_commit == 0);
+                assert(max_commit_index_seq(states) == rest_max);
+                assert(rest_max == 0);
+                assert(states[0].commit_index == 0);
+            }
+        } else {
             if last_commit > rest_max {
                 // Last server achieves the max
                 assert(states[n - 1].commit_index == max_commit_index_seq(states));
             } else {
                 // Some server in sub achieves rest_max
+                assert forall |j: int| 0 <= j < sub.len()
+                implies sub[j].commit_index >= 0 by {
+                    assert(sub[j] == states[j]);
+                }
                 lemma_max_commit_seq_achieved(sub);
                 let j = choose |j: int| 0 <= j < sub.len()
                     && sub[j].commit_index == max_commit_index_seq(sub);
                 assert(states[j] == sub[j]);
                 assert(states[j].commit_index == rest_max);
+                assert(max_commit_index_seq(states) == rest_max);
+            }
+        }
+    }
+
+    /// MaxCommitIndex(ds) > 0 implies some server has commit_index >= MaxCommitIndex
+    /// and log.len() >= MaxCommitIndex (from CommitIndexBounded).
+    pub proof fn lemma_max_commit_index_witness(ds: RaftDistributedState)
+        requires
+            WellFormedRaftDistributed(ds),
+            CommitIndexBounded(ds),
+            MaxCommitIndex(ds) > 0,
+        ensures
+            exists |id: int| 0 <= id < ds.num_servers
+                && ds.server_states[id].commit_index >= MaxCommitIndex(ds)
+                && ds.server_states[id].log.len() >= MaxCommitIndex(ds)
+        decreases ds.num_servers
+    {
+        let n = ds.num_servers;
+        let last_commit = ds.server_states[n - 1].commit_index;
+        let sub_ds = RaftDistributedState {
+            server_states: ds.server_states.subrange(0, n - 1),
+            server_constants: ds.server_constants.subrange(0, n - 1),
+            network: ds.network,
+            num_servers: n - 1,
+        };
+        let rest_max = MaxCommitIndex(sub_ds);
+        if last_commit >= MaxCommitIndex(ds) {
+            // Last server achieves the max
+            assert(ds.server_states[n - 1].commit_index >= MaxCommitIndex(ds));
+            assert(CommitIndexBounded(ds));
+            assert(ds.server_states[n - 1].log.len() >= last_commit);
+        } else {
+            // MaxCommitIndex comes from sub_ds
+            assert(rest_max >= MaxCommitIndex(ds));
+            assert(rest_max > 0);
+            // Need WellFormed for sub_ds — establish manually
+            // sub_ds has n-1 servers; WellFormedness requires my_id/quorum_size/servers match
+            // These are inherited from ds but with wrong values for the sub-state.
+            // Instead, prove the witness directly: rest_max == MaxCommitIndex(sub_ds) > 0,
+            // so recursively there's a witness in 0..n-1 which is also in 0..n.
+            if n - 1 > 0 {
+                // The recursive case: find witness in sub_ds
+                // We can't recurse directly (need WellFormed(sub_ds)), but we know
+                // rest_max > 0 means some server in 0..n-1 has commit_index == rest_max.
+                // Use seq-based approach:
+                lemma_max_commit_index_eq_seq(ds);
+                lemma_max_commit_index_eq_seq(sub_ds);
+                // max_commit_index_seq(ds.server_states) == MaxCommitIndex(ds)
+                // max_commit_index_seq(sub) == rest_max
+                let sub = ds.server_states.subrange(0, n - 1);
+                lemma_max_commit_seq_ge_server_reverse(sub, rest_max);
+                let j = choose |j: int| 0 <= j < sub.len()
+                    && sub[j].commit_index >= rest_max;
+                assert(ds.server_states[j] == sub[j]);
+                assert(ds.server_states[j].commit_index >= MaxCommitIndex(ds));
+                assert(CommitIndexBounded(ds));
+                assert(ds.server_states[j].log.len() >= ds.server_states[j].commit_index);
+            }
+        }
+    }
+
+    /// If max_commit_index_seq(states) >= threshold > 0, some server achieves >= threshold
+    pub proof fn lemma_max_commit_seq_ge_server_reverse(states: Seq<LState>, threshold: int)
+        requires
+            states.len() > 0,
+            max_commit_index_seq(states) >= threshold,
+            threshold > 0,
+        ensures
+            exists |j: int| 0 <= j < states.len()
+                && states[j].commit_index >= threshold
+        decreases states.len()
+    {
+        let n = states.len();
+        let last_commit = states[n - 1].commit_index;
+        let sub = states.subrange(0, n - 1);
+        let rest_max = max_commit_index_seq(sub);
+        if last_commit >= threshold {
+            // Last server suffices
+        } else {
+            // rest_max >= threshold (since max(last_commit, rest_max) >= threshold and last_commit < threshold)
+            assert(rest_max >= threshold);
+            if sub.len() > 0 {
+                lemma_max_commit_seq_ge_server_reverse(sub, threshold);
+                let j = choose |j: int| 0 <= j < sub.len()
+                    && sub[j].commit_index >= threshold;
+                assert(states[j] == sub[j]);
             }
         }
     }
@@ -310,16 +417,11 @@ verus! {
         if max_commit <= 0 {
             // GetCommittedLog returns empty
         } else {
-            // Find a server achieving max_commit
-            lemma_max_commit_index_eq_seq(ds);
-            lemma_max_commit_seq_achieved(ds.server_states);
-            let j = choose |j: int| 0 <= j < ds.server_states.len()
-                && ds.server_states[j].commit_index == max_commit_index_seq(ds.server_states);
-            // j has commit_index == MaxCommitIndex(ds) == max_commit
-            assert(ds.server_states[j].commit_index == max_commit);
-            // CommitIndexBounded: commit_index <= log.len()
-            assert(max_commit <= ds.server_states[j].log.len());
-            // So j qualifies for the choose in GetCommittedLog
+            // Find a server achieving max_commit with log.len() >= max_commit
+            lemma_max_commit_index_witness(ds);
+            let j = choose |id: int| 0 <= id < ds.num_servers
+                && ds.server_states[id].commit_index >= max_commit
+                && ds.server_states[id].log.len() >= max_commit;
             // ExtractLogValues(log, max_commit) has length max_commit
             lemma_extract_log_values_len(ds.server_states[j].log, max_commit);
         }
@@ -370,6 +472,27 @@ verus! {
     {
         if len > 0 {
             lemma_extract_log_values_len(log, len - 1);
+        }
+    }
+
+    /// ExtractLogValues(log, len)[k] == log[k].value for 0 <= k < len
+    pub proof fn lemma_extract_log_values_index(log: Seq<LLogEntry>, len: int, k: int)
+        requires
+            0 <= len <= log.len(),
+            0 <= k < len,
+        ensures
+            ExtractLogValues(log, len)[k] == log[k].value
+        decreases len
+    {
+        if len == 1 {
+            // ExtractLogValues(log, 1) == seq![log[0].value], k == 0
+        } else {
+            lemma_extract_log_values_len(log, len - 1);
+            if k < len - 1 {
+                lemma_extract_log_values_index(log, len - 1, k);
+            } else {
+                // k == len - 1: pushed element
+            }
         }
     }
 }

@@ -139,17 +139,16 @@ verus! {
         let old_log = GetCommittedLog(ds);
         let new_log = GetCommittedLog(ds_);
 
-        // Length monotonicity: new_log.len() >= old_log.len()
-        // This follows from MaxCommitIndex monotonicity and the definition of GetCommittedLog.
-        // GetCommittedLog length is determined by MaxCommitIndex (when > 0).
-        // Formal connection requires lemma_extract_log_values_len.
-        assume(new_log.len() >= old_log.len());
+        // Length monotonicity: GetCommittedLog length equals MaxCommitIndex (when > 0).
+        // MaxCommitIndex is non-decreasing (proved above).
+        lemma_committed_log_len(ds);
+        lemma_committed_log_len(ds_);
+        // old_log.len() == max(0, MaxCommitIndex(ds)) <= max(0, MaxCommitIndex(ds_)) == new_log.len()
 
         // Prefix preservation: entries 0..old_log.len() are the same.
-        // This requires StateMachineSafety: all servers agree on committed entries.
-        // Since GetCommittedLog uses `choose` to pick a server, we need the chosen
-        // servers for ds and ds_ to agree on the committed prefix.
-        // This follows from StateMachineSafety (assumed in the invariant).
+        // This requires StateMachineSafety: the two servers chosen by GetCommittedLog
+        // for ds and ds_ must agree on committed entries. Since StateMachineSafety
+        // is an assumed invariant (spec model limitation), we assume this property.
         assume(forall |k: int| #![trigger new_log[k]]
             0 <= k < old_log.len() ==> old_log[k] == new_log[k]);
     }

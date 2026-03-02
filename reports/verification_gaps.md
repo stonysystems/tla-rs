@@ -8,9 +8,9 @@ Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping r
 - 5 new files: `src/protocol/Raft/refinement_proof/{state_machine,invariants,induction,committed,refinement}.rs`
 - Top-level theorem: `lemma_refinement_correct` — every valid Raft behavior refines to a sequential committed log
 - Phase 32.3.1-32.3.2: Detailed invariant induction proofs with supporting invariants (VotesGrantedAreServers, CandidateOrLeaderVotedForSelf, VotersVotedForCandidate); 6 LNext case analysis assumes eliminated via helper lemmas
-- 8 targeted `assume()` across 2 files (see §6 below): 6 in invariants.rs, 2 in committed.rs
-- 0 `external_body` in Raft refinement proof
-- Verification: 660 verified, 0 errors (up from 632 pre-Phase 32)
+- 7 targeted `assume()` across 2 files (see §6 below): 6 in invariants.rs, 1 in committed.rs
+- 1 `external_body` axiom (`lemma_quorum_intersection` in common/collections/sets.rs) — pigeonhole principle for quorum intersection
+- Verification: 669 verified, 0 errors (up from 632 pre-Phase 32)
 
 ## Changes from Phase 31
 
@@ -178,7 +178,7 @@ Total `assume()` across RSL proof files: 77 (5 in formerly-external_body + 72 in
 
 ## 6. Raft Safety Refinement Proof — `assume()` Summary (Phase 32)
 
-8 targeted `assume()` across the Raft refinement proof files:
+7 targeted `assume()` across the Raft refinement proof files:
 
 ### invariants.rs (6 assumes)
 
@@ -214,16 +214,16 @@ Remaining assumes:
 Delegates to `lemma_safety_invariant_inductive` from invariants.rs.
 `lemma_invariant_holds_throughout_behavior` uses clean recursive induction (no assumes).
 
-### committed.rs (2 assumes)
+### committed.rs (1 assume)
 
-Two assumes eliminated via seq-based helpers:
+Three assumes eliminated via seq-based helpers:
 - WellFormedness assume eliminated via `max_commit_index_seq` (avoids RaftDistributedState sub-state construction)
 - MaxCommitIndex monotonicity eliminated via `lemma_max_commit_seq_monotone` (recursive proof over server_states sequences)
+- GetCommittedLog length monotonicity eliminated via `lemma_committed_log_len` + `lemma_max_commit_seq_achieved`
 
 | # | Line | Function | assume | Root Cause |
 |---|------|----------|--------|------------|
-| 7 | 146 | `lemma_committed_log_monotone` | new_log.len() ≥ old_log.len() | Connection between MaxCommitIndex and ExtractLogValues length |
-| 8 | 153 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
+| 7 | 152 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
 
 `lemma_abstract_step_valid` stutter case: proved via `=~=` extensional equality (previously assume).
 
@@ -237,4 +237,4 @@ All proofs fully mechanized. Top-level `lemma_refinement_correct` has no assumes
 - **Assume 1 (ElectionSafety quorum intersection)**: Depends on assumes 2 and 4-6 being resolved first (VotersVotedForCandidate provides the crucial link that quorum overlap implies same candidate)
 - **Assume 2 (VotersVotedForCandidate)**: Add network message provenance tracking (src/dst fields on messages, delivered-from invariant) to the distributed model, so that receiving a VoteResponse from voter `v` proves `v` actually voted for the candidate
 - **Assumes 4-6 (LogMatching, LeaderCompleteness, StateMachineSafety)**: Strengthen `LFollowerAppendEntries` to reject entries when `ae_has_entry && ae_prev_index < s.log.len() && s.log[ae_prev_index].term != ae_prev_term` (the Raft §5.3 consistency check). This enables LogMatching induction; LeaderCompleteness and StateMachineSafety follow from LogMatching + quorum intersection
-- **Assumes 7-8 (committed.rs)**: GetCommittedLog length monotonicity (needs MaxCommitIndex→ExtractLogValues connection) + StateMachineSafety dependency for entry agreement. Both in `lemma_committed_log_monotone`
+- **Assume 7 (committed.rs entry agreement)**: Follows directly from StateMachineSafety — once assumes 4-6 are resolved, this one falls out automatically
