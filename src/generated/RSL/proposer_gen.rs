@@ -12,6 +12,7 @@ use crate::generated::RSL::types_gen::CIncompleteBatchTimer::CIncompleteBatchTim
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
+use crate::protocol::common::upper_bound::UpperBoundedAddition;
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::gen_helpers::{
@@ -572,7 +573,32 @@ ensures
         // election_state: clone ensures result.valid() == self.valid()
         assert(new_proposer.election_state.valid());
         assert(new_proposer.valid());
-        assume(LProposerNominateNewValueAndSend2a(s@, new_proposer@, *clock as int, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)));
+
+        // Prove spec predicate: LProposerNominateNewValueAndSend2a
+        // The spec uses batchSize with an || max_batch_size < 0 branch that is always false
+        // since max_batch_size is u64 (>= 0 as int)
+
+        // Field-by-field View equality for s_ == LProposer{...}
+        assert(new_proposer@.constants =~= s@.constants);
+        assert(new_proposer@.current_state == s@.current_state);
+        assert(new_proposer@.max_ballot_i_sent_1a =~= s@.max_ballot_i_sent_1a);
+        assert(new_proposer@.next_operation_number_to_propose == s@.next_operation_number_to_propose + 1);
+        // request_queue: truncate_vec mapped view ensures
+        assert(new_proposer@.request_queue =~= s@.request_queue.subrange(batch_size as int, s@.request_queue.len() as int));
+        // received_1b_packets: clone_hashset res@ == s@ → Set::map preserves equality
+        assert(new_proposer@.received_1b_packets =~= s@.received_1b_packets);
+        // highest_seqno: HashMap clone res@ == self@ → Map::new extensionally equal
+        assert(new_proposer@.highest_seqno_requested_by_client_this_view =~= s@.highest_seqno_requested_by_client_this_view);
+        // election_state: clone ensures result@ == self@
+        assert(new_proposer@.election_state =~= s@.election_state);
+        // incomplete_batch_timer: inline construction matches spec
+        assert(new_proposer@.incomplete_batch_timer =~= if s@.request_queue.len() > batch_size as int {
+            IncompleteBatchTimer::IncompleteBatchTimerOn{when: UpperBoundedAddition(*clock as int, s@.constants.all.params.max_batch_delay, s@.constants.all.params.max_integer_val)}
+        } else {
+            IncompleteBatchTimer::IncompleteBatchTimerOff{}
+        });
+
+        assert(LProposerNominateNewValueAndSend2a(s@, new_proposer@, *clock as int, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)));
     }
     (new_proposer, sent_packets)
 }
@@ -741,82 +767,108 @@ ensures
     LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)),
 {
     let opn = s.next_operation_number_to_propose;
-    let result = if !s.CProposerCanNominateUsingOperationNumber(*log_truncation_point, opn) {
-        // Branch 1: can't nominate — no change
-        (s.clone_up_to_view(), vec![])
-    } else if !CProposer::CAllAcceptorsHadNoProposal(&s.received_1b_packets, opn) {
-        // Branch 2: old value exists — nominate old
-        CProposerNominateOldValueAndSend2a(s, log_truncation_point)
-    } else {
-        let has_proposal_larger = CProposer::CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, opn);
-        let queue_len = s.request_queue.len() as u64;
-        let max_batch = s.constants.all.params.max_batch_size;
-        let timer_on_and_expired = match &s.incomplete_batch_timer {
-            CIncompleteBatchTimer::CIncompleteBatchTimerOn { when } => *clock >= *when,
-            CIncompleteBatchTimer::CIncompleteBatchTimerOff => false,
-        };
-        if has_proposal_larger || queue_len >= max_batch || (queue_len > 0 && timer_on_and_expired) {
-            // Branch 3: nominate new value
-            CProposerNominateNewValueAndSend2a(s, clock, log_truncation_point)
-        } else if queue_len > 0 && matches!(&s.incomplete_batch_timer, CIncompleteBatchTimer::CIncompleteBatchTimerOff) {
-            // Branch 4: start batch timer — no packets
-            let timer = CIncompleteBatchTimer::CIncompleteBatchTimerOn {
-                when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
-            };
-            let new_proposer = CProposer {
-                constants: s.constants.clone(),
-                current_state: s.current_state,
-                request_queue: clone_request_queue(&s.request_queue),
-                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-                next_operation_number_to_propose: s.next_operation_number_to_propose,
-                received_1b_packets: clone_hashset(&s.received_1b_packets),
-                highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-                incomplete_batch_timer: timer,
-                election_state: s.election_state.clone(),
-                max_log_truncation_point: 0u64,
-                max_opn_with_proposal: 0u64,
-            };
-            proof {
-                // new_proposer.valid() via component validity chaining
-                assert(new_proposer.constants.valid());
-                assert(new_proposer.max_ballot_i_sent_1a.valid());
-                assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
-                    implies (#[trigger] new_proposer.request_queue@[i]).valid() by {
-                    assert(s.request_queue@[i].valid());
-                }
-                assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
-                    implies (#[trigger] new_proposer.request_queue@[i]).abstractable() by {
-                    assert(s.request_queue@[i].abstractable());
-                }
-                assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.valid() by {
-                    assert(s.received_1b_packets@.contains(p));
-                }
-                assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.abstractable() by {
-                    assert(s.received_1b_packets@.contains(p));
-                }
-                assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.valid_public_key() by {
-                    assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
-                }
-                assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.abstractable() by {
-                    assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
-                }
-                assert(new_proposer.incomplete_batch_timer.valid());
-                assert(new_proposer.election_state.valid());
-                assert(new_proposer.valid());
-            }
-            (new_proposer, vec![])
-        } else {
-            // Branch 5: default — no change
-            (s.clone_up_to_view(), vec![])
+
+    // Branch 1: can't nominate — no change
+    if !s.CProposerCanNominateUsingOperationNumber(*log_truncation_point, opn) {
+        let r = (s.clone_up_to_view(), vec![]);
+        proof {
+            // clone_up_to_view: self == result → result@ == self@
+            assert(r.0@ =~= s@);
+            // empty vec mapped is empty
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
         }
-    };
-    proof {
-        // result.0.valid(): branches 1,5 from clone_up_to_view (self==result → valid);
-        // branches 2,3 from NominateOld/NominateNew ensures; branch 4 from inline proof above
-        // result.1 packets: branches 1,4,5 are vec![] (vacuous); branches 2,3 from function ensures
-        assume(LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)));
+        return r;
     }
-    result
+
+    // Branch 2: old value exists — nominate old
+    if !CProposer::CAllAcceptorsHadNoProposal(&s.received_1b_packets, opn) {
+        return CProposerNominateOldValueAndSend2a(s, log_truncation_point);
+    }
+
+    let has_proposal_larger = CProposer::CExistsAcceptorHasProposalLargeThanOpn(&s.received_1b_packets, opn);
+    let queue_len = s.request_queue.len() as u64;
+    let max_batch = s.constants.all.params.max_batch_size;
+    let timer_on_and_expired = match &s.incomplete_batch_timer {
+        CIncompleteBatchTimer::CIncompleteBatchTimerOn { when } => *clock >= *when,
+        CIncompleteBatchTimer::CIncompleteBatchTimerOff => false,
+    };
+
+    // Branch 3: nominate new value
+    if has_proposal_larger || queue_len >= max_batch || (queue_len > 0 && timer_on_and_expired) {
+        return CProposerNominateNewValueAndSend2a(s, clock, log_truncation_point);
+    }
+
+    // Branch 4: start batch timer — no packets
+    if queue_len > 0 && matches!(&s.incomplete_batch_timer, CIncompleteBatchTimer::CIncompleteBatchTimerOff) {
+        let timer = CIncompleteBatchTimer::CIncompleteBatchTimerOn {
+            when: CUpperBoundedAddition(*clock, s.constants.all.params.max_batch_delay, s.constants.all.params.max_integer_val),
+        };
+        let new_proposer = CProposer {
+            constants: s.constants.clone(),
+            current_state: s.current_state,
+            request_queue: clone_request_queue(&s.request_queue),
+            max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
+            next_operation_number_to_propose: s.next_operation_number_to_propose,
+            received_1b_packets: clone_hashset(&s.received_1b_packets),
+            highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
+            incomplete_batch_timer: timer,
+            election_state: s.election_state.clone(),
+            max_log_truncation_point: 0u64,
+            max_opn_with_proposal: 0u64,
+        };
+        proof {
+            // new_proposer.valid() via component validity chaining
+            assert(new_proposer.constants.valid());
+            assert(new_proposer.max_ballot_i_sent_1a.valid());
+            assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
+                implies (#[trigger] new_proposer.request_queue@[i]).valid() by {
+                assert(s.request_queue@[i].valid());
+            }
+            assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
+                implies (#[trigger] new_proposer.request_queue@[i]).abstractable() by {
+                assert(s.request_queue@[i].abstractable());
+            }
+            assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.valid() by {
+                assert(s.received_1b_packets@.contains(p));
+            }
+            assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.abstractable() by {
+                assert(s.received_1b_packets@.contains(p));
+            }
+            assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.valid_public_key() by {
+                assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
+            }
+            assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.abstractable() by {
+                assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
+            }
+            assert(new_proposer.incomplete_batch_timer.valid());
+            assert(new_proposer.election_state.valid());
+            assert(new_proposer.valid());
+
+            // Field-by-field View equality for spec predicate (branch 4)
+            assert(new_proposer@.constants =~= s@.constants);
+            assert(new_proposer@.current_state == s@.current_state);
+            assert(new_proposer@.request_queue =~= s@.request_queue);
+            assert(new_proposer@.max_ballot_i_sent_1a =~= s@.max_ballot_i_sent_1a);
+            assert(new_proposer@.next_operation_number_to_propose == s@.next_operation_number_to_propose);
+            assert(new_proposer@.received_1b_packets =~= s@.received_1b_packets);
+            assert(new_proposer@.highest_seqno_requested_by_client_this_view =~= s@.highest_seqno_requested_by_client_this_view);
+            assert(new_proposer@.election_state =~= s@.election_state);
+            assert(new_proposer@.incomplete_batch_timer =~= IncompleteBatchTimer::IncompleteBatchTimerOn{when: UpperBoundedAddition(*clock as int, s@.constants.all.params.max_batch_delay, s@.constants.all.params.max_integer_val)});
+        }
+        let r4 = (new_proposer, vec![]);
+        proof {
+            assert(r4.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+        }
+        return r4;
+    }
+
+    // Branch 5: default — no change
+    let r5 = (s.clone_up_to_view(), vec![]);
+    proof {
+        assert(r5.0@ =~= s@);
+        assert(r5.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+    }
+    r5
 }
 
 pub exec fn CProposerProcessHeartbeat(s: &CProposer, p: &CPacket, clock: &u64) -> (result: CProposer)
