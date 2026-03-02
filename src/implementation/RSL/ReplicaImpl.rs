@@ -359,7 +359,7 @@ impl CReplica{
             // forall |p:CPacket| s@.contains(p) ==> p.msg is CMessage1b,
             pkt.msg is CMessage1b,
         ensures
-            res ==> forall |op:CPacket| s@.contains(op) ==> op.src@ != pkt.src@
+            res == (forall |op:CPacket| s@.contains(op) ==> op.src@ != pkt.src@)
     {
         let mut res = true;
         let m_iter = s.iter();
@@ -405,11 +405,13 @@ impl CReplica{
         match received_packet.msg {
             CMessage::CMessage1b { bal_1b, log_truncation_point, .. } => {
                 let samesrc = Self::Packet1bHasUniqueSrc(&self.proposer.received_1b_packets, &received_packet);
+                // Pre-compute all sub-conditions so their postconditions are available
+                // in both if and else branches (avoids short-circuit postcondition loss).
+                let in_config = contains(&self.proposer.constants.all.config.replica_ids, &received_packet.src);
+                let bal_eq = CBalEq(&bal_1b, &self.proposer.max_ballot_i_sent_1a);
+                let state_ok = self.proposer.current_state == 1;
 
-                if contains(&self.proposer.constants.all.config.replica_ids, &received_packet.src)
-                    && CBalEq(&bal_1b, &self.proposer.max_ballot_i_sent_1a)
-                    && self.proposer.current_state == 1
-                    && samesrc
+                if in_config && bal_eq && state_ok && samesrc
                 {
                     Self::print("receive valid 1b");
                     assert(ss.proposer.constants.all.config.replica_ids.contains(sp.src));
@@ -434,8 +436,43 @@ impl CReplica{
                 }
                 else
                 {
-                    // don't know why, if has been proved contains, but else cannot infer that doesn't contain.
-                    assume(!ss.proposer.constants.all.config.replica_ids.contains(sp.src));
+                    // Ensure spec-level message type is known
+                    assert(sp.msg is RslMessage1b);
+                    // Bridge exec sub-conditions to spec equivalents:
+                    // contains() postcondition: in_config == v@.map(|i,t:EndPoint| t@).contains(received_packet.src@)
+                    assert(in_config == ss.proposer.constants.all.config.replica_ids.contains(sp.src));
+                    // CBalEq postcondition: bal_eq == (bal_1b@ == max_ballot@)
+                    assert(bal_eq == (sp.msg->bal_1b == ss.proposer.max_ballot_i_sent_1a));
+                    // state comparison is identity
+                    assert(state_ok == (ss.proposer.current_state == 1));
+                    // Bridge samesrc (exec forall over CPacket) to spec forall (over RslPacket)
+                    // via Set::map: spec_set == exec_set@.map(|p:CPacket| p@)
+                    proof {
+                        let exec_set = self.proposer.received_1b_packets@;
+                        let spec_set = ss.proposer.received_1b_packets;
+                        // Establish the set equivalence via CProposer view mapping
+                        assert(exec_set.map(|p: CPacket| p@) =~= spec_set);
+
+                        if samesrc {
+                            // samesrc == true → forall CPacket op in exec_set: op.src@ != pkt.src@
+                            // Bridge to spec forall via Set::map
+                            assert forall |rp: RslPacket| spec_set.contains(rp) implies rp.src != sp.src by {
+                                // spec_set.contains(rp) → exec_set.map(|p| p@).contains(rp)
+                                // → exists |op| exec_set.contains(op) && op@ == rp
+                                let op = choose |op: CPacket| exec_set.contains(op) && op@ == rp;
+                                assert(exec_set.contains(op));
+                                // rp.src = op@.src = op.src@, which != pkt.src@ = sp.src
+                            };
+                        } else {
+                            // samesrc == false → exists op in exec_set: op.src@ == pkt.src@
+                            let bad_op = choose |op: CPacket| exec_set.contains(op) && !(op.src@ != received_packet.src@);
+                            assert(exec_set.contains(bad_op));
+                            // bad_op@ is in spec_set via Set::map
+                            assert(spec_set.contains(bad_op@));
+                            assert(bad_op@.src == sp.src);
+                            assert(!(forall |rp: RslPacket| spec_set.contains(rp) ==> rp.src != sp.src));
+                        }
+                    }
                     let mut pkt_vec: Vec<CPacket> = Vec::new();
                     let outpackets = OutboundPackets::PacketSequence{
                         s:pkt_vec,
