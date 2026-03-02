@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use vstd::prelude::*;
 
+use crate::common::collections::hashsets::hashset_to_vec;
+use crate::common::collections::seq_is_unique_v::do_end_points_match;
 use crate::common::collections::vecs::*;
 use crate::common::framework::environment_s::{LIoOp, LPacket};
 use crate::common::native::io_s::EndPoint;
@@ -132,17 +134,37 @@ pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -
 ///
 /// Kept as an external-body runtime helper because it is an IO-adjacent
 /// HashSet iteration pattern used by replica packet-processing wrappers.
-#[verifier(external_body)]
 pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &CPacket) -> (res: bool)
     requires
         pkt.msg is CMessage1b,
     ensures
         res == (forall |op: CPacket| received_1b_packets@.contains(op) ==> op.src@ != pkt.src@),
 {
+    let vec = hashset_to_vec(received_1b_packets);
     let mut res = true;
-    for p in received_1b_packets.iter() {
-        if p.src == pkt.src {
+    let mut i: usize = 0;
+    while i < vec.len()
+        invariant
+            0 <= i <= vec.len(),
+            forall |j: int| 0 <= j < vec@.len() ==> received_1b_packets@.contains(#[trigger] vec@[j]),
+            forall |x: CPacket| received_1b_packets@.contains(x) ==> (exists |j: int| 0 <= j < vec@.len() && vec@[j] == x),
+            res == (forall |j: int| 0 <= j < i ==> (#[trigger] vec@[j]).src@ != pkt.src@),
+        decreases vec.len() - i,
+    {
+        if do_end_points_match(&vec[i].src, &pkt.src) {
             res = false;
+        }
+        i += 1;
+    }
+    proof {
+        if res {
+            assert forall |op: CPacket| received_1b_packets@.contains(op) implies op.src@ != pkt.src@ by {
+                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == op;
+                assert(vec@[j].src@ != pkt.src@);
+            };
+        } else {
+            let j = choose |j: int| 0 <= j < i && vec@[j].src@ == pkt.src@;
+            assert(received_1b_packets@.contains(vec@[j]));
         }
     }
     res
