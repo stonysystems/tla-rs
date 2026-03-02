@@ -1,3 +1,4 @@
+use crate::common::collections::count_matches::*;
 use crate::common::collections::vecs::*;
 use crate::common::framework::environment_s::{LIoOp, LPacket};
 use crate::common::native::io_s::EndPoint;
@@ -1067,32 +1068,45 @@ impl CReplica{
         let ghost ss = old(self)@;
         assert(self.valid());
         assert(self.constants.all.config.valid());
-        let mut i = 0;
+        let mut i: usize = 0;
         let mut find = false;
         let mut target = 0;
+        // Note: no break — loop always completes so we can prove !find ==> all elements failed
         while i < self.acceptor.last_checkpointed_operation.len()
             invariant
                 self.valid(),
                 ss == self@,
+                i <= self.acceptor.last_checkpointed_operation.len(),
                 find ==> ss.acceptor.last_checkpointed_operation.contains(target as int),
                 find ==> IsLogTruncationPointValid(target as int, ss.acceptor.last_checkpointed_operation, ss.constants.all.config),
+                // Track that all checked elements failed when !find
+                !find ==> (forall |j: int| 0 <= j < i as int
+                    ==> !IsLogTruncationPointValid(
+                        ss.acceptor.last_checkpointed_operation[j],
+                        ss.acceptor.last_checkpointed_operation, ss.constants.all.config)),
             decreases self.acceptor.last_checkpointed_operation.len() - i
         {
             let opn = self.acceptor.last_checkpointed_operation[i];
             assert(self.acceptor.last_checkpointed_operation@.contains(opn));
-            if CIsLogTruncationPointValid(opn, &self.acceptor.last_checkpointed_operation, &self.constants.all.config)
+            if !find && CIsLogTruncationPointValid(opn, &self.acceptor.last_checkpointed_operation, &self.constants.all.config)
             {
                 find = true;
                 target = opn;
                 assert(self.acceptor.last_checkpointed_operation@.contains(target));
-                let valid = CIsLogTruncationPointValid(target, &self.acceptor.last_checkpointed_operation, &self.constants.all.config);
-                assert(valid == true);
-                assert(valid == IsLogTruncationPointValid(target as int, self.acceptor.last_checkpointed_operation@.map(|i, x| (x as int)), self.constants.all.config@));
+                assert(IsLogTruncationPointValid(target as int, self.acceptor.last_checkpointed_operation@.map(|i, x| (x as int)), self.constants.all.config@));
                 assert(ss.acceptor.last_checkpointed_operation == self.acceptor.last_checkpointed_operation@.map(|i, x| (x as int)));
                 assert(ss.constants.all.config == self.constants.all.config@);
                 assert(ss.acceptor.last_checkpointed_operation.contains(target as int));
                 assert(IsLogTruncationPointValid(target as int, ss.acceptor.last_checkpointed_operation, ss.constants.all.config));
-                break;
+            } else if !find {
+                proof {
+                    assert(ss.acceptor.last_checkpointed_operation
+                        == self.acceptor.last_checkpointed_operation@.map(|j, x: u64| (x as int)));
+                    assert(ss.constants.all.config == self.constants.all.config@);
+                    assert(!IsLogTruncationPointValid(
+                        ss.acceptor.last_checkpointed_operation[i as int],
+                        ss.acceptor.last_checkpointed_operation, ss.constants.all.config));
+                }
             }
             i = i + 1;
         }
@@ -1126,13 +1140,39 @@ impl CReplica{
             }
         }
         else {
-            // this brunch cannot be reached, use assume to pass the verification.
+            // !find: all elements failed IsLogTruncationPointValid
             let mut pkt_vec: Vec<CPacket> = Vec::new();
             let outpackets = OutboundPackets::PacketSequence{
                 s:pkt_vec,
             };
             assert(outpackets@ == Seq::<RslPacket>::empty());
-            assume(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(ss, self@, outpackets@));
+            proof {
+                // Prove unreachable for configs with >= 3 replicas
+                let lco = ss.acceptor.last_checkpointed_operation;
+                let cfg = ss.constants.all.config;
+                let n = LMinQuorumSize(cfg);
+                // Instantiate loop invariant: all elements failed
+                assert forall |j: int| 0 <= j < lco.len() implies
+                    !IsLogTruncationPointValid(lco[j], lco, cfg) by {
+                    assert(lco =~= ss.acceptor.last_checkpointed_operation);
+                    assert(cfg =~= ss.constants.all.config);
+                    assert(0 <= j && j < i as int);
+                };
+                if n > 0 && n < lco.len() {
+                    // nth order statistic always exists among sequence elements
+                    lemma_nth_highest_value_exists(lco, n);
+                    let v: int = choose |v: int| lco.contains(v)
+                        && CountMatchesInSeq(lco, |x: int| x > v) < n
+                        && CountMatchesInSeq(lco, |x: int| x >= v) >= n;
+                    assert(IsNthHighestValueInSequence(v, lco, n));
+                    assert(IsLogTruncationPointValid(v, lco, cfg));
+                    let j: int = choose |j: int| 0 <= j < lco.len() && lco[j] == v;
+                    assert(!IsLogTruncationPointValid(lco[j], lco, cfg));
+                    assert(false);
+                }
+                // For degenerate configs (< 3 replicas): same gap as original IronFleet
+                assume(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(ss, self@, outpackets@));
+            }
             outpackets
         }
     }

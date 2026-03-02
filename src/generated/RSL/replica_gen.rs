@@ -133,22 +133,6 @@ proof fn lemma_clearnerstate_value_valid(m: CLearnerState, key: u64)
 }
 
 
-/// Mathematical fact: for any integer sequence with 0 < n < len, an element satisfying
-/// IsNthHighestValueInSequence always exists (the nth order statistic is always a sequence element).
-/// Proof sketch: sort non-decreasingly as b_0 <= ... <= b_{k-1}; take v = b_{k-n}.
-/// Then count(>= v) >= n (elements at positions k-n..k-1) and count(> v) <= n-1 < n.
-#[verifier::external_body]
-proof fn lemma_nth_highest_value_exists(s: Seq<int>, n: int)
-requires
-    0 < n,
-    n < s.len(),
-ensures
-    exists |v: int| s.contains(v)
-        && CountMatchesInSeq(s, |x: int| x > v) < n
-        && CountMatchesInSeq(s, |x: int| x >= v) >= n,
-{
-}
-
 pub exec fn CReplicaInit(c: &CReplicaConstants) -> (result: CReplica)
 requires
     c.valid(),
