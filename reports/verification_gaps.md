@@ -7,8 +7,8 @@ Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping r
 - **Raft Safety Refinement Proof completed** (Phase 32.1–32.7) — full refinement proof from distributed Raft → abstract sequential state machine
 - 5 new files: `src/protocol/Raft/refinement_proof/{state_machine,invariants,induction,committed,refinement}.rs`
 - Top-level theorem: `lemma_refinement_correct` — every valid Raft behavior refines to a sequential committed log
-- Phase 32.3.1: Detailed invariant induction proofs with supporting invariants (VotesGrantedAreServers, CandidateOrLeaderVotedForSelf, VotersVotedForCandidate)
-- 17 targeted `assume()` across 2 files (see §6 below): 12 in invariants.rs, 5 in committed.rs
+- Phase 32.3.1-32.3.2: Detailed invariant induction proofs with supporting invariants (VotesGrantedAreServers, CandidateOrLeaderVotedForSelf, VotersVotedForCandidate); 6 LNext case analysis assumes eliminated via helper lemmas
+- 11 targeted `assume()` across 2 files (see §6 below): 6 in invariants.rs, 5 in committed.rs
 - 0 `external_body` in Raft refinement proof
 - Verification: 651 verified, 0 errors (up from 632 pre-Phase 32)
 
@@ -178,24 +178,26 @@ Total `assume()` across RSL proof files: 77 (5 in formerly-external_body + 72 in
 
 ## 6. Raft Safety Refinement Proof — `assume()` Summary (Phase 32)
 
-17 targeted `assume()` across the Raft refinement proof files:
+11 targeted `assume()` across the Raft refinement proof files:
 
-### invariants.rs (12 assumes)
+### invariants.rs (6 assumes)
+
+6 LNext case analysis assumes were eliminated (Phase 32.3.2) using helper lemmas:
+- `lemma_lnext_votes_bounded`: Verus auto-case-splits to prove votes come from {old votes} ∪ {my_id} ∪ c.servers
+- `lemma_lnext_self_vote_preserved`: Verus auto-case-splits to prove Candidate/Leader self-vote preserved
+- `lemma_lnext_leader_quorum_preserved`: Verus auto-case-splits to prove Leader quorum preserved
+- `lemma_invariant_at_step`: Clean recursive induction with `decreases k` (replaces inner assume)
+
+Remaining assumes:
 
 | # | Line | Function | assume | Root Cause |
 |---|------|----------|--------|------------|
-| 1 | 328 | `lemma_election_safety_inductive` | `assume(false)` (Candidate→Leader case) | Quorum intersection argument requires Set cardinality reasoning |
-| 2 | 386 | `lemma_votes_granted_are_servers_inductive` | `0 <= v < num_servers` for new voter | LNext case split not fully automated by SMT |
-| 3 | 459 | `lemma_candidate_or_leader_voted_for_self_inductive` | `s_.votes_granted.contains(my_id)` (was Candidate/Leader) | Set::insert preserves membership — SMT timeout on LNext branches |
-| 4 | 477 | `lemma_candidate_or_leader_voted_for_self_inductive` | `s_.votes_granted.contains(my_id)` (was Follower) | LTimeout creates `{my_id}` — SMT can't close through LNext |
-| 5 | 514 | `lemma_voters_voted_for_candidate_inductive` | `VotersVotedForCandidate(ds_)` | Network-level invariant requires message provenance tracking |
-| 6 | 561 | `lemma_leader_has_quorum_inductive` | `votes_granted.len() >= quorum_size` (was Leader) | Leader-preserving actions keep votes_granted — SMT timeout |
-| 7 | 566 | `lemma_leader_has_quorum_inductive` | `votes_granted.len() >= quorum_size` (became Leader) | LReceiveVoteAndBecomeLeader guard — SMT timeout |
-| 8 | 631 | `lemma_commit_index_bounded_inductive` | `commit_index <= log.len()` | Simplified spec lacks `min(ae_leader_commit, log.len())` guard |
-| 9 | 666 | `lemma_safety_invariant_inductive` | `LogMatching(ds_)` | Requires prev_log_index/term consistency checks in AppendEntries |
-| 10 | 667 | `lemma_safety_invariant_inductive` | `LeaderCompleteness(ds_)` | Requires quorum intersection (pigeonhole) argument |
-| 11 | 668 | `lemma_safety_invariant_inductive` | `StateMachineSafety(ds_)` | Requires Leader Completeness + Log Matching composition |
-| 12 | 696 | `lemma_invariant_holds_for_behavior` | `RaftSafetyInvariant(b[i])` for i > 0 | Inner induction not automated (superseded by `induction.rs` recursive version) |
+| 1 | 328 | `lemma_election_safety_inductive` | `assume(false)` (Candidate→Leader case) | Quorum intersection argument requires Set cardinality reasoning + VotersVotedForCandidate |
+| 2 | 517 | `lemma_voters_voted_for_candidate_inductive` | `VotersVotedForCandidate(ds_)` | Network-level invariant requires message provenance tracking |
+| 3 | 603 | `lemma_lnext_commit_bounded` | `commit_index <= log.len()` | Simplified spec lacks `min(ae_leader_commit, log.len())` guard |
+| 4 | 671 | `lemma_safety_invariant_inductive` | `LogMatching(ds_)` | Requires prev_log_index/term consistency checks in AppendEntries |
+| 5 | 672 | `lemma_safety_invariant_inductive` | `LeaderCompleteness(ds_)` | Requires quorum intersection (pigeonhole) argument |
+| 6 | 673 | `lemma_safety_invariant_inductive` | `StateMachineSafety(ds_)` | Requires Leader Completeness + Log Matching composition |
 
 ### induction.rs (0 assumes)
 
@@ -206,11 +208,11 @@ Delegates to `lemma_safety_invariant_inductive` from invariants.rs.
 
 | # | Line | Function | assume | Root Cause |
 |---|------|----------|--------|------------|
-| 13 | 97 | `lemma_max_commit_index_ge_server` | WellFormedRaftDistributed(sub_ds) | Sub-state from Seq::subrange doesn't preserve WellFormedness invariant on constants |
-| 14 | 134 | `lemma_max_commit_index_nondecreasing` | MaxCommitIndex(ds_) ≥ MaxCommitIndex(ds) | Follows from per-server monotonicity but requires recursive MaxCommitIndex induction |
-| 15 | 173 | `lemma_committed_log_monotone` | new_log.len() ≥ old_log.len() | Connection between MaxCommitIndex and ExtractLogValues length |
-| 16 | 180 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
-| 17 | 249 | `lemma_abstract_step_valid` | rs_ == rs (stutter) | Struct extensional equality when committed log unchanged |
+| 7 | 97 | `lemma_max_commit_index_ge_server` | WellFormedRaftDistributed(sub_ds) | Sub-state from Seq::subrange doesn't preserve WellFormedness invariant on constants |
+| 8 | 134 | `lemma_max_commit_index_nondecreasing` | MaxCommitIndex(ds_) ≥ MaxCommitIndex(ds) | Follows from per-server monotonicity but requires recursive MaxCommitIndex induction |
+| 9 | 173 | `lemma_committed_log_monotone` | new_log.len() ≥ old_log.len() | Connection between MaxCommitIndex and ExtractLogValues length |
+| 10 | 180 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
+| 11 | 249 | `lemma_abstract_step_valid` | rs_ == rs (stutter) | Struct extensional equality when committed log unchanged |
 
 ### refinement.rs (0 assumes)
 
@@ -218,8 +220,6 @@ All proofs fully mechanized. Top-level `lemma_refinement_correct` has no assumes
 
 ### What would eliminate these assumes
 
-- **Assume 8**: Strengthen `LFollowerAppendEntries` to cap `commit_index = min(ae_leader_commit, log.len())`
-- **Assumes 1, 5, 9-11**: Add network packets with src/dst fields, track message provenance invariants, implement quorum intersection lemma
-- **Assumes 2-4, 6-7**: Help SMT solver with explicit LNext case splitting or intermediate lemmas
-- **Assume 12**: Already superseded by `induction.rs::lemma_invariant_holds_throughout_behavior` (clean recursive induction)
-- **Assumes 13-17**: Improve recursive MaxCommitIndex induction infrastructure, add Seq::subrange well-formedness lemmas
+- **Assume 3**: Strengthen `LFollowerAppendEntries` to cap `commit_index = min(ae_leader_commit, log.len())` — requires spec change + transpiler regeneration
+- **Assumes 1, 2, 4-6**: Add network packets with src/dst fields, track message provenance invariants, implement quorum intersection lemma with Set cardinality axioms
+- **Assumes 7-11**: Improve recursive MaxCommitIndex induction infrastructure, add Seq::subrange well-formedness lemmas
