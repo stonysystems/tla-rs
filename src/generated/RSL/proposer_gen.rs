@@ -537,9 +537,41 @@ ensures
         max_opn_with_proposal: 0u64,
     };
     proof {
-        assume(new_proposer.valid());
-        assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
-        assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+        // sent_packets validity/abstractability: directly from CBroadcastToEveryone ensures
+
+        // new_proposer.valid() via component validity chaining:
+        // constants: clone ensures result == *self
+        assert(new_proposer.constants.valid());
+        // max_ballot_i_sent_1a: Copy from s
+        assert(new_proposer.max_ballot_i_sent_1a.valid());
+        // request_queue: truncate_vec ensures result@ == v@.subrange(batch_size, queue_len)
+        assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
+            implies (#[trigger] new_proposer.request_queue@[i]).valid() by {
+            assert(s.request_queue@[(batch_size as int) + i].valid());
+        }
+        assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
+            implies (#[trigger] new_proposer.request_queue@[i]).abstractable() by {
+            assert(s.request_queue@[(batch_size as int) + i].abstractable());
+        }
+        // received_1b_packets: clone_hashset ensures res@ == s@
+        assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.valid() by {
+            assert(s.received_1b_packets@.contains(p));
+        }
+        assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.abstractable() by {
+            assert(s.received_1b_packets@.contains(p));
+        }
+        // highest_seqno: HashMap clone ensures result@ == self@
+        assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.valid_public_key() by {
+            assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
+        }
+        assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.abstractable() by {
+            assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
+        }
+        // incomplete_batch_timer: valid() always true
+        assert(new_proposer.incomplete_batch_timer.valid());
+        // election_state: clone ensures result.valid() == self.valid()
+        assert(new_proposer.election_state.valid());
+        assert(new_proposer.valid());
         assume(LProposerNominateNewValueAndSend2a(s@, new_proposer@, *clock as int, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)));
     }
     (new_proposer, sent_packets)
@@ -657,9 +689,41 @@ ensures
         max_opn_with_proposal: 0u64,
     };
     proof {
-        assume(new_proposer.valid());
-        assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid());
-        assume(forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable());
+        // sent_packets validity/abstractability: directly from CBroadcastToEveryone ensures
+
+        // new_proposer.valid() via component validity chaining:
+        // constants: clone ensures result == *self
+        assert(new_proposer.constants.valid());
+        // max_ballot_i_sent_1a: Copy from s
+        assert(new_proposer.max_ballot_i_sent_1a.valid());
+        // request_queue: clone_request_queue ensures res@ == v@
+        assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
+            implies (#[trigger] new_proposer.request_queue@[i]).valid() by {
+            assert(s.request_queue@[i].valid());
+        }
+        assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
+            implies (#[trigger] new_proposer.request_queue@[i]).abstractable() by {
+            assert(s.request_queue@[i].abstractable());
+        }
+        // received_1b_packets: clone_hashset ensures res@ == s@
+        assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.valid() by {
+            assert(s.received_1b_packets@.contains(p));
+        }
+        assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.abstractable() by {
+            assert(s.received_1b_packets@.contains(p));
+        }
+        // highest_seqno: HashMap clone ensures result@ == self@
+        assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.valid_public_key() by {
+            assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
+        }
+        assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.abstractable() by {
+            assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
+        }
+        // incomplete_batch_timer: clone ensures res.valid() == r.valid()
+        assert(new_proposer.incomplete_batch_timer.valid());
+        // election_state: clone ensures result.valid() == self.valid()
+        assert(new_proposer.election_state.valid());
+        assert(new_proposer.valid());
         assume(LProposerNominateOldValueAndSend2a(s@, new_proposer@, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)));
     }
     (new_proposer, sent_packets)
