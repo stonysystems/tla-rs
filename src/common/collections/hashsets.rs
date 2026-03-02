@@ -230,11 +230,8 @@ verus! {
     /// Bridges a universal src-inequality predicate from Set<CPacket> to
     /// Set<RslPacket> across the CPacket view mapping.
     ///
-    /// Soundness: CPacket view is injective (axiom_cpacket_view ensures
-    /// p1@ == p2@ ==> p1 == p2). This establishes a bijection between
-    /// S and S.map(|p| p@), so the forall transfers in both directions.
-    /// The .src field maps through view: p@.src == p.src@.
-    #[verifier::external_body]
+    /// CPacket view is open spec, so p@.src == p.src@ definitionally.
+    /// Set::map is open spec, so membership transfers via existential witnesses.
     pub proof fn lemma_cpacket_set_forall_src(
         s: Set<crate::implementation::RSL::cmessage::CPacket>,
         src: crate::common::native::io_s::AbstractEndPoint,
@@ -244,6 +241,33 @@ verus! {
         <==>
         (forall |op: crate::protocol::RSL::environment::RslPacket| s.map(|p: crate::implementation::RSL::cmessage::CPacket| p@).contains(op) ==> op.src != src),
     {
+        let f = |p: crate::implementation::RSL::cmessage::CPacket| p@;
+
+        // Forward: CPacket src-inequality → RslPacket src-inequality
+        // For any RslPacket in s.map(f), its preimage CPacket in s has src@ != src,
+        // and p@.src == p.src@ definitionally, so the RslPacket inherits the property.
+        assert forall |rsl_op: crate::protocol::RSL::environment::RslPacket|
+            (forall |op: crate::implementation::RSL::cmessage::CPacket| s.contains(op) ==> op.src@ != src) &&
+            s.map(f).contains(rsl_op)
+            implies rsl_op.src != src by {
+            let q = choose |q: crate::implementation::RSL::cmessage::CPacket| s.contains(q) && f(q) == rsl_op;
+            // q.src@ != src (from hypothesis, since s.contains(q))
+            // rsl_op == q@ == LPacket { dst: q.dst@, src: q.src@, msg: q.msg@ }
+            // so rsl_op.src == q.src@ != src
+        };
+
+        // Backward: RslPacket src-inequality → CPacket src-inequality
+        // For any CPacket in s, its view op@ is in s.map(f), and
+        // op@.src == op.src@ definitionally, so the CPacket inherits the property.
+        assert forall |op: crate::implementation::RSL::cmessage::CPacket|
+            (forall |rsl_op: crate::protocol::RSL::environment::RslPacket| s.map(f).contains(rsl_op) ==> rsl_op.src != src) &&
+            s.contains(op)
+            implies op.src@ != src by {
+            // op ∈ s means f(op) = op@ ∈ s.map(f)
+            assert(s.map(f).contains(f(op)));
+            // op@.src != src (from hypothesis)
+            // op@.src == op.src@ definitionally
+        };
     }
 
     // ══════════════════════════════════════════════════════════════════

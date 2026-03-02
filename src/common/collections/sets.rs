@@ -157,18 +157,43 @@ verus! {
     ///
     /// This is the key lemma for quorum intersection arguments
     /// in consensus protocols (Raft, Paxos).
-    #[verifier::external_body]
     pub proof fn lemma_quorum_intersection<T>(a: Set<T>, b: Set<T>, u: Set<T>)
         requires
             a.subset_of(u),
             b.subset_of(u),
             a.len() + b.len() > u.len(),
+            u.finite(),
         ensures
             exists |w: T| a.contains(w) && b.contains(w),
     {
-        // Proof sketch: |A ∪ B| ≤ |U|, and |A ∪ B| = |A| + |B| - |A ∩ B|.
-        // So |A ∩ B| = |A| + |B| - |A ∪ B| ≥ |A| + |B| - |U| > 0.
-        // Therefore A ∩ B is non-empty.
+        // a and b are finite (subsets of finite u)
+        vstd::set_lib::lemma_len_subset(a, u);
+        vstd::set_lib::lemma_len_subset(b, u);
+
+        // a ∪ b ⊆ u
+        assert((a + b).subset_of(u)) by {
+            assert forall |x: T| (a + b).contains(x) implies u.contains(x) by {};
+        };
+
+        // |a ∪ b| ≤ |u| and a ∪ b is finite
+        vstd::set_lib::lemma_len_subset(a + b, u);
+
+        // Inclusion-exclusion: |a ∪ b| + |a ∩ b| = |a| + |b|
+        vstd::set_lib::lemma_set_intersect_union_lens(a, b);
+
+        // So |a ∩ b| = |a| + |b| - |a ∪ b| ≥ |a| + |b| - |u| > 0
+
+        // a ∩ b is finite (subset of a)
+        assert(a.intersect(b).subset_of(a)) by {
+            assert forall |x: T| a.intersect(b).contains(x) implies a.contains(x) by {};
+        };
+        vstd::set_lib::lemma_len_subset(a.intersect(b), a);
+
+        // a ∩ b is non-empty since its length > 0
+        vstd::set_lib::lemma_set_empty_equivalency_len(a.intersect(b));
+
+        // Extract witness: w ∈ a ∩ b means w ∈ a and w ∈ b
+        let w = choose |w: T| a.intersect(b).contains(w);
     }
 
 }
