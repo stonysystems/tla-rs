@@ -774,8 +774,16 @@ ensures
         prev_req_set: HashSet::new(),
     };
     proof {
-        assume(result.valid());
-        assume(ElectionStateReflectExecutedRequestBatch(es@, result@, abstractify_crequestbatch(batch)));
+        // result.valid(): constants and ballot from es.valid() + clone preserves;
+        // element validity from CRemoveExecutedRequestBatch ensures
+        assert(result.constants.valid());
+        assert(result.current_view.valid());
+
+        // Spec predicate: struct equality — field-by-field through View
+        // requests_received_{this_epoch,prev_epochs}: CRemoveExecutedRequestBatch ensures
+        //   new_{this_epoch,prev_epochs}@.map(|i,r:CRequest| r@) == RemoveExecutedRequestBatch(es@.requests_received_{...}, abstractify_crequestbatch(batch))
+        // Other fields: clone/copy preserve view
+        assert(ElectionStateReflectExecutedRequestBatch(es@, result@, abstractify_crequestbatch(batch)));
     }
     result
 }
