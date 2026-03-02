@@ -28,13 +28,23 @@ proof fn lemma_RepliesAreReplyType(me: AbstractEndPoint, requests: RequestBatch,
         RepliesAreReplyType(packets),
 {}
 
-#[verifier(external_body)]
 proof fn lemma_HandleRequestBatch_spec_len(state: AppState, batch: RequestBatch)
     ensures
         HandleRequestBatch(state, batch).0.len() == batch.len() + 1,
         HandleRequestBatch(state, batch).0.len() > 0,
         HandleRequestBatch(state, batch).1.len() == batch.len(),
-{}
+    decreases batch.len()
+{
+    // HandleRequestBatch delegates to HandleRequestBatchHidden.
+    // Induction on batch.len().
+    if batch.len() == 0 {
+        // Base: states = seq![state] (len 1), replies = empty (len 0)
+    } else {
+        // IH: HandleRequestBatchHidden(state, batch.drop_last()) has the right lengths
+        lemma_HandleRequestBatch_spec_len(state, batch.drop_last());
+        // Recursive case appends one element to each, so lengths grow by 1
+    }
+}
 
 // =============================================================================
 // CExecutorExecute — standalone with verified proof block

@@ -383,7 +383,6 @@ verus! {
     /// Helper lemma to instantiate the cvotes_is_valid quantifier for a specific key.
     /// Verus's #![auto] trigger in cvotes_is_valid doesn't always fire,
     /// so we provide direct access via external_body.
-    #[verifier(external_body)]
     pub proof fn lemma_cvotes_valid_key(m: &CVotes, k: u64)
     requires
         cvotes_is_valid(m),
@@ -391,6 +390,12 @@ verus! {
     ensures
         m@[k].valid(),
     {
+        // cvotes_is_valid(m) includes:
+        //   forall |i| #![auto] m@.contains_key(i) ==> COperationNumberIsValid(i) && m@[i].valid()
+        // Create trigger terms to instantiate with i = k.
+        assert(m@.contains_key(k));
+        let ghost _v = m@[k];
+        assert(COperationNumberIsValid(k));
     }
 
     pub open spec fn abstractify_cvotes(m:&CVotes) -> Votes

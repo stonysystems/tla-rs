@@ -180,7 +180,6 @@ spec fn abstractify_endpoint_seqno_map(m: Map<EndPoint, u64>) -> Map<AbstractEnd
 
 /// Insert commutativity: abstractify commutes with Map.insert for EndPoint keys.
 /// Sound by EndPoint View injectivity (axiom_endpoint_view).
-#[verifier(external_body)]
 proof fn lemma_abstractify_endpoint_seqno_insert(
     old_m: Map<EndPoint, u64>,
     new_m: Map<EndPoint, u64>,
@@ -192,6 +191,53 @@ requires
 ensures
     abstractify_endpoint_seqno_map(new_m) =~= abstractify_endpoint_seqno_map(old_m).insert(k@, v as int),
 {
+    broadcast use crate::common::native::io_s::axiom_endpoint_view;
+
+    let lhs = abstractify_endpoint_seqno_map(new_m);
+    let rhs = abstractify_endpoint_seqno_map(old_m).insert(k@, v as int);
+
+    // Show domain equality and value equality for =~=
+    assert forall |ak: AbstractEndPoint|
+        lhs.dom().contains(ak) implies rhs.dom().contains(ak)
+    by {
+        let ep = choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak;
+        if ep == k {
+            // ak == k@, so rhs.dom() contains ak via the insert
+        } else {
+            // ep in old_m, so abstractify_endpoint_seqno_map(old_m).dom() contains ak
+        }
+    };
+
+    assert forall |ak: AbstractEndPoint|
+        rhs.dom().contains(ak) implies lhs.dom().contains(ak)
+    by {
+        if ak == k@ {
+            // k is in new_m, and k@ == ak
+            assert(new_m.contains_key(k));
+        } else {
+            // ak in abstractify_endpoint_seqno_map(old_m).dom()
+            // So exists ep in old_m with ep@ == ak
+            // ep is also in new_m (since new_m = old_m.insert(k, v) and ep != k)
+        }
+    };
+
+    assert forall |ak: AbstractEndPoint|
+        lhs.dom().contains(ak) implies lhs[ak] == rhs[ak]
+    by {
+        let ep_new = choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak;
+        if ak == k@ {
+            // By injectivity, ep_new == k. new_m[k] == v.
+            assert(ep_new == k);
+            // rhs[k@] == v as int
+        } else {
+            // ep_new != k by injectivity. new_m[ep_new] == old_m[ep_new].
+            assert(ep_new != k);
+            assert(new_m[ep_new] == old_m[ep_new]);
+            // rhs[ak] = abstractify_endpoint_seqno_map(old_m)[ak]
+            //         = let ep_old = choose ...; old_m[ep_old] as int
+            // By injectivity, ep_old == ep_new, so values match
+        }
+    };
 }
 
 pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CPacket) -> (result: CProposer)

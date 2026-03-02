@@ -197,14 +197,13 @@ pub proof fn lemma_AbstractifyEndpoints_properties(s:Vec<EndPoint>)
     lemma_AbstractifyEndPointToNodeIdentity_injective_forall();
 }
 
-#[verifier::external_body]
 pub proof fn lemma_AbstractifyEndPointToNodeIdentity_injective(x:EndPoint, y:EndPoint)
     requires
         x@ == y@
     ensures
         x == y
 {
-
+    broadcast use crate::common::native::io_s::axiom_endpoint_view;
 }
 
 pub proof fn lemma_AbstractifyEndPointToNodeIdentity_injective_forall()
