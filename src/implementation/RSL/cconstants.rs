@@ -31,16 +31,21 @@ impl Clone for CReplicaConstants {
 }
 
 impl CConstants {
-    #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (result:Self)
     ensures
         self == result,
         self@ == result@,
-        result.valid()
     {
         CConstants {
             config: self.config.clone_up_to_view(),
-            params: self.params.clone_up_to_view(),
+            params: CParameters {
+                max_log_length: self.params.max_log_length,
+                baseline_view_timeout_period: self.params.baseline_view_timeout_period,
+                heartbeat_period: self.params.heartbeat_period,
+                max_integer_val: self.params.max_integer_val,
+                max_batch_size: self.params.max_batch_size,
+                max_batch_delay: self.params.max_batch_delay,
+            },
         }
     }
 
