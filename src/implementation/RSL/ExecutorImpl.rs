@@ -206,7 +206,7 @@ impl CExecutor{
                     assert(new_states.len() == batch.len() + 1);
                     assert(new_states.len() > 0);
                     assert(replies.len() == batch.len());
-                    assume(forall |j: int| 0 <= j < replies.len() ==> (#[trigger] replies[j]).valid());
+                    // Reply validity from CHandleRequestBatch ensures (proved via induction on batch)
                 }
 
                 let new_state = new_states[new_states.len()-1];

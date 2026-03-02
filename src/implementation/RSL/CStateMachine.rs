@@ -30,6 +30,7 @@ pub fn CHandleRequestBatchHidden(state:&CAppState, batch:&CRequestBatch) -> (res
         result.0.len() == batch.len()+1,
         result.1.len() == batch.len(),
         (result.0@.map(|i,x:CAppState| x@),result.1@.map(|i,y:CReply| y@)) == HandleRequestBatchHidden(state@, abstractify_crequestbatch(batch)),
+        forall |j: int| 0 <= j < result.1.len() ==> (#[trigger] result.1[j]).valid(),
     decreases batch.len(),
 {
     if batch.len() == 0 {
@@ -100,6 +101,19 @@ pub fn CHandleRequestBatchHidden(state:&CAppState, batch:&CRequestBatch) -> (res
             (states@.map(|i, x: CAppState| x@), replies@.map(|i, x: CReply| x@))
         );
 
+        // Prove reply validity: rest_replies valid by induction, new CReply valid by construction
+        proof {
+            assert forall |j: int| 0 <= j < replies@.len() implies (#[trigger] replies@[j]).valid() by {
+                if j < replies@.len() - 1 {
+                    // rest_replies[j] valid by inductive hypothesis
+                } else {
+                    // Last element: CReply{client: batch[..].client.clone(), seqno, reply}
+                    // EndPoint.abstractable() == EndPoint.valid_public_key(), CAppMessage.valid() == true
+                    assert(batch@[batch@.len() - 1].valid());
+                }
+            };
+        }
+
         (states, replies)
     }
 }
@@ -112,7 +126,8 @@ pub fn CHandleRequestBatch(state:&CAppState, batch:&CRequestBatch) -> (rc:(Vec<C
     ensures
         rc.0.len() == batch.len()+1,
         rc.1.len() == batch.len(),
-        (rc.0@.map(|i, x: CAppState| x@), rc.1@.map(|i, x: CReply| x@)) == HandleRequestBatch(state@, batch@.map(|i, x:CRequest| x@))
+        (rc.0@.map(|i, x: CAppState| x@), rc.1@.map(|i, x: CReply| x@)) == HandleRequestBatch(state@, batch@.map(|i, x:CRequest| x@)),
+        forall |j: int| 0 <= j < rc.1.len() ==> (#[trigger] rc.1[j]).valid(),
 {
     let (states, replies) = CHandleRequestBatchHidden(state, batch);
     (states, replies)
