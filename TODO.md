@@ -9450,9 +9450,9 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 **Strategy**: Start from leaf lemmas (no dependencies on other external_body lemmas) and work upward. Each lemma typically requires induction on behavior step `i` with case analysis on which protocol action fired.
 
 ### 31.1 Triage and dependency analysis
-- [ ] Map the call graph of all 28 external_body proof fns: which lemma calls which. Identify leaf lemmas (no external_body dependencies) as starting points
-- [ ] For each lemma, annotate estimated difficulty (simple induction / complex case split / requires new invariants) and document in `docs/refinement_proof_plan.md`
-- [ ] Classify lemmas as: (A) straightforward induction, (B) needs auxiliary invariants to be stated first, (C) likely irreducible in current Verus (e.g., requires features Verus doesn't support yet)
+- [x] Map the call graph of all 28 external_body proof fns: which lemma calls which. Identify leaf lemmas (no external_body dependencies) as starting points. Result: 9-tier dependency graph; 8 leaf lemmas (#1,#2,#5,#16,#17,#18,#25,#27); 2 mutual-recursion pairs (#10/#11, #13/#14); critical chokepoint at #22 `lemma_DecidedOperationWasChosen`
+- [x] For each lemma, annotate estimated difficulty (simple induction / complex case split / requires new invariants) and document in `docs/refinement_proof_plan.md`
+- [x] Classify lemmas as: (A) straightforward induction, (B) needs auxiliary invariants to be stated first, (C) likely irreducible in current Verus. Result: 15 category A (straightforward), 11 category B (needs careful engineering), 2 category C (may hit Verus limits: #21 Paxos safety core, #24 WLOG reasoning with assume(false))
 
 ### 31.2 common_proof leaf lemmas (8 lemmas)
 - [ ] Fill in proof body for `common_proof/chosen.rs` lemmas (3): quorum intersection / agreement properties — these are the Paxos safety core
