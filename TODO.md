@@ -9516,18 +9516,24 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 - Raft's log matching property (if two logs agree at an index, they agree on all preceding entries) is a key invariant with no RSL counterpart
 - Raft's election safety (at most one leader per term) replaces RSL's ballot uniqueness
 
-### 32.1 Define abstract state machine and refinement relation
-- [ ] Define `RaftSystemState` (abstract sequential state): `committed_log: Seq<int>`, `app_state: AppState`, `requests: Set<Request>`, `replies: Set<Reply>`
-- [ ] Define `RaftSystemInit`, `RaftSystemNext` (abstract transitions: append one entry to committed log, execute it)
-- [ ] Define `RaftSystemRefinement` relation: every committed entry in the abstract log corresponds to a log entry agreed upon by a majority of servers in the concrete system
-- [ ] Place in `src/protocol/Raft/refinement_proof/state_machine.rs`
+### 32.1 Define abstract state machine and refinement relation ✅
+- [x] Define `RaftSystemState` (abstract sequential state): `committed_log: Seq<int>`, `server_ids: Set<int>` (simplified: no app_state/requests/replies since Raft spec doesn't model application layer)
+- [x] Define `RaftSystemInit`, `RaftSystemNext` (abstract transitions: stutter or append one value to committed log)
+- [x] Define `RaftSystemRefinement` relation: abstract committed log == `GetCommittedLog(ds)` extracted from distributed state
+- [x] Define `RaftDistributedState` (N servers + network), `RaftDistributedInit`, `RaftDistributedNext` — distributed system model
+- [x] Define `GetCommittedLog`, `MaxCommitIndex`, `ExtractLogValues` — committed log extraction helpers
+- [x] Prove `lemma_extract_log_values_len` helper lemma
+- [x] Place in `src/protocol/Raft/refinement_proof/state_machine.rs`
 
-### 32.2 Key invariants
-- [ ] **Election Safety**: at most one leader per term — `forall |i, j| servers[i].role == Leader && servers[j].role == Leader && servers[i].current_term == servers[j].current_term ==> i == j`
-- [ ] **Log Matching**: if two servers have the same term at the same index, all preceding entries match — `forall |i, j, k| servers[i].log[k].term == servers[j].log[k].term ==> forall |m| m <= k ==> servers[i].log[m] == servers[j].log[m]`
-- [ ] **Leader Completeness**: if an entry is committed in term T, it appears in the log of every leader in term > T
-- [ ] **State Machine Safety**: if a server has applied entry at index i, no other server applies a different entry at index i
-- [ ] Place invariant definitions in `src/protocol/Raft/refinement_proof/invariants.rs`
+### 32.2 Key invariants ✅
+- [x] **Election Safety**: at most one leader per term — `forall |i, j| servers[i].role == Leader && servers[j].role == Leader && servers[i].current_term == servers[j].current_term ==> i == j`
+- [x] **Log Matching**: if two servers have the same term at the same index, all preceding entries match — `forall |i, j, k| servers[i].log[k].term == servers[j].log[k].term ==> forall |m| m <= k ==> servers[i].log[m] == servers[j].log[m]`
+- [x] **Leader Completeness**: if an entry is committed in term T, it appears in the log of every leader in term > T (uses `EntryCommittedAt` quorum predicate)
+- [x] **State Machine Safety**: if a server has applied entry at index i, no other server applies a different entry at index i (committed entries agree)
+- [x] Supporting invariants: `LeaderHasQuorum`, `CommitIndexBounded`
+- [x] Composite `RaftSafetyInvariant` conjunction
+- [x] Prove `lemma_init_establishes_invariant` — invariant holds at init
+- [x] Place invariant definitions in `src/protocol/Raft/refinement_proof/invariants.rs`
 
 ### 32.3 Invariant induction proofs
 - [ ] Prove Election Safety is inductive: case split on `LTimeout` (new election), `LGrantVote` (vote granting), `LBecomeLeader` (leader promotion)
