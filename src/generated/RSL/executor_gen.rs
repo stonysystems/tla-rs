@@ -414,7 +414,6 @@ proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestB
         states.len() == batch.len() + 1,
         states.len() > 0,
         replies.len() == batch.len(),
-        forall |j: int| 0 <= j < replies.len() ==> replies[j].valid(),
 {
     // Use spec-level length lemma on the abstracted batch
     let ghost spec_batch = batch@.map(|i: int, x: CRequest| x@);
@@ -423,8 +422,8 @@ proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestB
     // And batch@.map(g).len() == batch@.len()
     // From requires: states@.map(f) == HandleRequestBatch(...).0
     // So states@.len() == HandleRequestBatch(...).0.len() == spec_batch.len() + 1 == batch.len() + 1
-    // Reply validity: each reply output from HandleAppRequest is valid
-    assume(forall |j: int| 0 <= j < replies.len() ==> (#[trigger] replies[j]).valid());
+    // Note: reply validity (forall replies[j].valid()) is proven by CHandleRequestBatch's ensures
+    // directly, so callers get it from the CHandleRequestBatch call site, not from this lemma.
 }
 
 proof fn lemma_RepliesAreReplyType(me: AbstractEndPoint, requests: RequestBatch, replies: Seq<Reply>, packets: Seq<RslPacket>)

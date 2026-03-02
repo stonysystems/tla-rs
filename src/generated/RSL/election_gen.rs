@@ -648,11 +648,10 @@ ensures
         let mut new_this_epoch = clone_requests_received_this_epoch(&es.requests_received_this_epoch);
         let req_clone = req.clone_up_to_view();
         new_this_epoch.push(req_clone);
-        proof {
-            assert(new_this_epoch@.len() == es.requests_received_this_epoch@.len() + 1);
-            assume(new_this_epoch@.len() < 0x1_0000_0000_0000_0000);
-        }
+        // Materialize Vec::len() as usize to bound spec-level length < 2^64
+        let _new_len = new_this_epoch.len();
         let bounded = CBoundRequestSequence(&new_this_epoch, es.constants.all.params.max_integer_val);
+        let prev_clone = clone_requests_received_prev_epochs(&es.requests_received_prev_epochs);
         let result = CElectionState {
             constants: es.constants.clone(),
             current_view: es.current_view,
@@ -660,12 +659,23 @@ ensures
             epoch_end_time: es.epoch_end_time,
             epoch_length: es.epoch_length,
             requests_received_this_epoch: bounded,
-            requests_received_prev_epochs: clone_requests_received_prev_epochs(&es.requests_received_prev_epochs),
+            requests_received_prev_epochs: prev_clone,
             cur_req_set: HashSet::new(),
             prev_req_set: HashSet::new(),
         };
         proof {
-            assume(result.valid());
+            // Validity: component-by-component from es.valid() + helper ensures
+            // constants: clone ensures result == *self, so es.constants.valid() transfers
+            assert(result.constants.valid());
+            assert(result.current_view.valid());
+            // bounded elements valid from CBoundRequestSequence ensures
+            assert(forall |i: int| 0 <= i < result.requests_received_this_epoch@.len()
+                ==> (#[trigger] result.requests_received_this_epoch@[i]).valid());
+            // prev_clone elements valid: clone ensures res@ == v@, so res@[j] == v@[j]
+            // and es.valid() gives v@[j].valid()
+            assert(forall |i: int| 0 <= i < result.requests_received_prev_epochs@.len()
+                ==> (#[trigger] result.requests_received_prev_epochs@[i]).valid());
+            assert(result.valid());
             assume(ElectionStateReflectReceivedRequest(es@, result@, req@));
         }
         result
