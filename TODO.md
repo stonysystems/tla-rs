@@ -9454,11 +9454,19 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 - [x] For each lemma, annotate estimated difficulty (simple induction / complex case split / requires new invariants) and document in `docs/refinement_proof_plan.md`
 - [x] Classify lemmas as: (A) straightforward induction, (B) needs auxiliary invariants to be stated first, (C) likely irreducible in current Verus. Result: 15 category A (straightforward), 11 category B (needs careful engineering), 2 category C (may hit Verus limits: #21 Paxos safety core, #24 WLOG reasoning with assume(false))
 
-### 31.2 common_proof leaf lemmas (8 lemmas) ✅
-- [x] Fill in proof body for `common_proof/chosen.rs` lemmas (3): quorum intersection / agreement properties — removed external_body, 2 assumes remain in ChosenQuorumAnd2aFromLaterBallotMatchValues
-- [x] Fill in proof body for `common_proof/quorum.rs` lemmas (2): quorum membership reasoning — removed external_body, proof bodies verified
-- [x] Fill in proof body for `common_proof/learner_state.rs` lemmas (2): learner state consistency — removed external_body, proof bodies verified
-- [x] Fill in proof body for `common_proof/message2a.rs` lemma (1): 2a message lineage — removed external_body, 2 assumes remain
+### 31.2 common_proof leaf lemmas (8 lemmas) — 6/8 VERIFIED
+- `common_proof/chosen.rs` (3 lemmas — 2 verified, 1 has assume statements):
+  - [x] `collect_2b_messages`: recursive 2b message collection — body was complete, just needed external_body removal
+  - [x] `lemma_DecidedOperationWasChosen`: decided operation quorum reconstruction — body was complete
+  - [ ] `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues`: Paxos safety core — has 2 critical `assume` statements (lines 135, 140-142) on `choose` expressions for highest-ballot voting. Needs `lemma_GetIndicesFromPackets` and `lemma_QuorumIndexOverlap` (both now verified). Difficulty: 9/10
+- `common_proof/quorum.rs` (2 lemmas — both verified):
+  - [x] `lemma_GetIndicesFromNodes`: maps node set to index set with cardinality proof
+  - [x] `lemma_GetIndicesFromPackets`: delegates to lemma_GetIndicesFromNodes via src mapping
+- `common_proof/learner_state.rs` (2 lemmas — both verified):
+  - [x] `lemma_Received2bMessageSendersAlwaysNonempty`: simple induction on behavior steps
+  - [x] `lemma_GetSent2bMessageFromLearnerState`: recursive 2b message retrieval from learner state
+- `common_proof/message2a.rs` (1 lemma — has assume statements):
+  - [ ] `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`: has `assume(p1.msg->val_2a == p2.msg->val_2a)` (assumes the goal!) and `assume(false)`. Needs proof that proposer sends unique values per (ballot, opn). Difficulty: 8/10
 
 ### 31.3 refinement_proof/chosen.rs (4 lemmas) ✅
 - [x] `lemma_GetSequenceOfRequestBatches`: straightforward structural induction on `qs`

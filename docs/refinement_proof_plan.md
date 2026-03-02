@@ -6,7 +6,77 @@
 of the RSL refinement proof. All helper functions they call are already proven.
 This document maps dependencies, classifies difficulty, and proposes an attack order.
 
-## Dependency Graph (external_body → external_body only)
+## Master Table
+
+### refinement_proof/chosen.rs (4 lemmas) — ALL VERIFIED
+
+| # | Name | What it proves | Difficulty | Status |
+|---|------|----------------|------------|--------|
+| 1 | `lemma_GetSequenceOfRequestBatches` | `GetSequenceOfRequestBatches(qs).len() == qs.len()` | LOW | DONE |
+| 2 | `lemma_GetMaximalQuorumOf2bsSequenceWithinBound` | Constructs maximal quorum sequence up to bound | LOW | DONE |
+| 3 | `lemma_TwoMaximalQuorumsOf2bsMatch` | Two maximal sequences produce same request batches | MEDIUM | DONE |
+| 4 | `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence` | Valid sequence is prefix of maximal | MEDIUM | DONE |
+
+### refinement_proof/requests.rs (5 lemmas)
+
+| # | Name | What it proves | Difficulty |
+|---|------|----------------|------------|
+| 5 | `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage` | Request in this_epoch → client sent it | MEDIUM (has assume) |
+| 6 | `lemma_RequestInRequestsReceivedPrevEpochsHasCorrespondingRequestMessage` | Request in prev_epochs → client sent it | MEDIUM |
+| 7 | `lemma_RequestInRequestQueueHasCorrespondingRequestMessage` | Request in queue → client sent it | MEDIUM |
+| 8 | `lemma_RequestIn2aMessageHasCorrespondingRequestMessage` | Request in 2a → client sent it | HIGH (recursive + 1b chain) |
+| 9 | `lemma_DecidedRequestWasSentByClient` | Decided request → client sent it | MEDIUM |
+
+### refinement_proof/execution.rs (6 lemmas)
+
+| # | Name | What it proves | Difficulty |
+|---|------|----------------|------------|
+| 10 | `lemma_AppStateAlwaysValid` | Executor app state = GetAppStateFromRequestBatches(chosen) | HIGH (mutual w/ #11) |
+| 11 | `lemma_TransferredStateAlwaysValid` | AppStateSupply packet carries correct app state | HIGH (mutual w/ #10) |
+| 12 | `lemma_ReplySentIsAllowed` | Every Reply packet is justified by some quorum sequence | HIGH |
+| 13 | `lemma_ReplyInReplyCacheIsAllowed` | Reply cache entries are justified | HIGH (mutual w/ #14) |
+| 14 | `lemma_ReplyInAppStateSupplyIsAllowed` | AppStateSupply reply cache is justified | HIGH (mutual w/ #13) |
+| 15 | `lemma_ReplySentViaExecutionIsAllowed` | Fresh execution replies are justified | HIGH |
+
+### refinement_proof/refinement.rs (5 lemmas)
+
+| # | Name | What it proves | Difficulty |
+|---|------|----------------|------------|
+| 16 | `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState` | drop_last batches = intermediate(batches, 0) | MEDIUM (set ext.) |
+| 17 | `lemma_LastProduceIntermediateAbstractStateProducesAbstractState` | full batches = intermediate(batches, last.len()) | MEDIUM (has `/* fails */`) |
+| 18 | `lemma_GetBehaviorRefinementForBehaviorOfOneStep` | Initial state satisfies refinement | LOW |
+| 19 | `lemma_DemonstrateRslSystemNextWhenBatchesAdded` | Batch growth → abstract RslSystemNext | MEDIUM |
+| 20 | `lemma_GetBehaviorRefinement` | Top-level refinement theorem | MEDIUM (wrapper) |
+
+### common_proof/chosen.rs (3 lemmas) — 2/3 VERIFIED
+
+| # | Name | What it proves | Difficulty | Status |
+|---|------|----------------|------------|--------|
+| 21 | `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues` | Quorum + later-ballot 2a → same value (Paxos safety core) | VERY HIGH | BLOCKED — 2 assume stmts on choose expressions |
+| 22 | `lemma_DecidedOperationWasChosen` | OutstandingOpKnown → valid quorum of 2bs exists | HIGH | DONE |
+| 23 | `collect_2b_messages` | Collects 2b packets from learner state per sender | MEDIUM | DONE |
+
+### common_proof/message2a.rs (1 lemma)
+
+| # | Name | What it proves | Difficulty | Status |
+|---|------|----------------|------------|--------|
+| 24 | `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality` | Two 2a msgs, same ballot+opn → same value | HIGH | BLOCKED — assumes the goal + assume(false) |
+
+### common_proof/quorum.rs (2 lemmas) — ALL VERIFIED
+
+| # | Name | What it proves | Difficulty | Status |
+|---|------|----------------|------------|--------|
+| 25 | `lemma_GetIndicesFromNodes` | Endpoint set → replica index set (preserving cardinality) | MEDIUM | DONE |
+| 26 | `lemma_GetIndicesFromPackets` | Packet set → sender index set (preserving cardinality) | MEDIUM | DONE |
+
+### common_proof/learner_state.rs (2 lemmas) — ALL VERIFIED
+
+| # | Name | What it proves | Difficulty | Status |
+|---|------|----------------|------------|--------|
+| 27 | `lemma_Received2bMessageSendersAlwaysNonempty` | received_2b_message_senders is always non-empty | MEDIUM | DONE |
+| 28 | `lemma_GetSent2bMessageFromLearnerState` | Each sender in learner state has a 2b packet in sentPackets | MEDIUM-HIGH | DONE |
+
+## Dependency Graph
 
 ```
 Legend: A ──→ B means "A calls B"
