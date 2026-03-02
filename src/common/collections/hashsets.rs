@@ -54,6 +54,7 @@ verus! {
             T: Clone + Eq + Hash
     ensures
         forall |i: int| 0 <= i < res@.len() ==> s@.contains(#[trigger] res@[i]),
+        forall |x: T| s@.contains(x) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == x),
     {
         s.iter().cloned().collect()
     }

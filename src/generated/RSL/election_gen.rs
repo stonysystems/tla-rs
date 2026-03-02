@@ -575,7 +575,7 @@ ensures
     let mut idx: usize = 0;
     let ghost mut witness: Request = req@;
     let ghost mut witness_in_prev = false;
-    while idx < es.requests_received_prev_epochs.len()
+    while idx < es.requests_received_prev_epochs.len() && !found
     invariant
         idx <= es.requests_received_prev_epochs.len(),
         es.valid(),
@@ -585,6 +585,9 @@ ensures
             && es@.requests_received_prev_epochs.contains(witness)
             && RequestsMatch(witness, req@)
         ),
+        // Track "not found": no visited prev element matches
+        !found ==> forall |j: int| 0 <= j < idx as int
+            ==> !RequestsMatch(#[trigger] es@.requests_received_prev_epochs[j], req@),
     decreases
         es.requests_received_prev_epochs.len() - idx,
     {
@@ -593,16 +596,18 @@ ensures
             proof {
                 witness = es.requests_received_prev_epochs[idx as int]@;
                 witness_in_prev = true;
-                // es.requests_received_prev_epochs[idx]@ is in es@.requests_received_prev_epochs
                 assert(es.requests_received_prev_epochs@.map(|i: int, r: CRequest| r@)[idx as int] == witness);
             }
-            break;
+        } else {
+            proof {
+                assert(!RequestsMatch(es@.requests_received_prev_epochs[idx as int], req@));
+            }
         }
         idx = idx + 1;
     }
     if !found {
         idx = 0;
-        while idx < es.requests_received_this_epoch.len()
+        while idx < es.requests_received_this_epoch.len() && !found
         invariant
             idx <= es.requests_received_this_epoch.len(),
             es.valid(),
@@ -612,6 +617,13 @@ ensures
                 && es@.requests_received_this_epoch.contains(witness)
                 && RequestsMatch(witness, req@)
             ),
+            // Carried forward: all prev elements don't match
+            // (at loop 1 exit with !found: idx == prev.len(), so the invariant covers all indices)
+            forall |j: int| 0 <= j < es.requests_received_prev_epochs@.len()
+                ==> !RequestsMatch(#[trigger] es@.requests_received_prev_epochs[j], req@),
+            // Current loop: visited this_epoch elements don't match
+            !found ==> forall |j: int| 0 <= j < idx as int
+                ==> !RequestsMatch(#[trigger] es@.requests_received_this_epoch[j], req@),
         decreases
             es.requests_received_this_epoch.len() - idx,
         {
@@ -622,7 +634,10 @@ ensures
                     witness_in_prev = false;
                     assert(es.requests_received_this_epoch@.map(|i: int, r: CRequest| r@)[idx as int] == witness);
                 }
-                break;
+            } else {
+                proof {
+                    assert(!RequestsMatch(es@.requests_received_this_epoch[idx as int], req@));
+                }
             }
             idx = idx + 1;
         }
@@ -676,7 +691,54 @@ ensures
             assert(forall |i: int| 0 <= i < result.requests_received_prev_epochs@.len()
                 ==> (#[trigger] result.requests_received_prev_epochs@[i]).valid());
             assert(result.valid());
-            assume(ElectionStateReflectReceivedRequest(es@, result@, req@));
+
+            // Prove spec predicate: ElectionStateReflectReceivedRequest(es@, result@, req@)
+            // Bridge: Vec@.len() == mapped Seq.len() (needed for quantifier range matching)
+            assert(es.requests_received_prev_epochs@.len() == es@.requests_received_prev_epochs.len());
+            assert(es.requests_received_this_epoch@.len() == es@.requests_received_this_epoch.len());
+            // From both loops (!found): no matching request exists in either sequence
+            assert forall |earlier_req: Request|
+                es@.requests_received_prev_epochs.contains(earlier_req)
+                implies !RequestsMatch(earlier_req, req@) by {
+                // Seq.contains means exists j with seq[j] == earlier_req
+                if es@.requests_received_prev_epochs.contains(earlier_req) {
+                    let j = choose |j: int| 0 <= j < es@.requests_received_prev_epochs.len()
+                        && es@.requests_received_prev_epochs[j] == earlier_req;
+                    assert(!RequestsMatch(es@.requests_received_prev_epochs[j], req@));
+                }
+            };
+            assert forall |earlier_req: Request|
+                es@.requests_received_this_epoch.contains(earlier_req)
+                implies !RequestsMatch(earlier_req, req@) by {
+                if es@.requests_received_this_epoch.contains(earlier_req) {
+                    let j = choose |j: int| 0 <= j < es@.requests_received_this_epoch.len()
+                        && es@.requests_received_this_epoch[j] == earlier_req;
+                    assert(!RequestsMatch(es@.requests_received_this_epoch[j], req@));
+                }
+            };
+            // Therefore the spec if-condition is false
+            assert(!(exists |earlier_req: Request|
+                (es@.requests_received_prev_epochs.contains(earlier_req)
+                 || es@.requests_received_this_epoch.contains(earlier_req))
+                && RequestsMatch(earlier_req, req@)));
+
+            // Struct equality: result@ matches the else-branch struct
+            // requests_received_this_epoch: bounded via CBoundRequestSequence
+            assert(new_this_epoch@.map(|i: int, r: CRequest| r@) =~=
+                   es@.requests_received_this_epoch + seq![req@]);
+            assert(result@.requests_received_this_epoch =~=
+                   BoundRequestSequence(es@.requests_received_this_epoch + seq![req@],
+                                        es@.constants.all.params.max_integer_val));
+            // requests_received_prev_epochs: clone preserves view
+            assert(result@.requests_received_prev_epochs =~= es@.requests_received_prev_epochs);
+            // Other fields: direct copy or clone preserves view
+            assert(result@.constants =~= es@.constants);
+            assert(result@.current_view =~= es@.current_view);
+            assert(result@.current_view_suspectors =~= es@.current_view_suspectors);
+            assert(result@.epoch_end_time == es@.epoch_end_time);
+            assert(result@.epoch_length == es@.epoch_length);
+
+            assert(ElectionStateReflectReceivedRequest(es@, result@, req@));
         }
         result
     }

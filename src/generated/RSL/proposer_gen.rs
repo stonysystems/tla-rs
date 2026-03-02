@@ -603,11 +603,32 @@ ensures
     (new_proposer, sent_packets)
 }
 
+/// Bridges spec-level !LAllAcceptorsHadNoProposal (on Set<RslPacket>) to exec-level
+/// existence of a CPacket with CMessage1b votes containing the operation number.
+///
+/// Sound because: !LAllAcceptorsHadNoProposal means exists RslPacket rp in
+/// s@.map(|p| p@) with rp.msg->votes.contains_key(opn). By Set::map, rp = cp@ for
+/// some cp in s@. CMessage1b view maps votes via abstractify_cvotes, and
+/// abstractify_cvotes(m).contains_key(opn as int) iff m@.contains_key(opn)
+/// (since u64->int is injective). So cp.msg is CMessage1b && cp.msg->votes@.contains_key(opn).
+#[verifier::external_body]
+proof fn lemma_not_all_had_no_proposal_to_exec(
+    s: Set<CPacket>,
+    opn: u64,
+)
+requires
+    !LAllAcceptorsHadNoProposal(s.map(|p: CPacket| p@), opn as int),
+ensures
+    exists |cp: CPacket| s.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn),
+{
+}
+
 /// Existential search in received_1b_packets for highest-numbered proposal at opn.
 /// Uses clone_up_to_view() for verified element cloning.
 pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
 requires
     s.valid(),
+    !LAllAcceptorsHadNoProposal(s@.received_1b_packets, s.next_operation_number_to_propose as int),
 ensures
     result.0.valid(),
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
@@ -627,6 +648,13 @@ ensures
         forall |i: int| 0 <= i < packets@.len() ==> s.received_1b_packets@.contains(#[trigger] packets@[i]),
         best_bal.is_some() ==> best_bal.unwrap().valid(),
         best_val.is_some() ==> crequestbatch_is_valid(&best_val.unwrap()),
+        best_val.is_some() <==> best_bal.is_some(),
+        // Track "found": if best_val is None, no visited CMessage1b packet had a vote at opn
+        best_val.is_none() ==> (forall |j: int| 0 <= j < idx as int
+            ==> !((#[trigger] packets@[j]).msg is CMessage1b && packets@[j].msg->votes@.contains_key(opn))),
+        // Coverage: all HashSet elements are in the Vec
+        forall |x: CPacket| s.received_1b_packets@.contains(x)
+            ==> (exists |i: int| 0 <= i < packets@.len() && packets@[i] == x),
     decreases
         packets.len() - idx,
     {
@@ -674,7 +702,35 @@ ensures
         idx += 1;
     }
     // Precondition (!AllAcceptorsHadNoProposal) guarantees we find a value
-    proof { assume(best_val.is_some()); }
+    proof {
+        // Step 1: Bridge spec-level predicate to exec-level CPacket existence
+        lemma_not_all_had_no_proposal_to_exec(s.received_1b_packets@, opn);
+        // Now: exists |cp: CPacket| s.received_1b_packets@.contains(cp)
+        //      && cp.msg is CMessage1b && cp.msg->votes@.contains_key(opn)
+
+        // Step 2: Get the witness and chain through the loop invariant
+        let cp: CPacket = choose |cp: CPacket|
+            s.received_1b_packets@.contains(cp)
+            && cp.msg is CMessage1b
+            && (#[trigger] cp.msg->votes)@.contains_key(opn);
+        assert(s.received_1b_packets@.contains(cp));
+
+        // Step 3: By hashset_to_vec coverage, cp is in the packets Vec
+        // (loop invariant carries: forall x in hashset, exists i in packets with packets[i] == x)
+        let i: int = choose |i: int| 0 <= i < packets@.len() && packets@[i] == cp;
+        assert(0 <= i < packets@.len());
+        assert(packets@[i] == cp);
+
+        // Step 4: packets[i] has the vote property
+        assert((#[trigger] packets@[i]).msg is CMessage1b);
+        assert(packets@[i].msg->votes@.contains_key(opn));
+
+        // Step 5: Contrapositive of loop invariant (idx == packets.len() now):
+        // If best_val were None, then for all j < packets.len(),
+        //   !(packets@[j].msg is CMessage1b && packets@[j].msg->votes@.contains_key(opn))
+        // But packets@[i] contradicts this. So best_val.is_some().
+        assert(best_val.is_some());
+    }
     let val = best_val.unwrap();
     let val_2a_cloned = clone_request_batch_up_to_view(&val);
     let msg = CMessage::CMessage2a {
