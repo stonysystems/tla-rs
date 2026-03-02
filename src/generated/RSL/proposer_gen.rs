@@ -175,7 +175,7 @@ ensures
     LProposerProcessRequest(s@, result@, packet@),
 {
     proof {
-        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
+        broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model, crate::common::native::io_s::axiom_endpoint_view;
     }
     { let result = {
         let val = CRequest {
@@ -190,7 +190,7 @@ ensures
                 },
             },
             request: match &packet.msg {
-                CMessage::CMessageRequest { val, .. } => val.clone(),
+                CMessage::CMessageRequest { val, .. } => val.clone_up_to_view(),
                 _  => {
                     proof {
                         assert(false);
@@ -210,7 +210,13 @@ ensures
         };
         if should_enqueue {
             let mut __highest_seqno_requested_by_client_this_view = s.highest_seqno_requested_by_client_this_view.clone();
-            { __highest_seqno_requested_by_client_this_view.insert(val.client.clone(), val.seqno); }
+            let val_client_clone = val.client.clone();
+            proof {
+                // val.client.clone()@ == val.client@ == packet.src@ from EndPoint::clone ensures
+                assert(val_client_clone@ == val.client@);
+                assert(val_client_clone.valid_public_key());
+            }
+            { __highest_seqno_requested_by_client_this_view.insert(val_client_clone, val.seqno); }
             let result = CProposer {
                 constants: s.constants.clone(),
                 current_state: s.current_state,
@@ -225,7 +231,24 @@ ensures
                 max_opn_with_proposal: 0u64,
             };
             proof {
-                assume(result.valid());
+                // val validity from packet.valid() — CAppMessage.valid()==true, EndPoint preserves @ through clone
+                assert(packet.msg.valid());
+                assert(val.valid());
+                // Component validity
+                assert(result.constants.valid());
+                assert(result.max_ballot_i_sent_1a.valid());
+                assert(result.incomplete_batch_timer.valid());
+                assert(result.election_state.valid());
+                // request_queue: concat_vecs gives result@ == v1@ + v2@, all elements valid
+                assert(forall |i: int| 0 <= i < result.request_queue@.len()
+                    ==> (#[trigger] result.request_queue@[i]).valid());
+                // received_1b_packets: clone_hashset preserves elements
+                assert(forall |p: CPacket| result.received_1b_packets@.contains(p) ==> p.valid());
+                // highest_seqno: old keys valid from s.valid(), new key valid from above
+                assert(forall |k: EndPoint| (#[trigger] result.highest_seqno_requested_by_client_this_view@.contains_key(k))
+                    ==> k.valid_public_key());
+                assert(result.valid());
+                // Spec predicate: HashMap insert → Map insert bridging needed for highest_seqno
                 assume(LProposerProcessRequest(s@, result@, packet@));
             }
             result
@@ -245,8 +268,50 @@ ensures
                 max_opn_with_proposal: 0u64,
             };
             proof {
-                assume(result.valid());
-                assume(LProposerProcessRequest(s@, result@, packet@));
+                // Component validity
+                assert(result.constants.valid());
+                assert(result.max_ballot_i_sent_1a.valid());
+                assert(result.incomplete_batch_timer.valid());
+                assert(result.election_state.valid());
+                // request_queue: clone preserves elements (res@ == v@)
+                assert(forall |i: int| 0 <= i < result.request_queue@.len()
+                    ==> (#[trigger] result.request_queue@[i]).valid());
+                // received_1b_packets: clone_hashset preserves elements
+                assert(forall |p: CPacket| result.received_1b_packets@.contains(p) ==> p.valid());
+                // highest_seqno: HashMap clone preserves keys (result@ == self@)
+                assert(forall |k: EndPoint| (#[trigger] result.highest_seqno_requested_by_client_this_view@.contains_key(k))
+                    ==> k.valid_public_key());
+                assert(result.valid());
+                // Field-by-field View assertions for spec predicate
+                assert(result@.constants =~= s@.constants);
+                assert(result@.current_state == s@.current_state);
+                assert(result@.request_queue =~= s@.request_queue);
+                assert(result@.max_ballot_i_sent_1a =~= s@.max_ballot_i_sent_1a);
+                assert(result@.next_operation_number_to_propose == s@.next_operation_number_to_propose);
+                assert(result@.received_1b_packets =~= s@.received_1b_packets);
+                assert(result@.incomplete_batch_timer =~= s@.incomplete_batch_timer);
+                // HashMap clone: result.h@ == s.h@, so Map::new produces same Map
+                assert(result.highest_seqno_requested_by_client_this_view@ =~= s.highest_seqno_requested_by_client_this_view@);
+                assert(result@.highest_seqno_requested_by_client_this_view =~= s@.highest_seqno_requested_by_client_this_view);
+                // Connect exec val@ to spec val: val@ == Request{client: packet@.src, ...}
+                assert(val@.client == packet@.src);
+                assert(val@.seqno == packet@.msg->seqno_req);
+                assert(val@.request == packet@.msg->val);
+                // Election state from CElectionStateReflectReceivedRequest ensures
+                assert(crate::protocol::RSL::election::ElectionStateReflectReceivedRequest(s@.election_state, result@.election_state, val@));
+                // Struct equality: result@ matches the else-branch struct (using == for spec predicate)
+                assert(result@ == LProposer{
+                    constants: s@.constants,
+                    current_state: s@.current_state,
+                    request_queue: s@.request_queue,
+                    max_ballot_i_sent_1a: s@.max_ballot_i_sent_1a,
+                    next_operation_number_to_propose: s@.next_operation_number_to_propose,
+                    received_1b_packets: s@.received_1b_packets,
+                    highest_seqno_requested_by_client_this_view: s@.highest_seqno_requested_by_client_this_view,
+                    incomplete_batch_timer: s@.incomplete_batch_timer,
+                    election_state: result@.election_state,
+                });
+                assert(LProposerProcessRequest(s@, result@, packet@));
             }
             result
         } }
