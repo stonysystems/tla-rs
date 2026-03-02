@@ -166,10 +166,10 @@ impl CExecutor{
                         == HandleRequestBatch(self.app@, batch@.map(|i, x: CRequest| x@)));
                     assert(batch@.map(|i, x: CRequest| x@) == spec_batch);
                     assert(self.app == ss.app);
-                    // Length properties from HandleRequestBatch structure
-                    assume(new_states.len() == batch.len() + 1);
-                    assume(new_states.len() > 0);
-                    assume(replies.len() == batch.len());
+                    // Length properties from CHandleRequestBatch ensures
+                    assert(new_states.len() == batch.len() + 1);
+                    assert(new_states.len() > 0);
+                    assert(replies.len() == batch.len());
                     assume(forall |j: int| 0 <= j < replies.len() ==> (#[trigger] replies[j]).valid());
                 }
 

@@ -28,6 +28,7 @@ pub fn CHandleRequestBatchHidden(state:&CAppState, batch:&CRequestBatch) -> (res
         crequestbatch_is_valid(batch)
     ensures
         result.0.len() == batch.len()+1,
+        result.1.len() == batch.len(),
         (result.0@.map(|i,x:CAppState| x@),result.1@.map(|i,y:CReply| y@)) == HandleRequestBatchHidden(state@, abstractify_crequestbatch(batch)),
     decreases batch.len(),
 {
@@ -83,10 +84,11 @@ pub fn CHandleRequestBatchHidden(state:&CAppState, batch:&CRequestBatch) -> (res
         let ghost expected = rest_replies@.map(|i, x:CReply| x@) + seq![expected_reply];
         assert(rs_prime == expected);
 
-        //Endpoints and Replies are not holding across refinement
-        assume(replies@[replies.len()-1]@.client == rs_prime.last().client);
+        // EndPoint::clone() ensures res@ == self@, so client views match.
+        // reply is passed directly, so reply views match.
+        assert(replies@[replies.len()-1]@.client == rs_prime.last().client);
         assert(replies@[replies.len()-1]@.seqno == rs_prime.last().seqno);
-        assume(replies@[replies.len()-1]@.reply == rs_prime.last().reply);
+        assert(replies@[replies.len()-1]@.reply == rs_prime.last().reply);
         assert(replies@[replies@.len()-1]@ == expected_reply);
         assert(rs_prime[rs_prime.len()-1] == expected_reply);
 
@@ -108,6 +110,8 @@ pub fn CHandleRequestBatch(state:&CAppState, batch:&CRequestBatch) -> (rc:(Vec<C
         CAppStateIsValid(state),
         crequestbatch_is_valid(batch)
     ensures
+        rc.0.len() == batch.len()+1,
+        rc.1.len() == batch.len(),
         (rc.0@.map(|i, x: CAppState| x@), rc.1@.map(|i, x: CReply| x@)) == HandleRequestBatch(state@, batch@.map(|i, x:CRequest| x@))
 {
     let (states, replies) = CHandleRequestBatchHidden(state, batch);
