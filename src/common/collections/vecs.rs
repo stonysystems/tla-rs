@@ -62,7 +62,6 @@ verus! {
         false
     }
 
-    #[verifier(external_body)]
     pub fn contains_u64(v: &Vec<u64>, item:&u64) -> (found: bool)
         ensures
             found == v@.contains(*item),
@@ -75,12 +74,22 @@ verus! {
                 0 <= i,
                 i <= v.len(),
                 forall |j: int| 0 <= j < i ==> v@[j] != item,
+            decreases v.len() - i,
         {
-            // if v[i].equals(&item) {
             if v[i] == *item {
+                proof {
+                    let mapped = v@.map(|idx: int, t: u64| t as int);
+                    assert(mapped[i as int] == (item as int));
+                }
                 return true;
             }
             i += 1;
+        }
+        proof {
+            let mapped = v@.map(|idx: int, t: u64| t as int);
+            assert forall |j: int| 0 <= j < v@.len() implies #[trigger] mapped[j] != (item as int) by {
+                assert(v@[j] != *item);
+            };
         }
         false
     }
@@ -128,9 +137,7 @@ verus! {
         new_vec
     }
 
-    #[verifier(external_body)]
     pub fn truncate_vecu64(v: &Vec<u64>, start: usize, end: usize) -> (result: Vec<u64>)
-        // where T: Clone + vstd::view::View,
         requires
             start <= end,
             end <= v.len(),
@@ -150,17 +157,13 @@ verus! {
                 end <= v.len(),
                 new_vec.len() == i - start,
                 new_vec@ == v@.subrange(start as int, i as int),
+            decreases end - i,
         {
             assert(end <= v.len());
             let ghost j = i;
             let ghost old_v = new_vec;
             assert(old_v@ == v@.subrange(start as int, j as int));
-            let entry = v[i].clone();
-            // assert(v[i as int].clone() == v[i as int]);
-            assert(v@.len() == v.len() as int);
-            assert(0 <= i && i < v.len());
-            assert(v[i as int] == v@[i as int]);
-            assume(entry == v[i as int]);
+            let entry = v[i];
             assert(entry == v@[i as int]);
             new_vec.push(entry);
             assert(new_vec@.last() == v@[i as int]);

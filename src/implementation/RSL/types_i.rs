@@ -198,7 +198,6 @@ verus! {
 
     pub type CRequestBatch = Vec<CRequest>;
 
-    #[verifier(external_body)]
     pub fn clone_request_batch_up_to_view(batch: &CRequestBatch) -> (res: CRequestBatch)
         ensures
             res@ == batch@,
@@ -209,12 +208,15 @@ verus! {
         let mut i = 0;
         while i < batch.len()
             invariant
+                0 <= i <= batch.len(),
                 cloned.len() == i,
-                forall |j: int| 0 <= j < i ==> cloned[j]@ == batch[j]@
+                cloned@ == batch@.subrange(0, i as int),
+            decreases batch.len() - i,
         {
-            assert (forall |i: int| 0 <= i < cloned.len() ==> cloned[i]@ == batch[i]@);
-            cloned.push(batch[i].clone_up_to_view());
+            let item = batch[i].clone_up_to_view();
+            cloned.push(item);
             i += 1;
+            assert(cloned@ == batch@.subrange(0, i as int));
         }
         cloned
     }
