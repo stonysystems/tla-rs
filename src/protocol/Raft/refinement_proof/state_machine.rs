@@ -86,20 +86,25 @@ verus! {
         &&& rs.server_ids == server_ids
     }
 
-    /// Abstract next step: append one value to the committed log
+    /// Abstract next step: extend the committed log by one or more entries.
+    /// The existing prefix is preserved and at least one new entry is added.
+    /// This allows a single distributed step to commit multiple log entries
+    /// (e.g., when LAdvanceCommitIndex jumps commit_index by several entries).
     pub open spec fn RaftSystemNextAppendCommitted(
         rs: RaftSystemState,
         rs_: RaftSystemState,
-        value: int
     ) -> bool {
-        &&& rs_.committed_log == rs.committed_log.push(value)
+        &&& rs_.committed_log.len() > rs.committed_log.len()
+        &&& (forall |k: int| #![trigger rs_.committed_log[k]]
+             0 <= k < rs.committed_log.len() ==>
+             rs_.committed_log[k] == rs.committed_log[k])
         &&& rs_.server_ids == rs.server_ids
     }
 
-    /// Abstract next-state relation: either stutter or append one committed entry
+    /// Abstract next-state relation: either stutter or extend committed log
     pub open spec fn RaftSystemNext(rs: RaftSystemState, rs_: RaftSystemState) -> bool {
         ||| rs_ == rs   // stutter
-        ||| exists |value: int| RaftSystemNextAppendCommitted(rs, rs_, value)
+        ||| RaftSystemNextAppendCommitted(rs, rs_)
     }
 
     // =========================================================================

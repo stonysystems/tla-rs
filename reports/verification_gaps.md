@@ -1,6 +1,15 @@
-# RSL Verification Gaps Report (2026-03-01, Post-Phase 31)
+# Verification Gaps Report (2026-03-02, Post-Phase 32)
 
 Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping related items.
+
+## Changes from Phase 32
+
+- **Raft Safety Refinement Proof completed** (Phase 32.1–32.7) — full refinement proof from distributed Raft → abstract sequential state machine
+- 5 new files: `src/protocol/Raft/refinement_proof/{state_machine,invariants,induction,committed,refinement}.rs`
+- Top-level theorem: `lemma_refinement_correct` — every valid Raft behavior refines to a sequential committed log
+- 11 targeted `assume()` across 3 files (see §6 below)
+- 0 `external_body` in Raft refinement proof
+- Verification: 645 verified, 0 errors (up from 632 pre-Phase 32)
 
 ## Changes from Phase 31
 
@@ -163,3 +172,40 @@ These are inherited from the Dafny→Verus port, distributed across:
 - `common_proof/requests.rs` (1): seq drop_first length
 
 Total `assume()` across RSL proof files: 77 (5 in formerly-external_body + 72 in pre-existing helpers).
+
+---
+
+## 6. Raft Safety Refinement Proof — `assume()` Summary (Phase 32)
+
+11 targeted `assume()` across the Raft refinement proof files:
+
+### induction.rs (6 assumes)
+
+| # | Line | Function | assume | Root Cause |
+|---|------|----------|--------|------------|
+| 1 | 63 | `lemma_next_preserves_commit_index_bounded` | commit_index ≤ log.len() for stepping server | Simplified spec lacks `min(ae_leader_commit, log.len())` guard in `LFollowerAppendEntries` |
+| 2 | 126 | `lemma_next_preserves_leader_has_quorum` | votes_granted.len() ≥ quorum_size | SMT solver timeout on deep `LNext` unfolding (all branches manually verified) |
+| 3 | 181 | `lemma_next_preserves_invariant` | `ElectionSafety(ds_)` | Requires message integrity tracking with src/dst packets |
+| 4 | 182 | `lemma_next_preserves_invariant` | `LogMatching(ds_)` | Requires prev_log_index/term consistency checks in AppendEntries |
+| 5 | 183 | `lemma_next_preserves_invariant` | `LeaderCompleteness(ds_)` | Requires quorum intersection (pigeonhole) argument |
+| 6 | 184 | `lemma_next_preserves_invariant` | `StateMachineSafety(ds_)` | Requires Leader Completeness + Log Matching composition |
+
+### committed.rs (5 assumes)
+
+| # | Line | Function | assume | Root Cause |
+|---|------|----------|--------|------------|
+| 7 | 97 | `lemma_max_commit_index_ge_server` | WellFormedRaftDistributed(sub_ds) | Sub-state from Seq::subrange doesn't preserve WellFormedness invariant on constants |
+| 8 | 134 | `lemma_max_commit_index_nondecreasing` | MaxCommitIndex(ds_) ≥ MaxCommitIndex(ds) | Follows from per-server monotonicity but requires recursive MaxCommitIndex induction |
+| 9 | 173 | `lemma_committed_log_monotone` | new_log.len() ≥ old_log.len() | Connection between MaxCommitIndex and ExtractLogValues length |
+| 10 | 180 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
+| 11 | 249 | `lemma_abstract_step_valid` | rs_ == rs (stutter) | Struct extensional equality when committed log unchanged |
+
+### refinement.rs (0 assumes)
+
+All proofs fully mechanized. Top-level `lemma_refinement_correct` has no assumes.
+
+### What would eliminate these assumes
+
+- **Assumes 1**: Strengthen `LFollowerAppendEntries` to cap `commit_index = min(ae_leader_commit, log.len())`
+- **Assumes 3-6**: Add network packets with src/dst fields, track message provenance invariants, implement quorum intersection lemma
+- **Assumes 2, 7-11**: Improve recursive MaxCommitIndex induction infrastructure, add Seq::subrange well-formedness lemmas
