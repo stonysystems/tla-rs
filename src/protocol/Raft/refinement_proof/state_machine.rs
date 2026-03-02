@@ -1,5 +1,6 @@
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
+use crate::protocol::Raft::refinement_proof::invariants::CommitIndexBounded;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
 
@@ -264,6 +265,63 @@ verus! {
                 // max_commit_index_seq(sub) >= sub[j].commit_index == states[j].commit_index
                 // max_commit_index_seq(states) >= max_commit_index_seq(sub)
             }
+        }
+    }
+
+    /// max_commit_index_seq is achieved by some server
+    pub proof fn lemma_max_commit_seq_achieved(states: Seq<LState>)
+        requires states.len() > 0
+        ensures exists |j: int| 0 <= j < states.len()
+            && states[j].commit_index == max_commit_index_seq(states)
+        decreases states.len()
+    {
+        if states.len() == 1 {
+            // Only one server; it achieves the max
+            assert(states[0].commit_index == max_commit_index_seq(states));
+        } else {
+            let n = states.len();
+            let sub = states.subrange(0, n - 1);
+            let last_commit = states[n - 1].commit_index;
+            let rest_max = max_commit_index_seq(sub);
+
+            if last_commit > rest_max {
+                // Last server achieves the max
+                assert(states[n - 1].commit_index == max_commit_index_seq(states));
+            } else {
+                // Some server in sub achieves rest_max
+                lemma_max_commit_seq_achieved(sub);
+                let j = choose |j: int| 0 <= j < sub.len()
+                    && sub[j].commit_index == max_commit_index_seq(sub);
+                assert(states[j] == sub[j]);
+                assert(states[j].commit_index == rest_max);
+            }
+        }
+    }
+
+    /// GetCommittedLog length equals MaxCommitIndex when CommitIndexBounded holds
+    pub proof fn lemma_committed_log_len(ds: RaftDistributedState)
+        requires
+            WellFormedRaftDistributed(ds),
+            CommitIndexBounded(ds),
+        ensures
+            GetCommittedLog(ds).len() == if MaxCommitIndex(ds) <= 0 { 0 } else { MaxCommitIndex(ds) }
+    {
+        let max_commit = MaxCommitIndex(ds);
+        if max_commit <= 0 {
+            // GetCommittedLog returns empty
+        } else {
+            // Find a server achieving max_commit
+            lemma_max_commit_index_eq_seq(ds);
+            lemma_max_commit_seq_achieved(ds.server_states);
+            let j = choose |j: int| 0 <= j < ds.server_states.len()
+                && ds.server_states[j].commit_index == max_commit_index_seq(ds.server_states);
+            // j has commit_index == MaxCommitIndex(ds) == max_commit
+            assert(ds.server_states[j].commit_index == max_commit);
+            // CommitIndexBounded: commit_index <= log.len()
+            assert(max_commit <= ds.server_states[j].log.len());
+            // So j qualifies for the choose in GetCommittedLog
+            // ExtractLogValues(log, max_commit) has length max_commit
+            lemma_extract_log_values_len(ds.server_states[j].log, max_commit);
         }
     }
 

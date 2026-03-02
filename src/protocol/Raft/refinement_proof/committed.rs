@@ -78,7 +78,8 @@ verus! {
         lemma_max_commit_seq_ge_server(ds.server_states, j);
     }
 
-    /// MaxCommitIndex is non-decreasing across a distributed step
+    /// MaxCommitIndex is non-decreasing across a distributed step.
+    /// Uses seq-based helpers for clean recursive reasoning.
     pub proof fn lemma_max_commit_index_nondecreasing(
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int
     )
@@ -91,20 +92,19 @@ verus! {
         ensures
             MaxCommitIndex(ds_) >= MaxCommitIndex(ds)
     {
-        // MaxCommitIndex(ds) = max over all servers' commit_index in ds
-        // MaxCommitIndex(ds_) = max over all servers' commit_index in ds_
-        // Since each server's commit_index in ds_ >= that in ds
-        // (by lemma_commit_index_nondecreasing_for_server),
-        // the max is also non-decreasing.
-        //
-        // Formally: let j be the server achieving MaxCommitIndex(ds).
-        // ds_.server_states[j].commit_index >= ds.server_states[j].commit_index = MaxCommitIndex(ds)
-        // MaxCommitIndex(ds_) >= ds_.server_states[j].commit_index >= MaxCommitIndex(ds)
-        //
-        // This requires lemma_max_commit_index_ge_server for ds_ and the nondecreasing lemma.
-        // The recursive structure of MaxCommitIndex makes this complex to formalize.
-        // We assume the conclusion; it follows from per-server monotonicity.
-        assume(MaxCommitIndex(ds_) >= MaxCommitIndex(ds));
+        // Step 1: Per-server commit_index is non-decreasing
+        assert forall |j: int| 0 <= j < ds.num_servers
+        implies #[trigger] ds_.server_states[j].commit_index
+                >= ds.server_states[j].commit_index by {
+            lemma_commit_index_nondecreasing_for_server(ds, ds_, server_id, j);
+        }
+
+        // Step 2: Convert to seq-based helpers
+        lemma_max_commit_index_eq_seq(ds);
+        lemma_max_commit_index_eq_seq(ds_);
+
+        // Step 3: Apply seq-based monotonicity
+        lemma_max_commit_seq_monotone(ds.server_states, ds_.server_states);
     }
 
     // =========================================================================
