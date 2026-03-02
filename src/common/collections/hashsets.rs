@@ -78,19 +78,52 @@ verus! {
     /// Soundness: follows from the definition of Set::map and injectivity —
     /// injective f establishes a bijection between s and s.map(f), so they
     /// have equal cardinality.
-    #[verifier::external_body]
     pub proof fn lemma_set_map_injective_len<T, U>(s: Set<T>, f: spec_fn(T) -> U)
     requires
+        s.finite(),
         forall |x1: T, x2: T| #![trigger f(x1), f(x2)] f(x1) == f(x2) ==> x1 == x2,
     ensures
         s.map(f).len() == s.len(),
+    decreases s.len(),
     {
+        broadcast use vstd::set::group_set_axioms;
+        if s.len() == 0 {
+            assert(s =~= Set::<T>::empty());
+            assert(s.map(f) =~= Set::<U>::empty());
+        } else {
+            let a = s.choose();
+            let s_prime = s.remove(a);
+            // Induction hypothesis (s_prime is finite and smaller)
+            lemma_set_map_injective_len(s_prime, f);
+
+            // s == s_prime.insert(a)
+            assert(s =~= s_prime.insert(a));
+
+            // s.map(f) =~= s_prime.map(f).insert(f(a))
+            s_prime.lemma_set_map_insert_commute(a, f);
+            assert(s.map(f) =~= s_prime.map(f).insert(f(a)));
+
+            // f(a) not in s_prime.map(f) by injectivity
+            assert(!s_prime.map(f).contains(f(a))) by {
+                if s_prime.map(f).contains(f(a)) {
+                    let b = choose |b: T| s_prime.contains(b) && f(b) == f(a);
+                    assert(s_prime.contains(b) && f(b) == f(a));
+                    assert(b == a);  // injectivity
+                    assert(false);   // contradicts a not in s_prime
+                }
+            };
+
+            // s_prime.map(f) is finite
+            s_prime.lemma_map_finite(f);
+        }
     }
 
     /// Convenience: u64-to-int cast preserves set cardinality.
     ///
     /// Used in Raft (votes_granted: HashSet<u64>, spec uses Set<int>).
     pub proof fn lemma_set_u64_to_int_len(s: Set<u64>)
+    requires
+        s.finite(),
     ensures
         s.map(|x: u64| x as int).len() == s.len(),
     {
@@ -111,6 +144,7 @@ verus! {
         s@.map(|x: u64| x as int).len() == s.len(),
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
+        lemma_hashset_view_finite(s);
         assert(s@.len() == s.len());
         lemma_set_u64_to_int_len(s@);
     }
@@ -152,20 +186,36 @@ verus! {
 
     /// Monomorphic CPacket variant: bridges HashSet<CPacket>.len() to
     /// Set<RslPacket>.len() via view mapping.
-    #[verifier::external_body]
     pub proof fn lemma_hashset_cpacket_len(s: &HashSet<crate::implementation::RSL::cmessage::CPacket>)
     ensures
         s@.map(|p: crate::implementation::RSL::cmessage::CPacket| p@).len() == s.len(),
     {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
+        broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_view;
+        lemma_hashset_view_finite(s);
+        assert(s@.len() == s.len());
+        let f = |p: crate::implementation::RSL::cmessage::CPacket| p@;
+        assert forall |p1: crate::implementation::RSL::cmessage::CPacket, p2: crate::implementation::RSL::cmessage::CPacket|
+            #![trigger f(p1), f(p2)] f(p1) == f(p2) implies p1 == p2 by {};
+        lemma_set_map_injective_len(s@, f);
     }
 
     /// Monomorphic EndPoint variant: bridges HashSet<EndPoint>.len() to
     /// Set<AbstractEndPoint>.len() via view mapping.
-    #[verifier::external_body]
     pub proof fn lemma_hashset_endpoint_len(s: &HashSet<crate::common::native::io_s::EndPoint>)
     ensures
         s@.map(|e: crate::common::native::io_s::EndPoint| e@).len() == s.len(),
     {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+        broadcast use crate::common::native::io_s::axiom_endpoint_view;
+        lemma_hashset_view_finite(s);
+        assert(s@.len() == s.len());
+        let f = |e: crate::common::native::io_s::EndPoint| e@;
+        assert forall |e1: crate::common::native::io_s::EndPoint, e2: crate::common::native::io_s::EndPoint|
+            #![trigger f(e1), f(e2)] f(e1) == f(e2) implies e1 == e2 by {};
+        lemma_set_map_injective_len(s@, f);
     }
 
     // ══════════════════════════════════════════════════════════════════

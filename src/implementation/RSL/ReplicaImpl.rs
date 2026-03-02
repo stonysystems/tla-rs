@@ -850,7 +850,7 @@ impl CReplica{
                                 assert(self.learner.unexecuted_learner_state@[opn]@ == ss.learner.unexecuted_learner_state[opn as int]);
                                 // Bridge EndPoint set cardinality: HashSet<EndPoint>.len() == Set<AbstractEndPoint>.len()
                                 proof {
-                                    crate::common::collections::hashsets::lemma_set_view_map_len::<EndPoint>(v.received_2b_message_senders@);
+                                    crate::common::collections::hashsets::lemma_hashset_endpoint_len(&v.received_2b_message_senders);
                                 }
                                 assert(ss.learner.unexecuted_learner_state[opn as int].received_2b_message_senders.len() >= LMinQuorumSize(ss.learner.constants.all.config));
                                 self.executor = generated_executor::CExecutorGetDecision(
@@ -866,7 +866,7 @@ impl CReplica{
                             }
                             else {
                                 proof {
-                                    crate::common::collections::hashsets::lemma_set_view_map_len::<EndPoint>(v.received_2b_message_senders@);
+                                    crate::common::collections::hashsets::lemma_hashset_endpoint_len(&v.received_2b_message_senders);
                                 }
                                 let mut pkt_vec: Vec<CPacket> = Vec::new();
                                 let outpackets = OutboundPackets::PacketSequence{
