@@ -771,8 +771,16 @@ impl CReplica{
         match &self.executor.next_op_to_execute {
             COutstandingOperation::COutstandingOpUnknown{} => {
                 assert(clearnerstate_is_valid(self.learner.unexecuted_learner_state));
-                // assert(forall |i:COperationNumber| self.learner.unexecuted_learner_state@.contains_key(i) ==> COperationNumberIsValid(i) && self.learner.unexecuted_learner_state@[i].valid());
-                assume(forall |i:COperationNumber| self.learner.unexecuted_learner_state@.contains_key(i) ==> self.learner.unexecuted_learner_state@[i].valid());
+                // clearnerstate_is_valid provides: forall |i| #![auto] m@.contains_key(i) ==> COperationNumberIsValid(i) && m@[i].valid()
+                // Re-derive with explicit trigger to ensure SMT matches:
+                proof {
+                    let m = self.learner.unexecuted_learner_state;
+                    assert forall |i: COperationNumber| m@.contains_key(i) implies COperationNumberIsValid(i) && (#[trigger] m@[i]).valid() by {
+                        assert(clearnerstate_is_valid(m));
+                        let ghost _ = m@[i];
+                        let ghost _ = COperationNumberIsValid(i);
+                    };
+                }
                 if self.learner.unexecuted_learner_state.contains_key(&opn) {
                     let v = self.learner.unexecuted_learner_state.get(&opn);
                     match v {

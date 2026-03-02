@@ -13,6 +13,10 @@ use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::state_machine::HandleRequestBatch;
 use crate::protocol::RSL::types::*;
+use crate::protocol::RSL::message::*;
+use crate::protocol::RSL::environment::RslPacket;
+use crate::common::framework::environment_s::LPacket;
+use crate::common::native::io_s::AbstractEndPoint;
 use vstd::prelude::*;
 // Generated wrappers live in `crate::generated::RSL::executor_gen`.
 // This module owns CExecutor/CIncompleteBatchTimer type infrastructure
@@ -132,6 +136,38 @@ impl View for CIncompleteBatchTimer {
     }
 }
 
+// Proves that GetPacketsFromReplies constructs packets with RslMessageReply messages.
+proof fn lemma_replies_are_reply_type(me: AbstractEndPoint, requests: RequestBatch, replies: Seq<Reply>, packets: Seq<RslPacket>)
+    requires
+        packets == GetPacketsFromReplies(me, requests, replies),
+        requests.len() == replies.len(),
+    ensures
+        RepliesAreReplyType(packets),
+    decreases requests.len(),
+{
+    if requests.len() > 0 {
+        let rest_packets = GetPacketsFromReplies(me, requests.drop_first(), replies.drop_first());
+        lemma_replies_are_reply_type(me, requests.drop_first(), replies.drop_first(), rest_packets);
+        let first = LPacket::<AbstractEndPoint, RslMessage>{
+            dst: requests[0].client,
+            src: me,
+            msg: RslMessage::RslMessageReply{
+                seqno_reply: requests[0].seqno,
+                reply: replies[0].reply,
+            },
+        };
+        assert(packets =~= seq![first] + rest_packets);
+        assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {
+            if rest_packets.contains(p) {
+                // By induction: RepliesAreReplyType(rest_packets)
+            } else {
+                // p must be first, which has msg is RslMessageReply
+            }
+        };
+    }
+    // Base case: packets is empty, vacuously true
+}
+
 impl CExecutor{
 
     // Phase 25.6: removed external_body, added proof assertions
@@ -218,8 +254,12 @@ impl CExecutor{
                         ss.constants.all.config.replica_ids[ss.constants.my_index],
                         spec_batch,
                         spec_replies));
-                    // Conjunct 8: RepliesAreReplyType
-                    assume(RepliesAreReplyType(sp));
+                    // Conjunct 8: RepliesAreReplyType — proved by induction on GetPacketsFromReplies
+                    assert(spec_batch.len() == spec_replies.len());
+                    lemma_replies_are_reply_type(
+                        ss.constants.all.config.replica_ids[ss.constants.my_index],
+                        spec_batch, spec_replies, sp);
+                    assert(RepliesAreReplyType(sp));
 
                     assert(LExecutorExecute(ss, sr, sp));
                 }
