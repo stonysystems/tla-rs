@@ -1,4 +1,4 @@
-# RSL Verification Gaps Report (2026-03-02, Post-Phase 31.1-31.7)
+# RSL Verification Gaps Report (2026-03-01, Post-Phase 31)
 
 Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping related items.
 
@@ -115,20 +115,27 @@ collection operations to spec-level Set/Map operations.
 
 ## 4. Grand Total (excluding IO trust boundary and clone)
 
-| Category | Before (Phase 30) | After (Phase 30) | Change |
-|----------|-------------------|-------------------|--------|
-| Cardinality/forall assumes | 8 | 0 | -8 (replaced with lemma calls) |
-| `external_body` in generated/RSL | 3 | 3 | 0 |
-| `external_body` in implementation/RSL | 26 | 24 | -2 (verified) + -3 (dead code deleted) = -5, +3 new from other adjustments |
-| Trusted lemma primitives | 0 | 8 | +8 (new) |
-| Sorting functions | 2 | 0 | -2 (dead code deleted) |
-| **Total real verification gaps** | **36** | **27** | **-9** |
+| Category | Before Phase 30 | After Phase 30 | After Phase 31 | Change (Phase 31) |
+|----------|----------------|----------------|----------------|-------------------|
+| Cardinality/forall assumes | 8 | 0 | 0 | 0 |
+| `external_body` in generated/RSL | 3 | 3 | 3 | 0 |
+| `external_body` in implementation/RSL | 26 | 24 | 24 | 0 |
+| Trusted lemma primitives (common/) | 0 | 8 | 8 | 0 |
+| `external_body` in refinement proof | 20 | 20 | 0 | **-20** |
+| `external_body` in common proof | 8 | 8 | 0 | **-8** |
+| **Total external_body gaps** | **57** | **55** | **27** | **-28** |
 
-Root cause breakdown (remaining 27 in impl/generated):
+Root cause breakdown (remaining 27 `external_body` in impl/generated/common):
 - **HashSet/HashMap iteration** (15): Verus lacks verified iteration specs for unordered collections
+- **Trusted collection lemma primitives** (8): cardinality/forall bridging for hashsets/hashmaps
 - **Complex delegation wrappers** (4): Compose sub-functions with ownership patterns Verus can't prove
 - **Type axioms** (5): View injectivity and key model axioms for CMessage/CPacket/CRequest
 - **Generated helpers** (3): hashset_insert, filter, unreachable_value
+- **Minus overlapping count** (-8): trusted lemma primitives counted in both categories
+
+Refinement proof assume() breakdown (77 total, separate from external_body):
+- 5 in formerly-external_body functions (detailed in §5)
+- 72 in pre-existing Dafny→Verus port helpers (§5 bottom)
 
 ---
 
@@ -145,5 +152,14 @@ All 28 `external_body` proof functions have been converted to verified proof bod
 | 4 | `common_proof/message2a.rs:289` | `lemma_2aMessagesFromSameBallotAndOperationMatchWLOG` | `assume(p1.msg->val_2a == p2.msg->val_2a)` | Two 2a messages sent in same step have same value |
 | 5 | `common_proof/message2a.rs:303` | `lemma_2aMessagesFromSameBallotAndOperationMatchWLOG` | `assume(false)` | Contradiction from proposer state implications (p1 sent before, p2 sent now, same ballot/opn) |
 
-Note: ~65 additional `assume()` exist in pre-existing helper functions (not formerly external_body).
-These are inherited from the Dafny→Verus port and tracked separately.
+Additionally, 72 `assume()` statements exist in pre-existing helper functions (never were external_body).
+These are inherited from the Dafny→Verus port, distributed across:
+- `common_proof/message2a.rs` (23): proposer state implications, ballot validity
+- `common_proof/message2b.rs` (21): acceptor state implications, 2a correspondence
+- `common_proof/message1b.rs` (17): acceptor ballot ordering, vote tracking
+- `common_proof/packet_sending.rs` (5): RslNextOneReplica membership
+- `common_proof/quorum.rs` (5): set cardinality, intersection properties
+- `common_proof/chosen.rs` (2): choose witness membership (lemma_ChosenQuorumsMatchValue)
+- `common_proof/requests.rs` (1): seq drop_first length
+
+Total `assume()` across RSL proof files: 77 (5 in formerly-external_body + 72 in pre-existing helpers).

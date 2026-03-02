@@ -9498,7 +9498,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 
 ### 31.7 Verification and cleanup ✅
 - [x] Run full Verus verification after each sub-phase, ensure no regressions — 628 verified, 0 errors
-- [ ] Update `reports/verification_gaps.md` with new external_body counts
+- [x] Update `reports/verification_gaps.md` with new external_body counts — 28 external_body removed (20 refinement_proof + 8 common_proof), 27 remaining in impl/generated/common, 77 assume() statements in proof files
 - [x] Run transpiler test suite to confirm no collateral damage — 1491 passed, 0 failed
 
 ---
