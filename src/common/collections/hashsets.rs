@@ -192,4 +192,19 @@ verus! {
         (forall |op: crate::protocol::RSL::environment::RslPacket| s.map(|p: crate::implementation::RSL::cmessage::CPacket| p@).contains(op) ==> op.src != src),
     {
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Trusted primitive: HashSet view is always finite (Phase 30)
+    // ══════════════════════════════════════════════════════════════════
+    //
+    // Sound because a physical HashSet always contains a finite number
+    // of elements — its view Set<Key> is therefore always finite.
+
+    /// Any HashSet's spec view is a finite set.
+    #[verifier::external_body]
+    pub proof fn lemma_hashset_view_finite<Key>(s: &HashSet<Key>)
+    ensures
+        s@.finite(),
+    {
+    }
 }

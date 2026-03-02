@@ -1,3 +1,4 @@
+use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
 use crate::common::native::io_s::*;
@@ -184,11 +185,16 @@ impl CProposer{
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
+        broadcast use vstd::set::group_set_axioms;
         let mut result = true;
         let ghost mut checked: Set<RslPacket> = Set::empty();
         let m_iter = S.iter();
         let ghost mut count: int = 0;
-        assume(m_iter@.0 == 0); // need this to pass the verification of loop iteration
+        proof {
+            broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
+            // With obeys_key_model::<CPacket>() and builds_valid_hashers::<RandomState>() (from group_hash_axioms),
+            // HashSet::iter() ensures index == 0, i.e., m_iter@.0 == 0.
+        }
         assert(count == m_iter@.0);
 
         for p in iter: m_iter
@@ -198,6 +204,7 @@ impl CProposer{
                 forall |p:RslPacket| checked.contains(p) ==> p.msg is RslMessage1b,
                 result ==> count == checked.len(),
                 !result ==> !(forall |x:RslPacket| S@.map(|p:CPacket| p@).contains(x) ==> x.msg is RslMessage1b),
+                checked.finite(),
         {
             let ghost old_checked = checked;
             let ghost old_count = count;
@@ -211,7 +218,7 @@ impl CProposer{
                 proof{
                     if result {
                         assume(forall |x:RslPacket| checked.contains(x) ==> x != (*p)@);
-                        assume(checked.finite());
+                        // checked.finite() from loop invariant + axiom_set_insert_finite
                         axiom_set_remove_len(checked, (*p)@);
                         checked = checked.insert((*p)@);
                         assert(count == old_count + 1);
@@ -266,7 +273,7 @@ impl CProposer{
             // With `implies`, the antecedent s2@.contains(x) is automatically assumed
             if !s1.contains(x@) {
                 let s2_minus = s2@.remove(x);
-                assume(s2@.finite());
+                lemma_hashset_view_finite(s2);
                 axiom_set_remove_len(s2@, x);
                 assert(s2_minus.len() == s2@.len() - 1);
                 let ss2_minus = s2_minus.map(|p:CPacket| p@);
