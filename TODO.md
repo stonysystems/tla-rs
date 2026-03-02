@@ -9458,7 +9458,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 - `common_proof/chosen.rs` (3 lemmas — 2 verified, 1 has assume statements):
   - [x] `collect_2b_messages`: recursive 2b message collection — body was complete, just needed external_body removal
   - [x] `lemma_DecidedOperationWasChosen`: decided operation quorum reconstruction — body was complete
-  - [ ] `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues`: Paxos safety core — has 2 critical `assume` statements (lines 135, 140-142) on `choose` expressions for highest-ballot voting. Needs `lemma_GetIndicesFromPackets` and `lemma_QuorumIndexOverlap` (both now verified). Difficulty: 9/10
+  - [x] `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues`: VERIFIED (0 assumes). Paxos safety core — eliminated 2 `choose`-predicate assumes by asserting `!LAllAcceptorsHadNoProposal` (witness: overlap packet with votes[opn]), then `LValIsHighestNumberedProposal` holds from disjunctive ensures, enabling `choose` axiom for both ballot and packet witnesses.
 - `common_proof/quorum.rs` (2 lemmas — both verified):
   - [x] `lemma_GetIndicesFromNodes`: maps node set to index set with cardinality proof
   - [x] `lemma_GetIndicesFromPackets`: delegates to lemma_GetIndicesFromNodes via src mapping

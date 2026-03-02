@@ -144,36 +144,36 @@ Root cause breakdown (remaining 27 `external_body` in impl/generated/common):
 - **Generated helpers** (3): hashset_insert, filter, unreachable_value
 - **Minus overlapping count** (-8): trusted lemma primitives counted in both categories
 
-Refinement proof assume() breakdown (77 total, separate from external_body):
-- 5 in formerly-external_body functions (detailed in §5)
-- 72 in pre-existing Dafny→Verus port helpers (§5 bottom)
+Refinement proof assume() breakdown (70 total, separate from external_body):
+- 1 in formerly-external_body functions (detailed in §5)
+- 69 in pre-existing Dafny→Verus port helpers (§5 bottom)
 
 ---
 
-## 5. Refinement Proof — Remaining `assume()` (Post-Phase 31)
+## 5. Refinement Proof — Remaining `assume()` (Post-Phase 31, updated March 2026)
 
 All 28 `external_body` proof functions have been converted to verified proof bodies.
-5 targeted `assume()` remain inside 3 of these functions:
+Of the original 5 targeted `assume()` inside formerly-external_body functions, **all 5 have been eliminated**:
+- `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues`: 2 assumes eliminated by asserting existential witnesses (choose axiom)
+- `lemma_2aMessagesFromSameBallotAndOperationMatchWLOG`: 2 assumes eliminated via broadcast same-message lemma + proposer state contradiction
+
+1 targeted `assume()` remains in a formerly-external_body function:
 
 | # | File | Function | assume | Root Cause |
 |---|------|----------|--------|------------|
 | 1 | `refinement_proof/requests.rs:78` | `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage` | `assume(b[i].environment.sentPackets.contains(p))` | Received packet membership in next-step sentPackets |
-| 2 | `common_proof/chosen.rs:134` | `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues` | `assume(LValIsHighestNumberedProposalAtBallot(...))` | Existential witness extraction for highest-numbered proposal |
-| 3 | `common_proof/chosen.rs:139-142` | `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues` | `assume(quorum_of_1bs.contains(packet1b_highestballot) && ...)` | Existential witness matching for 1b packet with highest ballot |
-| 4 | `common_proof/message2a.rs:289` | `lemma_2aMessagesFromSameBallotAndOperationMatchWLOG` | `assume(p1.msg->val_2a == p2.msg->val_2a)` | Two 2a messages sent in same step have same value |
-| 5 | `common_proof/message2a.rs:303` | `lemma_2aMessagesFromSameBallotAndOperationMatchWLOG` | `assume(false)` | Contradiction from proposer state implications (p1 sent before, p2 sent now, same ballot/opn) |
 
-Additionally, 72 `assume()` statements exist in pre-existing helper functions (never were external_body).
+Additionally, 69 `assume()` statements exist in pre-existing helper functions (never were external_body).
 These are inherited from the Dafny→Verus port, distributed across:
-- `common_proof/message2a.rs` (23): proposer state implications, ballot validity
 - `common_proof/message2b.rs` (21): acceptor state implications, 2a correspondence
+- `common_proof/message2a.rs` (18): proposer state implications, ballot validity
 - `common_proof/message1b.rs` (17): acceptor ballot ordering, vote tracking
 - `common_proof/packet_sending.rs` (5): RslNextOneReplica membership
 - `common_proof/quorum.rs` (5): set cardinality, intersection properties
 - `common_proof/chosen.rs` (2): choose witness membership (lemma_ChosenQuorumsMatchValue)
 - `common_proof/requests.rs` (1): seq drop_first length
 
-Total `assume()` across RSL proof files: 77 (5 in formerly-external_body + 72 in pre-existing helpers).
+Total `assume()` across RSL proof files: 70 (1 in formerly-external_body + 69 in pre-existing helpers).
 
 ---
 

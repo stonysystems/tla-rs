@@ -130,13 +130,21 @@ verus! {
             assert(false);
         }
 
+        // packet1b_overlap is in quorum_of_1bs and has votes[opn], so LAllAcceptorsHadNoProposal is false.
+        // Therefore LValIsHighestNumberedProposal must hold (from lemma_2aMessageHas1bQuorumPermittingIt).
+        assert(!LAllAcceptorsHadNoProposal(quorum_of_1bs, opn));
+        assert(LValIsHighestNumberedProposal(packet2a.msg->val_2a, quorum_of_1bs, opn));
+
+        // Unfold: exists |c:Ballot| LValIsHighestNumberedProposalAtBallot(v, c, S, opn)
         let highestballot_in_1b_set = choose |b| LValIsHighestNumberedProposalAtBallot(packet2a.msg->val_2a, b, quorum_of_1bs, opn);
-        assume(LValIsHighestNumberedProposalAtBallot(packet2a.msg->val_2a, highestballot_in_1b_set, quorum_of_1bs, opn));
+        assert(LValIsHighestNumberedProposalAtBallot(packet2a.msg->val_2a, highestballot_in_1b_set, quorum_of_1bs, opn));
         assert(BalLeq(packet1b_overlap.msg->votes[opn].max_value_bal, highestballot_in_1b_set));
 
+        // LExistsBallotInS gives a witness packet for the highest ballot
+        assert(LExistsBallotInS(packet2a.msg->val_2a, highestballot_in_1b_set, quorum_of_1bs, opn));
         let packet1b_highestballot = choose |p| quorum_of_1bs.contains(p) &&
             p.msg->votes.contains_key(opn) && p.msg->votes[opn] == Vote{max_value_bal:highestballot_in_1b_set, max_val:packet2a.msg->val_2a};
-        assume(quorum_of_1bs.contains(packet1b_highestballot) &&
+        assert(quorum_of_1bs.contains(packet1b_highestballot) &&
             packet1b_highestballot.msg->votes.contains_key(opn) &&
             packet1b_highestballot.msg->votes[opn] == Vote{max_value_bal:highestballot_in_1b_set, max_val:packet2a.msg->val_2a});
         assert(BalLeq(quorum_of_2bs.bal, packet1b_highestballot.msg->bal_1b));
