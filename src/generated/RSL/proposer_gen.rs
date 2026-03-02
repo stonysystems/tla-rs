@@ -742,7 +742,6 @@ ensures
 /// Reasoning (trusted): abstractify_crequestbatch(v) = v@.map(|i, r| r.view()),
 /// and abstractify_cvotes(votes)[opn as int].max_val = abstractify_crequestbatch(votes@[opn].max_val).
 /// So if val@ =~= votes@[opn].max_val@, their abstractifications match.
-#[verifier::external_body]
 proof fn lemma_val_2a_matches_witness(
     best_cp: CPacket,
     opn: u64,
@@ -756,6 +755,30 @@ requires
 ensures
     abstractify_crequestbatch(&val_2a) =~= best_cp@.msg->votes[opn as int].max_val,
 {
+    // Bind exec-level votes for clarity
+    let votes = best_cp.msg->votes;
+
+    // Step 1: Establish abstractify_cvotes domain for opn as int
+    // Witness: k = opn satisfies the existential (u64 identity view: opn@ == opn == opn as int)
+    assert(votes@.contains_key(opn));
+    assert(abstractify_cvotes(&votes).dom().contains(opn as int));
+
+    // Step 2: Map::new value at opn as int equals votes@[opn]@
+    // The choose picks k: u64 with votes@.contains_key(k) && k == opn as int;
+    // since u64→int is injective, k == opn, so the value is votes@[opn]@
+    assert(abstractify_cvotes(&votes)[opn as int] == votes@[opn]@);
+
+    // Step 3: CVote.view().max_val = abstractify_crequestbatch(&votes@[opn].max_val)
+    // So abstractify_cvotes(&votes)[opn as int].max_val == abstractify_crequestbatch(&votes@[opn].max_val)
+    //    == votes@[opn].max_val@.map(|i, r: CRequest| r@)
+
+    // Step 4: From requires val_2a@ =~= votes@[opn].max_val@, Seq map preserves =~=:
+    // abstractify_crequestbatch(&val_2a) = val_2a@.map(|i, r| r@)
+    //     =~= votes@[opn].max_val@.map(|i, r| r@)
+    //     == abstractify_cvotes(&votes)[opn as int].max_val
+
+    // Step 5: CMessage1b view connects best_cp@.msg->votes to abstractify_cvotes(&votes)
+    assert(best_cp@.msg->votes =~= abstractify_cvotes(&votes));
 }
 
 /// Existential search in received_1b_packets for highest-numbered proposal at opn.

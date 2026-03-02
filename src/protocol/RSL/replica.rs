@@ -504,11 +504,11 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_ExtractSentPacketsFromIos(ios:Seq<RslIo>)
         ensures forall |p:RslPacket| ExtractSentPacketsFromIos(ios).contains(p) <==> ios.contains(LIoOp::Send{s:p})
     {
-
+        ExtractSentPacketsFromIos_Ensures1(ios);
+        ExtractSentPacketsFromIos_Ensures2(ios);
     }
 
     pub proof fn ExtractSentPacketsFromIos_Ensures1(ios:Seq<RslIo>)
