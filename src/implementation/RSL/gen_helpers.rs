@@ -300,8 +300,9 @@ pub exec fn CGetPacketsFromReplies(
 
 /// Convert OutboundPackets (enum with Broadcast/PacketSequence/OutboundPacket variants)
 /// to Vec<CPacket> with view-preserving ensures and validity guarantees.
-#[verifier(external_body)]
 pub fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
+    requires
+        sent.valid(),
     ensures
         result@.map(|i: int, p: CPacket| p@) =~= sent@,
         forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
@@ -312,15 +313,33 @@ pub fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
         OutboundPackets::Broadcast { broadcast } => {
             match broadcast {
                 CBroadcast::CBroadcast { src, dsts, msg } => {
-                    let mut result = Vec::new();
-                    let mut i = 0;
-                    while i < dsts.len() {
-                        result.push(CPacket {
-                            dst: dsts[i].clone(),
-                            src: src.clone(),
-                            msg: msg.clone(),
-                        });
+                    let mut result: Vec<CPacket> = Vec::new();
+                    let mut i: usize = 0;
+                    while i < dsts.len()
+                        invariant
+                            0 <= i <= dsts.len(),
+                            result.len() == i,
+                            src.valid_public_key(),
+                            src.abstractable(),
+                            msg.valid(),
+                            msg.abstractable(),
+                            forall |j: int| 0 <= j < dsts.len() ==> (#[trigger] dsts@[j]).valid_public_key(),
+                            forall |j: int| 0 <= j < dsts.len() ==> (#[trigger] dsts@[j]).abstractable(),
+                            forall |j: int| 0 <= j < i ==> (#[trigger] result@[j]).valid(),
+                            forall |j: int| 0 <= j < i ==> (#[trigger] result@[j]).abstractable(),
+                            forall |j: int| 0 <= j < i ==> (#[trigger] result@[j])@ =~= (LPacket { dst: dsts@[j]@, src: src@, msg: msg@ }),
+                        decreases dsts.len() - i,
+                    {
+                        let pkt = CPacket {
+                            dst: dsts[i].clone_up_to_view(),
+                            src: src.clone_up_to_view(),
+                            msg: msg.clone_up_to_view(),
+                        };
+                        result.push(pkt);
                         i += 1;
+                    }
+                    proof {
+                        lemma_BuildBroadcast_ensures(src@, dsts@.map(|i: int, e: EndPoint| e@), msg@);
                     }
                     result
                 },
@@ -329,7 +348,11 @@ pub fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
         },
         OutboundPackets::OutboundPacket { p } => {
             match p {
-                Some(pkt) => vec![pkt],
+                Some(pkt) => {
+                    let mut v: Vec<CPacket> = Vec::new();
+                    v.push(pkt);
+                    v
+                },
                 None => Vec::new(),
             }
         },
