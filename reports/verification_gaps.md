@@ -8,7 +8,7 @@ Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping r
 - 5 new files: `src/protocol/Raft/refinement_proof/{state_machine,invariants,induction,committed,refinement}.rs`
 - Top-level theorem: `lemma_refinement_correct` — every valid Raft behavior refines to a sequential committed log
 - Phase 32.3.1-32.3.2: Detailed invariant induction proofs with supporting invariants (VotesGrantedAreServers, CandidateOrLeaderVotedForSelf, VotersVotedForCandidate); 6 LNext case analysis assumes eliminated via helper lemmas
-- 11 targeted `assume()` across 2 files (see §6 below): 6 in invariants.rs, 5 in committed.rs
+- 10 targeted `assume()` across 2 files (see §6 below): 6 in invariants.rs, 4 in committed.rs
 - 0 `external_body` in Raft refinement proof
 - Verification: 651 verified, 0 errors (up from 632 pre-Phase 32)
 
@@ -178,7 +178,7 @@ Total `assume()` across RSL proof files: 77 (5 in formerly-external_body + 72 in
 
 ## 6. Raft Safety Refinement Proof — `assume()` Summary (Phase 32)
 
-11 targeted `assume()` across the Raft refinement proof files:
+10 targeted `assume()` across the Raft refinement proof files:
 
 ### invariants.rs (6 assumes)
 
@@ -204,7 +204,7 @@ Remaining assumes:
 Delegates to `lemma_safety_invariant_inductive` from invariants.rs.
 `lemma_invariant_holds_throughout_behavior` uses clean recursive induction (no assumes).
 
-### committed.rs (5 assumes)
+### committed.rs (4 assumes)
 
 | # | Line | Function | assume | Root Cause |
 |---|------|----------|--------|------------|
@@ -212,7 +212,8 @@ Delegates to `lemma_safety_invariant_inductive` from invariants.rs.
 | 8 | 134 | `lemma_max_commit_index_nondecreasing` | MaxCommitIndex(ds_) ≥ MaxCommitIndex(ds) | Follows from per-server monotonicity but requires recursive MaxCommitIndex induction |
 | 9 | 173 | `lemma_committed_log_monotone` | new_log.len() ≥ old_log.len() | Connection between MaxCommitIndex and ExtractLogValues length |
 | 10 | 180 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
-| 11 | 249 | `lemma_abstract_step_valid` | rs_ == rs (stutter) | Struct extensional equality when committed log unchanged |
+
+`lemma_abstract_step_valid` stutter case: proved via `=~=` extensional equality (previously assume).
 
 ### refinement.rs (0 assumes)
 
@@ -222,4 +223,4 @@ All proofs fully mechanized. Top-level `lemma_refinement_correct` has no assumes
 
 - **Assume 3**: Strengthen `LFollowerAppendEntries` to cap `commit_index = min(ae_leader_commit, log.len())` — requires spec change + transpiler regeneration
 - **Assumes 1, 2, 4-6**: Add network packets with src/dst fields, track message provenance invariants, implement quorum intersection lemma with Set cardinality axioms
-- **Assumes 7-11**: Improve recursive MaxCommitIndex induction infrastructure, add Seq::subrange well-formedness lemmas
+- **Assumes 7-10**: Improve recursive MaxCommitIndex induction infrastructure, add Seq::subrange well-formedness lemmas

@@ -246,7 +246,9 @@ verus! {
             by {
                 // From IsPrefix
             }
-            assume(rs_ == rs); // extensional equality of struct
+            // Extensional equality: same committed_log and same server_ids → same struct
+            assert(rs_.committed_log =~= rs.committed_log);
+            assert(rs_.server_ids =~= rs.server_ids);
         } else {
             // new_log is strictly longer: RaftSystemNextAppendCommitted
             assert(new_log.len() > old_log.len());

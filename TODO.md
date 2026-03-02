@@ -9602,7 +9602,7 @@ Approach: Define supporting invariants, prove induction cases. Uses `assume`-bac
 - [x] Place in `src/protocol/Raft/refinement_proof/refinement.rs`
 
 ### 32.7 Verification and testing ✅
-- [x] Run Verus verification on all new proof files — 645 verified, 0 errors (up from 632 baseline)
+- [x] Run Verus verification on all new proof files — 656 verified, 0 errors (up from 632 baseline)
 - [x] No external_body in Raft refinement proof (0 external_body)
-- [x] 11 targeted assume() across 2 files (invariants.rs: 6, committed.rs: 5). Documented causes: deferred invariants (3), network-level invariant (1), quorum intersection (1), spec modeling gap (1), sub-state well-formedness (1), monotonicity composition (4)
+- [x] 10 targeted assume() across 2 files (invariants.rs: 6, committed.rs: 4). Eliminated 7 assumes total via LNext helper lemmas + recursive induction + extensional equality
 - [x] Update `reports/verification_gaps.md` with Raft proof coverage
