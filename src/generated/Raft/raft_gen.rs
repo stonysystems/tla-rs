@@ -627,12 +627,26 @@ ensures
         (s_mid, _sent_0)
 
     } else {
-                proof {
-            assert(s_mid@.log =~= s@.log);
-            assert(s_mid@.log.len() == s@.log.len());
-        }
-        CFollowerAppendEntries(&s_mid, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit)
+        if ((*ae_prev_index > 0) && ((*ae_prev_index > (s_mid.log.len() as u64)) || (s_mid.log[(*ae_prev_index - 1) as usize].term != *ae_prev_term))) {
+                        let _sent_0 = vec![CRaftMessage::AppendResponse {
+    term: s_mid.current_term,
+    success: false,
+    match_index: 0u64,
+    follower: c.my_id.clone(),
+}];
+            proof {
+                assert(_sent_0@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(_sent_0@[0]@));
+            }
+            (s_mid, _sent_0)
 
+        } else {
+                        proof {
+                assert(s_mid@.log =~= s@.log);
+                assert(s_mid@.log.len() == s@.log.len());
+            }
+            CFollowerAppendEntries(&s_mid, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit)
+
+        }
     }
 
 }

@@ -362,6 +362,19 @@ verus! {
                 match_index: 0int,
                 follower: c.my_id,
             }]
+        } else if ae_prev_index > 0 && (
+            ae_prev_index > s_mid.log.len()
+            || s_mid.log[ae_prev_index - 1].term != ae_prev_term
+        ) {
+            // Prev-log consistency check failed (Raft paper 5.3):
+            // follower doesn't have a matching entry at prev_log_index
+            &&& s_ == s_mid
+            &&& sent_packets == seq![LRaftMessage::AppendResponse {
+                term: s_mid.current_term,
+                success: false,
+                match_index: 0int,
+                follower: c.my_id,
+            }]
         } else {
             // Accept: delegate to atomic follower append entries
             LFollowerAppendEntries(s_mid, s_, c, ae_term, ae_leader, ae_prev_index,

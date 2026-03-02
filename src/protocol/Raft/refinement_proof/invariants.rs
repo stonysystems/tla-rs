@@ -718,15 +718,17 @@ verus! {
     ///       requires network-level reasoning about message provenance.
     ///
     ///   (b) LFollowerAppendEntries (follower appends entry):
-    ///       The real Raft protocol (§5.3) checks prev_log_index/prev_log_term
-    ///       before accepting. Our simplified spec does NOT include this check —
-    ///       it appends unconditionally. This means LogMatching cannot be proved
-    ///       from the spec as written. The guarantee comes from the network layer:
-    ///       AppendEntries RPCs carry prev_log consistency data, and the
-    ///       implementation rejects inconsistent entries.
+    ///       The spec now includes a prev_log consistency check in
+    ///       LHandleAppendEntriesMsg (Raft paper §5.3): the follower rejects
+    ///       AppendEntries if log[prev_index-1].term != prev_term. However,
+    ///       in the single-server model, ae_prev_index and ae_prev_term are
+    ///       existentially quantified — there is no constraint linking them
+    ///       to what the leader actually sent. Proving LogMatching requires
+    ///       knowing that received prev_log values correspond to the leader's
+    ///       log entries, which is a network-level message provenance property.
     ///
     /// Both gaps are network-level: they require reasoning about which messages
-    /// are actually delivered and how the implementation validates them.
+    /// are actually delivered and how their parameters relate to sender state.
     pub proof fn lemma_log_matching_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -764,11 +766,12 @@ verus! {
         // entries match. This requires:
         // - For LClientRequest: Election Safety (one leader per term) +
         //   network-level entry provenance (j got its entry from this leader)
-        // - For LFollowerAppendEntries: prev_log consistency check (not in spec)
+        // - For LFollowerAppendEntries: the spec now checks prev_log consistency,
+        //   but ae_prev_index/ae_prev_term are existentially quantified with no
+        //   constraint linking them to the leader's log entries.
         //
-        // Since the spec model lacks prev_log_index/prev_log_term validation
-        // in LFollowerAppendEntries, this invariant is a network-level trust
-        // assumption, analogous to VotersVotedForCandidate.
+        // Both require network-level message provenance reasoning that the
+        // single-server spec model cannot provide.
         assume(LogMatching(ds_));
     }
 
@@ -790,9 +793,10 @@ verus! {
     /// 4. Log up-to-date check: LGrantVote checks log_up_to_date, ensuring
     ///    the new leader's log is at least as current as any voter's
     ///
-    /// The key gap is the same as LogMatching: without network-level message
-    /// provenance tracking, we cannot formally link the voter's log state at
-    /// vote time to the committed entry's presence.
+    /// The key gap is the same as LogMatching: in the single-server spec model,
+    /// message parameters are existentially quantified with no provenance linking
+    /// them to the sender's state, so we cannot formally connect the voter's log
+    /// at vote time to the committed entry's presence.
     pub proof fn lemma_leader_completeness_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )

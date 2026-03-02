@@ -134,11 +134,27 @@ ensures
     let s_mid = step_down_if_needed(s, ae_term);
 
     if ae_term < s_mid.current_term {
-        // Rejection: s_ == s_mid
+        // Rejection: stale term, s_ == s_mid
         if ae_term > s.current_term {
             // Step-down occurred but term is still stale (impossible:
             // s_mid.current_term == ae_term, so ae_term < ae_term is false)
             assert(false);
+        } else {
+            // No step-down, s_mid == s, s_ == s: stutter
+            assert(s_ == s);
+        }
+    } else if ae_prev_index > 0 && (
+        ae_prev_index > s_mid.log.len()
+        || s_mid.log[ae_prev_index - 1].term != ae_prev_term
+    ) {
+        // Rejection: prev_log consistency check failed, s_ == s_mid
+        let empty = Seq::<LRaftMessage>::empty();
+        if ae_term > s.current_term {
+            // Step-down occurred: s_ == s_mid = step_down_if_needed(s, ae_term)
+            // LStepDown's sent_packets is existentially quantified in LNextAtomic,
+            // so we witness with empty (the actual rejection packet is irrelevant).
+            assert(LStepDown(s, s_, c, ae_term, empty));
+            assert(LNextAtomic(s, s_, c));
         } else {
             // No step-down, s_mid == s, s_ == s: stutter
             assert(s_ == s);
