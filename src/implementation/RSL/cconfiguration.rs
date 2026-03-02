@@ -179,7 +179,6 @@ pub open spec fn ReplicaIndexValid(index:u64, config:CConfiguration) -> bool
     0 <= index < config.replica_ids.len()
 }
 
-#[verifier::external_body]
 pub proof fn lemma_AbstractifyEndpoints_properties(s:Vec<EndPoint>)
     requires
         seq_is_unique(s@),
@@ -191,10 +190,24 @@ pub proof fn lemma_AbstractifyEndpoints_properties(s:Vec<EndPoint>)
             &&& (forall |i:int| 0 <= i < s.len() ==> ss[i] == s[i]@)
             &&& (forall |i:AbstractEndPoint| ss.contains(i) ==> exists |x:int| 0 <= x < s.len() && i == s[x]@)
             &&& (forall |i:EndPoint| ss.contains(i@) ==> exists |x:int| 0 <= x < s.len() && i == s[x])
-            &&& seq_is_unique(ss) /* this one cannot be verified */
+            &&& seq_is_unique(ss)
         })
 {
     lemma_AbstractifyEndPointToNodeIdentity_injective_forall();
+    let ss = s@.map(|i, e:EndPoint| e@);
+
+    // seq_is_unique(ss): if ss[i] == ss[j] then s@[i]@ == s@[j]@,
+    // by endpoint injectivity s@[i] == s@[j], by seq_is_unique(s@) i == j.
+    assert forall |i: int, j: int|
+        #![trigger ss[i], ss[j]]
+        0 <= i < ss.len() && 0 <= j < ss.len() && ss[i] == ss[j] implies i == j
+    by {
+        // ss[i] == s@[i]@ and ss[j] == s@[j]@ (by Seq::map)
+        assert(ss[i] == s@[i]@);
+        assert(ss[j] == s@[j]@);
+        // s@[i]@ == s@[j]@ implies s@[i] == s@[j] by endpoint injectivity
+        // seq_is_unique(s@) with s@[i] == s@[j] gives i == j
+    };
 }
 
 pub proof fn lemma_AbstractifyEndPointToNodeIdentity_injective(x:EndPoint, y:EndPoint)

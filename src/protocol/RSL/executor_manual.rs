@@ -19,14 +19,43 @@ proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestB
         forall |j: int| 0 <= j < replies.len() ==> replies[j].valid(),
 {}
 
-#[verifier(external_body)]
 proof fn lemma_RepliesAreReplyType(me: AbstractEndPoint, requests: RequestBatch, replies: Seq<Reply>, packets: Seq<RslPacket>)
     requires
         packets == GetPacketsFromReplies(me, requests, replies),
         requests.len() == replies.len(),
     ensures
         RepliesAreReplyType(packets),
-{}
+    decreases requests.len()
+{
+    // Induction on requests.len(). GetPacketsFromReplies constructs each
+    // packet with msg: RslMessageReply{...}, so RepliesAreReplyType holds.
+    if requests.len() == 0 {
+        // packets == Seq::empty(), RepliesAreReplyType vacuously true
+    } else {
+        // IH: tail satisfies RepliesAreReplyType
+        let tail_packets = GetPacketsFromReplies(me, requests.drop_first(), replies.drop_first());
+        lemma_RepliesAreReplyType(me, requests.drop_first(), replies.drop_first(), tail_packets);
+        // Head packet has msg: RslMessageReply
+        let head = LPacket{
+            dst: requests[0].client,
+            src: me,
+            msg: RslMessage::RslMessageReply{
+                seqno_reply: requests[0].seqno,
+                reply: replies[0].reply,
+            }
+        };
+        // packets == seq![head] + tail_packets
+        // Any p in packets is either head (msg is RslMessageReply) or in tail_packets (by IH)
+        assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {
+            if p == head {
+                // head.msg is RslMessageReply by construction
+            } else {
+                // p must be in tail_packets
+                assert(tail_packets.contains(p));
+            }
+        };
+    }
+}
 
 proof fn lemma_HandleRequestBatch_spec_len(state: AppState, batch: RequestBatch)
     ensures
