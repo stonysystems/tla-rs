@@ -221,6 +221,8 @@ All proofs fully mechanized. Top-level `lemma_refinement_correct` has no assumes
 
 ### What would eliminate these assumes
 
-- **Assume 3**: Strengthen `LFollowerAppendEntries` to cap `commit_index = min(ae_leader_commit, log.len())` — requires spec change + transpiler regeneration
-- **Assumes 1, 2, 4-6**: Add network packets with src/dst fields, track message provenance invariants, implement quorum intersection lemma with Set cardinality axioms
-- **Assumes 7-10**: Improve recursive MaxCommitIndex induction infrastructure, add Seq::subrange well-formedness lemmas
+- **Assume 3 (CommitIndexBounded)**: Strengthen `LFollowerAppendEntries` to cap `commit_index = min(ae_leader_commit, log.len())` — requires spec change + transpiler regeneration
+- **Assume 1 (ElectionSafety quorum intersection)**: Depends on assumes 2 and 4-6 being resolved first (VotersVotedForCandidate provides the crucial link that quorum overlap implies same candidate)
+- **Assume 2 (VotersVotedForCandidate)**: Add network message provenance tracking (src/dst fields on messages, delivered-from invariant) to the distributed model, so that receiving a VoteResponse from voter `v` proves `v` actually voted for the candidate
+- **Assumes 4-6 (LogMatching, LeaderCompleteness, StateMachineSafety)**: Strengthen `LFollowerAppendEntries` to reject entries when `ae_has_entry && ae_prev_index < s.log.len() && s.log[ae_prev_index].term != ae_prev_term` (the Raft §5.3 consistency check). This enables LogMatching induction; LeaderCompleteness and StateMachineSafety follow from LogMatching + quorum intersection
+- **Assumes 7-10 (committed.rs)**: Improve recursive MaxCommitIndex induction infrastructure, add Seq::subrange well-formedness lemmas

@@ -9573,14 +9573,20 @@ Approach: Define supporting invariants, prove induction cases. Uses `assume`-bac
 - [x] Analysis: the quorum intersection argument depends on `VotersVotedForCandidate` being provably inductive, which requires network-level message tracking not in the spec model. The `assume(false)` was replaced with `assume(stepping == other)` — same trust gap, more explicit
 - [x] 656 verified, 0 errors. Assume count unchanged (6 in invariants.rs: 1 quorum/network gap, 1 network-level, 1 spec gap, 3 deferred)
 
-#### 32.3.4 Log Matching induction proof
-- [ ] Prove Log Matching is inductive: case split on `LFollowerAppendEntries` (log append), `LClientRequest` (leader append). Core argument: AppendEntries RPC includes `prev_log_index` + `prev_log_term` check
+#### 32.3.4-32.3.6 LogMatching, LeaderCompleteness, StateMachineSafety — DEFERRED (spec model limitation)
 
-#### 32.3.5 Leader Completeness proof
-- [ ] Prove Leader Completeness: requires Election Safety + Log Matching + quorum intersection. A new leader's log must overlap with the previous commit quorum
+Analysis: All three invariants are **irreducible** in the current spec model.
 
-#### 32.3.6 State Machine Safety proof
-- [ ] Prove State Machine Safety: follows from Leader Completeness + Log Matching — committed entries are never overwritten
+**Root cause**: `LFollowerAppendEntries` (raft.rs:156-187) unconditionally appends entries without checking `prev_log_index`/`prev_log_term` against the follower's existing log. In the real Raft paper (§5.3), a follower rejects AppendEntries if `log[prev_log_index].term != prev_log_term`, which is the mechanism that enforces Log Matching. Our simplified spec omits this check — the `ae_prev_index` and `ae_prev_term` parameters exist but are unused in the guard.
+
+**Dependency chain**:
+- `LogMatching` requires prev_log consistency check in spec → **spec change needed**
+- `LeaderCompleteness` requires LogMatching + quorum intersection → depends on LogMatching
+- `StateMachineSafety` requires LeaderCompleteness + LogMatching → depends on both
+
+**To fix**: Strengthen `LFollowerAppendEntries` to reject entries when `ae_has_entry && ae_prev_index < s.log.len() && s.log[ae_prev_index].term != ae_prev_term`. This requires spec change + transpiler regeneration + host.rs updates. Same class of work as fixing CommitIndexBounded (32.3.2).
+
+**Status**: 3 assumes remain at invariants.rs:719-721 — correctly categorized as spec model limitations alongside CommitIndexBounded (line 651) and VotersVotedForCandidate network gap (line 565).
 
 ### 32.4 Committed log extraction ✅
 - [x] Define `IsPrefix` predicate for sequence prefix comparison
