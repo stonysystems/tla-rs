@@ -63,7 +63,7 @@ verus! {
         ensures
         ({
             let ss = s@.map(|i, t:u64| t as int);
-            && res < 0xffff_ffff_ffff_ffff
+            && res as int <= s@.len()
             && res as int == CountMatchesInSeq(ss, |x:int| x > target as int)
         })
         decreases s.len(),
@@ -79,7 +79,10 @@ verus! {
             let temp = CCountLargerInSeq(&rest, target);
             assert(temp == CountMatchesInSeq(ss.subrange(1, ss.len() as int), |x:int| x > target as int));
             if s[0] > target {
-                assume(temp + 1 < 0xffff_ffff_ffff_ffff);
+                proof {
+                    lemma_count_matches_le_len(ss.subrange(1, ss.len() as int), |x:int| x > target as int);
+                    // temp as int <= rest@.len() == s@.len() - 1, so temp + 1 <= s@.len() <= usize::MAX
+                }
                 temp + 1
             } else
             {
@@ -92,7 +95,7 @@ verus! {
         ensures
         ({
             let ss = s@.map(|i, t:u64| t as int);
-            && res < 0xffff_ffff_ffff_ffff
+            && res as int <= s@.len()
             && res as int == CountMatchesInSeq(ss, |x:int| x >= target as int)
         })
         decreases s.len(),
@@ -107,7 +110,9 @@ verus! {
             let temp = CCountLargerOrEqualInSeq(&rest, target);
             assert(temp == CountMatchesInSeq(ss.subrange(1, ss.len() as int), |x:int| x >= target as int));
             if s[0] >= target {
-                assume(temp + 1 < 0xffff_ffff_ffff_ffff);
+                proof {
+                    lemma_count_matches_le_len(ss.subrange(1, ss.len() as int), |x:int| x >= target as int);
+                }
                 temp + 1
             } else
             {

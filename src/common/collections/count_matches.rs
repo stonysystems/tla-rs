@@ -12,6 +12,15 @@ verus! {
         }
     }
 
+    pub proof fn lemma_count_matches_le_len<T>(s: Seq<T>, f: spec_fn(T) -> bool)
+        ensures CountMatchesInSeq(s, f) <= s.len()
+        decreases s.len()
+    {
+        if s.len() > 0 {
+            lemma_count_matches_le_len(s.subrange(1, s.len() as int), f);
+        }
+    }
+
     pub open spec fn IsNthHighestValueInSequence(v:int, s:Seq<int>, n:int) -> bool
     {
         &&& 0 < n < s.len()
