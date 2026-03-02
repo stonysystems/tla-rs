@@ -34,12 +34,19 @@ pub fn clone_cpacket_preserving_validity(p: &CPacket) -> (res: CPacket)
 
 /// Clone a CPacket preserving full structural equality (needed when
 /// callee checks concrete fields like `replica_ids@.contains(pkt.src)`).
-#[verifier(external_body)]
 pub fn clone_cpacket_full(p: &CPacket) -> (res: CPacket)
     requires p.valid(),
     ensures res == *p,
 {
-    p.clone_up_to_view()
+    let res = p.clone_up_to_view();
+    proof {
+        broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_view;
+        let ghost r = res;
+        let ghost q = *p;
+        assert(r@ == q@);
+        // axiom gives: r@ == q@ ==> r == q
+    }
+    res
 }
 
 /// Clone an LPacket<EndPoint, CMessage> into a CPacket with field equality

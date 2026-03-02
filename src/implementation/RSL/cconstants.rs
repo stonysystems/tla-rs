@@ -81,8 +81,9 @@ impl View for CConstants {
 }
 
 impl CReplicaConstants {
-    #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (result:Self)
+    requires
+        self.valid(),
     ensures
         self == result,
         self@ == result@,

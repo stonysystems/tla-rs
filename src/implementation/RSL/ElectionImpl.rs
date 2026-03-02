@@ -239,12 +239,10 @@ impl CElectionState
         cloned
     }
 
-    #[verifier(external_body)]
     pub fn clone_vec_crequest(v: &Vec<CRequest>) -> (res: Vec<CRequest>)
         requires
             forall |i: int| 0 <= i < v.len() ==> v[i].valid()
         ensures
-            res==v,
             res@ == v@,
             res.len() == v.len(),
             forall |i: int| 0 <= i < res.len() ==> res[i].valid(),
@@ -256,9 +254,11 @@ impl CElectionState
             invariant
                 0 <= i <= v.len(),
                 result.len() == i,
+                forall |j: int| 0 <= j < v.len() ==> v[j].valid(),
                 forall |j: int| 0 <= j < i ==> result[j].valid(),
                 result@ == v@.subrange(0, i as int),
                 forall |j: int| 0 <= j < i ==> result@[j] == v@[j]
+            decreases v.len() - i,
         {
             let item = v[i].clone_up_to_view();
             result.push(item);
