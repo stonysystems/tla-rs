@@ -573,16 +573,29 @@ ensures
     // Search for an earlier request with matching client+seqno
     let mut found = false;
     let mut idx: usize = 0;
+    let ghost mut witness: Request = req@;
+    let ghost mut witness_in_prev = false;
     while idx < es.requests_received_prev_epochs.len()
     invariant
         idx <= es.requests_received_prev_epochs.len(),
         es.valid(),
         req.valid(),
+        found ==> (
+            witness_in_prev
+            && es@.requests_received_prev_epochs.contains(witness)
+            && RequestsMatch(witness, req@)
+        ),
     decreases
         es.requests_received_prev_epochs.len() - idx,
     {
         if CRequestsMatch(&es.requests_received_prev_epochs[idx], req) {
             found = true;
+            proof {
+                witness = es.requests_received_prev_epochs[idx as int]@;
+                witness_in_prev = true;
+                // es.requests_received_prev_epochs[idx]@ is in es@.requests_received_prev_epochs
+                assert(es.requests_received_prev_epochs@.map(|i: int, r: CRequest| r@)[idx as int] == witness);
+            }
             break;
         }
         idx = idx + 1;
@@ -594,11 +607,21 @@ ensures
             idx <= es.requests_received_this_epoch.len(),
             es.valid(),
             req.valid(),
+            found ==> (
+                !witness_in_prev
+                && es@.requests_received_this_epoch.contains(witness)
+                && RequestsMatch(witness, req@)
+            ),
         decreases
             es.requests_received_this_epoch.len() - idx,
         {
             if CRequestsMatch(&es.requests_received_this_epoch[idx], req) {
                 found = true;
+                proof {
+                    witness = es.requests_received_this_epoch[idx as int]@;
+                    witness_in_prev = false;
+                    assert(es.requests_received_this_epoch@.map(|i: int, r: CRequest| r@)[idx as int] == witness);
+                }
                 break;
             }
             idx = idx + 1;
@@ -609,7 +632,15 @@ ensures
         let result = es.clone_up_to_view();
         proof {
             assert(result == *es);
-            assume(ElectionStateReflectReceivedRequest(es@, result@, req@));
+            // The witness is in one of the two request sequences and matches req@
+            assert(RequestsMatch(witness, req@));
+            assert(es@.requests_received_prev_epochs.contains(witness) || es@.requests_received_this_epoch.contains(witness));
+            // This satisfies the existential in the spec: exists earlier_req with matching client+seqno
+            assert(exists |earlier_req: Request|
+                (es@.requests_received_prev_epochs.contains(earlier_req) || es@.requests_received_this_epoch.contains(earlier_req))
+                && RequestsMatch(earlier_req, req@));
+            // Since result@ == es@, the spec predicate holds (es_ == es case)
+            assert(result@ == es@);
         }
         result
     } else {

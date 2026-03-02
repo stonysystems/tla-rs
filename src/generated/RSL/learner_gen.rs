@@ -283,7 +283,17 @@ ensures
         _ => { return unreachable_value(); },
     };
     let (src_in_config, _) = s.constants.all.config.CGetReplicaIndex(&packet.src);
-    proof { assume(bal_2b.valid() && s.max_ballot_seen.valid()); }
+    proof {
+        // s.valid() implies s.max_ballot_seen.valid()
+        assert(s.max_ballot_seen.valid());
+        // packet.valid() implies packet.msg.valid(), and packet.msg is CMessage2b
+        // implies (packet.msg)->bal_2b.valid(). bal_2b == (packet.msg)->bal_2b from the match.
+        assert(packet.msg.valid());
+        assert(packet.msg is CMessage2b);
+        assert((packet.msg)->bal_2b.valid());
+        assert(bal_2b == (packet.msg)->bal_2b);
+        assert(bal_2b.valid());
+    }
     let result = if !src_in_config || CBalLt(&bal_2b, &s.max_ballot_seen) {
         // Branch 1: not a valid replica or old ballot — no change
         s.clone_up_to_view()

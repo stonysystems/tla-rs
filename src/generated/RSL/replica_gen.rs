@@ -285,9 +285,13 @@ ensures
         let ghost sp = received_packet@;
         let result = (result_replica, vec![]);
         proof {
-            // Bridge CMessage fields to spec message fields (trusted enum view gap)
-            assume(log_truncation_point as int == sp.msg->log_truncation_point);
-            assume(bal_1b@ == sp.msg->bal_1b);
+            // Bridge CMessage fields to spec message fields
+            // received_packet.msg is CMessage1b (from requires), so its view is RslMessage1b
+            // with bal_1b: bal_1b@, log_truncation_point: log_truncation_point as int
+            assert(received_packet.msg is CMessage1b);
+            assert(sp.msg is RslMessage1b);
+            assert(sp.msg->log_truncation_point == log_truncation_point as int);
+            assert(sp.msg->bal_1b == bal_1b@);
             // Sub-function postconditions (from their ensures clauses)
             assert(crate::protocol::RSL::proposer::LProposerProcess1b(ss.proposer, s_proposer@, sp));
             assert(crate::protocol::RSL::acceptor::LAcceptorTruncateLog(ss.acceptor, s_acceptor@, log_truncation_point as int));
