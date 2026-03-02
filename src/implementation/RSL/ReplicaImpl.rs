@@ -248,7 +248,18 @@ impl CReplica{
                             broadcast use vstd::std_specs::hash::group_hash_axioms;
                             broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
                             assert(received_packet.src@ == sp.src);
-                            assume(v@ == ss.executor.reply_cache[sp.src]); // don't know why, maybe the key is endpoint, it should satisfy some properties.
+                            proof {
+                                broadcast use crate::common::native::io_s::axiom_endpoint_view;
+                                // HashMap::get gives *v == m@[received_packet.src], so v@ == m@[received_packet.src]@
+                                // abstractify_creplycache uses choose |k| m@.contains_key(k) && k@ == sp.src
+                                // By axiom_endpoint_view (k@ == received_packet.src@ ==> k == received_packet.src),
+                                // the chosen k must be received_packet.src
+                                let m = self.executor.reply_cache;
+                                assert(m@.contains_key(received_packet.src) && received_packet.src@ == sp.src);
+                                let k = choose |k: EndPoint| m@.contains_key(k) && k@ == sp.src;
+                                assert(k@ == received_packet.src@);
+                                assert(k == received_packet.src);
+                            }
                             if v.seqno >= seqno_req {
                                 assert(ss.executor.reply_cache.contains_key(sp.src));
                                 assert(sp.msg->seqno_req <= ss.executor.reply_cache[sp.src].seqno);
@@ -298,7 +309,23 @@ impl CReplica{
                         }
                     }
                 } else {
-                    assume(!ss.executor.reply_cache.contains_key(sp.src)); // don't know why, maybe the key is endpoint, it should satisfy some properties.
+                    proof {
+                        broadcast use crate::common::native::io_s::axiom_endpoint_view;
+                        // HashMap::contains_key returned false: !m@.contains_key(received_packet.src)
+                        // Need: !abstractify_creplycache(&m).contains_key(sp.src)
+                        // abstractify domain: exists |k: EndPoint| m@.contains_key(k) && k@ == sp.src
+                        // By contradiction: any witness k with k@ == sp.src must be received_packet.src
+                        // (axiom_endpoint_view), but !m@.contains_key(received_packet.src)
+                        let m = self.executor.reply_cache;
+                        assert(!abstractify_creplycache(&m).contains_key(sp.src)) by {
+                            if abstractify_creplycache(&m).contains_key(sp.src) {
+                                let k = choose |k: EndPoint| m@.contains_key(k) && k@ == sp.src;
+                                assert(k@ == received_packet.src@);
+                                assert(k == received_packet.src);
+                                assert(m@.contains_key(received_packet.src)); // contradiction
+                            }
+                        };
+                    }
                     // Self::print("receive request");
                     self.proposer = generated_proposer::CProposerProcessRequest(&self.proposer, &received_packet);
                     let mut pkt_vec: Vec<CPacket> = Vec::new();
