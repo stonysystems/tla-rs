@@ -52,6 +52,8 @@ verus! {
     pub fn hashset_to_vec<T>(s:&HashSet<T>) -> (res:Vec<T>)
     where
             T: Clone + Eq + Hash
+    ensures
+        forall |i: int| 0 <= i < res@.len() ==> s@.contains(#[trigger] res@[i]),
     {
         s.iter().cloned().collect()
     }

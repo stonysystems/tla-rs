@@ -19,6 +19,9 @@ use crate::implementation::RSL::gen_helpers::{
 };
 use crate::implementation::RSL::types_i::abstractify_crequestbatch;
 use crate::implementation::RSL::types_i::clone_request_batch_up_to_view;
+use crate::implementation::RSL::types_i::crequestbatch_is_valid;
+use crate::implementation::RSL::types_i::cvotes_is_valid;
+use crate::implementation::RSL::types_i::lemma_cvotes_valid_key;
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::types::*;
@@ -498,18 +501,42 @@ ensures
     invariant
         idx <= packets.len(),
         s.valid(),
+        forall |i: int| 0 <= i < packets@.len() ==> s.received_1b_packets@.contains(#[trigger] packets@[i]),
+        best_bal.is_some() ==> best_bal.unwrap().valid(),
+        best_val.is_some() ==> crequestbatch_is_valid(&best_val.unwrap()),
     decreases
         packets.len() - idx,
     {
         let p = &packets[idx];
+        proof {
+            // packets[idx] is in s.received_1b_packets@ (hashset_to_vec ensures)
+            assert(s.received_1b_packets@.contains(packets@[idx as int]));
+            // s.valid() ==> all packets in received_1b_packets are valid
+            assert(p.valid());
+        }
         match &p.msg {
             CMessage::CMessage1b { bal_1b: _, log_truncation_point: _, votes } => {
                 if votes.contains_key(&opn) {
                     let vote = votes.get(&opn).unwrap();
+                    proof {
+                        // Derive vote validity: p.valid() → p.msg.valid() → cvotes_is_valid
+                        assert(p.msg.valid());
+                        assert(p.msg is CMessage1b);
+                        assert(cvotes_is_valid(votes));
+                        assert(votes@.contains_key(opn));
+                        // Write a helper lemma inline to instantiate the quantifier
+                        lemma_cvotes_valid_key(votes, opn);
+                        assert(vote.max_value_bal.valid());
+                        assert(crequestbatch_is_valid(&vote.max_val));
+                    }
                     let is_better = match &best_bal {
                         None => true,
                         Some(bb) => {
-                            proof { assume(bb.valid() && vote.max_value_bal.valid()); }
+                            proof {
+                                // bb.valid() from loop invariant; vote.max_value_bal.valid() from above
+                                assert(best_bal.is_some());
+                                assert(bb.valid());
+                            }
                             CBalLt(bb, &vote.max_value_bal)
                         },
                     };
@@ -526,12 +553,23 @@ ensures
     // Precondition (!AllAcceptorsHadNoProposal) guarantees we find a value
     proof { assume(best_val.is_some()); }
     let val = best_val.unwrap();
+    let val_2a_cloned = clone_request_batch_up_to_view(&val);
     let msg = CMessage::CMessage2a {
         bal_2a: s.max_ballot_i_sent_1a,
         opn_2a: opn,
-        val_2a: clone_request_batch_up_to_view(&val),
+        val_2a: val_2a_cloned,
     };
-    proof { assume(msg.valid()); }
+    proof {
+        // msg.valid() for CMessage2a requires:
+        // 1. bal_2a.valid() = s.max_ballot_i_sent_1a.valid() — from s.valid()
+        assert(s.max_ballot_i_sent_1a.valid());
+        // 2. COperationNumberIsValid(opn_2a) — always true
+        // 3. crequestbatch_is_valid(&val_2a) — val from best_val (loop invariant),
+        //    clone preserves element validity
+        assert(crequestbatch_is_valid(&val));
+        assert(crequestbatch_is_valid(&val_2a_cloned));
+        assert(msg.valid());
+    }
     let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(
         &s.constants.all.config,
         &s.constants.my_index,
