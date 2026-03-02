@@ -13,6 +13,7 @@ use crate::generated::RSL::executor_gen::*;
 use crate::generated::RSL::learner_gen::*;
 use crate::generated::RSL::proposer_gen::*;
 use crate::generated::RSL::types_gen::*;
+use crate::implementation::RSL::types_i::abstractify_creplycache;
 use crate::implementation::common::upper_bound::CUpperBoundedAddition;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cbroadcast::*;
@@ -21,6 +22,8 @@ use crate::protocol::common::upper_bound::{LtUpperBound, LeqUpperBound, UpperBou
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::environment::{RslIo, RslPacket};
 use crate::protocol::RSL::message::RslMessage;
+use crate::protocol::RSL::executor::LExecutorProcessRequest;
+use crate::protocol::RSL::proposer::LProposerProcessRequest;
 use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
@@ -189,7 +192,18 @@ ensures
             let sent_packets = crate::generated::RSL::executor_gen::CExecutorProcessRequest(&s.executor, &received_packet);
             let r = (s.clone_up_to_view(), sent_packets);
             proof {
-                assume(LReplicaNextProcessRequest(s@, r.0@, received_packet@, r.1@.map(|i: int, p: CPacket| p@)));
+                // Bridge exec HashMap.contains_key → spec abstractify_creplycache.contains_key
+                lemma_creplycache_get(s.executor.reply_cache, received_packet.src);
+                assert(s@.executor.reply_cache.contains_key(received_packet@.src));
+                // Bridge seqno comparison through CReply View
+                assert(s.executor.reply_cache@[received_packet.src]@.seqno == cached_seqno as int);
+                assert(s@.executor.reply_cache[received_packet@.src].seqno == cached_seqno as int);
+                assert(received_packet@.msg->seqno_req == seqno_req as int);
+                assert(received_packet@.msg->seqno_req <= s@.executor.reply_cache[received_packet@.src].seqno);
+                // clone_up_to_view: s_ == s
+                assert(r.0@ == s@);
+                assert(LExecutorProcessRequest(s@.executor, received_packet@, r.1@.map(|i: int, p: CPacket| p@)));
+                assert(LReplicaNextProcessRequest(s@, r.0@, received_packet@, r.1@.map(|i: int, p: CPacket| p@)));
             }
             return r;
         }
@@ -205,8 +219,45 @@ ensures
             executor: s.executor.clone_up_to_view(),
         }, vec![]);
         proof {
-            assume(r.0.valid());
-            assume(LReplicaNextProcessRequest(s@, r.0@, received_packet@, r.1@.map(|i: int, p: CPacket| p@)));
+            // === Prove r.0.valid() ===
+            assert(s_proposer.valid()); // from CProposerProcessRequest ensures
+            // Constants consistency: LProposerProcessRequest preserves constants in both branches
+            assert(LProposerProcessRequest(s.proposer@, s_proposer@, received_packet@));
+            assert(s_proposer@.constants == s.proposer@.constants);
+            assert(r.0.constants@ == s.constants@);
+            assert(r.0.valid());
+
+            // === Prove LReplicaNextProcessRequest (else branch) ===
+            // Show spec if-condition is false to take else branch
+            if has_src {
+                // seqno_req > cached_seqno from exec flow (inner if returned)
+                lemma_creplycache_get(s.executor.reply_cache, received_packet.src);
+                assert(s@.executor.reply_cache.contains_key(received_packet@.src));
+                // But seqno_req > cached value, so spec's <= conjunct is false
+            } else {
+                // HashMap doesn't contain key → abstract map doesn't either
+                broadcast use crate::common::native::io_s::axiom_endpoint_view;
+                let ghost m = s.executor.reply_cache;
+                assert(!abstractify_creplycache(&m).contains_key(received_packet@.src)) by {
+                    if abstractify_creplycache(&m).contains_key(received_packet@.src) {
+                        let k = choose |k: EndPoint| m@.contains_key(k) && k@ == received_packet@.src;
+                        assert(k@ == received_packet.src@);
+                        assert(k == received_packet.src);
+                        assert(m@.contains_key(received_packet.src)); // contradicts !has_src
+                    }
+                };
+            }
+            assert(LProposerProcessRequest(s@.proposer, s_proposer@, received_packet@));
+            assert(r.0@ == LReplica {
+                constants: s@.constants,
+                nextHeartbeatTime: s@.nextHeartbeatTime,
+                proposer: r.0@.proposer,
+                acceptor: s@.acceptor,
+                learner: s@.learner,
+                executor: s@.executor,
+            });
+            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            assert(LReplicaNextProcessRequest(s@, r.0@, received_packet@, r.1@.map(|i: int, p: CPacket| p@)));
         }
         r
     }

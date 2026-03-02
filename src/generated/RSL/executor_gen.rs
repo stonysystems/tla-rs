@@ -100,7 +100,7 @@ ensures
 
 
 /// Connects HashMap.get(&key) through abstractify_creplycache to spec Map[key@].
-proof fn lemma_creplycache_get(cache: CReplyCache, key: EndPoint)
+pub proof fn lemma_creplycache_get(cache: CReplyCache, key: EndPoint)
     requires
         creplycache_is_valid(&cache),
         cache@.contains_key(key),
