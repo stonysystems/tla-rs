@@ -336,6 +336,42 @@ verus! {
     // Supporting invariant induction: VotesGrantedAreServers
     // =========================================================================
 
+    /// Helper: characterize what LNext can do to votes_granted.
+    /// Every element of s_.votes_granted is either in s.votes_granted,
+    /// or equals c.my_id, or is in c.servers.
+    spec fn votes_granted_change_bounded(
+        s: LState, s_: LState, c: LConstants
+    ) -> bool {
+        forall |v: int| s_.votes_granted.contains(v) ==> {
+            ||| s.votes_granted.contains(v)
+            ||| v == c.my_id
+            ||| c.servers.contains(v)
+        }
+    }
+
+    /// Prove that LNext preserves the property that votes_granted elements
+    /// come from {old votes} ∪ {my_id} ∪ c.servers.
+    proof fn lemma_lnext_votes_bounded(s: LState, s_: LState, c: LConstants)
+        requires LNext(s, s_, c)
+        ensures votes_granted_change_bounded(s, s_, c)
+    {
+        // LNext is a disjunction. Verus will case-split on which branch is taken.
+        // For each branch, the spec explicitly sets s_.votes_granted to one of:
+        //   - s.votes_granted (frame, most branches)
+        //   - Set::empty().insert(c.my_id) (LTimeout)
+        //   - s.votes_granted.insert(voter) or s_mid.votes_granted.insert(voter)
+        //     where c.servers.contains(voter) (LReceiveVoteGranted, LReceiveVoteAndBecomeLeader)
+        //   - Set::empty() (step_down_if_needed with higher term)
+        //   - s.votes_granted (via step_down_if_needed with same term)
+        //
+        // In all cases, every element of s_.votes_granted is either in
+        // s.votes_granted, equals c.my_id, or is in c.servers.
+        //
+        // Note: step_down_if_needed(s, term) when term > s.current_term sets
+        // votes_granted = Set::empty(). When term <= current_term, returns s unchanged.
+        // The s_mid passed to sub-actions has votes_granted ⊆ s.votes_granted ∪ {}.
+    }
+
     pub proof fn lemma_votes_granted_are_servers_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -357,37 +393,28 @@ verus! {
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
 
+        // Establish that votes_granted changes are bounded
+        lemma_lnext_votes_bounded(s, s_, c);
+
         assert forall |i: int, v: int|
             0 <= i < ds_.num_servers
             && ds_.server_states[i].votes_granted.contains(v)
         implies 0 <= v < ds_.num_servers by {
             if i != server_id {
-                // Unchanged server: use induction hypothesis
                 assert(ds_.server_states[i] == ds.server_states[i]);
-                assert(VotesGrantedAreServers(ds));
             } else {
-                // Stepping server: examine which votes were added
-                // LTimeout: votes_granted = {my_id} — my_id is a valid server
-                // LReceiveVoteGranted: adds voter where c.servers.contains(voter)
-                // LReceiveVoteAndBecomeLeader: adds voter where c.servers.contains(voter)
-                // LStepDown/LFollowerAppendEntries with higher term: votes_granted = empty set
-                // Other actions: votes_granted unchanged from s
-                //
-                // In all cases, new voters are in c.servers which is {0..num_servers}
-                // or inherited from the induction hypothesis.
-                if s_.votes_granted.contains(v) && !s.votes_granted.contains(v) {
-                    // v is newly added. This happens in:
-                    // - LTimeout: v == c.my_id, so 0 <= v < num_servers by WellFormed
-                    // - LReceiveVoteGranted / LReceiveVoteAndBecomeLeader: c.servers.contains(v)
-                    //   c.servers == {j | 0 <= j < num_servers}, so 0 <= v < num_servers
+                // By lemma_lnext_votes_bounded: v is in s.votes_granted,
+                // or v == c.my_id, or c.servers.contains(v)
+                assert(votes_granted_change_bounded(s, s_, c));
+                if s.votes_granted.contains(v) {
+                    // IH: VotesGrantedAreServers(ds) gives 0 <= v < num_servers
+                } else if v == c.my_id {
                     assert(WellFormedRaftDistributed(ds));
-                    assert(c.servers == Set::new(|j: int| 0 <= j < ds.num_servers));
-                    // Verus can resolve this from the spec definitions
-                    assume(0 <= v < ds_.num_servers);
-                } else if s.votes_granted.contains(v) {
-                    // Inherited from previous state
-                    assert(VotesGrantedAreServers(ds));
-                    assert(0 <= v < ds.num_servers);
+                    assert(0 <= c.my_id < ds.num_servers);
+                } else {
+                    // c.servers.contains(v)
+                    assert(WellFormedRaftDistributed(ds));
+                    assert(c.servers =~= Set::new(|j: int| 0 <= j < ds.num_servers));
                 }
             }
         }
@@ -396,6 +423,29 @@ verus! {
     // =========================================================================
     // Supporting invariant induction: CandidateOrLeaderVotedForSelf
     // =========================================================================
+
+    /// Helper: if LNext produces a Candidate or Leader in s_, then
+    /// s_.votes_granted contains c.my_id, given that the same holds
+    /// for s if s was Candidate or Leader.
+    proof fn lemma_lnext_self_vote_preserved(s: LState, s_: LState, c: LConstants)
+        requires
+            LNext(s, s_, c),
+            (s.role is Candidate || s.role is Leader) ==>
+                s.votes_granted.contains(c.my_id),
+        ensures
+            (s_.role is Candidate || s_.role is Leader) ==>
+                s_.votes_granted.contains(c.my_id),
+    {
+        // Verus case-splits on LNext branches.
+        // LTimeout: s_ is Candidate, votes_granted = Set::empty().insert(my_id).
+        // LReceiveVoteGranted/LReceiveVoteAndBecomeLeader:
+        //   s was Candidate, so s.votes_granted.contains(my_id).
+        //   s_.votes_granted = s.votes_granted.insert(voter) or s_mid.votes_granted.insert(voter)
+        //   where s_mid.votes_granted ⊆ s.votes_granted (step_down clears votes to empty,
+        //   but then s_mid is Follower → not Candidate → those branches don't apply).
+        // Leader-preserving actions: s_.votes_granted == s.votes_granted.
+        // Step-down/follower actions: s_ is Follower → conclusion vacuous.
+    }
 
     pub proof fn lemma_candidate_or_leader_voted_for_self_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
@@ -414,69 +464,22 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j])
         };
 
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        // Use helper lemma for the stepping server
+        assert(CandidateOrLeaderVotedForSelf(ds));
+        lemma_lnext_self_vote_preserved(s, s_, c);
+
         assert forall |i: int|
             0 <= i < ds_.num_servers
             && (ds_.server_states[i].role is Candidate || ds_.server_states[i].role is Leader)
         implies ds_.server_states[i].votes_granted.contains(ds_.server_constants[i].my_id) by {
             if i != server_id {
                 assert(ds_.server_states[i] == ds.server_states[i]);
-                assert(CandidateOrLeaderVotedForSelf(ds));
-            } else {
-                let s = ds.server_states[server_id];
-                let s_ = ds_.server_states[server_id];
-                let c = ds.server_constants[server_id];
-                // LNext cases where s_ is Candidate or Leader:
-                // - LTimeout: s_ is Candidate, votes_granted = {my_id}.insert(my_id) = {my_id}
-                // - LReceiveVoteGranted: s_ preserves role (Candidate), votes_granted grows.
-                //   s was Candidate, so by IH, s.votes_granted.contains(my_id).
-                //   s_.votes_granted = s.votes_granted.insert(voter), still contains my_id.
-                // - LReceiveVoteAndBecomeLeader: s_ is Leader, votes_granted = s.votes_granted.insert(voter).
-                //   s was Candidate, so by IH contains my_id. Insert preserves membership.
-                // - LClientRequest, LSendAppendEntries, LHandleAppendResponse, etc.:
-                //   s_ preserves role and votes_granted from s. Use IH.
-                // - LStepDown: s_ is Follower. Vacuously true.
-                // - LFollowerAppendEntries: s_ is Follower. Vacuously true.
-                if s.role is Candidate || s.role is Leader {
-                    assert(CandidateOrLeaderVotedForSelf(ds));
-                    assert(s.votes_granted.contains(c.my_id));
-                    // All LNext branches where s_ is Candidate/Leader either:
-                    // (1) Keep votes_granted == s.votes_granted (most actions), or
-                    // (2) Set votes_granted = s.votes_granted.insert(voter)
-                    //     (LReceiveVoteGranted, LReceiveVoteAndBecomeLeader), or
-                    // (3) Set votes_granted = Set::empty().insert(my_id) (LTimeout)
-                    // In cases (1) and (2), s.votes_granted.contains(my_id) implies
-                    //   s_.votes_granted.contains(my_id) (insert preserves membership).
-                    // In case (3), Set::empty().insert(my_id).contains(my_id) is true.
-                    // Cases where s_ is Follower (step_down, LFollowerAppendEntries) are vacuous.
-                    //
-                    // Verus can resolve this from LNext's spec structure:
-                    // Each branch explicitly sets s_.votes_granted.
-                    // We help by noting that insert preserves existing members.
-                    assert(s.votes_granted.insert(c.my_id).contains(c.my_id));
-                    // For any voter: s.votes_granted.insert(voter).contains(my_id)
-                    // because s.votes_granted.contains(my_id).
-                    // Verus should resolve this from the LNext case analysis.
-                    assume(s_.votes_granted.contains(c.my_id));
-                } else {
-                    // s was Follower. s_ is Candidate or Leader.
-                    // Only way Follower -> Candidate: LTimeout, which sets
-                    //   votes_granted = Set::empty().insert(my_id)
-                    //   So votes_granted.contains(my_id) holds.
-                    // Follower -> Leader: LReceiveVoteAndBecomeLeader requires
-                    //   s.role is Candidate, not Follower. So not reachable.
-                    // step_down_if_needed(s, term) when s is Follower stays Follower
-                    //   (since new term > current means Follower, or no change).
-                    //   Actually: step_down_if_needed for Follower:
-                    //     if new_term > current_term: stays Follower (explicit in spec)
-                    //     else: s unchanged (Follower)
-                    //   Then LHandleVoteResponseMsg: s_mid.role is not Candidate → no-op (s_ == s_mid)
-                    //   So s_ is Follower → vacuous.
-                    //
-                    // Only LTimeout can go Follower → Candidate:
-                    assert(Set::<int>::empty().insert(c.my_id).contains(c.my_id));
-                    assume(s_.votes_granted.contains(c.my_id));
-                }
             }
+            // For i == server_id: lemma_lnext_self_vote_preserved gives the result
         }
     }
 
@@ -518,6 +521,24 @@ verus! {
     // Supporting invariant induction: LeaderHasQuorum
     // =========================================================================
 
+    /// Helper: if s is Leader with quorum, and LNext produces s_ that is also Leader,
+    /// then s_ still has quorum. Also handles Candidate → Leader via LReceiveVoteAndBecomeLeader.
+    proof fn lemma_lnext_leader_quorum_preserved(s: LState, s_: LState, c: LConstants)
+        requires
+            LNext(s, s_, c),
+            (s.role is Leader) ==> s.votes_granted.len() >= c.quorum_size,
+        ensures
+            (s_.role is Leader) ==> s_.votes_granted.len() >= c.quorum_size,
+    {
+        // LNext case analysis:
+        // Leader-preserving actions: s_.votes_granted == s.votes_granted, s_.role == s.role
+        //   → s.role is Leader → s.votes_granted.len() >= quorum_size → same for s_
+        // LReceiveVoteAndBecomeLeader: guard checks votes_granted.insert(voter).len() >= quorum_size
+        //   s_.votes_granted == s.votes_granted.insert(voter) (via LHandleVoteResponseMsg)
+        // Step-down: s_ is Follower → conclusion vacuous
+        // LTimeout: s_ is Candidate → conclusion vacuous
+    }
+
     pub proof fn lemma_leader_has_quorum_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -535,43 +556,52 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j])
         };
 
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        // Use helper for stepping server
+        assert(LeaderHasQuorum(ds));
+        lemma_lnext_leader_quorum_preserved(s, s_, c);
+
         assert forall |i: int|
             0 <= i < ds_.num_servers
             && ds_.server_states[i].role is Leader
         implies ds_.server_states[i].votes_granted.len() >= ds_.server_constants[i].quorum_size by {
             if i != server_id {
-                // Unchanged server: use induction hypothesis
                 assert(ds_.server_states[i] == ds.server_states[i]);
-                assert(LeaderHasQuorum(ds));
-            } else {
-                let s = ds.server_states[server_id];
-                let s_ = ds_.server_states[server_id];
-                let c = ds.server_constants[server_id];
-                // s_ is Leader. How did it become/remain Leader?
-                if s.role is Leader {
-                    // Was already Leader. LeaderHasQuorum(ds) applies.
-                    // votes_granted may have changed but:
-                    // - LClientRequest, LSendAppendEntries: votes_granted unchanged
-                    // - LHandleAppendResponse/Reject: votes_granted unchanged
-                    // - LAdvanceCommitIndex: votes_granted unchanged
-                    // All Leader-preserving actions keep votes_granted unchanged.
-                    assert(LeaderHasQuorum(ds));
-                    assert(s.votes_granted.len() >= c.quorum_size);
-                    // s_.votes_granted == s.votes_granted for all Leader-preserving actions
-                    assume(s_.votes_granted.len() >= c.quorum_size);
-                } else {
-                    // Became Leader from Candidate: LReceiveVoteAndBecomeLeader
-                    // This requires votes_granted.insert(voter).len() >= quorum_size
-                    // which is the guard in LHandleVoteResponseMsg
-                    assume(s_.votes_granted.len() >= c.quorum_size);
-                }
             }
+            // For i == server_id: lemma_lnext_leader_quorum_preserved gives the result
         }
     }
 
     // =========================================================================
     // Supporting invariant induction: CommitIndexBounded
     // =========================================================================
+
+    /// Helper: LNext preserves commit_index <= log.len() for most branches.
+    /// The one exception is LFollowerAppendEntries where ae_leader_commit
+    /// is not bounded by the follower's log length in the spec model.
+    /// This is a spec modeling simplification — the real Raft protocol uses
+    /// min(leader_commit, log.len()), but our spec just uses leader_commit.
+    /// Fixing this requires a spec change + transpiler regeneration.
+    proof fn lemma_lnext_commit_bounded(s: LState, s_: LState, c: LConstants)
+        requires
+            LNext(s, s_, c),
+            s.commit_index <= s.log.len(),
+        ensures
+            s_.commit_index <= s_.log.len(),
+    {
+        // Most LNext branches preserve both commit_index and log, or update them in bounded ways:
+        // - LTimeout, LReceiveVoteGranted, LBecomeLeader, LSendAppendEntries,
+        //   LHandleAppendResponse, LHandleAppendReject, LStepDown: both unchanged.
+        // - LClientRequest: log grows by 1, commit_index unchanged → still bounded.
+        // - LAdvanceCommitIndex: new_commit_index <= s.log.len() by spec precondition.
+        // - LFollowerAppendEntries: ae_leader_commit is unbounded in the spec model.
+        //   The real Raft paper uses min(leaderCommit, lastLogIndex), but our spec
+        //   doesn't enforce this bound. This assume covers that gap.
+        assume(s_.commit_index <= s_.log.len());
+    }
 
     pub proof fn lemma_commit_index_bounded_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
@@ -590,6 +620,13 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j])
         };
 
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        assert(CommitIndexBounded(ds));
+        lemma_lnext_commit_bounded(s, s_, c);
+
         assert forall |i: int|
             0 <= i < ds_.num_servers
         implies
@@ -597,38 +634,6 @@ verus! {
         by {
             if i != server_id {
                 assert(ds_.server_states[i] == ds.server_states[i]);
-                assert(CommitIndexBounded(ds));
-            } else {
-                let s = ds.server_states[server_id];
-                let s_ = ds_.server_states[server_id];
-                let c = ds.server_constants[server_id];
-                // LNext branches:
-                // - LTimeout: commit_index unchanged, log unchanged
-                // - LGrantVote: commit_index unchanged, log unchanged
-                // - LReceiveVoteGranted: commit_index unchanged, log unchanged
-                // - LBecomeLeader: commit_index unchanged, log unchanged
-                // - LClientRequest: log grows by 1, commit_index unchanged
-                // - LSendAppendEntries: both unchanged
-                // - LFollowerAppendEntries: log may grow, commit_index may increase to leader_commit
-                //   ae_leader_commit is the leader's commit_index which is <= leader's log.len()
-                //   But follower's log may be shorter. Need: new commit_index <= new log.len()
-                // - LHandleAppendResponse/Reject: log unchanged, commit_index unchanged
-                // - LAdvanceCommitIndex: new_commit_index <= s.log.len() by precondition
-                // - LStepDown: log unchanged, commit_index unchanged
-                assert(CommitIndexBounded(ds));
-                assert(s.commit_index <= s.log.len());
-                // Most actions preserve both commit_index and log.
-                // LClientRequest: s_.log = s.log.push(...), s_.commit_index = s.commit_index
-                //   s.commit_index <= s.log.len() < s.log.len() + 1 = s_.log.len()
-                // LAdvanceCommitIndex: s_.commit_index = new_commit_index <= s.log.len() = s_.log.len()
-                // LFollowerAppendEntries: may increase both. The commit_index update:
-                //   s_.commit_index = max(s.commit_index, ae_leader_commit)
-                //   s_.log = s.log.push(...) or s.log
-                //   ae_leader_commit could exceed s_.log.len() — but the spec allows this!
-                //   Actually in the spec, commit_index is set to ae_leader_commit if it's larger.
-                //   The spec doesn't bound this by log length. This is a modeling weakness.
-                //   We assume it here.
-                assume(s_.commit_index <= s_.log.len());
             }
         }
     }
@@ -672,30 +677,37 @@ verus! {
     // Invariant holds for all reachable states (by induction on behavior)
     // =========================================================================
 
+    /// Prove the invariant holds at step k of a valid behavior.
+    /// Uses recursion on k (strong induction via decreases k).
+    pub proof fn lemma_invariant_at_step(b: RaftBehavior, k: int)
+        requires
+            IsValidRaftBehavior(b),
+            0 <= k < b.len(),
+        ensures
+            RaftSafetyInvariant(b[k])
+        decreases k
+    {
+        if k == 0 {
+            lemma_init_establishes_invariant(b[0]);
+        } else {
+            // By recursion, the invariant holds at step k-1
+            lemma_invariant_at_step(b, k - 1);
+            // b[k-1] -> b[k] is a valid RaftDistributedNext step
+            assert(RaftDistributedNext(b[k - 1], b[k]));
+            // By the inductive step, the invariant is preserved
+            lemma_safety_invariant_inductive(b[k - 1], b[k]);
+        }
+    }
+
+    /// The invariant holds for all reachable states in a valid behavior.
     pub proof fn lemma_invariant_holds_for_behavior(b: RaftBehavior)
         requires IsValidRaftBehavior(b)
         ensures forall |i: int| #![trigger b[i]] 0 <= i < b.len() ==> RaftSafetyInvariant(b[i])
-        decreases b.len()
     {
-        lemma_init_establishes_invariant(b[0]);
-
-        // Induct on behavior length
-        if b.len() > 1 {
-            // For each step, the invariant is preserved
-            assert forall |i: int| #![trigger b[i]]
-                0 <= i < b.len()
-            implies RaftSafetyInvariant(b[i]) by {
-                if i == 0 {
-                    lemma_init_establishes_invariant(b[0]);
-                } else {
-                    // This requires an inner induction. We use assume
-                    // for the inductive step on i > 0 since Verus doesn't
-                    // directly support induction on universally quantified
-                    // behavior indices. The real proof would use a loop
-                    // invariant or explicit recursion.
-                    assume(RaftSafetyInvariant(b[i]));
-                }
-            }
+        assert forall |i: int| #![trigger b[i]]
+            0 <= i < b.len()
+        implies RaftSafetyInvariant(b[i]) by {
+            lemma_invariant_at_step(b, i);
         }
     }
 }
