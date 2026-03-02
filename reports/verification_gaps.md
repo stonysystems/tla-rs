@@ -8,9 +8,9 @@ Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping r
 - 5 new files: `src/protocol/Raft/refinement_proof/{state_machine,invariants,induction,committed,refinement}.rs`
 - Top-level theorem: `lemma_refinement_correct` — every valid Raft behavior refines to a sequential committed log
 - Phase 32.3.1-32.3.2: Detailed invariant induction proofs with supporting invariants (VotesGrantedAreServers, CandidateOrLeaderVotedForSelf, VotersVotedForCandidate); 6 LNext case analysis assumes eliminated via helper lemmas
-- 10 targeted `assume()` across 2 files (see §6 below): 6 in invariants.rs, 4 in committed.rs
+- 9 targeted `assume()` across 2 files (see §6 below): 6 in invariants.rs, 3 in committed.rs
 - 0 `external_body` in Raft refinement proof
-- Verification: 651 verified, 0 errors (up from 632 pre-Phase 32)
+- Verification: 660 verified, 0 errors (up from 632 pre-Phase 32)
 
 ## Changes from Phase 31
 
@@ -178,7 +178,7 @@ Total `assume()` across RSL proof files: 77 (5 in formerly-external_body + 72 in
 
 ## 6. Raft Safety Refinement Proof — `assume()` Summary (Phase 32)
 
-10 targeted `assume()` across the Raft refinement proof files:
+9 targeted `assume()` across the Raft refinement proof files:
 
 ### invariants.rs (6 assumes)
 
@@ -188,30 +188,41 @@ Total `assume()` across RSL proof files: 77 (5 in formerly-external_body + 72 in
 - `lemma_lnext_leader_quorum_preserved`: Verus auto-case-splits to prove Leader quorum preserved
 - `lemma_invariant_at_step`: Clean recursive induction with `decreases k` (replaces inner assume)
 
+Phase 32.3.3: Quorum intersection lemma added to sets.rs (`lemma_quorum_intersection`).
+Election Safety `assume(false)` replaced with structured quorum intersection argument + `assume(stepping == other)`.
+
+Phase 32.3.4-32.3.6: Log-level invariants (LogMatching, LeaderCompleteness, StateMachineSafety)
+moved from bare assumes in composite function to structured proof functions with:
+- `lemma_lnext_log_preserved_or_extended`: Verified helper proving log is unchanged or extended by 1 entry for all LNext branches
+- `lemma_log_matching_inductive`: Structured proof documenting the two network-level gaps (leader entry uniqueness, prev_log consistency)
+- `lemma_leader_completeness_inductive`: Structured proof documenting quorum intersection + log up-to-date argument
+- `lemma_state_machine_safety_inductive`: Documents dependency on LogMatching + LeaderCompleteness
+
 Remaining assumes:
 
 | # | Line | Function | assume | Root Cause |
 |---|------|----------|--------|------------|
-| 1 | 328 | `lemma_election_safety_inductive` | `assume(false)` (Candidate→Leader case) | Quorum intersection argument requires Set cardinality reasoning + VotersVotedForCandidate |
-| 2 | 517 | `lemma_voters_voted_for_candidate_inductive` | `VotersVotedForCandidate(ds_)` | Network-level invariant requires message provenance tracking |
-| 3 | 603 | `lemma_lnext_commit_bounded` | `commit_index <= log.len()` | Simplified spec lacks `min(ae_leader_commit, log.len())` guard |
-| 4 | 671 | `lemma_safety_invariant_inductive` | `LogMatching(ds_)` | Requires prev_log_index/term consistency checks in AppendEntries |
-| 5 | 672 | `lemma_safety_invariant_inductive` | `LeaderCompleteness(ds_)` | Requires quorum intersection (pigeonhole) argument |
-| 6 | 673 | `lemma_safety_invariant_inductive` | `StateMachineSafety(ds_)` | Requires Leader Completeness + Log Matching composition |
+| 1 | 376 | `lemma_election_safety_inductive` | `assume(stepping == other)` | Quorum intersection requires VotersVotedForCandidate(ds_) + VotesGrantedAreServers(ds_) |
+| 2 | 565 | `lemma_voters_voted_for_candidate_inductive` | `VotersVotedForCandidate(ds_)` | Network-level invariant requires message provenance tracking |
+| 3 | 651 | `lemma_lnext_commit_bounded` | `commit_index <= log.len()` | Simplified spec lacks `min(ae_leader_commit, log.len())` guard |
+| 4 | 778 | `lemma_log_matching_inductive` | `LogMatching(ds_)` | Spec lacks prev_log_index/term consistency check in LFollowerAppendEntries |
+| 5 | 829 | `lemma_leader_completeness_inductive` | `LeaderCompleteness(ds_)` | Requires LogMatching + quorum intersection + log up-to-date |
+| 6 | 862 | `lemma_state_machine_safety_inductive` | `StateMachineSafety(ds_)` | Depends on LeaderCompleteness + LogMatching |
 
 ### induction.rs (0 assumes)
 
 Delegates to `lemma_safety_invariant_inductive` from invariants.rs.
 `lemma_invariant_holds_throughout_behavior` uses clean recursive induction (no assumes).
 
-### committed.rs (4 assumes)
+### committed.rs (3 assumes)
+
+WellFormedness assume eliminated via seq-based `max_commit_index_seq` helper (avoids RaftDistributedState sub-state construction).
 
 | # | Line | Function | assume | Root Cause |
 |---|------|----------|--------|------------|
-| 7 | 97 | `lemma_max_commit_index_ge_server` | WellFormedRaftDistributed(sub_ds) | Sub-state from Seq::subrange doesn't preserve WellFormedness invariant on constants |
-| 8 | 134 | `lemma_max_commit_index_nondecreasing` | MaxCommitIndex(ds_) ≥ MaxCommitIndex(ds) | Follows from per-server monotonicity but requires recursive MaxCommitIndex induction |
-| 9 | 173 | `lemma_committed_log_monotone` | new_log.len() ≥ old_log.len() | Connection between MaxCommitIndex and ExtractLogValues length |
-| 10 | 180 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
+| 7 | 107 | `lemma_max_commit_index_nondecreasing` | MaxCommitIndex(ds_) ≥ MaxCommitIndex(ds) | Follows from per-server monotonicity but requires recursive MaxCommitIndex induction |
+| 8 | 146 | `lemma_committed_log_monotone` | new_log.len() ≥ old_log.len() | Connection between MaxCommitIndex and ExtractLogValues length |
+| 9 | 153 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
 
 `lemma_abstract_step_valid` stutter case: proved via `=~=` extensional equality (previously assume).
 
@@ -225,4 +236,4 @@ All proofs fully mechanized. Top-level `lemma_refinement_correct` has no assumes
 - **Assume 1 (ElectionSafety quorum intersection)**: Depends on assumes 2 and 4-6 being resolved first (VotersVotedForCandidate provides the crucial link that quorum overlap implies same candidate)
 - **Assume 2 (VotersVotedForCandidate)**: Add network message provenance tracking (src/dst fields on messages, delivered-from invariant) to the distributed model, so that receiving a VoteResponse from voter `v` proves `v` actually voted for the candidate
 - **Assumes 4-6 (LogMatching, LeaderCompleteness, StateMachineSafety)**: Strengthen `LFollowerAppendEntries` to reject entries when `ae_has_entry && ae_prev_index < s.log.len() && s.log[ae_prev_index].term != ae_prev_term` (the Raft §5.3 consistency check). This enables LogMatching induction; LeaderCompleteness and StateMachineSafety follow from LogMatching + quorum intersection
-- **Assumes 7-10 (committed.rs)**: Improve recursive MaxCommitIndex induction infrastructure, add Seq::subrange well-formedness lemmas
+- **Assumes 7-9 (committed.rs)**: MaxCommitIndex monotonicity (needs recursive induction over seq-based helper) + StateMachineSafety dependency for entry agreement

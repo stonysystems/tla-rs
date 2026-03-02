@@ -61,7 +61,8 @@ verus! {
     // MaxCommitIndex is monotonically non-decreasing
     // =========================================================================
 
-    /// Helper: MaxCommitIndex is at least each server's commit_index
+    /// Helper: MaxCommitIndex is at least each server's commit_index.
+    /// Uses seq-based helper to avoid sub-state WellFormedness issues.
     pub proof fn lemma_max_commit_index_ge_server(
         ds: RaftDistributedState, j: int
     )
@@ -70,39 +71,11 @@ verus! {
             0 <= j < ds.num_servers,
         ensures
             MaxCommitIndex(ds) >= ds.server_states[j].commit_index
-        decreases ds.num_servers
     {
-        if ds.num_servers > 0 {
-            if j == ds.num_servers - 1 {
-                // j is the last server; its commit_index is directly compared
-            } else {
-                // j is in the sub-range 0..n-1; recurse
-                let sub_ds = RaftDistributedState {
-                    server_states: ds.server_states.subrange(0, ds.num_servers - 1),
-                    server_constants: ds.server_constants.subrange(0, ds.num_servers - 1),
-                    network: ds.network,
-                    num_servers: ds.num_servers - 1,
-                };
-                // Need j < sub_ds.num_servers, which holds since j < ds.num_servers - 1
-                assert(sub_ds.server_states.len() == ds.num_servers - 1);
-                assert(sub_ds.server_constants.len() == ds.num_servers - 1);
-                assert(sub_ds.num_servers == ds.num_servers - 1);
-                // sub_ds.server_states[j] == ds.server_states[j] for j < n-1
-                assert(sub_ds.server_states[j] == ds.server_states.subrange(0, ds.num_servers - 1)[j]);
-
-                // Need WellFormedRaftDistributed(sub_ds) for the recursive call.
-                // This is hard to establish because my_id, quorum_size, servers
-                // in sub_ds.server_constants won't match (they still have the original values).
-                // Use assume for this structural property.
-                assume(WellFormedRaftDistributed(sub_ds));
-                lemma_max_commit_index_ge_server(sub_ds, j);
-                // MaxCommitIndex(sub_ds) >= sub_ds.server_states[j].commit_index
-                //                        == ds.server_states[j].commit_index
-                // MaxCommitIndex(ds) = max(ds.server_states[n-1].commit_index, MaxCommitIndex(sub_ds))
-                //                    >= MaxCommitIndex(sub_ds)
-                //                    >= ds.server_states[j].commit_index
-            }
-        }
+        // Establish equivalence: MaxCommitIndex(ds) == max_commit_index_seq(ds.server_states)
+        lemma_max_commit_index_eq_seq(ds);
+        // Use the seq-based lemma which doesn't need WellFormedness for recursion
+        lemma_max_commit_seq_ge_server(ds.server_states, j);
     }
 
     /// MaxCommitIndex is non-decreasing across a distributed step

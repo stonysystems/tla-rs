@@ -210,6 +210,98 @@ verus! {
     }
 
     // =========================================================================
+    // Helper: Seq-based max commit index (avoids WellFormedness constraints)
+    // =========================================================================
+
+    /// Maximum commit_index across a sequence of server states.
+    /// This is equivalent to MaxCommitIndex but takes only the server_states
+    /// sequence, avoiding the need for WellFormedRaftDistributed in proofs.
+    pub open spec fn max_commit_index_seq(states: Seq<LState>) -> int
+        decreases states.len()
+    {
+        if states.len() <= 0 {
+            0
+        } else {
+            let last_commit = states[states.len() - 1].commit_index;
+            let rest_max = max_commit_index_seq(states.subrange(0, states.len() - 1));
+            if last_commit > rest_max { last_commit } else { rest_max }
+        }
+    }
+
+    /// Equivalence: MaxCommitIndex(ds) == max_commit_index_seq(ds.server_states)
+    /// when ds.server_states.len() == ds.num_servers
+    pub proof fn lemma_max_commit_index_eq_seq(ds: RaftDistributedState)
+        requires ds.server_states.len() == ds.num_servers
+        ensures MaxCommitIndex(ds) == max_commit_index_seq(ds.server_states)
+        decreases ds.num_servers
+    {
+        if ds.num_servers > 0 {
+            let sub_ds = RaftDistributedState {
+                server_states: ds.server_states.subrange(0, ds.num_servers - 1),
+                server_constants: ds.server_constants.subrange(0, ds.num_servers - 1),
+                network: ds.network,
+                num_servers: ds.num_servers - 1,
+            };
+            assert(sub_ds.server_states.len() == ds.num_servers - 1);
+            lemma_max_commit_index_eq_seq(sub_ds);
+        }
+    }
+
+    /// max_commit_index_seq is at least each server's commit_index
+    pub proof fn lemma_max_commit_seq_ge_server(states: Seq<LState>, j: int)
+        requires 0 <= j < states.len()
+        ensures max_commit_index_seq(states) >= states[j].commit_index
+        decreases states.len()
+    {
+        if states.len() > 0 {
+            if j == states.len() - 1 {
+                // j is the last element; directly compared in the definition
+            } else {
+                // j < states.len() - 1; recurse on subrange
+                let sub = states.subrange(0, states.len() - 1);
+                assert(sub[j] == states[j]);
+                lemma_max_commit_seq_ge_server(sub, j);
+                // max_commit_index_seq(sub) >= sub[j].commit_index == states[j].commit_index
+                // max_commit_index_seq(states) >= max_commit_index_seq(sub)
+            }
+        }
+    }
+
+    /// If every server's commit_index in states' >= that in states,
+    /// then max_commit_index_seq(states') >= max_commit_index_seq(states).
+    pub proof fn lemma_max_commit_seq_monotone(
+        states: Seq<LState>, states_: Seq<LState>
+    )
+        requires
+            states.len() == states_.len(),
+            forall |j: int| 0 <= j < states.len()
+                ==> #[trigger] states_[j].commit_index >= states[j].commit_index,
+        ensures
+            max_commit_index_seq(states_) >= max_commit_index_seq(states)
+        decreases states.len()
+    {
+        if states.len() > 0 {
+            let n = states.len();
+            let sub = states.subrange(0, n - 1);
+            let sub_ = states_.subrange(0, n - 1);
+
+            // Per-element monotonicity for the subrange
+            assert forall |j: int| 0 <= j < sub.len()
+            implies #[trigger] sub_[j].commit_index >= sub[j].commit_index by {
+                assert(sub[j] == states[j]);
+                assert(sub_[j] == states_[j]);
+            }
+
+            lemma_max_commit_seq_monotone(sub, sub_);
+            // max_commit_index_seq(sub_) >= max_commit_index_seq(sub)
+            // states_[n-1].commit_index >= states[n-1].commit_index
+            // max_commit_index_seq(states_) = max(states_[n-1].commit_index, max_commit_index_seq(sub_))
+            //                                >= max(states[n-1].commit_index, max_commit_index_seq(sub))
+            //                                = max_commit_index_seq(states)
+        }
+    }
+
+    // =========================================================================
     // Helper Lemma: ExtractLogValues length
     // =========================================================================
 
