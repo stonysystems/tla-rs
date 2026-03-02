@@ -247,19 +247,28 @@ impl Marshalable for bool {
     }
   }
 
-  #[verifier(external_body)]
   exec fn deserialize(data: &Vec<u8>, start: usize) -> (res: Option<(Self, usize)>)
     // req, ens from trait
   {
-    if data.len() < 1 {
+    if start >= data.len() {
       return None;
     }
-    if start > data.len() - 1 {
-      return None;
+    let b = data[start];
+    if b == 0 {
+      proof {
+        assert(false as u8 == 0u8) by(compute_only);
+        assert(data@.subrange(start as int, start + 1) =~= seq![data@[start as int]]);
+      }
+      Some((false, start + 1))
+    } else if b == 1 {
+      proof {
+        assert(true as u8 == 1u8) by(compute_only);
+        assert(data@.subrange(start as int, start + 1) =~= seq![data@[start as int]]);
+      }
+      Some((true, start + 1))
+    } else {
+      None
     }
-    let end = start + 1;
-    let v = data[start] != 0;
-    Some((v, end))
   }
 
   proof fn lemma_serialization_is_not_a_prefix_of(&self, other: &Self)

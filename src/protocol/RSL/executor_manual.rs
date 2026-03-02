@@ -6,7 +6,6 @@
 // Helper lemmas
 // =============================================================================
 
-#[verifier(external_body)]
 proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestBatch, states: Vec<CAppState>, replies: Vec<CReply>)
     requires
         CAppStateIsValid(&state),
@@ -17,7 +16,36 @@ proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestB
         states.len() > 0,
         replies.len() == batch.len(),
         forall |j: int| 0 <= j < replies.len() ==> replies[j].valid(),
-{}
+{
+    let spec_batch = batch@.map(|i, x: CRequest| x@);
+    let spec_states = states@.map(|i, x: CAppState| x@);
+    let spec_replies = replies@.map(|i, x: CReply| x@);
+
+    // Length properties from spec-level lemma
+    lemma_HandleRequestBatch_spec_len(state@, spec_batch);
+    // .map() preserves .len(), so concrete lengths follow
+    assert(spec_states.len() == states@.len());
+    assert(spec_replies.len() == replies@.len());
+    assert(spec_batch.len() == batch@.len());
+
+    // Per-element properties: spec_replies[j].client == spec_batch[j].client
+    crate::protocol::RSL::state_machine::lemma_HandleRequestBatchTriggerHappy(
+        state@, spec_batch, spec_states, spec_replies,
+    );
+
+    // Reply validity: CReply.valid() = client@.valid_physical_address() (other parts trivially true)
+    assert forall |j: int| 0 <= j < replies.len() implies replies[j].valid() by {
+        // spec_replies[j] == replies[j]@ and spec_batch[j] == batch[j]@ by Seq::map indexing
+        assert(spec_replies[j] == replies[j]@);
+        assert(spec_batch[j] == batch[j]@);
+        // lemma_HandleRequestBatchTriggerHappy gives: spec_replies[j].client == spec_batch[j].client
+        // i.e. replies[j].client@ == batch[j].client@
+        assert(replies[j].client@ == batch[j].client@);
+        // batch[j].valid() from crequestbatch_is_valid implies batch[j].client@.valid_physical_address()
+        assert(batch[j].valid());
+        // Same abstract endpoint, so replies[j].client@.valid_physical_address()
+    };
+}
 
 proof fn lemma_RepliesAreReplyType(me: AbstractEndPoint, requests: RequestBatch, replies: Seq<Reply>, packets: Seq<RslPacket>)
     requires
