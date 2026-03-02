@@ -16,6 +16,7 @@ use std::result;
 use vstd::hash_set::HashSetWithView;
 use vstd::invariant;
 use vstd::prelude::*;
+use vstd::std_specs::cmp::PartialEqSpecImpl;
 use vstd::std_specs::hash::*;
 use vstd::{hash_map::*, map::*, prelude::*, seq::*, set::*};
 // Generated wrappers live in `crate::generated::RSL::election_gen`.
@@ -174,8 +175,17 @@ pub struct CRequestHeader {
     pub seqno : u64,
 }
 
+impl PartialEqSpecImpl for CRequestHeader {
+    open spec fn obeys_eq_spec() -> bool {
+        true
+    }
+
+    open spec fn eq_spec(&self, other: &CRequestHeader) -> bool {
+        self.client@ == other.client@ && self.seqno == other.seqno
+    }
+}
+
 impl PartialEq for CRequestHeader {
-    #[verifier(external_body)]
     fn eq(&self, other: &Self) -> bool {
         self.client.eq(&other.client) && self.seqno == other.seqno
     }

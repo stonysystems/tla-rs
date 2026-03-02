@@ -7,6 +7,7 @@ use std::net::UdpSocket;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use vstd::prelude::*;
 use vstd::slice::*;
+use vstd::std_specs::cmp::PartialEqSpecImpl;
 use vstd::std_specs::hash::*;
 use vstd::{modes::*, prelude::*, seq::*, *};
 
@@ -54,12 +55,28 @@ verus! {
         }
     }
 
+    impl PartialEqSpecImpl for EndPoint {
+        open spec fn obeys_eq_spec() -> bool {
+            true
+        }
+
+        open spec fn eq_spec(&self, other: &EndPoint) -> bool {
+            self@ == other@
+        }
+    }
+
     impl PartialEq for EndPoint{
-        #[verifier(external_body)]
         fn eq(&self, other: &Self) -> (result: bool)
             ensures result == (self@ == other@)
         {
-            self.id.len() == other.id.len() && self.id.iter().zip(&other.id).all(|(a, b)| a == b)
+            let r = crate::common::collections::seq_is_unique_v::do_end_points_match(self, other);
+            proof {
+                // do_end_points_match ensures r == (self == other) (structural equality)
+                // and r == (self@ == other@) (view equality).
+                // axiom_endpoint_view ensures e1@ == e2@ ==> e1 == e2.
+                broadcast use axiom_endpoint_view;
+            }
+            r
         }
     }
 
