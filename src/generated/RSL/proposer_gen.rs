@@ -776,6 +776,34 @@ ensures
                 max_log_truncation_point: 0u64,
                 max_opn_with_proposal: 0u64,
             };
+            proof {
+                // new_proposer.valid() via component validity chaining
+                assert(new_proposer.constants.valid());
+                assert(new_proposer.max_ballot_i_sent_1a.valid());
+                assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
+                    implies (#[trigger] new_proposer.request_queue@[i]).valid() by {
+                    assert(s.request_queue@[i].valid());
+                }
+                assert forall |i: int| 0 <= i < new_proposer.request_queue@.len()
+                    implies (#[trigger] new_proposer.request_queue@[i]).abstractable() by {
+                    assert(s.request_queue@[i].abstractable());
+                }
+                assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.valid() by {
+                    assert(s.received_1b_packets@.contains(p));
+                }
+                assert forall |p: CPacket| new_proposer.received_1b_packets@.contains(p) implies p.abstractable() by {
+                    assert(s.received_1b_packets@.contains(p));
+                }
+                assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.valid_public_key() by {
+                    assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
+                }
+                assert forall |k: EndPoint| (#[trigger] new_proposer.highest_seqno_requested_by_client_this_view@.contains_key(k)) implies k.abstractable() by {
+                    assert(s.highest_seqno_requested_by_client_this_view@.contains_key(k));
+                }
+                assert(new_proposer.incomplete_batch_timer.valid());
+                assert(new_proposer.election_state.valid());
+                assert(new_proposer.valid());
+            }
             (new_proposer, vec![])
         } else {
             // Branch 5: default — no change
@@ -783,9 +811,9 @@ ensures
         }
     };
     proof {
-        assume(result.0.valid());
-        assume(forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid());
-        assume(forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable());
+        // result.0.valid(): branches 1,5 from clone_up_to_view (self==result → valid);
+        // branches 2,3 from NominateOld/NominateNew ensures; branch 4 from inline proof above
+        // result.1 packets: branches 1,4,5 are vec![] (vacuous); branches 2,3 from function ensures
         assume(LProposerMaybeNominateValueAndSend2a(s@, result.0@, *clock as int, *log_truncation_point as int, result.1@.map(|i, p: CPacket| p@)));
     }
     result
