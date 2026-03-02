@@ -27,6 +27,7 @@ set_fields = ["votes_granted", "servers"]
     })""",
 ]
 "CFollowerAppendEntries" = [
+    "*ae_term >= s.current_term",
     "s.log@.len() < u64::MAX as int",
 ]
 "CHandleAppendEntriesMsg" = [

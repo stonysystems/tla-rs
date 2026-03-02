@@ -317,23 +317,26 @@ pub exec fn CFollowerAppendEntries(s: &CState, c: &CConstants, ae_term: &u64, ae
 requires
     s.valid(),
     c.valid(),
-    (*ae_term >= s.current_term),
+    *ae_term >= s.current_term,
     s.log@.len() < u64::MAX as int,
 ensures
     result.0.valid(),
     LFollowerAppendEntries(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
-        let mut __log = clone_log(&s.log);
-        if ae_has_entry {
+        let new_log_len = if ae_has_entry {
+            ((s.log.len() as u64) + 1)
+        } else {
+            (s.log.len() as u64)
+        };
+        { let mut __log = clone_log(&s.log); if ae_has_entry {
                         __log.push(CLogEntry {
     term: *ae_term,
     value: *ae_value,
 });
             
 
-        };
-        (CState {
+        }; (CState {
     current_term: *ae_term,
     has_voted: if (*ae_term > s.current_term) {
         false
@@ -347,7 +350,11 @@ ensures
     },
     log: __log,
     commit_index: if (*ae_leader_commit > s.commit_index) {
-        *ae_leader_commit
+        if (*ae_leader_commit <= new_log_len) {
+            *ae_leader_commit
+        } else {
+            new_log_len
+        }
     } else {
         s.commit_index.clone()
     },
@@ -368,7 +375,7 @@ ensures
         (s.log.len() as u64)
     },
     follower: c.my_id.clone(),
-}])
+}]) }
     };
     proof {
         lemma_empty_set_map();

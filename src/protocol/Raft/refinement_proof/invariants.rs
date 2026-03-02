@@ -630,9 +630,8 @@ verus! {
     /// Helper: LNext preserves commit_index <= log.len() for most branches.
     /// The one exception is LFollowerAppendEntries where ae_leader_commit
     /// is not bounded by the follower's log length in the spec model.
-    /// This is a spec modeling simplification — the real Raft protocol uses
-    /// min(leader_commit, log.len()), but our spec just uses leader_commit.
-    /// Fixing this requires a spec change + transpiler regeneration.
+    /// commit_index <= log.len() is preserved by all LNext branches.
+    /// LFollowerAppendEntries: spec caps commit_index = min(ae_leader_commit, new_log_len).
     proof fn lemma_lnext_commit_bounded(s: LState, s_: LState, c: LConstants)
         requires
             LNext(s, s_, c),
@@ -640,15 +639,16 @@ verus! {
         ensures
             s_.commit_index <= s_.log.len(),
     {
-        // Most LNext branches preserve both commit_index and log, or update them in bounded ways:
-        // - LTimeout, LReceiveVoteGranted, LBecomeLeader, LSendAppendEntries,
-        //   LHandleAppendResponse, LHandleAppendReject, LStepDown: both unchanged.
-        // - LClientRequest: log grows by 1, commit_index unchanged → still bounded.
-        // - LAdvanceCommitIndex: new_commit_index <= s.log.len() by spec precondition.
-        // - LFollowerAppendEntries: ae_leader_commit is unbounded in the spec model.
-        //   The real Raft paper uses min(leaderCommit, lastLogIndex), but our spec
-        //   doesn't enforce this bound. This assume covers that gap.
-        assume(s_.commit_index <= s_.log.len());
+        // Most LNext branches preserve both commit_index and log.
+        // LClientRequest: s_.log = s.log.push(...), s_.commit_index = s.commit_index
+        // LAdvanceCommitIndex: new_commit_index <= s.log.len() by spec precondition
+        // LFollowerAppendEntries: commit_index = min(ae_leader_commit, new_log_len)
+        //   which is <= new_log_len = s_.log.len() by construction
+        // step_down_if_needed: preserves commit_index and log
+        assert forall |term: int|
+            step_down_if_needed(s, term).commit_index == s.commit_index
+            && step_down_if_needed(s, term).log == s.log
+        by {}
     }
 
     pub proof fn lemma_commit_index_bounded_inductive(
@@ -683,6 +683,7 @@ verus! {
             if i != server_id {
                 assert(ds_.server_states[i] == ds.server_states[i]);
             }
+            // For i == server_id: lemma_lnext_commit_bounded gives the result
         }
     }
 

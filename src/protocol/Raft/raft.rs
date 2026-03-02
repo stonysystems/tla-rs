@@ -152,13 +152,15 @@ verus! {
     }
 
     /// Follower handles AppendEntries: accepts entries if term >= current_term
-    /// Simplified: appends single entry if has_entry, updates commit_index
+    /// Appends single entry if has_entry, updates commit_index (capped by new log length
+    /// per Raft paper: "set commitIndex = min(leaderCommit, index of last new entry)")
     pub open spec fn LFollowerAppendEntries(
         s: LState, s_: LState, c: LConstants,
         ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
         ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
         sent_packets: Seq<LRaftMessage>,
     ) -> bool {
+        let new_log_len: int = if ae_has_entry { s.log.len() as int + 1 } else { s.log.len() as int };
         &&& ae_term >= s.current_term
         // Accept: step down to follower if needed, append entry
         &&& s_.current_term == ae_term
@@ -169,7 +171,7 @@ verus! {
             s.log.push(LLogEntry { term: ae_term, value: ae_value })
         } else { s.log })
         &&& s_.commit_index == (if ae_leader_commit > s.commit_index {
-            ae_leader_commit
+            if ae_leader_commit <= new_log_len { ae_leader_commit } else { new_log_len }
         } else { s.commit_index })
         &&& s_.votes_granted == (if ae_term > s.current_term {
             Set::<int>::empty()

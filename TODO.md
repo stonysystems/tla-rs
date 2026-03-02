@@ -9558,13 +9558,12 @@ Approach: Define supporting invariants, prove induction cases. Uses `assume`-bac
 - [x] Prove `lemma_invariant_holds_throughout_behavior` — full induction on behavior length, no assumes (uses init + induction step)
 - [x] Place in `src/protocol/Raft/refinement_proof/induction.rs`
 
-#### 32.3.2 Eliminate LNext case analysis assumes in invariants.rs ✅ DONE (6→1 assumes eliminated)
+#### 32.3.2 Eliminate LNext case analysis assumes in invariants.rs ✅ DONE (all 7 assumes eliminated)
 - [x] Eliminate `assume(0 <= v < ds_.num_servers)` in VotesGrantedAreServers — via `lemma_lnext_votes_bounded` helper
 - [x] Eliminate `assume(s_.votes_granted.contains(c.my_id))` (×2) in CandidateOrLeaderVotedForSelf — via `lemma_lnext_self_vote_preserved` helper
 - [x] Eliminate `assume(s_.votes_granted.len() >= c.quorum_size)` (×2) in LeaderHasQuorum — via `lemma_lnext_leader_quorum_preserved` helper
 - [x] Eliminate behavior induction assume — via recursive `lemma_invariant_at_step` with `decreases k`
-- [ ] `assume(s_.commit_index <= s_.log.len())` in CommitIndexBounded — **KEPT**: spec modeling weakness in `LFollowerAppendEntries` (uses `ae_leader_commit` directly instead of `min(ae_leader_commit, log.len())`). Fix requires spec change + regeneration.
-- [x] 645 verified, 0 errors. 6 assumes remaining in invariants.rs (1 CommitIndexBounded spec gap, 1 quorum intersection, 1 network-level, 3 deferred invariants)
+- [x] Eliminate `assume(s_.commit_index <= s_.log.len())` in CommitIndexBounded — fixed by strengthening LFollowerAppendEntries spec to cap commit_index = min(ae_leader_commit, new_log_len) per Raft paper; regenerated raft_gen.rs
 
 #### 32.3.3 Election Safety quorum intersection ✅ DONE (partial)
 - [x] Add `lemma_quorum_intersection` (pigeonhole principle) to `src/common/collections/sets.rs` as `external_body` axiom

@@ -28,14 +28,15 @@ verus! {
     // - LGrantVote, LReceiveVoteGranted, LBecomeLeader: commit_index unchanged
     // - LHandleAppendResponse, LHandleAppendReject: commit_index unchanged
     // - LStepDown (step_down_if_needed): commit_index unchanged (..s preserves it)
-    // - LFollowerAppendEntries: commit_index = max(old, ae_leader_commit)
+    // - LFollowerAppendEntries: commit_index = min(ae_leader_commit, new_log_len)
+    //   which is >= old commit_index since new_log_len >= log.len() >= commit_index
     // - LAdvanceCommitIndex: commit_index increases
 
     pub proof fn lemma_commit_index_nondecreasing_for_server(
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int, j: int
     )
         requires
-            WellFormedRaftDistributed(ds),
+            RaftSafetyInvariant(ds),
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
@@ -47,6 +48,13 @@ verus! {
         if j != server_id {
             // Non-stepping server: state unchanged
             assert(ds_.server_states[j] == ds.server_states[j]);
+        } else {
+            // CommitIndexBounded(ds) gives us: s.commit_index <= s.log.len()
+            // For LFollowerAppendEntries: new_log_len >= s.log.len() >= s.commit_index
+            // So min(ae_leader_commit, new_log_len) >= s.commit_index when ae_leader_commit > s.commit_index
+            assert(CommitIndexBounded(ds));
+            let s = ds.server_states[j];
+            assert(s.commit_index <= s.log.len());
         }
         // For j == server_id: all actions have s_.commit_index >= s.commit_index.
         // LTimeout: s_.commit_index == s.commit_index
