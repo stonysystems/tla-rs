@@ -59,7 +59,7 @@ All major phases complete. Phase 18 (sent_packets migration) COMPLETE — all 8 
 8. ~~Phase 14: Regeneration audit~~ ✅ DONE
 9. ~~Write a doc explaining how to check/test whether current TLA+ -> Verus and Verus -> TLA+ conversions work correctly~~ ✅ DONE — see `docs/conversion-testing-guide.md`
 
-**Active work**: 669 verified, 0 errors. **Phase 32 COMPLETE** (32.3.4-6 analyzed as spec-model gaps; 3 committed.rs assumes eliminated via seq-based helpers). Raft safety refinement proof with top-level refinement theorem. 7 assumes remain (6 invariants.rs + 1 committed.rs).
+**Active work**: 669 verified, 0 errors. **Phase 32 COMPLETE** (32.3.4-6 analyzed as spec-model gaps; 3 committed.rs assumes eliminated via seq-based helpers). Raft safety refinement proof with top-level refinement theorem. 6 assumes remain (5 invariants.rs + 1 committed.rs). CommitIndexBounded assume eliminated via spec fix (LFollowerAppendEntries now uses min(ae_leader_commit, new_log_len)).
 
 ## Reference
 
@@ -9563,14 +9563,15 @@ Approach: Define supporting invariants, prove induction cases. Uses `assume`-bac
 - [x] Eliminate `assume(s_.votes_granted.contains(c.my_id))` (×2) in CandidateOrLeaderVotedForSelf — via `lemma_lnext_self_vote_preserved` helper
 - [x] Eliminate `assume(s_.votes_granted.len() >= c.quorum_size)` (×2) in LeaderHasQuorum — via `lemma_lnext_leader_quorum_preserved` helper
 - [x] Eliminate behavior induction assume — via recursive `lemma_invariant_at_step` with `decreases k`
-- [x] Eliminate `assume(s_.commit_index <= s_.log.len())` in CommitIndexBounded — fixed by strengthening LFollowerAppendEntries spec to cap commit_index = min(ae_leader_commit, new_log_len) per Raft paper; regenerated raft_gen.rs
+- [x] `assume(s_.commit_index <= s_.log.len())` in CommitIndexBounded — **FIXED**: spec changed `LFollowerAppendEntries` to use `min(ae_leader_commit, new_log_len)` instead of raw `ae_leader_commit`. Transpiler fixed to handle Block/Let expressions in struct fields (`cast_len_to_u64_recursive` + `clone_if_input_ref`). Regenerated raft_gen.rs. Verus auto-verifies the proof.
+- [x] 645 verified, 0 errors. 6 assumes remaining in invariants.rs (1 CommitIndexBounded spec gap, 1 quorum intersection, 1 network-level, 3 deferred invariants)
 
 #### 32.3.3 Election Safety quorum intersection ✅ DONE (partial)
 - [x] Add `lemma_quorum_intersection` (pigeonhole principle) to `src/common/collections/sets.rs` as `external_body` axiom
 - [x] Replace `assume(false)` with explicit quorum intersection proof structure in `lemma_election_safety_inductive`
 - [x] New assume: `assume(stepping == other)` — documents the exact gap: proving two alleged leaders are the same server, which requires `VotersVotedForCandidate(ds_)` (network-level invariant) + `VotesGrantedAreServers(ds_)` + quorum intersection
 - [x] Analysis: the quorum intersection argument depends on `VotersVotedForCandidate` being provably inductive, which requires network-level message tracking not in the spec model. The `assume(false)` was replaced with `assume(stepping == other)` — same trust gap, more explicit
-- [x] 656 verified, 0 errors. Assume count unchanged (6 in invariants.rs: 1 quorum/network gap, 1 network-level, 1 spec gap, 3 deferred)
+- [x] 656 verified, 0 errors. Assume count at time: 6 in invariants.rs (1 quorum/network gap, 1 network-level, 1 spec gap, 3 deferred). CommitIndexBounded spec gap later eliminated via spec fix.
 
 #### 32.3.4-32.3.6 LogMatching, LeaderCompleteness, StateMachineSafety — DEFERRED (spec model limitation)
 
@@ -9612,5 +9613,5 @@ Analysis: All three invariants are **irreducible** in the current spec model.
 ### 32.7 Verification and testing ✅
 - [x] Run Verus verification on all new proof files — 669 verified, 0 errors (up from 632 baseline)
 - [x] No external_body in Raft refinement proof (1 external_body `lemma_quorum_intersection` in common/collections/sets.rs)
-- [x] 7 targeted assume() across 2 files (invariants.rs: 6, committed.rs: 1). Eliminated 11 assumes via LNext helper lemmas + recursive induction + extensional equality + quorum intersection refinement + seq-based MaxCommitIndex helpers
+- [x] 6 targeted assume() across 2 files (invariants.rs: 5, committed.rs: 1). Eliminated 12 assumes via LNext helper lemmas + recursive induction + extensional equality + quorum intersection refinement + seq-based MaxCommitIndex helpers + spec fix for CommitIndexBounded
 - [x] Update `reports/verification_gaps.md` with Raft proof coverage

@@ -2132,6 +2132,26 @@ impl Translator {
             } if method == "index" && Self::contains_input_var(receiver, ctx) => {
                 ExecExpr::Clone(Box::new(expr))
             }
+            // Block: recurse into all statements to handle input refs in value positions
+            ExecExpr::Block(stmts) => {
+                let stmts = stmts.clone();
+                ExecExpr::Block(
+                    stmts
+                        .into_iter()
+                        .map(|s| self.clone_if_input_ref(s, ctx))
+                        .collect(),
+                )
+            }
+            // Let: recurse into value to handle input refs
+            ExecExpr::Let {
+                pattern,
+                ty,
+                value,
+            } => ExecExpr::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                value: Box::new(self.clone_if_input_ref(*value.clone(), ctx)),
+            },
             _ => expr,
         }
     }

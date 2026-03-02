@@ -28,16 +28,16 @@ verus! {
     // - LGrantVote, LReceiveVoteGranted, LBecomeLeader: commit_index unchanged
     // - LHandleAppendResponse, LHandleAppendReject: commit_index unchanged
     // - LStepDown (step_down_if_needed): commit_index unchanged (..s preserves it)
-    // - LFollowerAppendEntries: commit_index = min(ae_leader_commit, new_log_len)
-    //   which is >= old commit_index since new_log_len >= log.len() >= commit_index
+    // - LFollowerAppendEntries: commit_index = min(max(old, ae_leader_commit), new_log_len)
     // - LAdvanceCommitIndex: commit_index increases
 
     pub proof fn lemma_commit_index_nondecreasing_for_server(
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int, j: int
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
             WellFormedRaftDistributed(ds_),
+            CommitIndexBounded(ds),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
             ServerTookStep(ds, ds_, server_id),
@@ -48,21 +48,12 @@ verus! {
         if j != server_id {
             // Non-stepping server: state unchanged
             assert(ds_.server_states[j] == ds.server_states[j]);
-        } else {
-            // CommitIndexBounded(ds) gives us: s.commit_index <= s.log.len()
-            // For LFollowerAppendEntries: new_log_len >= s.log.len() >= s.commit_index
-            // So min(ae_leader_commit, new_log_len) >= s.commit_index when ae_leader_commit > s.commit_index
-            assert(CommitIndexBounded(ds));
-            let s = ds.server_states[j];
-            assert(s.commit_index <= s.log.len());
         }
         // For j == server_id: all actions have s_.commit_index >= s.commit_index.
-        // LTimeout: s_.commit_index == s.commit_index
-        // LClientRequest: s_.commit_index == s.commit_index
-        // LSendAppendEntries: s_.commit_index == s.commit_index
-        // LHandleMessage (all sub-cases): commit_index either unchanged or increased
-        // LTryAdvanceCommitIndex: s_ == s or s_.commit_index > s.commit_index
-        // Let the SMT solver unfold LNext and verify each branch.
+        // LFollowerAppendEntries: min(ae_leader_commit, new_log_len) >= s.commit_index
+        //   because ae_leader_commit > s.commit_index and new_log_len >= s.log.len()
+        //   >= s.commit_index (from CommitIndexBounded).
+        // All other branches: commit_index unchanged or increased.
     }
 
     // =========================================================================
