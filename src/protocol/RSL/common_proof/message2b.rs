@@ -273,8 +273,20 @@ verus! {
         let e = b[i-1].environment;
         let e_ = b[i].environment;
 
-        // assert(nextActionIndex!=4);
-        assume(nextActionIndex == 0); // why?
+        // Prove nextActionIndex == 0: only action 0 (receive) can add/change votes.
+        // Actions 1-3, 5-9 preserve s_.acceptor == s.acceptor (explicit in spec),
+        // so s_.votes == s.votes — contradiction with being past line 253.
+        // Action 4 (truncation) only removes votes via RemoveVotesBeforeLogTruncationPoint:
+        //   s_.votes.contains_key(opn) ==> s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
+        // Since s_.votes.contains_key(opn) (from requires), this gives
+        //   s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
+        // — contradiction with being past line 263.
+        if nextActionIndex != 0 {
+            assert(LReplicaNoReceiveNext(
+                b[i-1].replicas[idx].replica, nextActionIndex,
+                b[i].replicas[idx].replica, ios));
+            assert(false);
+        }
 
         let recv = ios[0]->r;
         assert(LEnvironment_Next(e, e_));
@@ -302,7 +314,19 @@ verus! {
         assert(b[i].environment.sentPackets.contains(p));
         assert(c.config.replica_ids.contains(p.src));
         if p.msg is RslMessage1b {
-            assume(forall |opn| s_.votes.contains_key(opn) ==> s.votes.contains_key(opn)); // why?
+            // LReplicaNextProcess1b calls LAcceptorTruncateLog, which either:
+            // (a) leaves s_ == s (conditions not met, or opn <= log_truncation_point), or
+            // (b) applies RemoveVotesBeforeLogTruncationPoint, which ensures:
+            //     forall|opn| s_.votes.contains_key(opn) ==> s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
+            // In both cases, s_.votes ⊆ s.votes, so the vote for our opn was already in s.votes.
+            // Then s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn] — contradiction with line 263.
+            assert(forall |o: OperationNumber| s_.votes.contains_key(o) implies s.votes.contains_key(o)) by {
+                assert(LReplicaNextProcess1b(
+                    b[i-1].replicas[idx].replica,
+                    b[i].replicas[idx].replica,
+                    p,
+                    ExtractSentPacketsFromIos(ios)));
+            }
             assert(false);
         }
         assert(p.msg is RslMessage2a);
