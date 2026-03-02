@@ -57,23 +57,10 @@ verus! {
   {
         if i == 0
         {
-            let acceptor_idx = arbitrary();
-            assume(0 <= acceptor_idx < c.config.replica_ids.len());
-            assume(0 <= acceptor_idx < b[i].replicas.len());
-            assume(p.src == c.config.replica_ids[acceptor_idx]);
-            assume(BalLeq(p.msg->bal_1b, b[i].replicas[acceptor_idx].replica.acceptor.max_bal));
-            assume(
-                p.msg->votes.contains_key(opn) && opn >= b[i].replicas[acceptor_idx].replica.acceptor.log_truncation_point ==>
-                  b[i].replicas[acceptor_idx].replica.acceptor.votes.contains_key(opn)
-                  && (BalLeq(p.msg->bal_1b, b[i].replicas[acceptor_idx].replica.acceptor.votes[opn].max_value_bal)
-                    || b[i].replicas[acceptor_idx].replica.acceptor.votes[opn] == Vote{max_value_bal:p.msg->votes[opn].max_value_bal, max_val:p.msg->votes[opn].max_val})
-            );
-            assume(
-                !p.msg->votes.contains_key(opn) && opn >= b[i].replicas[acceptor_idx].replica.acceptor.log_truncation_point ==>
-                (!b[i].replicas[acceptor_idx].replica.acceptor.votes.contains_key(opn)
-                  || (b[i].replicas[acceptor_idx].replica.acceptor.votes.contains_key(opn) && BalLeq(p.msg->bal_1b, b[i].replicas[acceptor_idx].replica.acceptor.votes[opn].max_value_bal)))
-            );
-            return acceptor_idx;
+            // sentPackets is empty at init, contradicting requires b[i].environment.sentPackets.contains(p)
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].environment.sentPackets.len() == 0);
+            return arbitrary();
         }
 
         lemma_AssumptionsMakeValidTransition(b, c, i-1);
@@ -188,13 +175,9 @@ verus! {
   {
         if i == 0
         {
-            let p_2a:RslPacket = arbitrary();
-            assume(b[i].environment.sentPackets.contains(p_2a));
-            assume(c.config.replica_ids.contains(p_2a.src));
-            assume(p_2a.msg is RslMessage2a);
-            assume(p_2a.msg->opn_2a == opn);
-            assume(p_2a.msg->bal_2a == p_1b.msg->votes[opn].max_value_bal);
-            assume(p_2a.msg->val_2a == p_1b.msg->votes[opn].max_val);
+            // sentPackets is empty at init, contradicting requires b[i].environment.sentPackets.contains(p_1b)
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].environment.sentPackets.len() == 0);
             return arbitrary();
         }
 
@@ -283,7 +266,9 @@ verus! {
     decreases i,
   {
     if i == 0 {
-        assume(BalLeq(p_1b.msg->bal_1b, p_2b.msg->bal_2b));
+        // sentPackets is empty at init, contradicting requires
+        lemma_ConstantsAllConsistent(b, c, 0);
+        assert(b[0].environment.sentPackets.len() == 0);
         return;
     }
 
@@ -437,7 +422,9 @@ verus! {
       decreases i,
   {
         if i == 0 {
-            assume(BalLt(p.msg->votes[opn].max_value_bal, p.msg->bal_1b));
+            // sentPackets is empty at init, contradicting requires b[i].environment.sentPackets.contains(p)
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].environment.sentPackets.len() == 0);
             return;
         }
 
@@ -515,9 +502,9 @@ verus! {
       decreases i,
     {
         if i == 0 {
-            assume(BalLeq(p_1b.msg->bal_1b, p_2b.msg->bal_2b) ||
-            (p_2b.msg->bal_2b == p_1b.msg->votes[opn].max_value_bal && p_2b.msg->val_2b == p_1b.msg->votes[opn].max_val) ||
-            BalLt(p_2b.msg->bal_2b, p_1b.msg->votes[opn].max_value_bal));
+            // sentPackets is empty at init, contradicting requires
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].environment.sentPackets.len() == 0);
             return;
         }
 

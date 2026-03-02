@@ -48,13 +48,9 @@ verus! {
     {
         if i == 0
         {
-            let p_2a:RslPacket = arbitrary();
-            assume(b[i].environment.sentPackets.contains(p_2a));
-            assume(c.config.replica_ids.contains(p_2a.src));
-            assume(p_2a.msg is RslMessage2a);
-            assume(p_2a.msg->opn_2a == p_2b.msg->opn_2b);
-            assume(p_2a.msg->bal_2a == p_2b.msg->bal_2b);
-            assume(p_2a.msg->val_2a == p_2b.msg->val_2b);
+            // sentPackets is empty at init, contradicting requires b[i].environment.sentPackets.contains(p_2b)
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].environment.sentPackets.len() == 0);
             return arbitrary();
         }
 
@@ -240,14 +236,11 @@ verus! {
     {
         if i == 0
         {
-            let p:RslPacket = arbitrary();
-            assume(b[i].environment.sentPackets.contains(p));
-            assume(c.config.replica_ids.contains(p.src));
-            assume(p.msg is RslMessage2a);
-            assume(p.msg->opn_2a == opn);
-            assume(p.msg->bal_2a == b[i].replicas[idx].replica.acceptor.votes[opn].max_value_bal);
-            assume(p.msg->val_2a == b[i].replicas[idx].replica.acceptor.votes[opn].max_val);
-            return p;
+            // At init, acceptor votes are empty (LAcceptorInit requires votes == Map::empty()),
+            // so votes.contains_key(opn) is false, contradicting requires.
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].replicas[idx].replica.acceptor.votes == Map::<OperationNumber, Vote>::empty());
+            return arbitrary();
         }
 
         lemma_AssumptionsMakeValidTransition(b, c, i-1);
@@ -351,20 +344,10 @@ verus! {
         decreases i,
     {
         if i == 0 {
-            let acceptor_idx = arbitrary();
-            assume(0 <= acceptor_idx < c.config.replica_ids.len());
-            assume(0 <= acceptor_idx < b[i].replicas.len());
-            assume(p.src == c.config.replica_ids[acceptor_idx]);
-            assume(BalLeq(p.msg->bal_2b, b[i].replicas[acceptor_idx].replica.acceptor.max_bal));
-            let s = b[i].replicas[acceptor_idx].replica.acceptor;
-            assume(if p.msg->opn_2b >= s.log_truncation_point {
-                s.votes.contains_key(p.msg->opn_2b) &&
-                BalLeq(p.msg->bal_2b, s.votes[p.msg->opn_2b].max_value_bal) &&
-                (s.votes[p.msg->opn_2b].max_value_bal == p.msg->bal_2b ==> s.votes[p.msg->opn_2b].max_val == p.msg->val_2b)
-            } else {
-                true
-            });
-            return arbitrary(); // Placeholder return value
+            // sentPackets is empty at init, contradicting requires b[i].environment.sentPackets.contains(p)
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].environment.sentPackets.len() == 0);
+            return arbitrary();
         }
 
         lemma_AssumptionsMakeValidTransition(b, c, i - 1);

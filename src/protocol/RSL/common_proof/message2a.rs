@@ -151,16 +151,9 @@ verus! {
     {
         if i == 0
         {
-          let proposer_idx:int = arbitrary();
-          assume(0 <= proposer_idx < b[i].replicas.len());
-          assume(0 <= proposer_idx < c.config.replica_ids.len());
-          assume(p.src == c.config.replica_ids[proposer_idx]);
-          assume(p.msg->bal_2a.proposer_id == proposer_idx);
-          let s = b[i].replicas[proposer_idx].replica.proposer;
-          assume(BalLt(p.msg->bal_2a, s.max_ballot_i_sent_1a)
-                ||  (&& s.max_ballot_i_sent_1a == p.msg->bal_2a
-                    && s.current_state != 1
-                    && s.next_operation_number_to_propose > p.msg->opn_2a));
+          // sentPackets is empty at init, contradicting requires b[i].environment.sentPackets.contains(p)
+          lemma_ConstantsAllConsistent(b, c, 0);
+          assert(b[0].environment.sentPackets.len() == 0);
           return arbitrary();
         }
 
@@ -228,6 +221,10 @@ verus! {
     {
         if i == 0
         {
+          // At init, acceptor votes are empty (LAcceptorInit requires votes == Map::empty()),
+          // so votes.contains_key(opn) is false, contradicting requires.
+          lemma_ConstantsAllConsistent(b, c, 0);
+          assert(b[0].replicas[idx].replica.acceptor.votes == Map::<OperationNumber, Vote>::empty());
           return arbitrary();
         }
 
@@ -493,14 +490,9 @@ verus! {
         decreases i
     {
         if i == 0 {
-            let q_new:Set<RslPacket> = arbitrary();
-            assume(q_new <= b[i].environment.sentPackets);
-            assume(q_new.len() >= LMinQuorumSize(c.config));
-            assume(LIsAfterLogTruncationPoint(p.msg->opn_2a, q_new));
-            assume(LSetOfMessage1bAboutBallot(q_new, p.msg->bal_2a));
-            assume(LAllAcceptorsHadNoProposal(q_new, p.msg->opn_2a) || LValIsHighestNumberedProposal(p.msg->val_2a, q_new, p.msg->opn_2a));
-            assume(forall|p1, p2: RslPacket| q_new.contains(p1) && q_new.contains(p2) && p1 != p2 ==> p1.src != p2.src);
-            assume(forall|p1: RslPacket| q_new.contains(p1) ==> c.config.replica_ids.contains(p1.src));
+            // sentPackets is empty at init, contradicting requires b[i].environment.sentPackets.contains(p)
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].environment.sentPackets.len() == 0);
             return arbitrary();
         }
 
@@ -564,9 +556,9 @@ verus! {
         decreases i,
     {
         if i == 0 {
-            assume(p.msg->bal_2a.seqno >= 0); // why?
-            assume(0 <= p.msg->bal_2a.proposer_id);
-            assume(p.msg->bal_2a.proposer_id < c.config.replica_ids.len());
+            // sentPackets is empty at init, contradicting requires b[i].environment.sentPackets.contains(p)
+            lemma_ConstantsAllConsistent(b, c, 0);
+            assert(b[0].environment.sentPackets.len() == 0);
             return;
         }
 
