@@ -105,31 +105,39 @@ verus! {
                 match &res {
                     CBroadcast::CBroadcast { src: s, dsts: d, msg: m } => {
 
+                        // clone_up_to_view ensures res.valid() == self.valid().
+                        // msg.valid() is a precondition, so m.valid() follows.
+                        // valid() implies abstractable() (first conjunct of CMessage::valid).
+                        assert(m.valid());
+                        assert(m.abstractable());
+
                         //Asserting all abstractable functions
                         assert(s.abstractable());
                         assert(forall |i:int| 0 <= i < d.len() ==> d[i].abstractable());
-                        assert(msg.abstractable());//Proved that message is the abstractable (requirement)
-                        assert(msg@ == m@);//Proved that both are the same
-                        assume(m.abstractable());
                         assert(res.abstractable());
 
                         //Asserting all valid functions
                         assert(s.valid_public_key());
                         assert(forall |i:int| 0 <= i < d.len() ==> d[i].valid_public_key());
-                        assume(m.valid());
                         assert(res.valid());
 
                         assert(s@ == config.replica_ids[my_index as int]@);
                         assert (forall |i: int|0 <= i < config.replica_ids@.len() ==> #[trigger] d@[i]@ == config.replica_ids@[i]@);
                         assert(d@.map(|i,x: EndPoint| x@) =~= config.replica_ids@.map(|i, x:EndPoint| x@));
-                        // assert(msg.valid());
-                        // assert(msg@ == config.replica_ids[my_index as int]@);
 
                         let ghost sent_packets = BuildLBroadcast(config.replica_ids@[my_index as int]@, config.replica_ids@.map(|i, x:EndPoint| x@), msg@);
-                        //LBroadcast verification
-                        assume(config.replica_ids@.len()==sent_packets.len());
+                        // lemma_BuildBroadcast_ensures proves b.len() == dsts.len() and
+                        // forall |i| b[i] == LPacket{dst:dsts[i], src:src, msg:m}
+                        proof {
+                            lemma_BuildBroadcast_ensures(
+                                config.replica_ids@[my_index as int]@,
+                                config.replica_ids@.map(|i, x:EndPoint| x@),
+                                msg@,
+                            );
+                        }
+                        assert(config.replica_ids@.len()==sent_packets.len());
                         assert(my_index < config.replica_ids.len());
-                        assume(forall |i:int| 0 <= i < sent_packets.len() ==> sent_packets[i] =~= LPacket{
+                        assert(forall |i:int| 0 <= i < sent_packets.len() ==> sent_packets[i] =~= LPacket{
                             dst: config.replica_ids@[i]@,
                             src: config.replica_ids@[my_index as int]@,
                             msg: msg@

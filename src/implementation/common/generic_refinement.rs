@@ -48,19 +48,21 @@ verus! {
     {
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_AbstractifyVec_Concat<CT:vstd::view::View>(v1:Vec<CT>, v2:Vec<CT>, v3:Vec<CT>, p:spec_fn(CT) -> bool)
         requires
-            // forall |x:CT| v1@.contains(x) ==> p(x),
-            // forall |x:CT| v2@.contains(x) ==> p(x),
             forall |i:int| 0 <= i < v1@.len() ==> p(v1[i]),
             forall |i:int| 0 <= i < v2@.len() ==> p(v2[i]),
             v3@ == v1@ + v2@,
         ensures
-            // forall |x:CT| v3@.contains(x) ==> p(x)
             forall |i:int| 0 <= i < v3@.len() ==> p(v3[i]),
     {
-
+        assert forall |i:int| 0 <= i < v3@.len() implies p(v3[i]) by {
+            if i < v1@.len() {
+                assert(v3@[i] == v1@[i]);
+            } else {
+                assert(v3@[i] == v2@[i - v1@.len()]);
+            }
+        };
     }
 
     #[verifier::external_body]
