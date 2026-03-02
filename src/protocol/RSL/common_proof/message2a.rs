@@ -27,6 +27,103 @@ use crate::common::native::io_s::*;
 
 verus! {
 
+    /// All packets in a LBroadcastToEveryone share the same message.
+    /// If two packets p1, p2 are both in sent_packets from a broadcast, then p1.msg == p2.msg.
+    pub proof fn lemma_BroadcastPacketsHaveSameMessage(
+        c: LConfiguration,
+        myidx: int,
+        m: RslMessage,
+        sent_packets: Seq<RslPacket>,
+        p1: RslPacket,
+        p2: RslPacket,
+    )
+        requires
+            LBroadcastToEveryone(c, myidx, m, sent_packets),
+            sent_packets.contains(p1),
+            sent_packets.contains(p2),
+        ensures
+            p1.msg == p2.msg,
+    {
+        // sent_packets.contains(p1) means exists |i1| sent_packets[i1] == p1
+        // LBroadcastToEveryone gives sent_packets[i1].msg == m for all valid i1
+        let i1 = choose |i1: int| 0 <= i1 < sent_packets.len() && sent_packets[i1] == p1;
+        let i2 = choose |i2: int| 0 <= i2 < sent_packets.len() && sent_packets[i2] == p2;
+        assert(sent_packets[i1] =~= LPacket { dst: c.replica_ids[i1], src: c.replica_ids[myidx], msg: m });
+        assert(sent_packets[i2] =~= LPacket { dst: c.replica_ids[i2], src: c.replica_ids[myidx], msg: m });
+    }
+
+    /// When two packets are both sent by the same LProposerMaybeNominateValueAndSend2a action,
+    /// they have the same message (because the action broadcasts a single message to all replicas).
+    pub proof fn lemma_2aSentInSameStepHaveSameMessage(
+        s: LProposer,
+        s_: LProposer,
+        clock: int,
+        log_truncation_point: int,
+        sent_packets: Seq<RslPacket>,
+        p1: RslPacket,
+        p2: RslPacket,
+    )
+        requires
+            LProposerMaybeNominateValueAndSend2a(s, s_, clock, log_truncation_point, sent_packets),
+            sent_packets.contains(p1),
+            sent_packets.contains(p2),
+        ensures
+            p1.msg == p2.msg,
+    {
+        lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, clock, log_truncation_point, sent_packets);
+        if LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets) {
+            let opn = s.next_operation_number_to_propose;
+            let p_1b: RslPacket = choose |p_1b: RslPacket|
+                s.received_1b_packets.contains(p_1b)
+                && LValIsHighestNumberedProposal(p_1b.msg->votes[opn].max_val, s.received_1b_packets, opn)
+                && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
+                    RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_1b.msg->votes[opn].max_val},
+                    sent_packets);
+            lemma_BroadcastPacketsHaveSameMessage(
+                s.constants.all.config, s.constants.my_index,
+                RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_1b.msg->votes[opn].max_val},
+                sent_packets, p1, p2);
+        } else {
+            let opn = s.next_operation_number_to_propose;
+            let batchSize = if s.request_queue.len() <= s.constants.all.params.max_batch_size || s.constants.all.params.max_batch_size < 0 {
+                s.request_queue.len() as int
+            } else {
+                s.constants.all.params.max_batch_size
+            };
+            let v = s.request_queue.subrange(0, batchSize);
+            lemma_BroadcastPacketsHaveSameMessage(
+                s.constants.all.config, s.constants.my_index,
+                RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: v},
+                sent_packets, p1, p2);
+        }
+    }
+
+    /// When LProposerMaybeNominateValueAndSend2a produces non-empty sent_packets,
+    /// it must be via either LProposerNominateOldValueAndSend2a or
+    /// LProposerNominateNewValueAndSend2a (the other branches produce empty packets).
+    pub proof fn lemma_MaybeNominate_nonempty_implies_old_or_new(
+        s: LProposer,
+        s_: LProposer,
+        clock: int,
+        log_truncation_point: int,
+        sent_packets: Seq<RslPacket>,
+    )
+        requires
+            LProposerMaybeNominateValueAndSend2a(s, s_, clock, log_truncation_point, sent_packets),
+            sent_packets.len() > 0,
+        ensures
+            LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets) ||
+            LProposerNominateNewValueAndSend2a(s, s_, clock, log_truncation_point, sent_packets),
+    {
+        // Case split on the if-else-if chain in LProposerMaybeNominateValueAndSend2a:
+        // - Branch 1 (line 368): !LProposerCanNominate → sent_packets == empty (contradicts len > 0)
+        // - Branch 2 (line 371): !LAllAcceptorsHadNoProposal → LProposerNominateOldValueAndSend2a
+        // - Branch 3 (line 373): LAllAcceptorsHadNoProposal → LProposerNominateNewValueAndSend2a
+        // - Branch 4 (line 378): timer set → sent_packets == empty (contradicts len > 0)
+        // - Branch 5 (line 391): do nothing → sent_packets == empty (contradicts len > 0)
+        // Verus case-splits automatically.
+    }
+
     pub proof fn lemma_2aMessageImplicationsForProposerState(
         b:Behavior<RslState>,
         c:LConstants,
@@ -97,10 +194,9 @@ verus! {
         assert(pkts.contains(p));
 
         assert(LProposerMaybeNominateValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts));
-        assume(
-            LProposerNominateOldValueAndSend2a(s, s_, a.log_truncation_point, pkts) ||
-            LProposerNominateNewValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts)
-        ); //why?
+        // pkts.contains(p) implies pkts is non-empty, so the Maybe action must have
+        // used one of the nominating branches (others produce empty sent_packets).
+        lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts);
 
         assert(p.msg->bal_2a.proposer_id == proposer_idx);
         proposer_idx
@@ -229,7 +325,10 @@ verus! {
     {
         if i == 0
         {
-          assume(p1.msg->val_2a == p2.msg->val_2a); // why?
+          // At init, sentPackets is empty (LEnvironment_Init requires len()==0),
+          // so b[0].environment.sentPackets.contains(p1) is false, contradicting requires.
+          lemma_ConstantsAllConsistent(b, c, 0);
+          assert(b[0].environment.sentPackets.len() == 0);
           return;
         }
 
@@ -282,25 +381,91 @@ verus! {
 
         if !b[i-1].environment.sentPackets.contains(p1)
         {
-          // Both packets were sent in step i-1, so observe that any two packets sent in the same step
-          // have the same value.
+          // Both packets were sent in step i-1→i, so they're both in ios.
           assert(ios.contains(LIoOp::Send{s:p1}));
           assert(ios.contains(LIoOp::Send{s:p2}));
-          assume(p1.msg->val_2a == p2.msg->val_2a);
+          // Extract sent_packets and show both p1,p2 are in it
+          let pkts = ExtractSentPacketsFromIos(ios);
+          lemma_ExtractSentPacketsFromIos(ios);
+          assert(pkts.contains(p1));
+          assert(pkts.contains(p2));
+          // The action is LReplicaNextReadClockMaybeNominateValueAndSend2a, which calls
+          // LProposerMaybeNominateValueAndSend2a on the proposer. Both packets come from
+          // the same broadcast, so they have the same message.
+          let s = b[i-1].replicas[proposer_idx].replica.proposer;
+          let s_ = b[i].replicas[proposer_idx].replica.proposer;
+          let a = b[i-1].replicas[proposer_idx].replica.acceptor;
+          lemma_2aSentInSameStepHaveSameMessage(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts, p1, p2);
+          assert(p1.msg == p2.msg);
           return;
         }
 
-        // Note the implications on processor state for p1, since once p1 is sent we
-        // won't be able to send p2.
-        let alt_proposer_idx = lemma_2aMessageImplicationsForProposerState(b, c, i-1, p1);
+        // p1 was already sent before step i; p2 is newly sent in step i.
+        // We'll derive a contradiction: the proposer can't send p2 given its state.
 
-        // Note the implications on processor state for p2, just to notice that they
-        // use the same replica index.
+        // Get proposer state implications for p1 at step i-1
+        let alt_proposer_idx = lemma_2aMessageImplicationsForProposerState(b, c, i-1, p1);
+        // Get proposer state implications for p2 at step i (to identify the replica)
         let alt2_proposer_idx = lemma_2aMessageImplicationsForProposerState(b, c, i, p2);
         assert(alt_proposer_idx == alt2_proposer_idx);
         assert(ReplicasDistinct(c.config.replica_ids, proposer_idx, alt_proposer_idx));
         assert(proposer_idx == alt_proposer_idx);
-        assume(false);
+
+        // The proposer state at step i-1 (pre-state of the action that sends p2)
+        let s = b[i-1].replicas[proposer_idx].replica.proposer;
+        let s_ = b[i].replicas[proposer_idx].replica.proposer;
+        let a = b[i-1].replicas[proposer_idx].replica.acceptor;
+        let pkts = ExtractSentPacketsFromIos(ios);
+        lemma_ExtractSentPacketsFromIos(ios);
+        assert(pkts.contains(p2));
+
+        // The proposer action is LProposerMaybeNominateValueAndSend2a, which (since pkts
+        // is non-empty) must be either Old or New nomination.
+        assert(LProposerMaybeNominateValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts));
+        lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts);
+
+        // In both Old and New nomination, the broadcast message has:
+        //   bal_2a == s.max_ballot_i_sent_1a and opn_2a == s.next_operation_number_to_propose
+        // Since p2 is in the broadcast, p2.msg has these fields.
+        // Use LBroadcastToEveryone structure: all packets have msg == m
+        let i2 = choose |i2: int| 0 <= i2 < pkts.len() && pkts[i2] == p2;
+        if LProposerNominateOldValueAndSend2a(s, s_, a.log_truncation_point, pkts) {
+            let opn = s.next_operation_number_to_propose;
+            let p_1b: RslPacket = choose |p_1b: RslPacket|
+                s.received_1b_packets.contains(p_1b)
+                && LValIsHighestNumberedProposal(p_1b.msg->votes[opn].max_val, s.received_1b_packets, opn)
+                && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
+                    RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_1b.msg->votes[opn].max_val},
+                    pkts);
+            assert(pkts[i2] =~= LPacket { dst: s.constants.all.config.replica_ids[i2],
+                src: s.constants.all.config.replica_ids[s.constants.my_index],
+                msg: RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_1b.msg->votes[opn].max_val} });
+        } else {
+            let opn = s.next_operation_number_to_propose;
+            let batchSize = if s.request_queue.len() <= s.constants.all.params.max_batch_size || s.constants.all.params.max_batch_size < 0 {
+                s.request_queue.len() as int
+            } else {
+                s.constants.all.params.max_batch_size
+            };
+            let v = s.request_queue.subrange(0, batchSize);
+            assert(pkts[i2] =~= LPacket { dst: s.constants.all.config.replica_ids[i2],
+                src: s.constants.all.config.replica_ids[s.constants.my_index],
+                msg: RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: v} });
+        }
+        // Now we know: p2.msg->bal_2a == s.max_ballot_i_sent_1a, p2.msg->opn_2a == s.next_operation_number_to_propose
+        assert(p2.msg->bal_2a == s.max_ballot_i_sent_1a);
+        assert(p2.msg->opn_2a == s.next_operation_number_to_propose);
+
+        // Since p1.msg->bal_2a == p2.msg->bal_2a, we have p1.msg->bal_2a == s.max_ballot_i_sent_1a
+        // Since p1.msg->opn_2a == p2.msg->opn_2a, we have p1.msg->opn_2a == s.next_operation_number_to_propose
+        //
+        // From lemma_2aMessageImplicationsForProposerState(b, c, i-1, p1):
+        //   BalLt(p1.msg->bal_2a, s.max_ballot_i_sent_1a) — i.e., BalLt(s.max_ballot_i_sent_1a, s.max_ballot_i_sent_1a), which is false
+        //   OR s.next_operation_number_to_propose > p1.msg->opn_2a — i.e., s.next_opn > s.next_opn, which is false
+        // Both disjuncts are false → contradiction.
+        assert(!BalLt(s.max_ballot_i_sent_1a, s.max_ballot_i_sent_1a));
+        assert(p1.msg->opn_2a == s.next_operation_number_to_propose);
+        assert(false);
     }
 
 
@@ -360,11 +525,7 @@ verus! {
         assert(pkts.contains(p));
 
         assert(LProposerMaybeNominateValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts));
-        assume(
-            LProposerNominateOldValueAndSend2a(s, s_, a.log_truncation_point, pkts) ||
-            LProposerNominateNewValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts)
-        ); //why?
-        // assert(LProposerCanNominateUsingOperationNumber(s, a.log_truncation_point, s.next_operation_number_to_propose));
+        lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts);
 
         assert forall|p_1b: RslPacket| q_new.contains(p_1b) implies b[i].environment.sentPackets.contains(p_1b)
         by {

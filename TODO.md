@@ -9454,7 +9454,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 - [x] For each lemma, annotate estimated difficulty (simple induction / complex case split / requires new invariants) and document in `docs/refinement_proof_plan.md`
 - [x] Classify lemmas as: (A) straightforward induction, (B) needs auxiliary invariants to be stated first, (C) likely irreducible in current Verus. Result: 15 category A (straightforward), 11 category B (needs careful engineering), 2 category C (may hit Verus limits: #21 Paxos safety core, #24 WLOG reasoning with assume(false))
 
-### 31.2 common_proof leaf lemmas (8 lemmas) — 6/8 VERIFIED
+### 31.2 common_proof leaf lemmas (8 lemmas) — 7/8 VERIFIED
 - `common_proof/chosen.rs` (3 lemmas — 2 verified, 1 has assume statements):
   - [x] `collect_2b_messages`: recursive 2b message collection — body was complete, just needed external_body removal
   - [x] `lemma_DecidedOperationWasChosen`: decided operation quorum reconstruction — body was complete
@@ -9466,7 +9466,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
   - [x] `lemma_Received2bMessageSendersAlwaysNonempty`: simple induction on behavior steps
   - [x] `lemma_GetSent2bMessageFromLearnerState`: recursive 2b message retrieval from learner state
 - `common_proof/message2a.rs` (1 lemma — has assume statements):
-  - [ ] `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`: has `assume(p1.msg->val_2a == p2.msg->val_2a)` (assumes the goal!) and `assume(false)`. Needs proof that proposer sends unique values per (ballot, opn). Difficulty: 8/10
+  - [x] `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`: VERIFIED (0 assumes). Proved broadcast same-message property via `lemma_BroadcastPacketsHaveSameMessage` + `lemma_2aSentInSameStepHaveSameMessage`, and contradiction from proposer state (BalLt irrefl + opn uniqueness). Also proved `lemma_2aMessagesFromSameBallotAndOperationMatch` i=0 base case and removed Old||New assumes from `lemma_2aMessageImplicationsForProposerState` and `lemma_2aMessageHas1bQuorumPermittingIt` via `lemma_MaybeNominate_nonempty_implies_old_or_new`. 5 assumes eliminated total.
 
 ### 31.3 refinement_proof/chosen.rs (4 lemmas) ✅
 - [x] `lemma_GetSequenceOfRequestBatches`: straightforward structural induction on `qs`
