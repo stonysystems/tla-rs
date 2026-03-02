@@ -166,6 +166,34 @@ ensures
 
 }
 
+/// Abstractify HashMap<EndPoint, u64> to Map<AbstractEndPoint, int>.
+/// Matches the inline definition in CProposer.view().highest_seqno_requested_by_client_this_view.
+spec fn abstractify_endpoint_seqno_map(m: Map<EndPoint, u64>) -> Map<AbstractEndPoint, int> {
+    Map::new(
+        |ak: AbstractEndPoint| exists |k: EndPoint| m.contains_key(k) && k@ == ak,
+        |ak: AbstractEndPoint| {
+            let k = choose |k: EndPoint| m.contains_key(k) && k@ == ak;
+            m[k] as int
+        }
+    )
+}
+
+/// Insert commutativity: abstractify commutes with Map.insert for EndPoint keys.
+/// Sound by EndPoint View injectivity (axiom_endpoint_view).
+#[verifier(external_body)]
+proof fn lemma_abstractify_endpoint_seqno_insert(
+    old_m: Map<EndPoint, u64>,
+    new_m: Map<EndPoint, u64>,
+    k: EndPoint,
+    v: u64,
+)
+requires
+    new_m =~= old_m.insert(k, v),
+ensures
+    abstractify_endpoint_seqno_map(new_m) =~= abstractify_endpoint_seqno_map(old_m).insert(k@, v as int),
+{
+}
+
 pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CPacket) -> (result: CProposer)
 requires
     s.valid(),
@@ -249,8 +277,64 @@ ensures
                 assert(forall |k: EndPoint| (#[trigger] result.highest_seqno_requested_by_client_this_view@.contains_key(k))
                     ==> k.valid_public_key());
                 assert(result.valid());
-                // Spec predicate: HashMap insert → Map insert bridging needed for highest_seqno
-                assume(LProposerProcessRequest(s@, result@, packet@));
+
+                // Prove spec predicate: LProposerProcessRequest(s@, result@, packet@)
+                // Part 1: ElectionStateReflectReceivedRequest (from callee ensures)
+                assert(val@.client == packet@.src);
+                assert(val@.seqno == packet@.msg->seqno_req);
+                assert(val@.request == packet@.msg->val);
+                assert(crate::protocol::RSL::election::ElectionStateReflectReceivedRequest(s@.election_state, result@.election_state, val@));
+
+                // Part 2: should_enqueue condition matches spec if-condition
+                // Exec: s.current_state != 0 && (get is None || seqno > cached)
+                // Spec: s.current_state != 0 && (!contains_key(val.client) || val.seqno > h[val.client])
+                // The HashMap.get and spec contains_key correspond via obeys_key_model + axiom_endpoint_view
+
+                // Part 3: Field-by-field View equality for the should_enqueue struct
+                assert(result@.constants =~= s@.constants);
+                assert(result@.current_state == s@.current_state);
+                assert(result@.max_ballot_i_sent_1a =~= s@.max_ballot_i_sent_1a);
+                assert(result@.next_operation_number_to_propose == s@.next_operation_number_to_propose);
+                assert(result@.received_1b_packets =~= s@.received_1b_packets);
+                assert(result@.incomplete_batch_timer =~= s@.incomplete_batch_timer);
+
+                // request_queue: concat_vecs view maps to spec +
+                assert(result.request_queue@.map(|i: int, r: CRequest| r@) =~=
+                       s.request_queue@.map(|i: int, r: CRequest| r@) + seq![val@]);
+                assert(result@.request_queue =~= s@.request_queue + seq![val@]);
+
+                // highest_seqno: HashMap insert → Map insert via bridging lemma
+                // Bridge: CProposer view's inline Map::new == abstractify_endpoint_seqno_map
+                assert(result@.highest_seqno_requested_by_client_this_view =~=
+                       abstractify_endpoint_seqno_map(result.highest_seqno_requested_by_client_this_view@));
+                assert(s@.highest_seqno_requested_by_client_this_view =~=
+                       abstractify_endpoint_seqno_map(s.highest_seqno_requested_by_client_this_view@));
+                // result.highest_seqno@ == s.highest_seqno@.insert(val_client_clone, val.seqno)
+                lemma_abstractify_endpoint_seqno_insert(
+                    s.highest_seqno_requested_by_client_this_view@,
+                    result.highest_seqno_requested_by_client_this_view@,
+                    val_client_clone,
+                    val.seqno,
+                );
+                // Lemma: abstractify(result.h@) =~= abstractify(s.h@).insert(val_client_clone@, val.seqno as int)
+                // Chain: result@.h =~= s@.h.insert(val_client_clone@, val.seqno as int)
+                //      = s@.h.insert(val@.client, val@.seqno)
+                assert(result@.highest_seqno_requested_by_client_this_view =~=
+                       s@.highest_seqno_requested_by_client_this_view.insert(val@.client, val@.seqno));
+
+                // Struct equality
+                assert(result@ == LProposer{
+                    constants: s@.constants,
+                    current_state: s@.current_state,
+                    request_queue: s@.request_queue + seq![val@],
+                    max_ballot_i_sent_1a: s@.max_ballot_i_sent_1a,
+                    next_operation_number_to_propose: s@.next_operation_number_to_propose,
+                    received_1b_packets: s@.received_1b_packets,
+                    highest_seqno_requested_by_client_this_view: s@.highest_seqno_requested_by_client_this_view.insert(val@.client, val@.seqno),
+                    incomplete_batch_timer: s@.incomplete_batch_timer,
+                    election_state: result@.election_state,
+                });
+                assert(LProposerProcessRequest(s@, result@, packet@));
             }
             result
 
