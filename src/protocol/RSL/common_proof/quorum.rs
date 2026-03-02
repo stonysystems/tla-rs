@@ -109,20 +109,24 @@ verus! {
             0 <= n,
         ensures
             Q.len() <= n,
+            Q.finite(),
         decreases n,
     {
+        broadcast use vstd::set::group_set_axioms, vstd::set_lib::lemma_set_remove_finite_iff;
+
         if n == 0 {
             assert forall |idx: int| Q.contains(idx) implies false by {};
-            assume(Q.is_empty());
-            assert(Q.len() <= n);
+            assert(Q =~= Set::<int>::empty());
+            // axiom_set_ext_equal: Q == Set::empty()
+            // axiom_set_empty_finite: Set::empty().finite() → Q.finite()
+            // axiom_set_empty_len: Set::empty().len() == 0 → Q.len() == 0 <= 0
         } else if Q.contains(n - 1) {
             lemma_SetOfElementsOfRangeNoBiggerThanRange(Q.remove(n - 1), n - 1);
-            assume(Q.remove(n-1).len() == Q.len()-1);
-            assert(Q.remove(n-1).len() <= n-1);
-            assert(Q.len() <= n);
+            // Induction: Q.remove(n-1).finite() and Q.remove(n-1).len() <= n-1
+            // lemma_set_remove_finite_iff: Q.remove(n-1).finite() <==> Q.finite()
+            // axiom_set_remove_len: Q.len() == Q.remove(n-1).len() + 1
         } else {
             lemma_SetOfElementsOfRangeNoBiggerThanRange(Q, n - 1);
-            assert(Q.len() <= n);
         }
     }
 
@@ -142,17 +146,29 @@ verus! {
             Q2.contains(common),
             0 <= common < n,
     {
+        broadcast use vstd::set::group_set_axioms, vstd::set_lib::group_set_properties,
+                     vstd::set_lib::axiom_is_empty;
+
+        // Establish finiteness for Q1 and Q2
+        lemma_SetOfElementsOfRangeNoBiggerThanRange(Q1, n);
+        lemma_SetOfElementsOfRangeNoBiggerThanRange(Q2, n);
+
         if Q1.intersect(Q2).is_empty() {
+            // Union is also bounded by [0, n)
             lemma_SetOfElementsOfRangeNoBiggerThanRange(Q1.union(Q2), n);
-            assert(Q1.union(Q2).len() <= n);
-            assume(Q1.union(Q2).len() == Q1.len() + Q2.len());
+            // Convert is_empty to disjoint predicate
+            lemma_disjoint_iff_empty_intersection(Q1, Q2);
+            // lemma_set_disjoint_lens: disjoint + finite → (Q1 + Q2).len() == Q1.len() + Q2.len()
+            assert((Q1 + Q2).len() == Q1.len() + Q2.len());
+            // But Q1.union(Q2).len() <= n and Q1.len() + Q2.len() > n — contradiction
             assert(false);
         }
+
+        // Intersection is non-empty: extract a common element
         let overlap_Q = Q1.intersect(Q2);
-        assume(forall |i:int| overlap_Q.contains(i) ==> Q1.contains(i) && Q2.contains(i));
-        assert(!overlap_Q.is_empty());
+        // axiom_is_empty: !overlap_Q.is_empty() → exists|a| overlap_Q.contains(a)
+        // axiom_set_intersect: overlap_Q.contains(i) <==> Q1.contains(i) && Q2.contains(i)
         let common = choose |common: int| overlap_Q.contains(common);
-        assume(overlap_Q.contains(common));
         common
     }
 }

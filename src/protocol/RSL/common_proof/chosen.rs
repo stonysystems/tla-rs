@@ -73,6 +73,8 @@ verus! {
         ensures
             q1.v == q2.v,
     {
+        broadcast use vstd::set::group_set_axioms;
+
         lemma_ConstantsAllConsistent(b, c, i);
 
         // Both quorum index sets are non-empty (size >= LMinQuorumSize >= 1)
