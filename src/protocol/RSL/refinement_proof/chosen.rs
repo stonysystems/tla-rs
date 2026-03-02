@@ -46,11 +46,13 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_GetSequenceOfRequestBatches(qs:Seq<QuorumOf2bs>)
         ensures GetSequenceOfRequestBatches(qs).len() == qs.len()
+        decreases qs.len()
     {
-
+        if qs.len() != 0 {
+            lemma_GetSequenceOfRequestBatches(qs.drop_last());
+        }
     }
 
     pub proof fn lemma_SequenceOfRequestBatchesNthElement(qs:Seq<QuorumOf2bs>, n:int)
@@ -131,7 +133,6 @@ verus! {
         bound
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_GetMaximalQuorumOf2bsSequenceWithinBound(
         b:Behavior<RslState>,
         c:LConstants,
@@ -155,12 +156,21 @@ verus! {
         let qs = lemma_GetMaximalQuorumOf2bsSequenceWithinBound(b, c, i, bound-1);
         if !exists |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == qs.len()
         {
-          return arbitrary();
+          return qs;
         }
 
         assert(qs.len() == bound - 1);
         let q = choose |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == bound - 1;
         let new_qs = qs + seq![q];
+        assert forall |opn:int| 0 <= opn < new_qs.len() implies
+            new_qs[opn].opn == opn && IsValidQuorumOf2bs(b[i], new_qs[opn])
+        by {
+            if opn < qs.len() {
+                assert(new_qs[opn] == qs[opn]);
+            } else {
+                assert(new_qs[opn] == q);
+            }
+        }
         new_qs
     }
 
@@ -209,7 +219,6 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_TwoMaximalQuorumsOf2bsMatch(
         b: Behavior<RslState>,
         c: LConstants,
@@ -237,6 +246,9 @@ verus! {
             assert(false);
         }
 
+        lemma_GetSequenceOfRequestBatches(qs1);
+        lemma_GetSequenceOfRequestBatches(qs2);
+
         assert forall|opn: int| 0 <= opn < qs1.len() implies
             batches1[opn] == batches2[opn]
         by {
@@ -244,9 +256,9 @@ verus! {
             lemma_SequenceOfRequestBatchesNthElement(qs1, opn);
             lemma_SequenceOfRequestBatchesNthElement(qs2, opn);
         }
+        assert(batches1 =~= batches2);
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence(
         b: Behavior<RslState>,
         c: LConstants,
@@ -266,6 +278,9 @@ verus! {
         let batches1 = GetSequenceOfRequestBatches(qs_regular);
         let batches2 = GetSequenceOfRequestBatches(qs_maximal);
 
+        lemma_GetSequenceOfRequestBatches(qs_regular);
+        lemma_GetSequenceOfRequestBatches(qs_maximal);
+
         if qs_regular.len() > qs_maximal.len() {
             assert(IsValidQuorumOf2bs(b[i], qs_regular[qs_maximal.len() as int]) && qs_regular[qs_maximal.len() as int].opn == qs_maximal.len());
             assert(false);
@@ -276,6 +291,7 @@ verus! {
             lemma_SequenceOfRequestBatchesNthElement(qs_regular, opn);
             lemma_SequenceOfRequestBatchesNthElement(qs_maximal, opn);
         }
+        assert(batches1 =~= batches2.subrange(0, batches1.len() as int));
     }
 
 }

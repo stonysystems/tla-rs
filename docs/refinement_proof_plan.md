@@ -9,14 +9,14 @@ bottom-up order of attack to fill in real proof bodies.
 
 ## Master Table
 
-### refinement_proof/chosen.rs (4 lemmas)
+### refinement_proof/chosen.rs (4 lemmas) — ALL VERIFIED
 
-| # | Name | What it proves | Difficulty |
-|---|------|----------------|------------|
-| 1 | `lemma_GetSequenceOfRequestBatches` | `GetSequenceOfRequestBatches(qs).len() == qs.len()` | LOW |
-| 2 | `lemma_GetMaximalQuorumOf2bsSequenceWithinBound` | Constructs maximal quorum sequence up to bound | LOW |
-| 3 | `lemma_TwoMaximalQuorumsOf2bsMatch` | Two maximal sequences produce same request batches | MEDIUM |
-| 4 | `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence` | Valid sequence is prefix of maximal | MEDIUM |
+| # | Name | What it proves | Difficulty | Status |
+|---|------|----------------|------------|--------|
+| 1 | `lemma_GetSequenceOfRequestBatches` | `GetSequenceOfRequestBatches(qs).len() == qs.len()` | LOW | DONE |
+| 2 | `lemma_GetMaximalQuorumOf2bsSequenceWithinBound` | Constructs maximal quorum sequence up to bound | LOW | DONE |
+| 3 | `lemma_TwoMaximalQuorumsOf2bsMatch` | Two maximal sequences produce same request batches | MEDIUM | DONE |
+| 4 | `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence` | Valid sequence is prefix of maximal | MEDIUM | DONE |
 
 ### refinement_proof/requests.rs (5 lemmas)
 

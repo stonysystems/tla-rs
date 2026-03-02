@@ -9460,11 +9460,11 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 - [ ] Fill in proof body for `common_proof/learner_state.rs` lemmas (2): learner state consistency
 - [ ] Fill in proof body for `common_proof/message2a.rs` lemma (1): 2a message lineage
 
-### 31.3 refinement_proof/chosen.rs (4 lemmas)
-- [ ] `lemma_GetSequenceOfRequestBatches`: straightforward structural induction on `qs`
-- [ ] `lemma_GetMaximalQuorumOf2bsSequenceWithinBound`: recursive construction — induction on bound with `IsValidQuorumOf2bs` decision at each slot
-- [ ] `lemma_TwoMaximalQuorumsOf2bsMatch`: induction on sequence length, using `lemma_ChosenQuorumsMatchValue` per slot
-- [ ] `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence`: induction using uniqueness of chosen values
+### 31.3 refinement_proof/chosen.rs (4 lemmas) — COMPLETE
+- [x] `lemma_GetSequenceOfRequestBatches`: straightforward structural induction on `qs`
+- [x] `lemma_GetMaximalQuorumOf2bsSequenceWithinBound`: recursive construction — induction on bound with `IsValidQuorumOf2bs` decision at each slot
+- [x] `lemma_TwoMaximalQuorumsOf2bsMatch`: induction on sequence length, using `lemma_ChosenQuorumsMatchValue` per slot + extensional equality
+- [x] `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence`: contradiction for len > maximal + extensional subrange equality
 
 ### 31.4 refinement_proof/requests.rs (5 lemmas)
 - [ ] `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`: induction on `i`, case split on election actions
