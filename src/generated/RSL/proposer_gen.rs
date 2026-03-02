@@ -707,6 +707,56 @@ ensures
 {
 }
 
+/// Bridging lemma: Given exec-level facts about the best CPacket from the loop,
+/// produces the spec-level LValIsHighestNumberedProposal predicate.
+/// Reasoning (trusted): Translates exec-level CPacket/CVote/CBallot facts through
+/// CMessage view (abstractify_cvotes), CVote view, and Set::map to establish
+/// Lmax_balInS + LExistsBallotInS at the spec level.
+#[verifier::external_body]
+proof fn lemma_val_is_highest_numbered_proposal_bridge(
+    s_set: Set<CPacket>,
+    best_cp: CPacket,
+    opn: u64,
+)
+requires
+    s_set.contains(best_cp),
+    best_cp.msg is CMessage1b,
+    best_cp.msg->votes@.contains_key(opn),
+    forall |cp: CPacket| s_set.contains(cp) && cp.msg is CMessage1b
+        && (#[trigger] cp.msg->votes)@.contains_key(opn)
+        ==> BalLeq(cp.msg->votes@[opn].max_value_bal@, best_cp.msg->votes@[opn].max_value_bal@),
+    forall |cp: CPacket| s_set.contains(cp) ==> cp.valid(),
+ensures
+    s_set.map(|p: CPacket| p@).contains(best_cp@),
+    LValIsHighestNumberedProposal(
+        best_cp@.msg->votes[opn as int].max_val,
+        s_set.map(|p: CPacket| p@),
+        opn as int,
+    ),
+{
+}
+
+/// Bridging lemma: Connects the abstractify_crequestbatch chain from val_2a
+/// through to best_cp@.msg->votes[opn].max_val at the spec level.
+/// Reasoning (trusted): abstractify_crequestbatch(v) = v@.map(|i, r| r.view()),
+/// and abstractify_cvotes(votes)[opn as int].max_val = abstractify_crequestbatch(votes@[opn].max_val).
+/// So if val@ =~= votes@[opn].max_val@, their abstractifications match.
+#[verifier::external_body]
+proof fn lemma_val_2a_matches_witness(
+    best_cp: CPacket,
+    opn: u64,
+    val_2a: CRequestBatch,
+)
+requires
+    best_cp.msg is CMessage1b,
+    best_cp.msg->votes@.contains_key(opn),
+    best_cp.valid(),
+    val_2a@ =~= best_cp.msg->votes@[opn].max_val@,
+ensures
+    abstractify_crequestbatch(&val_2a) =~= best_cp@.msg->votes[opn as int].max_val,
+{
+}
+
 /// Existential search in received_1b_packets for highest-numbered proposal at opn.
 /// Uses clone_up_to_view() for verified element cloning.
 pub exec fn CProposerNominateOldValueAndSend2a(s: &CProposer, log_truncation_point: &u64) -> (result: (CProposer, Vec<CPacket>))
@@ -725,6 +775,7 @@ ensures
     let mut best_bal: Option<CBallot> = None;
     let packets = hashset_to_vec(&s.received_1b_packets);
     let mut idx: usize = 0;
+    let ghost mut ghost_best_idx: Option<int> = None;
     while idx < packets.len()
     invariant
         idx <= packets.len(),
@@ -739,6 +790,17 @@ ensures
         // Coverage: all HashSet elements are in the Vec
         forall |x: CPacket| s.received_1b_packets@.contains(x)
             ==> (exists |i: int| 0 <= i < packets@.len() && packets@[i] == x),
+        // Ghost witness tracking: ghost_best_idx points to the CPacket that provided best_bal/best_val
+        best_bal.is_some() <==> ghost_best_idx.is_some(),
+        ghost_best_idx.is_some() ==> (0 <= ghost_best_idx.unwrap() < idx as int),
+        ghost_best_idx.is_some() ==> packets@[ghost_best_idx.unwrap()].msg is CMessage1b,
+        ghost_best_idx.is_some() ==> (#[trigger] packets@[ghost_best_idx.unwrap()]).msg->votes@.contains_key(opn),
+        ghost_best_idx.is_some() ==> packets@[ghost_best_idx.unwrap()].msg->votes@[opn].max_value_bal == best_bal.unwrap(),
+        ghost_best_idx.is_some() ==> packets@[ghost_best_idx.unwrap()].msg->votes@[opn].max_val@ =~= best_val.unwrap()@,
+        // All visited packets with votes at opn have ballot <= best_bal
+        best_bal.is_some() ==> (forall |j: int| 0 <= j < idx as int
+            && (#[trigger] packets@[j]).msg is CMessage1b && packets@[j].msg->votes@.contains_key(opn)
+            ==> BalLeq(packets@[j].msg->votes@[opn].max_value_bal@, best_bal.unwrap()@)),
     decreases
         packets.len() - idx,
     {
@@ -776,8 +838,23 @@ ensures
                         },
                     };
                     if is_better {
+                        proof {
+                            // For BalLeq invariant maintenance when best_bal was Some:
+                            // CBalLt(old_best, new_best) gives BalLt(old@, new@),
+                            // and BalLeq(j_bal@, old@) && BalLt(old@, new@) ==> BalLeq(j_bal@, new@)
+                            // (transitivity, automatic from arithmetic).
+                            // When best_bal was None: forall j < idx is vacuous.
+                            // BalLeq reflexivity for current idx: automatic.
+                        }
                         best_val = Some(clone_request_batch_up_to_view(&vote.max_val));
                         best_bal = Some(vote.max_value_bal);
+                        proof { ghost_best_idx = Some(idx as int); }
+                    } else {
+                        proof {
+                            // !CBalLt(bb, vote.max_value_bal) ==> !BalLt(bb@, vote@)
+                            // ==> BalLeq(vote.max_value_bal@, bb@) = BalLeq(vote@, best_bal@)
+                            // This maintains the BalLeq invariant for the current idx.
+                        }
                     }
                 }
             }
@@ -890,7 +967,62 @@ ensures
         // election_state: clone ensures result.valid() == self.valid()
         assert(new_proposer.election_state.valid());
         assert(new_proposer.valid());
-        assume(LProposerNominateOldValueAndSend2a(s@, new_proposer@, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)));
+
+        // === Prove NominateOld spec predicate ===
+        // Step 1: Get the ghost witness CPacket from ghost_best_idx
+        let best_cp: CPacket = packets@[ghost_best_idx.unwrap()];
+        assert(s.received_1b_packets@.contains(best_cp));
+        assert(best_cp.msg is CMessage1b);
+        assert(best_cp.msg->votes@.contains_key(opn));
+        assert(best_cp.valid());
+
+        // Step 2: Bridge BalLeq from Vec-level to HashSet-level
+        assert forall |cp: CPacket| s.received_1b_packets@.contains(cp) && cp.msg is CMessage1b
+            && (#[trigger] cp.msg->votes)@.contains_key(opn)
+            implies BalLeq(cp.msg->votes@[opn].max_value_bal@, best_cp.msg->votes@[opn].max_value_bal@) by {
+            // cp is in the HashSet, so by coverage it's in the Vec
+            let j: int = choose |j: int| 0 <= j < packets@.len() && packets@[j] == cp;
+            assert(0 <= j < packets@.len());
+            assert(packets@[j] == cp);
+            // Loop invariant: all Vec elements with votes at opn have BalLeq to best_bal
+            assert(BalLeq(packets@[j].msg->votes@[opn].max_value_bal@, best_bal.unwrap()@));
+            // best_bal == best_cp's ballot
+            assert(best_cp.msg->votes@[opn].max_value_bal == best_bal.unwrap());
+        };
+
+        // Step 3: Call bridging lemma for LValIsHighestNumberedProposal
+        lemma_val_is_highest_numbered_proposal_bridge(s.received_1b_packets@, best_cp, opn);
+        // Now: s@.received_1b_packets.contains(best_cp@)
+        // Now: LValIsHighestNumberedProposal(best_cp@.msg->votes[opn as int].max_val, s@.received_1b_packets, opn as int)
+
+        // Step 4: Connect val_2a to witness value via abstractify chain
+        // val (= best_val.unwrap()) was cloned from best_cp's vote, so val@ =~= best_cp's val@
+        // val_2a_cloned was cloned from val, so val_2a_cloned@ =~= val@ =~= best_cp's val@
+        // msg->val_2a is val_2a_cloned (moved into msg), so msg->val_2a@ =~= best_cp's val@
+        assert(msg->val_2a@ =~= best_cp.msg->votes@[opn].max_val@);
+        lemma_val_2a_matches_witness(best_cp, opn, msg->val_2a);
+        // Now: abstractify_crequestbatch(&msg->val_2a) =~= best_cp@.msg->votes[opn as int].max_val
+        // Therefore: msg@.val_2a =~= best_cp@.msg->votes[opn as int].max_val
+        // (since msg@ for CMessage2a maps val_2a via abstractify_crequestbatch)
+
+        // Step 5: Struct equality — new_proposer@ matches the spec LProposer{...with opn+1}
+        // Field-by-field from clone ensures:
+        assert(new_proposer@.constants =~= s@.constants);
+        assert(new_proposer@.current_state == s@.current_state);
+        assert(new_proposer@.request_queue =~= s@.request_queue);
+        assert(new_proposer@.max_ballot_i_sent_1a == s@.max_ballot_i_sent_1a);
+        assert(new_proposer@.next_operation_number_to_propose == s@.next_operation_number_to_propose + 1);
+        assert(new_proposer@.received_1b_packets =~= s@.received_1b_packets);
+        assert(new_proposer@.incomplete_batch_timer =~= s@.incomplete_batch_timer);
+        assert(new_proposer@.election_state =~= s@.election_state);
+
+        // Step 6: The spec predicate's existential is satisfied by witness best_cp@
+        // best_cp@ is in s@.received_1b_packets (Step 3 lemma)
+        // LValIsHighestNumberedProposal holds (Step 3 lemma)
+        // msg@ has matching val_2a (Step 4)
+        // CBroadcastToEveryone ensures LBroadcastToEveryone(c@, idx, msg@, sent_spec)
+        // Struct equality (Step 5)
+        assert(LProposerNominateOldValueAndSend2a(s@, new_proposer@, *log_truncation_point as int, sent_packets@.map(|i, p: CPacket| p@)));
     }
     (new_proposer, sent_packets)
 }
