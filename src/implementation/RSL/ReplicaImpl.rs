@@ -381,25 +381,13 @@ impl CReplica{
 
     }
 
-    #[verifier(external_body)]
     pub fn Packet1bHasUniqueSrc(s:&HashSet<CPacket>, pkt:&CPacket) -> (res:bool)
         requires
-            // forall |p:CPacket| s@.contains(p) ==> p.msg is CMessage1b,
             pkt.msg is CMessage1b,
         ensures
             res == (forall |op:CPacket| s@.contains(op) ==> op.src@ != pkt.src@)
     {
-        let mut res = true;
-        let m_iter = s.iter();
-        assert(m_iter@.0 == 0);
-
-        for p in iter: m_iter
-        {
-            if p.src == pkt.src {
-                res = false;
-            }
-        }
-        res
+        crate::implementation::RSL::gen_helpers::Packet1bHasUniqueSrc(s, pkt)
     }
 
     #[verifier::external_body]

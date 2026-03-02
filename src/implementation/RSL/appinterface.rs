@@ -41,7 +41,7 @@ verus! {
     impl CAppMessage {
 
         pub fn clone_up_to_view(&self) -> (res: CAppMessage)
-            ensures res@ == self@
+            ensures res@ == self@, res == *self
         {
             match self {
                 CAppMessage::CAppIncrement {} => CAppMessage::CAppIncrement {},

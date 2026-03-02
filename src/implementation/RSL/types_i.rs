@@ -503,13 +503,10 @@ verus! {
         )
     }
 
-    #[verifier(external_body)]
     pub fn clone_vec_coperationnumber(v: &Vec<COperationNumber>) -> (res: Vec<COperationNumber>)
         ensures
-            res==v,
             res@ == v@,
             res.len() == v.len(),
-            // forall |i: int| 0 <= i < res.len() ==> res@[i] == v@[i]
     {
         let mut result:Vec<COperationNumber> = Vec::new();
         let mut i = 0;
@@ -517,9 +514,8 @@ verus! {
             invariant
                 0 <= i <= v.len(),
                 result.len() == i,
-                // forall |j: int| 0 <= j < i ==> result[j].valid(),
                 result@ == v@.subrange(0, i as int),
-                forall |j: int| 0 <= j < i ==> result@[j] == v@[j]
+            decreases v.len() - i,
         {
             let item = v[i];
             result.push(item);

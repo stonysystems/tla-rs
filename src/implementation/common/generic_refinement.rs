@@ -65,9 +65,9 @@ verus! {
         };
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_AbstractifyVec_Truncate<CT:vstd::view::View>(v1:Vec<CT>, v2:Vec<CT>, start:usize, end:usize, p:spec_fn(CT) -> bool)
         requires
+            start <= end <= v1.len(),
             v2.len() == end - start,
             v2@ == v1@.subrange(start as int, end as int),
             v2@.map(|i, t:CT| t@) == v1@.map(|i, t:CT| t@).subrange(start as int, end as int),
@@ -75,7 +75,12 @@ verus! {
         ensures
             forall |i:int| 0 <= i < v2@.len() ==> p(v2[i]),
     {
-
+        assert forall |i:int| 0 <= i < v2@.len() implies p(v2[i]) by {
+            let j = start as int + i;
+            assert(0 <= j < v1@.len());
+            assert(v2@[i] == v1@[j]);
+            assert(p(v1[j]));
+        };
     }
 
 
