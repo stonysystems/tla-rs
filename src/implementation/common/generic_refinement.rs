@@ -118,6 +118,7 @@ verus! {
     {
         let ss = s@.map(|i:CT| RefineValue(i));
         let cs = s@;
+        crate::common::collections::hashsets::lemma_hashset_view_finite(&s);
         lemma_AbstractifySet_SizeUnchange(s@, ss, RefineValue, AbstractableValue);
         assume(s.len() == s@.len());
         assert(cs.len() == ss.len());
@@ -146,9 +147,9 @@ verus! {
 
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_AbstractifySet_SizeUnchange<T, CT>(s:Set<CT>, ss:Set<T>, RefineValue: spec_fn(CT) -> T, AbstractableValue:spec_fn(CT) -> bool)
         requires
+            s.finite(),
             (forall |x:CT| s.contains(x) ==> AbstractableValue(x)),
             (forall |x:CT, y:CT| s.contains(x) && s.contains(y) && RefineValue(x) == RefineValue(y) ==> x == y),
             (forall |i:CT| s.contains(i) ==> ss.contains(RefineValue(i))),
@@ -157,28 +158,71 @@ verus! {
             s.len() == ss.len(),
         decreases s.len()
     {
+        broadcast use vstd::set::group_set_axioms;
+
+        // ss =~= s.map(RefineValue) from the biconditional precondition
+        let f = |i: CT| RefineValue(i);
+        assert(ss =~= s.map(f)) by {
+            assert forall |y: T| ss.contains(y) <==> s.map(f).contains(y) by {};
+        };
+        // ss.finite() because s.map(f).finite() and ss == s.map(f)
+        s.lemma_map_finite(f);
+
         if s.len() > 0 {
-            assume(exists |x:CT| s.contains(x));
-            let x = choose |x:CT| s.contains(x);
+            // axiom_set_choose_len: s.finite() && s.len() != 0 ==> s.contains(s.choose())
+            let x = s.choose();
             assert(s.contains(x));
             let s_ = s.remove(x);
             let ss_ = ss.remove(RefineValue(x));
-            // assert(s_.len() == s.len() - 1);
 
-            assert(s.contains(x));
-            assert(!s_.contains(x));
-            assert forall |y:CT| s_.contains(y) implies s.contains(y) && y != x by {
-                assert(s.contains(y));
-                assert(y != x);
+            // Forward mapping preserved on s_
+            assert forall |i:CT| s_.contains(i) implies ss_.contains(RefineValue(i)) by {
+                assert(s.contains(i) && i != x);
+                assert(ss.contains(RefineValue(i)));
+                // Injectivity contrapositive: i != x && both in s ==> RefineValue(i) != RefineValue(x)
+                if RefineValue(i) == RefineValue(x) {
+                    // s.contains(i) && s.contains(x) && RefineValue(i) == RefineValue(x) ==> i == x
+                    // But i != x, contradiction
+                }
             };
-            assert forall |y:CT| s.contains(y) && y != x implies s_.contains(y) by {
-                assert(s_.contains(y));
-            };
-            assert(s_.len() == s.len() - 1);
 
-            assert(ss_.len() == ss.len() - 1);
+            // Biconditional for s_, ss_
+            assert forall |y:T| ss_.contains(y) <==> (exists |ct:CT| s_.contains(ct) && y == RefineValue(ct)) by {
+                if ss_.contains(y) {
+                    assert(ss.contains(y));
+                    let ct = choose |ct:CT| s.contains(ct) && y == RefineValue(ct);
+                    assert(s.contains(ct) && y == RefineValue(ct));
+                    // y != RefineValue(x) (since ss_.contains(y) means y != RefineValue(x))
+                    // If ct == x then y == RefineValue(x), contradiction
+                    assert(ct != x);
+                    assert(s_.contains(ct));
+                }
+                if exists |ct:CT| s_.contains(ct) && y == RefineValue(ct) {
+                    let ct = choose |ct:CT| s_.contains(ct) && y == RefineValue(ct);
+                    assert(s.contains(ct) && ct != x);
+                    assert(ss.contains(y));
+                    // ct != x && both in s ==> RefineValue(ct) != RefineValue(x) by injectivity
+                    if RefineValue(ct) == RefineValue(x) {
+                        // contradiction with ct != x
+                    }
+                    assert(y != RefineValue(x));
+                }
+            };
+
+            assert(ss.contains(RefineValue(x)));
             lemma_AbstractifySet_SizeUnchange(s_, ss_, RefineValue, AbstractableValue);
-            assert(s.len() == ss.len());
+        } else {
+            // s.len() == 0, so s is empty => ss is empty
+            assert(ss =~= Set::<T>::empty()) by {
+                assert forall |y: T| !ss.contains(y) by {
+                    if ss.contains(y) {
+                        let ct = choose |ct:CT| s.contains(ct) && y == RefineValue(ct);
+                        assert(s.contains(ct));
+                        // axiom_set_contains_len: s.finite() && s.contains(ct) ==> s.len() != 0
+                        // But s.len() == 0, contradiction
+                    }
+                };
+            };
         }
     }
 
