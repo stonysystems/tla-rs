@@ -400,8 +400,49 @@ ensures
         unexecuted_learner_state: filtered,
     };
     proof {
-        assume(result.valid());
-        assume(LLearnerForgetOperationsBefore(s@, result@, *ops_complete as int));
+        // Validity: filter_clearnerstate ensures clearnerstate_is_valid(filtered),
+        // clone_up_to_view ensures constants.valid(), max_ballot_seen from s.valid() (Copy)
+        assert(result.valid());
+
+        // Spec predicate: LLearnerForgetOperationsBefore
+        let abs_filtered = abstractify_clearnerstate(result.unexecuted_learner_state);
+        let abs_orig = abstractify_clearnerstate(s.unexecuted_learner_state);
+
+        // Biconditional containment: filtered abstract map ↔ original filtered by threshold
+        assert forall |ak: int| abs_filtered.contains_key(ak) <==>
+            (ak >= *ops_complete as int && abs_orig.contains_key(ak))
+        by {
+            if abs_filtered.contains_key(ak) {
+                let j = choose |j: u64| result.unexecuted_learner_state@.contains_key(j) && j as int == ak;
+                // Trigger filter ensures quantifier (trigger: res@[k]) to get j >= threshold + containment
+                assert(result.unexecuted_learner_state@[j]@ == s.unexecuted_learner_state@[j]@);
+                assert(s.unexecuted_learner_state@.contains_key(j));
+                assert(j >= *ops_complete);
+            }
+            if ak >= *ops_complete as int && abs_orig.contains_key(ak) {
+                let j = choose |j: u64| s.unexecuted_learner_state@.contains_key(j) && j as int == ak;
+                assert(j >= *ops_complete);
+                // filter ensures: j in m && j >= threshold ==> j in filtered
+                assert(result.unexecuted_learner_state@.contains_key(j));
+            }
+        }
+
+        // Value equality through u64-to-int injectivity
+        assert forall |ak: int| abs_filtered.contains_key(ak) implies
+            abs_filtered[ak] == abs_orig[ak]
+        by {
+            let j_f = choose |j: u64| result.unexecuted_learner_state@.contains_key(j) && j as int == ak;
+            let j_s = choose |j: u64| s.unexecuted_learner_state@.contains_key(j) && j as int == ak;
+            assert(j_f == j_s);  // u64 as int is injective
+            // Trigger filter ensures for value equality
+            assert(result.unexecuted_learner_state@[j_f]@ == s.unexecuted_learner_state@[j_f]@);
+        }
+
+        // Struct fields: constants from clone_up_to_view, max_ballot_seen from Copy
+        assert(result@.constants == s@.constants);
+        assert(result@.max_ballot_seen == s@.max_ballot_seen);
+
+        assert(LLearnerForgetOperationsBefore(s@, result@, *ops_complete as int));
     }
     result
 }
