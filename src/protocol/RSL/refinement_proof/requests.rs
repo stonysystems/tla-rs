@@ -33,7 +33,6 @@ use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
 
 verus! {
-    #[verifier::external_body]
     pub proof fn lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -88,7 +87,6 @@ verus! {
         arbitrary()
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_RequestInRequestsReceivedPrevEpochsHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -142,7 +140,6 @@ verus! {
         arbitrary()
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_RequestInRequestQueueHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -229,7 +226,6 @@ verus! {
         p_req
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_RequestIn2aMessageHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -296,7 +292,6 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_DecidedRequestWasSentByClient(
         b:Behavior<RslState>,
         c:LConstants,

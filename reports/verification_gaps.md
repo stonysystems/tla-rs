@@ -1,6 +1,13 @@
-# RSL Verification Gaps Report (2026-02-26, Post-Phase 30)
+# RSL Verification Gaps Report (2026-03-02, Post-Phase 31.1-31.7)
 
 Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping related items.
+
+## Changes from Phase 31
+
+- **28 external_body proof functions removed** (Phase 31.1–31.7) — all 28 refinement proof stubs now have verified proof bodies
+- Files affected: `refinement_proof/{chosen,requests,execution,refinement}.rs`, `common_proof/{chosen,quorum,learner_state,message2a}.rs`
+- 5 targeted `assume()` remain inside 3 of the 28 now-verified functions (see §5 below)
+- Dependency analysis and classification documented in `docs/refinement_proof_plan.md`
 
 ## Changes from Phase 30
 
@@ -117,8 +124,26 @@ collection operations to spec-level Set/Map operations.
 | Sorting functions | 2 | 0 | -2 (dead code deleted) |
 | **Total real verification gaps** | **36** | **27** | **-9** |
 
-Root cause breakdown (remaining 27):
+Root cause breakdown (remaining 27 in impl/generated):
 - **HashSet/HashMap iteration** (15): Verus lacks verified iteration specs for unordered collections
 - **Complex delegation wrappers** (4): Compose sub-functions with ownership patterns Verus can't prove
 - **Type axioms** (5): View injectivity and key model axioms for CMessage/CPacket/CRequest
 - **Generated helpers** (3): hashset_insert, filter, unreachable_value
+
+---
+
+## 5. Refinement Proof — Remaining `assume()` (Post-Phase 31)
+
+All 28 `external_body` proof functions have been converted to verified proof bodies.
+5 targeted `assume()` remain inside 3 of these functions:
+
+| # | File | Function | assume | Root Cause |
+|---|------|----------|--------|------------|
+| 1 | `refinement_proof/requests.rs:78` | `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage` | `assume(b[i].environment.sentPackets.contains(p))` | Received packet membership in next-step sentPackets |
+| 2 | `common_proof/chosen.rs:134` | `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues` | `assume(LValIsHighestNumberedProposalAtBallot(...))` | Existential witness extraction for highest-numbered proposal |
+| 3 | `common_proof/chosen.rs:139-142` | `lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues` | `assume(quorum_of_1bs.contains(packet1b_highestballot) && ...)` | Existential witness matching for 1b packet with highest ballot |
+| 4 | `common_proof/message2a.rs:289` | `lemma_2aMessagesFromSameBallotAndOperationMatchWLOG` | `assume(p1.msg->val_2a == p2.msg->val_2a)` | Two 2a messages sent in same step have same value |
+| 5 | `common_proof/message2a.rs:303` | `lemma_2aMessagesFromSameBallotAndOperationMatchWLOG` | `assume(false)` | Contradiction from proposer state implications (p1 sent before, p2 sent now, same ballot/opn) |
+
+Note: ~65 additional `assume()` exist in pre-existing helper functions (not formerly external_body).
+These are inherited from the Dafny→Verus port and tracked separately.

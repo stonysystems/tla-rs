@@ -245,7 +245,6 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality(
         b:Behavior<RslState>,
         c:LConstants,

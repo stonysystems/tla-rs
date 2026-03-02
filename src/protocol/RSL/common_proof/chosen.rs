@@ -95,7 +95,6 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues(
         b: Behavior<RslState>,
         c: LConstants,
@@ -183,7 +182,6 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_DecidedOperationWasChosen(
         b: Behavior<RslState>,
         c: LConstants,
@@ -244,7 +242,6 @@ verus! {
         return QuorumOf2bs{c:c, indices:indices, packets:packets, bal:bal, opn:opn, v:v};
     }
 
-    #[verifier::external_body]
     pub proof fn collect_2b_messages(
         c: LConstants,
         senders: Set<AbstractEndPoint>,

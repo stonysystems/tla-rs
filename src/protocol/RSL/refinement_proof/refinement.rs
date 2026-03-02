@@ -169,7 +169,6 @@ verus! {
         request
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_FirstProduceIntermediateAbstractStateProducesAbstractState(
         server_addresses: Set<AbstractEndPoint>,
         batches: Seq<RequestBatch>
@@ -224,7 +223,6 @@ verus! {
         assert(rs_prime.replies == rs.replies);
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_LastProduceIntermediateAbstractStateProducesAbstractState(
         server_addresses: Set<AbstractEndPoint>,
         batches: Seq<RequestBatch>
@@ -281,7 +279,6 @@ verus! {
         &&& (forall|i: int| #![trigger high_level_behavior[i]] 0 <= i < high_level_behavior.len() - 1 ==> RslSystemNext(high_level_behavior[i], high_level_behavior[i + 1]))
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_GetBehaviorRefinementForBehaviorOfOneStep(
         b: Behavior<RslState>,
         c: LConstants
@@ -351,7 +348,6 @@ verus! {
     }
 
 
-    #[verifier::external_body]
     proof fn lemma_DemonstrateRslSystemNextWhenBatchesAdded(
         server_addresses: Set<AbstractEndPoint>,
         s: RSLSystemState,
@@ -449,7 +445,6 @@ verus! {
         high_level_behavior
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_GetBehaviorRefinement(
         low_level_behavior: Seq<RslState>,
         c: LConstants

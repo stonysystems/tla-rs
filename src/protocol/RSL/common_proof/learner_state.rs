@@ -64,7 +64,6 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_Received2bMessageSendersAlwaysNonempty(
         b: Behavior<RslState>,
         c: LConstants,
@@ -103,7 +102,6 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn lemma_GetSent2bMessageFromLearnerState(
         b: Behavior<RslState>,
         c: LConstants,
