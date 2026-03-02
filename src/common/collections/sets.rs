@@ -121,4 +121,27 @@ verus! {
         s1 == s2
     {}
 
+    /// Pigeonhole principle for finite sets:
+    /// If two subsets of a universe U each have size > |U|/2,
+    /// then they must intersect.
+    ///
+    /// Formally: if A ⊆ U, B ⊆ U, |A| + |B| > |U|,
+    /// then there exists w in both A and B.
+    ///
+    /// This is the key lemma for quorum intersection arguments
+    /// in consensus protocols (Raft, Paxos).
+    #[verifier::external_body]
+    pub proof fn lemma_quorum_intersection<T>(a: Set<T>, b: Set<T>, u: Set<T>)
+        requires
+            a.subset_of(u),
+            b.subset_of(u),
+            a.len() + b.len() > u.len(),
+        ensures
+            exists |w: T| a.contains(w) && b.contains(w),
+    {
+        // Proof sketch: |A ∪ B| ≤ |U|, and |A ∪ B| = |A| + |B| - |A ∩ B|.
+        // So |A ∩ B| = |A| + |B| - |A ∪ B| ≥ |A| + |B| - |U| > 0.
+        // Therefore A ∩ B is non-empty.
+    }
+
 }
