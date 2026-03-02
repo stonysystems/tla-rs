@@ -96,29 +96,57 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
     pub proof fn subset_cardinality<T>(x:Set<T>, y:Set<T>)
-        requires x.subset_of(y)
+        requires
+            x.subset_of(y),
+            y.finite(),
         ensures x.len() <= y.len()
     {
+        vstd::set_lib::lemma_len_subset(x, y);
     }
 
-    #[verifier::external_body]
     pub proof fn InsertCardinality<T>(s:Set<T>, x:T)
-        requires forall |y:T| s.contains(y) ==> y != x
+        requires
+            s.finite(),
+            forall |y:T| s.contains(y) ==> y != x,
         ensures s.insert(x).len() == s.len() + 1
     {
-
+        broadcast use vstd::set::group_set_axioms;
+        // forall y in s: y != x. Instantiate with y = x: s.contains(x) ==> x != x.
+        // Since x == x, we get !s.contains(x).
+        assert(!s.contains(x));
+        // axiom_set_insert_len (in group_set_axioms): s.insert(x).len() == s.len() + 1
     }
 
-    #[verifier::external_body]
     pub proof fn subset_len_equal_implies_equal<T>(s1: Set<T>, s2: Set<T>)
     requires
         s1.subset_of(s2),
-        s1.len() == s2.len()
+        s1.len() == s2.len(),
+        s2.finite(),
     ensures
         s1 == s2
-    {}
+    {
+        broadcast use vstd::set::group_set_axioms;
+        if s1 != s2 {
+            // s1 ⊆ s2 and s1 ≠ s2 ⟹ ∃x ∈ s2 \ s1
+            assert(exists |x: T| s2.contains(x) && !s1.contains(x)) by {
+                if forall |x: T| s2.contains(x) ==> s1.contains(x) {
+                    assert(s1 =~= s2);
+                }
+            };
+            let x = choose |x: T| s2.contains(x) && !s1.contains(x);
+            // s1 ⊆ s2.remove(x) since all of s1 is in s2 and x ∉ s1
+            assert(s1.subset_of(s2.remove(x))) by {
+                assert forall |y: T| s1.contains(y) implies s2.remove(x).contains(y) by {
+                    assert(s2.contains(y));  // from s1 ⊆ s2
+                    assert(y != x);          // x ∉ s1 but y ∈ s1
+                };
+            };
+            vstd::set_lib::lemma_len_subset(s1, s2.remove(x));
+            // s1.len() <= s2.remove(x).len() == s2.len() - 1 < s2.len() == s1.len()
+            assert(false);
+        }
+    }
 
     /// Pigeonhole principle for finite sets:
     /// If two subsets of a universe U each have size > |U|/2,

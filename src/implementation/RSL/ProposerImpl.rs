@@ -299,6 +299,9 @@ impl CProposer{
                 assert(s2_minus.map(|p:CPacket| p@).len() == s2@.map(|p:CPacket| p@).len() - 1);
                 assert(s2_minus.map(|p:CPacket| p@).len() < s2@.map(|p:CPacket| p@).len());
                 assert(s1.subset_of(s2_minus.map(|p:CPacket| p@)));
+                // s2_minus is finite (s2@ finite from HashSet, remove preserves finiteness)
+                // s2_minus.map(...) is also finite
+                s2_minus.lemma_map_finite(|p:CPacket| p@);
                 subset_cardinality(s1, s2_minus.map(|p:CPacket| p@));
                 assert(s1.len() <= s2_minus.map(|p:CPacket| p@).len());
                 assert(s1.len() == s2@.map(|p:CPacket| p@).len());
