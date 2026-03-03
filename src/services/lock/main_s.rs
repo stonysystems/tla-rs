@@ -545,7 +545,7 @@ verus! {
              forall |i: int, j: int| #![trigger gls_next(glb[i], glb[j])] 0 <= i < glb.len() - 1 && j == i+1 ==> gls_next(glb[i], glb[j]),
     ensures sb.len() == glb.len(),
             service_init(sb[0], abstractify_end_points(config).to_set()),
-            forall |i: int, j: int| #![trigger service_next(sb[i], sb[j])] 0 <= i < sb.len() - 1 ==> sb[i] == sb[j] || service_next(sb[i], sb[j]),
+            forall |i: int, j: int| #![trigger service_next(sb[i], sb[j])] 0 <= i < sb.len() - 1 && j == i+1 ==> sb[i] == sb[j] || service_next(sb[i], sb[j]),
             forall |i: int| 0 <= i < glb.len() ==> sb[i] == abstractify_gls_state(glb[i]),
             forall |i: int| 0 <= i < sb.len() ==> #[trigger] sb[i].hosts =~= sb[0].hosts,
             sb[sb.len()-1] == abstractify_gls_state(glb[glb.len()-1]),
@@ -570,7 +570,18 @@ verus! {
                 assert(service_next(sb[sb.len()-2], sb[sb.len()-1]));
             }
 
-            assume(forall |i: int, j: int| #![trigger service_next(sb[i], sb[j])] 0 <= i < sb.len() - 1 ==> sb[i] == sb[j] || service_next(sb[i], sb[j]));
+            // Prove the service_next quantifier by IH + last step
+            assert forall |i: int, j: int| #![trigger service_next(sb[i], sb[j])]
+                0 <= i < sb.len() - 1 && j == i+1
+                implies sb[i] == sb[j] || service_next(sb[i], sb[j])
+            by {
+                if i < rest.len() - 1 {
+                    // IH case: both sb[i] and sb[i+1] are from rest
+                    assert(sb[i] == rest[i]);
+                    assert(sb[i+1] == rest[i+1]);
+                }
+                // else: i == sb.len()-2, already proved in lines 567-571
+            };
 
             sb
         }
@@ -674,7 +685,7 @@ verus! {
                  forall |i: int, j: int| #![trigger DSStateLock::next_requires(db[i], db[j])] 0 <= i < db.len() - 1 && j == i+1 ==> DSStateLock::next_requires(db[i], db[j])
         ensures db.len() == sb.len(),
                 service_init(sb[0], db[0].servers.dom()),
-                forall |i: int, j: int| #![trigger service_next(sb[i], sb[j])] 0 <= i < sb.len() - 1 ==> sb[i] == sb[j] || service_next(sb[i], sb[j]),
+                forall |i: int, j: int| #![trigger service_next(sb[i], sb[j])] 0 <= i < sb.len() - 1 && j == i+1 ==> sb[i] == sb[j] || service_next(sb[i], sb[j]),
                 forall |i: int| 0 <= i < db.len() ==> service_correspondence(db[i].environment.sentPackets, sb[i])
     {
         let lsb = RefinementToLSState(config, db);
