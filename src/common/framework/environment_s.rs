@@ -100,10 +100,10 @@ verus! {
         ) -> bool
       {
         &&& e_.sentPackets =~= e.sentPackets.union(
-                                        ios.map_values(|io: LIoOp<IdType, MessageType>| io->Send_s)
+                                        ios.filter(|io: LIoOp<IdType, MessageType>| io is Send)
+                                            .map_values(|io: LIoOp<IdType, MessageType>| io->s)
                                             .to_set())
-        &&& (forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets) )
-        // &&& (forall |io| ios.contains(io) && io is Receive ==> e.sentPackets.contains(io->r))
+        &&& (forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets) )
         &&& e_.time == e.time
       }
 
@@ -155,7 +155,8 @@ verus! {
               LEnvStep::LEnvStepHostIos{actor, ios} => {
                   broadcast use vstd::seq_lib::seq_to_set_is_finite;
                   broadcast use vstd::set::group_set_axioms;
-                  let new_set = ios.map_values(|io: LIoOp<IdType, MessageType>| io->Send_s).to_set();
+                  let new_set = ios.filter(|io: LIoOp<IdType, MessageType>| io is Send)
+                      .map_values(|io: LIoOp<IdType, MessageType>| io->s).to_set();
                   assert(new_set.finite());
                   assert(e.sentPackets.union(new_set).finite());
               },
