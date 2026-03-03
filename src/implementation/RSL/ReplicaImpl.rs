@@ -94,14 +94,25 @@ impl CReplica{
 }
 
 impl CReplica {
-    #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (result: Self)
         ensures
-            self == result,
             result@ == self@,
             result.valid() == self.valid(),
     {
-        self.clone()
+        let constants = self.constants.clone();
+        let proposer = self.proposer.clone_up_to_view();
+        let acceptor = self.acceptor.clone_up_to_view();
+        let learner = self.learner.clone_up_to_view();
+        let executor = self.executor.clone_up_to_view();
+
+        CReplica {
+            constants,
+            nextHeartbeatTime: self.nextHeartbeatTime,
+            proposer,
+            acceptor,
+            learner,
+            executor,
+        }
     }
 }
 
