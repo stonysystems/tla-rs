@@ -9,6 +9,7 @@ use vstd::{set::*, set_lib::*};
 
 verus! {
     pub fn deliver_packet(r: &mut ReplicaImpl, netc:&mut NetClient, packet:&Option<CPacket>) -> (ok:bool)
+        ensures *r == *old(r),
     {
         let mut ok:bool = true;
         match packet {
@@ -27,6 +28,7 @@ verus! {
     }
 
     pub fn deliver_packet_sequence(r: &mut ReplicaImpl, netc:&mut NetClient, packets:&Vec<CPacket>) -> (ok:bool)
+        ensures *r == *old(r),
     {
         let mut ok = true;
         let (is_ok, net_event) = send_packet_seq(packets, netc);
@@ -38,6 +40,7 @@ verus! {
     }
 
     pub fn deliver_broadcast(r: &mut ReplicaImpl, netc:&mut NetClient, broadcast:&CBroadcast) -> (ok:bool)
+        ensures *r == *old(r),
     {
         let mut ok = true;
         let (is_ok, net_event) = send_broadcast(broadcast, netc);
@@ -49,6 +52,7 @@ verus! {
     }
 
     pub fn deliver_outbound_packets(r: &mut ReplicaImpl, netc:&mut NetClient, outpackets:&OutboundPackets) -> (ok:bool)
+        ensures *r == *old(r),
     {
         match outpackets {
             OutboundPackets::OutboundPacket{p} => {

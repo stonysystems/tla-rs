@@ -13,6 +13,7 @@ use vstd::{set::*, set_lib::*};
 verus! {
     pub fn replica_no_receive_no_read_clock_next_maybe_enter_new_view_send_1a(r:&mut ReplicaImpl, netc:&mut NetClient) -> (ok:bool)
         requires old(r).valid(),
+        ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let outpackets = CReplica::CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
@@ -21,6 +22,7 @@ verus! {
 
     pub fn replica_no_receive_no_read_clock_next_maybe_enter_phase2(r:&mut ReplicaImpl, netc:&mut NetClient) -> (ok:bool)
         requires old(r).valid(),
+        ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let outpackets = CReplica::CReplicaNextSpontaneousMaybeEnterPhase2(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
@@ -29,6 +31,7 @@ verus! {
 
     pub fn replica_no_receive_no_read_clock_truncate_log_based_on_checkpoints(r:&mut ReplicaImpl, netc:&mut NetClient) -> (ok:bool)
         requires old(r).valid(),
+        ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let outpackets = CReplica::CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
@@ -37,6 +40,7 @@ verus! {
 
     pub fn replica_no_receive_no_read_clock_maybe_make_decision(r:&mut ReplicaImpl, netc:&mut NetClient) -> (ok:bool)
         requires old(r).valid(),
+        ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let outpackets = CReplica::CReplicaNextSpontaneousMaybeMakeDecision(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
@@ -45,6 +49,7 @@ verus! {
 
     pub fn replica_no_receive_no_read_clock_maybe_execute(r:&mut ReplicaImpl, netc:&mut NetClient) -> (ok:bool)
         requires old(r).valid(),
+        ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let outpackets = CReplica::CReplicaNextSpontaneousMaybeExecute(&mut r.replica);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
@@ -53,6 +58,7 @@ verus! {
 
     pub fn replica_no_receive_no_read_clock(r:&mut ReplicaImpl, netc:&mut NetClient) -> (ok:bool)
         requires old(r).valid(),
+        ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         if r.nextActionIndex == 1 {
             replica_no_receive_no_read_clock_next_maybe_enter_new_view_send_1a(r, netc)

@@ -52,8 +52,8 @@ verus! {
         (ok, Ghost(event_results), ios)
     }
 
-    #[verifier(external_body)]
     pub fn ReplicaNextMainNoClock(r:&mut ReplicaImpl, netc:&mut NetClient) -> (res: (bool, Ghost<EventResults>, Ghost<Seq<RslIo>>))
+        requires old(r).valid(),
     {
 
         let curActionIndex = r.nextActionIndex;
@@ -78,8 +78,8 @@ verus! {
         (ok, Ghost(event_results), Ghost(ios_his))
     }
 
-    #[verifier(external_body)]
     pub fn ReplicaNextMainReadClock(r:&mut ReplicaImpl, netc:&mut NetClient) -> (res: (bool, Ghost<EventResults>, Ghost<Seq<RslIo>>))
+        requires old(r).valid(),
     {
         let curActionIndex = r.nextActionIndex;
         let ghost mut net_event = Seq::<NetEvent>::empty();
