@@ -25,13 +25,20 @@ impl CLearner {
         &&& clearnerstate_is_valid(self.unexecuted_learner_state)
     }
 
-    #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (res: CLearner)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
     {
-        self.clone()
+        let constants_clone = self.constants.clone();
+        // Clone impl ensures: constants_clone == *self.constants, constants_clone@ == self.constants@
+        let state_clone = clone_clearnerstate_up_to_view(&self.unexecuted_learner_state);
+        // ensures: state_clone@ == self.unexecuted_learner_state@
+        CLearner {
+            constants: constants_clone,
+            max_ballot_seen: self.max_ballot_seen, // CBallot is Copy
+            unexecuted_learner_state: state_clone,
+        }
     }
 }
 

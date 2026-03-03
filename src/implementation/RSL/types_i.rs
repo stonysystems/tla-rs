@@ -511,6 +511,18 @@ verus! {
         )
     }
 
+    #[verifier(external_body)]
+    pub fn clone_clearnerstate_up_to_view(m: &CLearnerState) -> (res: CLearnerState)
+        ensures
+            res@ == m@,
+    {
+        let mut cloned: HashMap<COperationNumber, CLearnerTuple> = HashMap::new();
+        for (&k, v) in m.iter() {
+            cloned.insert(k, v.clone_up_to_view());
+        }
+        cloned
+    }
+
     pub fn clone_vec_coperationnumber(v: &Vec<COperationNumber>) -> (res: Vec<COperationNumber>)
         ensures
             res@ == v@,
