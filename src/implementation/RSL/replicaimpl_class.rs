@@ -29,7 +29,6 @@ verus! {
         self.replica@
     }
 
-    #[verifier::external_body]
     pub fn Replica_Init(constants:CReplicaConstants) -> (rc:Self)
         requires constants.valid(),
         ensures

@@ -176,6 +176,7 @@ impl CReplica{
             c.valid()
         ensures
             result.valid(),
+            result.constants == c,
             LReplicaInit(result@,c@)
     {
         let s = CReplica{
