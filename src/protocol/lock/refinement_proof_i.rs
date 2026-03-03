@@ -205,6 +205,26 @@ verus! {
         }
     }
 
+    /// Inductive invariant: sentPackets.finite() holds for all states in a valid lock behavior.
+    pub proof fn lemma_lock_sentPackets_finite(glb: Seq<AbstractGLSState>, config: AbstractConfig, i: int)
+        requires
+            is_valid_behaviour(glb, config),
+            0 <= i < glb.len(),
+        ensures
+            glb[i].ls.environment.sentPackets.finite()
+        decreases i
+    {
+        if i == 0 {
+            // gls_init(glb[0], config) → ls_init(glb[0].ls, config) → sentPackets.finite()
+        } else {
+            lemma_lock_sentPackets_finite(glb, config, i - 1);
+            lemma_ls_next(glb, config, i - 1);
+            // gls_next → ls_next → LEnvironment_Next → generic preservation
+            lemma_environment_next_preserves_sentpackets_finite(
+                glb[i - 1].ls.environment, glb[i].ls.environment);
+        }
+    }
+
     // TODO: NOT PROVEN
     pub proof fn make_lock_history(glb:Seq<AbstractGLSState>, config:AbstractConfig, i:int) -> (history:Seq<AbstractEndPoint>)
     requires is_valid_behaviour(glb, config),
@@ -220,7 +240,9 @@ verus! {
     decreases
         i
     {
-        assume(forall |i: int| 0 <= i < glb.len() ==> glb[i].ls.environment.sentPackets.finite());
+        assert forall |k: int| 0 <= k < glb.len() implies glb[k].ls.environment.sentPackets.finite() by {
+            lemma_lock_sentPackets_finite(glb, config, k);
+        };
         // lemma_seq_properties::<AbstractEndPoint>();
         // lemma_set_properties::<AbstractEndPoint>();
         if i == 0 {
