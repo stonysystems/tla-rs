@@ -146,7 +146,6 @@ impl CProposer{
     // Internal helper: check if opn is after all log truncation points in set
     // =========================================================================
 
-    #[verifier(external_body)]
     pub fn CIsAfterLogTruncationPoint(opn:COperationNumber, S:&HashSet<CPacket>) -> (res:bool)
         ensures
             ({
@@ -154,19 +153,52 @@ impl CProposer{
                 res == lr
             })
     {
-        let mut result = true;
-        let ghost mut checked: Set<RslPacket> = Set::empty();
-        let m_iter = S.iter();
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::set::group_set_axioms;
+        broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
-        for p in iter:m_iter
+        let vec = hashset_to_vec(S);
+        let mut i: usize = 0;
+        while i < vec.len()
+            invariant
+                0 <= i <= vec.len(),
+                forall |j: int| 0 <= j < i as int ==> (
+                    (#[trigger] vec@[j]).msg is CMessage1b ==> vec@[j].msg->log_truncation_point <= opn
+                ),
+                forall |k: int| 0 <= k < vec@.len() ==> S@.contains(#[trigger] vec@[k]),
+                forall |x: CPacket| S@.contains(x) ==> (exists |k: int| 0 <= k < vec@.len() && vec@[k] == x),
+            decreases
+                vec.len() - i,
         {
-            if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &p.msg {
+            if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &vec[i].msg {
                 if *log_truncation_point > opn {
+                    // Found a Message1b with log_truncation_point > opn
+                    proof {
+                        let bad = vec@[i as int];
+                        assert(S@.contains(bad));
+                        let f = |p: CPacket| p@;
+                        assert(S@.map(f).contains(f(bad)));
+                        assert(bad@.msg is RslMessage1b);
+                        assert(bad@.msg->log_truncation_point > opn as int);
+                    }
                     return false;
                 }
             } else {
-                return false;
+                // Not a Message1b — the spec condition is vacuously true for non-1b packets,
+                // but we still need to check all packets; just continue
             }
+            i = i + 1;
+        }
+        // All packets checked: for each Message1b, log_truncation_point <= opn
+        proof {
+            let f = |p: CPacket| p@;
+            assert forall |p: RslPacket| S@.map(f).contains(p) && p.msg is RslMessage1b
+                implies p.msg->log_truncation_point <= opn as int by {
+                let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == p;
+                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == cp;
+                // vec@[j].msg is CMessage1b (since cp@ == p and p.msg is RslMessage1b)
+                // From loop invariant: vec@[j].msg->log_truncation_point <= opn
+            };
         }
         true
     }
@@ -235,24 +267,59 @@ impl CProposer{
     // Called from proposer_gen.rs and proposer_manual.rs
     // =========================================================================
 
-    #[verifier(external_body)]
     pub fn CSetOfMessage1bAboutBallot(S:&HashSet<CPacket>, b:&CBallot) -> (res:bool)
         ensures
             res == LSetOfMessage1bAboutBallot(S@.map(|p:CPacket| p@), b@)
     {
-        let mut iter = S.iter();
-        match iter.next(){
-            Some(p)=>{
-            if let CMessage::CMessage1b{ bal_1b, log_truncation_point, votes} = &p.msg{
-                if bal_1b.seqno != b.seqno || bal_1b.proposer_id != b.proposer_id{
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::set::group_set_axioms;
+        broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
+
+        // First check: all packets are Message1b
+        if !Self::CSetOfMessage1b(S) {
+            return false;
+        }
+        // LSetOfMessage1b(S@.map(...)) is true at this point
+
+        // Second check: all Message1b packets have ballot == b
+        let vec = hashset_to_vec(S);
+        let mut i: usize = 0;
+        while i < vec.len()
+            invariant
+                0 <= i <= vec.len(),
+                forall |j: int| 0 <= j < i as int ==>
+                    ((#[trigger] vec@[j]).msg is CMessage1b ==> vec@[j].msg->bal_1b@ == b@),
+                forall |k: int| 0 <= k < vec@.len() ==> S@.contains(#[trigger] vec@[k]),
+                forall |x: CPacket| S@.contains(x) ==> (exists |k: int| 0 <= k < vec@.len() && vec@[k] == x),
+            decreases
+                vec.len() - i,
+        {
+            if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &vec[i].msg {
+                if bal_1b.seqno != b.seqno || bal_1b.proposer_id != b.proposer_id {
+                    // Found a Message1b with wrong ballot
+                    proof {
+                        let bad = vec@[i as int];
+                        assert(S@.contains(bad));
+                        let f = |p: CPacket| p@;
+                        assert(S@.map(f).contains(f(bad)));
+                        assert(bad@.msg is RslMessage1b);
+                        assert(bad@.msg->bal_1b != b@);
+                    }
                     return false;
                 }
             }
-            }
-            None=>{}
+            i = i + 1;
         }
-        Self::CSetOfMessage1b(&S)
-
+        // All Message1b packets have ballot == b
+        proof {
+            let f = |p: CPacket| p@;
+            assert forall |p: RslPacket| S@.map(f).contains(p)
+                implies p.msg->bal_1b == b@ by {
+                let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == p;
+                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == cp;
+            };
+        }
+        true
     }
 
     // =========================================================================
