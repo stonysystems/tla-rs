@@ -50,13 +50,28 @@ verus! {
             }
         }
 
-        #[verifier(external_body)]
         pub fn clone_up_to_view(&self) -> (result: Self)
             ensures
                 result@ == self@,
                 result.valid() == self.valid(),
         {
-            self.clone()
+            let constants_clone = self.constants.clone();
+            // Clone impl ensures: constants_clone == self.constants, constants_clone@ == self.constants@
+            let votes_clone = clone_cvotes_up_to_view(&self.votes);
+            // ensures: votes_clone == self.votes
+            let ckpt_clone = self.last_checkpointed_operation.clone();
+            // Vec<u64>::clone — for Copy elements, clone preserves all values
+            proof {
+                assert(self.last_checkpointed_operation@ =~= ckpt_clone@);
+            }
+            CAcceptor {
+                constants: constants_clone,
+                max_bal: self.max_bal,
+                votes: votes_clone,
+                last_checkpointed_operation: ckpt_clone,
+                log_truncation_point: self.log_truncation_point,
+                min_vote_opn: self.min_vote_opn,
+            }
         }
     }
 

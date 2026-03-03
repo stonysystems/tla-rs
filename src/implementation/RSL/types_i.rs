@@ -1,3 +1,4 @@
+use crate::common::collections::hashsets::clone_hashset;
 use crate::common::framework::environment_s::*;
 use crate::common::native::io_s::*;
 use crate::implementation::common::marshalling::*;
@@ -439,20 +440,19 @@ verus! {
 
 
     impl CLearnerTuple{
-        #[verifier(external_body)]
         pub fn clone_up_to_view(&self) -> (res:CLearnerTuple)
             ensures
                 res@ == self@,
                 (self.abstractable() ==> res.abstractable()),
         {
-            let mut new_senders = HashSet::new();
-            for client in self.received_2b_message_senders.iter() {
-                new_senders.insert(client.clone_up_to_view());
-            }
+            let new_senders = clone_hashset(&self.received_2b_message_senders);
+            // clone_hashset ensures: new_senders@ == self.received_2b_message_senders@
+            let new_batch = clone_request_batch_up_to_view(&self.candidate_learned_value);
+            // clone_request_batch_up_to_view ensures: new_batch@ == self.candidate_learned_value@
 
             CLearnerTuple{
                 received_2b_message_senders: new_senders,
-                candidate_learned_value: clone_request_batch_up_to_view(&self.candidate_learned_value),
+                candidate_learned_value: new_batch,
             }
         }
 

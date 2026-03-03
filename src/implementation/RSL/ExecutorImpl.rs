@@ -65,13 +65,33 @@ impl CExecutor {
         res
     }
 
-    #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (result: Self)
         ensures
             result@ == self@,
             result.valid() == self.valid(),
     {
-        self.clone()
+        let constants_clone = self.constants.clone();
+        // Clone impl ensures: constants_clone == *self.constants, constants_clone@ == self.constants@
+        let reply_cache_clone = clone_creply_cache_up_to_view(&self.reply_cache);
+        // ensures: reply_cache_clone@ == self.reply_cache@
+        let next_op_clone = match &self.next_op_to_execute {
+            COutstandingOperation::COutstandingOpKnown{v, bal} => {
+                let v_clone = clone_request_batch_up_to_view(v);
+                // ensures: v_clone@ == v@, element-wise valid() preserved
+                COutstandingOperation::COutstandingOpKnown{v: v_clone, bal: *bal}
+            }
+            COutstandingOperation::COutstandingOpUnknown{} => {
+                COutstandingOperation::COutstandingOpUnknown{}
+            }
+        };
+        CExecutor {
+            constants: constants_clone,
+            app: self.app,
+            ops_complete: self.ops_complete,
+            max_bal_reflected: self.max_bal_reflected,
+            next_op_to_execute: next_op_clone,
+            reply_cache: reply_cache_clone,
+        }
     }
 }
 
