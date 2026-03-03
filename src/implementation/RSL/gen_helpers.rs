@@ -51,21 +51,6 @@ pub fn clone_cpacket_full(p: &CPacket) -> (res: CPacket)
     res
 }
 
-/// Clone an LPacket<EndPoint, CMessage> into a CPacket with field equality
-/// and validity guarantees. Needed for IO dispatch in replica_gen where packets
-/// come from the network layer as LPacket rather than CPacket.
-#[verifier(external_body)]
-pub fn clone_io_packet(p: &LPacket<EndPoint, CMessage>) -> (res: CPacket)
-    ensures
-        res.dst == p.dst,
-        res.src == p.src,
-        res.msg == p.msg,
-        res.valid(),
-        res.abstractable(),
-{
-    CPacket { dst: p.dst.clone(), src: p.src.clone(), msg: p.msg.clone() }
-}
-
 /// Snoc lemma: ExtractSentPacketsFromIos distributes over push.
 /// Extract(s.push(x)) == Extract(s) ++ [x->s]  if x is Send
 /// Extract(s.push(x)) == Extract(s)             otherwise

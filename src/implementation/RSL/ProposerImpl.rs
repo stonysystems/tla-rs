@@ -2,7 +2,6 @@ use crate::common::collections::hashsets::*;
 use crate::common::collections::sets::*;
 use crate::common::collections::vecs::*;
 use crate::common::native::io_s::*;
-use crate::implementation::common::generic_refinement::*;
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::RSL::{
     cbroadcast::*, cconfiguration::*, cconstants::*, cmessage::*, types_i::*, ElectionImpl::*,
@@ -260,7 +259,12 @@ impl CProposer{
             assume(count == S@.len());
             if result {
                 assert(checked.len() == S@.len());
-                lemma_SetViewSizeUnchange(S@, S@.map(|p:CPacket| p@));
+                // Proved: S@.map(|p| p@).len() == S@.len() via injective-map cardinality
+                lemma_hashset_view_finite(S);
+                let f_cpv = |p: CPacket| p@;
+                broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_view;
+                assert forall |p1: CPacket, p2: CPacket| #![trigger f_cpv(p1), f_cpv(p2)] f_cpv(p1) == f_cpv(p2) implies p1 == p2 by {};
+                lemma_set_map_injective_len::<CPacket, RslPacket>(S@, f_cpv);
                 assert(checked.len() == S@.map(|p:CPacket| p@).len());
                 Self::lemma_PropertiesHoldsDuringAbstractionForCPacketHashSet(checked, S);
                 assert(forall |x:RslPacket| S@.map(|p:CPacket| p@).contains(x) ==> x.msg is RslMessage1b);
@@ -294,8 +298,17 @@ impl CProposer{
                 assert(forall |x:RslPacket| ss2_minus.contains(x) ==> exists |y:CPacket| s2_minus.contains(y) && x == y@);
                 assert(forall |x:RslPacket| ss2.contains(x) ==> exists |y:CPacket| s2@.contains(y) && x == y@);
 
-                lemma_SetViewSizeUnchange(s2_minus, ss2_minus);
-                lemma_SetViewSizeUnchange(s2@, ss2);
+                // Proved: injective-map cardinality for CPacket view
+                {
+                    broadcast use vstd::set::group_set_axioms;
+                    broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_view;
+                    let f_cpv = |p: CPacket| p@;
+                    assert forall |p1: CPacket, p2: CPacket| #![trigger f_cpv(p1), f_cpv(p2)] f_cpv(p1) == f_cpv(p2) implies p1 == p2 by {};
+                    // s2@.finite() from lemma_hashset_view_finite(s2) above;
+                    // s2_minus.finite() from axiom_set_remove_finite in group_set_axioms
+                    lemma_set_map_injective_len::<CPacket, RslPacket>(s2_minus, f_cpv);
+                    lemma_set_map_injective_len::<CPacket, RslPacket>(s2@, f_cpv);
+                }
                 assert(s2_minus.map(|p:CPacket| p@).len() == s2@.map(|p:CPacket| p@).len() - 1);
                 assert(s2_minus.map(|p:CPacket| p@).len() < s2@.map(|p:CPacket| p@).len());
                 assert(s1.subset_of(s2_minus.map(|p:CPacket| p@)));
