@@ -254,7 +254,13 @@ verus! {
                 if (0 <= i < sb.len()-2) {
                     assert(ls_next(sb[i], sb[j]));
                 } else {
-                    assume( db[j].abstractable());
+                    // Prove db[j].abstractable() where j = db.len()-1
+                    // IH gives db[i].abstractable() for i = db.len()-2
+                    lemma_ds_consistency(config, db, j);
+                    // sentPackets.finite(): from IH + LEnvironment_Next preservation
+                    lemma_environment_next_preserves_sentpackets_finite(
+                        db[i].environment, db[j].environment);
+                    assert(db[j].abstractable());
                     RefinementToLSStateHelper(db[i], db[j], sb[i], sb[j]);
                 }
             }
@@ -263,7 +269,8 @@ verus! {
             assert(forall |i: int| #![auto] 0 <= i < db.len() ==> db[i].environment.sentPackets.finite());
             assert(forall |i: int| #![auto] 0 <= i < db.len() ==> db[i].servers.dom().finite());
             assert(forall |i: int, r: AbstractEndPoint| #![auto] 0 <= i < db.len() ==> abstractify_end_points( db[i].config).contains(r) ==>  db[i].servers.contains_key(r));
-            assume( forall |i: int| #![auto] 0 <= i < db.len() ==> db[i].abstractable());
+            // db[i].abstractable() follows from the four components proved above (lines 262-265)
+            assert( forall |i: int| #![auto] 0 <= i < db.len() ==> db[i].abstractable());
             /*
             &&& valid_config(self.config)
             // TODO: maybe this trigger needs a change
