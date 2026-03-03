@@ -249,7 +249,32 @@ verus! {
             assume(de.sentPackets + sends == de_next.sentPackets);
             assume(le.sentPackets + r_sends == le_next.sentPackets);
 
-            assume(forall |r_io| #![auto] r_ios.contains(r_io) && r_io is Receive ==>  le.sentPackets.contains(r_io->r ));
+            // Prove: abstract Receive ios are in le.sentPackets
+            // Bridge: r_io ∈ r_ios, r_io is Receive → ∃j. r_ios[j] == r_io, ios[j] is Receive
+            //         → de.sentPackets.contains(ios[j]->r)  (from PerformIos match_ios_recv)
+            //         → le.sentPackets.contains(abs_pkt(ios[j]->r)) = le.sentPackets.contains(r_io->r)
+            assert(le.sentPackets =~= de.sentPackets.map(f_pkt));
+            assert forall |r_io: LockIo| r_ios.contains(r_io) && r_io is Receive
+                implies le.sentPackets.contains(r_io->r) by
+            {
+                // Extract witness j such that r_ios[j] == r_io
+                let j = choose |j: int| 0 <= j < r_ios.len() && r_ios[j] == r_io;
+
+                // r_ios[j] = abstractify_net_event_to_lock_io(ios[j])
+                // abstractify preserves variant: r_io is Receive → ios[j] is Receive
+                assert(r_ios[j] =~= abstractify_net_event_to_lock_io(ios[j]));
+                assert(ios[j] is Receive);
+
+                // From LEnvironment_PerformIos(de, de_next, id, ios):
+                // forall |io| ios.contains(io) && match_ios_recv(io, de.sentPackets)
+                // → for ios[j] which is Receive: de.sentPackets.contains(ios[j]->r)
+                assert(ios.contains(ios[j]));
+
+                // From abstractify definition for Receive:
+                // r_io->r == abstractify_net_packet_to_lock_packet(ios[j]->r)
+                // Witness for Set::map containment: ios[j]->r maps to r_io->r
+                assert(de.sentPackets.contains(ios[j]->r) && f_pkt(ios[j]->r) == r_io->r);
+            };
             assume(LEnvironment_PerformIos(le, le_next, id, r_ios));
         }
 
@@ -564,8 +589,12 @@ verus! {
         decreases i
     {
         if i == 0 {
-            assume(exists |q: LockPacket| lb[i].environment.sentPackets.contains(q) && q.msg is Transfer && lb[i].servers.contains_key(q.src) && q.msg->transfer_epoch =~= p.msg->locked_epoch && q.dst == p.src);
-            return;    
+            // sentPackets is empty from LEnvironment_Init → contradicts lb[0].sentPackets.contains(p)
+            assert(ls_init(lb[0], abstractify_end_points(config)));
+            assert(LEnvironment_Init(lb[0].environment));
+            lb[0].environment.sentPackets.lemma_len0_is_empty();
+            // lb[0].environment.sentPackets == Set::empty(), so contains(p) is false — vacuously true
+            return;
         }
 
         lemma_DeduceTransitionFromLsBehavior(config, lb, i-1);
