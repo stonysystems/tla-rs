@@ -59,6 +59,20 @@ verus! {
         s.iter().cloned().collect()
     }
 
+    /// Convert HashMap keys to a Vec, analogous to hashset_to_vec.
+    /// Ensures: every element in the result is a key of the map,
+    /// and every key of the map appears in the result.
+    #[verifier(external_body)]
+    pub fn hashmap_keys_to_vec<K, V>(m: &HashMap<K, V>) -> (res: Vec<K>)
+    where
+            K: Clone + Eq + Hash
+    ensures
+        forall |i: int| 0 <= i < res@.len() ==> m@.contains_key(#[trigger] res@[i]),
+        forall |k: K| m@.contains_key(k) ==> (exists |i: int| 0 <= i < res@.len() && res@[i] == k),
+    {
+        m.keys().cloned().collect()
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // Trusted primitives: Set::map cardinality lemmas (Phase 30)
     // ══════════════════════════════════════════════════════════════════

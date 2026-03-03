@@ -399,7 +399,54 @@ impl CProposer{
     // Internal helper for CExistsAcceptorHasProposalLargeThanOpn
     // =========================================================================
 
-    #[verifier(external_body)]
+    // Inner helper: check if any key in votes HashMap is > op.
+    // Proven against abstractify_cvotes(votes), avoiding the pattern-binding gap.
+    fn CExistVotesHasProposalLargeThanOpn_inner(votes: &CVotes, op: COperationNumber) -> (result: bool)
+    requires
+        cvotes_is_abstractable(votes),
+    ensures
+        result == (exists |opn: int| abstractify_cvotes(votes).contains_key(opn) && opn > op as int),
+    {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::map::group_map_axioms;
+
+        let keys = hashmap_keys_to_vec(votes);
+        let mut i: usize = 0;
+        while i < keys.len()
+            invariant
+                0 <= i <= keys.len(),
+                forall |j: int| 0 <= j < i as int ==> (#[trigger] keys@[j]) <= op,
+                forall |k: int| 0 <= k < keys@.len() ==> votes@.contains_key(#[trigger] keys@[k]),
+                forall |k: u64| votes@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+                cvotes_is_abstractable(votes),
+            decreases keys.len() - i,
+        {
+            if keys[i] > op {
+                proof {
+                    let opn_u64 = keys@[i as int];
+                    assert(votes@.contains_key(opn_u64));
+                    assert(opn_u64 as int > op as int);
+                    // Trigger Map::new axiom for abstractify_cvotes domain
+                    let abs_v = abstractify_cvotes(votes);
+                    assert(abs_v.dom().contains(opn_u64 as int));
+                    assert(abs_v.contains_key(opn_u64 as int) && opn_u64 as int > op as int);
+                }
+                return true;
+            }
+            i = i + 1;
+        }
+        proof {
+            assert forall |opn: int| abstractify_cvotes(votes).contains_key(opn)
+                implies opn <= op as int by {
+                let k = choose |k: u64| votes@.contains_key(k) && k as int == opn;
+                assert(votes@.contains_key(k));
+                let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+                assert(k <= op);
+            };
+        }
+        false
+    }
+
     pub fn CExistVotesHasProposalLargeThanOpn(p:&CPacket, op: COperationNumber) -> (result_CExistVotesHasProposalLargeThanOpn:bool)
     requires
         p.valid(),
@@ -411,31 +458,18 @@ impl CProposer{
         result_CExistVotesHasProposalLargeThanOpn == lr
     })
     {
-
         match &p.msg {
-            CMessage::CMessage1b { votes, .. } => {
-                let mut iter = votes.keys();
-
-                loop {
-                    let maybe_opn = iter.next();
-                    match maybe_opn {
-                        Some(opn_in_map) => {
-                            if *opn_in_map > op {
-                                return true;
-                            }
-                        }
-                        None => break,
-                    }
+            CMessage::CMessage1b { bal_1b, log_truncation_point, votes } => {
+                proof {
+                    // Bridge pattern-bound votes to p@.msg->votes via extensional equality
+                    assert(abstractify_cvotes(votes) =~= p@.msg->votes);
                 }
+                Self::CExistVotesHasProposalLargeThanOpn_inner(votes, op)
             }
             _ => {
                 return false;
             }
         }
-
-        return false;
-
-
     }
 
     // =========================================================================
