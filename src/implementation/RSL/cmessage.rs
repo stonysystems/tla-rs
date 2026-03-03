@@ -291,11 +291,19 @@ verus! {
         }
     }
 
-    #[verifier(external_body)]
     pub broadcast proof fn axiom_cpacket_view()
         ensures forall |p1:CPacket, p2:CPacket| p1@ == p2@ ==> p1 == p2
     {
-
+        broadcast use crate::common::native::io_s::axiom_endpoint_view;
+        broadcast use axiom_cmessage_view;
+        assert forall |p1:CPacket, p2:CPacket| p1@ == p2@ implies p1 == p2 by {
+            // p1@ == p2@ means LPacket{dst: p1.dst@, src: p1.src@, msg: p1.msg@}
+            //                == LPacket{dst: p2.dst@, src: p2.src@, msg: p2.msg@}
+            // So: p1.dst@ == p2.dst@, p1.src@ == p2.src@, p1.msg@ == p2.msg@
+            // axiom_endpoint_view: p1.dst == p2.dst, p1.src == p2.src
+            // axiom_cmessage_view: p1.msg == p2.msg
+            // All fields equal => p1 == p2
+        };
     }
 
     #[verifier(external_body)]
