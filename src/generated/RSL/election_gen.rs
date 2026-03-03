@@ -646,7 +646,7 @@ ensures
         // Request already seen — return es unchanged
         let result = es.clone_up_to_view();
         proof {
-            assert(result == *es);
+            // clone_up_to_view ensures: result@ == es@, result.valid() == es.valid()
             // The witness is in one of the two request sequences and matches req@
             assert(RequestsMatch(witness, req@));
             assert(es@.requests_received_prev_epochs.contains(witness) || es@.requests_received_this_epoch.contains(witness));

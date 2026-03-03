@@ -147,11 +147,13 @@ impl View for COutstandingOperation {
 }
 
 // CElectionState contains HashSet<u64> and HashSet<CRequestHeader>, so Clone can't be derived by Verus.
+// Clone body remains external_body (verifying Clone trait methods triggers SMT context changes
+// that cause rlimit regression in CMessage marshalling). Ensures relaxed from `*self == result`
+// to view-only + validity preservation, which is all callers actually need.
 impl Clone for CElectionState {
     #[verifier(external_body)]
     fn clone(&self) -> (result: Self)
     ensures
-        *self == result,
         result@ == self@,
         result.valid() == self.valid(),
     {
@@ -194,22 +196,27 @@ impl PartialEq for CRequestHeader {
 impl CElectionState
 {
 
-    #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (result:Self)
         ensures
-            self==result,
-            self@ == result@,
+            result@ == self@,
+            result.valid() == self.valid(),
     {
+        let constants_clone = self.constants.clone();
+        let suspectors_clone = clone_hashset_u64(&self.current_view_suspectors);
+        let this_epoch_clone = clone_request_batch_up_to_view(&self.requests_received_this_epoch);
+        let prev_epochs_clone = clone_request_batch_up_to_view(&self.requests_received_prev_epochs);
+        let cur_set_clone = clone_hashset(&self.cur_req_set);
+        let prev_set_clone = clone_hashset(&self.prev_req_set);
         CElectionState {
-            constants: self.constants.clone_up_to_view(),
-            current_view: self.current_view.clone_up_to_view(),
-            current_view_suspectors: clone_hashset_u64(&self.current_view_suspectors),
+            constants: constants_clone,
+            current_view: self.current_view,
+            current_view_suspectors: suspectors_clone,
             epoch_end_time: self.epoch_end_time,
             epoch_length: self.epoch_length,
-            requests_received_this_epoch: clone_request_batch_up_to_view(&self.requests_received_this_epoch),
-            requests_received_prev_epochs: clone_request_batch_up_to_view(&self.requests_received_prev_epochs),
-            cur_req_set : self.cur_req_set.clone(),
-            prev_req_set : self.prev_req_set.clone(),
+            requests_received_this_epoch: this_epoch_clone,
+            requests_received_prev_epochs: prev_epochs_clone,
+            cur_req_set: cur_set_clone,
+            prev_req_set: prev_set_clone,
         }
     }
 
