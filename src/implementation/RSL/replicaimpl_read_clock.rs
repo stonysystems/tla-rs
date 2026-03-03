@@ -11,8 +11,8 @@ use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 
 verus! {
-    #[verifier::external_body]
     pub fn replica_next_read_clock_and_process_packet( r:&mut ReplicaImpl, netc:&mut NetClient, cpacket:CPacket) -> (ok:bool)
+        requires old(r).valid(), cpacket.valid(), cpacket.msg is CMessageHeartbeat,
     {
         let clock = read_clock(netc);
         let outpackets = CReplica::CReplicaNextProcessHeartbeat(&mut r.replica, cpacket, clock);

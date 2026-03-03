@@ -16,16 +16,16 @@ verus! {
 
     }
 
-    #[verifier::external_body]
     pub fn replica_next_process_packet_heartbeat(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
+        requires old(r).valid(), pkt.valid(), pkt.msg is CMessageHeartbeat,
     {
         let mut ok:bool = true;
         ok = replica_next_read_clock_and_process_packet(r, netc, pkt);
         ok
     }
 
-    #[verifier::external_body]
     pub fn replica_next_process_packet_non_heartbeat(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
+        requires old(r).valid(), pkt.valid(),
     {
         let mut ok:bool = true;
         ok = replica_next_process_packet_without_reading_clock(r, netc, pkt);
