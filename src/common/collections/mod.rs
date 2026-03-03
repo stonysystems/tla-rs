@@ -1,6 +1,5 @@
 pub mod comparable;
 pub mod count_matches;
-pub mod hashmaps;
 pub mod hashsets;
 pub mod maps;
 pub mod maps2;
