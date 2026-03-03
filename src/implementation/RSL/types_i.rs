@@ -474,12 +474,12 @@ verus! {
     }
 
     impl Clone for CLearnerTuple {
-        #[verifier::external_body]
-        fn clone(&self) -> Self {
-            CLearnerTuple {
-                received_2b_message_senders: self.received_2b_message_senders.clone(),
-                candidate_learned_value: self.candidate_learned_value.clone(),
-            }
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+        {
+            self.clone_up_to_view()
         }
     }
 
@@ -489,16 +489,25 @@ verus! {
             ensures
                 res@ == self@,
                 (self.abstractable() ==> res.abstractable()),
+                res.valid() == self.valid(),
         {
             let new_senders = clone_hashset(&self.received_2b_message_senders);
-            // clone_hashset ensures: new_senders@ == self.received_2b_message_senders@
             let new_batch = clone_request_batch_up_to_view(&self.candidate_learned_value);
-            // clone_request_batch_up_to_view ensures: new_batch@ == self.candidate_learned_value@
 
-            CLearnerTuple{
+            let res = CLearnerTuple{
                 received_2b_message_senders: new_senders,
                 candidate_learned_value: new_batch,
+            };
+            proof {
+                // new_batch@ == self.candidate_learned_value@, so they are element-wise equal.
+                // Prove crequestbatch_is_valid transfers.
+                assert(crequestbatch_is_valid(&res.candidate_learned_value) ==
+                       crequestbatch_is_valid(&self.candidate_learned_value));
+                // Prove crequestbatch_is_abstractable transfers.
+                assert(crequestbatch_is_abstractable(&res.candidate_learned_value) ==
+                       crequestbatch_is_abstractable(&self.candidate_learned_value));
             }
+            res
         }
 
         pub open spec fn abstractable(self) -> bool{

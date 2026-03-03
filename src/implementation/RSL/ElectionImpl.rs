@@ -147,27 +147,15 @@ impl View for COutstandingOperation {
 }
 
 // CElectionState contains HashSet<u64> and HashSet<CRequestHeader>, so Clone can't be derived by Verus.
-// Clone body remains external_body (verifying Clone trait methods triggers SMT context changes
-// that cause rlimit regression in CMessage marshalling). Ensures relaxed from `*self == result`
-// to view-only + validity preservation, which is all callers actually need.
+// Delegation to clone_up_to_view() which uses verified clone helpers (clone_hashset_u64, clone_hashset,
+// clone_request_batch_up_to_view) instead of raw HashSet::clone().
 impl Clone for CElectionState {
-    #[verifier(external_body)]
     fn clone(&self) -> (result: Self)
     ensures
         result@ == self@,
         result.valid() == self.valid(),
     {
-        CElectionState {
-            constants: self.constants.clone(),
-            current_view: self.current_view,
-            current_view_suspectors: self.current_view_suspectors.clone(),
-            epoch_end_time: self.epoch_end_time,
-            epoch_length: self.epoch_length,
-            requests_received_this_epoch: self.requests_received_this_epoch.clone(),
-            requests_received_prev_epochs: self.requests_received_prev_epochs.clone(),
-            cur_req_set: self.cur_req_set.clone(),
-            prev_req_set: self.prev_req_set.clone(),
-        }
+        self.clone_up_to_view()
     }
 }
 
