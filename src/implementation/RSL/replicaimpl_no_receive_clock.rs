@@ -47,7 +47,6 @@ verus! {
         ok
     }
 
-    #[verifier(external_body)]
     pub fn replica_no_receive_read_clock_next(r:&mut ReplicaImpl, netc:&mut NetClient) -> (ok:bool)
     {
         if r.nextActionIndex == 3 {

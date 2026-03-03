@@ -102,8 +102,9 @@ verus! {
         (ok, Ghost(event_results), Ghost(ios_his))
     }
 
-    #[verifier(external_body)]
     pub fn Replica_Next_main(r:&mut ReplicaImpl, netc:&mut NetClient) -> (res: (bool, Ghost<EventResults>, Ghost<Seq<RslIo>>))
+        requires
+            old(r).valid(),
     {
         if r.nextActionIndex == 0 {
             ReplicaNextMainProcessPacketX(r, netc)
