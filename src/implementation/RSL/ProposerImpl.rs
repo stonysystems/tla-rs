@@ -61,14 +61,36 @@ impl CProposer{
         &&& self.election_state.valid()
     }
 
-    #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (result: Self)
         ensures
-            self == result,
             result@ == self@,
             result.valid() == self.valid(),
     {
-        self.clone()
+        let constants = self.constants.clone();
+        let request_queue = clone_request_batch_up_to_view(&self.request_queue);
+        let received_1b_packets = clone_hashset(&self.received_1b_packets);
+        let highest_seqno = clone_endpoint_seqno_map(&self.highest_seqno_requested_by_client_this_view);
+        let incomplete_batch_timer = match self.incomplete_batch_timer {
+            CIncompleteBatchTimer::CIncompleteBatchTimerOn { when } =>
+                CIncompleteBatchTimer::CIncompleteBatchTimerOn { when },
+            CIncompleteBatchTimer::CIncompleteBatchTimerOff =>
+                CIncompleteBatchTimer::CIncompleteBatchTimerOff,
+        };
+        let election_state = self.election_state.clone();
+
+        CProposer {
+            constants,
+            current_state: self.current_state,
+            request_queue,
+            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a,
+            next_operation_number_to_propose: self.next_operation_number_to_propose,
+            received_1b_packets,
+            highest_seqno_requested_by_client_this_view: highest_seqno,
+            incomplete_batch_timer,
+            election_state,
+            max_log_truncation_point: self.max_log_truncation_point,
+            max_opn_with_proposal: self.max_opn_with_proposal,
+        }
     }
 
     pub open spec fn view(self) -> LProposer
@@ -119,23 +141,69 @@ impl View for CProposer {
 }
 
 // CProposer contains HashSet<CPacket> and HashMap<EndPoint, u64>, so Clone can't be derived by Verus.
+// Delegation to clone_up_to_view() which uses verified clone helpers (clone_hashset, clone_endpoint_seqno_map,
+// clone_request_batch_up_to_view) instead of raw HashSet::clone()/HashMap::clone().
 impl Clone for CProposer {
-    #[verifier(external_body)]
-    fn clone(&self) -> Self {
-        CProposer {
-            constants: self.constants.clone(),
-            current_state: self.current_state,
-            request_queue: self.request_queue.clone(),
-            max_ballot_i_sent_1a: self.max_ballot_i_sent_1a,
-            next_operation_number_to_propose: self.next_operation_number_to_propose,
-            received_1b_packets: self.received_1b_packets.clone(),
-            highest_seqno_requested_by_client_this_view: self.highest_seqno_requested_by_client_this_view.clone(),
-            incomplete_batch_timer: self.incomplete_batch_timer.clone(),
-            election_state: self.election_state.clone(),
-            max_log_truncation_point: self.max_log_truncation_point,
-            max_opn_with_proposal: self.max_opn_with_proposal,
-        }
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
+        self.clone_up_to_view()
     }
+}
+
+/// Clone a HashMap<EndPoint, u64> with verified view preservation.
+/// Uses hashmap_keys_to_vec + while loop pattern (same as clone_creply_cache_up_to_view).
+pub fn clone_endpoint_seqno_map(m: &HashMap<EndPoint, u64>) -> (res: HashMap<EndPoint, u64>)
+    ensures
+        res@ == m@,
+{
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+    broadcast use vstd::hash_map::group_hash_map_axioms;
+    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+
+    let keys = hashmap_keys_to_vec(m);
+    let mut result: HashMap<EndPoint, u64> = HashMap::new();
+    let mut i: usize = 0;
+    while i < keys.len()
+        invariant
+            0 <= i <= keys.len(),
+            forall |k: EndPoint| result@.contains_key(k) ==> m@.contains_key(k),
+            forall |k: EndPoint| result@.contains_key(k) ==> (#[trigger] result@[k]) == m@[k],
+            forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
+            forall |k: int| 0 <= k < keys@.len() ==> m@.contains_key(#[trigger] keys@[k]),
+            forall |k: EndPoint| m@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+        decreases keys.len() - i,
+    {
+        let k = keys[i].clone_eq();
+        proof {
+            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            broadcast use vstd::hash_map::group_hash_map_axioms;
+            assert(k == keys@[i as int]);
+            assert(m@.contains_key(k));
+        }
+        let v = *m.get(&k).unwrap();
+        let ghost old_result = result@;
+        let _ = result.insert(k, v);
+        proof {
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            broadcast use vstd::hash_map::group_hash_map_axioms;
+            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+            assert(result@ =~= old_result.insert(k, v));
+            assert(v == m@[k]);
+        }
+        i = i + 1;
+    }
+    proof {
+        assert forall |k: EndPoint| m@.contains_key(k) implies result@.contains_key(k) by {
+            let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+            assert(result@.contains_key(keys@[j]));
+        };
+        assert(result@ =~= m@);
+    }
+    result
 }
 
 broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
