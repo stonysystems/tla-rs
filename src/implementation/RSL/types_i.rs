@@ -123,17 +123,25 @@ verus! {
 
     impl CRequest {
 
-    #[verifier(external_body)]
         pub fn clone_up_to_view(&self) -> (res: CRequest)
             ensures
             res@ == self@,
             res==self
         {
-            CRequest {
+            let res = CRequest {
                 client: self.client.clone_up_to_view(),
                 seqno: self.seqno,
                 request: self.request.clone_up_to_view()
+            };
+            proof {
+                // EndPoint::clone_up_to_view ensures res.client@ == self.client@
+                // axiom_endpoint_view: e1@ == e2@ ==> e1 == e2, so res.client == self.client
+                broadcast use crate::common::native::io_s::axiom_endpoint_view;
+                // CAppMessage::clone_up_to_view ensures res.request == *(&self.request)
+                // seqno is u64 (Copy): res.seqno == self.seqno
+                // All fields equal => res == *self
             }
+            res
         }
 
         pub open spec fn abstractable(self) -> bool {

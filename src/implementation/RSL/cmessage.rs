@@ -86,7 +86,6 @@ verus! {
 
     impl CMessage{
 
-        #[verifier(external_body)]
         pub fn clone_up_to_view(&self) -> (res: Self)
         ensures
             res@ == self@,
