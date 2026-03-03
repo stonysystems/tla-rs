@@ -1147,20 +1147,20 @@ impl CReplica{
                     assert(cfg =~= ss.constants.all.config);
                     assert(0 <= j && j < i as int);
                 };
-                if n > 0 && n < lco.len() {
-                    // nth order statistic always exists among sequence elements
-                    lemma_nth_highest_value_exists(lco, n);
-                    let v: int = choose |v: int| lco.contains(v)
-                        && CountMatchesInSeq(lco, |x: int| x > v) < n
-                        && CountMatchesInSeq(lco, |x: int| x >= v) >= n;
-                    assert(IsNthHighestValueInSequence(v, lco, n));
-                    assert(IsLogTruncationPointValid(v, lco, cfg));
-                    let j: int = choose |j: int| 0 <= j < lco.len() && lco[j] == v;
-                    assert(!IsLogTruncationPointValid(lco[j], lco, cfg));
-                    assert(false);
-                }
-                // For degenerate configs (< 3 replicas): same gap as original IronFleet
-                assume(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(ss, self@, outpackets@));
+                // n > 0 from config.valid() (0 < replica_ids.len()) and n = len/2+1 >= 1
+                // n <= lco.len() from acceptor.valid() (lco.len() == config.replica_ids.len())
+                //   and n = lco.len()/2+1 <= lco.len() for lco.len() >= 1
+                assert(n > 0 && n <= lco.len());
+                // nth order statistic always exists among sequence elements
+                lemma_nth_highest_value_exists(lco, n);
+                let v: int = choose |v: int| lco.contains(v)
+                    && CountMatchesInSeq(lco, |x: int| x > v) < n
+                    && CountMatchesInSeq(lco, |x: int| x >= v) >= n;
+                assert(IsNthHighestValueInSequence(v, lco, n));
+                assert(IsLogTruncationPointValid(v, lco, cfg));
+                let j: int = choose |j: int| 0 <= j < lco.len() && lco[j] == v;
+                assert(!IsLogTruncationPointValid(lco[j], lco, cfg));
+                assert(false);
             }
             outpackets
         }

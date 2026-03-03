@@ -23,7 +23,7 @@ verus! {
 
     pub open spec fn IsNthHighestValueInSequence(v:int, s:Seq<int>, n:int) -> bool
     {
-        &&& 0 < n < s.len()
+        &&& 0 < n <= s.len()
         &&& s.contains(v)
         &&& CountMatchesInSeq(s, |x:int| x > v) < n
         &&& CountMatchesInSeq(s, |x:int| x >= v) >= n
@@ -239,7 +239,7 @@ verus! {
     pub proof fn lemma_nth_highest_value_exists(s: Seq<int>, n: int)
     requires
         0 < n,
-        n < s.len(),
+        n <= s.len(),
     ensures
         exists |v: int| s.contains(v)
             && CountMatchesInSeq(s, |x: int| x > v) < n
@@ -285,7 +285,7 @@ verus! {
             assert(count_eq_m > 0);
             assert(s_filtered.len() < s.len());
 
-            assert(n_prime < s_filtered.len()) by {
+            assert(n_prime <= s_filtered.len()) by {
                 assert(s_filtered.len() == s.len() - count_eq_m);
             };
 

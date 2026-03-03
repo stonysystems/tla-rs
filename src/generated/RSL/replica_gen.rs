@@ -860,29 +860,26 @@ ensures
                     // So j < lco.len() == idx as int, which triggers the loop invariant
                     assert(0 <= j && j < idx as int);
                 };
-                if n > 0 && n < lco.len() {
-                    // Mathematical fact: the nth highest value always exists among sequence elements
-                    lemma_nth_highest_value_exists(lco, n);
-                    // Get the witness v that satisfies IsNthHighestValueInSequence
-                    let v: int = choose |v: int| lco.contains(v)
-                        && CountMatchesInSeq(lco, |x: int| x > v) < n
-                        && CountMatchesInSeq(lco, |x: int| x >= v) >= n;
-                    // This means IsLogTruncationPointValid(v, lco, cfg)
-                    assert(IsNthHighestValueInSequence(v, lco, n));
-                    assert(crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
-                        v, lco, cfg));
-                    // v is in lco, so v = lco[j] for some j
-                    let j: int = choose |j: int| 0 <= j < lco.len() && lco[j] == v;
-                    // But we proved all elements failed — contradiction
-                    assert(!crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
-                        lco[j], lco, cfg));
-                    assert(false);
-                }
-                // For degenerate configs (< 3 replicas): LMinQuorumSize >= len,
-                // so IsNthHighestValueInSequence is vacuously false and the spec predicate
-                // is unsatisfiable. Same gap as original IronFleet implementation.
-                assume(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(
-                    ss, r.0@, r.1@.map(|i: int, p: CPacket| p@)));
+                // n > 0 from config.valid() (0 < replica_ids.len()) and n = len/2+1 >= 1
+                // n <= lco.len() from acceptor.valid() (lco.len() == config.replica_ids.len())
+                //   and n = lco.len()/2+1 <= lco.len() for lco.len() >= 1
+                assert(n > 0 && n <= lco.len());
+                // Mathematical fact: the nth highest value always exists among sequence elements
+                lemma_nth_highest_value_exists(lco, n);
+                // Get the witness v that satisfies IsNthHighestValueInSequence
+                let v: int = choose |v: int| lco.contains(v)
+                    && CountMatchesInSeq(lco, |x: int| x > v) < n
+                    && CountMatchesInSeq(lco, |x: int| x >= v) >= n;
+                // This means IsLogTruncationPointValid(v, lco, cfg)
+                assert(IsNthHighestValueInSequence(v, lco, n));
+                assert(crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
+                    v, lco, cfg));
+                // v is in lco, so v = lco[j] for some j
+                let j: int = choose |j: int| 0 <= j < lco.len() && lco[j] == v;
+                // But we proved all elements failed — contradiction
+                assert(!crate::protocol::RSL::acceptor::IsLogTruncationPointValid(
+                    lco[j], lco, cfg));
+                assert(false);
             }
         }
         r

@@ -130,8 +130,8 @@ verus! {
     {
         let ghost ss = s@.map(|i, t:u64| t as int);
         let len = s.len();
-        let b1 = (0 < n) && (n < len as u64);
-        assert(b1 == (0 < n < ss.len()));
+        let b1 = (0 < n) && (n <= len as u64);
+        assert(b1 == (0 < n <= ss.len()));
         let b2 = contains_u64(s, &v);
         assert(b2 == ss.contains(v as int));
         let b3 = CCountLargerInSeq(s, v) < n;
