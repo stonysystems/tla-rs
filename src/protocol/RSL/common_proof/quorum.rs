@@ -31,6 +31,7 @@ verus! {
         requires
             WellFormedLConfiguration(config),
             forall |node: AbstractEndPoint| nodes.contains(node) ==> config.replica_ids.contains(node),
+            nodes.finite(),
         ensures
             forall |idx: int| indices.contains(idx) ==>
                 0 <= idx < config.replica_ids.len() && nodes.contains(config.replica_ids[idx]),
@@ -64,6 +65,10 @@ verus! {
             assert(indices_out.contains(idx) && node == f(idx));
         };
 
+        // Prove indices_out.finite(): all elements in [0, config.replica_ids.len())
+        lemma_SetOfElementsOfRangeNoBiggerThanRange(
+            indices_out, config.replica_ids.len() as int);
+
         lemma_MapSetCardinalityOver(indices_out, nodes, f);
         indices_out
     }
@@ -76,6 +81,7 @@ verus! {
             WellFormedLConfiguration(config),
             forall |p: RslPacket| packets.contains(p) ==> config.replica_ids.contains(p.src),
             forall |p1: RslPacket, p2: RslPacket| packets.contains(p1) && packets.contains(p2) && p1 != p2 ==> p1.src != p2.src,
+            packets.finite(),
         ensures
             forall |idx: int| indices.contains(idx)
                 ==> 0 <= idx < config.replica_ids.len() &&
@@ -85,6 +91,9 @@ verus! {
     {
         // Construct the set of src nodes from the given packets.
         let nodes = packets.map(|p:RslPacket| p.src);
+
+        // nodes.finite() from packets.finite() via map_finite
+        packets.lemma_map_finite(|p:RslPacket| p.src);
 
         // Derive the set of indices from the set of nodes.
         let indices_out = lemma_GetIndicesFromNodes(nodes, config);

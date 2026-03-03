@@ -51,23 +51,132 @@ verus! {
     {
     }
 
-    #[verifier::external_body]
+    /// If S maps injectively into a finite set T via f, then S is finite
+    /// and |S| <= |T|.
+    pub proof fn lemma_injective_preimage_finite<S, T>(
+        s: Set<S>, f: spec_fn(S) -> T, t: Set<T>,
+    )
+        requires
+            t.finite(),
+            forall |x: S| s.contains(x) ==> t.contains(#[trigger] f(x)),
+            forall |x1: S, x2: S| #![trigger f(x1), f(x2)]
+                s.contains(x1) && s.contains(x2) && f(x1) == f(x2) ==> x1 == x2,
+        ensures
+            s.finite(),
+            s.len() <= t.len(),
+        decreases t.len(),
+    {
+        broadcast use vstd::set::group_set_axioms;
+
+        if t.len() == 0 {
+            vstd::set_lib::lemma_set_empty_equivalency_len(t);
+            assert(s =~= Set::<S>::empty()) by {
+                assert forall |x: S| !s.contains(x) by {
+                    if s.contains(x) {
+                        assert(t.contains(f(x)));
+                    }
+                };
+            };
+        } else {
+            let y = t.choose();
+            let t_minus = t.remove(y);
+            if exists |x: S| s.contains(x) && f(x) == y {
+                let x = choose |x: S| s.contains(x) && f(x) == y;
+                let s_minus = s.remove(x);
+                // s_minus maps injectively into t_minus
+                assert forall |x2: S| s_minus.contains(x2) implies t_minus.contains(#[trigger] f(x2)) by {
+                    assert(s.contains(x2));
+                    assert(t.contains(f(x2)));
+                    // f(x2) != y because x2 != x (x2 in s.remove(x)) and f is injective on s
+                    if f(x2) == y {
+                        // Then f(x2) == f(x) == y, and s.contains(x2) && s.contains(x)
+                        // By injectivity: x2 == x. But x2 in s.remove(x) means x2 != x. Contradiction.
+                    }
+                };
+                lemma_injective_preimage_finite(s_minus, f, t_minus);
+                // s_minus.finite() by IH, so s = s_minus.insert(x) is finite
+            } else {
+                // No element of s maps to y, so s maps into t_minus
+                assert forall |x: S| s.contains(x) implies t_minus.contains(#[trigger] f(x)) by {
+                    assert(t.contains(f(x)));
+                    assert(f(x) != y);
+                };
+                lemma_injective_preimage_finite(s, f, t_minus);
+            }
+        }
+    }
+
     pub proof fn lemma_MapSetCardinalityOver<X, Y>(xs: Set<X>, ys: Set<Y>, f: spec_fn(X) -> Y)
         requires
             InjectiveOver(xs, ys, f),
             forall |x: X| xs.contains(x) ==> ys.contains(f(x)),
             forall |y: Y| ys.contains(y) ==> exists |x: X| xs.contains(x) && y == f(x),
+            xs.finite(),
         ensures
             xs.len() == ys.len(),
-        decreases xs.len(), ys.len()
+        decreases xs.len(),
     {
-        if xs.len() > 0 {
-            let x = choose |x: X| xs.contains(x);
+        broadcast use vstd::set::group_set_axioms;
+
+        // Derive ys.finite(): ys ⊆ xs.map(f) and xs.map(f) is finite
+        assert(ys.subset_of(xs.map(f))) by {
+            assert forall |y: Y| ys.contains(y) implies xs.map(f).contains(y) by {
+                let x = choose |x: X| xs.contains(x) && y == f(x);
+            };
+        };
+        xs.lemma_map_finite(f);
+        vstd::set_lib::lemma_len_subset(ys, xs.map(f));
+        // ys is now known to be finite
+
+        if xs.len() == 0 {
+            // xs is empty
+            vstd::set_lib::lemma_set_empty_equivalency_len(xs);
+            // No x in xs, so no y in ys has a preimage — ys is empty
+            assert(ys =~= Set::<Y>::empty()) by {
+                assert forall |y: Y| !ys.contains(y) by {
+                    if ys.contains(y) {
+                        let x = choose |x: X| xs.contains(x) && y == f(x);
+                    }
+                };
+            };
+        } else {
+            let x = xs.choose();
             let xs_prime = xs.remove(x);
-            assert(xs_prime.len() < xs.len());
             let ys_prime = ys.remove(f(x));
-            assert(ys_prime.len() < ys.len());
+
+            // Precondition 1: InjectiveOver(xs_prime, ys_prime, f)
+            // Follows from InjectiveOver(xs, ys, f) since xs_prime ⊆ xs and ys_prime ⊆ ys
+
+            // Precondition 2: forward image
+            assert forall |x2: X| xs_prime.contains(x2)
+                implies ys_prime.contains(f(x2)) by
+            {
+                assert(xs.contains(x2));
+                assert(ys.contains(f(x2)));
+                // f(x2) != f(x) by injectivity (x2 != x since x2 in xs.remove(x))
+                if f(x2) == f(x) {
+                    // InjectiveOver: xs.contains(x2) && xs.contains(x) && ys.contains(f(x2)) && ys.contains(f(x)) && f(x2)==f(x) ==> x2==x
+                    assert(ys.contains(f(x)));
+                }
+            };
+
+            // Precondition 3: backward surjection
+            assert forall |y: Y| ys_prime.contains(y)
+                implies exists |x2: X| xs_prime.contains(x2) && y == f(x2) by
+            {
+                assert(ys.contains(y));
+                let x2 = choose |x2: X| xs.contains(x2) && y == f(x2);
+                // x2 != x because y != f(x) (y in ys.remove(f(x)))
+                assert(x2 != x); // if x2 == x then y == f(x), but y in ys_prime = ys.remove(f(x))
+                assert(xs_prime.contains(x2));
+            };
+
+            // xs_prime.finite() from remove
             lemma_MapSetCardinalityOver(xs_prime, ys_prime, f);
+            // xs_prime.len() == ys_prime.len()
+            // xs.len() == xs_prime.len() + 1 (axiom_set_remove_len)
+            // ys.len() == ys_prime.len() + 1 (axiom_set_remove_len, ys.contains(f(x)))
+            assert(ys.contains(f(x)));
         }
     }
 
