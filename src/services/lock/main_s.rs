@@ -100,8 +100,6 @@ verus! {
             de.nextStep is LEnvStepHostIos,
             concrete_env_is_abstractable(de),
             abstractify_concrete_environment(de) == le,
-            de.sentPackets.finite(),
-            le.sentPackets.finite(),
         ensures
             IsValidLEnvStep(le, le.nextStep),
     {
@@ -160,13 +158,20 @@ verus! {
             abstractify_concrete_environment(de_next) == le_next,
             de.nextStep is LEnvStepHostIos,
             LEnvironment_Next(de, de_next),
+            de.sentPackets.finite(),
         ensures
             LEnvironment_Next(le, le_next),
         {
-            assume(de.sentPackets.finite());
-            assume(le.sentPackets.finite());
-            assume(de_next.sentPackets.finite());
-            assume(le_next.sentPackets.finite());
+            // Derive le.sentPackets.finite() from de.sentPackets.finite():
+            // le.sentPackets = abstractify_concrete_env_sent_packets(de.sentPackets) = de.sentPackets.map(f)
+            let f_pkt = |p: NetPacket| abstractify_net_packet_to_lock_packet(p);
+            de.sentPackets.lemma_map_finite(f_pkt);
+
+            // Derive de_next.sentPackets.finite() from de.sentPackets.finite() + LEnvironment_Next
+            lemma_environment_next_preserves_sentpackets_finite(de, de_next);
+
+            // Derive le_next.sentPackets.finite() from de_next.sentPackets.finite()
+            de_next.sentPackets.lemma_map_finite(f_pkt);
 
             lemma_is_valid_env_step(de, le);
             let id = de.nextStep->actor;
@@ -176,8 +181,6 @@ verus! {
             assert(LEnvironment_PerformIos(de, de_next, id, ios));
 
             let (sends, r_sends) = lemma_ios_relations(ios, r_ios);
-            
-            assume(sends.finite() && r_sends.finite());
 
             assume(de.sentPackets + sends == de_next.sentPackets);
             assume(le.sentPackets + r_sends == le_next.sentPackets);

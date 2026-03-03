@@ -139,6 +139,32 @@ verus! {
         }
       }
 
+      /// Generic one-step preservation: if sentPackets is finite and LEnvironment_Next holds,
+      /// then sentPackets is finite in the next state.
+      pub proof fn lemma_environment_next_preserves_sentpackets_finite<IdType, MessageType>(
+          e: LEnvironment<IdType, MessageType>,
+          e_: LEnvironment<IdType, MessageType>,
+      )
+          requires
+              e.sentPackets.finite(),
+              LEnvironment_Next(e, e_),
+          ensures
+              e_.sentPackets.finite()
+      {
+          match e.nextStep {
+              LEnvStep::LEnvStepHostIos{actor, ios} => {
+                  broadcast use vstd::seq_lib::seq_to_set_is_finite;
+                  broadcast use vstd::set::group_set_axioms;
+                  let new_set = ios.map_values(|io: LIoOp<IdType, MessageType>| io->Send_s).to_set();
+                  assert(new_set.finite());
+                  assert(e.sentPackets.union(new_set).finite());
+              },
+              LEnvStep::LEnvStepDeliverPacket{p} => {},
+              LEnvStep::LEnvStepAdvanceTime => {},
+              LEnvStep::LEnvStepStutter => {},
+          }
+      }
+
       // #[verifier(opaque)] -> can't make it opaque for the proof to work???
       pub open spec fn EnvironmentNextTemporal<IdType,MessageType>(b:Behavior<LEnvironment<IdType, MessageType>>) -> temporal
       {
