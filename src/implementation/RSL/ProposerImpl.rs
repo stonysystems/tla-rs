@@ -185,143 +185,49 @@ impl CProposer{
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
         broadcast use vstd::set::group_set_axioms;
-        let mut result = true;
-        let ghost mut checked: Set<RslPacket> = Set::empty();
-        let m_iter = S.iter();
-        let ghost mut count: int = 0;
-        proof {
-            broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
-            // With obeys_key_model::<CPacket>() and builds_valid_hashers::<RandomState>() (from group_hash_axioms),
-            // HashSet::iter() ensures index == 0, i.e., m_iter@.0 == 0.
-        }
-        assert(count == m_iter@.0);
+        broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
-        for p in iter: m_iter
+        let vec = hashset_to_vec(S);
+        let mut i: usize = 0;
+        while i < vec.len()
             invariant
-                forall |x:RslPacket| checked.contains(x) ==> exists |y:CPacket| S@.contains(y) && x == y@,
-                checked.subset_of(S@.map(|p:CPacket| p@)),
-                forall |p:RslPacket| checked.contains(p) ==> p.msg is RslMessage1b,
-                result ==> count == checked.len(),
-                !result ==> !(forall |x:RslPacket| S@.map(|p:CPacket| p@).contains(x) ==> x.msg is RslMessage1b),
-                checked.finite(),
-                // Iterator-tracking invariants
-                iter.elements.to_set() == S@,
-                iter.elements.no_duplicates(),
+                0 <= i <= vec.len(),
+                forall |j: int| 0 <= j < i as int ==> (#[trigger] vec@[j]).msg is CMessage1b,
+                // hashset_to_vec postconditions available as ambient facts
+                forall |k: int| 0 <= k < vec@.len() ==> S@.contains(#[trigger] vec@[k]),
+                forall |x: CPacket| S@.contains(x) ==> (exists |k: int| 0 <= k < vec@.len() && vec@[k] == x),
+            decreases
+                vec.len() - i,
         {
-            let ghost old_checked = checked;
-            let ghost old_count = count;
-            proof{
-                if result {
-                    old_count == old_checked.len();
-                }
-            }
-            proof{count = count + 1;}
-            // Prove S@.contains(*p): from for-loop semantics, *p came from the HashSet S
-            proof {
-                // Try direct: iter.elements.to_set() == S@, and *p is an element from iter.elements
-                assume(S@.contains(*p));
-            }
-            if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &p.msg {
-                proof{
-                    if result {
-                        assume(forall |x:RslPacket| checked.contains(x) ==> x != (*p)@);
-                        // checked.finite() from loop invariant + axiom_set_insert_finite
-                        axiom_set_remove_len(checked, (*p)@);
-                        checked = checked.insert((*p)@);
-                        assert(count == old_count + 1);
-                        assert(checked.len() == old_checked.len() + 1);
-                        assert(old_count + 1 == old_checked.len() + 1);
-                        assert(checked.contains((*p)@));
-                        assert(S@.contains(*p));
-                        assert( count == checked.len());
-                    }
-                }
+            if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &vec[i].msg {
+                // CMessage1b: continue
             } else {
+                // Found a non-CMessage1b element; prove the result is false
                 proof {
-                    assert(S@.contains(*p));
+                    let bad = vec@[i as int];
+                    assert(S@.contains(bad));
+                    // bad@ is in S@.map(|p:CPacket| p@), and bad@.msg is NOT RslMessage1b
+                    let f = |p: CPacket| p@;
+                    assert(S@.map(f).contains(f(bad)));
+                    assert(!(bad@.msg is RslMessage1b));
                 }
-                result = false;
-                assert(exists |x:CPacket| S@.contains(x) && !(x.msg is CMessage1b));
-                assert(!(forall |x:CPacket| S@.contains(x) ==> x.msg is CMessage1b));
-                let ghost ss = S@.map(|p:CPacket| p@);
-                assert(forall |x:CPacket| S@.contains(x) ==> ss.contains(p@));
-                assert(forall |x:RslPacket| #![trigger ss.contains(x)] ss.contains(x) ==> exists |y:CPacket| S@.contains(y) && x == y@);
-                assert(!(forall |x:RslPacket| ss.contains(x) ==> x.msg is RslMessage1b));
+                return false;
             }
+            i = i + 1;
         }
-        proof{
-            assert(forall |x:RslPacket| checked.contains(x) ==> x.msg is RslMessage1b);
-            assert(forall |x:RslPacket| checked.contains(x) ==> exists |y:CPacket| S@.contains(y) && x == y@);
-            assert(checked.subset_of(S@.map(|p:CPacket| p@)));
-            // count == iter.pos (invariant) and iter.pos == iter.elements.len() (ghost_ensures)
-            // but iter is scoped to the for-loop body, so we can't access it here.
-            // TODO: prove count == S@.len() when Verus for-loop ghost_ensures are accessible post-loop
-            assume(count == S@.len());
-            if result {
-                assert(checked.len() == S@.len());
-                // Proved: S@.map(|p| p@).len() == S@.len() via injective-map cardinality
-                lemma_hashset_view_finite(S);
-                let f_cpv = |p: CPacket| p@;
-                broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_view;
-                assert forall |p1: CPacket, p2: CPacket| #![trigger f_cpv(p1), f_cpv(p2)] f_cpv(p1) == f_cpv(p2) implies p1 == p2 by {};
-                lemma_set_map_injective_len::<CPacket, RslPacket>(S@, f_cpv);
-                assert(checked.len() == S@.map(|p:CPacket| p@).len());
-                Self::lemma_PropertiesHoldsDuringAbstractionForCPacketHashSet(checked, S);
-                assert(forall |x:RslPacket| S@.map(|p:CPacket| p@).contains(x) ==> x.msg is RslMessage1b);
-            }
-            else
-            {
-                !(forall |x:RslPacket| S@.map(|p:CPacket| p@).contains(x) ==> x.msg is RslMessage1b);
-            }
+        // All elements in vec are CMessage1b; prove the result is true
+        proof {
+            let f = |p: CPacket| p@;
+            assert forall |x: RslPacket| S@.map(f).contains(x) implies x.msg is RslMessage1b by {
+                // x is in S@.map(f), so there exists a CPacket cp in S@ with cp@ == x
+                let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == x;
+                // cp is in S@, so it appears in vec at some index j
+                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == cp;
+                // From the loop invariant, vec@[j].msg is CMessage1b, so cp.msg is CMessage1b
+                // Therefore cp@ (== x) has msg is RslMessage1b
+            };
         }
-        result
-    }
-
-    proof fn lemma_PropertiesHoldsDuringAbstractionForCPacketHashSet(s1:Set<RslPacket>, s2:&HashSet<CPacket>)
-        requires
-            s1.len() == s2@.map(|p:CPacket| p@).len(),
-            s1.subset_of(s2@.map(|p:CPacket| p@)),
-            forall |x:RslPacket| s1.contains(x) ==> exists |y:CPacket| s2@.contains(y) && x == y@,
-            forall |x:RslPacket| s1.contains(x) ==> x.msg is RslMessage1b,
-        ensures
-            forall |x:RslPacket| s2@.map(|p:CPacket| p@).contains(x) ==> x.msg is RslMessage1b,
-    {
-        assert forall |x:CPacket| s2@.contains(x) implies s1.contains(x@) by{
-            // With `implies`, the antecedent s2@.contains(x) is automatically assumed
-            if !s1.contains(x@) {
-                let s2_minus = s2@.remove(x);
-                lemma_hashset_view_finite(s2);
-                axiom_set_remove_len(s2@, x);
-                assert(s2_minus.len() == s2@.len() - 1);
-                let ss2_minus = s2_minus.map(|p:CPacket| p@);
-                let ss2 = s2@.map(|p:CPacket| p@);
-                assert(forall |x:RslPacket| ss2_minus.contains(x) ==> exists |y:CPacket| s2_minus.contains(y) && x == y@);
-                assert(forall |x:RslPacket| ss2.contains(x) ==> exists |y:CPacket| s2@.contains(y) && x == y@);
-
-                // Proved: injective-map cardinality for CPacket view
-                {
-                    broadcast use vstd::set::group_set_axioms;
-                    broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_view;
-                    let f_cpv = |p: CPacket| p@;
-                    assert forall |p1: CPacket, p2: CPacket| #![trigger f_cpv(p1), f_cpv(p2)] f_cpv(p1) == f_cpv(p2) implies p1 == p2 by {};
-                    // s2@.finite() from lemma_hashset_view_finite(s2) above;
-                    // s2_minus.finite() from axiom_set_remove_finite in group_set_axioms
-                    lemma_set_map_injective_len::<CPacket, RslPacket>(s2_minus, f_cpv);
-                    lemma_set_map_injective_len::<CPacket, RslPacket>(s2@, f_cpv);
-                }
-                assert(s2_minus.map(|p:CPacket| p@).len() == s2@.map(|p:CPacket| p@).len() - 1);
-                assert(s2_minus.map(|p:CPacket| p@).len() < s2@.map(|p:CPacket| p@).len());
-                assert(s1.subset_of(s2_minus.map(|p:CPacket| p@)));
-                // s2_minus is finite (s2@ finite from HashSet, remove preserves finiteness)
-                // s2_minus.map(...) is also finite
-                s2_minus.lemma_map_finite(|p:CPacket| p@);
-                subset_cardinality(s1, s2_minus.map(|p:CPacket| p@));
-                assert(s1.len() <= s2_minus.map(|p:CPacket| p@).len());
-                assert(s1.len() == s2@.map(|p:CPacket| p@).len());
-                assert(false);
-            }
-        };
-        assert(s1 == s2@.map(|p:CPacket| p@));
+        true
     }
 
     // =========================================================================
