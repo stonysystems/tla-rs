@@ -92,7 +92,6 @@ ensures
 /// Shared fallback for processing 1b packets.
 /// Re-homed from generated proof-fallback ownership so dispatch wrappers can
 /// reference a stable helper without relying on manual_code injection.
-#[verifier(external_body)]
 pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (result: (CReplica, Vec<CPacket>))
     requires
         s.valid(),
@@ -103,16 +102,20 @@ pub exec fn CReplicaNextProcess1b(s: &CReplica, received_packet: &CPacket) -> (r
         LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
     let mut state = s.clone_up_to_view();
+    // clone_up_to_view: state@ == s@, state.valid() == s.valid()
     let pkt = clone_cpacket_full(received_packet);
+    // clone_cpacket_full: pkt == *received_packet, so pkt@ == received_packet@
     let sent = state.CReplicaNextProcess1b(pkt);
+    // impl ensures: state.valid(), sent.valid(),
+    //   LReplicaNextProcess1b(old(state)@ == s@, state@, pkt@ == received_packet@, sent@)
     let packets = outbound_packets_to_vec(sent);
+    // outbound_packets_to_vec: packets@.map(|i, p| p@) =~= sent@
     (state, packets)
 }
 
 /// Shared fallback for spontaneous truncate-log action.
 /// Re-homed from generated ownership so no_receive dispatch can resolve it
 /// without relying on manual_code-injected local definitions.
-#[verifier(external_body)]
 pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -> (result: (CReplica, Vec<CPacket>))
     requires
         s.valid(),
@@ -125,8 +128,12 @@ pub exec fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(s: &CReplica) -
         ),
 {
     let mut state = s.clone_up_to_view();
+    // clone_up_to_view: state@ == s@, state.valid() == s.valid()
     let sent = state.CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints();
+    // impl ensures: state.valid(), sent.valid(),
+    //   LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(old(state)@ == s@, state@, sent@)
     let packets = outbound_packets_to_vec(sent);
+    // outbound_packets_to_vec: packets@.map(|i, p| p@) =~= sent@
     (state, packets)
 }
 
