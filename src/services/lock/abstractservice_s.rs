@@ -12,14 +12,15 @@ verus! {
         pub history:Seq<AbstractEndPoint>
     }
 
+    // Matches CMessage::CLocked{locked_epoch: epoch as u64}.ghost_serialize()
+    // (1-byte tag=1 + 8-byte little-endian u64)
     pub open spec fn marshall_lock_message(epoch:int) -> Seq<u8>
     {
       if 0 <= epoch < 0x1_0000_0000_0000_0000
-            { seq![ 0, 0, 0, 0, 0, 0, 0, 1]  // MarshallMesssage_Request magic number
-                + (epoch as u64).ghost_serialize()
+            { seq![1u8] + (epoch as u64).ghost_serialize()
             }
       else {
-          seq![1]
+          seq![1u8]
       }
     }
 
@@ -38,6 +39,7 @@ verus! {
         forall |p: LPacket<AbstractEndPoint, Seq<u8>>, epoch: int| #![auto] concrete_pkts.contains(p)
                 && service_state.hosts.contains(p.src)
                 && service_state.hosts.contains(p.dst)
+                && 0 <= epoch < 0x1_0000_0000_0000_0000
                 && p.msg =~= marshall_lock_message(epoch) ==> 1 <= epoch <= service_state.history.len()
                                                         && p.src == service_state.history[epoch-1]
     }

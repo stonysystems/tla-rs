@@ -9,9 +9,9 @@ use crate::common::native::io_s::*;
 use crate::implementation::common::cmd_line_parser_i::{parse_args, parse_end_points};
 use crate::implementation::lock::host_i::HostState;
 use crate::implementation::lock::host_s::EventResults;
-use crate::implementation::lock::message_i::abstractify_net_packet_to_lock_packet;
+use crate::implementation::lock::message_i::{abstractify_net_packet_to_lock_packet, CMessage, lock_demarshal_data};
 use crate::implementation::lock::netlock_i::{
-    abstractify_net_event_to_lock_io, abstractify_raw_log_to_ios, net_packet_is_abstractable,
+    abstractify_net_event_to_lock_io, abstractify_raw_log_to_ios, lock_marshal_data_injective, net_packet_is_abstractable,
 };
 use crate::implementation::lock::node_i::{valid_config, ConcreteConfig};
 use crate::protocol::lock::distributed_system_procotol_i::{ls_init, ls_next, AbstractLSState};
@@ -811,6 +811,9 @@ verus! {
         let sb = RefinementToServiceState(config, glsb);
         //assert forall i :: 0 <= i < sb.len() - 1 ==> Service_Next(sb[i], sb[i+1]);
         
+        // Establish is_valid_behavior_ls(config, lsb) once for use in the proof
+        assert(is_valid_behavior_ls(config, lsb));
+
         assert forall |i: int| 0 <= i < db.len()
             implies service_correspondence(db[i].environment.sentPackets, sb[i])
             by
@@ -820,14 +823,74 @@ verus! {
             let ss = sb[i];
             let history = make_lock_history(glsb, abstractify_end_points(config), i);
             assert(history == gls.history);
-            assume(forall |p: NetPacket, epoch| 
-                            db[i].environment.sentPackets.contains(p)
-                         && ss.hosts.contains(p.src) 
-                         && ss.hosts.contains(p.dst)
-                         && p.msg == marshall_lock_message(epoch) 
-                ==> 2 <= epoch <= ss.history.len()
-                     && p.src == ss.history[epoch-1]
-        );
+
+            // Prove service_correspondence by proving its inner quantifier
+            assert forall |p: NetPacket, epoch: int| #![auto]
+                db[i].environment.sentPackets.contains(p)
+                && ss.hosts.contains(p.src)
+                && ss.hosts.contains(p.dst)
+                && 0 <= epoch < 0x1_0000_0000_0000_0000
+                && p.msg =~= marshall_lock_message(epoch)
+            implies
+                1 <= epoch <= ss.history.len() && p.src == ss.history[epoch - 1]
+            by {
+                // Step 1: marshall_lock_message(epoch) = seq![1u8] + (epoch as u64).ghost_serialize()
+                //       = CMessage::CLocked{locked_epoch: epoch as u64}.ghost_serialize()
+                let witness = CMessage::CLocked{locked_epoch: epoch as u64};
+                assert(witness.is_marshalable());
+                // witness.ghost_serialize() == marshall_lock_message(epoch) since both unfold to
+                // seq![1u8] + (epoch as u64).ghost_serialize() for 0 <= epoch < 2^64
+                assert(witness.ghost_serialize() =~= p.msg);
+
+                // Step 2: lock_demarshal_data(p.msg) has a valid witness, so choose gives
+                // a marshalable CMessage with same serialization as p.msg
+                let d = lock_demarshal_data(p.msg);
+
+                // Step 3: By serialization injectivity, d@ == witness@ == Locked{locked_epoch: epoch}
+                lock_marshal_data_injective(&d, &witness);
+                assert(d@ == LockMessage::Locked{locked_epoch: epoch});
+
+                // Step 4: Construct abstract packet
+                let ap = abstractify_net_packet_to_lock_packet(p);
+                assert(ap.msg == d@);
+                assert(ap.msg is Locked);
+                assert(ap.msg->locked_epoch == epoch);
+
+                // Step 5: Show ap is in lsb[i].environment.sentPackets via Set::map witness
+                let f = |p_: NetPacket| abstractify_net_packet_to_lock_packet(p_);
+                assert(lsb[i].environment.sentPackets =~= db[i].environment.sentPackets.map(f));
+                assert(f(p) == ap);
+                assert(lsb[i].environment.sentPackets.contains(ap));
+
+                // Step 6: Show ap.src is a known server in lsb[i]
+                assert(lsb[i].servers.dom() =~= db[i].servers.dom());
+                assert(lsb[i].servers.contains_key(ap.src));
+
+                // Step 7: Bridge to glsb[i] (glsb[i].ls =~= lsb[i])
+                assert(glsb[i].ls =~= lsb[i]);
+
+                // Step 8: Use lemma_LockedPacketImpliesTransferPacket
+                lemma_LockedPacketImpliesTransferPacket(config, lsb, i, ap);
+                let q = choose |q: LockPacket|
+                    lsb[i].environment.sentPackets.contains(q)
+                    && q.msg is Transfer
+                    && lsb[i].servers.contains_key(q.src)
+                    && q.msg->transfer_epoch =~= ap.msg->locked_epoch
+                    && q.dst == ap.src;
+
+                // Step 9: Use make_lock_history Transfer postconditions
+                // q is in glsb[i].ls.sentPackets (= lsb[i].sentPackets via =~=)
+                assert(glsb[i].ls.environment.sentPackets.contains(q));
+                assert(glsb[i].ls.servers.contains_key(q.src));
+                assert(q.msg->transfer_epoch == epoch);
+                // make_lock_history: 2 <= transfer_epoch <= history.len()
+                assert(2 <= epoch <= history.len());
+                // make_lock_history: history[transfer_epoch - 1] == q.dst
+                assert(history[epoch - 1] == q.dst);
+                assert(q.dst == ap.src);
+                assert(ap.src == p.src);
+                assert(ss.history == history);
+            };
         }
         sb
     }
