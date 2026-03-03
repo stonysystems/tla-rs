@@ -615,40 +615,158 @@ verus! {
         assert(lb[i].servers.dom() =~= lb[0].servers.dom());
         assert(ls_init(lb[0], abstractify_end_points(config)));
         
+        assert(ls_next(lb[i-1], lb[i]));
+        assert(LEnvironment_Next(lb[i-1].environment, lb[i].environment));
+
         if lb[i-1].environment.sentPackets.contains(p) {
+            // Recursive case: p was already in lb[i-1]
             lemma_LockedPacketImpliesTransferPacket(config, lb, i-1, p);
+            // IH: exists |q| lb[i-1].sentPackets.contains(q) && ...
+            // Propagate witness to lb[i] via sentPackets monotonicity
+            lemma_LsConsistency(config, lb, i-1);
+            let q = choose |q: LockPacket|
+                lb[i-1].environment.sentPackets.contains(q)
+                && q.msg is Transfer
+                && lb[i-1].servers.contains_key(q.src)
+                && q.msg->transfer_epoch =~= p.msg->locked_epoch
+                && q.dst == p.src;
+            // sentPackets monotone: old ⊆ old ∪ new (from LEnvironment_Next)
+            assert(lb[i].environment.sentPackets.contains(q));
+            // servers dom preserved
+            assert(lb[i-1].servers.dom() =~= lb[0].servers.dom());
+            assert(lb[i].servers.contains_key(q.src));
         } else {
+            // p is newly sent in the transition from lb[i-1] to lb[i]
             let s = lb[i-1];
             let s_n = lb[i];
-            assert(ls_next(lb[i-1], lb[i]));
-            if s.environment.nextStep is LEnvStepHostIos && s.servers.contains_key(s.environment.nextStep->actor) {
-                assert(ls_next_one_server(s, s_n, s.environment.nextStep->actor, s.environment.nextStep->ios));
-                let id = s.environment.nextStep->actor;
-                let node = s.servers[id];
-                let node_n = s_n.servers[id];
-                let ios = s.environment.nextStep->ios;
-                if NodeAccept(node, node_n, ios) {
-                    let packet = ios[0]->r;
-                    assert(IsValidLIoOp(ios[0], id, s.environment));
-                    assume(lb[i].environment.sentPackets.contains(packet)
-                         && packet.msg is Transfer
-                         && packet.msg->transfer_epoch == p.msg->locked_epoch
-                         && packet.dst == p.src
-                         && node.config.contains(packet.src));
-                    
-                    assert(node.config =~= lb[0].servers[id].config);
-                    assert(lb[0].servers[id].config =~= lb[i].servers[id].config);
-                    assert(forall|e| lb[i].servers[id].config.contains(e) <==> lb[i].servers.contains_key(e));
-                    assert(lb[i].servers.contains_key(packet.src));
-                }
+
+            if !(s.environment.nextStep is LEnvStepHostIos) {
+                // Not HostIos: Stutter/AdvanceTime/DeliverPacket → sentPackets unchanged
+                assert(s_n.environment.sentPackets =~= s.environment.sentPackets);
+                // p ∈ s_n.sentPackets =~= s.sentPackets contradicts p ∉ s.sentPackets
+                return;
             }
+
+            assert(s.environment.nextStep is LEnvStepHostIos);
+            let id = s.environment.nextStep->actor;
+            let ios = s.environment.nextStep->ios;
+            assert(LEnvironment_PerformIos(s.environment, s_n.environment, id, ios));
+            assert(IsValidLEnvStep(s.environment, s.environment.nextStep));
+            reveal_with_fuel(Seq::<LockIo>::filter, 3);
+
+            if !s.servers.contains_key(id) {
+                // Unknown server: servers unchanged, sentPackets grows
+                // All newly sent packets have src == id (from IsValidLIoOp for Send)
+                // But p.src ∈ lb[i].servers and id ∉ servers → contradiction
+                assert(s_n.servers =~= s.servers);
+                let f_send = |io: LockIo| io is Send;
+                let f_pkt = |io: LockIo| io->s;
+                let filtered = ios.filter(f_send);
+                let mapped = filtered.map_values(f_pkt);
+                let sends = mapped.to_set();
+                // p ∉ s.sentPackets and p ∈ s_n.sentPackets = s.sentPackets ∪ sends → p ∈ sends
+                assert(sends.contains(p));
+                // p ∈ sends → mapped.contains(p) → exists k: mapped[k] == p
+                assert(mapped.contains(p));
+                let k = choose |k: int| 0 <= k < mapped.len() && mapped[k] == p;
+                // mapped[k] == filtered[k]->s == p
+                assert(filtered[k]->s == p);
+                // From filter: filtered[k] is Send and ios.contains(filtered[k])
+                assert(filtered[k] is Send);
+                assert(filtered.contains(filtered[k]));
+                ios.filter_lemma(f_send);
+                assert(ios.contains(filtered[k]));
+                // From IsValidLEnvStep: IsValidLIoOp(filtered[k], id, e)
+                assert(IsValidLIoOp(filtered[k], id, s.environment));
+                // Send: src == actor → filtered[k]->s.src == id → p.src == id
+                assert(p.src == id);
+                // But id ∉ servers and p.src ∈ lb[i].servers → contradiction
+                assert(false);
+                return;
+            }
+
+            assert(s.servers.contains_key(id));
+            assert(ls_next_one_server(s, s_n, id, ios));
+            let node = s.servers[id];
+            let node_n = s_n.servers[id];
+            assert(NodeNext(node, node_n, ios));
+
+            // p is newly sent and p.msg is Locked
+            // NodeGrant only produces Transfer packets (never Locked):
+            //   Grant branch: ios.len()==1, ios[0] is Send, ios[0]->s.msg is Transfer
+            //   Stutter: ios.len()==0, no new packets
+            // In either NodeGrant case: no Locked packet is newly sent
+            // So NodeAccept must hold (and specifically the accept sub-branch)
+            assert(NodeAccept(node, node_n, ios));
+
+            // Prove ios[0] is Receive by elimination:
+            if ios[0] is Send {
+                // Corrected NodeAccept returns false for Send → contradiction
+                assert(false);
+            } else if ios[0] is TimeoutReceive {
+                // NodeAccept: s == s_, ios.len() == 1, no Send io
+                // → filter gives empty seq → sends = empty → sentPackets unchanged
+                assert(ios.len() == 1);
+                assert(s_n.environment.sentPackets =~= s.environment.sentPackets);
+                assert(false);
+            } else if ios[0] is ReadClock {
+                // Same argument: ios.len() == 1, no Send io
+                assert(ios.len() == 1);
+                assert(s_n.environment.sentPackets =~= s.environment.sentPackets);
+                assert(false);
+            }
+            // ios[0] is Receive
+            assert(ios[0] is Receive);
+
+            // In NodeAccept Receive branch: accept or ignore
+            // Ignore branches have ios.len()==1, no Send → sentPackets unchanged → contradiction
+            // So the accept condition must hold
+            if ios.len() == 1 {
+                // Ignore or alt-ignore: no Send io → sentPackets unchanged
+                assert(s_n.environment.sentPackets =~= s.environment.sentPackets);
+                assert(false);
+            }
+            // Accept sub-branch
+            assert(ios.len() == 2);
+            assert(ios[1] is Send);
+            assert(ios[1]->s.msg is Locked);
+
+            let packet = ios[0]->r;
+            assert(IsValidLIoOp(ios[0], id, s.environment));
+            assert(IsValidLIoOp(ios[1], id, s.environment));
+
+            // Conjunct 1: packet (= ios[0]->r) is in sentPackets
+            // match_ios_recv for Receive: s.sentPackets.contains(ios[0]->r)
+            assert(ios.contains(ios[0]));
+            assert(s.environment.sentPackets.contains(packet));
+            // sentPackets monotone (union adds, never removes)
+            assert(lb[i].environment.sentPackets.contains(packet));
+
+            // Conjunct 2: packet.msg is Transfer (from accept condition)
+            assert(packet.msg is Transfer);
+
+            // Conjuncts 3,4: epoch chain and dst == src
+            // From IsValidLIoOp: Receive → dst == actor, Send → src == actor
+            assert(packet.dst == id);
+            assert(ios[1]->s.src == id);
+            // From accept: s_.epoch == ios[0]->r.msg->transfer_epoch == ios[1]->s.msg->locked_epoch
+            assert(node_n.epoch == packet.msg->transfer_epoch);
+            assert(node_n.epoch == ios[1]->s.msg->locked_epoch);
+            // p == ios[1]->s: the only new packet (sends = {ios[1]->s})
+            // p ∉ s.sentPackets, p ∈ s_n.sentPackets = s.sentPackets ∪ {ios[1]->s}
+            // So p == ios[1]->s
+            assert(packet.msg->transfer_epoch == p.msg->locked_epoch);
+            assert(packet.dst == p.src);
+
+            // Conjunct 5: node.config.contains(packet.src) (from accept condition)
+            assert(node.config.contains(packet.src));
+
+            // Establish witness for ensures
+            assert(node.config =~= lb[0].servers[id].config);
+            assert(lb[0].servers[id].config =~= lb[i].servers[id].config);
+            assert(forall|e| lb[i].servers[id].config.contains(e) <==> lb[i].servers.contains_key(e));
+            assert(lb[i].servers.contains_key(packet.src));
         }
-        assume(exists |q: LockPacket| lb[i].environment.sentPackets.contains(q) 
-                            && q.msg is Transfer 
-                            && lb[i].servers.contains_key(q.src) 
-                            && q.msg->transfer_epoch =~= p.msg->locked_epoch 
-                            && q.dst == p.src
-                        );
     }
 
     pub proof fn lemma_PacketSentByServerIsDemarshallable(

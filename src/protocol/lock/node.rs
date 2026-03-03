@@ -103,8 +103,13 @@ verus! {
                 &&& ios.len() == 1
                 &&& ignore_unparseable_packets()
             }
+            } else if ios[0] is ReadClock {
+                &&& s == s_
+                &&& ios.len() == 1
+                &&& s_.config =~= s.config
             } else {
-                true
+                // ios[0] is Send — NodeAccept never starts with a send
+                false
             }
     }
 
