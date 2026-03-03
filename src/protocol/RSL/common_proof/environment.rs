@@ -39,6 +39,50 @@ verus! {
         }
     }
 
+    pub proof fn lemma_sentPackets_finite(
+        b:Behavior<RslState>,
+        c:LConstants,
+        i:int,
+    )
+        requires IsValidBehaviorPrefix(b, c, i),
+                 0 <= i,
+        ensures  b[i].environment.sentPackets.finite()
+        decreases i
+    {
+        if i == 0 {
+            // Base case: RslInit(c, b[0]) includes LEnvironment_Init(b[0].environment)
+            // which now includes sentPackets.finite()
+        } else {
+            lemma_sentPackets_finite(b, c, i - 1);
+            lemma_AssumptionsMakeValidTransition(b, c, i - 1);
+            // RslNext(b[i-1], b[i]) => LEnvironment_Next(b[i-1].environment, b[i].environment)
+            let e = b[i - 1].environment;
+            let e_ = b[i].environment;
+            // Case analysis on e.nextStep
+            match e.nextStep {
+                LEnvStep::LEnvStepHostIos{actor, ios} => {
+                    // e_.sentPackets =~= e.sentPackets.union(ios.map_values(...).to_set())
+                    // e.sentPackets.finite() by IH
+                    // ios.map_values(...).to_set().finite() by seq_to_set_is_finite
+                    broadcast use vstd::seq_lib::seq_to_set_is_finite;
+                    broadcast use vstd::set::group_set_axioms;
+                    let new_set = ios.map_values(|io: RslIo| io->Send_s).to_set();
+                    assert(new_set.finite());
+                    assert(e.sentPackets.union(new_set).finite());
+                },
+                LEnvStep::LEnvStepDeliverPacket{p} => {
+                    // Stutter: sentPackets unchanged
+                },
+                LEnvStep::LEnvStepAdvanceTime => {
+                    // sentPackets unchanged
+                },
+                LEnvStep::LEnvStepStutter => {
+                    // sentPackets unchanged
+                },
+            }
+        }
+    }
+
     pub proof fn lemma_PacketSetStaysInSentPackets(
         b:Behavior<RslState>,
         c:LConstants,

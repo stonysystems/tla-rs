@@ -33,22 +33,79 @@ verus! {
             forall |i: int| s.contains(i) ==> m >= i
     }
 
-    #[verifier::external_body]
+    /// Helper: any finite non-empty set of ints has a maximum element.
+    proof fn lemma_finite_int_set_has_max(s: Set<int>)
+        requires s.finite(), s.len() > 0
+        ensures
+            s.contains(intsetmax(s)),
+            forall |i: int| s.contains(i) ==> intsetmax(s) >= i,
+        decreases s.len()
+    {
+        broadcast use vstd::set::group_set_axioms;
+
+        let x = s.choose();
+        let s_minus = s.remove(x);
+
+        if s_minus.len() == 0 {
+            // s == {x}, so intsetmax(s) must be x
+            vstd::set_lib::lemma_set_empty_equivalency_len(s_minus);
+            assert(s_minus =~= Set::<int>::empty());
+            assert(s =~= Set::<int>::empty().insert(x));
+            // x satisfies both conditions: s.contains(x) and forall i in s => x >= i
+            assert(s.contains(x));
+            assert forall |i: int| s.contains(i) implies x >= i by {
+                // i in s means i in {x}, so i == x
+                assert(Set::<int>::empty().insert(x).contains(i));
+            };
+            // The choose in intsetmax picks m satisfying both conditions; x is such a witness
+            // By the definition of intsetmax (choose |m| ...), we know the result satisfies the spec
+        } else {
+            // IH on s_minus
+            lemma_finite_int_set_has_max(s_minus);
+            let max_rest = intsetmax(s_minus);
+            // max_rest is the max of s_minus
+            assert(s_minus.contains(max_rest));
+            assert(forall |i: int| s_minus.contains(i) ==> max_rest >= i);
+
+            // The max of s is max(x, max_rest)
+            let m = if x >= max_rest { x } else { max_rest };
+            assert(s.contains(m));
+            assert forall |i: int| s.contains(i) implies m >= i by {
+                if i == x {
+                    // m >= x by construction
+                } else {
+                    assert(s_minus.contains(i));
+                    assert(max_rest >= i);
+                    // m >= max_rest >= i
+                }
+            };
+            // m satisfies the choose condition in intsetmax(s), so intsetmax(s) also does
+        }
+    }
+
     pub proof fn lemma_intsetmax_ensures(s: Set<int>)
-        requires s.len() > 0
+        requires s.len() > 0, s.finite()
         ensures ({
             let m = intsetmax(s);
             &&& s.contains(m)
             &&& forall |i: int| s.contains(i) ==> m >= i
         })
     {
+        lemma_finite_int_set_has_max(s);
     }
 
-    #[verifier::external_body]
     pub proof fn SetNotEmpty<T>(s:Set<T>)
         requires exists |x:T| s.contains(x),
+                 s.finite(),
         ensures s.len()>0
     {
+        vstd::set_lib::lemma_set_empty_equivalency_len(s);
+        // If s.len() == 0, then s =~= empty, contradicting exists |x| s.contains(x)
+        if s.len() == 0 {
+            assert(s =~= Set::<T>::empty());
+            let x = choose |x: T| s.contains(x);
+            assert(Set::<T>::empty().contains(x)); // false — contradiction
+        }
     }
 
     /// If S maps injectively into a finite set T via f, then S is finite

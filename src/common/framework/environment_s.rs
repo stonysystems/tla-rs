@@ -81,6 +81,7 @@ verus! {
         ) -> bool
       {
         &&& e.sentPackets.len() == 0
+        &&& e.sentPackets.finite()
         &&& e.time >= 0
       }
 
