@@ -102,15 +102,14 @@ verus! {
 
     pub open spec fn UpdateNewCache(c:ReplyCache, c_:ReplyCache, replies:Seq<Reply>) -> bool
     {
-        let nc = LClientsInReplies(replies);
         &&& (forall |client:AbstractEndPoint| c_.contains_key(client) ==> (c.contains_key(client) && c_[client] == c[client])
                                                                         || (exists |req_idx:int| 0 <= req_idx < replies.len()
                                                                             && replies[req_idx].client == client
                                                                             && c_[client] == replies[req_idx]))
-        &&& (forall |client:AbstractEndPoint| c_.contains_key(client) <==> (nc.contains_key(client) || c.contains_key(client)))
-        &&& (forall |client:AbstractEndPoint| c_.contains_key(client) ==> c_[client] == if c.contains_key(client) {c[client]} else {nc[client]})
-        &&& (forall |client:AbstractEndPoint| (nc.contains_key(client) || c.contains_key(client)) ==> c_.contains_key(client)
-                                                                                                && c_[client] == if c.contains_key(client) {c[client]} else {nc[client]})
+        &&& (forall |client:AbstractEndPoint| c_.contains_key(client) <==> (LClientsInReplies(replies).contains_key(client) || c.contains_key(client)))
+        &&& (forall |client:AbstractEndPoint| c_.contains_key(client) ==> c_[client] == if c.contains_key(client) {c[client]} else {LClientsInReplies(replies)[client]})
+        &&& (forall |client:AbstractEndPoint| (LClientsInReplies(replies).contains_key(client) || c.contains_key(client)) ==> c_.contains_key(client)
+                                                                                                && c_[client] == if c.contains_key(client) {c[client]} else {LClientsInReplies(replies)[client]})
     }
 
     pub open spec fn LExecutorExecute(

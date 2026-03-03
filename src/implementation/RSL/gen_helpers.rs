@@ -18,6 +18,7 @@ use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::abstractify_creplycache;
 use crate::protocol::RSL::environment::{RslIo, RslPacket};
 use crate::protocol::RSL::executor::{GetPacketsFromReplies, LClientsInReplies, UpdateNewCache};
+use crate::protocol::RSL::types::Reply;
 use crate::protocol::RSL::message::RslMessage;
 use crate::protocol::RSL::replica::{
     ExtractSentPacketsFromIos, LReplicaNextProcess1b, LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints,
@@ -434,9 +435,43 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
     result
 }
 
+/// Helper lemma: if LClientsInReplies(replies) contains a client,
+/// then some reply has that client and LClientsInReplies maps to it.
+proof fn lemma_clients_in_replies_witness(replies: Seq<Reply>, client: AbstractEndPoint)
+    requires LClientsInReplies(replies).contains_key(client),
+    ensures exists |idx: int| 0 <= idx < replies.len()
+        && replies[idx].client == client
+        && LClientsInReplies(replies)[client] == replies[idx],
+    decreases replies.len(),
+{
+    if replies.len() == 0 {
+        // Map::empty has no keys — contradicts requires
+    } else {
+        let rest = LClientsInReplies(replies.drop_first());
+        let merged = rest.insert(replies[0].client, replies[0]);
+        // LClientsInReplies(replies) == merged
+        if replies[0].client == client {
+            // replies[0] is the witness at index 0
+            assert(merged[client] == replies[0]);
+        } else {
+            // client must be in rest (insert of different key doesn't add client)
+            assert(rest.contains_key(client));
+            lemma_clients_in_replies_witness(replies.drop_first(), client);
+            let idx = choose |idx: int| 0 <= idx < replies.drop_first().len()
+                && replies.drop_first()[idx].client == client
+                && LClientsInReplies(replies.drop_first())[client] == replies.drop_first()[idx];
+            // drop_first()[idx] == replies[idx + 1]
+            assert(replies[idx + 1].client == client);
+            // merged[client] == rest[client] (insert of different key)
+            assert(merged[client] == rest[client]);
+            assert(rest[client] == replies.drop_first()[idx]);
+            assert(merged[client] == replies[idx + 1]);
+        }
+    }
+}
+
 /// Merge new replies into an existing reply cache.
-/// Kept external-body because HashMap iteration/insert is runtime-backed.
-#[verifier(external_body)]
+/// Clones nc (from replies), then inserts c's entries on top (c takes priority per spec).
 pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime: CReplyCache)
     requires
         creplycache_is_valid(c),
@@ -449,15 +484,251 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
             replies@.map(|i, x: CReply| x@),
         ),
 {
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+    broadcast use vstd::hash_map::group_hash_map_axioms;
+    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+    broadcast use crate::common::native::io_s::axiom_endpoint_view;
+
+    // Step 1: Build nc from replies (verified)
     let nc = CClientsInReplies(replies);
-    let mut updated_cache = HashMap::<EndPoint, CReply>::new();
-    for (k, v) in c.iter() {
-        updated_cache.insert(k.clone(), v.clone());
+    let ghost abs_nc = abstractify_creplycache(&nc);
+    let ghost abs_c = abstractify_creplycache(c);
+    let ghost abs_replies = replies@.map(|i, x: CReply| x@);
+
+    // Step 2: Clone nc into result
+    let mut result = clone_creply_cache_up_to_view(&nc);
+    // result@ == nc@
+
+    // Step 3: Insert all entries from c (overwrites nc where both have same key)
+    let c_keys = crate::common::collections::hashsets::hashmap_keys_to_vec(c);
+    let mut j: usize = 0;
+    while j < c_keys.len()
+        invariant
+            0 <= j <= c_keys.len(),
+            // All nc keys are in result (never removed)
+            forall |ep: EndPoint| nc@.contains_key(ep) ==> result@.contains_key(ep),
+            // Processed c keys are in result with c's values
+            forall |idx: int| 0 <= idx < j as int ==>
+                result@.contains_key(#[trigger] c_keys@[idx])
+                && result@[c_keys@[idx]] == c@[c_keys@[idx]],
+            // Domain: result only has nc keys and processed c keys
+            forall |ep: EndPoint| result@.contains_key(ep) ==>
+                nc@.contains_key(ep)
+                || (exists |idx: int| 0 <= idx < j as int && c_keys@[idx] == ep),
+            // nc-only keys (not in c) still have nc's values
+            forall |ep: EndPoint| nc@.contains_key(ep) && !c@.contains_key(ep)
+                ==> result@[ep] == nc@[ep],
+            // Validity
+            creplycache_is_valid(&result),
+            // Preserved postconditions
+            forall |k: int| 0 <= k < c_keys@.len() ==> c@.contains_key(#[trigger] c_keys@[k]),
+            forall |k: EndPoint| c@.contains_key(k) ==> (exists |idx: int| 0 <= idx < c_keys@.len() && c_keys@[idx] == k),
+            creplycache_is_valid(c),
+            creplycache_is_valid(&nc),
+            abs_nc == abstractify_creplycache(&nc),
+            abs_c == abstractify_creplycache(c),
+        decreases c_keys.len() - j,
+    {
+        let ghost old_result = result@;
+
+        proof {
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            broadcast use vstd::hash_map::group_hash_map_axioms;
+            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+            broadcast use crate::common::native::io_s::axiom_endpoint_view;
+            assert(c@.contains_key(c_keys@[j as int]));
+        }
+
+        let k = c_keys[j].clone_eq();
+        let v = c.get(&c_keys[j]).unwrap().clone_up_to_view();
+        let _ = result.insert(k, v);
+
+        proof {
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            broadcast use vstd::hash_map::group_hash_map_axioms;
+            broadcast use vstd::map::group_map_axioms;
+            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+            broadcast use crate::common::native::io_s::axiom_endpoint_view;
+
+            assert(k == c_keys@[j as int]);
+            assert(v == c@[k]);
+            assert(result@ =~= old_result.insert(k, v));
+
+            // Processed c keys maintain values (including the new one)
+            assert forall |idx: int| 0 <= idx < j as int + 1 implies
+                result@.contains_key(#[trigger] c_keys@[idx])
+                && result@[c_keys@[idx]] == c@[c_keys@[idx]]
+            by {
+                if idx == j as int {
+                    assert(result@.contains_key(k));
+                    assert(result@[k] == v);
+                    assert(v == c@[k]);
+                } else {
+                    // Previous c keys: unchanged unless k == c_keys@[idx]
+                    if c_keys@[idx] == k {
+                        // Same key, just overwritten with same value
+                        assert(result@[k] == v);
+                        assert(c@[c_keys@[idx]] == c@[k]);
+                    } else {
+                        assert(result@[c_keys@[idx]] == old_result[c_keys@[idx]]);
+                    }
+                }
+            };
+
+            // nc-only keys still have nc's values
+            assert forall |ep: EndPoint| nc@.contains_key(ep) && !c@.contains_key(ep)
+                implies result@[ep] == nc@[ep]
+            by {
+                // ep is not in c, k IS in c, so ep != k
+                assert(c@.contains_key(k));
+                assert(!c@.contains_key(ep));
+                assert(ep != k);
+                assert(result@[ep] == old_result[ep]);
+            };
+
+            // Validity: new entry valid because c is valid
+            assert forall |ep: EndPoint| result@.contains_key(ep) implies
+                ep.abstractable() && (#[trigger] result@[ep]).abstractable() && result@[ep].valid()
+            by {
+                if ep == k {
+                    assert(c@.contains_key(k));
+                    // creplycache_is_valid(c) gives c@[k].valid() and k.abstractable()
+                } else {
+                    assert(old_result.contains_key(ep));
+                }
+            };
+        }
+        j = j + 1;
     }
-    for (k, v) in nc.iter() {
-        updated_cache.insert(k.clone(), v.clone());
+
+    // Post-loop proof: establish UpdateNewCache
+    //
+    // Key insight: Verus encodes ghost `let` bindings as separate SMT constants,
+    // so proved foralls using ghost variables don't trigger-match the postcondition
+    // which uses raw expressions. We use `abs_replies` (defined at exec-level before
+    // the loop) consistently. The postcondition unfolds with `replies@.map(...)` —
+    // Verus should equate this with `abs_replies` from the exec-level ghost binding.
+    proof {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::hash_map::group_hash_map_axioms;
+        broadcast use vstd::map::group_map_axioms;
+        broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+        broadcast use crate::common::native::io_s::axiom_endpoint_view;
+
+        // First establish: all c keys are in result
+        assert forall |ep: EndPoint| c@.contains_key(ep) implies result@.contains_key(ep) by {
+            let idx = choose |idx: int| 0 <= idx < c_keys@.len() && c_keys@[idx] == ep;
+            assert(result@.contains_key(c_keys@[idx]));
+        };
+
+        // Concrete domain: result has exactly nc ∪ c keys
+        assert forall |ep: EndPoint| result@.contains_key(ep) <==>
+            (nc@.contains_key(ep) || c@.contains_key(ep)) by {};
+
+        // Concrete values: c keys get c's values
+        assert forall |ep: EndPoint| result@.contains_key(ep) && c@.contains_key(ep)
+            implies result@[ep] == c@[ep] by {
+            let idx = choose |idx: int| 0 <= idx < c_keys@.len() && c_keys@[idx] == ep;
+        };
+
+        // Bridge between concrete and abstract
+        assert(abstractify_creplycache(&nc) == abs_nc);
+        assert(abs_nc == LClientsInReplies(abs_replies));
+
+        // Pre-prove: for all clients in nc, a witness reply exists
+        assert forall |client: AbstractEndPoint|
+            LClientsInReplies(abs_replies).contains_key(client) implies
+            (exists |idx: int| 0 <= idx < abs_replies.len()
+                && (#[trigger] abs_replies[idx]).client == client
+                && LClientsInReplies(abs_replies)[client] == abs_replies[idx])
+        by {
+            lemma_clients_in_replies_witness(abs_replies, client);
+        };
+
+        // Now prove all 4 conjuncts using abs_replies (exec-level ghost variable)
+        // Conjunct 1: existential witness
+        assert forall |client: AbstractEndPoint|
+            abstractify_creplycache(&result).contains_key(client) implies
+            (abstractify_creplycache(c).contains_key(client) && abstractify_creplycache(&result)[client] == abstractify_creplycache(c)[client])
+            || (exists |req_idx: int| 0 <= req_idx < abs_replies.len()
+                && (#[trigger] abs_replies[req_idx]).client == client
+                && abstractify_creplycache(&result)[client] == abs_replies[req_idx])
+        by {
+            assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == client);
+            let ep_r = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == client;
+            if c@.contains_key(ep_r) {
+                assert(result@[ep_r] == c@[ep_r]);
+                assert(abstractify_creplycache(c).contains_key(client));
+            } else {
+                assert(nc@.contains_key(ep_r));
+                assert(abstractify_creplycache(&nc).contains_key(client));
+                assert(LClientsInReplies(abs_replies).contains_key(client));
+                // Witness exists from the pre-proved forall above
+            }
+        };
+
+        // Conjunct 2: domain
+        assert forall |client: AbstractEndPoint|
+            abstractify_creplycache(&result).contains_key(client) <==>
+            (LClientsInReplies(abs_replies).contains_key(client) || abstractify_creplycache(c).contains_key(client))
+        by {
+            if abstractify_creplycache(&result).contains_key(client) {
+                assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == client);
+                let ep = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == client;
+                if nc@.contains_key(ep) {
+                    assert(exists |ep2: EndPoint| nc@.contains_key(ep2) && ep2@ == client);
+                    assert(abstractify_creplycache(&nc).contains_key(client));
+                } else {
+                    assert(c@.contains_key(ep));
+                    assert(exists |ep2: EndPoint| c@.contains_key(ep2) && ep2@ == client);
+                    assert(abstractify_creplycache(c).contains_key(client));
+                }
+            }
+            if LClientsInReplies(abs_replies).contains_key(client) || abstractify_creplycache(c).contains_key(client) {
+                if LClientsInReplies(abs_replies).contains_key(client) {
+                    assert(abstractify_creplycache(&nc).contains_key(client));
+                    assert(exists |ep: EndPoint| nc@.contains_key(ep) && ep@ == client);
+                    let ep = choose |ep: EndPoint| nc@.contains_key(ep) && ep@ == client;
+                    assert(result@.contains_key(ep));
+                    assert(exists |ep2: EndPoint| result@.contains_key(ep2) && ep2@ == client);
+                }
+                if abstractify_creplycache(c).contains_key(client) {
+                    assert(exists |ep: EndPoint| c@.contains_key(ep) && ep@ == client);
+                    let ep = choose |ep: EndPoint| c@.contains_key(ep) && ep@ == client;
+                    assert(result@.contains_key(ep));
+                    assert(exists |ep2: EndPoint| result@.contains_key(ep2) && ep2@ == client);
+                }
+            }
+        };
+
+        // Conjunct 3: values
+        assert forall |client: AbstractEndPoint|
+            abstractify_creplycache(&result).contains_key(client) implies
+            abstractify_creplycache(&result)[client] == if abstractify_creplycache(c).contains_key(client) { abstractify_creplycache(c)[client] } else { LClientsInReplies(abs_replies)[client] }
+        by {
+            assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == client);
+            let ep_r = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == client;
+            if abstractify_creplycache(c).contains_key(client) {
+                assert(exists |ep: EndPoint| c@.contains_key(ep) && ep@ == client);
+                let ep_c = choose |ep: EndPoint| c@.contains_key(ep) && ep@ == client;
+                assert(ep_c == ep_r);
+                assert(c@.contains_key(ep_r));
+                assert(result@[ep_r] == c@[ep_r]);
+            } else {
+                assert(!c@.contains_key(ep_r));
+                assert(nc@.contains_key(ep_r));
+                assert(result@[ep_r] == nc@[ep_r]);
+            }
+        };
+
+        // Conjunct 4: reverse direction
+        assert forall |client: AbstractEndPoint|
+            (LClientsInReplies(abs_replies).contains_key(client) || abstractify_creplycache(c).contains_key(client)) implies
+            abstractify_creplycache(&result).contains_key(client)
+            && abstractify_creplycache(&result)[client] == if abstractify_creplycache(c).contains_key(client) { abstractify_creplycache(c)[client] } else { LClientsInReplies(abs_replies)[client] }
+        by {};
     }
-    updated_cache
+    result
 }
 
 /// Build reply packets from paired requests/replies.
