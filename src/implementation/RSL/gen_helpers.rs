@@ -16,7 +16,7 @@ use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::abstractify_creplycache;
-use crate::protocol::RSL::environment::RslPacket;
+use crate::protocol::RSL::environment::{RslIo, RslPacket};
 use crate::protocol::RSL::executor::{GetPacketsFromReplies, LClientsInReplies, UpdateNewCache};
 use crate::protocol::RSL::message::RslMessage;
 use crate::protocol::RSL::replica::{
@@ -66,26 +66,130 @@ pub fn clone_io_packet(p: &LPacket<EndPoint, CMessage>) -> (res: CPacket)
     CPacket { dst: p.dst.clone(), src: p.src.clone(), msg: p.msg.clone() }
 }
 
+/// Snoc lemma: ExtractSentPacketsFromIos distributes over push.
+/// Extract(s.push(x)) == Extract(s) ++ [x->s]  if x is Send
+/// Extract(s.push(x)) == Extract(s)             otherwise
+proof fn lemma_ExtractSentPacketsFromIos_snoc(s: Seq<RslIo>, x: RslIo)
+    ensures
+        ExtractSentPacketsFromIos(s.push(x)) =~=
+            if x is Send { ExtractSentPacketsFromIos(s).push(x->s) }
+            else { ExtractSentPacketsFromIos(s) }
+    decreases s.len()
+{
+    let sx = s.push(x);
+    let target = if x is Send { ExtractSentPacketsFromIos(s).push(x->s) }
+                 else { ExtractSentPacketsFromIos(s) };
+
+    if s.len() == 0 {
+        // s.push(x) = seq![x], len 1
+        assert(sx.len() == 1);
+        assert(sx[0] == x);
+        assert(sx.drop_first().len() == 0);
+        assert(ExtractSentPacketsFromIos(sx.drop_first()) =~= Seq::<RslPacket>::empty());
+        assert(ExtractSentPacketsFromIos(s) =~= Seq::<RslPacket>::empty());
+        if x is Send {
+            // Extract(seq![x]) = seq![x->s] + Extract(empty) = seq![x->s]
+            // target = Extract(empty).push(x->s) = empty.push(x->s) = seq![x->s]
+        }
+    } else {
+        lemma_ExtractSentPacketsFromIos_snoc(s.drop_first(), x);
+        // IH: Extract(s.drop_first().push(x)) =~= target_rest
+        // where target_rest = if x is Send: Extract(s.drop_first()).push(x->s)
+        //                     else: Extract(s.drop_first())
+
+        // Key identity: sx.drop_first() == s.drop_first().push(x)
+        assert(sx.drop_first() =~= s.drop_first().push(x));
+        assert(sx[0] == s[0]);
+
+        let extract_df_x = ExtractSentPacketsFromIos(s.drop_first().push(x));
+        let extract_df = ExtractSentPacketsFromIos(s.drop_first());
+
+        if s[0] is Send {
+            // Extract(sx) = seq![s[0]->s] + Extract(sx.drop_first())
+            // Extract(s) = seq![s[0]->s] + extract_df
+            let head = seq![s[0]->s];
+            if x is Send {
+                // IH: extract_df_x =~= extract_df.push(x->s)
+                //                    = extract_df + seq![x->s]
+                assert(extract_df_x =~= extract_df.push(x->s));
+                // Assoc: head + (extract_df + seq![x->s])
+                //     =~= (head + extract_df) + seq![x->s]
+                assert((head + extract_df) + seq![x->s]
+                    =~= head + (extract_df + seq![x->s]));
+                // Extract(sx) = head + extract_df_x
+                //             =~= head + (extract_df + seq![x->s])
+                //             =~= (head + extract_df) + seq![x->s]
+                //             = Extract(s) + seq![x->s]
+                //             = target
+                assert(ExtractSentPacketsFromIos(sx) =~= target);
+            } else {
+                assert(extract_df_x =~= extract_df);
+                assert(ExtractSentPacketsFromIos(sx) =~= target);
+            }
+        } else {
+            // Extract(sx) = Extract(sx.drop_first())
+            // Extract(s) = extract_df
+            if x is Send {
+                assert(extract_df_x =~= extract_df.push(x->s));
+                assert(ExtractSentPacketsFromIos(sx) =~= target);
+            } else {
+                assert(extract_df_x =~= extract_df);
+                assert(ExtractSentPacketsFromIos(sx) =~= target);
+            }
+        }
+    }
+}
+
 /// Convert runtime IO events to sent packets with the exact spec projection.
 /// Re-homed from replica_manual.rs to shrink manual_code footprint.
-#[verifier(external_body)]
 pub exec fn CExtractSentPacketsFromIos(ios: &Vec<CRslIo>) -> (result: Vec<CPacket>)
 ensures
     result@.map(|i, p: CPacket| p@) == ExtractSentPacketsFromIos(abstractify_crslio_seq(ios@)),
 {
     let mut result: Vec<CPacket> = Vec::new();
     let mut i: usize = 0;
+    let ghost abs_ios = abstractify_crslio_seq(ios@);
+
     while i < ios.len()
+        invariant
+            0 <= i <= ios.len(),
+            abs_ios == abstractify_crslio_seq(ios@),
+            result@.map(|j: int, p: CPacket| p@) =~=
+                ExtractSentPacketsFromIos(abs_ios.take(i as int)),
+        decreases ios.len() - i,
     {
         if let LIoOp::Send{s: pkt_s} = &ios[i] {
-            result.push(CPacket {
-                dst: pkt_s.dst.clone(),
-                src: pkt_s.src.clone(),
-                msg: pkt_s.msg.clone(),
-            })
+            let pkt = CPacket {
+                dst: pkt_s.dst.clone_up_to_view(),
+                src: pkt_s.src.clone_up_to_view(),
+                msg: pkt_s.msg.clone_up_to_view(),
+            };
+            result.push(pkt);
+            proof {
+                assert(pkt@ == abstractify_clpacket(*pkt_s));
+                assert(abs_ios[i as int] == abstractify_crslio(ios@[i as int]));
+                lemma_ExtractSentPacketsFromIos_snoc(
+                    abs_ios.take(i as int), abs_ios[i as int]);
+                assert(abs_ios.take((i + 1) as int) =~=
+                    abs_ios.take(i as int).push(abs_ios[i as int]));
+            }
+        } else {
+            proof {
+                assert(abs_ios[i as int] == abstractify_crslio(ios@[i as int]));
+                assert(!(abs_ios[i as int] is Send));
+                lemma_ExtractSentPacketsFromIos_snoc(
+                    abs_ios.take(i as int), abs_ios[i as int]);
+                assert(abs_ios.take((i + 1) as int) =~=
+                    abs_ios.take(i as int).push(abs_ios[i as int]));
+            }
         }
         i = i + 1;
     }
+
+    proof {
+        assert(abs_ios.take(ios@.len() as int) =~= abs_ios);
+    }
+
     result
 }
 
