@@ -274,34 +274,34 @@ verus! {
                         history = prev_history;
                     }
                 } else {
-                    if !(ios[0] is TimeoutReceive)
+                    if ios[0] is Receive
                     && !s_prev.ls.servers[id].held
                     && s_prev.ls.servers[id].config.contains(ios[0]->r.src)
                     && ios[0]->r.msg is Transfer
                     && ios[0]->r.msg->transfer_epoch > s_prev.ls.servers[id].epoch {
                         let p = ios[0]->r;
-                        assert(IsValidLIoOp(ios[0], id, s_prev.ls.environment));     // trigger
-                        assume(p.dst == id);
+                        assert(IsValidLIoOp(ios[0], id, s_prev.ls.environment));
+                        assert(p.dst == id);
                     }
 
                     history = prev_history;
 
-                    // All of the post conditions fail here
-                    assume(forall |p: LockPacket| #![auto] glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> 2 <= p.msg->transfer_epoch <= history.len());
-                    assume(forall |p: LockPacket| #![auto] glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> history[p.msg->transfer_epoch-1] == p.dst);
-                    assume(forall |h: AbstractEndPoint, j: int| #![auto] glb[i].ls.servers.contains_key(h) && 0 <= j < history.len()-1 && history[j] == h ==> j+1 <= glb[i].ls.servers[h].epoch);
-                    assume(forall |h: AbstractEndPoint| #![auto] glb[i].ls.servers.contains_key(h) && h != history.last() ==> !glb[i].ls.servers[h].held);
-                    assume(forall |h: AbstractEndPoint| #![auto] glb[i].ls.servers.contains_key(h) && glb[i].ls.servers[h].held ==> glb[i].ls.servers[h].epoch == history.len());
+                    assert(forall |p: LockPacket| #![auto] glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> 2 <= p.msg->transfer_epoch <= history.len());
+                    assert(forall |p: LockPacket| #![auto] glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> history[p.msg->transfer_epoch-1] == p.dst);
+                    assert(forall |h: AbstractEndPoint, j: int| #![auto] glb[i].ls.servers.contains_key(h) && 0 <= j < history.len()-1 && history[j] == h ==> j+1 <= glb[i].ls.servers[h].epoch);
+                    assert(forall |h: AbstractEndPoint| #![auto] glb[i].ls.servers.contains_key(h) && h != history.last() ==> !glb[i].ls.servers[h].held);
+                    assert(forall |h: AbstractEndPoint| #![auto] glb[i].ls.servers.contains_key(h) && glb[i].ls.servers[h].held ==> glb[i].ls.servers[h].epoch == history.len());
                 }
             } else {
                 history = prev_history;
 
-                assume(forall |p: LockPacket| #![auto] glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> 2 <= p.msg->transfer_epoch <= history.len());
-                assume(forall |p: LockPacket| #![auto] glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> history[p.msg->transfer_epoch-1] == p.dst);
+                // history == prev_history, servers unchanged → IH gives Transfer packet properties
+                assert(forall |p: LockPacket| #![auto] glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> 2 <= p.msg->transfer_epoch <= history.len());
+                assert(forall |p: LockPacket| #![auto] glb[i].ls.environment.sentPackets.contains(p) && p.msg is Transfer && glb[i].ls.servers.contains_key(p.src) ==> history[p.msg->transfer_epoch-1] == p.dst);
 
-                // assert(forall |h: AbstractEndPoint, j: int| glb[i].ls.servers.contains_key(h) && 0 <= j < history.len()-1 && history[j] == h ==> j+1 <= glb[i].ls.servers[h].epoch);
-                // assert(forall |h: AbstractEndPoint| glb[i].ls.servers.contains_key(h) && h != history.last() ==> !glb[i].ls.servers[h].held);
-                // assert(forall |h: AbstractEndPoint| glb[i].ls.servers.contains_key(h) && glb[i].ls.servers[h].held ==> glb[i].ls.servers[h].epoch == history.len());
+                assert(forall |h: AbstractEndPoint, j: int| #![auto] glb[i].ls.servers.contains_key(h) && 0 <= j < history.len()-1 && history[j] == h ==> j+1 <= glb[i].ls.servers[h].epoch);
+                assert(forall |h: AbstractEndPoint| #![auto] glb[i].ls.servers.contains_key(h) && h != history.last() ==> !glb[i].ls.servers[h].held);
+                assert(forall |h: AbstractEndPoint| #![auto] glb[i].ls.servers.contains_key(h) && glb[i].ls.servers[h].held ==> glb[i].ls.servers[h].epoch == history.len());
             }
 
             history
