@@ -202,10 +202,19 @@ verus! {
         match ds.environment.nextStep {
             LEnvStep::LEnvStepHostIos{actor, ios} => {
                 lemma_LEnvironmentNextHost(ds.environment, ss.environment, ds_next.environment, ss_next.environment);
-                // assert(NodeNext(s.servers[actor], s_.servers[actor], ios));
-                assume(ss.servers.dom().finite());
-                assume(ss_next.servers.dom().finite());
-                assume(ss_next.servers.index(ss.environment.nextStep->actor).config =~= ss.servers.index(ss.environment.nextStep->actor).config);
+
+                // ss.servers.dom() =~= ds.servers.dom() by definition of map_values
+                assert(ss.servers.dom() =~= ds.servers.dom());
+                assert(ss_next.servers.dom() =~= ds_next.servers.dom());
+
+                // Config preservation: NodeNext preserves config in all branches
+                let actor = ds.environment.nextStep->actor;
+                assert(DSStateLock::next_one_server_requires(ds, ds_next, actor, ds.environment.nextStep->ios));
+                assert(HostState::next(ds.servers[actor]@, ds_next.servers[actor]@, ds.environment.nextStep->ios));
+                assert(ds_next.servers[actor]@.config =~= ds.servers[actor]@.config);
+                // ss.servers[actor] == ds.servers[actor]@ by map_values definition
+                assert(ss_next.servers.index(ss.environment.nextStep->actor).config =~= ss.servers.index(ss.environment.nextStep->actor).config);
+
                 assert(ls_next(ss, ss_next));
             },
             _ => {
