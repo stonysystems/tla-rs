@@ -360,18 +360,41 @@ verus! {
             let sb = rest + seq![AbstractGLSState{
                 ls: db[db.len()-1], 
                 history: new_history}];
-            assume(gls_next(sb[sb.len()-2], sb[sb.len()-1]));
+            // Prove gls_next(sb[sb.len()-2], sb[sb.len()-1])
+            // sb[sb.len()-2] = rest.last(), whose .ls =~= ls from IH
+            assert(sb[sb.len()-2] == rest.last());
+            assert(sb[sb.len()-2].ls =~= ls);
+            assert(sb[sb.len()-2].history == last_history);
+            assert(sb[sb.len()-1].ls == ls_new);
+            assert(sb[sb.len()-1].history == new_history);
+            // ls_next transfers via =~=
+            assert(ls_next(sb[sb.len()-2].ls, sb[sb.len()-1].ls));
+            // Bridge NodeGrant through =~=
+            assert(sb[sb.len()-2].ls.servers[id] =~= node);
+            assert(sb[sb.len()-1].ls.servers[id] =~= node_next);
+            assert(gls_next(sb[sb.len()-2], sb[sb.len()-1]));
 
-            // assume(gls_init(sb[0], abstractify_end_points(config)));
-            // assume(forall |i: int, j: int| #![trigger gls_next(sb[i], sb[j])] 0 <= i < sb.len() - 1 && j == i+1 ==> gls_next(sb[i], sb[j]));
-            assume(forall |i: int| 0 <= i < db.len() ==> sb[i].ls =~= db[i]);
+            // sb[i].ls =~= db[i]: from IH for i < db.len()-1, by construction for i == db.len()-1
+            assert forall |i: int| 0 <= i < db.len() implies sb[i].ls =~= db[i] by {
+                if i < db.len() - 1 {
+                    assert(sb[i] == rest[i]);
+                } else {
+                    // i == db.len() - 1: sb[i] = AbstractGLSState{ls: db[db.len()-1], ...}
+                }
+            };
 
             sb
         } else {
             let sb = rest + seq![AbstractGLSState{ls: db[db.len()-1], history: last_history}];
-            // assume(gls_init(sb[0], abstractify_end_points(config)));
-            // assume(forall |i: int, j: int| #![trigger gls_next(sb[i], sb[j])] 0 <= i < sb.len() - 1 && j == i+1 ==> gls_next(sb[i], sb[j]));
-            assume(forall |i: int| 0 <= i < db.len() ==> sb[i].ls =~= db[i]);
+
+            // sb[i].ls =~= db[i]: from IH for i < db.len()-1, by construction for i == db.len()-1
+            assert forall |i: int| 0 <= i < db.len() implies sb[i].ls =~= db[i] by {
+                if i < db.len() - 1 {
+                    assert(sb[i] == rest[i]);
+                } else {
+                    // i == db.len() - 1: sb[i] = AbstractGLSState{ls: db[db.len()-1], ...}
+                }
+            };
             sb
             }   
         }
