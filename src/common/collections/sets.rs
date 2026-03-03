@@ -180,19 +180,6 @@ verus! {
         }
     }
 
-    #[verifier::external_body]
-    pub proof fn SubsetCardinality<T>(x:Set<T>, y:Set<T>)
-        ensures x.subset_of(y) ==> x.len() < y.len(),
-                (x.subset_of(y) || x==y) ==> x.len() <= y.len()
-    {
-        if (x.subset_of(y)) {
-
-        }
-        if (x==y) {
-
-        }
-    }
-
     pub proof fn subset_cardinality<T>(x:Set<T>, y:Set<T>)
         requires
             x.subset_of(y),

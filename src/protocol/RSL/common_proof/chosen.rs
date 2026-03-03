@@ -295,7 +295,9 @@ verus! {
             assert(0 <= sidx < c.config.replica_ids.len());
             assert(senders.contains(c.config.replica_ids[sidx]));
         }
-        SubsetCardinality(alt_indices, indices);
+        // indices.finite() from collect_2b_messages ensures
+        // alt_indices ⊆ indices established above
+        subset_cardinality(alt_indices, indices);
 
         return QuorumOf2bs{c:c, indices:indices, packets:packets, bal:bal, opn:opn, v:v};
     }
@@ -309,11 +311,15 @@ verus! {
         i: int,
         sender_idx:int,
     ) -> (rc:(Set<int>, Seq<RslPacket>))
-        // ensures
+        ensures
+            rc.0.finite(),
+        // Original commented-out ensures preserved:
         //     indices.subset_of(Set::new(|x: int| 0 <= x < c.config.replica_ids.len())),
         //     packets.len() == c.config.replica_ids.len()
         decreases c.config.replica_ids.len() - sender_idx
     {
+        broadcast use vstd::set::group_set_axioms;
+
         let dummy_packet = LPacket{dst:c.config.replica_ids[0], src:c.config.replica_ids[0], msg:RslMessage::RslMessage1a{bal_1a:Ballot{seqno:0, proposer_id:0}}};
         if c.config.replica_ids.len() == sender_idx {
             (Set::empty(), Seq::empty())
@@ -324,10 +330,13 @@ verus! {
             let (rest_indices, rest_packets) = collect_2b_messages(
                 c, senders, opn, idx, b, i, sender_idx+1
             );
+            // IH: rest_indices.finite()
 
             if senders.contains(sender) {
                 let (sender_idx_unused, p) = lemma_GetSent2bMessageFromLearnerState(b, c, i, idx, opn, sender);
                 let new_indices = set![sender_idx_unused] + rest_indices;
+                // set![sender_idx_unused] = Set::empty().insert(sender_idx_unused) is finite
+                // union of two finite sets is finite (axiom_set_union_finite in group_set_axioms)
                 let new_packets = seq![p] + rest_packets;
                 (new_indices, new_packets)
             } else {
