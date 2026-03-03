@@ -168,7 +168,6 @@ nat_type = "u64"
 "ExecutorProcessRequest" = "crate::generated::RSL::executor_gen::CExecutorProcessRequest"
 # Associated functions on CProposer (manual implementations)
 "SetOfMessage1bAboutBallot" = "CProposer::CSetOfMessage1bAboutBallot"
-"ValIsHighestNumberedProposal" = "CProposer::CValIsHighestNumberedProposal"
 "ExistsAcceptorHasProposalLargeThanOpn" = "CProposer::CExistsAcceptorHasProposalLargeThanOpn"
 # Associated functions on CExecutor (manual implementations, recursive)
 "ClientsInReplies" = "CExecutor::CClientsInReplies"
