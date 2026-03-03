@@ -25,7 +25,7 @@ verus! {
 
     pub open spec fn valid_config(c:ConcreteConfig) -> bool
     {
-        // &&& 0 < c.len() < 0x1_0000_0000_0000_0000
+        &&& c.len() > 0
         &&& (forall |i: int| #![auto] 0 <= i < c.len() ==> c[i]@.valid_physical_address())
         &&& seq_is_unique(abstractify_end_points(c))
     }

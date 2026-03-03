@@ -238,10 +238,50 @@ verus! {
         if db.len() == 1 {
             let ls = db[0]@;
             let sb = seq![ ls ];
-            assert(forall |id| #![auto] db[0].servers.contains_key(id) ==> HostState::host_init(db[0].servers[id], abstractify_end_points(config), id));
-            assume(ls_init(sb[0], abstractify_end_points(db[0].config)));
+            let config_abs = abstractify_end_points(db[0].config);
+
+            // From init_requires: all servers satisfy host_init
+            assert(forall |id: AbstractEndPoint| #![auto] db[0].servers.contains_key(id)
+                ==> HostState::host_init(db[0].servers[id], config_abs, id));
+
+            // 1. LEnvironment_Init bridging: empty concrete sentPackets → empty abstract sentPackets
+            broadcast use vstd::set::group_set_axioms;
+            assert(db[0].environment.sentPackets =~= Set::<NetPacket>::empty());
+            assert(abstractify_concrete_env_sent_packets(db[0].environment.sentPackets)
+                =~= Set::<LockPacket>::empty());
+            assert(LEnvironment_Init(sb[0].environment));
+
+            // 2-3. config.len() > 0 and seq_is_unique from valid_config
+            assert(config_abs.len() > 0);
+            assert(seq_is_unique(config_abs));
+
+            // 4. Server domain ↔ config containment
+            // map_values preserves domain: sb[0].servers.dom() =~= db[0].servers.dom()
+            // init_requires: db[0].servers.dom() =~= config_abs.to_set()
+            assert(sb[0].servers.dom() =~= config_abs.to_set());
+
+            // 5. NodeInit at each position i: host_init gives NodeInit with my_index,
+            //    seq_is_unique proves my_index == i
+            assert forall |i: int| #![auto] 0 <= i < config_abs.len()
+                implies NodeInit(sb[0].servers[config_abs[i]], i as nat, config_abs) by {
+                let id = config_abs[i];
+                assert(config_abs.to_set().contains(id));
+                assert(db[0].servers.contains_key(id));
+                assert(HostState::host_init(db[0].servers[id], config_abs, id));
+                // host_init → NodeInit(servers[id]@, servers[id]@.my_index, config_abs)
+                // host_init → servers[id]@.config[servers[id]@.my_index] == id
+                // Since servers[id]@.config =~= config_abs:
+                //   config_abs[servers[id]@.my_index] == id == config_abs[i]
+                // seq_is_unique → servers[id]@.my_index == i
+                // sb[0].servers[id] == db[0].servers[id]@ (map_values definition)
+            };
+
+            // 6-7. Finiteness
+            assert(sb[0].servers.dom().finite());
+            assert(sb[0].environment.sentPackets.finite());
+
+            assert(ls_init(sb[0], config_abs));
             sb
-            // reveal_SeqIsUnique();
         } else {
             lemma_deduce_transition_from_ds_behavior(config, db, db.len()-2);
             lemma_ds_consistency(config, db, db.len()-2);
