@@ -76,7 +76,7 @@ verus! {
         }
 
         pub fn clone_up_to_view(&self) -> (res: CBallot)
-        ensures res@ == self@
+        ensures res@ == self@, res.valid() == self.valid()
         {
             CBallot {
                 seqno: self.seqno,
@@ -316,7 +316,7 @@ verus! {
     impl CVote{
 
         pub fn clone_up_to_view(&self) -> (res: CVote)
-        ensures res@ == self@
+        ensures res@ == self@, res.valid() == self.valid()
         {
             CVote {
                 max_value_bal: self.max_value_bal.clone_up_to_view(),
