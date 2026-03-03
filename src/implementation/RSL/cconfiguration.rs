@@ -11,23 +11,36 @@ pub struct CConfiguration {
 }
 
 impl CConfiguration {
-    #[verifier(external_body)]
     pub fn clone_up_to_view(&self) -> (res:CConfiguration)
     ensures
         self@ == res@,
-        self == res,
-        res.valid(),
+        res.valid() == self.valid(),
+        self.replica_ids.len() == res.replica_ids.len(),
     {
         let mut newVec:Vec<EndPoint> = Vec::new();
         let mut i = 0;
         let len = self.replica_ids.len();
         while i < len
+            invariant
+                0 <= i <= len,
+                len == self.replica_ids.len(),
+                newVec.len() == i,
+                newVec@ =~= self.replica_ids@.take(i as int),
+                forall |j: int| 0 <= j < i ==> newVec@[j] == self.replica_ids@[j],
+            decreases len - i,
         {
-            assert(i >= 0);
-            assert(i < self.replica_ids@.len());
-            newVec.push(self.replica_ids[i].clone_up_to_view());
+            let ep = self.replica_ids[i].clone_up_to_view();
+            proof {
+                broadcast use crate::common::native::io_s::axiom_endpoint_view;
+            }
+            // ep@ == self.replica_ids[i]@ from clone_up_to_view
+            // axiom_endpoint_view: ep@ == self.replica_ids[i]@ ==> ep == self.replica_ids[i]
+            assert(ep == self.replica_ids[i as int]);
+            newVec.push(ep);
             i += 1;
+            assert(newVec@ =~= self.replica_ids@.take(i as int));
         }
+        assert(newVec@ =~= self.replica_ids@);
         CConfiguration {
             replica_ids: newVec,
         }

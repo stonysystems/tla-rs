@@ -56,13 +56,15 @@ verus! {
                 result.valid() == self.valid(),
         {
             let constants_clone = self.constants.clone();
-            // Clone impl ensures: constants_clone == self.constants, constants_clone@ == self.constants@
+            // Clone impl ensures: constants_clone@ == self.constants@, valid() biconditional, len preserved
             let votes_clone = clone_cvotes_up_to_view(&self.votes);
             // ensures: votes_clone == self.votes
             let ckpt_clone = self.last_checkpointed_operation.clone();
             // Vec<u64>::clone — for Copy elements, clone preserves all values
             proof {
                 assert(self.last_checkpointed_operation@ =~= ckpt_clone@);
+                // Length preservation: constants_clone has same replica_ids len as self.constants
+                assert(constants_clone.all.config.replica_ids.len() == self.constants.all.config.replica_ids.len());
             }
             CAcceptor {
                 constants: constants_clone,

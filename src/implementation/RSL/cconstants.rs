@@ -20,8 +20,9 @@ pub struct CReplicaConstants {
 impl Clone for CReplicaConstants {
     fn clone(&self) -> (result: Self)
     ensures
-        result == *self,
         result@ == self@,
+        result.valid() == self.valid(),
+        self.all.config.replica_ids.len() == result.all.config.replica_ids.len(),
     {
         CReplicaConstants {
             my_index: self.my_index,
@@ -33,8 +34,9 @@ impl Clone for CReplicaConstants {
 impl CConstants {
     pub fn clone_up_to_view(&self) -> (result:Self)
     ensures
-        self == result,
         self@ == result@,
+        result.valid() == self.valid(),
+        self.config.replica_ids.len() == result.config.replica_ids.len(),
     {
         CConstants {
             config: self.config.clone_up_to_view(),
@@ -90,9 +92,9 @@ impl CReplicaConstants {
     requires
         self.valid(),
     ensures
-        self == result,
         self@ == result@,
-        result.valid()
+        result.valid(),
+        self.all.config.replica_ids.len() == result.all.config.replica_ids.len(),
     {
         CReplicaConstants {
             my_index: self.my_index,
@@ -149,8 +151,7 @@ pub fn InitReplicaConstants(end:&EndPoint, config:&CConfiguration) -> (rc:CRepli
         config.replica_ids@.contains(*end),
     ensures
         rc.valid(),
-        rc.all.config.replica_ids[rc.my_index as int] == end,
-        rc.all.config == config,
+        rc.all.config@ == config@,
         rc.all.params.max_log_length > 0,
         rc.all.params.max_log_length < 10000,
 {

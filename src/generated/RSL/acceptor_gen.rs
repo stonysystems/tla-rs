@@ -359,11 +359,17 @@ ensures
     } else {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         let new_votes = CRemoveVotesBeforeLogTruncationPoint(&s.votes, opn);
+        let constants_clone = s.constants.clone_up_to_view();
+        let ckpt_clone = s.last_checkpointed_operation.clone();
+        proof {
+            assert(s.last_checkpointed_operation@ =~= ckpt_clone@);
+            assert(constants_clone.all.config.replica_ids.len() == s.constants.all.config.replica_ids.len());
+        }
         let result = CAcceptor {
-            constants: s.constants.clone_up_to_view(),
+            constants: constants_clone,
             max_bal: s.max_bal,
             votes: new_votes,
-            last_checkpointed_operation: s.last_checkpointed_operation.clone(),
+            last_checkpointed_operation: ckpt_clone,
             log_truncation_point: *opn,
             min_vote_opn: 0u64,
         };
