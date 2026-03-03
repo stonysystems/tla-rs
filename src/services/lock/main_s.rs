@@ -137,9 +137,73 @@ verus! {
         let r_sends = r_ios.filter(|io:LockIo| io is Send).map_values(|io: LockIo| io->s).to_set();
 
         let refined_sends = abstractify_concrete_env_sent_packets(sends);
-        
-        assume(forall |r| r_sends.contains(r) ==> refined_sends.contains(r));
-        assume(forall |r| refined_sends.contains(r) ==> r_sends.contains(r));
+
+        // Prove r_sends == refined_sends by showing bidirectional containment.
+        // Key: r_ios[j] = abstractify_io(ios[j]), and abstractify preserves Send variant,
+        // so both sets are { abstractify_pkt(ios[j]->s) | ios[j] is Send }.
+        let abs_io = |evt: NetEvent| abstractify_net_event_to_lock_io(evt);
+        let abs_pkt = |p: NetPacket| abstractify_net_packet_to_lock_packet(p);
+        let pred_c = |io: NetEvent| io is Send;
+        let pred_r = |io: LockIo| io is Send;
+        let ext_c = |io: NetEvent| io->s;
+        let ext_r = |io: LockIo| io->s;
+
+        // Bridge: abstractify preserves Send variant and packet extraction
+        assert forall |j: int| 0 <= j < ios.len() implies
+            (r_ios[j] is Send <==> ios[j] is Send) &&
+            (ios[j] is Send ==> r_ios[j]->s == abs_pkt(ios[j]->s))
+        by {
+            assert(r_ios[j] =~= abs_io(ios[j]));
+        };
+
+        // Forward: r_sends ⊆ refined_sends
+        assert forall |r: LockPacket| r_sends.contains(r) implies refined_sends.contains(r) by {
+            broadcast use vstd::seq_lib::group_filter_ensures;
+            // r ∈ r_ios.filter(Send).map_values(->s).to_set() means the seq contains r
+            let mapped_r = r_ios.filter(pred_r).map_values(ext_r);
+            assert(mapped_r.contains(r));
+            let k = choose |k: int| 0 <= k < mapped_r.len() && mapped_r[k] == r;
+            // filtered_r[k] is Send (from filter_pred broadcast)
+            let io_r = r_ios.filter(pred_r)[k];
+            // io_r ∈ r_ios (filter is subset)
+            r_ios.lemma_filter_contains_rev(pred_r, io_r);
+            let j = choose |j: int| 0 <= j < r_ios.len() && r_ios[j] == io_r;
+            // ios[j] is Send (variant preserved) and ios[j]->s ∈ sends
+            assert(ios[j] is Send);
+            let pkt = ios[j]->s;
+            // ios.filter(Send).contains(ios[j]) (from filter_contains broadcast)
+            let filtered_c = ios.filter(pred_c);
+            assert(filtered_c.contains(ios[j]));
+            let k2 = choose |k2: int| 0 <= k2 < filtered_c.len() && filtered_c[k2] == ios[j];
+            assert(filtered_c.map_values(ext_c)[k2] == pkt);
+            assert(sends.contains(pkt));
+            // r = abstractify(pkt), so r ∈ sends.map(abstractify) = refined_sends
+            assert(r == abs_pkt(pkt));
+        };
+
+        // Backward: refined_sends ⊆ r_sends
+        assert forall |r: LockPacket| refined_sends.contains(r) implies r_sends.contains(r) by {
+            broadcast use vstd::seq_lib::group_filter_ensures;
+            // r ∈ sends.map(abstractify): ∃pkt ∈ sends with abstractify(pkt) == r
+            let pkt = choose |pkt: NetPacket| sends.contains(pkt) && abs_pkt(pkt) == r;
+            // pkt ∈ ios.filter(Send).map_values(->s)
+            let mapped_c = ios.filter(pred_c).map_values(ext_c);
+            assert(mapped_c.contains(pkt));
+            let k = choose |k: int| 0 <= k < mapped_c.len() && mapped_c[k] == pkt;
+            let io_c = ios.filter(pred_c)[k];
+            // io_c ∈ ios (filter is subset)
+            ios.lemma_filter_contains_rev(pred_c, io_c);
+            let j = choose |j: int| 0 <= j < ios.len() && ios[j] == io_c;
+            // r_ios[j] is Send and r_ios[j]->s == r
+            assert(r_ios[j] is Send);
+            assert(r_ios[j]->s == r);
+            // r_ios.filter(Send).contains(r_ios[j]) (from filter_contains broadcast)
+            let filtered_r = r_ios.filter(pred_r);
+            assert(filtered_r.contains(r_ios[j]));
+            let k2 = choose |k2: int| 0 <= k2 < filtered_r.len() && filtered_r[k2] == r_ios[j];
+            assert(filtered_r.map_values(ext_r)[k2] == r);
+            assert(r_sends.contains(r));
+        };
 
         assert_sets_equal!(r_sends, refined_sends);
 
