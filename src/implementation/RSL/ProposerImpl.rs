@@ -327,35 +327,72 @@ impl CProposer{
     // Called from proposer_gen.rs and proposer_manual.rs
     // =========================================================================
 
-    #[verifier(external_body)]
     pub fn CAllAcceptorsHadNoProposal(S:&HashSet<CPacket>, opn:COperationNumber) -> (result_CAllAcceptorsHadNoProposal:bool)
     requires
         forall |p:CPacket| S@.contains(p) ==> p.valid(),
         COperationNumberIsValid(opn),
+        LSetOfMessage1b(S@.map(|p:CPacket| p@)),
     ensures
         ({
             let lr = LAllAcceptorsHadNoProposal(S@.map(|p:CPacket| p@), AbstractifyCOperationNumberToOperationNumber(opn));
             result_CAllAcceptorsHadNoProposal == lr
         })
     {
-        let mut iter = S.iter();
-        let mut res = false;
-        match iter.next() {
-            Some(p)=>{
-            match &p.msg{
-                CMessage::CMessage1b { votes, .. } => {
-                            if votes.contains_key(&opn) {
-                                return false;
-                            }
-                        }
-                        _ => {
-                             return false;
-                        }
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::set::group_set_axioms;
+        broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
+
+        let vec = hashset_to_vec(S);
+        let mut i: usize = 0;
+        while i < vec.len()
+            invariant
+                0 <= i <= vec.len(),
+                forall |j: int| 0 <= j < i as int ==> (
+                    (#[trigger] vec@[j]).msg is CMessage1b ==> !(vec@[j].msg->votes@).contains_key(opn)
+                ),
+                forall |k: int| 0 <= k < vec@.len() ==> S@.contains(#[trigger] vec@[k]),
+                forall |x: CPacket| S@.contains(x) ==> (exists |k: int| 0 <= k < vec@.len() && vec@[k] == x),
+                forall |p:CPacket| S@.contains(p) ==> p.valid(),
+                COperationNumberIsValid(opn),
+                LSetOfMessage1b(S@.map(|p: CPacket| p@)),
+            decreases
+                vec.len() - i,
+        {
+            if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &vec[i].msg {
+                if votes.contains_key(&opn) {
+                    // Found a Message1b with votes containing opn — spec is false
+                    proof {
+                        let bad = vec@[i as int];
+                        assert(S@.contains(bad));
+                        assert(bad.valid());
+                        assert(bad.abstractable());
+                        let f = |p: CPacket| p@;
+                        assert(S@.map(f).contains(f(bad)));
+                        assert(bad@.msg is RslMessage1b);
                     }
+                    return false;
+                }
             }
-            None=>{}
+            i = i + 1;
         }
-        return true;
+        // All Message1b packets checked — none have opn in their votes
+        // LSetOfMessage1b guarantees all packets are RslMessage1b, so loop invariant covers all
+        proof {
+            let f = |p: CPacket| p@;
+            assert forall |p: RslPacket| S@.map(f).contains(p)
+                implies !p.msg->votes.contains_key(AbstractifyCOperationNumberToOperationNumber(opn)) by {
+                let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == p;
+                assert(cp.valid());
+                assert(cp.abstractable());
+                // LSetOfMessage1b: all packets in S@.map(f) are RslMessage1b
+                assert(p.msg is RslMessage1b);
+                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == cp;
+                // loop invariant via j: vec@[j].msg is CMessage1b ==> !(vec@[j].msg->votes@).contains_key(opn)
+                // since cp@ == p and p.msg is RslMessage1b, cp.msg is CMessage1b
+                // so !(cp.msg->votes@).contains_key(opn)
+            };
+        }
+        true
     }
 
     // =========================================================================
@@ -406,22 +443,71 @@ impl CProposer{
     // Called from proposer_gen.rs and proposer_manual.rs
     // =========================================================================
 
-    #[verifier(external_body)]
     pub fn CExistsAcceptorHasProposalLargeThanOpn(S:&HashSet<CPacket>, op:COperationNumber) -> (result_CExistsAcceptorHasProposalLargeThanOpn:bool)
     requires
         forall |p:CPacket| S@.contains(p) ==> p.valid(),
         COperationNumberIsValid(op),
+        LSetOfMessage1b(S@.map(|p:CPacket| p@)),
     ensures
     ({
         let lr = LExistsAcceptorHasProposalLargeThanOpn(S@.map(|p:CPacket| p@), AbstractifyCOperationNumberToOperationNumber(op));
         result_CExistsAcceptorHasProposalLargeThanOpn == lr
     })
-
     {
-        for p in S {
-            if Self::CExistVotesHasProposalLargeThanOpn(p, op) {
-                return true;
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::set::group_set_axioms;
+        broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
+
+        let vec = hashset_to_vec(S);
+        let mut i: usize = 0;
+        while i < vec.len()
+            invariant
+                0 <= i <= vec.len(),
+                forall |j: int| 0 <= j < i as int ==> (
+                    (#[trigger] vec@[j]).msg is CMessage1b ==>
+                        !LExistVotesHasProposalLargeThanOpn(vec@[j]@, AbstractifyCOperationNumberToOperationNumber(op))
+                ),
+                forall |k: int| 0 <= k < vec@.len() ==> S@.contains(#[trigger] vec@[k]),
+                forall |k: int| 0 <= k < vec@.len() ==> (#[trigger] vec@[k]).valid(),
+                forall |x: CPacket| S@.contains(x) ==> (exists |k: int| 0 <= k < vec@.len() && vec@[k] == x),
+                forall |p:CPacket| S@.contains(p) ==> p.valid(),
+                COperationNumberIsValid(op),
+                LSetOfMessage1b(S@.map(|p: CPacket| p@)),
+            decreases
+                vec.len() - i,
+        {
+            if let CMessage::CMessage1b { bal_1b, log_truncation_point, votes } = &vec[i].msg {
+                // vec[i] is CMessage1b and valid — safe to call CExistVotesHasProposalLargeThanOpn
+                if Self::CExistVotesHasProposalLargeThanOpn(&vec[i], op) {
+                    // Found a packet with votes having key > op
+                    proof {
+                        let good = vec@[i as int];
+                        assert(S@.contains(good));
+                        assert(good.valid());
+                        assert(good.abstractable());
+                        let f = |p: CPacket| p@;
+                        assert(S@.map(f).contains(f(good)));
+                    }
+                    return true;
+                }
             }
+            i = i + 1;
+        }
+        // No 1b packet has votes with key > op
+        // LSetOfMessage1b guarantees all packets are RslMessage1b, so loop invariant covers all
+        proof {
+            let f = |p: CPacket| p@;
+            assert forall |p: RslPacket| S@.map(f).contains(p)
+                implies !LExistVotesHasProposalLargeThanOpn(p, AbstractifyCOperationNumberToOperationNumber(op)) by {
+                let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == p;
+                assert(cp.valid());
+                assert(cp.abstractable());
+                // LSetOfMessage1b: p.msg is RslMessage1b
+                assert(p.msg is RslMessage1b);
+                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == cp;
+                // cp.msg is CMessage1b (from p.msg is RslMessage1b)
+                // loop invariant via j gives !LExistVotesHasProposalLargeThanOpn(cp@, ...)
+            };
         }
         false
     }
