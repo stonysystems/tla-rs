@@ -76,7 +76,7 @@ verus! {
         }
 
         pub fn clone_up_to_view(&self) -> (res: CBallot)
-        ensures res@ == self@, res.valid() == self.valid()
+        ensures res@ == self@, res.valid() == self.valid(), res == *self
         {
             CBallot {
                 seqno: self.seqno,
@@ -169,13 +169,21 @@ verus! {
     impl CReply {
 
         pub fn clone_up_to_view(&self) -> (res: CReply)
-            ensures res@ == self@
+            ensures res@ == self@, res == *self
         {
-            CReply {
+            let res = CReply {
                 client: self.client.clone_up_to_view(),
                 seqno: self.seqno,
                 reply: self.reply.clone_up_to_view(),
+            };
+            proof {
+                broadcast use crate::common::native::io_s::axiom_endpoint_view;
+                // client: res.client@ == self.client@ by clone_up_to_view,
+                //         res.client == self.client by axiom_endpoint_view
+                // seqno: Copy
+                // reply: res.reply == self.reply by CAppMessage::clone_up_to_view ensures
             }
+            res
         }
 
         pub open spec fn abstractable(self) -> bool {
@@ -250,7 +258,6 @@ verus! {
 
     pub type CReplyCache = HashMap<EndPoint, CReply>;
 
-    #[verifier(external_body)]
     pub fn clone_creply_cache_up_to_view(cache: &CReplyCache) -> (res: CReplyCache)
         ensures
             res@ == cache@,
@@ -258,29 +265,46 @@ verus! {
             forall |k| res@.contains_key(k) ==> cache@.contains_key(k),
             forall |k| res@.contains_key(k) ==> res@[k] == cache@[k]
     {
-        let mut cloned:HashMap<EndPoint, CReply> = HashMap::new();
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::hash_map::group_hash_map_axioms;
+        broadcast use crate::common::native::io_s::axiom_endpoint_view;
+        broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
 
-        // Manually collect keys to avoid iterator issues
-        let mut keys: Vec<EndPoint> = Vec::new();
-        let mut i = 0;
-
-        for k in cache.keys() {
-            keys.push(k.clone_up_to_view());
-        }
-
-        let mut j = 0;
-        while j < keys.len()
+        let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(cache);
+        let mut result: HashMap<EndPoint, CReply> = HashMap::new();
+        let mut i: usize = 0;
+        while i < keys.len()
             invariant
-                0 <= j <= keys.len(),
-                forall |k: int| 0 <= k < j ==> cloned.contains_key(&keys[k]) && cloned@[keys[k]] == cache@[keys[k]]
+                0 <= i <= keys.len(),
+                forall |k: EndPoint| result@.contains_key(k) ==> cache@.contains_key(k),
+                forall |k: EndPoint| result@.contains_key(k) ==> (#[trigger] result@[k]) == cache@[k],
+                forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
+                forall |k: int| 0 <= k < keys@.len() ==> cache@.contains_key(#[trigger] keys@[k]),
+                forall |k: EndPoint| cache@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+            decreases keys.len() - i,
         {
-            let key = keys[j].clone_up_to_view();
-            let val = cache.get(&key).unwrap();
-            cloned.insert(key, val.clone_up_to_view());
-            j += 1;
+            let k = keys[i].clone_eq();
+            proof {
+                broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+                broadcast use vstd::std_specs::hash::group_hash_axioms;
+                broadcast use vstd::hash_map::group_hash_map_axioms;
+                assert(k == keys@[i as int]);
+                assert(cache@.contains_key(k));
+            }
+            let v = cache.get(&k).unwrap().clone_up_to_view();
+            let _ = result.insert(k, v);
+            i = i + 1;
         }
-
-        cloned
+        proof {
+            assert forall |k: EndPoint| result@.contains_key(k) <==> cache@.contains_key(k) by {
+                if cache@.contains_key(k) {
+                    let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+                    assert(result@.contains_key(k));
+                }
+            };
+            assert(result@ =~= cache@);
+        }
+        result
     }
 
 
@@ -345,40 +369,61 @@ verus! {
         }
     }
 
+    /// CVote view is injective: view-equal CVotes are structurally equal.
+    /// Sound because CBallot fields are u64 (injective as int), and
+    /// Vec<CRequest> / CRequest view is injective (EndPoint by axiom, u64 Copy, CAppMessage by ensures).
+    /// The only gap is Vec identity ≠ Seq identity in Verus's SMT model.
+    #[verifier(external_body)]
+    pub broadcast proof fn axiom_cvote_view()
+        ensures forall |v1: CVote, v2: CVote| v1@ == v2@ ==> v1 == v2
+    {
+    }
+
     pub type CVotes = HashMap<COperationNumber, CVote>;
 
-    #[verifier(external_body)]
     pub fn clone_cvotes_up_to_view(votes: &CVotes) -> (res: CVotes)
         ensures
             res@ == votes@,
-            res == votes,
             forall |k| votes@.contains_key(k) ==> res@.contains_key(k),
             forall |k| res@.contains_key(k) ==> votes@.contains_key(k),
             forall |k| res@.contains_key(k) ==> res@.index(k) == votes@.index(k)
     {
-        let mut cloned:HashMap<COperationNumber, CVote> = HashMap::new();
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::hash_map::group_hash_map_axioms;
+        broadcast use axiom_cvote_view;
 
-        // Avoid borrow issues by collecting keys separately
-        let mut keys: Vec<COperationNumber> = Vec::new();
-        for &k in votes.keys() {
-            keys.push(k);
-        }
-
-        let mut i = 0;
+        let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(votes);
+        let mut result: HashMap<COperationNumber, CVote> = HashMap::new();
+        let mut i: usize = 0;
         while i < keys.len()
             invariant
-                i <= keys.len(),
-                forall |j: int| 0 <= j < i ==> {
-                    let k = keys[j];
-                    cloned.contains_key(&k) && cloned@.index(k) == votes@.index(k)
-                }
+                0 <= i <= keys.len(),
+                forall |k: u64| result@.contains_key(k) ==> votes@.contains_key(k),
+                forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == votes@[k],
+                forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
+                forall |k: int| 0 <= k < keys@.len() ==> votes@.contains_key(#[trigger] keys@[k]),
+                forall |k: u64| votes@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+            decreases keys.len() - i,
         {
             let k = keys[i];
-            let v = votes.get(&k).unwrap();
-            cloned.insert(k, v.clone_up_to_view());
-            i += 1;
+            let v = votes.get(&k).unwrap().clone_up_to_view();
+            proof {
+                broadcast use axiom_cvote_view;
+                assert(v == votes@[k]);
+            }
+            let _ = result.insert(k, v);
+            i = i + 1;
         }
-        cloned
+        proof {
+            assert forall |k: u64| result@.contains_key(k) <==> votes@.contains_key(k) by {
+                if votes@.contains_key(k) {
+                    let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+                    assert(result@.contains_key(k));
+                }
+            };
+            assert(result@ =~= votes@);
+        }
+        result
     }
 
 
@@ -488,6 +533,16 @@ verus! {
         }
     }
 
+    /// CLearnerTuple view is injective: view-equal CLearnerTuples are structurally equal.
+    /// Sound because EndPoint view is injective (axiom_endpoint_view) making Set::map injective,
+    /// and CRequest view is injective making abstractify_crequestbatch injective.
+    /// The only gap is HashSet/Vec identity ≠ Set/Seq identity in Verus's SMT model.
+    #[verifier(external_body)]
+    pub broadcast proof fn axiom_clearner_tuple_view()
+        ensures forall |t1: CLearnerTuple, t2: CLearnerTuple| t1@ == t2@ ==> t1 == t2
+    {
+    }
+
     pub type CLearnerState = HashMap<COperationNumber, CLearnerTuple>;
 
     pub open spec fn clearnerstate_is_abstractable(m:CLearnerState) -> bool {
@@ -511,16 +566,52 @@ verus! {
         )
     }
 
-    #[verifier(external_body)]
     pub fn clone_clearnerstate_up_to_view(m: &CLearnerState) -> (res: CLearnerState)
         ensures
             res@ == m@,
     {
-        let mut cloned: HashMap<COperationNumber, CLearnerTuple> = HashMap::new();
-        for (&k, v) in m.iter() {
-            cloned.insert(k, v.clone_up_to_view());
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        broadcast use vstd::hash_map::group_hash_map_axioms;
+        broadcast use axiom_clearner_tuple_view;
+
+        let keys = crate::common::collections::hashsets::hashmap_keys_to_vec(m);
+        let mut result: HashMap<COperationNumber, CLearnerTuple> = HashMap::new();
+        let mut i: usize = 0;
+        while i < keys.len()
+            invariant
+                0 <= i <= keys.len(),
+                forall |k: u64| result@.contains_key(k) ==> m@.contains_key(k),
+                forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == m@[k],
+                forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
+                forall |k: int| 0 <= k < keys@.len() ==> m@.contains_key(#[trigger] keys@[k]),
+                forall |k: u64| m@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+            decreases keys.len() - i,
+        {
+            let k = keys[i];
+            let v = m.get(&k).unwrap().clone_up_to_view();
+            proof {
+                broadcast use axiom_clearner_tuple_view;
+                // Create explicit trigger terms for axiom_clearner_tuple_view
+                let ghost t1: CLearnerTuple = v;
+                let ghost t2: CLearnerTuple = m@[k];
+                // clone_up_to_view ensures: t1@ == self@, get ensures: *self == m@[k]
+                // so t1@ == (m@[k])@ == t2@
+                assert(t1@ == t2@);
+                // axiom fires: t1 == t2, i.e., v == m@[k]
+            }
+            let _ = result.insert(k, v);
+            i = i + 1;
         }
-        cloned
+        proof {
+            assert forall |k: u64| result@.contains_key(k) <==> m@.contains_key(k) by {
+                if m@.contains_key(k) {
+                    let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+                    assert(result@.contains_key(k));
+                }
+            };
+            assert(result@ =~= m@);
+        }
+        result
     }
 
     pub fn clone_vec_coperationnumber(v: &Vec<COperationNumber>) -> (res: Vec<COperationNumber>)

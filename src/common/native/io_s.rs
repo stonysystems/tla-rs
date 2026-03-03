@@ -88,6 +88,15 @@ verus! {
             EndPoint{id: clone_vec_u8(&self.id)}
         }
 
+        /// Clone with structural equality guarantee.
+        /// Sound because Rust's clone on EndPoint{id: Vec<u8>} produces an identical value.
+        #[verifier(external_body)]
+        pub fn clone_eq(&self) -> (res: EndPoint)
+            ensures res == *self, res@ == self@
+        {
+            self.clone()
+        }
+
         // pub open spec fn view(self) -> AbstractEndPoint {
         //     AbstractEndPoint{id: self.id@}
         // }
