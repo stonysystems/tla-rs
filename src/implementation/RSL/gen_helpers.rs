@@ -12,7 +12,7 @@ use crate::common::collections::hashsets::hashset_to_vec;
 use crate::common::collections::seq_is_unique_v::do_end_points_match;
 use crate::common::collections::vecs::*;
 use crate::common::framework::environment_s::{LIoOp, LPacket};
-use crate::common::native::io_s::EndPoint;
+use crate::common::native::io_s::{AbstractEndPoint, EndPoint};
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::abstractify_creplycache;
@@ -267,8 +267,8 @@ pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &C
 }
 
 /// Build reply cache from a reply list.
-/// Kept external-body because HashMap construction/proofs are runtime-backed.
-#[verifier(external_body)]
+/// Iterates back-to-front to match spec's recursive first-wins semantics:
+/// LClientsInReplies(replies) = LClientsInReplies(replies.drop_first()).insert(replies[0].client, replies[0])
 pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
     requires
         forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
@@ -276,9 +276,160 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
         creplycache_is_valid(&result),
         abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
 {
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+    broadcast use vstd::hash_map::group_hash_map_axioms;
+    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+    broadcast use crate::common::native::io_s::axiom_endpoint_view;
+
+    let ghost abs_replies = replies@.map(|i: int, r: CReply| r@);
+    let ghost len = abs_replies.len() as int;
+
     let mut result: HashMap<EndPoint, CReply> = HashMap::new();
-    for reply in replies.iter() {
-        result.insert(reply.client.clone(), reply.clone());
+    let mut i: usize = replies.len();
+
+    while i > 0
+        invariant
+            0 <= i <= replies.len(),
+            // Validity: keys abstractable, values abstractable+valid
+            creplycache_is_valid(&result),
+            // Abstract equality with spec function on the suffix
+            abstractify_creplycache(&result) =~= LClientsInReplies(abs_replies.subrange(i as int, len)),
+            // Preserved
+            forall |j: int| 0 <= j < replies.len() ==> (#[trigger] replies@[j]).valid(),
+            abs_replies == replies@.map(|i: int, r: CReply| r@),
+            len == abs_replies.len(),
+        decreases i,
+    {
+        i = i - 1;
+        let ghost old_map = result@;
+        let ghost old_abstract = abstractify_creplycache(&result);
+
+        let k = replies[i].client.clone_eq();
+        let v = replies[i].clone_up_to_view();
+
+        proof {
+            // Broadcast axioms must be re-stated inside loop body
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            broadcast use vstd::hash_map::group_hash_map_axioms;
+            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+            broadcast use crate::common::native::io_s::axiom_endpoint_view;
+            assert(k == replies@[i as int].client);
+            assert(v == replies@[i as int]);
+            assert(v@ == replies@[i as int]@);
+            // Establish pointwise equality: abs_replies[j] == replies@[j]@ for valid j
+            assert forall |j: int| 0 <= j < replies@.len() as int implies
+                abs_replies[j] == (#[trigger] replies@[j])@
+            by {};
+            assert(abs_replies[i as int] == v@);
+        }
+
+        let _ = result.insert(k, v);
+
+        proof {
+            broadcast use vstd::std_specs::hash::group_hash_axioms;
+            broadcast use vstd::hash_map::group_hash_map_axioms;
+            broadcast use vstd::map::group_map_axioms;
+            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
+            broadcast use crate::common::native::io_s::axiom_endpoint_view;
+
+            // Establish HashMap insert postcondition explicitly
+            assert(result@ =~= old_map.insert(k, v));
+            assert(result@.contains_key(k));
+            assert(result@[k] == v);
+            assert(forall |e: EndPoint| e != k ==> (result@.contains_key(e) == old_map.contains_key(e)));
+            assert(forall |e: EndPoint| e != k && old_map.contains_key(e) ==> result@[e] == old_map[e]);
+
+            // Step 1: Relate LClientsInReplies recursion
+            let sub_i = abs_replies.subrange(i as int, len);
+            let sub_i1 = abs_replies.subrange(i as int + 1, len);
+            assert(sub_i.len() > 0);
+            assert(sub_i.drop_first() =~= sub_i1);
+            assert(sub_i[0] == abs_replies[i as int]);
+
+            // Step 2: Show abstractify_creplycache(&result) =~= old_abstract.insert(k@, v@)
+            let new_abstract = abstractify_creplycache(&result);
+            let target = old_abstract.insert(k@, v@);
+
+            // Domain forward: new_abstract.dom ⊆ target.dom
+            assert forall |ak: AbstractEndPoint|
+                new_abstract.dom().contains(ak) implies target.dom().contains(ak)
+            by {
+                broadcast use crate::common::native::io_s::axiom_endpoint_view;
+                broadcast use vstd::map::group_map_axioms;
+                // Unfold: new_abstract.dom().contains(ak) means exists ep in result@ with ep@ == ak
+                assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == ak);
+                let ep = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == ak;
+                if ep == k {
+                    // ak == k@ → target contains k@
+                } else {
+                    // ep in result@ and ep != k → ep in old_map → old_abstract.dom().contains(ak)
+                    assert(old_map.contains_key(ep));
+                }
+            };
+
+            // Domain backward: target.dom ⊆ new_abstract.dom
+            assert forall |ak: AbstractEndPoint|
+                target.dom().contains(ak) implies new_abstract.dom().contains(ak)
+            by {
+                broadcast use crate::common::native::io_s::axiom_endpoint_view;
+                broadcast use vstd::map::group_map_axioms;
+                if ak == k@ {
+                    // Witness: k is in result@ and k@ == ak
+                    assert(result@.contains_key(k) && k@ == ak);
+                } else {
+                    // ak in old_abstract.dom() → exists ep in old_map with ep@ == ak
+                    assert(old_abstract.dom().contains(ak));
+                    assert(exists |ep: EndPoint| old_map.contains_key(ep) && ep@ == ak);
+                    let ep = choose |ep: EndPoint| old_map.contains_key(ep) && ep@ == ak;
+                    assert(ep != k);
+                    assert(result@.contains_key(ep));
+                    assert(result@.contains_key(ep) && ep@ == ak);
+                }
+            };
+
+            // Values match
+            assert forall |ak: AbstractEndPoint|
+                new_abstract.dom().contains(ak) implies new_abstract[ak] == target[ak]
+            by {
+                broadcast use crate::common::native::io_s::axiom_endpoint_view;
+                broadcast use vstd::map::group_map_axioms;
+                assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == ak);
+                let ep_new = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == ak;
+                if ak == k@ {
+                    assert(ep_new == k);
+                } else {
+                    assert(ep_new != k);
+                    assert(result@[ep_new] == old_map[ep_new]);
+                }
+            };
+
+            // Combine: new_abstract =~= target
+            assert(new_abstract =~= target);
+
+            // Bridge: sub_i[0] == v@ and v@.client == k@
+            // abs_replies[i] == v@ was established in the pre-insert proof block
+            assert(sub_i[0] == v@);
+            assert(v@.client == k@);
+            // By IH: old_abstract =~= LClientsInReplies(sub_i1)
+            // target = old_abstract.insert(k@, v@) = LClientsInReplies(sub_i1).insert(sub_i[0].client, sub_i[0])
+            // = LClientsInReplies(sub_i)
+
+            // Maintain creplycache_is_valid
+            assert(v.valid());
+            assert(k.abstractable());
+        }
+    }
+
+    // Post-loop: i == 0, subrange(0, len) == abs_replies
+    proof {
+        assert(abs_replies.subrange(0int, len) =~= abs_replies);
+
+        // creplycache_is_valid: abstractable + valid for all entries
+        assert forall |e: EndPoint| result@.contains_key(e) implies
+            e.abstractable() && (#[trigger] result@[e]).abstractable()
+        by {
+            // result@[e].valid() from invariant, valid ==> abstractable
+        };
     }
     result
 }
