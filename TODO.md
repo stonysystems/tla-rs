@@ -9835,7 +9835,7 @@ This is the hardest step. Estimated ~300-500 LOC.
 
 - [x] **34.6.2**: Handled via model audit: current Raft spec does **not** model follower overwrite/truncation; it models append-only followers. Evidence: `LHandleAppendEntriesMsg` rejects `ae_has_entry && ae_prev_index != s_mid.log.len()` (only append-at-end accepted), and `LFollowerAppendEntries` updates `s_.log` via `s.log.push(...)` only. Therefore the overwrite-prefix sub-proof is not required in the current model. Also validated append-only step lemma with focused check: `verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::message_invariants --verify-function '*log_append_only*' --rlimit 40`. If truncation semantics are added later, re-open this item and add a follower-overwrite prefix lemma.
 
-- [ ] **34.6.3**: Remove `assume(LogMatching(ds_))` at invariants.rs:775.
+- [x] **34.6.3**: Completed by audit — `assume(LogMatching(ds_))` is no longer present in `src/protocol/Raft/refinement_proof/invariants.rs` (the old line reference is stale; current line ~775 is within `lemma_candidate_or_leader_voted_for_self_id_inductive`). The LogMatching path now flows through `lemma_log_matching_inductive`/`lemma_log_matching_inner` without a direct `assume(LogMatching(ds_))`.
 
 ### 34.7 Eliminate LeaderCompleteness assume (#4)
 
