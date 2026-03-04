@@ -1,6 +1,7 @@
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
+use crate::protocol::Raft::refinement_proof::message_invariants::*;
 use crate::common::collections::sets::*;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
@@ -171,6 +172,11 @@ verus! {
         &&& VotesGrantedAreServers(ds)
         &&& CandidateOrLeaderVotedForSelf(ds)
         &&& VotersVotedForCandidate(ds)
+        // Message invariants (Phase 34.2)
+        &&& SenderIntegrity(ds)
+        &&& VoteResponseIntegrity(ds)
+        &&& AppendEntriesIntegrity(ds)
+        &&& OneVotePerTermInNetwork(ds)
     }
 
     // =========================================================================
@@ -191,6 +197,9 @@ verus! {
         // - VotesGrantedAreServers: votes_granted empty, vacuously true
         // - CandidateOrLeaderVotedForSelf: no Candidates/Leaders, vacuously true
         // - VotersVotedForCandidate: no Candidates/Leaders, vacuously true
+        // Message invariants: network is empty, all vacuously true
+        // - SenderIntegrity, VoteResponseIntegrity, AppendEntriesIntegrity,
+        //   OneVotePerTermInNetwork: forall over empty set is vacuously true
     }
 
     // =========================================================================
@@ -868,6 +877,80 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant Induction Stubs (Phase 34.2)
+    // =========================================================================
+    //
+    // Stub proofs for the 4 message invariants. These will be filled in
+    // during Phase 34.3. For now, they use assume().
+
+    pub proof fn lemma_sender_integrity_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            SenderIntegrity(ds_)
+    {
+        // Proof sketch: new packets have src == server_id, and each message
+        // type sets the identity field to c.my_id == server_id. Existing
+        // packets are preserved (network monotonicity) and already satisfy
+        // the invariant. Packet bounds (0 <= src/dst < num_servers) follow
+        // from the network model constraints.
+        assume(SenderIntegrity(ds_));
+    }
+
+    pub proof fn lemma_vote_response_integrity_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            VoteResponseIntegrity(ds_)
+    {
+        // Proof sketch: new VoteResponse{granted: true} packets are created
+        // by LGrantVote, which sets has_voted = true and voted_for = candidate_id.
+        // The routing constraint ensures pkt.dst == received_from (the candidate
+        // who sent the RequestVote). Existing packets: voter's term either
+        // stayed the same (voted_for preserved) or advanced (current_term > t).
+        assume(VoteResponseIntegrity(ds_));
+    }
+
+    pub proof fn lemma_append_entries_integrity_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            AppendEntriesIntegrity(ds_)
+    {
+        // Proof sketch: new AppendEntries packets are created by
+        // LSendAppendEntries. The full invariant requires strengthening
+        // LSendAppendEntries to constrain prev_index/prev_term/value to
+        // match the leader's log (Phase 34.3). Existing packets: leader's
+        // log is append-only (LogAppendOnly), so entries are preserved.
+        assume(AppendEntriesIntegrity(ds_));
+    }
+
+    pub proof fn lemma_one_vote_per_term_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            OneVotePerTermInNetwork(ds_)
+    {
+        // Proof sketch: LGrantVote only fires when !has_voted (first vote
+        // in the current term). Combined with network monotonicity, each
+        // (voter, term) pair produces at most one VoteResponse{granted: true}.
+        // The routing constraint ensures they all have the same dst.
+        assume(OneVotePerTermInNetwork(ds_));
+    }
+
+    // =========================================================================
     // Composite induction step
     // =========================================================================
 
@@ -898,6 +981,12 @@ verus! {
         lemma_log_matching_inductive(ds, ds_);
         lemma_leader_completeness_inductive(ds, ds_);
         lemma_state_machine_safety_inductive(ds, ds_);
+
+        // Message invariants (Phase 34.2 — stubs with assumes)
+        lemma_sender_integrity_inductive(ds, ds_);
+        lemma_vote_response_integrity_inductive(ds, ds_);
+        lemma_append_entries_integrity_inductive(ds, ds_);
+        lemma_one_vote_per_term_inductive(ds, ds_);
     }
 
     // =========================================================================

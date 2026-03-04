@@ -40,22 +40,24 @@ verus! {
     }
 
     /// Helper: which action branch was taken, producing the given sent_packets.
-    /// Like LNext but (1) message handling requires packet in network, and
-    /// (2) sent_packets is exposed as a parameter for network update.
+    /// `received_from` is None for local/sending actions, Some(pkt.src) for
+    /// message-handling actions, enabling response routing constraints.
     pub open spec fn RaftActionProduces(
         ds: RaftDistributedState, server_id: int,
         s: LState, s_: LState, c: LConstants,
         sent_packets: Seq<LRaftMessage>,
+        received_from: Option<int>,
     ) -> bool {
         {
             // (A) Local/sending actions — no message received from network
-            ||| LTimeout(s, s_, c, sent_packets)
-            ||| (exists |value: int| LClientRequest(s, s_, c, value, sent_packets))
-            ||| (exists |follower: int, ev: int, pli: int, plt: int, he: bool|
-                    LSendAppendEntries(s, s_, c, follower, ev, pli, plt, he, sent_packets))
-            ||| (exists |nci: int| LTryAdvanceCommitIndex(s, s_, c, nci, sent_packets))
+            ||| (received_from is None && LTimeout(s, s_, c, sent_packets))
+            ||| (received_from is None && (exists |value: int| LClientRequest(s, s_, c, value, sent_packets)))
+            ||| (received_from is None && (exists |follower: int, ev: int, pli: int, plt: int, he: bool|
+                    LSendAppendEntries(s, s_, c, follower, ev, pli, plt, he, sent_packets)))
+            ||| (received_from is None && (exists |nci: int| LTryAdvanceCommitIndex(s, s_, c, nci, sent_packets)))
             // (B) Message handling — received packet must be in network
             ||| (exists |pkt: LRaftPacket| {
+                    &&& received_from == Some(pkt.src)
                     &&& ds.network.contains(pkt)
                     &&& pkt.dst == server_id
                     &&& LHandleMessage(s, s_, c, pkt.msg, sent_packets)
@@ -66,25 +68,32 @@ verus! {
     /// Server step with full network semantics: the stepping server produces
     /// sent_packets via an action, and new packets in the network correspond
     /// to those sent_packets wrapped with src == server_id.
+    /// For message-handling actions, response packets are routed back to the
+    /// sender of the received packet (received_from).
     pub open spec fn RaftServerStepWithNetwork(
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
     ) -> bool {
         let s = ds.server_states[server_id];
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
-        exists |sent_packets: Seq<LRaftMessage>|
-            #![trigger RaftActionProduces(ds, server_id, s, s_, c, sent_packets)]
+        exists |sent_packets: Seq<LRaftMessage>, received_from: Option<int>|
+            #![trigger RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from)]
         {
             // Action: which branch was taken
-            &&& RaftActionProduces(ds, server_id, s, s_, c, sent_packets)
+            &&& RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from)
             // Network monotonicity: old packets preserved
             &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
-            // New packets come from sent_packets
+            // New packets come from sent_packets with routing constraints
             &&& (forall |pkt: LRaftPacket|
                 ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                     &&& pkt.src == server_id
                     &&& 0 <= pkt.dst < ds.num_servers
                     &&& (exists |i: int| 0 <= i < sent_packets.len() && pkt.msg == sent_packets[i])
+                    // Routing: message-handling responses go back to sender
+                    &&& (match received_from {
+                        Some(src) => pkt.dst == src,
+                        None => true,
+                    })
                 })
         }
     }
