@@ -125,6 +125,7 @@ verus! {
         ensures
             IsPrefix(GetCommittedLog(ds), GetCommittedLog(ds_))
     {
+        lemma_distributed_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int| {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],

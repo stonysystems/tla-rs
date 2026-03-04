@@ -223,6 +223,8 @@ verus! {
         ensures
             ElectionSafety(ds_)
     {
+        // Bridge to legacy to get exists |server_id| LNext(...) && frame
+        lemma_distributed_next_implies_legacy(ds, ds_);
         // Unpack RaftDistributedNext to get the stepping server
         let server_id = choose |server_id: int| {
             &&& 0 <= server_id < ds.num_servers
@@ -429,6 +431,7 @@ verus! {
         ensures
             VotesGrantedAreServers(ds_)
     {
+        lemma_distributed_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -504,6 +507,7 @@ verus! {
         ensures
             CandidateOrLeaderVotedForSelf(ds_)
     {
+        lemma_distributed_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -596,6 +600,7 @@ verus! {
         ensures
             LeaderHasQuorum(ds_)
     {
+        lemma_distributed_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -654,6 +659,7 @@ verus! {
         ensures
             CommitIndexBounded(ds_)
     {
+        lemma_distributed_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
@@ -738,6 +744,7 @@ verus! {
         ensures
             LogMatching(ds_)
     {
+        lemma_distributed_next_implies_legacy(ds, ds_);
         let server_id = choose |server_id: int| {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])

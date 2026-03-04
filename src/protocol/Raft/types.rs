@@ -45,6 +45,15 @@ verus! {
         pub next_index: Map<u64, u64>,  // For each server, index of next log entry to send
     }
 
+    /// A routed Raft message with sender and receiver information.
+    /// Used in the distributed-level network model (RaftDistributedState.network)
+    /// to track message provenance for safety proofs.
+    pub struct LRaftPacket {
+        pub src: int,           // Sending server ID
+        pub dst: int,           // Destination server ID
+        pub msg: LRaftMessage,  // The message payload
+    }
+
     /// Protocol constants
     pub struct LConstants {
         pub servers: Set<int>,          // The set of all server IDs

@@ -15,7 +15,7 @@ verus! {
     pub struct RaftDistributedState {
         pub server_states: Seq<LState>,     // Per-server Raft state (indexed by server ID)
         pub server_constants: Seq<LConstants>, // Per-server constants
-        pub network: Set<LRaftMessage>,     // Messages in transit (multiset modeled as set)
+        pub network: Set<LRaftPacket>,      // Routed messages in transit
         pub num_servers: int,               // Number of servers in the cluster
     }
 
@@ -36,11 +36,85 @@ verus! {
         &&& WellFormedRaftDistributed(ds)
         &&& (forall |i: int| 0 <= i < ds.num_servers ==>
             LInit(ds.server_states[i], ds.server_constants[i]))
-        &&& ds.network == Set::<LRaftMessage>::empty()
+        &&& ds.network == Set::<LRaftPacket>::empty()
     }
 
-    /// Distributed system step: one server takes a step
+    /// Server step with network constraint: like LNext, but for message handling,
+    /// the received message must be in the network as a packet with dst == server_id.
+    /// This is strictly stronger than LNext (each branch implies the corresponding
+    /// LNext branch).
+    pub open spec fn RaftServerStep(
+        ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+    ) -> bool {
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+        {
+            // (A) Local/sending actions — no message received from network
+            ||| (exists |sent_packets: Seq<LRaftMessage>| LTimeout(s, s_, c, sent_packets))
+            ||| (exists |value: int, sent_packets: Seq<LRaftMessage>|
+                    LClientRequest(s, s_, c, value, sent_packets))
+            ||| (exists |follower: int, ev: int, pli: int, plt: int, he: bool,
+                        sent_packets: Seq<LRaftMessage>|
+                    LSendAppendEntries(s, s_, c, follower, ev, pli, plt, he, sent_packets))
+            ||| (exists |nci: int, sent_packets: Seq<LRaftMessage>|
+                    LTryAdvanceCommitIndex(s, s_, c, nci, sent_packets))
+            // (B) Message handling — received packet must be in network
+            ||| (exists |pkt: LRaftPacket, sent_packets: Seq<LRaftMessage>| {
+                    &&& ds.network.contains(pkt)
+                    &&& pkt.dst == server_id
+                    &&& LHandleMessage(s, s_, c, pkt.msg, sent_packets)
+                })
+        }
+    }
+
+    /// Network update constraint: the network is monotonic (old messages preserved),
+    /// and new messages have valid routing from the stepping server.
+    pub open spec fn RaftNetworkUpdate(
+        ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+    ) -> bool {
+        // Old messages preserved
+        &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
+        // All new packets have src == server_id and valid dst
+        &&& (forall |pkt: LRaftPacket|
+            ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                &&& pkt.src == server_id
+                &&& 0 <= pkt.dst < ds.num_servers
+            })
+    }
+
+    /// Distributed system step: one server takes a step, with network routing.
+    ///
+    /// The server either:
+    /// (A) performs a local/sending action (LTimeout, LClientRequest,
+    ///     LSendAppendEntries, LTryAdvanceCommitIndex), or
+    /// (B) handles a message received from the network (LHandleMessage),
+    ///     where the received packet must exist in ds.network with dst == server_id.
+    ///
+    /// In both cases, the network is monotonic (messages are never removed) and
+    /// new messages are tagged with src == server_id.
     pub open spec fn RaftDistributedNext(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
+        &&& WellFormedRaftDistributed(ds)
+        &&& WellFormedRaftDistributed(ds_)
+        &&& ds_.num_servers == ds.num_servers
+        &&& ds_.server_constants == ds.server_constants
+        &&& exists |server_id: int| #![trigger ds.server_states[server_id]] {
+            &&& 0 <= server_id < ds.num_servers
+            // All other servers remain unchanged
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j])
+            // The stepping server takes an action (with network constraint on received messages)
+            &&& RaftServerStep(ds, ds_, server_id)
+            // Network update: monotonic, new packets from server_id
+            &&& RaftNetworkUpdate(ds, ds_, server_id)
+        }
+    }
+
+    /// Legacy RaftDistributedNext without network routing.
+    /// Kept for backward compatibility with existing proofs during Phase 34 migration.
+    /// Every step of RaftDistributedNext implies a step of RaftDistributedNextLegacy.
+    pub open spec fn RaftDistributedNextLegacy(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
         &&& WellFormedRaftDistributed(ds_)
         &&& ds_.num_servers == ds.num_servers
@@ -54,6 +128,24 @@ verus! {
                 0 <= j < ds.num_servers && j != server_id ==>
                 ds_.server_states[j] == ds.server_states[j])
         }
+    }
+
+    /// The new RaftDistributedNext implies the legacy version.
+    /// This allows existing proofs to work unchanged during migration.
+    ///
+    /// Each action category in RaftDistributedNext (LTimeout, LClientRequest,
+    /// LSendAppendEntries, LTryAdvanceCommitIndex, LHandleMessage) directly
+    /// corresponds to a branch of LNext. The same server_id witness works
+    /// for both. Network update constraints and sent_packets are dropped.
+    pub proof fn lemma_distributed_next_implies_legacy(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+    )
+        requires RaftDistributedNext(ds, ds_)
+        ensures RaftDistributedNextLegacy(ds, ds_)
+    {
+        // RaftDistributedNext provides exists |server_id, sent_packets| { action_categories && ... }
+        // Each action category implies the corresponding LNext branch by existential weakening.
+        // The frame condition is identical. Network constraints are simply dropped.
     }
 
     // =========================================================================
