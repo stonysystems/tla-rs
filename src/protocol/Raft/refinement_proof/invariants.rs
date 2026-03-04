@@ -1159,18 +1159,91 @@ verus! {
         ensures
             AppendEntriesIntegrity(ds_)
     {
-        // New AppendEntries packets: created by LSendAppendEntries with
-        // existentially quantified parameters (prev_index, prev_term, value,
-        // has_entry). The invariant requires these match the leader's log.
-        // Since LSendAppendEntries does NOT constrain these parameters to
-        // match the log, this invariant requires strengthening the spec.
-        //
-        // Old packets: leader's log is append-only (LogAppendOnly ensures
-        // existing entries are preserved), so AE content still matches.
-        //
-        // TODO(Phase 34.3): Strengthen LSendAppendEntries to constrain
-        // parameters to match the leader's log, then remove this assume.
-        assume(AppendEntriesIntegrity(ds_));
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        lemma_log_append_only(ds, ds_);
+        lemma_lnext_term_monotone(s, s_, c);
+        lemma_lnext_log_preserved_or_extended(s, s_, c);
+
+        // Establish that old entries of the stepping server are preserved
+        assert forall |k: int| 0 <= k < s.log.len()
+            implies #[trigger] s_.log[k] == s.log[k] by {};
+
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::AppendEntries { term: t, leader: l, prev_index,
+                                               prev_term, value, has_entry, .. } => {
+                    &&& 0 <= l < ds_.num_servers
+                    &&& p.src == l
+                    &&& prev_index >= 0
+                    &&& ds_.server_states[l].current_term >= t
+                    &&& ds_.server_states[l].log.len() >= prev_index
+                            + (if has_entry { 1int } else { 0int })
+                    &&& (prev_index > 0 ==>
+                        ds_.server_states[l].log[prev_index - 1].term == prev_term)
+                    &&& (has_entry ==>
+                        ds_.server_states[l].log[prev_index].value == value)
+                }
+                _ => true,
+            }
+        by {
+            if p.msg is AppendEntries {
+                let l = p.msg->AppendEntries_leader;
+                let prev_index = p.msg->AppendEntries_prev_index;
+                let has_entry = p.msg->AppendEntries_has_entry;
+
+                if ds.network.contains(p) {
+                    // Old AE packet: AppendEntriesIntegrity(ds) gives conditions on ds.
+                    assert(AppendEntriesIntegrity(ds));
+
+                    if l != server_id {
+                        // Non-stepping leader: state unchanged
+                        assert(ds_.server_states[l] == ds.server_states[l]);
+                    } else {
+                        // Stepping server is the leader in this old packet.
+                        // s == ds.server_states[server_id], s_ == ds_.server_states[server_id]
+                        // lemma_lnext_log_preserved_or_extended gives s_.log[k] == s.log[k]
+                        // for k < s.log.len(). Since l == server_id:
+                        assert(ds.server_states[l] == s);
+                        assert(ds_.server_states[l] == s_);
+                        assert(s_.log.len() >= s.log.len());
+                        // AEI(ds) + has_entry → prev_index < s.log.len()
+                        // lemma_lnext_log_preserved_or_extended → s_.log[k] == s.log[k] for k < s.log.len()
+                        if has_entry {
+                            // s.log.len() >= prev_index + 1 (from AEI)
+                            assert(s.log.len() >= prev_index + 1);
+                            assert(0 <= prev_index);
+                            assert(prev_index < s_.log.len());
+                            assert(s_.log[prev_index] == s.log[prev_index]);
+                        }
+                        if prev_index > 0 {
+                            assert(s.log.len() >= prev_index);
+                            assert(prev_index - 1 < s.log.len());
+                            assert(prev_index - 1 < s_.log.len());
+                            assert(s_.log[prev_index - 1] == s.log[prev_index - 1]);
+                        }
+                    }
+                } else {
+                    // New AE packet: produced by RaftDistributedNext.
+                    // RaftServerStepWithNetwork ensures p.src == stepping server.
+                    // Only LSendAppendEntries produces AppendEntries messages.
+                    // Its constraints + WellFormedRaftDistributed + frame conditions
+                    // establish all AEI conjuncts. All spec fns are open → auto-verify.
+                }
+            }
+        }
     }
 
     pub proof fn lemma_one_vote_per_term_inductive(
@@ -1188,6 +1261,19 @@ verus! {
         // any existing VoteResponse for the same (voter, term) implies voter has voted,
         // so voted_for must match, and routing ensures same dst.
         // New-new: at most one VoteResponse per step, so p1 == p2.
+    }
+
+    // =========================================================================
+    // Helper: LNext term monotonicity
+    // =========================================================================
+
+    /// LNext never decreases current_term.
+    proof fn lemma_lnext_term_monotone(s: LState, s_: LState, c: LConstants)
+        requires LNext(s, s_, c)
+        ensures s_.current_term >= s.current_term
+    {
+        // All LNext branches either keep current_term unchanged or increase it
+        // (step_down_if_needed increases term when receiving a higher one).
     }
 
     // =========================================================================

@@ -73,12 +73,13 @@ verus! {
     // assume() until LSendAppendEntries is strengthened.
 
     pub open spec fn AppendEntriesIntegrity(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::AppendEntries { term: t, leader: l, prev_index,
                                                prev_term, value, has_entry, .. } => {
                     &&& 0 <= l < ds.num_servers
                     &&& p.src == l
+                    &&& prev_index >= 0
                     // Leader's current term >= message term
                     &&& ds.server_states[l].current_term >= t
                     // Leader's log still contains the referenced entries

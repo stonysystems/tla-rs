@@ -130,6 +130,11 @@ verus! {
     ) -> bool {
         &&& s.role is Leader
         &&& c.servers.contains(follower)
+        // Log-consistency constraints: message parameters match the leader's log
+        &&& prev_log_index >= 0
+        &&& s.log.len() >= prev_log_index + (if has_entry { 1int } else { 0int })
+        &&& (prev_log_index > 0 ==> s.log[prev_log_index - 1].term == prev_log_term)
+        &&& (has_entry ==> s.log[prev_log_index].value == entry_value)
         // Frame
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role

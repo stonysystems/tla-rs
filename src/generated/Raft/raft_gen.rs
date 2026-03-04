@@ -278,6 +278,10 @@ requires
     c.valid(),
     s.role is Leader,
     c@.servers.contains(*follower as int),
+    // Log-consistency constraints (Phase 34.3)
+    s.log@.len() >= *prev_log_index as int + (if has_entry { 1int } else { 0int }),
+    (*prev_log_index > 0) ==> (s.log@[*prev_log_index as int - 1].term as int == *prev_log_term as int),
+    has_entry ==> (s.log@[*prev_log_index as int].value as int == *entry_value as int),
 ensures
     result.0.valid(),
     LSendAppendEntries(s@, result.0@, c@, *follower as int, *entry_value as int, *prev_log_index as int, *prev_log_term as int, has_entry, result.1@.map(|i, p: CRaftMessage| p@)),
