@@ -94,6 +94,10 @@ pub struct TranslatorConfig {
     /// Generates clone/filter helpers and abstractify proof lemmas.
     /// e.g., {"unexecuted_learner_state" => ("CLearnerState", "clearnerstate", "CLearnerTuple")}
     pub map_fields: HashMap<String, (String, String, String)>,
+    /// Verified clone functions for map_fields.
+    /// Maps abstractify_prefix to a verified clone function name.
+    /// When set, `clone_{prefix}()` delegates instead of using `external_body`.
+    pub verified_clone_fns: HashMap<String, String>,
     /// Fields that are HashMap-typed and need `&key` indexing, but should NOT trigger
     /// helper code generation. Used purely for `is_map_index_base()` detection.
     pub hashmap_index_fields: HashSet<String>,
@@ -165,6 +169,7 @@ impl Default for TranslatorConfig {
             clone_field_types: HashMap::new(),
             struct_vec_fields: HashMap::new(),
             map_fields: HashMap::new(),
+            verified_clone_fns: HashMap::new(),
             hashmap_index_fields: HashSet::new(),
             type_view_exprs: HashMap::new(),
             extra_requires: HashMap::new(),

@@ -4211,6 +4211,7 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
                     )
                 })
                 .collect(),
+            verified_clone_fns: file_config.verified_clone_fns.clone(),
             hashmap_index_fields: file_config.hashmap_index_fields.iter().cloned().collect(),
             type_view_exprs: file_config.type_view_exprs.clone(),
             extra_requires: file_config.extra_requires.clone(),

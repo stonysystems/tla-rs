@@ -408,7 +408,7 @@ impl Transpiler {
             // Generate HashMap abstractify proof lemmas for map_fields
             if self.has_map_fields() {
                 let map_helpers =
-                    Self::generate_map_proof_lemmas(&self.config.translator.map_fields);
+                    Self::generate_map_proof_lemmas(&self.config.translator.map_fields, &self.config.translator.verified_clone_fns);
                 if !map_helpers.is_empty() {
                     output.push_str(&map_helpers);
                     output.push('\n');
@@ -1104,7 +1104,7 @@ impl Transpiler {
             // Generate HashMap abstractify proof lemmas for map_fields
             if self.has_map_fields() {
                 let map_helpers =
-                    Self::generate_map_proof_lemmas(&self.config.translator.map_fields);
+                    Self::generate_map_proof_lemmas(&self.config.translator.map_fields, &self.config.translator.verified_clone_fns);
                 if !map_helpers.is_empty() {
                     output.push_str(&map_helpers);
                     output.push('\n');
@@ -1520,10 +1520,11 @@ impl Transpiler {
     /// - `lemma_abstractify_{prefix}_insert()`: insert commutes with abstractify
     /// - `lemma_abstractify_{prefix}_remove()`: remove commutes with abstractify
     /// - `lemma_abstractify_singleton_{prefix}()`: singleton map abstractify
-    /// - `clone_{prefix}()`: external_body clone wrapper
+    /// - `clone_{prefix}()`: verified delegation or external_body clone wrapper
     /// - `filter_{prefix}()`: external_body filter-by-key-threshold helper
     fn generate_map_proof_lemmas(
         map_fields: &std::collections::HashMap<String, (String, String, String)>,
+        verified_clone_fns: &std::collections::HashMap<String, String>,
     ) -> String {
         let mut output = String::new();
 
@@ -1772,22 +1773,36 @@ impl Transpiler {
             output.push_str("}\n\n");
 
             // =========================================================
-            // clone_{prefix} external_body helper
+            // clone_{prefix} helper (verified delegation or external_body)
             // =========================================================
             output.push_str(&format!(
                 "/// Helper: clone a {} preserving view.\n",
                 exec_type
             ));
-            output.push_str("#[verifier(external_body)]\n");
-            output.push_str(&format!(
-                "fn clone_{}(m: &{}) -> (res: {})\n",
-                prefix, exec_type, exec_type
-            ));
-            output.push_str("ensures\n");
-            output.push_str("    res@ == m@,\n");
-            output.push_str("{\n");
-            output.push_str("    m.clone()\n");
-            output.push_str("}\n\n");
+            if let Some(verified_fn) = verified_clone_fns.get(prefix.as_str()) {
+                // Verified: delegate to the proven clone function
+                output.push_str(&format!(
+                    "fn clone_{}(m: &{}) -> (res: {})\n",
+                    prefix, exec_type, exec_type
+                ));
+                output.push_str("ensures\n");
+                output.push_str("    res@ == m@,\n");
+                output.push_str("{\n");
+                output.push_str(&format!("    {}(m)\n", verified_fn));
+                output.push_str("}\n\n");
+            } else {
+                // Fallback: external_body trusted wrapper
+                output.push_str("#[verifier(external_body)]\n");
+                output.push_str(&format!(
+                    "fn clone_{}(m: &{}) -> (res: {})\n",
+                    prefix, exec_type, exec_type
+                ));
+                output.push_str("ensures\n");
+                output.push_str("    res@ == m@,\n");
+                output.push_str("{\n");
+                output.push_str("    m.clone()\n");
+                output.push_str("}\n\n");
+            }
 
             // =========================================================
             // filter_{prefix} external_body helper
@@ -3062,7 +3077,7 @@ mod tests {
                 "CLearnerTuple".to_string(),
             ),
         );
-        let output = Transpiler::generate_map_proof_lemmas(&map_fields);
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new());
 
         // Check all 4 proof lemmas are generated
         assert!(
@@ -3110,7 +3125,7 @@ mod tests {
     #[test]
     fn test_generate_map_proof_lemmas_empty() {
         let map_fields = std::collections::HashMap::new();
-        let output = Transpiler::generate_map_proof_lemmas(&map_fields);
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new());
         assert!(
             output.is_empty(),
             "Empty map_fields should generate nothing"
@@ -3128,13 +3143,53 @@ mod tests {
                 "CVote".to_string(),
             ),
         );
-        let output = Transpiler::generate_map_proof_lemmas(&map_fields);
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new());
 
         // Should have filter helper with proper type
         assert!(output.contains("fn filter_cvotes(m: &CVotes, threshold: u64) -> (res: CVotes)"));
         assert!(output.contains("cvotes_is_valid(*m)"));
         assert!(output.contains("cvotes_is_valid(res)"));
         assert!(output.contains("v.clone_up_to_view()"));
+    }
+
+    #[test]
+    fn test_generate_map_proof_lemmas_verified_clone() {
+        let mut map_fields = std::collections::HashMap::new();
+        map_fields.insert(
+            "unexecuted_learner_state".to_string(),
+            (
+                "CLearnerState".to_string(),
+                "clearnerstate".to_string(),
+                "CLearnerTuple".to_string(),
+            ),
+        );
+        let mut verified_clone_fns = std::collections::HashMap::new();
+        verified_clone_fns.insert(
+            "clearnerstate".to_string(),
+            "clone_clearnerstate_up_to_view".to_string(),
+        );
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields, &verified_clone_fns);
+
+        // Should NOT contain external_body for clone
+        assert!(
+            !output.contains("#[verifier(external_body)]\nfn clone_clearnerstate"),
+            "Should not use external_body when verified clone is configured"
+        );
+        // Should delegate to the verified function
+        assert!(
+            output.contains("clone_clearnerstate_up_to_view(m)"),
+            "Should delegate to verified clone function"
+        );
+        // Should still contain the clone function signature
+        assert!(
+            output.contains("fn clone_clearnerstate(m: &CLearnerState) -> (res: CLearnerState)"),
+            "Should still generate clone wrapper"
+        );
+        // Filter should still be external_body (not affected)
+        assert!(
+            output.contains("#[verifier(external_body)]\nfn filter_clearnerstate"),
+            "Filter should remain external_body"
+        );
     }
 
     #[test]
@@ -3411,7 +3466,7 @@ mod tests {
             ),
         );
 
-        let output = Transpiler::generate_map_proof_lemmas(&map_fields);
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new());
 
         // Should generate abstractify lemmas for the map field
         assert!(

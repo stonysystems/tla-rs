@@ -21,6 +21,10 @@ clone_fields = ["constants"]
 [map_fields]
 "unexecuted_learner_state" = ["CLearnerState", "clearnerstate", "CLearnerTuple"]
 
+# Verified clone functions for map_fields (no external_body needed)
+[verified_clone_fns]
+"clearnerstate" = "clone_clearnerstate_up_to_view"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

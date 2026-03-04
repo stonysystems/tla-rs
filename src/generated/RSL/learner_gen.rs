@@ -212,12 +212,11 @@ ensures
 }
 
 /// Helper: clone a CLearnerState preserving view.
-#[verifier(external_body)]
 fn clone_clearnerstate(m: &CLearnerState) -> (res: CLearnerState)
 ensures
     res@ == m@,
 {
-    m.clone()
+    clone_clearnerstate_up_to_view(m)
 }
 
 /// Helper: filter CLearnerState keeping only entries with key >= threshold.

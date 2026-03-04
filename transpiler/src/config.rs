@@ -230,6 +230,14 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub map_fields: HashMap<String, Vec<String>>,
 
+    /// Verified clone functions for map_fields.
+    /// Maps abstractify_prefix to a verified clone function name.
+    /// When set, the generated `clone_{prefix}()` delegates to this function
+    /// instead of using `#[verifier(external_body)]` + `m.clone()`.
+    /// e.g., {"clearnerstate" = "clone_clearnerstate_up_to_view"}
+    #[serde(default)]
+    pub verified_clone_fns: HashMap<String, String>,
+
     /// Message type for sent_packets Vec proof helpers in composite handlers.
     /// Generates `lemma_empty_msg_map()` for proving `Seq::<ExecType>::empty().map(f) =~= Seq::<SpecType>::empty()`.
     /// Format: ["CRaftMessage", "LRaftMessage"]
