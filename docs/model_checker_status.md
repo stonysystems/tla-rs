@@ -1,90 +1,211 @@
-# tla-rs Model Checker Status
+# tla-rs Model Checker Status (Source-First)
 
-Last reviewed: 2026-03-03
+Last reviewed: 2026-03-04 (UTC)
 
-This is the canonical status page for the source-first `verus-transpile model-check` engine. Keep this file synchronized with `TODO.md` Phase 33 whenever capability, protocol coverage, blockers, or performance claims change.
+This is the canonical status page for `verus-transpile model-check`. Keep this synchronized with `TODO.md` Phase 33 whenever capabilities, blockers, coverage, or performance claims change.
 
-## Current baseline
+## 1. What the current engine can do
 
-Implemented today:
+### 1.1 Implemented source-first pipeline
 
-- Source-first ingestion of tla-rs specs from `LInit` / `LNext`
-- BFS and DFS exploration
-- invariant checking, deadlock checking, and counterexample traces
-- TLC-wrapper generation for relational specs when needed
-- reduction knobs: canonical dedup, `hash_compaction64`, `symmetry_fields`, and `por_heuristic = "invisible_branch"`
-- bounded `leads_to` checking plus branch-label fairness filtering on fully explored graphs
+- Ingest protocol spec + types sources and resolve entrypoints (`LInit`, `LNext`) from Rust/Verus input.
+- Parse/validate `model.toml`, apply CLI overrides, and resolve selected invariants.
+- Build normalized branch IR from `LNext` (disjunction flattening, branch labels, branch-level existential extraction).
+- Construct initial states by evaluating `LInit` over finite candidate states and resolved constants.
+- Explore state space with BFS/DFS, dedup, invariants, deadlock checks, and counterexample traces with action labels + state diffs.
+- Run bounded liveness checks for configured `leads_to` obligations on fully explored graphs, with branch-label weak/strong fairness filtering.
+- Emit JSON reports including search settings, reduction telemetry, stop reason, and violation payloads.
 
-Checked-in automated source-first evidence today:
+### 1.2 Reduction/analysis knobs currently implemented
 
-- `TwoPhase`: bounded run passes
-- `PrimaryBackup`: bounded run passes
-- `LeaderElection`: bounded run passes
-- `Paxos`: bounded run passes
-- Tiny liveness/fairness fixtures also pass and exercise `leads_to` reporting
+- `search.state_dedup = "canonical"` (exact dedup).
+- `search.state_dedup = "hash_compaction64"` (lossy dedup; collision-prone by design).
+- `search.symmetry_fields = [...]` (field-level symmetry normalization before dedup).
+- `search.por_heuristic = "invisible_branch"` (syntactic branch-pruning heuristic).
+- `properties.successor_semantics = "deadlock" | "stuttering"`.
 
-Checked-in test entry points:
+### 1.3 Capability anchors in source
 
-- `transpiler/tests/integration.rs:test_model_check_primarybackup_helper_call_branches_bounded_run`
-- `transpiler/tests/integration.rs:test_model_check_twophase_bounded_run`
-- `transpiler/tests/integration.rs:test_model_check_leader_election_bounded_run`
-- `transpiler/tests/integration.rs:test_model_check_paxos_bounded_run`
-- `transpiler/tests/integration.rs:test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes`
-- `transpiler/tests/integration.rs:test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models`
+- CLI/model-check execution: `transpiler/src/main.rs` (`execute_model_check`, `Commands::ModelCheck`).
+- Explorer and traces: `transpiler/src/modelcheck/explorer.rs`.
+- Liveness/fairness SCC checks: `transpiler/src/modelcheck/liveness.rs`.
+- Branch IR normalization: `transpiler/src/modelcheck/ir.rs`.
+- Runtime evaluator: `transpiler/src/modelcheck/evaluator.rs`.
+- Finite-domain expansion: `transpiler/src/modelcheck/domain.rs`.
+- Solver: `transpiler/src/modelcheck/solver.rs`.
 
-## Protocol matrix
+## 2. What it cannot do yet (implementation-backed)
 
-| Protocol | Checked-in source-first evidence | Current status | Notes |
+### 2.1 Unsupported evaluator constructs
+
+`transpiler/src/modelcheck/evaluator.rs` still rejects:
+
+- `forall` quantifier
+- expression-level `exists`
+- `match`
+- struct update expressions
+- bitwise/shift operators
+- non-identifier `let` patterns
+- casts beyond `int` / `nat` / `bool`
+
+### 2.2 Domain/solver/constants limitations
+
+- `transpiler/src/modelcheck/domain.rs` only expands generics for concrete built-ins (`Seq`, `Set`, `Map`) and rejects broader generic forms.
+- `transpiler/src/main.rs` currently requires exactly one resolved `LConstants` valuation.
+- `transpiler/src/modelcheck/solver.rs` falls back to full candidate-state enumeration for branches without direct `s_.field == ...` assignments; this can explode badly.
+
+### 2.3 Temporal/fairness/timeout limitations
+
+- Liveness checks are only performed when exploration is complete (`stop_reason = FrontierExhausted`); otherwise `liveness.skipped_reason = "incomplete_exploration"`.
+- Fairness labels are validated for non-empty/duplicate format, but not currently rejected when they do not match any real branch label (typos can silently become ineffective constraints).
+- `search.timeout_ms` is parsed, validated, and reported, but there is currently no wall-clock timeout stop in the exploration engine.
+
+## 3. Checked-in model-checking evidence (currently passing)
+
+Status below is based on checked-in automated integration tests under `transpiler/tests/integration.rs`.
+
+### 3.1 Bounded protocol safety runs (all pass)
+
+| Case | Input spec | Types spec | Model config | Automated test |
+| --- | --- | --- | --- | --- |
+| TwoPhase small bounded run | `src/protocol/TwoPhase/twophase.rs` | `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `test_model_check_twophase_bounded_run` |
+| PrimaryBackup small bounded run | `src/protocol/PrimaryBackup/primarybackup.rs` | `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `test_model_check_primarybackup_helper_call_branches_bounded_run` |
+| LeaderElection small bounded run | `src/protocol/LeaderElection/election.rs` | `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `test_model_check_leader_election_bounded_run` |
+| Paxos small bounded run | `src/protocol/Paxos/paxos.rs` | `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `test_model_check_paxos_bounded_run` |
+
+Pass condition used by tests: command success + valid JSON + `summary.states > 0` + `summary.transitions > 0`.
+
+### 3.2 Liveness/fairness fixtures (all pass expected outcomes)
+
+| Case | Input spec | Types spec | Model config | Expected result | Automated test |
+| --- | --- | --- | --- | --- | --- |
+| Avoidable cycle (no fairness) | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs` | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs` | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_violated.model.toml` | `leads_to_violated` | `test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes` |
+| Avoidable cycle + strong fairness | same as above | same as above | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_strong_fairness.model.toml` | `ok` | same |
+| Forced progress (no fairness) | `transpiler/tests/model_check_fixtures/liveness_forced.protocol.rs` | `transpiler/tests/model_check_fixtures/liveness_forced.types.rs` | `transpiler/tests/model_check_fixtures/liveness_forced_unfair.model.toml` | `ok` | same |
+| Forced progress + strong fairness | same as above | same as above | `transpiler/tests/model_check_fixtures/liveness_forced_strong_fairness.model.toml` | `ok` | same |
+
+### 3.3 Differential source-first vs wrapper outcomes
+
+- `test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models` checks qualitative agreement for shared small models (TwoPhase, LeaderElection, PrimaryBackup, Paxos) against the TLC outcomes documented in `docs/conversion-testing-guide.md`.
+
+## 4. Protocol coverage matrix (source-first, checked-in evidence)
+
+| Protocol | Source-first status | Checked-in model + automation | Notes |
 | --- | --- | --- | --- |
-| `RSL` | No | Untracked for source-first | Highest-value missing consensus protocol. Needs checked-in source-first model and blocker audit. |
-| `Raft` | No | Untracked for source-first | Safety proof is strong, but source-first model-check status is still missing. |
-| `Paxos` | Yes | Bounded pass | Covered by checked-in integration test and fixture model. |
-| `VerticalPaxos` | No | Untracked for source-first | Needs model file, exact-mode attempt, and blocker classification. |
-| `EPaxos` | No | Untracked for source-first | No checked-in source-first run yet. Existing TLC wrapper notes already warn about large state spaces. |
-| `PBFT` | No | Untracked for source-first | No checked-in source-first run yet. Existing TLC wrapper notes already warn about large state spaces. |
-| `ChainReplication` | No | Untracked for source-first | Needs checked-in source-first model and automation. |
-| `PrimaryBackup` | Yes | Bounded pass | Covered by checked-in integration test and fixture model. |
-| `TwoPhase` | Yes | Bounded pass | Covered by checked-in integration test and fixture model. |
-| `LeaderElection` | Yes | Bounded pass | Non-consensus control protocol; keep it green while expanding consensus coverage. |
+| `RSL` | Not yet covered | No | Highest-value missing consensus protocol. |
+| `Raft` | Not yet covered | No | Needs source-first model-check evidence separate from refinement proofs. |
+| `Paxos` | Bounded small-model pass | Yes | Fixture-backed integration test exists. |
+| `VerticalPaxos` | Not yet covered | No | Needs checked-in source-first model/check. |
+| `EPaxos` | Not yet covered | No | Needs checked-in source-first model/check. |
+| `PBFT` | Not yet covered | No | Needs checked-in source-first model/check. |
+| `ChainReplication` | Not yet covered | No | Needs checked-in source-first model/check. |
+| `PrimaryBackup` | Bounded small-model pass | Yes | Fixture-backed integration test exists. |
+| `TwoPhase` | Bounded small-model pass | Yes | Fixture-backed integration test exists. |
+| `LeaderElection` | Bounded small-model pass | Yes | Fixture-backed integration test exists. |
 
-## Known unsupported or incomplete areas
+## 5. Exact reproduction commands
 
-Implementation-backed limitations:
+Run from repo root.
 
-- `transpiler/src/modelcheck/evaluator.rs` still rejects:
-  - general `forall`
-  - expression-level `exists`
-  - `match`
-  - struct update expressions
-  - bitwise/shift operators
-  - non-identifier `let` patterns
-- `transpiler/src/modelcheck/evaluator.rs` only supports casts to `int`, `nat`, and `bool`.
-- `transpiler/src/modelcheck/domain.rs` only supports concrete built-in container expansion (`Seq`, `Set`, `Map`) and rejects broader generic-domain expansion.
-- `transpiler/src/main.rs` currently requires exactly one concrete `LConstants` valuation after config resolution.
-- `transpiler/src/modelcheck/solver.rs` can fall back to next-state candidate enumeration for predicate-only/helper branches. This is functionally useful but can explode badly.
-- Liveness checking is only reported when the explored graph is complete; incomplete explorations report `liveness.skipped_reason = "incomplete_exploration"`.
+### 5.1 Build binary
 
-Process gaps:
+```bash
+cargo build --manifest-path transpiler/Cargo.toml --bin verus-transpile
+```
 
-- No checked-in status matrix existed before this file; keep it current.
-- No checked-in exact-mode benchmark discipline exists yet for performance claims.
-- Several real consensus protocols still have no source-first automation or blocker write-up.
+### 5.2 Run each passing protocol model-check
 
-## Required work, in order
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input src/protocol/TwoPhase/twophase.rs \
+  --types src/protocol/TwoPhase/types.rs \
+  --model transpiler/tests/model_check_fixtures/twophase_small.model.toml \
+  --search bfs \
+  --json-report
+```
 
-1. Close the real semantic blockers.
-   Start with protocol-driven gaps: finite-domain quantifiers, `match`, struct updates, multi-valuation constants, and better solving for helper/predicate branches.
-2. Build performance discipline before claiming wins.
-   Keep exact-mode baselines, separate lossy vs exact runs, and require before/after telemetry for every optimization.
-3. Push real consensus protocol coverage.
-   Work through `RSL`, `Raft`, `VerticalPaxos`, `EPaxos`, `PBFT`, and `ChainReplication` instead of staying on already-green small protocols.
-4. Keep differential evidence where TLC wrappers already exist.
-   Shared small models should continue to agree qualitatively between wrapper-based and source-first workflows.
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input src/protocol/PrimaryBackup/primarybackup.rs \
+  --types src/protocol/PrimaryBackup/types.rs \
+  --model transpiler/tests/model_check_fixtures/primarybackup_small.model.toml \
+  --search bfs \
+  --json-report
+```
 
-## Rules for updating this file
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input src/protocol/LeaderElection/election.rs \
+  --types src/protocol/LeaderElection/types.rs \
+  --model transpiler/tests/model_check_fixtures/leaderelection_small.model.toml \
+  --search bfs \
+  --json-report
+```
 
-- Never mark a protocol as supported without a checked-in model plus automated evidence or a checked-in JSON report.
-- Record exact-mode and lossy-mode results separately.
-- When a protocol still fails, write the first blocker and the next concrete code task.
-- When a new feature lands, update both the blocker list and the protocol matrix.
-- Do not replace missing evidence with prose.
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input src/protocol/Paxos/paxos.rs \
+  --types src/protocol/Paxos/types.rs \
+  --model transpiler/tests/model_check_fixtures/paxos_small.model.toml \
+  --search bfs \
+  --json-report
+```
+
+### 5.3 Run liveness/fairness fixtures
+
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs \
+  --types transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs \
+  --model transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_violated.model.toml \
+  --search bfs \
+  --json-report
+```
+
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs \
+  --types transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs \
+  --model transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_strong_fairness.model.toml \
+  --search bfs \
+  --json-report
+```
+
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input transpiler/tests/model_check_fixtures/liveness_forced.protocol.rs \
+  --types transpiler/tests/model_check_fixtures/liveness_forced.types.rs \
+  --model transpiler/tests/model_check_fixtures/liveness_forced_unfair.model.toml \
+  --search bfs \
+  --json-report
+```
+
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input transpiler/tests/model_check_fixtures/liveness_forced.protocol.rs \
+  --types transpiler/tests/model_check_fixtures/liveness_forced.types.rs \
+  --model transpiler/tests/model_check_fixtures/liveness_forced_strong_fairness.model.toml \
+  --search bfs \
+  --json-report
+```
+
+### 5.4 Re-run automated evidence directly
+
+```bash
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_primarybackup_helper_call_branches_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_twophase_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_leader_election_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models -- --nocapture
+```
+
+## 6. Update rules (strict)
+
+- Never mark a protocol as source-first supported without checked-in model + automated evidence.
+- Keep exact-mode results and lossy-mode results separate.
+- For failures, record the first blocker and the next concrete code task.
+- For every capability change, update both:
+  - this status file
+  - `TODO.md` Phase 33 checklist
+- Do not replace missing evidence with prose claims.

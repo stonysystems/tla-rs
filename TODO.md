@@ -45,15 +45,16 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 - **Consensus protocol source-first coverage is incomplete** — only TwoPhase, LeaderElection, PrimaryBackup, and Paxos currently have checked-in bounded source-first runs. ChainReplication, Raft, VerticalPaxos, PBFT, EPaxos, and RSL still need checked-in source-first status, blockers, and automation.
 - **Model-check performance work is incomplete** — reductions exist, but there is no checked-in before/after benchmark discipline for exact-mode optimizations, and predicate-only helper branches still risk expensive candidate-state enumeration.
 - **Phase 16.8 is not fully complete (reopened / partial)** — workspace artifact audit found missing `tla_test_workspace` outputs/folders (`transpiler_generated_verus_exec`, `llm_to_verus_spec`, `llm_to_verus_exec`, `community_to_verus_spec`, `community_to_verus_exec`), partial property/TLC coverage (`transpiler_generated_tla_with_properties` only covers 4 protocols), no checked-in TLC run logs under the workspace snapshot, and missing runtime validation (`30s`, `3 clients / 3 replicas`) for generated D2 exec outputs. See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
+
 **Next steps (priority order):**
-1. **Phase 34: Raft Network Model and Complete Refinement Proof** — extend Raft spec with RSL-style network model (sentPackets + receive guards), then eliminate all 6 remaining assumes in the refinement proof. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
-2. **Phase 33: Model checker hardening, protocol coverage, and performance** — keep `docs/model_checker_status.md` current, close real evaluator/solver gaps, add checked-in source-first runs for as many consensus protocols as possible, and land measured exact-mode optimizations with evidence. See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority).
+1. **Phase 33: Model checker hardening, protocol coverage, and performance** — this is now the top queue. First deliverable is keeping `docs/model_checker_status.md` fully up to date with capability/limitation audits, pass matrix, source/config pointers, and exact reproduction commands; then close evaluator/solver gaps and expand protocol coverage with measured exact-mode evidence. See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority).
+2. **Phase 34: Raft Network Model and Complete Refinement Proof** — extend Raft spec with RSL-style network model (sentPackets + receive guards), then eliminate all 6 remaining assumes in the refinement proof. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
 3. **Phase 16.8 (reopened): Real-Protocol Cross-Direction + Model Checking Validation artifact completion** — close the audited gaps in `transpiler/tla_test_workspace/` (missing `*_verus_exec` / `*_to_verus_{spec,exec}` folders, incomplete `transpiler_generated_tla_with_properties` protocol coverage, missing checked-in TLC run evidence, and missing generated-D2 runtime checks with `30s` / `3 clients` / `3 replicas`). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
 4. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation. This remains useful, but it is now below model-checker work.
 5. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code` once higher-priority model-check work stops finding language gaps that change regeneration requirements.
 6. **Phase 20 cleanup** — finish the remaining auto-inference cleanup only after the model checker and artifact gaps above stop exposing new schema/config needs.
 
-**Active work**: 669 verified, 0 errors. **Phase 34** (Raft network model + complete refinement proof) and **Phase 33** (model checker hardening) are the top two priorities. Phase 32 COMPLETE with 6 assumes remaining — Phase 34 targets eliminating all 6 by extending the Raft spec with RSL-style sentPackets network model.
+**Active work**: 669 verified, 0 errors. **Phase 33** (model checker hardening + status discipline) is the top priority, followed by **Phase 34** (Raft network model + complete refinement proof). Phase 32 COMPLETE with 6 assumes remaining — Phase 34 targets eliminating all 6 by extending the Raft spec with RSL-style sentPackets network model.
 
 ## Reference
 
@@ -9702,7 +9703,52 @@ Rules for this phase (do not cut corners):
 - [ ] Where TLC wrappers already exist, add differential comparison on shared small models so source-first and wrapper outcomes agree qualitatively.
 - [ ] Prefer real protocol safety invariants/properties over toy fixtures once the engine can execute them.
 
-### 33.6 Completion gate
+### 33.6 Code-review findings converted to no-corners tasks (2026-03-04)
+
+- [ ] **33.6.1 Enforce real wall-clock timeout semantics (currently missing)**
+  - [ ] Thread `search.timeout_ms` from model config into exploration limits/runtime checks (`transpiler/src/main.rs` → `transpiler/src/modelcheck/explorer.rs`).
+  - [ ] Add a concrete stop reason (`TimeoutReached`) and surface it in:
+    - CLI text result mapping
+    - JSON report `result` + `stop_reason`
+    - liveness summary (`checked=false`, `skipped_reason="incomplete_exploration"` when timeout occurs before full graph closure)
+  - [ ] Add tests before/with implementation:
+    - unit tests in `transpiler/src/modelcheck/explorer.rs` covering timeout preemption in BFS and DFS
+    - command-level test in `transpiler/src/main.rs` verifying `--timeout/--timeout-ms` changes behavior, not just parsed config
+  - [ ] Update docs after code/test pass: `docs/model_checker_status.md` and `docs/model-checking-source-first.md`.
+
+- [ ] **33.6.2 Validate fairness labels against actual `LNext` branch labels**
+  - [ ] Add preflight validation in model-check execution to reject unknown fairness labels (typos must fail fast instead of silently weakening assumptions).
+  - [ ] Error message requirements:
+    - include unknown label(s)
+    - include available branch labels (`branch_0`, `branch_1`, ...)
+    - include config path context (`properties.fairness.weak` / `properties.fairness.strong`)
+  - [ ] Add regression coverage:
+    - positive test with known labels still passes
+    - negative test where unknown label is rejected with deterministic message
+  - [ ] Update status doc limitation table once fixed.
+
+- [ ] **33.6.3 Make predicate-only/helper-branch enumeration visible and bounded**
+  - [ ] Add telemetry counters for:
+    - number of branches solved by direct next-state assignments
+    - number of branches solved by candidate enumeration fallback
+    - total candidate next-states evaluated by enumeration path
+  - [ ] Emit these counters in JSON report summary so performance claims are auditable.
+  - [ ] Add guardrail config (or explicit hard-coded safety bound with clear error) for candidate enumeration work per explored state/branch to avoid hidden blowups.
+  - [ ] Add regression tests demonstrating:
+    - fallback path is exercised for helper/predicate-only branches
+    - telemetry increments as expected
+    - guardrail triggers clean config/runtime error
+
+- [ ] **33.6.4 Strengthen evidence reproducibility discipline**
+  - [ ] Add a checked-in script target (or test helper) to run the full currently-supported source-first matrix and save JSON artifacts under `reports/model_check/`.
+  - [ ] Require `docs/model_checker_status.md` entries to point to:
+    - source file path
+    - model config path
+    - automated test name and/or generated JSON artifact path
+    - exact replay command
+  - [ ] Add CI coverage to prevent stale status/evidence drift (fail if listed artifact paths are missing).
+
+### 33.7 Completion gate
 
 - [ ] Do not mark Phase 33 complete until all of the following are true:
   - `docs/model_checker_status.md` is current and specific
@@ -9710,6 +9756,9 @@ Rules for this phase (do not cut corners):
   - at least one previously-uncovered consensus protocol has a checked-in automated source-first run
   - optimization claims include before/after measurements
   - every protocol in the matrix has an explicit status instead of "not looked at"
+  - timeout behavior is implemented and tested (or explicitly removed from config surface)
+  - fairness-label typo rejection is implemented and tested
+  - enumeration-fallback telemetry is exposed in JSON reports
 
 ---
 
