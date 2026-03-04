@@ -15,6 +15,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - Explore state space with BFS/DFS, dedup, invariants, deadlock checks, and counterexample traces with action labels + state diffs.
 - Enforce wall-clock exploration timeout via `search.timeout_ms` with concrete stop reason `TimeoutReached`.
 - Run bounded liveness checks for configured `leads_to` obligations on fully explored graphs, with branch-label weak/strong fairness filtering.
+- Reject unknown fairness labels at model-check preflight by validating `properties.fairness.{weak,strong}` against actual `LNext` branch labels.
 - Emit JSON reports including search settings, reduction telemetry, stop reason, and violation payloads.
 
 ### 1.2 Reduction/analysis knobs currently implemented
@@ -58,7 +59,6 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 ### 2.3 Temporal/fairness/timeout limitations
 
 - Liveness checks are only performed when exploration is complete (`stop_reason = FrontierExhausted`); otherwise `liveness.skipped_reason = "incomplete_exploration"`.
-- Fairness labels are validated for non-empty/duplicate format, but not currently rejected when they do not match any real branch label (typos can silently become ineffective constraints).
 
 ## 3. Checked-in model-checking evidence (currently passing)
 
@@ -96,6 +96,8 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 - `transpiler/src/main.rs`:
   - `test_model_check_command_timeout_override_changes_execution_behavior`
   - `test_execute_model_check_marks_liveness_skipped_on_timeout`
+  - `test_model_check_command_accepts_fairness_configuration`
+  - `test_model_check_command_rejects_unknown_fairness_branch_labels`
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 

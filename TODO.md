@@ -9724,16 +9724,16 @@ Rules for this phase (do not cut corners):
     - command-level test in `transpiler/src/main.rs` verifying `--timeout/--timeout-ms` changes behavior, not just parsed config
   - [x] Update docs after code/test pass: `docs/model_checker_status.md` and `docs/model-checking-source-first.md`.
 
-- [ ] **33.6.2 Validate fairness labels against actual `LNext` branch labels**
-  - [ ] Add preflight validation in model-check execution to reject unknown fairness labels (typos must fail fast instead of silently weakening assumptions).
-  - [ ] Error message requirements:
+- [x] **33.6.2 Validate fairness labels against actual `LNext` branch labels**
+  - [x] Add preflight validation in model-check execution to reject unknown fairness labels (typos must fail fast instead of silently weakening assumptions).
+  - [x] Error message requirements:
     - include unknown label(s)
     - include available branch labels (`branch_0`, `branch_1`, ...)
     - include config path context (`properties.fairness.weak` / `properties.fairness.strong`)
-  - [ ] Add regression coverage:
+  - [x] Add regression coverage:
     - positive test with known labels still passes
     - negative test where unknown label is rejected with deterministic message
-  - [ ] Update status doc limitation table once fixed.
+  - [x] Update status doc limitation table once fixed.
 
 - [ ] **33.6.3 Make predicate-only/helper-branch enumeration visible and bounded**
   - [ ] Add telemetry counters for:

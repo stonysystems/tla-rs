@@ -2137,6 +2137,69 @@ fn successor_semantics_to_solver_semantics(
     }
 }
 
+fn validate_fairness_labels_against_lnext_branches(
+    fairness: &verus_transpiler::modelcheck::config::FairnessConfig,
+    available_labels: &std::collections::BTreeSet<String>,
+) -> Result<()> {
+    fn unknown_labels(
+        configured: &[String],
+        available: &std::collections::BTreeSet<String>,
+    ) -> Vec<String> {
+        let mut unknown = configured
+            .iter()
+            .filter(|label| !available.contains(*label))
+            .cloned()
+            .collect::<Vec<_>>();
+        unknown.sort();
+        unknown.dedup();
+        unknown
+    }
+
+    let unknown_weak = unknown_labels(&fairness.weak, available_labels);
+    let unknown_strong = unknown_labels(&fairness.strong, available_labels);
+    if unknown_weak.is_empty() && unknown_strong.is_empty() {
+        return Ok(());
+    }
+
+    let mut sections = Vec::new();
+    if !unknown_weak.is_empty() {
+        sections.push(format!(
+            "properties.fairness.weak = [{}]",
+            unknown_weak
+                .iter()
+                .map(|label| format!("`{}`", label))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !unknown_strong.is_empty() {
+        sections.push(format!(
+            "properties.fairness.strong = [{}]",
+            unknown_strong
+                .iter()
+                .map(|label| format!("`{}`", label))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    let available_rendered = if available_labels.is_empty() {
+        "<none>".to_string()
+    } else {
+        available_labels
+            .iter()
+            .map(|label| format!("`{}`", label))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    Err(miette::miette!(
+        "Invalid model.toml: unknown fairness branch label(s): {}. Available LNext branch labels: {}.",
+        sections.join("; "),
+        available_rendered
+    ))
+}
+
 fn expand_type_domain_candidates(
     label: &str,
     var_name: &str,
@@ -2568,6 +2631,15 @@ fn execute_model_check(
 
     let transition =
         build_transition_ir(&bundle.entrypoints.lnext).map_err(|e| miette::miette!("{}", e))?;
+    let transition_branch_labels = transition
+        .branches
+        .iter()
+        .map(|branch| branch.label.clone())
+        .collect::<BTreeSet<_>>();
+    validate_fairness_labels_against_lnext_branches(
+        &model_config.properties.fairness,
+        &transition_branch_labels,
+    )?;
     let owned_invariants: Vec<verus_transpiler::ast::SpecFunction> = selected_invariants
         .iter()
         .map(|invariant_fn| (*invariant_fn).clone())
@@ -5189,6 +5261,96 @@ fairness = { weak = ["branch_0"] }
         };
 
         handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_rejects_unknown_fairness_branch_labels() {
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value == s.value && s.value <= c.limit
+    }
+
+    pub open spec fn LInv(s: LState, c: LConstants) -> bool {
+        s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[properties]
+invariants = ["LInv"]
+fairness = { weak = ["branch_typo"], strong = ["branch_missing"] }
+"#,
+        )
+        .unwrap();
+
+        let command = Commands::ModelCheck {
+            input: proto_path,
+            types: None,
+            init: "LInit".to_string(),
+            next: "LNext".to_string(),
+            invariant: vec![],
+            search: None,
+            max_depth: None,
+            max_states: None,
+            timeout_ms: None,
+            json_report: false,
+            model: model_path,
+        };
+        let cli = Cli {
+            command: None,
+            input: None,
+            annotations: None,
+            output: None,
+            config: None,
+            project: None,
+            output_dir: None,
+            stdout: false,
+            verbose: false,
+            dry_run: false,
+            auto_skip: false,
+            proof_fallback: false,
+            dump_config: false,
+        };
+
+        let err = handle_command(&command, &cli).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("unknown fairness branch label"));
+        assert!(message.contains("properties.fairness.weak"));
+        assert!(message.contains("properties.fairness.strong"));
+        assert!(message.contains("branch_typo"));
+        assert!(message.contains("branch_missing"));
+        assert!(message.contains("Available LNext branch labels"));
+        assert!(message.contains("branch_0"));
     }
 
     #[test]
