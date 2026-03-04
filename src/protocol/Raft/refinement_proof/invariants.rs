@@ -2741,11 +2741,68 @@ verus! {
                     );
                 }
             } else {
-                // Pending 34.7.1.e.4.b (fresh-step append branch from post commit).
-                assume(
-                    ds_.server_states[leader_id].log.len() > k
-                        && ds_.server_states[leader_id].log[k] == entry
-                );
+                // Post-only committed witness. From the decomposition helper and
+                // !EntryCommittedAt(ds, k, entry), we are in the fresh-step-append branch.
+                assert(exists |stepping: int| {
+                    &&& 0 <= stepping < ds.num_servers
+                    &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                        0 <= j < ds.num_servers && j != stepping ==>
+                        ds_.server_states[j] == ds.server_states[j])
+                    &&& k == ds.server_states[stepping].log.len()
+                    &&& ds_.server_states[stepping].log.len()
+                        == ds.server_states[stepping].log.len() + 1
+                    &&& ds_.server_states[stepping].log[k] == entry
+                });
+                let stepping = choose |stepping: int| {
+                    &&& 0 <= stepping < ds.num_servers
+                    &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                        0 <= j < ds.num_servers && j != stepping ==>
+                        ds_.server_states[j] == ds.server_states[j])
+                    &&& k == ds.server_states[stepping].log.len()
+                    &&& ds_.server_states[stepping].log.len()
+                        == ds.server_states[stepping].log.len() + 1
+                    &&& ds_.server_states[stepping].log[k] == entry
+                };
+
+                if ds_.server_states[leader_id] == ds.server_states[leader_id] {
+                    // Unchanged-leader fresh path (34.7.1.e.4.b):
+                    // the stepping server cannot be this unchanged leader because
+                    // the stepping log grew by one at index k.
+                    assert(leader_id != stepping) by {
+                        if leader_id == stepping {
+                            assert(ds_.server_states[stepping].log.len()
+                                == ds.server_states[stepping].log.len());
+                            assert(ds_.server_states[stepping].log.len()
+                                == ds.server_states[stepping].log.len() + 1);
+                            assert(false);
+                        }
+                    };
+
+                    let commit_quorum = choose |q: Set<int>| {
+                        &&& q.len() >= ds.num_servers / 2 + 1
+                        &&& (forall |id: int| q.contains(id) ==> {
+                            &&& 0 <= id < ds.num_servers
+                            &&& ds_.server_states[id].log.len() > k
+                            &&& ds_.server_states[id].log[k] == entry
+                        })
+                    };
+                    if commit_quorum.contains(leader_id) {
+                        assert(ds_.server_states[leader_id].log.len() > k);
+                        assert(ds_.server_states[leader_id].log[k] == entry);
+                    } else {
+                        // Pending 34.7.1.e.4.b.2 (leader not directly in post commit quorum).
+                        assume(
+                            ds_.server_states[leader_id].log.len() > k
+                                && ds_.server_states[leader_id].log[k] == entry
+                        );
+                    }
+                } else {
+                    // Pending 34.7.1.e.4.c (changed-leader branch).
+                    assume(
+                        ds_.server_states[leader_id].log.len() > k
+                            && ds_.server_states[leader_id].log[k] == entry
+                    );
+                }
             }
         }
     }
