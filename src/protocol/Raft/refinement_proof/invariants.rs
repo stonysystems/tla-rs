@@ -435,6 +435,127 @@ verus! {
         };
     }
 
+    /// Helper: from vote-set membership, extract an explicit RequestVote packet
+    /// witness (including request parameters) that justifies the granted vote.
+    ///
+    /// This composes:
+    /// - vote packet extraction from `votes_granted` (`lemma_vote_witness_from_votes_granted`)
+    /// - provenance hook (`VoteResponseHasRequestVote`) to recover the matching
+    ///   RequestVote packet for the same term/candidate route.
+    proof fn lemma_request_vote_witness_from_votes_granted(
+        ds: RaftDistributedState, candidate: int, voter: int,
+    )
+        requires
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            VoteResponseHasRequestVote(ds),
+            0 <= candidate < ds.num_servers,
+            0 <= voter < ds.num_servers,
+            voter != candidate,
+            (ds.server_states[candidate].role is Candidate
+                || ds.server_states[candidate].role is Leader),
+            ds.server_states[candidate].votes_granted.contains(voter),
+        ensures
+            exists |req: LRaftPacket| {
+                &&& ds.network.contains(req)
+                &&& req.src == candidate
+                &&& req.dst == voter
+                &&& req.msg matches LRaftMessage::RequestVote {
+                    term,
+                    candidate: req_candidate,
+                    last_log_index: _,
+                    last_log_term: _,
+                }
+                &&& term == ds.server_states[candidate].current_term
+                &&& req_candidate == candidate
+            },
+    {
+        lemma_vote_witness_from_votes_granted(ds, candidate, voter);
+        let vote_pkt = choose |p: LRaftPacket| {
+            &&& ds.network.contains(p)
+            &&& p.src == voter
+            &&& p.dst == candidate
+            &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter }
+            &&& granted
+            &&& term == ds.server_states[candidate].current_term
+            &&& msg_voter == voter
+        };
+        assert(ds.network.contains(vote_pkt));
+        assert(vote_pkt.msg is VoteResponse);
+        assert(vote_pkt.msg->VoteResponse_granted);
+        assert(vote_pkt.msg->VoteResponse_term == ds.server_states[candidate].current_term);
+        assert(vote_pkt.msg->VoteResponse_voter == voter);
+
+        assert(
+            match vote_pkt.msg {
+                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
+                    granted ==> exists |req: LRaftPacket| {
+                        &&& ds.network.contains(req)
+                        &&& req.src == vote_pkt.dst
+                        &&& req.dst == v
+                        &&& req.msg matches LRaftMessage::RequestVote {
+                            term,
+                            candidate: req_candidate,
+                            last_log_index: _,
+                            last_log_term: _,
+                        }
+                        &&& term == t
+                        &&& req_candidate == vote_pkt.dst
+                    }
+                }
+                _ => true,
+            }
+        ) by {
+            assert(VoteResponseHasRequestVote(ds));
+        };
+
+        let req_pkt = choose |req: LRaftPacket| {
+            &&& ds.network.contains(req)
+            &&& req.src == vote_pkt.dst
+            &&& req.dst == vote_pkt.msg->VoteResponse_voter
+            &&& req.msg matches LRaftMessage::RequestVote {
+                term,
+                candidate: req_candidate,
+                last_log_index: _,
+                last_log_term: _,
+            }
+            &&& term == vote_pkt.msg->VoteResponse_term
+            &&& req_candidate == vote_pkt.dst
+        };
+        assert(ds.network.contains(req_pkt));
+        assert(req_pkt.src == candidate);
+        assert(req_pkt.dst == voter);
+        assert(req_pkt.msg is RequestVote);
+        assert(req_pkt.msg->RequestVote_term == ds.server_states[candidate].current_term);
+        assert(req_pkt.msg->RequestVote_candidate == candidate);
+
+        assert(exists |req: LRaftPacket| {
+            &&& ds.network.contains(req)
+            &&& req.src == candidate
+            &&& req.dst == voter
+            &&& req.msg matches LRaftMessage::RequestVote {
+                term,
+                candidate: req_candidate,
+                last_log_index: _,
+                last_log_term: _,
+            }
+            &&& term == ds.server_states[candidate].current_term
+            &&& req_candidate == candidate
+        }) by {
+            let req = req_pkt;
+            assert(req.src == candidate);
+            assert(req.dst == voter);
+            assert(req.msg matches LRaftMessage::RequestVote {
+                term,
+                candidate: req_candidate,
+                last_log_index: _,
+                last_log_term: _,
+            });
+            assert(req.msg->RequestVote_term == ds.server_states[candidate].current_term);
+            assert(req.msg->RequestVote_candidate == candidate);
+        };
+    }
+
     /// Helper: combine committed quorum and vote quorum to produce an overlap
     /// witness carrying both committed-entry and vote-side facts.
     proof fn lemma_committed_vote_quorum_overlap_witness(

@@ -291,3 +291,36 @@ Validation status:
 
 - Focused command passes:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_response_has_request_vote*' --rlimit 40`
+
+## Update: 34.7.1.e.3.b complete (2026-03-04)
+
+Implemented extraction helper in:
+
+- `src/protocol/Raft/refinement_proof/invariants.rs`
+  - `lemma_request_vote_witness_from_votes_granted(...)`
+
+What this helper provides:
+
+- Starting from vote-set membership (`candidate.votes_granted.contains(voter)`)
+  plus existing vote witness/provenance invariants, it extracts an explicit
+  `RequestVote` packet witness in-network with aligned routing/term/candidate:
+  - `req.src == candidate`
+  - `req.dst == voter`
+  - `req.term == candidate.current_term`
+  - `req.candidate == candidate`
+- RequestVote last-log parameters are exposed existentially via packet pattern
+  matching, so downstream lemmas can pull concrete request parameters for
+  overlap voter reasoning.
+
+How it is proved:
+
+- Calls `lemma_vote_witness_from_votes_granted(...)` to get a concrete granted
+  `VoteResponse` packet witness for `(voter -> candidate)` at candidate term.
+- Instantiates `VoteResponseHasRequestVote(ds)` on that packet to obtain the
+  corresponding `RequestVote` packet witness and re-exports it in the helper
+  postcondition in candidate/voter form.
+
+Validation status:
+
+- Focused command passes:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*request_vote_witness_from_votes_granted*' --rlimit 40`
