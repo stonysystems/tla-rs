@@ -9735,14 +9735,14 @@ Rules for this phase (do not cut corners):
     - negative test where unknown label is rejected with deterministic message
   - [x] Update status doc limitation table once fixed.
 
-- [ ] **33.6.3 Make predicate-only/helper-branch enumeration visible and bounded**
-  - [ ] Add telemetry counters for:
+- [x] **33.6.3 Make predicate-only/helper-branch enumeration visible and bounded**
+  - [x] Add telemetry counters for:
     - number of branches solved by direct next-state assignments
     - number of branches solved by candidate enumeration fallback
     - total candidate next-states evaluated by enumeration path
-  - [ ] Emit these counters in JSON report summary so performance claims are auditable.
-  - [ ] Add guardrail config (or explicit hard-coded safety bound with clear error) for candidate enumeration work per explored state/branch to avoid hidden blowups.
-  - [ ] Add regression tests demonstrating:
+  - [x] Emit these counters in JSON report summary so performance claims are auditable.
+  - [x] Add guardrail config (or explicit hard-coded safety bound with clear error) for candidate enumeration work per explored state/branch to avoid hidden blowups.
+  - [x] Add regression tests demonstrating:
     - fallback path is exercised for helper/predicate-only branches
     - telemetry increments as expected
     - guardrail triggers clean config/runtime error

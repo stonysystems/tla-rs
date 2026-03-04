@@ -16,6 +16,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - Enforce wall-clock exploration timeout via `search.timeout_ms` with concrete stop reason `TimeoutReached`.
 - Run bounded liveness checks for configured `leads_to` obligations on fully explored graphs, with branch-label weak/strong fairness filtering.
 - Reject unknown fairness labels at model-check preflight by validating `properties.fairness.{weak,strong}` against actual `LNext` branch labels.
+- Track solver fallback telemetry in run summaries/JSON (`direct_assignment_branch_solves`, `enumeration_fallback_branch_solves`, `enumeration_candidate_evaluations`) and enforce a per-state/branch candidate-enumeration guardrail.
 - Emit JSON reports including search settings, reduction telemetry, stop reason, and violation payloads.
 
 ### 1.2 Reduction/analysis knobs currently implemented
@@ -54,7 +55,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 
 - `transpiler/src/modelcheck/domain.rs` only expands generics for concrete built-ins (`Seq`, `Set`, `Map`) and rejects broader generic forms.
 - `transpiler/src/main.rs` currently requires exactly one resolved `LConstants` valuation.
-- `transpiler/src/modelcheck/solver.rs` falls back to full candidate-state enumeration for branches without direct `s_.field == ...` assignments; this can explode badly.
+- `transpiler/src/modelcheck/solver.rs` still uses candidate-state enumeration fallback for predicate-only/helper branches; runs are now bounded by a hard guardrail (`candidate_evaluation_guardrail_per_state_branch = 10000`) and expose fallback telemetry in JSON/CLI summaries.
 
 ### 2.3 Temporal/fairness/timeout limitations
 
@@ -98,6 +99,11 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
   - `test_execute_model_check_marks_liveness_skipped_on_timeout`
   - `test_model_check_command_accepts_fairness_configuration`
   - `test_model_check_command_rejects_unknown_fairness_branch_labels`
+  - `test_execute_model_check_reports_enumeration_fallback_telemetry`
+  - `test_execute_model_check_candidate_enumeration_guardrail_triggers_clean_error`
+- `transpiler/src/modelcheck/solver.rs`:
+  - `test_solve_branch_successors_with_candidates_reports_enumeration_telemetry`
+  - `test_solve_branch_successors_with_candidates_enforces_enumeration_guardrail`
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 

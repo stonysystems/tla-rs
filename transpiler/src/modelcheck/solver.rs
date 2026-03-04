@@ -25,6 +25,24 @@ pub enum EmptySuccessorSemantics {
     Stuttering,
 }
 
+/// Telemetry emitted for one branch-solve attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BranchSolveTelemetry {
+    /// Count of branch solves using direct `s_.field == ...` assignments.
+    pub direct_assignment_branch_solves: usize,
+    /// Count of branch solves using candidate-enumeration fallback.
+    pub enumeration_fallback_branch_solves: usize,
+    /// Number of candidate next-state evaluations performed by fallback.
+    pub enumeration_candidate_evaluations: usize,
+}
+
+/// Result payload for one branch-solve attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchSolveResult {
+    pub successors: Vec<RuntimeValue>,
+    pub telemetry: BranchSolveTelemetry,
+}
+
 /// Solve one normalized `LNext` branch into concrete successor states.
 ///
 /// For each existential assignment:
@@ -40,16 +58,18 @@ pub fn solve_branch_successors(
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
 ) -> TranspileResult<Vec<RuntimeValue>> {
-    solve_branch_successors_with_candidates(
+    Ok(solve_branch_successors_with_candidates_and_telemetry(
         transition,
         branch,
         current_state,
         constants,
         existential_assignments,
         None,
+        None,
         bounds,
         hooks,
-    )
+    )?
+    .successors)
 }
 
 /// Solve one normalized `LNext` branch with optional next-state candidates.
@@ -67,18 +87,54 @@ pub fn solve_branch_successors_with_candidates(
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
 ) -> TranspileResult<Vec<RuntimeValue>> {
+    Ok(solve_branch_successors_with_candidates_and_telemetry(
+        transition,
+        branch,
+        current_state,
+        constants,
+        existential_assignments,
+        next_state_candidates,
+        None,
+        bounds,
+        hooks,
+    )?
+    .successors)
+}
+
+/// Same as `solve_branch_successors_with_candidates`, but returns per-branch telemetry
+/// and optionally enforces a candidate-enumeration guardrail.
+pub fn solve_branch_successors_with_candidates_and_telemetry(
+    transition: &TransitionIr,
+    branch: &TransitionBranchIr,
+    current_state: &RuntimeValue,
+    constants: Option<&RuntimeValue>,
+    existential_assignments: &[ExistentialAssignment],
+    next_state_candidates: Option<&[RuntimeValue]>,
+    max_candidate_evaluations_per_state_branch: Option<usize>,
+    bounds: RuntimeCollectionBounds,
+    hooks: SolverHooks<'_>,
+) -> TranspileResult<BranchSolveResult> {
     if !branch_has_next_state_assignment(branch) {
         if let Some(candidates) = next_state_candidates {
-            return solve_branch_by_candidate_enumeration(
+            let (successors, candidate_evaluations) = solve_branch_by_candidate_enumeration(
                 transition,
                 branch,
                 current_state,
                 constants,
                 existential_assignments,
                 candidates,
+                max_candidate_evaluations_per_state_branch,
                 bounds,
                 hooks,
-            );
+            )?;
+            return Ok(BranchSolveResult {
+                successors,
+                telemetry: BranchSolveTelemetry {
+                    direct_assignment_branch_solves: 0,
+                    enumeration_fallback_branch_solves: 1,
+                    enumeration_candidate_evaluations: candidate_evaluations,
+                },
+            });
         }
         return Err(unsupported_solver(
             format!(
@@ -122,7 +178,14 @@ pub fn solve_branch_successors_with_candidates(
         }
     }
 
-    Ok(deduplicate_successors(successors))
+    Ok(BranchSolveResult {
+        successors: deduplicate_successors(successors),
+        telemetry: BranchSolveTelemetry {
+            direct_assignment_branch_solves: 1,
+            enumeration_fallback_branch_solves: 0,
+            enumeration_candidate_evaluations: 0,
+        },
+    })
 }
 
 fn solve_branch_by_candidate_enumeration(
@@ -132,9 +195,10 @@ fn solve_branch_by_candidate_enumeration(
     constants: Option<&RuntimeValue>,
     existential_assignments: &[ExistentialAssignment],
     next_state_candidates: &[RuntimeValue],
+    max_candidate_evaluations_per_state_branch: Option<usize>,
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
-) -> TranspileResult<Vec<RuntimeValue>> {
+) -> TranspileResult<(Vec<RuntimeValue>, usize)> {
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
     } else {
@@ -142,6 +206,7 @@ fn solve_branch_by_candidate_enumeration(
     };
 
     let mut successors = Vec::new();
+    let mut candidate_evaluations = 0usize;
     for assignment in assignments {
         if !assignment_compatible_with_branch(branch, &assignment)? {
             return Err(TranspileError::Config {
@@ -153,6 +218,20 @@ fn solve_branch_by_candidate_enumeration(
         }
 
         for candidate_next_state in next_state_candidates {
+            candidate_evaluations += 1;
+            if let Some(limit) = max_candidate_evaluations_per_state_branch {
+                if candidate_evaluations > limit {
+                    return Err(TranspileError::Config {
+                        message: format!(
+                            "Model-check candidate-enumeration guardrail exceeded for branch `{}`: \
+                             evaluated {} candidate next-states for a single explored state/branch \
+                             (limit = {}). Reduce candidate-state domains, inline direct `s_.field == ...` \
+                             constraints, or simplify predicate-only helper branches.",
+                            branch.label, candidate_evaluations, limit
+                        ),
+                    });
+                }
+            }
             let env = build_environment(
                 transition,
                 current_state,
@@ -174,7 +253,7 @@ fn solve_branch_by_candidate_enumeration(
         }
     }
 
-    Ok(deduplicate_successors(successors))
+    Ok((deduplicate_successors(successors), candidate_evaluations))
 }
 
 /// Solve all `LNext` branches for one current state and return deduplicated successors.
@@ -927,6 +1006,84 @@ mod tests {
         )
         .unwrap();
         assert_eq!(successors, vec![state(1, 0)]);
+    }
+
+    #[test]
+    fn test_solve_branch_successors_with_candidates_reports_enumeration_telemetry() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![BranchConstraintIr::Predicate {
+                expr: Expr::Call {
+                    func: Path::single("LHelper".to_string()),
+                    args: vec![Expr::Ident("s".to_string()), Expr::Ident("s_".to_string())],
+                },
+            }],
+        };
+        let candidate_next_states = vec![state(0, 0), state(1, 0)];
+        let call_hook = |func: &Path, args: &[RuntimeValue]| -> TranspileResult<RuntimeValue> {
+            if func.last() == Some("LHelper") {
+                let candidate_x = read_value_at_path(&args[1], &[String::from("x")])?;
+                return Ok(RuntimeValue::Bool(candidate_x == RuntimeValue::Int(1)));
+            }
+            Err(unsupported_solver(
+                "Unexpected helper call in solver test",
+                None,
+            ))
+        };
+        let hooks = SolverHooks {
+            call_evaluator: Some(&call_hook),
+            method_evaluator: None,
+        };
+
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidate_next_states),
+            None,
+            bounds(),
+            hooks,
+        )
+        .unwrap();
+
+        assert_eq!(result.successors, vec![state(1, 0)]);
+        assert_eq!(result.telemetry.direct_assignment_branch_solves, 0);
+        assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 1);
+        assert_eq!(result.telemetry.enumeration_candidate_evaluations, 2);
+    }
+
+    #[test]
+    fn test_solve_branch_successors_with_candidates_enforces_enumeration_guardrail() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![BranchConstraintIr::Predicate {
+                expr: Expr::Literal(crate::ast::Literal::Bool(true)),
+            }],
+        };
+        let candidate_next_states = vec![state(0, 0), state(1, 0)];
+
+        let err = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidate_next_states),
+            Some(1),
+            bounds(),
+            SolverHooks::default(),
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("candidate-enumeration guardrail exceeded"));
+        assert!(err.to_string().contains("branch_0"));
+        assert!(err.to_string().contains("limit = 1"));
     }
 
     #[test]

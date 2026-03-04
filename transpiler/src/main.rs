@@ -1920,7 +1920,16 @@ struct ModelCheckExecutionSummary {
     transitions: usize,
     depth: usize,
     elapsed_ms: u128,
+    enumeration: ModelCheckEnumerationSummary,
     liveness: Option<ModelCheckLivenessSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelCheckEnumerationSummary {
+    direct_assignment_branch_solves: usize,
+    enumeration_fallback_branch_solves: usize,
+    enumeration_candidate_evaluations: usize,
+    candidate_evaluation_guardrail_per_state_branch: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2623,9 +2632,11 @@ fn execute_model_check(
     };
     use verus_transpiler::modelcheck::por::infer_invisible_branch_pruning;
     use verus_transpiler::modelcheck::solver::{
-        solve_branch_successors_with_candidates, SolverHooks,
+        solve_branch_successors_with_candidates_and_telemetry, SolverHooks,
     };
     use verus_transpiler::modelcheck::value::RuntimeCollectionBounds;
+
+    const CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH: usize = 10_000;
 
     let started = Instant::now();
 
@@ -2655,6 +2666,13 @@ fn execute_model_check(
     let limits = ExplorationLimits::from(&model_config.search);
     let empty_successor_semantics =
         successor_semantics_to_solver_semantics(model_config.properties.successor_semantics);
+    let mut enumeration_summary = ModelCheckEnumerationSummary {
+        direct_assignment_branch_solves: 0,
+        enumeration_fallback_branch_solves: 0,
+        enumeration_candidate_evaluations: 0,
+        candidate_evaluation_guardrail_per_state_branch:
+            CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
+    };
 
     let state_ty = bundle
         .entrypoints
@@ -2744,19 +2762,27 @@ fn execute_model_check(
                             0,
                         )
                     };
-                let successors = solve_branch_successors_with_candidates(
+                let solved = solve_branch_successors_with_candidates_and_telemetry(
                     &transition,
                     branch,
                     state,
                     Some(&constants_value),
                     branch_assignments,
                     Some(&state_candidates),
+                    Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
                     bounds,
                     SolverHooks {
                         call_evaluator: Some(&call_evaluator),
                         method_evaluator: None,
                     },
                 )?;
+                enumeration_summary.direct_assignment_branch_solves +=
+                    solved.telemetry.direct_assignment_branch_solves;
+                enumeration_summary.enumeration_fallback_branch_solves +=
+                    solved.telemetry.enumeration_fallback_branch_solves;
+                enumeration_summary.enumeration_candidate_evaluations +=
+                    solved.telemetry.enumeration_candidate_evaluations;
+                let successors = solved.successors;
                 for successor in successors {
                     traced_successors.push(TracedSuccessor {
                         action_branch: branch.label.clone(),
@@ -2832,19 +2858,21 @@ fn execute_model_check(
                                 0,
                             )
                         };
-                    let successors = solve_branch_successors_with_candidates(
+                    let solved = solve_branch_successors_with_candidates_and_telemetry(
                         &transition,
                         branch,
                         state,
                         Some(&constants_value),
                         branch_assignments,
                         Some(&state_candidates),
+                        Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
                         bounds,
                         SolverHooks {
                             call_evaluator: Some(&call_evaluator),
                             method_evaluator: None,
                         },
                     )?;
+                    let successors = solved.successors;
                     for successor in successors {
                         traced_successors.push(TracedSuccessor {
                             action_branch: branch.label.clone(),
@@ -2941,6 +2969,7 @@ fn execute_model_check(
             .max()
             .unwrap_or(0),
         elapsed_ms: started.elapsed().as_millis(),
+        enumeration: enumeration_summary,
         liveness: liveness_summary,
     };
 
@@ -3185,6 +3214,10 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "pruned_by_por": execution.por_pruned_branches.len(),
                         "hash_compaction_collisions": execution.exploration.stats.hash_compaction_collisions,
                         "symmetry_collapses": execution.exploration.stats.symmetry_collapses,
+                        "direct_assignment_branch_solves": execution.summary.enumeration.direct_assignment_branch_solves,
+                        "enumeration_fallback_branch_solves": execution.summary.enumeration.enumeration_fallback_branch_solves,
+                        "enumeration_candidate_evaluations": execution.summary.enumeration.enumeration_candidate_evaluations,
+                        "candidate_evaluation_guardrail_per_state_branch": execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
                     },
                     "liveness": execution.summary.liveness.as_ref().map(|liveness| serde_json::json!({
                         "obligations": liveness.obligations,
@@ -3275,6 +3308,13 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 execution.por_pruned_branches.len(),
                 execution.exploration.stats.hash_compaction_collisions,
                 execution.exploration.stats.symmetry_collapses,
+            );
+            println!(
+                "  solver_enumeration: direct_assignment_branch_solves={}, enumeration_fallback_branch_solves={}, enumeration_candidate_evaluations={}, candidate_eval_guardrail_per_state_branch={}",
+                execution.summary.enumeration.direct_assignment_branch_solves,
+                execution.summary.enumeration.enumeration_fallback_branch_solves,
+                execution.summary.enumeration.enumeration_candidate_evaluations,
+                execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
             );
             if let Some(liveness) = &execution.summary.liveness {
                 println!(
@@ -5978,6 +6018,180 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
         assert!(!liveness.violation_found);
         assert_eq!(liveness.obligations, 1);
         assert!(liveness.skipped_reason.is_none());
+    }
+
+    #[test]
+    fn test_execute_model_check_reports_enumeration_fallback_telemetry() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 0 && s_.value == 1 && s_.value <= c.limit)
+        || (s.value == 1 && s_.value == 1 && s_.value <= c.limit)
+    }
+
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        LStep(s, s_, c)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(
+            execution.summary.enumeration.direct_assignment_branch_solves,
+            0
+        );
+        assert_eq!(
+            execution.summary.enumeration.enumeration_fallback_branch_solves,
+            2
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_candidate_evaluations,
+            4
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .candidate_evaluation_guardrail_per_state_branch,
+            10_000
+        );
+    }
+
+    #[test]
+    fn test_execute_model_check_candidate_enumeration_guardrail_triggers_clean_error() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 10001 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit
+    }
+
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        LStep(s, s_, c)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 10001
+
+[quantifiers.int]
+min = 0
+max = 10001
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let err = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap_err();
+
+        let message = err.to_string();
+        assert!(message.contains("candidate-enumeration guardrail exceeded"));
+        assert!(message.contains("branch `branch_0`"));
+        assert!(message.contains("limit = 10000"));
     }
 
     #[test]
