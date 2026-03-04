@@ -46,13 +46,14 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 - **Model-check performance work is incomplete** — reductions exist, but there is no checked-in before/after benchmark discipline for exact-mode optimizations, and predicate-only helper branches still risk expensive candidate-state enumeration.
 - **Phase 16.8 is not fully complete (reopened / partial)** — workspace artifact audit found missing `tla_test_workspace` outputs/folders (`transpiler_generated_verus_exec`, `llm_to_verus_spec`, `llm_to_verus_exec`, `community_to_verus_spec`, `community_to_verus_exec`), partial property/TLC coverage (`transpiler_generated_tla_with_properties` only covers 4 protocols), no checked-in TLC run logs under the workspace snapshot, and missing runtime validation (`30s`, `3 clients / 3 replicas`) for generated D2 exec outputs. See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
 **Next steps (priority order):**
-1. **Phase 33: Model checker hardening, protocol coverage, and performance** — this is now the top priority. Keep `docs/model_checker_status.md` current, close real evaluator/solver gaps, add checked-in source-first runs for as many consensus protocols as possible, and land measured exact-mode optimizations with evidence. See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority).
-2. **Phase 16.8 (reopened): Real-Protocol Cross-Direction + Model Checking Validation artifact completion** — close the audited gaps in `transpiler/tla_test_workspace/` (missing `*_verus_exec` / `*_to_verus_{spec,exec}` folders, incomplete `transpiler_generated_tla_with_properties` protocol coverage, missing checked-in TLC run evidence, and missing generated-D2 runtime checks with `30s` / `3 clients` / `3 replicas`). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
-3. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation. This remains useful, but it is now below model-checker work.
-4. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code` once higher-priority model-check work stops finding language gaps that change regeneration requirements.
-5. **Phase 20 cleanup** — finish the remaining auto-inference cleanup only after the model checker and artifact gaps above stop exposing new schema/config needs.
+1. **Phase 34: Raft Network Model and Complete Refinement Proof** — extend Raft spec with RSL-style network model (sentPackets + receive guards), then eliminate all 6 remaining assumes in the refinement proof. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
+2. **Phase 33: Model checker hardening, protocol coverage, and performance** — keep `docs/model_checker_status.md` current, close real evaluator/solver gaps, add checked-in source-first runs for as many consensus protocols as possible, and land measured exact-mode optimizations with evidence. See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority).
+3. **Phase 16.8 (reopened): Real-Protocol Cross-Direction + Model Checking Validation artifact completion** — close the audited gaps in `transpiler/tla_test_workspace/` (missing `*_verus_exec` / `*_to_verus_{spec,exec}` folders, incomplete `transpiler_generated_tla_with_properties` protocol coverage, missing checked-in TLC run evidence, and missing generated-D2 runtime checks with `30s` / `3 clients` / `3 replicas`). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
+4. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation. This remains useful, but it is now below model-checker work.
+5. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code` once higher-priority model-check work stops finding language gaps that change regeneration requirements.
+6. **Phase 20 cleanup** — finish the remaining auto-inference cleanup only after the model checker and artifact gaps above stop exposing new schema/config needs.
 
-**Active work**: 669 verified, 0 errors. **Phase 32 COMPLETE** (32.3.4-6 analyzed as spec-model gaps; 3 committed.rs assumes eliminated via seq-based helpers; prev_log consistency check added to LHandleAppendEntriesMsg per Raft §5.3; CommitIndexBounded eliminated via spec fix). Raft safety refinement proof with top-level refinement theorem. 6 assumes remain (5 invariants.rs + 1 committed.rs).
+**Active work**: 669 verified, 0 errors. **Phase 34** (Raft network model + complete refinement proof) and **Phase 33** (model checker hardening) are the top two priorities. Phase 32 COMPLETE with 6 assumes remaining — Phase 34 targets eliminating all 6 by extending the Raft spec with RSL-style sentPackets network model.
 
 ## Reference
 
@@ -86,7 +87,8 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 22. [Phase 28: Text-to-TLA+ Survey (Related Work and Evaluation)](#phase-28-text-to-tla-survey-related-work-and-evaluation)
 23. [Phase 29: Transpiler Support for Spec Helper Functions and Composite Action Generation](#phase-29-transpiler-support-for-spec-helper-functions-and-composite-action-generation)
 24. [Phase 32: Raft Safety Refinement Proof](#phase-32-raft-safety-refinement-proof)
-25. [Phase 33: Model Checker Hardening, Protocol Coverage, and Performance — TOP PRIORITY](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority)
+25. [Phase 33: Model Checker Hardening, Protocol Coverage, and Performance](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority)
+26. [Phase 34: Raft Network Model and Complete Refinement Proof — TOP PRIORITY](#phase-34-raft-network-model-and-complete-refinement-proof)
 
 ---
 
@@ -9708,3 +9710,221 @@ Rules for this phase (do not cut corners):
   - at least one previously-uncovered consensus protocol has a checked-in automated source-first run
   - optimization claims include before/after measurements
   - every protocol in the matrix has an explicit status instead of "not looked at"
+
+---
+
+## Phase 34: Raft Network Model and Complete Refinement Proof
+
+**Goal**: Eliminate all 6 remaining assumes in the Raft refinement proof (5 in invariants.rs, 1 in committed.rs) by extending the Raft spec with an RSL-style network model. This upgrades the Raft refinement from "partially trusted" to "fully machine-verified" (modulo IO trust boundary shared with RSL).
+
+**Context**: Phase 32 completed the refinement proof structure but left 6 assumes, all rooted in the single-server spec model lacking network-level message provenance. The RSL codebase already demonstrates the Verus patterns needed (`sentPackets`, `match_ios_recv`, `LPacket`, `LEnvironment_PerformIos`). Ongaro's TLA+ Raft proof provides the proof blueprint.
+
+**Dependency chain of the 6 assumes**:
+```
+              Network Model (sentPackets + receive guards)
+                         |
+               +---------+---------+
+               |                   |
+        VotersVotedFor (#2)   LogMatching (#3)
+        invariants.rs:565     invariants.rs:775
+               |                   |
+         +-----+-----+       +----+
+         |           |        |
+  ElectionSafety  LeaderCompleteness
+  invariants.rs:376  invariants.rs:827
+                      |
+               StateMachineSafety
+               invariants.rs:860
+                      |
+               CommittedLogPrefix
+               committed.rs:151
+```
+
+### 34.1 Extend Raft spec with network model
+
+Add message routing to `RaftDistributedState` and `RaftDistributedNext`, following RSL's `environment_s.rs` pattern.
+
+- [ ] **34.1.1**: Wrap `LRaftMessage` in `LRaftPacket` with `src: int` and `dst: int` fields. Keep `LRaftMessage` as the payload type. Place in `src/protocol/Raft/types.rs`.
+  ```rust
+  pub struct LRaftPacket {
+      pub src: int,
+      pub dst: int,
+      pub msg: LRaftMessage,
+  }
+  ```
+
+- [ ] **34.1.2**: Change `RaftDistributedState.network` from `Set<LRaftMessage>` to `Set<LRaftPacket>` (already exists as a dead field — activate it).
+
+- [ ] **34.1.3**: Update `RaftDistributedNext` to:
+  1. Accumulate `sent_packets` into `ds_.network`: `ds_.network =~= ds.network.union(sent_packets_as_set)`
+  2. Constrain received messages: message-handling actions (`LHandleMessage` dispatch) receive a packet from `ds.network` with `dst == server_id`
+  3. Non-message actions (LTimeout, LClientRequest, LSendAppendEntries, LTryAdvanceCommitIndex): `ds_.network =~= ds.network.union(new_packets)`
+
+- [ ] **34.1.4**: Update `sent_packets` in `raft.rs` spec actions to produce `Seq<LRaftPacket>` (with src/dst) instead of `Seq<LRaftMessage>`. Each sending action knows the sender (`server_id` from `LConstants.my_id`) and receiver.
+  - `LTimeout` (RequestVote): broadcast to all servers → packets with `src=my_id, dst=j` for each server `j`
+  - `LSendAppendEntries`: packets with `src=my_id, dst=j` for each follower `j`
+  - `LGrantVote`: single packet `src=my_id, dst=candidate_id`
+  - `LHandleVoteResponseMsg` / `LReceiveVoteAndBecomeLeader`: no new sends (vote responses already sent)
+  - `LHandleAppendEntriesMsg`: AppendResponse with `src=my_id, dst=leader`
+  - `LHandleAppendResponseMsg`: no new sends
+  - `LStepDown`: no sends
+  - `LTryAdvanceCommitIndex`: no sends
+
+- [ ] **34.1.5**: Update `RaftDistributedInit` to assert `ds.network == Set::<LRaftPacket>::empty()` (already present, just type change).
+
+- [ ] **34.1.6**: Verify existing proof files still compile after spec changes. Update `state_machine.rs`, `induction.rs`, `refinement.rs` as needed for the new `LRaftPacket` type. Existing proven lemmas should require only mechanical signature/type updates.
+
+### 34.2 Define message invariants
+
+Network-level invariants that constrain what messages can exist in `sentPackets`. These are the key enablers for eliminating the assumes.
+
+- [ ] **34.2.1**: Define `VoteResponseIntegrity(ds)` — every `VoteResponse{voter: v, term: t, granted: true}` packet in `ds.network` with `src == v` implies that server `v` has `has_voted == true` and `voted_for == candidate` and `current_term >= t` (or has moved to a later term). Formally:
+  ```
+  forall |p: LRaftPacket| ds.network.contains(p) && p.msg is VoteResponse && p.msg->granted ==>
+      let v = p.src;
+      0 <= v < ds.num_servers &&
+      (ds.server_states[v].current_term > p.msg->term ||
+       (ds.server_states[v].has_voted && ds.server_states[v].voted_for == p.dst
+        && ds.server_states[v].current_term >= p.msg->term))
+  ```
+
+- [ ] **34.2.2**: Define `AppendEntriesIntegrity(ds)` — every `AppendEntries{prev_index, prev_term, value, term, ...}` packet in `ds.network` with `src == leader` implies that at the time of sending, the leader's log was consistent with the message content. Since logs are append-only, this can be stated as a current-state invariant:
+  ```
+  forall |p: LRaftPacket| ds.network.contains(p) && p.msg is AppendEntries ==>
+      let leader = p.src;
+      0 <= leader < ds.num_servers &&
+      // Leader's log still contains the referenced entries (logs are append-only)
+      ds.server_states[leader].log.len() >= p.msg->prev_index + (if p.msg->has_entry { 1 } else { 0 }) &&
+      // prev_term matches leader's log at prev_index
+      (p.msg->prev_index > 0 ==> ds.server_states[leader].log[p.msg->prev_index - 1].term == p.msg->prev_term) &&
+      // The entry value matches leader's log
+      (p.msg->has_entry ==> ds.server_states[leader].log[p.msg->prev_index].value == p.msg->value)
+  ```
+
+- [ ] **34.2.3**: Define `LogAppendOnly(ds, ds_)` — auxiliary step invariant: logs only grow by appending (no truncation/overwrite). For leader: `LClientRequest` appends one entry. For follower: `LHandleAppendEntriesMsg` may append but the spec already has prev_log check. Formalize:
+  ```
+  forall |i: int| 0 <= i < ds.num_servers ==>
+      ds.server_states[i].log.len() <= ds_.server_states[i].log.len() &&
+      (forall |k: int| 0 <= k < ds.server_states[i].log.len() ==>
+          ds_.server_states[i].log[k] == ds.server_states[i].log[k])
+  ```
+  Note: The current Raft spec's `LHandleAppendEntriesMsg` overwrites at `prev_index`, which may violate append-only for followers receiving entries at a truncation point. Need to verify whether the spec models log truncation. If it does, `LogAppendOnly` holds only for leaders, and `AppendEntriesIntegrity` needs a weaker formulation using term-index pairs rather than exact log content.
+
+- [ ] **34.2.4**: Define `OneVotePerTerm(ds)` — each server votes at most once per term. This is already implicit in the `has_voted` guard but needs to be stated as an invariant on the network: at most one `VoteResponse{granted: true}` per `(voter, term)` pair in `ds.network`.
+
+- [ ] **34.2.5**: Add all message invariants to `RaftSafetyInvariant` conjunction. Place definitions in `invariants.rs` or a new `message_invariants.rs` file.
+
+### 34.3 Prove message invariants are inductive
+
+- [ ] **34.3.1**: Prove `VoteResponseIntegrity` inductive — case split on LNext actions:
+  - `LGrantVote`: sends VoteResponse with `voter=my_id`, sets `has_voted=true, voted_for=candidate`. New packet matches invariant. Existing packets: voter's state unchanged or term advanced.
+  - `LStepDown`: may advance term but `has_voted` is reset — need the weaker `current_term > p.msg->term` disjunct.
+  - `LHandleAppendEntriesMsg`: may step down (advance term) — same reasoning.
+  - All other actions: no new VoteResponse packets, voter state preserved or term advanced.
+
+- [ ] **34.3.2**: Prove `AppendEntriesIntegrity` inductive — case split:
+  - `LSendAppendEntries`: sends AE packet matching leader's current log. New packet satisfies invariant.
+  - `LClientRequest`: leader appends to own log — existing AE packets still valid because log is extended (append-only for leader).
+  - Other actions: no new AE packets. Leader's log may only grow.
+  - **Key subtlety**: if a server steps down and another becomes leader, old AE packets from the old leader must still satisfy the invariant. This works because logs are append-only: the old leader's log still contains the referenced entries.
+
+- [ ] **34.3.3**: Prove `LogAppendOnly` as a step property (not a state invariant — it relates ds to ds_). Case analysis on each LNext action showing log[0..old_len] is preserved.
+
+- [ ] **34.3.4**: Prove `OneVotePerTerm` inductive — `LGrantVote` only fires when `!has_voted`, so each `(voter, term)` pair produces at most one granted VoteResponse. Network monotonicity + `has_voted` guard.
+
+### 34.4 Eliminate VotersVotedForCandidate assume (#2)
+
+- [ ] **34.4.1**: Prove `VotersVotedForCandidate(ds_)` inductively using `VoteResponseIntegrity`:
+  - When server `i` adds voter `v` to `votes_granted` via `LReceiveVoteGranted`: the received VoteResponse packet has `src=v, granted=true, term=i.current_term`. By receive guard, packet is in `ds.network`. By `VoteResponseIntegrity`, `v` voted for `i` (or moved to later term — but term matching in the VoteResponse check ensures `v.current_term >= i.current_term`; combined with `OneVotePerTerm`, `v.voted_for == i`).
+  - Non-stepping servers: `votes_granted` unchanged, voter state preserved or term advanced.
+- [ ] **34.4.2**: Remove `assume(VotersVotedForCandidate(ds_))` at invariants.rs:565.
+
+### 34.5 Eliminate ElectionSafety assume (#1)
+
+- [ ] **34.5.1**: Prove `ElectionSafety(ds_)` using `VotersVotedForCandidate(ds_)` + quorum intersection:
+  - When `stepping` becomes Leader via `LReceiveVoteAndBecomeLeader` and `other` is already Leader at same term:
+  - `VotersVotedForCandidate` gives: each voter in `stepping.votes_granted` voted for `stepping`, each voter in `other.votes_granted` voted for `other`.
+  - `VotesGrantedAreServers` (already proved) gives: all voters are valid server IDs.
+  - `LeaderHasQuorum` (already proved) gives: `|votes_granted| >= quorum_size`.
+  - `lemma_quorum_intersection` (already in sets.rs) gives: the two voter sets overlap → some voter `w` voted for both → `w.voted_for == stepping && w.voted_for == other` → `stepping == other`.
+- [ ] **34.5.2**: Remove `assume(stepping == other)` at invariants.rs:376.
+
+### 34.6 Eliminate LogMatching assume (#3)
+
+This is the hardest step. Estimated ~300-500 LOC.
+
+- [ ] **34.6.1**: Prove `LogMatching(ds_)` inductive by case split on log-modifying actions:
+  - **LClientRequest** (leader appends entry at index `log.len()` with `term = current_term`):
+    - New entry: if another server `j` has an entry at same index with same term, then `j` received it from the same leader (by `ElectionSafety`, one leader per term). By `AppendEntriesIntegrity`, the AE packet content matches the leader's log. By induction hypothesis, the leader's log prefix matches `j`'s prefix.
+  - **LHandleAppendEntriesMsg** (follower appends/overwrites):
+    - The prev_log check (Phase 32 spec strengthening) ensures `log[prev_index-1].term == ae_prev_term`. By `AppendEntriesIntegrity`, the leader's log at `prev_index-1` has the same term. By induction hypothesis on the leader's log, all preceding entries match. The new entry has the same value/term as the leader's log at `prev_index`.
+  - Non-log-modifying actions: trivial (log unchanged → invariant preserved).
+
+- [ ] **34.6.2**: Handle log truncation carefully. If the Raft spec allows followers to overwrite divergent log entries (standard Raft behavior per §5.3), the proof must show that after overwrite, the follower's log is a prefix of the leader's log, which by `AppendEntriesIntegrity` + `ElectionSafety` implies LogMatching. Check whether the current spec models truncation or only appending.
+
+- [ ] **34.6.3**: Remove `assume(LogMatching(ds_))` at invariants.rs:775.
+
+### 34.7 Eliminate LeaderCompleteness assume (#4)
+
+- [ ] **34.7.1**: Prove `LeaderCompleteness(ds_)` inductive — the critical case is when a new leader is elected (`LReceiveVoteAndBecomeLeader`):
+  1. Entry `e` committed at index `k` in term `t` means a quorum `Q_c` of servers have `e` at index `k` (from `EntryCommittedAt` definition).
+  2. New leader's voter quorum `Q_v` satisfies `|Q_v| >= quorum_size`.
+  3. By `lemma_quorum_intersection`, `Q_c ∩ Q_v ≠ ∅` → some voter `w` has `e` at index `k`.
+  4. `w` granted vote to new leader, passing `log_up_to_date` check (via `VoteResponseIntegrity` + receive guard: RequestVote carries `last_log_index, last_log_term`; `w` checked these before voting).
+  5. By `log_up_to_date` semantics, new leader's log is at least as up-to-date as `w`'s.
+  6. By `LogMatching` (now proved), new leader has `e` at index `k`.
+  - Other actions: leaders don't remove entries (append-only), committed entries persist.
+
+- [ ] **34.7.2**: May need a supporting invariant `LeaderLogContainsCommitted(ds)` to strengthen the induction. Define if needed.
+
+- [ ] **34.7.3**: Remove `assume(LeaderCompleteness(ds_))` at invariants.rs:827.
+
+### 34.8 Eliminate StateMachineSafety assume (#5)
+
+- [ ] **34.8.1**: Prove `StateMachineSafety(ds_)` as a direct consequence of `LogMatching` + `LeaderCompleteness`:
+  - If entry `e1` is committed at index `k` (leader at term `t1` replicated it to a quorum) and entry `e2` is committed at index `k` (leader at term `t2` replicated it), then:
+  - By `LeaderCompleteness`, the term-`t2` leader has `e1` at index `k`.
+  - By `LogMatching`, entries at the same index with the same term agree.
+  - Therefore `e1 == e2`.
+- [ ] **34.8.2**: Remove `assume(StateMachineSafety(ds_))` at invariants.rs:860.
+
+### 34.9 Eliminate CommittedLogPrefix assume (#6)
+
+- [ ] **34.9.1**: In `lemma_committed_log_monotone` (committed.rs:151), replace `assume(forall |k| ... old_log[k] == new_log[k])` with a call to `StateMachineSafety`. The two `choose` witnesses for `GetCommittedLog` at ds and ds_ may be different servers, but `StateMachineSafety` guarantees they agree on all committed entries.
+- [ ] **34.9.2**: Remove the assume at committed.rs:151.
+
+### 34.10 Update exec layer (transpiler regeneration)
+
+- [ ] **34.10.1**: If `LRaftMessage` → `LRaftPacket` changes affect `types.rs`, update `types_transpile.toml` and regenerate `types_gen.rs` for Raft.
+- [ ] **34.10.2**: If `sent_packets` type changes from `Seq<LRaftMessage>` to `Seq<LRaftPacket>`, update `raft_transpile.toml` remappings and regenerate `raft_gen.rs`.
+- [ ] **34.10.3**: Update `host.rs` to construct `CRaftPacket` wrappers with src/dst from network client. Verify the exec layer still compiles and runs.
+- [ ] **34.10.4**: Run integration test: `./scripts/integration_test_cluster.sh raft` to confirm no runtime regression.
+
+### 34.11 Completion gate
+
+- [ ] All 6 assumes eliminated (0 assumes in Raft refinement proof)
+- [ ] Verus verification passes with 0 errors
+- [ ] No new `external_body` introduced (except `lemma_quorum_intersection` which already exists)
+- [ ] Raft benchmark still passes (`./scripts/integration_test_cluster.sh raft`)
+- [ ] Update Phase 32 status and "What doesn't work yet" section to reflect completion
+
+### 34.12 Estimated effort
+
+| Sub-phase | Estimated LOC | Difficulty |
+|-----------|--------------|------------|
+| 34.1 Spec changes (network model) | ~80 | Low |
+| 34.2 Message invariant definitions | ~60 | Low |
+| 34.3 Message invariant induction | ~200 | Medium |
+| 34.4 VotersVotedForCandidate (#2) | ~150 | Medium |
+| 34.5 ElectionSafety (#1) | ~100 | Medium |
+| 34.6 LogMatching (#3) | ~300-500 | Hard |
+| 34.7 LeaderCompleteness (#4) | ~200-300 | Hard |
+| 34.8 StateMachineSafety (#5) | ~20 | Easy |
+| 34.9 CommittedLogPrefix (#6) | ~5 | Trivial |
+| 34.10 Exec layer update | ~50 | Low |
+| **Total** | **~900-1300** | |
+
+**Key risks**:
+- LogMatching (34.6) is the hardest step — log truncation/overwrite semantics may require additional supporting invariants
+- Verus SMT timeouts on deep quantifier nesting (message invariants + quorum intersection + log index reasoning). May need trigger engineering and lemma decomposition similar to RSL Phase 31
+- `AppendEntriesIntegrity` formulation depends on whether the spec models log truncation — need to verify in 34.2.3
