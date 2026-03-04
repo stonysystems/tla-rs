@@ -137,3 +137,29 @@ Validation status:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_witness_from_votes_granted*' --rlimit 40`
 - Currently blocked by existing module-level quantifier-trigger inference error in
   `EntryTermLeaderWitness` (`src/protocol/Raft/refinement_proof/invariants.rs`, around line 207).
+
+## Update: 34.7.1.c complete (2026-03-04)
+
+Implemented overlap helper lemma:
+
+- `lemma_committed_vote_quorum_overlap_witness(ds, k, entry, candidate)`
+  in `src/protocol/Raft/refinement_proof/invariants.rs`.
+
+What it packages:
+
+- committed quorum witness from `EntryCommittedAt(ds, k, entry)`
+- vote quorum witness from `candidate.votes_granted` and quorum-size lower bound
+- subset-to-universe facts and finite-universe discharge
+- `lemma_quorum_intersection` application to derive overlap server `w`
+- overlap outputs:
+  - `w` is in candidate vote quorum
+  - `w` has committed entry `entry` at index `k`
+  - for `w != candidate`: explicit vote packet witness and voter term/voted_for
+    alignment via `lemma_vote_witness_from_votes_granted`
+
+Validation status:
+
+- Focused command attempted:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*committed_vote_quorum_overlap_witness*' --rlimit 40`
+- Currently blocked by existing module-level quantifier-trigger inference error in
+  `EntryTermLeaderWitness` (`src/protocol/Raft/refinement_proof/invariants.rs`, around line 207).

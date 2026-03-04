@@ -338,6 +338,142 @@ verus! {
         };
     }
 
+    /// Helper: combine committed quorum and vote quorum to produce an overlap
+    /// witness carrying both committed-entry and vote-side facts.
+    proof fn lemma_committed_vote_quorum_overlap_witness(
+        ds: RaftDistributedState,
+        k: int,
+        entry: LLogEntry,
+        candidate: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= candidate < ds.num_servers,
+            (ds.server_states[candidate].role is Candidate
+                || ds.server_states[candidate].role is Leader),
+            VotesGrantedAreServers(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            ds.server_states[candidate].votes_granted.len()
+                >= ds.server_constants[candidate].quorum_size,
+        ensures
+            exists |w: int| {
+                &&& 0 <= w < ds.num_servers
+                &&& ds.server_states[candidate].votes_granted.contains(w)
+                &&& ds.server_states[w].log.len() > k
+                &&& ds.server_states[w].log[k] == entry
+                &&& (w != candidate ==> (
+                        ds.server_states[w].current_term
+                            > ds.server_states[candidate].current_term
+                        || (ds.server_states[w].current_term
+                                == ds.server_states[candidate].current_term
+                            && ds.server_states[w].has_voted
+                            && ds.server_states[w].voted_for == candidate)
+                    ))
+                &&& (w != candidate ==> exists |p: LRaftPacket| {
+                        &&& ds.network.contains(p)
+                        &&& p.src == w
+                        &&& p.dst == candidate
+                        &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter }
+                        &&& granted
+                        &&& term == ds.server_states[candidate].current_term
+                        &&& msg_voter == w
+                    })
+            },
+    {
+        let n = ds.num_servers;
+        let quorum_size = ds.server_constants[candidate].quorum_size;
+        let universe = ds.server_constants[candidate].servers;
+        let commit_quorum = choose |q: Set<int>| {
+            &&& q.len() >= n / 2 + 1
+            &&& (forall |id: int| q.contains(id) ==> {
+                &&& 0 <= id < ds.num_servers
+                &&& ds.server_states[id].log.len() > k
+                &&& ds.server_states[id].log[k] == entry
+            })
+        };
+        let vote_quorum = ds.server_states[candidate].votes_granted;
+
+        assert(quorum_size == n / 2 + 1);
+        assert(commit_quorum.len() >= quorum_size);
+        assert(vote_quorum.len() >= quorum_size);
+        assert(commit_quorum.len() + vote_quorum.len() >= quorum_size + quorum_size);
+        assert(quorum_size + quorum_size > n);
+        assert(commit_quorum.len() + vote_quorum.len() > n);
+
+        assert(universe == Set::<int>::new(|j: int| 0 <= j < n));
+        assert(commit_quorum.subset_of(universe)) by {
+            assert forall |id: int| commit_quorum.contains(id) implies universe.contains(id) by {
+                assert(0 <= id < ds.num_servers);
+            };
+        };
+        assert(vote_quorum.subset_of(universe)) by {
+            assert forall |id: int| vote_quorum.contains(id) implies universe.contains(id) by {
+                assert(VotesGrantedAreServers(ds));
+            };
+        };
+
+        lemma_range_set_finite(n);
+        assert(universe.finite());
+
+        lemma_quorum_intersection(commit_quorum, vote_quorum, universe);
+        let w = choose |w: int| commit_quorum.contains(w) && vote_quorum.contains(w);
+        assert(0 <= w < ds.num_servers);
+        assert(ds.server_states[w].log.len() > k);
+        assert(ds.server_states[w].log[k] == entry);
+
+        if w != candidate {
+            lemma_vote_witness_from_votes_granted(ds, candidate, w);
+        }
+
+        assert(exists |wit: int| {
+            &&& 0 <= wit < ds.num_servers
+            &&& ds.server_states[candidate].votes_granted.contains(wit)
+            &&& ds.server_states[wit].log.len() > k
+            &&& ds.server_states[wit].log[k] == entry
+            &&& (wit != candidate ==> (
+                    ds.server_states[wit].current_term
+                        > ds.server_states[candidate].current_term
+                    || (ds.server_states[wit].current_term
+                            == ds.server_states[candidate].current_term
+                        && ds.server_states[wit].has_voted
+                        && ds.server_states[wit].voted_for == candidate)
+                ))
+            &&& (wit != candidate ==> exists |p: LRaftPacket| {
+                    &&& ds.network.contains(p)
+                    &&& p.src == wit
+                    &&& p.dst == candidate
+                    &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter }
+                    &&& granted
+                    &&& term == ds.server_states[candidate].current_term
+                    &&& msg_voter == wit
+                })
+        }) by {
+            assert(0 <= w < ds.num_servers);
+            assert(ds.server_states[candidate].votes_granted.contains(w));
+            assert(ds.server_states[w].log.len() > k);
+            assert(ds.server_states[w].log[k] == entry);
+            if w != candidate {
+                assert(ds.server_states[w].current_term
+                    > ds.server_states[candidate].current_term
+                    || (ds.server_states[w].current_term
+                        == ds.server_states[candidate].current_term
+                        && ds.server_states[w].has_voted
+                        && ds.server_states[w].voted_for == candidate));
+                assert(exists |p: LRaftPacket| {
+                    &&& ds.network.contains(p)
+                    &&& p.src == w
+                    &&& p.dst == candidate
+                    &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter }
+                    &&& granted
+                    &&& term == ds.server_states[candidate].current_term
+                    &&& msg_voter == w
+                });
+            }
+        };
+    }
+
     /// Helper: vote sets of two different servers (one becoming Leader, one
     /// already Leader at the same term) are completely disjoint.
     ///
