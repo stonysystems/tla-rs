@@ -88,6 +88,7 @@ If `--types` is omitted, the tool defaults to sibling `types.rs`.
 With `--json-report`, output includes:
 
 - `result` (`ok`, violation, or limit/timeout stop)
+- `stop_reason` (for example `FrontierExhausted`, `MaxStatesReached`, `TimeoutReached`)
 - `summary.states`
 - `summary.transitions`
 - `summary.depth`
@@ -167,6 +168,7 @@ Finite-domain expansion and runtime values currently cover:
   - Safety-only scope in Phase 22 MVP was the initial baseline; bounded liveness (`leads_to`) support is now available with the caveats below.
   - `properties.leads_to` is executable and reports violations via SCC/cycle analysis.
   - `properties.fairness.{weak,strong}` participates in liveness cycle filtering.
+  - `search.timeout_ms` is enforced during exploration; timeout preemption reports `result = timeout_reached` and `stop_reason = TimeoutReached`.
   - Liveness evaluation currently runs only on fully explored graphs (`stop_reason = FrontierExhausted`); otherwise report field `liveness.skipped_reason = "incomplete_exploration"`.
   - Fairness filtering is branch-label based over candidate SCCs and should be treated as a bounded-model diagnostic aid rather than a complete temporal proof procedure.
 - Current entrypoint assumptions:

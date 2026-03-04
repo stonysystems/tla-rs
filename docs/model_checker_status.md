@@ -13,6 +13,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - Build normalized branch IR from `LNext` (disjunction flattening, branch labels, branch-level existential extraction).
 - Construct initial states by evaluating `LInit` over finite candidate states and resolved constants.
 - Explore state space with BFS/DFS, dedup, invariants, deadlock checks, and counterexample traces with action labels + state diffs.
+- Enforce wall-clock exploration timeout via `search.timeout_ms` with concrete stop reason `TimeoutReached`.
 - Run bounded liveness checks for configured `leads_to` obligations on fully explored graphs, with branch-label weak/strong fairness filtering.
 - Emit JSON reports including search settings, reduction telemetry, stop reason, and violation payloads.
 
@@ -58,7 +59,6 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 
 - Liveness checks are only performed when exploration is complete (`stop_reason = FrontierExhausted`); otherwise `liveness.skipped_reason = "incomplete_exploration"`.
 - Fairness labels are validated for non-empty/duplicate format, but not currently rejected when they do not match any real branch label (typos can silently become ineffective constraints).
-- `search.timeout_ms` is parsed, validated, and reported, but there is currently no wall-clock timeout stop in the exploration engine.
 
 ## 3. Checked-in model-checking evidence (currently passing)
 
@@ -87,6 +87,15 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 ### 3.3 Differential source-first vs wrapper outcomes
 
 - `test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models` checks qualitative agreement for shared small models (TwoPhase, LeaderElection, PrimaryBackup, Paxos) against the TLC outcomes documented in `docs/conversion-testing-guide.md`.
+
+### 3.4 Timeout semantics coverage
+
+- `transpiler/src/modelcheck/explorer.rs`:
+  - `test_explore_state_space_bfs_stops_on_timeout`
+  - `test_explore_state_space_dfs_stops_on_timeout`
+- `transpiler/src/main.rs`:
+  - `test_model_check_command_timeout_override_changes_execution_behavior`
+  - `test_execute_model_check_marks_liveness_skipped_on_timeout`
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 

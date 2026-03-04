@@ -3,6 +3,7 @@ use crate::modelcheck::config::{SearchLimits, StateDedupMode};
 use crate::modelcheck::value::RuntimeValue;
 use std::collections::{BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
+use std::time::Instant;
 
 /// Traversal strategy for state-space exploration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -19,6 +20,7 @@ pub enum SearchMode {
 pub struct ExplorationLimits {
     pub max_depth: usize,
     pub max_states: usize,
+    pub timeout_ms: u64,
 }
 
 impl From<&SearchLimits> for ExplorationLimits {
@@ -26,6 +28,7 @@ impl From<&SearchLimits> for ExplorationLimits {
         Self {
             max_depth: value.max_depth,
             max_states: value.max_states,
+            timeout_ms: value.timeout_ms,
         }
     }
 }
@@ -44,6 +47,8 @@ pub enum ExplorationStopReason {
     FrontierExhausted,
     /// State bound reached before the frontier is fully explored.
     MaxStatesReached,
+    /// Wall-clock timeout reached before the frontier is fully explored.
+    TimeoutReached,
     /// A user-selected invariant evaluated to false on a reached state.
     InvariantViolated,
     /// Deadlock detected: a reached state (below depth bound) has no successors.
@@ -304,9 +309,27 @@ where
 
     stats.initial_states = frontier.len();
     stats.max_frontier_size = frontier.len();
+    let started = Instant::now();
     let mut explored = Vec::new();
     let mut parents = std::collections::BTreeMap::<String, TraceParent>::new();
-    while let Some(item) = pop_frontier(&mut frontier, mode) {
+    loop {
+        if timeout_reached(started, limits.timeout_ms) {
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::TimeoutReached,
+                visited.len(),
+                frontier.len(),
+                stats,
+                None,
+                None,
+                None,
+            ));
+        }
+
+        let Some(item) = pop_frontier(&mut frontier, mode) else {
+            break;
+        };
+
         explored.push(ExploredState {
             state: item.state.clone(),
             depth: item.depth,
@@ -330,11 +353,36 @@ where
             ));
         }
 
+        if timeout_reached(started, limits.timeout_ms) {
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::TimeoutReached,
+                visited.len(),
+                frontier.len(),
+                stats,
+                None,
+                None,
+                None,
+            ));
+        }
+
         if item.depth >= limits.max_depth {
             continue;
         }
 
         let successors = successor_fn(&item.state)?;
+        if timeout_reached(started, limits.timeout_ms) {
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::TimeoutReached,
+                visited.len(),
+                frontier.len(),
+                stats,
+                None,
+                None,
+                None,
+            ));
+        }
         if check_deadlock && successors.is_empty() {
             let counterexample = build_counterexample_trace(&item.key, &states_by_key, &parents);
             return Ok(finalize_result(
@@ -354,6 +402,18 @@ where
 
         let mut to_enqueue = Vec::new();
         for successor in successors {
+            if timeout_reached(started, limits.timeout_ms) {
+                return Ok(finalize_result(
+                    explored,
+                    ExplorationStopReason::TimeoutReached,
+                    visited.len(),
+                    frontier.len(),
+                    stats,
+                    None,
+                    None,
+                    None,
+                ));
+            }
             stats.successors_considered += 1;
             if visited.len() >= limits.max_states {
                 return Ok(finalize_result(
@@ -452,8 +512,26 @@ where
         max_frontier_size: frontier.len(),
         ..ExplorationStats::default()
     };
+    let started = Instant::now();
     let mut explored = Vec::new();
-    while let Some(item) = pop_frontier(&mut frontier, mode) {
+    loop {
+        if timeout_reached(started, limits.timeout_ms) {
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::TimeoutReached,
+                visited.len(),
+                frontier.len(),
+                stats,
+                None,
+                None,
+                None,
+            ));
+        }
+
+        let Some(item) = pop_frontier(&mut frontier, mode) else {
+            break;
+        };
+
         explored.push(ExploredState {
             state: item.state.clone(),
             depth: item.depth,
@@ -476,11 +554,36 @@ where
             ));
         }
 
+        if timeout_reached(started, limits.timeout_ms) {
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::TimeoutReached,
+                visited.len(),
+                frontier.len(),
+                stats,
+                None,
+                None,
+                None,
+            ));
+        }
+
         if item.depth >= limits.max_depth {
             continue;
         }
 
         let successors = successor_fn(&item.state)?;
+        if timeout_reached(started, limits.timeout_ms) {
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::TimeoutReached,
+                visited.len(),
+                frontier.len(),
+                stats,
+                None,
+                None,
+                None,
+            ));
+        }
         if check_deadlock && successors.is_empty() {
             return Ok(finalize_result(
                 explored,
@@ -498,6 +601,18 @@ where
         }
         let mut to_enqueue = Vec::new();
         for successor in successors {
+            if timeout_reached(started, limits.timeout_ms) {
+                return Ok(finalize_result(
+                    explored,
+                    ExplorationStopReason::TimeoutReached,
+                    visited.len(),
+                    frontier.len(),
+                    stats,
+                    None,
+                    None,
+                    None,
+                ));
+            }
             stats.successors_considered += 1;
             if visited.len() >= limits.max_states {
                 return Ok(finalize_result(
@@ -838,10 +953,20 @@ fn collect_named_field_diffs(
     }
 }
 
+fn timeout_reached(started: Instant, timeout_ms: u64) -> bool {
+    started.elapsed().as_millis() >= u128::from(timeout_ms)
+}
+
 fn validate_limits(limits: ExplorationLimits) -> TranspileResult<()> {
     if limits.max_states == 0 {
         return Err(TranspileError::Config {
             message: "Invalid model-check exploration limits: `max_states` must be > 0."
+                .to_string(),
+        });
+    }
+    if limits.timeout_ms == 0 {
+        return Err(TranspileError::Config {
+            message: "Invalid model-check exploration limits: `timeout_ms` must be > 0."
                 .to_string(),
         });
     }
@@ -879,6 +1004,7 @@ fn push_successors(
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use std::time::Duration;
 
     fn state(id: i128) -> RuntimeValue {
         RuntimeValue::struct_value("LState", vec![("id".to_string(), RuntimeValue::Int(id))])
@@ -899,6 +1025,14 @@ mod tests {
         result.explored.iter().map(|s| state_id(&s.state)).collect()
     }
 
+    fn limits(max_depth: usize, max_states: usize) -> ExplorationLimits {
+        ExplorationLimits {
+            max_depth,
+            max_states,
+            timeout_ms: 30_000,
+        }
+    }
+
     #[test]
     fn test_explore_state_space_bfs_order() {
         let graph = BTreeMap::from([
@@ -908,23 +1042,15 @@ mod tests {
             (3, vec![]),
             (4, vec![]),
         ]);
-        let result = explore_state_space(
-            &[state(0)],
-            SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
-            |s| {
-                let next = graph
-                    .get(&state_id(s))
-                    .unwrap()
-                    .iter()
-                    .map(|i| state(*i))
-                    .collect();
-                Ok(next)
-            },
-        )
+        let result = explore_state_space(&[state(0)], SearchMode::Bfs, limits(10, 20), |s| {
+            let next = graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| state(*i))
+                .collect();
+            Ok(next)
+        })
         .unwrap();
         assert_eq!(ids(&result), vec![0, 1, 2, 3, 4]);
         assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
@@ -939,23 +1065,15 @@ mod tests {
             (3, vec![]),
             (4, vec![]),
         ]);
-        let result = explore_state_space(
-            &[state(0)],
-            SearchMode::Dfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
-            |s| {
-                let next = graph
-                    .get(&state_id(s))
-                    .unwrap()
-                    .iter()
-                    .map(|i| state(*i))
-                    .collect();
-                Ok(next)
-            },
-        )
+        let result = explore_state_space(&[state(0)], SearchMode::Dfs, limits(10, 20), |s| {
+            let next = graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| state(*i))
+                .collect();
+            Ok(next)
+        })
         .unwrap();
         assert_eq!(ids(&result), vec![0, 1, 3, 2, 4]);
         assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
@@ -964,23 +1082,15 @@ mod tests {
     #[test]
     fn test_explore_state_space_deduplicates_cycles() {
         let graph = BTreeMap::from([(0, vec![1]), (1, vec![0, 2]), (2, vec![])]);
-        let result = explore_state_space(
-            &[state(0)],
-            SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
-            |s| {
-                let next = graph
-                    .get(&state_id(s))
-                    .unwrap()
-                    .iter()
-                    .map(|i| state(*i))
-                    .collect();
-                Ok(next)
-            },
-        )
+        let result = explore_state_space(&[state(0)], SearchMode::Bfs, limits(10, 20), |s| {
+            let next = graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| state(*i))
+                .collect();
+            Ok(next)
+        })
         .unwrap();
         assert_eq!(ids(&result), vec![0, 1, 2]);
     }
@@ -988,23 +1098,15 @@ mod tests {
     #[test]
     fn test_explore_state_space_respects_depth_bound() {
         let graph = BTreeMap::from([(0, vec![1]), (1, vec![2]), (2, vec![3]), (3, vec![])]);
-        let result = explore_state_space(
-            &[state(0)],
-            SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 1,
-                max_states: 20,
-            },
-            |s| {
-                let next = graph
-                    .get(&state_id(s))
-                    .unwrap()
-                    .iter()
-                    .map(|i| state(*i))
-                    .collect();
-                Ok(next)
-            },
-        )
+        let result = explore_state_space(&[state(0)], SearchMode::Bfs, limits(1, 20), |s| {
+            let next = graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| state(*i))
+                .collect();
+            Ok(next)
+        })
         .unwrap();
         assert_eq!(ids(&result), vec![0, 1]);
     }
@@ -1012,23 +1114,15 @@ mod tests {
     #[test]
     fn test_explore_state_space_stops_on_max_states() {
         let graph = BTreeMap::from([(0, vec![1, 2, 3]), (1, vec![]), (2, vec![]), (3, vec![])]);
-        let result = explore_state_space(
-            &[state(0)],
-            SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 2,
-            },
-            |s| {
-                let next = graph
-                    .get(&state_id(s))
-                    .unwrap()
-                    .iter()
-                    .map(|i| state(*i))
-                    .collect();
-                Ok(next)
-            },
-        )
+        let result = explore_state_space(&[state(0)], SearchMode::Bfs, limits(10, 2), |s| {
+            let next = graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| state(*i))
+                .collect();
+            Ok(next)
+        })
         .unwrap();
 
         assert_eq!(result.stop_reason, ExplorationStopReason::MaxStatesReached);
@@ -1037,39 +1131,83 @@ mod tests {
 
     #[test]
     fn test_explore_state_space_rejects_zero_max_states() {
+        let err = explore_state_space(&[state(0)], SearchMode::Bfs, limits(10, 0), |_| Ok(vec![]))
+            .unwrap_err();
+        assert!(err.to_string().contains("max_states"));
+    }
+
+    #[test]
+    fn test_explore_state_space_rejects_zero_timeout_ms() {
         let err = explore_state_space(
             &[state(0)],
             SearchMode::Bfs,
             ExplorationLimits {
                 max_depth: 10,
-                max_states: 0,
+                max_states: 1,
+                timeout_ms: 0,
             },
             |_| Ok(vec![]),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("max_states"));
+        assert!(err.to_string().contains("timeout_ms"));
     }
 
     #[test]
-    fn test_explore_state_space_reports_statistics() {
-        let graph = BTreeMap::from([(0, vec![1, 2]), (1, vec![2]), (2, vec![])]);
+    fn test_explore_state_space_bfs_stops_on_timeout() {
         let result = explore_state_space(
             &[state(0)],
             SearchMode::Bfs,
             ExplorationLimits {
                 max_depth: 10,
                 max_states: 20,
+                timeout_ms: 1,
             },
-            |s| {
-                let next = graph
-                    .get(&state_id(s))
-                    .unwrap()
-                    .iter()
-                    .map(|i| state(*i))
-                    .collect();
-                Ok(next)
+            |_| {
+                std::thread::sleep(Duration::from_millis(5));
+                Ok(vec![state(1)])
             },
         )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::TimeoutReached);
+        assert_eq!(ids(&result), vec![0]);
+        assert_eq!(result.stats.visited_states, 1);
+    }
+
+    #[test]
+    fn test_explore_state_space_dfs_stops_on_timeout() {
+        let result = explore_state_space(
+            &[state(0)],
+            SearchMode::Dfs,
+            ExplorationLimits {
+                max_depth: 10,
+                max_states: 20,
+                timeout_ms: 1,
+            },
+            |_| {
+                std::thread::sleep(Duration::from_millis(5));
+                Ok(vec![state(1)])
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::TimeoutReached);
+        assert_eq!(ids(&result), vec![0]);
+        assert_eq!(result.stats.visited_states, 1);
+    }
+
+    #[test]
+    fn test_explore_state_space_reports_statistics() {
+        let graph = BTreeMap::from([(0, vec![1, 2]), (1, vec![2]), (2, vec![])]);
+        let result = explore_state_space(&[state(0)], SearchMode::Bfs, limits(10, 20), |s| {
+            let next = graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| state(*i))
+                .collect();
+            Ok(next)
+        })
         .unwrap();
 
         assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
@@ -1086,23 +1224,15 @@ mod tests {
     #[test]
     fn test_explore_state_space_reports_statistics_on_max_states_stop() {
         let graph = BTreeMap::from([(0, vec![1, 2, 3]), (1, vec![]), (2, vec![]), (3, vec![])]);
-        let result = explore_state_space(
-            &[state(0)],
-            SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 2,
-            },
-            |s| {
-                let next = graph
-                    .get(&state_id(s))
-                    .unwrap()
-                    .iter()
-                    .map(|i| state(*i))
-                    .collect();
-                Ok(next)
-            },
-        )
+        let result = explore_state_space(&[state(0)], SearchMode::Bfs, limits(10, 2), |s| {
+            let next = graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| state(*i))
+                .collect();
+            Ok(next)
+        })
         .unwrap();
 
         assert_eq!(result.stop_reason, ExplorationStopReason::MaxStatesReached);
@@ -1122,10 +1252,7 @@ mod tests {
         let result = explore_state_space_with_invariants(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
+            limits(10, 20),
             |s| {
                 let next = graph
                     .get(&state_id(s))
@@ -1165,10 +1292,7 @@ mod tests {
         let result = explore_state_space_with_invariants(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
+            limits(10, 20),
             |_| {
                 successor_calls += 1;
                 Ok(vec![state(1)])
@@ -1194,10 +1318,7 @@ mod tests {
         let result = explore_state_space_with_invariants(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
+            limits(10, 20),
             |s| {
                 let next = graph
                     .get(&state_id(s))
@@ -1222,10 +1343,7 @@ mod tests {
         let result = explore_state_space_with_checks(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
+            limits(10, 20),
             true,
             |s| {
                 let next = graph
@@ -1258,10 +1376,7 @@ mod tests {
         let result = explore_state_space_with_checks(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
+            limits(10, 20),
             false,
             |s| {
                 let next = graph
@@ -1287,10 +1402,7 @@ mod tests {
         let result = explore_state_space_with_checks(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 1,
-                max_states: 20,
-            },
+            limits(1, 20),
             true,
             |s| {
                 let next = graph
@@ -1320,10 +1432,7 @@ mod tests {
         let result = explore_state_space_with_traces(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
+            limits(10, 20),
             false,
             |s| {
                 let next = graph
@@ -1366,10 +1475,7 @@ mod tests {
         let result = explore_state_space_with_traces(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 10,
-                max_states: 20,
-            },
+            limits(10, 20),
             true,
             |s| {
                 let next = graph
@@ -1439,10 +1545,7 @@ mod tests {
         let result = explore_state_space_with_traces_and_dedup(
             &[state(0)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 5,
-                max_states: 20,
-            },
+            limits(5, 20),
             StateDedupMode::HashCompaction64,
             &[],
             false,
@@ -1474,10 +1577,7 @@ mod tests {
         let result = explore_state_space_with_traces_and_dedup(
             &[state(1), state(2)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 3,
-                max_states: 20,
-            },
+            limits(3, 20),
             StateDedupMode::Canonical,
             &["id".to_string()],
             false,
@@ -1498,10 +1598,7 @@ mod tests {
         let result = explore_state_space_with_traces_and_dedup(
             &[state(1), state(2)],
             SearchMode::Bfs,
-            ExplorationLimits {
-                max_depth: 3,
-                max_states: 20,
-            },
+            limits(3, 20),
             StateDedupMode::Canonical,
             &["unknown_field".to_string()],
             false,

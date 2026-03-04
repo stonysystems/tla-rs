@@ -9713,16 +9713,16 @@ Rules for this phase (do not cut corners):
 
 ### 33.6 Code-review findings converted to no-corners tasks (2026-03-04)
 
-- [ ] **33.6.1 Enforce real wall-clock timeout semantics (currently missing)**
-  - [ ] Thread `search.timeout_ms` from model config into exploration limits/runtime checks (`transpiler/src/main.rs` → `transpiler/src/modelcheck/explorer.rs`).
-  - [ ] Add a concrete stop reason (`TimeoutReached`) and surface it in:
+- [x] **33.6.1 Enforce real wall-clock timeout semantics**
+  - [x] Thread `search.timeout_ms` from model config into exploration limits/runtime checks (`transpiler/src/main.rs` → `transpiler/src/modelcheck/explorer.rs`). `ExplorationLimits` now carries `timeout_ms` and both exploration loops enforce timeout preemption.
+  - [x] Add a concrete stop reason (`TimeoutReached`) and surface it in:
     - CLI text result mapping
     - JSON report `result` + `stop_reason`
     - liveness summary (`checked=false`, `skipped_reason="incomplete_exploration"` when timeout occurs before full graph closure)
-  - [ ] Add tests before/with implementation:
+  - [x] Add tests before/with implementation:
     - unit tests in `transpiler/src/modelcheck/explorer.rs` covering timeout preemption in BFS and DFS
     - command-level test in `transpiler/src/main.rs` verifying `--timeout/--timeout-ms` changes behavior, not just parsed config
-  - [ ] Update docs after code/test pass: `docs/model_checker_status.md` and `docs/model-checking-source-first.md`.
+  - [x] Update docs after code/test pass: `docs/model_checker_status.md` and `docs/model-checking-source-first.md`.
 
 - [ ] **33.6.2 Validate fairness labels against actual `LNext` branch labels**
   - [ ] Add preflight validation in model-check execution to reject unknown fairness labels (typos must fail fast instead of silently weakening assumptions).

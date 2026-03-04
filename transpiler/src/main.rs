@@ -1941,6 +1941,14 @@ struct ModelCheckExecution {
     leads_to_violation: Option<verus_transpiler::modelcheck::liveness::LeadsToViolation>,
 }
 
+struct ModelCheckCommandExecution {
+    bundle: verus_transpiler::spec_analyzer::ProtocolSourceBundle,
+    model_config: verus_transpiler::modelcheck::config::ModelConfig,
+    selected_search: CliSearchMode,
+    resolved_invariant_names: Vec<String>,
+    execution: ModelCheckExecution,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct AssumeSiteReport {
     module: String,
@@ -2076,7 +2084,10 @@ fn collect_assume_report(generated_dir: &Path) -> Result<AssumeReportOutput> {
 
     let files_with_assumes = files.iter().filter(|file| file.assume_count > 0).count();
     let assume_count = files.iter().map(|file| file.assume_count).sum::<usize>();
-    let assume_false_count = files.iter().map(|file| file.assume_false_count).sum::<usize>();
+    let assume_false_count = files
+        .iter()
+        .map(|file| file.assume_false_count)
+        .sum::<usize>();
     let non_fallback_assume_count = assume_count.saturating_sub(assume_false_count);
 
     Ok(AssumeReportOutput {
@@ -2099,6 +2110,7 @@ fn model_check_result_label(
     match reason {
         ExplorationStopReason::FrontierExhausted => "ok",
         ExplorationStopReason::MaxStatesReached => "max_states_reached",
+        ExplorationStopReason::TimeoutReached => "timeout_reached",
         ExplorationStopReason::InvariantViolated => "invariant_violated",
         ExplorationStopReason::DeadlockDetected => "deadlock_detected",
     }
@@ -2868,6 +2880,82 @@ fn execute_model_check(
     })
 }
 
+fn run_model_check_command(
+    input: &Path,
+    types: Option<&Path>,
+    init: &str,
+    next: &str,
+    invariant_overrides: &[String],
+    search: Option<CliSearchMode>,
+    max_depth: Option<usize>,
+    max_states: Option<usize>,
+    timeout_ms: Option<u64>,
+    model: &Path,
+) -> Result<ModelCheckCommandExecution> {
+    use verus_transpiler::modelcheck::config::{
+        apply_model_config_overrides, parse_model_config_file, ModelConfigOverrides,
+    };
+    use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+    use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+    let bundle = ingest_protocol_sources_with_types_and_entrypoints(input, types, init, next)
+        .map_err(|e| miette::miette!("{}", e))?;
+    let mut model_config = parse_model_config_file(model).map_err(|e| miette::miette!("{}", e))?;
+    let overrides = ModelConfigOverrides {
+        max_depth,
+        max_states,
+        timeout_ms,
+        ..ModelConfigOverrides::default()
+    };
+    apply_model_config_overrides(&mut model_config, &overrides)
+        .map_err(|e| miette::miette!("{}", e))?;
+
+    if !invariant_overrides.is_empty() {
+        let mut normalized = Vec::with_capacity(invariant_overrides.len());
+        let mut seen = HashSet::new();
+        for name in invariant_overrides {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                return Err(miette::miette!(
+                    "Invalid --invariant override: names cannot be empty."
+                ));
+            }
+            let owned = trimmed.to_string();
+            if !seen.insert(owned.clone()) {
+                return Err(miette::miette!(
+                    "Invalid --invariant override: duplicate invariant `{}`.",
+                    owned
+                ));
+            }
+            normalized.push(owned);
+        }
+        model_config.properties.invariants = normalized;
+    }
+
+    let selected_search = search.unwrap_or(CliSearchMode::Bfs);
+    let selected_invariants =
+        resolve_selected_invariants(&bundle.spec_functions, &model_config.properties.invariants)
+            .map_err(|e| miette::miette!("{}", e))?;
+    let resolved_invariant_names = selected_invariants
+        .iter()
+        .map(|invariant_fn| invariant_fn.name.clone())
+        .collect::<Vec<_>>();
+    let execution = execute_model_check(
+        &bundle,
+        &model_config,
+        selected_search,
+        &selected_invariants,
+    )?;
+
+    Ok(ModelCheckCommandExecution {
+        bundle,
+        model_config,
+        selected_search,
+        resolved_invariant_names,
+        execution,
+    })
+}
+
 /// Handle subcommands
 fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
     match command {
@@ -2963,13 +3051,6 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             json_report,
             model,
         } => {
-            use std::collections::HashSet;
-            use verus_transpiler::modelcheck::config::{
-                apply_model_config_overrides, parse_model_config_file, ModelConfigOverrides,
-            };
-            use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
-            use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
-
             if cli.verbose {
                 eprintln!("Loading protocol spec: {}", input.display());
                 if let Some(types_file) = types {
@@ -2979,60 +3060,23 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 eprintln!("Loading model config: {}", model.display());
             }
 
-            let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            let ModelCheckCommandExecution {
+                bundle,
+                model_config,
+                selected_search,
+                resolved_invariant_names,
+                execution,
+            } = run_model_check_command(
                 input.as_path(),
                 types.as_deref(),
                 init,
                 next,
-            )
-            .map_err(|e| miette::miette!("{}", e))?;
-            let mut model_config =
-                parse_model_config_file(model).map_err(|e| miette::miette!("{}", e))?;
-            let overrides = ModelConfigOverrides {
-                max_depth: *max_depth,
-                max_states: *max_states,
-                timeout_ms: *timeout_ms,
-                ..ModelConfigOverrides::default()
-            };
-            apply_model_config_overrides(&mut model_config, &overrides)
-                .map_err(|e| miette::miette!("{}", e))?;
-
-            if !invariant.is_empty() {
-                let mut normalized = Vec::with_capacity(invariant.len());
-                let mut seen = HashSet::new();
-                for name in invariant {
-                    let trimmed = name.trim();
-                    if trimmed.is_empty() {
-                        return Err(miette::miette!(
-                            "Invalid --invariant override: names cannot be empty."
-                        ));
-                    }
-                    let owned = trimmed.to_string();
-                    if !seen.insert(owned.clone()) {
-                        return Err(miette::miette!(
-                            "Invalid --invariant override: duplicate invariant `{}`.",
-                            owned
-                        ));
-                    }
-                    normalized.push(owned);
-                }
-                model_config.properties.invariants = normalized;
-            }
-            let selected_search = (*search).unwrap_or(CliSearchMode::Bfs);
-            let selected_invariants = resolve_selected_invariants(
-                &bundle.spec_functions,
-                &model_config.properties.invariants,
-            )
-            .map_err(|e| miette::miette!("{}", e))?;
-            let resolved_invariant_names: Vec<String> = selected_invariants
-                .iter()
-                .map(|invariant_fn| invariant_fn.name.clone())
-                .collect();
-            let execution = execute_model_check(
-                &bundle,
-                &model_config,
-                selected_search,
-                &selected_invariants,
+                invariant,
+                *search,
+                *max_depth,
+                *max_states,
+                *timeout_ms,
+                model.as_path(),
             )?;
 
             if *json_report {
@@ -3046,7 +3090,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     },
                     "invariants": {
                         "configured_count": model_config.properties.invariants.len(),
-                        "resolved_count": selected_invariants.len(),
+                        "resolved_count": resolved_invariant_names.len(),
                         "configured": model_config.properties.invariants,
                         "resolved": resolved_invariant_names,
                     },
@@ -4053,8 +4097,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             })?;
 
             // Load message variants and classification overrides from TOML config
-            let (message_variants, classification_overrides) = if let Some(cfg_path) = config_path
-            {
+            let (message_variants, classification_overrides) = if let Some(cfg_path) = config_path {
                 let file_config = FileConfig::from_file(cfg_path)
                     .map_err(|e| miette::miette!("Failed to load config: {}", e))?;
                 let variants = file_config
@@ -4071,7 +4114,10 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     .unwrap_or_default();
                 (variants, overrides)
             } else {
-                (vec![], verus_transpiler::ActionClassificationOverrides::default())
+                (
+                    vec![],
+                    verus_transpiler::ActionClassificationOverrides::default(),
+                )
             };
 
             // Classify actions as message_driven or timer_driven
@@ -4223,7 +4269,12 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
             vec_element_ensures: file_config.vec_element_ensures.clone(),
             set_fields: file_config.set_fields.iter().cloned().collect(),
             assume_postconditions: file_config.output.assume_postconditions,
-            proven_functions: file_config.output.proven_functions.iter().cloned().collect(),
+            proven_functions: file_config
+                .output
+                .proven_functions
+                .iter()
+                .cloned()
+                .collect(),
             use_verified_hashset_clone: file_config
                 .clone_strategy
                 .values()
@@ -4959,7 +5010,11 @@ pub exec fn CTwo() {
             "pub exec fn CAlpha() {\n    assume(false);\n}\n",
         )
         .unwrap();
-        std::fs::write(generated_dir.join("beta_gen.rs"), "pub exec fn CBeta() { }\n").unwrap();
+        std::fs::write(
+            generated_dir.join("beta_gen.rs"),
+            "pub exec fn CBeta() { }\n",
+        )
+        .unwrap();
         std::fs::write(generated_dir.join("notes.txt"), "assume(false);\n").unwrap();
 
         let report = collect_assume_report(generated_dir.as_path()).unwrap();
@@ -5208,6 +5263,140 @@ max = 1
         };
 
         handle_command(&command, &cli).unwrap();
+    }
+
+    #[test]
+    fn test_model_check_command_timeout_override_changes_execution_behavior() {
+        use verus_transpiler::modelcheck::explorer::ExplorationStopReason;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 8000 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s.value < c.limit && s_.value == s.value + 1
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 8000
+
+[quantifiers.int]
+min = 0
+max = 8000
+
+[search]
+max_depth = 8000
+max_states = 10000
+timeout_ms = 60000
+"#,
+        )
+        .unwrap();
+
+        let baseline = run_model_check_command(
+            proto_path.as_path(),
+            None,
+            "LInit",
+            "LNext",
+            &[],
+            None,
+            None,
+            None,
+            None,
+            model_path.as_path(),
+        )
+        .unwrap();
+        assert_eq!(baseline.execution.summary.result, "ok");
+
+        let cli_with_timeout = Cli::parse_from([
+            "verus-transpile",
+            "model-check",
+            "--input",
+            "demo.rs",
+            "--model",
+            "model.toml",
+            "--timeout",
+            "1",
+        ]);
+        let timeout_override = match cli_with_timeout.command {
+            Some(Commands::ModelCheck { timeout_ms, .. }) => timeout_ms,
+            _ => panic!("Expected ModelCheck command"),
+        };
+        let timeout_run = run_model_check_command(
+            proto_path.as_path(),
+            None,
+            "LInit",
+            "LNext",
+            &[],
+            None,
+            None,
+            None,
+            timeout_override,
+            model_path.as_path(),
+        )
+        .unwrap();
+        assert_eq!(timeout_run.execution.summary.result, "timeout_reached");
+        assert_eq!(
+            timeout_run.execution.exploration.stop_reason,
+            ExplorationStopReason::TimeoutReached
+        );
+
+        let cli_with_timeout_alias = Cli::parse_from([
+            "verus-transpile",
+            "model-check",
+            "--input",
+            "demo.rs",
+            "--model",
+            "model.toml",
+            "--timeout-ms",
+            "1",
+        ]);
+        let timeout_alias_override = match cli_with_timeout_alias.command {
+            Some(Commands::ModelCheck { timeout_ms, .. }) => timeout_ms,
+            _ => panic!("Expected ModelCheck command"),
+        };
+        let timeout_alias_run = run_model_check_command(
+            proto_path.as_path(),
+            None,
+            "LInit",
+            "LNext",
+            &[],
+            None,
+            None,
+            None,
+            timeout_alias_override,
+            model_path.as_path(),
+        )
+        .unwrap();
+        assert_eq!(
+            timeout_alias_run.execution.summary.result,
+            "timeout_reached"
+        );
+        assert_eq!(
+            timeout_alias_run.execution.exploration.stop_reason,
+            ExplorationStopReason::TimeoutReached
+        );
     }
 
     #[test]
@@ -5801,6 +5990,98 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
 
         assert_eq!(execution.summary.result, "max_states_reached");
         assert!(execution.leads_to_violation.is_none());
+        let liveness = execution
+            .summary
+            .liveness
+            .as_ref()
+            .expect("expected liveness summary");
+        assert!(!liveness.checked);
+        assert!(!liveness.violation_found);
+        assert_eq!(
+            liveness.skipped_reason.as_deref(),
+            Some("incomplete_exploration")
+        );
+    }
+
+    #[test]
+    fn test_execute_model_check_marks_liveness_skipped_on_timeout() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 2000 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s.value < c.limit && s_.value == s.value + 1
+    }
+
+    pub open spec fn LFrom(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 2000 }
+    pub open spec fn LTo(s: LState, c: LConstants) -> bool { s.value == c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 2000
+
+[quantifiers.int]
+min = 0
+max = 2000
+
+[search]
+max_depth = 2000
+max_states = 4000
+timeout_ms = 1
+
+[properties]
+leads_to = [{ from = "LFrom", to = "LTo" }]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "timeout_reached");
         let liveness = execution
             .summary
             .liveness
