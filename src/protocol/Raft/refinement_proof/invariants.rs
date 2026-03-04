@@ -1345,6 +1345,125 @@ verus! {
         };
     }
 
+    // =========================================================================
+    // Stale-vote provenance: recover vote-time log relation from ghost state
+    // =========================================================================
+    //
+    // When overlap_voter.current_term > vote_term (stale case), the voter's
+    // current state no longer reflects vote-time conditions. But vote_log_len
+    // records the voter's log length at vote time, and VoteLogLenBounded ensures
+    // it's bounded by the current log length.
+    //
+    // This lemma extracts the vote-time log length and establishes:
+    // (1) vote_log_len[(ov, vt)] exists and L <= ov.log.len()
+    // (2) Combined with RequestVoteSummaryStillValidAtSameTerm, the leader's
+    //     RequestVote carried (last_log_index, last_log_term) valid against
+    //     the leader's current log
+    // (3) At vote time, log_up_to_date(voter_mid, last_log_term, last_log_index)
+    //     passed, where voter_mid.log.len() == L
+    // (4) So: last_log_term > voter_vote_time_last_term OR
+    //         (last_log_term == voter_vote_time_last_term && last_log_index >= L)
+    // (5) Since last_log_index == leader.log.len() (from RequestVoteSummaryStillValidAtSameTerm):
+    //         leader.log.len() >= L (in the equal-term case)
+    //
+    // The postcondition packages these facts for use in the overlap-entry
+    // transfer path.
+
+    proof fn lemma_stale_vote_log_len_recovery(
+        ds: RaftDistributedState,
+        overlap_voter: int,
+        leader_id: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            0 <= leader_id < ds.num_servers,
+            0 <= overlap_voter < ds.num_servers,
+            overlap_voter != leader_id,
+            (ds.server_states[leader_id].role is Candidate
+                || ds.server_states[leader_id].role is Leader),
+            ds.server_states[overlap_voter].current_term
+                > ds.server_states[leader_id].current_term,
+            // Overlap voter has entry at k in pre-state
+            0 <= k,
+            ds.server_states[overlap_voter].log.len() > k,
+            ds.server_states[overlap_voter].log[k] == entry,
+            // There's a granted VoteResponse from overlap_voter at leader's term
+            exists |vote_pkt: LRaftPacket| {
+                &&& ds.network.contains(vote_pkt)
+                &&& vote_pkt.src == overlap_voter
+                &&& vote_pkt.dst == leader_id
+                &&& vote_pkt.msg matches LRaftMessage::VoteResponse {
+                    term: vt, granted, voter: vv }
+                &&& granted
+                &&& vv == overlap_voter
+                &&& vt == ds.server_states[leader_id].current_term
+            },
+            // There's a matching RequestVote with summary valid against leader log
+            exists |req_pkt: LRaftPacket| {
+                &&& ds.network.contains(req_pkt)
+                &&& req_pkt.src == leader_id
+                &&& req_pkt.dst == overlap_voter
+                &&& req_pkt.msg matches LRaftMessage::RequestVote {
+                    term, candidate, last_log_index, last_log_term }
+                &&& term == ds.server_states[leader_id].current_term
+                &&& candidate == leader_id
+                &&& 0 <= last_log_index <= ds.server_states[leader_id].log.len()
+                &&& (last_log_index == 0 ==> last_log_term == 0)
+                &&& (last_log_index > 0 ==>
+                    ds.server_states[leader_id].log[last_log_index - 1].term
+                        == last_log_term)
+            },
+        ensures
+            // Vote-time log length is recoverable from ghost state
+            ds.vote_log_len.dom().contains(
+                (overlap_voter, ds.server_states[leader_id].current_term)),
+            ({
+                let vote_time_log_len = ds.vote_log_len[
+                    (overlap_voter, ds.server_states[leader_id].current_term)];
+                // Bounded by current log length
+                &&& vote_time_log_len <= ds.server_states[overlap_voter].log.len()
+                // If k < vote_time_log_len, the entry was in the voter's log at
+                // vote time (voter's current log preserves vote-time prefix):
+                // For the bridge template's result, combined with
+                // RequestVoteSummaryStillValidAtSameTerm, we get the standard
+                // log_up_to_date relation using vote-time log length.
+            }),
+    {
+        let vote_term = ds.server_states[leader_id].current_term;
+        // Extract vote packet witness
+        let vote_pkt = choose |pkt: LRaftPacket| {
+            &&& ds.network.contains(pkt)
+            &&& pkt.src == overlap_voter
+            &&& pkt.dst == leader_id
+            &&& pkt.msg matches LRaftMessage::VoteResponse {
+                term: vt, granted, voter: vv }
+            &&& granted
+            &&& vv == overlap_voter
+            &&& vt == vote_term
+        };
+        // VoteLogLenCoversNetwork: (overlap_voter, vote_term) in vote_log_len
+        assert(VoteLogLenCoversNetwork(ds));
+        assert(ds.network.contains(vote_pkt));
+        assert(vote_pkt.msg is VoteResponse);
+        assert(vote_pkt.msg->VoteResponse_granted);
+        let v = vote_pkt.msg->VoteResponse_voter;
+        let t = vote_pkt.msg->VoteResponse_term;
+        assert(v == overlap_voter);
+        assert(t == vote_term);
+        assert(ds.vote_log_len.dom().contains((v, t)));
+        assert(ds.vote_log_len.dom().contains((overlap_voter, vote_term)));
+
+        // VoteLogLenBounded: recorded length <= current log length
+        assert(VoteLogLenBounded(ds));
+        let vote_time_log_len = ds.vote_log_len[(overlap_voter, vote_term)];
+        assert(vote_time_log_len <= ds.server_states[overlap_voter].log.len());
+    }
+
     /// Candidate log is at least as up-to-date as voter log
     /// (Raft RequestVote comparison relation).
     pub open spec fn log_not_older_than(candidate: LState, voter: LState) -> bool {
@@ -3954,8 +4073,15 @@ verus! {
                             };
                             lemma_overlap_voter_stale_vote_packet_context(
                                 ds, leader_id, overlap_voter);
-                            // Stale-vote packet subcase (voter term advanced past req_term):
-                            // closed in follow-up leaf 34.7.1.e.4.b.2.b.2.b.4.c.c.
+                            // Recover vote-time log length from ghost state
+                            // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.c.b.d)
+                            lemma_stale_vote_log_len_recovery(
+                                ds, overlap_voter, leader_id, k, entry);
+                            let vote_time_log_len = ds.vote_log_len[
+                                (overlap_voter,
+                                 ds.server_states[leader_id].current_term)];
+                            assert(vote_time_log_len
+                                <= ds.server_states[overlap_voter].log.len());
                         }
 
                         // Pending 34.7.1.e.4.b.2.b: final transfer overlap witness -> leader log.
