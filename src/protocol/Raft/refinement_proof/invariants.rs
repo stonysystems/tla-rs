@@ -474,6 +474,98 @@ verus! {
         };
     }
 
+    /// Candidate log is at least as up-to-date as voter log
+    /// (Raft RequestVote comparison relation).
+    pub open spec fn log_not_older_than(candidate: LState, voter: LState) -> bool {
+        let candidate_last_log_term: int = if candidate.log.len() == 0 {
+            0int
+        } else {
+            candidate.log[candidate.log.len() - 1].term
+        };
+        let voter_last_log_term: int = if voter.log.len() == 0 {
+            0int
+        } else {
+            voter.log[voter.log.len() - 1].term
+        };
+        candidate_last_log_term > voter_last_log_term
+            || (candidate_last_log_term == voter_last_log_term
+                && candidate.log.len() >= voter.log.len())
+    }
+
+    /// Bridge 1 (vote-grant context): if request-vote handling produced a
+    /// granted VoteResponse, then the request passed log_up_to_date.
+    proof fn lemma_granted_request_vote_implies_log_up_to_date(
+        s: LState, s_: LState, c: LConstants,
+        term: int, candidate_id: int, last_log_index: int, last_log_term: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LHandleRequestVoteMsg(
+                s, s_, c, term, candidate_id, last_log_index, last_log_term, sent_packets),
+            sent_packets == seq![LRaftMessage::VoteResponse {
+                term: term,
+                granted: true,
+                voter: c.my_id,
+            }],
+        ensures
+            log_up_to_date(step_down_if_needed(s, term), last_log_term, last_log_index),
+    {
+        let s_mid = step_down_if_needed(s, term);
+        assert(sent_packets.len() == 1);
+
+        if term < s_mid.current_term {
+            assert(sent_packets == Seq::<LRaftMessage>::empty());
+            assert(sent_packets.len() == 0);
+            assert(false);
+        } else if s_mid.has_voted && s_mid.voted_for != candidate_id {
+            assert(sent_packets == Seq::<LRaftMessage>::empty());
+            assert(sent_packets.len() == 0);
+            assert(false);
+        } else if !log_up_to_date(s_mid, last_log_term, last_log_index) {
+            assert(sent_packets == Seq::<LRaftMessage>::empty());
+            assert(sent_packets.len() == 0);
+            assert(false);
+        } else {
+            assert(log_up_to_date(s_mid, last_log_term, last_log_index));
+        }
+    }
+
+    /// Bridge 2 (leader-election use): if the request parameters are exactly
+    /// the candidate's last-log summary, then vote-grant context gives the
+    /// candidate-vs-voter log relation needed for leader completeness.
+    proof fn lemma_vote_grant_context_implies_log_relation(
+        voter_pre: LState, voter_post: LState, voter_constants: LConstants,
+        term: int, candidate_id: int,
+        candidate_last_log_index: int, candidate_last_log_term: int,
+        sent_packets: Seq<LRaftMessage>,
+        candidate_state: LState,
+    )
+        requires
+            LHandleRequestVoteMsg(
+                voter_pre, voter_post, voter_constants, term, candidate_id,
+                candidate_last_log_index, candidate_last_log_term, sent_packets),
+            sent_packets == seq![LRaftMessage::VoteResponse {
+                term: term,
+                granted: true,
+                voter: voter_constants.my_id,
+            }],
+            candidate_last_log_index == candidate_state.log.len(),
+            candidate_last_log_term == (if candidate_state.log.len() == 0 {
+                0int
+            } else {
+                candidate_state.log[candidate_state.log.len() - 1].term
+            }),
+        ensures
+            log_not_older_than(candidate_state, step_down_if_needed(voter_pre, term)),
+    {
+        let voter_mid = step_down_if_needed(voter_pre, term);
+        lemma_granted_request_vote_implies_log_up_to_date(
+            voter_pre, voter_post, voter_constants, term, candidate_id,
+            candidate_last_log_index, candidate_last_log_term, sent_packets);
+        assert(log_up_to_date(voter_mid, candidate_last_log_term, candidate_last_log_index));
+        assert(log_not_older_than(candidate_state, voter_mid));
+    }
+
     /// Helper: vote sets of two different servers (one becoming Leader, one
     /// already Leader at the same term) are completely disjoint.
     ///

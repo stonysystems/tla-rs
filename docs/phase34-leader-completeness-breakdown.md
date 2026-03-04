@@ -163,3 +163,35 @@ Validation status:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*committed_vote_quorum_overlap_witness*' --rlimit 40`
 - Currently blocked by existing module-level quantifier-trigger inference error in
   `EntryTermLeaderWitness` (`src/protocol/Raft/refinement_proof/invariants.rs`, around line 207).
+
+## Update: 34.7.1.d complete (2026-03-04)
+
+Implemented log-up-to-date bridge helpers in
+`src/protocol/Raft/refinement_proof/invariants.rs`:
+
+- `log_not_older_than(candidate, voter)`
+- `lemma_granted_request_vote_implies_log_up_to_date(...)`
+- `lemma_vote_grant_context_implies_log_relation(...)`
+
+Bridge semantics added:
+
+- From a granted `LHandleRequestVoteMsg` context (sent packet is
+  `VoteResponse{granted: true}`), derive the voter-side
+  `log_up_to_date(step_down_if_needed(voter_pre, term), req_last_term, req_last_index)`
+  fact.
+- When request parameters match the candidate's last-log summary
+  (`req_last_index == candidate.log.len()` and
+  `req_last_term == candidate_last_term`), derive
+  `log_not_older_than(candidate_state, voter_mid)`.
+
+This isolates the exact Step-D proof bridge needed by leader election
+reasoning. It is intentionally local to vote-grant context; the separate
+packet/history linkage from a `VoteResponse` witness back to specific
+`RequestVote` parameters remains part of later integration work.
+
+Validation status:
+
+- Focused command attempted:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_grant_context_implies_log_relation*' --rlimit 40`
+- Currently blocked by existing module-level quantifier-trigger inference error in
+  `EntryTermLeaderWitness` (`src/protocol/Raft/refinement_proof/invariants.rs`, around line 207).
