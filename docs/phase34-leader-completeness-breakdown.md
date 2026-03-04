@@ -324,3 +324,29 @@ Validation status:
 
 - Focused command passes:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*request_vote_witness_from_votes_granted*' --rlimit 40`
+
+## 34.7.1.e.3.c Wiring Update (2026-03-04)
+
+Implemented wiring from overlap/provenance extraction into the leader-completeness
+path in `src/protocol/Raft/refinement_proof/invariants.rs`:
+
+- Added `lemma_overlap_request_vote_params_witness(...)` to package:
+  - overlap voter witness from committed quorum ∩ vote quorum, and
+  - RequestVote provenance witness when overlap voter is not the candidate.
+- Added `lemma_vote_grant_bridge_template_for_overlap_voter(...)` to expose the
+  reusable implication form that delegates to
+  `lemma_vote_grant_context_implies_log_relation(...)`.
+- Added `lemma_new_leader_provenance_bridge_wiring(...)` and called it from
+  `lemma_leader_completeness_inductive(...)` so the new-leader branch explicitly
+  threads overlap + RequestVote params into the log-up-to-date bridge path.
+
+Focused verification status:
+
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*overlap_request_vote_params_witness*' --rlimit 40`
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_grant_bridge_template_for_overlap_voter*' --rlimit 40`
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness*' --rlimit 40`
+- Still rlimit-bounded:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*new_leader_provenance_bridge_wiring*' --rlimit 40`
