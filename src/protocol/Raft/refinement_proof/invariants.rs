@@ -4,7 +4,7 @@ use crate::protocol::Raft::refinement_proof::state_machine::*;
 use crate::protocol::Raft::refinement_proof::message_invariants::*;
 use crate::common::collections::sets::*;
 use vstd::prelude::*;
-use vstd::{map::*, seq::*, set::*};
+use vstd::{map::*, seq::*, set::*, set_lib::*};
 
 verus! {
 
@@ -113,19 +113,35 @@ verus! {
             ==> ds.server_states[i].votes_granted.contains(ds.server_constants[i].my_id)
     }
 
+    /// A leader/candidate has voted for itself (voted_for == i).
+    /// LTimeout sets voted_for = my_id when becoming Candidate. All transitions
+    /// that preserve Candidate/Leader role also preserve voted_for.
+    pub open spec fn CandidateOrLeaderVotedForSelfId(ds: RaftDistributedState) -> bool {
+        forall |i: int|
+            0 <= i < ds.num_servers
+            && (ds.server_states[i].role is Candidate || ds.server_states[i].role is Leader)
+            ==> ds.server_states[i].has_voted && ds.server_states[i].voted_for == i
+    }
+
     /// Network-level invariant: if server i is a Leader or Candidate with voter v
     /// in its votes_granted set, then voter v voted for i in i's current term.
     /// This links the local votes_granted set to the global voting state.
     ///
-    /// In the single-server spec model, votes are received without full validation
-    /// (LReceiveVoteGranted doesn't check vote_term == s.current_term).
-    /// This invariant captures the cross-server property that the full protocol
-    /// guarantees: every vote in votes_granted corresponds to a real vote.
+    /// Network-based vote tracking: if v is in candidate/leader i's votes_granted,
+    /// there must be a VoteResponse{granted: true, term: i.current_term} packet
+    /// in the network from v to i.
     ///
-    /// Formally: if i has voter v in votes_granted at term t, then in some prior
-    /// step, v called LGrantVote with candidate_id = i and candidate_term = t.
-    /// Since each server votes at most once per term (has_voted guard), and
-    /// votes_granted is reset on term change, each vote is unique to one candidate.
+    /// This formulation is inductive because:
+    /// 1. The network is monotonic (packets are never removed).
+    /// 2. When LHandleVoteResponseMsg adds voter v, the received VoteResponse
+    ///    packet is already in the network (with the right term, by the new
+    ///    term check guard).
+    /// 3. votes_granted is reset on term change (step_down or LTimeout), so
+    ///    old votes from previous terms don't carry over.
+    ///
+    /// Combined with OneVotePerTermInNetwork, this gives ElectionSafety:
+    /// two leaders at the same term would need overlapping quorums, but the
+    /// quorum intersection voter has a unique VoteResponse destination.
     pub open spec fn VotersVotedForCandidate(ds: RaftDistributedState) -> bool {
         forall |i: int, v: int|
             0 <= i < ds.num_servers
@@ -133,10 +149,13 @@ verus! {
             && v != i
             && (ds.server_states[i].role is Candidate || ds.server_states[i].role is Leader)
             && ds.server_states[i].votes_granted.contains(v)
-            ==> {
-                &&& ds.server_states[v].has_voted
-                &&& ds.server_states[v].voted_for == i
-                &&& ds.server_states[v].current_term >= ds.server_states[i].current_term
+            ==> exists |p: LRaftPacket| {
+                &&& ds.network.contains(p)
+                &&& p.dst == i
+                &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter }
+                &&& term == ds.server_states[i].current_term
+                &&& granted
+                &&& voter == v
             }
     }
 
@@ -171,6 +190,7 @@ verus! {
         &&& CommitIndexBounded(ds)
         &&& VotesGrantedAreServers(ds)
         &&& CandidateOrLeaderVotedForSelf(ds)
+        &&& CandidateOrLeaderVotedForSelfId(ds)
         &&& VotersVotedForCandidate(ds)
         // Message invariants (Phase 34.2)
         &&& SenderIntegrity(ds)
@@ -213,6 +233,115 @@ verus! {
     ///
     /// The only interesting case is when server_id becomes a new Leader.
 
+    /// Helper: extract voted_for == i from CandidateOrLeaderVotedForSelfId.
+    proof fn lemma_voted_for_self(ds: RaftDistributedState, i: int)
+        requires
+            RaftSafetyInvariant(ds),
+            0 <= i < ds.num_servers,
+            ds.server_states[i].role is Candidate || ds.server_states[i].role is Leader,
+        ensures
+            ds.server_states[i].voted_for == i,
+            ds.server_states[i].has_voted,
+    {
+        assert(CandidateOrLeaderVotedForSelfId(ds));
+    }
+
+    /// Helper: vote sets of two different servers (one becoming Leader, one
+    /// already Leader at the same term) are completely disjoint.
+    ///
+    /// Uses VotersVotedForCandidate (network packet witness), VoteResponseIntegrity
+    /// (voter state consistency), CandidateOrLeaderVotedForSelf (self-vote), and
+    /// OneVotePerTermInNetwork (unique vote per term) to show no element can be
+    /// in both vote sets without contradiction.
+    proof fn lemma_vote_sets_disjoint(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        stepping: int, other: int, term: int, n: int,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            VotersVotedForCandidate(ds_),
+            VotesGrantedAreServers(ds_),
+            VoteResponseIntegrity(ds_),
+            0 <= stepping < n,
+            0 <= other < n,
+            stepping != other,
+            n == ds.num_servers,
+            term == ds_.server_states[stepping].current_term,
+            term == ds.server_states[other].current_term,
+            ds.server_states[stepping].role is Candidate,
+            ds_.server_states[stepping].role is Leader,
+            ds.server_states[other].role is Leader,
+            ds_.server_states[other] == ds.server_states[other],
+        ensures
+            ds.server_states[other].votes_granted.disjoint(
+                ds_.server_states[stepping].votes_granted),
+    {
+        let other_votes = ds.server_states[other].votes_granted;
+        let stepping_votes = ds_.server_states[stepping].votes_granted;
+
+        // Pre-establish voted_for for key servers
+        lemma_voted_for_self(ds, stepping);
+        lemma_voted_for_self(ds, other);
+
+        assert forall |x: int|
+            other_votes.contains(x) implies !stepping_votes.contains(x)
+        by {
+            if other_votes.contains(x) && stepping_votes.contains(x) {
+                assert(0 <= x < n) by {
+                    assert(VotesGrantedAreServers(ds));
+                };
+
+                if x == stepping {
+                    // stepping ∈ other.votes_granted.
+                    // VotersVotedForCandidate(ds) for (other, stepping):
+                    // ∃ VoteResponse{voter=stepping, term=t, dst=other} in ds.network.
+                    // VoteResponseIntegrity(ds): stepping.voted_for == other.
+                    // But voted_for == stepping (pre-established). So other == stepping.
+                } else if x == other {
+                    // other ∈ stepping.votes_granted (ds_).
+                    // VotersVotedForCandidate(ds_) for (stepping, other):
+                    // ∃ VoteResponse{voter=other, term=t, dst=stepping} in ds_.network.
+                    // VoteResponseIntegrity(ds_): other.voted_for == stepping.
+                    // But voted_for == other (pre-established). So stepping == other.
+                } else {
+                    // x ≠ stepping, x ≠ other.
+                    // VotersVotedForCandidate(ds) for (other, x):
+                    //   ∃ p1 in ds.network with VoteResponse{voter=x, term=t, dst=other}
+                    // VotersVotedForCandidate(ds_) for (stepping, x):
+                    //   ∃ p2 in ds_.network with VoteResponse{voter=x, term=t, dst=stepping}
+                    // p1 is in ds.network ⊆ ds_.network (network monotonic).
+                    // Both in ds_.network. OneVotePerTermInNetwork(ds_):
+                    //   same voter x, same term t → p1.dst == p2.dst → other == stepping.
+                    //   Contradiction.
+                    assert(VotersVotedForCandidate(ds));
+                    assert(VotersVotedForCandidate(ds_));
+                    assert(OneVotePerTermInNetwork(ds_));
+                    // Witness the packets
+                    let p1 = choose |p: LRaftPacket| {
+                        &&& ds.network.contains(p)
+                        &&& p.dst == other
+                        &&& p.msg matches LRaftMessage::VoteResponse { term: pt, granted: pg, voter: pv }
+                        &&& pt == ds.server_states[other].current_term
+                        &&& pg
+                        &&& pv == x
+                    };
+                    let p2 = choose |p: LRaftPacket| {
+                        &&& ds_.network.contains(p)
+                        &&& p.dst == stepping
+                        &&& p.msg matches LRaftMessage::VoteResponse { term: pt, granted: pg, voter: pv }
+                        &&& pt == ds_.server_states[stepping].current_term
+                        &&& pg
+                        &&& pv == x
+                    };
+                    // p1 is in ds_.network (monotonic)
+                    assert(ds_.network.contains(p1));
+                    assert(ds_.network.contains(p2));
+                }
+            }
+        }
+    }
+
     /// Main induction lemma for Election Safety:
     /// If the safety invariant holds in state ds, and ds transitions to ds_
     /// via RaftDistributedNext, then ElectionSafety is preserved.
@@ -232,6 +361,8 @@ verus! {
         ensures
             ElectionSafety(ds_)
     {
+        broadcast use vstd::set_lib::group_set_properties;
+
         // Bridge to legacy to get exists |server_id| LNext(...) && frame
         lemma_distributed_next_implies_legacy(ds, ds_);
         // Unpack RaftDistributedNext to get the stepping server
@@ -328,63 +459,75 @@ verus! {
                         assert(ds.server_states[other].role is Leader);
                         assert(ds.server_states[stepping].current_term == ds.server_states[other].current_term);
                     } else {
-                        // Case (b): stepping server became Leader (was Candidate).
-                        // Use quorum intersection to derive contradiction.
+                        // Case (b): stepping was Candidate, became Leader.
+                        // Derive contradiction: no other server is Leader at same term.
+
                         let term = ds_.server_states[stepping].current_term;
-
-                        // other is Leader in ds (unchanged) with term t
-                        assert(ds.server_states[other].role is Leader);
-                        assert(ds.server_states[other].current_term == term);
-
-                        // LeaderHasQuorum: other has a quorum of votes
                         let other_votes = ds.server_states[other].votes_granted;
-                        let quorum_size = ds.server_constants[other].quorum_size;
-                        assert(LeaderHasQuorum(ds));
-                        assert(other_votes.len() >= quorum_size);
-
-                        // stepping became Leader, so its new votes_granted has quorum size
-                        // s_.votes_granted comes from LHandleVoteResponseMsg →
-                        // LReceiveVoteAndBecomeLeader, which requires:
-                        //   s_mid.votes_granted.insert(voter).len() >= quorum_size
-                        // where s_mid = step_down_if_needed(s, term).
-                        // Since stepping was Candidate and is now Leader, step_down didn't
-                        // happen (otherwise stepping would be Follower). So s_mid == s.
                         let stepping_votes = ds_.server_states[stepping].votes_granted;
-                        // stepping_votes has quorum size (guard in LHandleVoteResponseMsg)
-                        assert(LeaderHasQuorum(ds_) || ds_.server_states[stepping].role is Leader);
+                        let n = ds.num_servers;
+                        let quorum_size = ds.server_constants[other].quorum_size;
 
-                        // Both vote sets are subsets of the universe {0..N}
+                        // Stepping went from non-Leader to Leader via LNext.
+                        lemma_lnext_non_leader_to_leader_was_candidate(
+                            ds.server_states[stepping],
+                            ds_.server_states[stepping],
+                            ds.server_constants[stepping]);
+                        assert(ds.server_states[stepping].role is Candidate);
+
+                        // Establish ds_ components needed
+                        lemma_voters_voted_for_candidate_inductive(ds, ds_);
+                        lemma_votes_granted_are_servers_inductive(ds, ds_);
+                        lemma_vote_response_integrity_inductive(ds, ds_);
+
+                        // Both vote sets are subsets of c.servers
                         let universe = ds.server_constants[other].servers;
-                        assert(WellFormedRaftDistributed(ds));
+                        assert(universe =~= Set::new(|j: int| 0 <= j < n));
 
-                        // Construct the subset relationships:
-                        // other_votes ⊆ universe (VotesGrantedAreServers)
-                        assert(VotesGrantedAreServers(ds));
+                        // Show vote sets ⊆ universe
+                        assert(other_votes.subset_of(universe)) by {
+                            assert forall |v: int| other_votes.contains(v)
+                            implies universe.contains(v) by {
+                                assert(VotesGrantedAreServers(ds));
+                            }
+                        };
+                        assert(stepping_votes.subset_of(universe)) by {
+                            assert forall |v: int| stepping_votes.contains(v)
+                            implies universe.contains(v) by {
+                                assert(VotesGrantedAreServers(ds_));
+                            }
+                        };
 
-                        // Apply quorum intersection: two quorums in a universe of N
-                        // servers, each of size ≥ N/2+1, must share at least one member.
-                        // quorum_size = N/2+1, so |other_votes| + |stepping_votes| ≥ N+2 > N.
-                        //
-                        // We need both sets to be subsets of `universe` and
-                        // |A| + |B| > |universe|. This requires knowing:
-                        // 1. other_votes ⊆ universe (from VotesGrantedAreServers)
-                        // 2. stepping_votes ⊆ universe (from VotesGrantedAreServers for ds_)
-                        // 3. |other_votes| >= N/2+1 (from LeaderHasQuorum)
-                        // 4. |stepping_votes| >= N/2+1 (from the quorum guard)
-                        //
-                        // With the intersection element w:
-                        // - VotersVotedForCandidate(ds) for (other, w): w.voted_for == other
-                        // - VotersVotedForCandidate(ds) for (stepping, w): w.voted_for == stepping
-                        //   (only if w was in stepping's pre-state votes; the newly added voter
-                        //    requires the network invariant VotersVotedForCandidate(ds_))
-                        // - These give other == stepping, contradiction.
-                        //
-                        // The gap: proving stepping_votes ⊆ universe requires
-                        // VotesGrantedAreServers(ds_), and proving w.voted_for == stepping
-                        // for the newly added voter requires VotersVotedForCandidate(ds_).
-                        // Both are network-level invariants assumed elsewhere.
-                        // We consolidate the assumption here.
-                        assume(stepping == other);
+                        // Universe is finite with len == N
+                        lemma_range_set_finite(n);
+
+                        // Vote sets are finite (subsets of finite set)
+                        lemma_len_subset(other_votes, universe);
+                        lemma_len_subset(stepping_votes, universe);
+
+                        // Both have quorum-sized vote sets
+                        assert(other_votes.len() >= quorum_size);
+                        assert(stepping_votes.len() >= quorum_size);
+                        assert(quorum_size == n / 2 + 1);
+
+                        // Key claim: the vote sets are completely disjoint.
+                        // Proved by calling helper that avoids deep nesting.
+                        lemma_vote_sets_disjoint(
+                            ds, ds_, stepping, other, term, n);
+                        assert(other_votes.disjoint(stepping_votes));
+
+                        // Disjoint subsets: |A ∪ B| = |A| + |B|
+                        // (broadcast use group_set_properties at top of fn)
+                        // |A ∪ B| ≤ |universe|
+                        assert((other_votes + stepping_votes).subset_of(universe)) by {
+                            assert forall |v: int| (other_votes + stepping_votes).contains(v)
+                            implies universe.contains(v) by {}
+                        };
+                        lemma_len_subset(other_votes + stepping_votes, universe);
+
+                        // Contradiction: |A| + |B| ≥ 2*quorum_size > N ≥ |A ∪ B| = |A| + |B|
+                        assert(other_votes.len() + stepping_votes.len()
+                               > universe.len());
                     }
                 }
             }
@@ -545,22 +688,80 @@ verus! {
     }
 
     // =========================================================================
+    // Supporting invariant induction: CandidateOrLeaderVotedForSelfId
+    // =========================================================================
+
+    /// Helper: if LNext produces a Candidate or Leader in s_, then
+    /// s_.has_voted && s_.voted_for == c.my_id, given that the same holds
+    /// for s if s was Candidate or Leader.
+    proof fn lemma_lnext_voted_for_id_preserved(s: LState, s_: LState, c: LConstants)
+        requires
+            LNext(s, s_, c),
+            (s.role is Candidate || s.role is Leader) ==>
+                (s.has_voted && s.voted_for == c.my_id),
+        ensures
+            (s_.role is Candidate || s_.role is Leader) ==>
+                (s_.has_voted && s_.voted_for == c.my_id),
+    {
+        // Verus case-splits on LNext branches.
+        // LTimeout: s_ is Candidate, voted_for = c.my_id, has_voted = true.
+        // LReceiveVoteGranted/LReceiveVoteAndBecomeLeader:
+        //   s was Candidate, so s.has_voted && s.voted_for == c.my_id.
+        //   s_.voted_for = s.voted_for, s_.has_voted = s.has_voted.
+        // Leader-preserving actions: s_.voted_for == s.voted_for, s_.has_voted == s.has_voted.
+        // Step-down/follower actions: s_ is Follower → conclusion vacuous.
+    }
+
+    pub proof fn lemma_candidate_or_leader_voted_for_self_id_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            CandidateOrLeaderVotedForSelfId(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |server_id: int| {
+            &&& 0 <= server_id < ds.num_servers
+            &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        // Use helper lemma for the stepping server
+        assert(CandidateOrLeaderVotedForSelfId(ds));
+        lemma_lnext_voted_for_id_preserved(s, s_, c);
+
+        assert forall |i: int|
+            0 <= i < ds_.num_servers
+            && (ds_.server_states[i].role is Candidate || ds_.server_states[i].role is Leader)
+        implies ds_.server_states[i].has_voted && ds_.server_states[i].voted_for == i by {
+            if i != server_id {
+                assert(ds_.server_states[i] == ds.server_states[i]);
+            } else {
+                // lemma_lnext_voted_for_id_preserved gives voted_for == c.my_id
+                // WellFormedRaftDistributed ensures c.my_id == server_id == i
+                assert(WellFormedRaftDistributed(ds));
+            }
+        }
+    }
+
+    // =========================================================================
     // Supporting invariant induction: VotersVotedForCandidate
     // =========================================================================
 
-    /// This is the most complex supporting invariant. It requires reasoning
-    /// about how votes propagate through the network.
-    ///
-    /// The key insight: when server_id receives a VoteResponse from voter v,
-    /// the protocol guarantees that v actually voted for server_id. This is
-    /// because:
-    /// 1. v sent the VoteResponse after calling LGrantVote with candidate_id = server_id
-    /// 2. LGrantVote sets has_voted = true and voted_for = candidate_id
-    /// 3. has_voted prevents re-voting in the same term
-    ///
-    /// However, since our distributed model doesn't track message provenance
-    /// (server_id just receives a VoteResponse with voter=v, no proof it
-    /// actually came from v), this invariant requires a network-level assume.
+    /// Network-based VotersVotedForCandidate is inductive because:
+    /// - Network is monotonic (packets never removed)
+    /// - When a vote is added via LHandleVoteResponseMsg, the received
+    ///   VoteResponse packet is already in the network with matching term
+    ///   (ensured by the term check guard: term == s.current_term)
+    /// - votes_granted is reset on term change (step_down/LTimeout)
     pub proof fn lemma_voters_voted_for_candidate_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -570,12 +771,43 @@ verus! {
         ensures
             VotersVotedForCandidate(ds_)
     {
-        // This invariant connects cross-server state (voter v's voted_for
-        // matches candidate i's identity) and requires network-level reasoning
-        // that the single-server spec model cannot directly verify.
-        // We assume it here, following the same pattern as RSL's IO trust
-        // boundary assumes.
-        assume(VotersVotedForCandidate(ds_));
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |i: int, v: int|
+            0 <= i < ds_.num_servers
+            && 0 <= v < ds_.num_servers
+            && v != i
+            && (ds_.server_states[i].role is Candidate || ds_.server_states[i].role is Leader)
+            && ds_.server_states[i].votes_granted.contains(v)
+        implies exists |p: LRaftPacket| {
+            &&& ds_.network.contains(p)
+            &&& p.dst == i
+            &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter }
+            &&& term == ds_.server_states[i].current_term
+            &&& granted
+            &&& voter == v
+        } by {
+            if i != server_id {
+                // i didn't step: state unchanged from ds
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                // VotersVotedForCandidate(ds) gives us a packet p in ds.network
+                // ds.network ⊆ ds_.network (monotonic), so p in ds_.network
+            }
+            // For i == server_id: the stepping server
+            // Key cases:
+            // 1. step_down/LTimeout: votes_granted reset, only contains self → v != i vacuous
+            // 2. LHandleVoteResponseMsg with term == current_term: the received
+            //    VoteResponse packet is in ds.network (and thus ds_.network)
+            // 3. Other actions: votes_granted unchanged → use ds invariant
+        }
     }
 
     // =========================================================================
@@ -959,6 +1191,51 @@ verus! {
     }
 
     // =========================================================================
+    // Helper: LNext non-Leader to Leader implies Candidate
+    // =========================================================================
+
+    /// If LNext produces a Leader from a non-Leader, the pre-state was Candidate.
+    proof fn lemma_lnext_non_leader_to_leader_was_candidate(
+        s: LState, s_: LState, c: LConstants
+    )
+        requires
+            LNext(s, s_, c),
+            !(s.role is Leader),
+            s_.role is Leader,
+        ensures
+            s.role is Candidate,
+    {
+        // LNext is a disjunction. The only branch that produces Leader from
+        // non-Leader is LHandleMessage → LHandleVoteResponseMsg →
+        // LReceiveVoteAndBecomeLeader, which requires s_mid.role is Candidate.
+        // step_down_if_needed: if term > s.current_term, s_mid.role is Follower
+        // (not Candidate → no-op). So s_mid == s, meaning s.role is Candidate.
+    }
+
+    // =========================================================================
+    // Helper: range set finiteness
+    // =========================================================================
+
+    /// Set::new(|j: int| 0 <= j < n) is finite with len == n.
+    proof fn lemma_range_set_finite(n: int)
+        requires n >= 0
+        ensures
+            Set::<int>::new(|j: int| 0 <= j < n).finite(),
+            Set::<int>::new(|j: int| 0 <= j < n).len() == n,
+        decreases n
+    {
+        if n == 0 {
+            assert(Set::<int>::new(|j: int| 0 <= j < 0int) =~= Set::<int>::empty());
+        } else {
+            lemma_range_set_finite(n - 1);
+            let s_prev = Set::<int>::new(|j: int| 0 <= j < n - 1);
+            let s_curr = Set::<int>::new(|j: int| 0 <= j < n);
+            assert(s_curr =~= s_prev.insert(n - 1));
+            assert(!s_prev.contains(n - 1));
+        }
+    }
+
+    // =========================================================================
     // Composite induction step
     // =========================================================================
 
@@ -981,6 +1258,7 @@ verus! {
         // Supporting invariants
         lemma_votes_granted_are_servers_inductive(ds, ds_);
         lemma_candidate_or_leader_voted_for_self_inductive(ds, ds_);
+        lemma_candidate_or_leader_voted_for_self_id_inductive(ds, ds_);
         lemma_voters_voted_for_candidate_inductive(ds, ds_);
         lemma_leader_has_quorum_inductive(ds, ds_);
         lemma_commit_index_bounded_inductive(ds, ds_);

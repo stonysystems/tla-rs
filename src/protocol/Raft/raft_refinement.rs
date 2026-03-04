@@ -192,8 +192,9 @@ ensures
         assert(LNextAtomic(s, s_, c));
     } else {
         // No step-down: s_mid == s
-        if !(s_mid.role is Candidate) || !granted || !c.servers.contains(voter) {
-            // Guard failure: s_ == s: stutter
+        if !(s_mid.role is Candidate) || term < s_mid.current_term
+           || !granted || !c.servers.contains(voter) {
+            // Guard failure (including stale term): s_ == s: stutter
             assert(s_ == s);
         } else {
             // Add vote

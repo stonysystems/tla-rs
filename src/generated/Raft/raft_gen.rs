@@ -721,6 +721,13 @@ ensures
         }
         (s_mid, vec![])
 
+    } else if *term < s_mid.current_term {
+        // Stale term (vote from a previous election): no-op
+        proof {
+            lemma_empty_msg_map();
+        }
+        (s_mid, vec![])
+
     } else {
         if !granted {
                         proof {

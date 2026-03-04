@@ -416,6 +416,11 @@ verus! {
             // Not a candidate (stepped down or was follower/leader): no-op
             &&& s_ == s_mid
             &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if term < s_mid.current_term {
+            // Stale term (vote from a previous election): no-op
+            // This matches real Raft: candidates ignore VoteResponses from old terms.
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
         } else if !granted {
             // Vote denied: no-op
             &&& s_ == s_mid
