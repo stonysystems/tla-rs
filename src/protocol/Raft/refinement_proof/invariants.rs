@@ -1347,6 +1347,29 @@ verus! {
     // Leader Completeness Induction (Phase 32.3.5)
     // =========================================================================
 
+    /// Sub-helper for LeaderCompleteness induction: if the leader is unchanged
+    /// across a distributed step and the committed-entry witness is from the
+    /// pre-state, the LeaderCompleteness obligation transfers directly.
+    proof fn lemma_leader_completeness_unchanged_leader_for_prestate_commit(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        leader_id: int, k: int, entry: LLogEntry,
+    )
+        requires
+            LeaderCompleteness(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= leader_id < ds.num_servers,
+            ds_.server_states[leader_id] == ds.server_states[leader_id],
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term > entry.term,
+        ensures
+            ds_.server_states[leader_id].log.len() > k,
+            ds_.server_states[leader_id].log[k] == entry,
+    {
+        assert(LeaderCompleteness(ds));
+        assert(ds.server_states[leader_id].log.len() > k);
+        assert(ds.server_states[leader_id].log[k] == entry);
+    }
+
     /// Main induction lemma for Leader Completeness
     ///
     /// LeaderCompleteness states: if an entry is committed (replicated to a

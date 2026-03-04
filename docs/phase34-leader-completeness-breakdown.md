@@ -195,3 +195,36 @@ Validation status:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_grant_context_implies_log_relation*' --rlimit 40`
 - Currently blocked by existing module-level quantifier-trigger inference error in
   `EntryTermLeaderWitness` (`src/protocol/Raft/refinement_proof/invariants.rs`, around line 207).
+
+## Update: 34.7.1.e decomposed; 34.7.1.e.1 complete (2026-03-04)
+
+`34.7.1.e` is larger than a clean single-leaf implementation in this
+codebase because it still needs (1) committed-witness transfer handling across
+`ds -> ds_` and (2) explicit RequestVote provenance linkage for the new-leader
+vote overlap path.
+
+Added first execution leaf:
+
+- `lemma_leader_completeness_unchanged_leader_for_prestate_commit(...)`
+  in `src/protocol/Raft/refinement_proof/invariants.rs`.
+
+What this sub-leaf discharges:
+
+- unchanged leader (`ds_.server_states[leader_id] == ds.server_states[leader_id]`)
+- committed-entry witness is already in pre-state (`EntryCommittedAt(ds, k, entry)`)
+- then LeaderCompleteness obligation transfers directly to `ds_`.
+
+Planned remaining sub-leaves:
+
+1. `34.7.1.e.2`: `EntryCommittedAt(ds_)` transfer/fresh-step bridge
+2. `34.7.1.e.3`: new-leader branch integration with provenance hook
+3. `34.7.1.e.4`: remove assume and complete final induction theorem
+
+Validation status:
+
+- Focused command attempted:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness_unchanged_leader_for_prestate_commit*' --rlimit 40`
+- Currently blocked by existing dirty-worktree compile issue in
+  `src/protocol/Raft/refinement_proof/invariants.rs` (undefined helper
+  `lemma_leader_log_quorum_intersection`, around line 1442), before reaching
+  the prior module-level trigger-inference blocker.
