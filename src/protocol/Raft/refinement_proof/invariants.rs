@@ -2868,6 +2868,59 @@ verus! {
     // EntryTermHasVoteQuorum Induction
     // =========================================================================
 
+    /// Helper: convert a finite Set<int> to a Seq<int> preserving
+    /// elements and distinctness.
+    proof fn finite_set_to_seq(s: Set<int>) -> (result: Seq<int>)
+        requires s.finite()
+        ensures
+            result.len() == s.len(),
+            forall |a: int| #![trigger result[a]]
+                0 <= a < result.len() ==> s.contains(result[a]),
+            forall |a: int, b: int| #![trigger result[a], result[b]]
+                0 <= a < result.len() && 0 <= b < result.len() && a != b
+                ==> result[a] != result[b],
+        decreases s.len()
+    {
+        broadcast use vstd::set::group_set_axioms;
+        vstd::set_lib::lemma_set_empty_equivalency_len(s);
+        if s.len() == 0 {
+            Seq::<int>::empty()
+        } else {
+            let x = s.choose();
+            let s_rest = s.remove(x);
+            let rest = finite_set_to_seq(s_rest);
+            let result = rest.push(x);
+            assert forall |a: int| #![trigger result[a]]
+                0 <= a < result.len()
+                implies s.contains(result[a]) by
+            {
+                if a < rest.len() {
+                    assert(result[a] == rest[a]);
+                    assert(s_rest.contains(rest[a]));
+                } else {
+                    assert(result[a] == x);
+                }
+            };
+            assert forall |a: int, b: int| #![trigger result[a], result[b]]
+                0 <= a < result.len() && 0 <= b < result.len() && a != b
+                implies result[a] != result[b] by
+            {
+                if a < rest.len() && b < rest.len() {
+                    // Both from rest — IH gives distinctness
+                } else if a < rest.len() {
+                    // a from rest, b == rest.len() so result[b] == x
+                    assert(s_rest.contains(rest[a]));
+                    assert(!s_rest.contains(x));
+                } else if b < rest.len() {
+                    // symmetric
+                    assert(s_rest.contains(rest[b]));
+                    assert(!s_rest.contains(x));
+                }
+            };
+            result
+        }
+    }
+
     /// Helper: construct voters Seq from a Leader/Candidate's votes_granted
     /// using VotersVotedForCandidate. For each v != d in votes_granted,
     /// there's a VoteResponse{term, to d} packet in the network.
@@ -2882,6 +2935,7 @@ verus! {
             VotersVotedForCandidate(ds),
             VotesGrantedAreServers(ds),
             CandidateOrLeaderVotedForSelf(ds),
+            SenderIntegrity(ds),
             0 <= d < ds.num_servers,
             ds.server_states[d].role is Candidate || ds.server_states[d].role is Leader,
             ds.server_states[d].current_term == term,
@@ -2905,12 +2959,64 @@ verus! {
                 0 <= a < voters.len() && 0 <= b < voters.len() && a != b
                 ==> voters[a] != voters[b],
     {
-        // votes_granted is a finite Set<int> (subset of [0, n)).
-        // We extract the subset excluding d, which all have VoteResponse packets.
-        // For now, use assume to establish this construction.
-        // The key properties follow from VotersVotedForCandidate + Set membership.
-        assume(false);
-        Seq::<int>::empty() // placeholder
+        broadcast use vstd::set::group_set_axioms;
+
+        let vg = ds.server_states[d].votes_granted;
+        let n = ds.num_servers;
+
+        // CandidateOrLeaderVotedForSelf => d in vg
+        assert(vg.contains(ds.server_constants[d].my_id));
+        assert(ds.server_constants[d].my_id == d);
+
+        // Prove vg finite (subset of [0, n))
+        let universe = Set::<int>::new(|j: int| 0 <= j < n);
+        lemma_range_set_finite(n);
+        assert(vg.subset_of(universe)) by {
+            assert forall |v: int| vg.contains(v) implies universe.contains(v) by {};
+        };
+        vstd::set_lib::lemma_len_subset(vg, universe);
+
+        // Remove d, convert to Seq
+        let vg_no_d = vg.remove(d);
+        let voters = finite_set_to_seq(vg_no_d);
+        // voters.len() == vg_no_d.len() == vg.len() - 1 (since d in vg)
+
+        // Per-element properties
+        assert forall |a: int| #![trigger voters[a]] 0 <= a < voters.len() implies {
+            &&& 0 <= voters[a] < ds.num_servers
+            &&& voters[a] != d
+            &&& ds.network.contains(LRaftPacket {
+                src: voters[a],
+                dst: d,
+                msg: LRaftMessage::VoteResponse {
+                    term: term,
+                    granted: true,
+                    voter: voters[a],
+                },
+            })
+        } by {
+            let v = voters[a];
+            assert(vg_no_d.contains(v));
+            assert(vg.contains(v));
+            // v != d since v in vg.remove(d)
+
+            // VotersVotedForCandidate: d is Candidate/Leader, v != d, vg.contains(v)
+            // => exists VoteResponse packet to d with voter v at term
+            let p = choose |p: LRaftPacket| {
+                &&& ds.network.contains(p)
+                &&& p.dst == d
+                &&& p.msg matches LRaftMessage::VoteResponse {
+                    term: pt, granted: pg, voter: pv,
+                }
+                &&& pt == ds.server_states[d].current_term
+                &&& pg
+                &&& pv == v
+            };
+            // SenderIntegrity: VoteResponse voter == v => p.src == v
+            assert(p.src == v);
+        };
+
+        voters
     }
 
     /// Inductive step for EntryTermHasVoteQuorum.
