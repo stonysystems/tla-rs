@@ -1355,6 +1355,7 @@ verus! {
         leader_id: int, k: int, entry: LLogEntry,
     )
         requires
+            0 <= k,
             LeaderCompleteness(ds),
             EntryCommittedAt(ds, k, entry),
             0 <= leader_id < ds.num_servers,
@@ -1368,6 +1369,126 @@ verus! {
         assert(LeaderCompleteness(ds));
         assert(ds.server_states[leader_id].log.len() > k);
         assert(ds.server_states[leader_id].log[k] == entry);
+    }
+
+    /// Sub-helper for LeaderCompleteness induction: a post-state committed
+    /// witness either already existed in the pre-state, or it is a fresh
+    /// append at index `k` on the stepping server this step.
+    proof fn lemma_entry_committed_post_implies_pre_or_fresh_step_append(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        k: int, entry: LLogEntry,
+    )
+        requires
+            0 <= k,
+            RaftDistributedNext(ds, ds_),
+            EntryCommittedAt(ds_, k, entry),
+        ensures
+            EntryCommittedAt(ds, k, entry)
+                || exists |stepping: int| {
+                    &&& 0 <= stepping < ds.num_servers
+                    &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                        0 <= j < ds.num_servers && j != stepping ==>
+                        ds_.server_states[j] == ds.server_states[j])
+                    &&& k == ds.server_states[stepping].log.len()
+                    &&& ds_.server_states[stepping].log.len()
+                        == ds.server_states[stepping].log.len() + 1
+                    &&& ds_.server_states[stepping].log[k] == entry
+                }
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid], ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+        lemma_lnext_log_preserved_or_extended(s, s_, c);
+
+        let commit_quorum = choose |q: Set<int>| {
+            &&& q.len() >= ds.num_servers / 2 + 1
+            &&& (forall |id: int| q.contains(id) ==> {
+                &&& 0 <= id < ds.num_servers
+                &&& ds_.server_states[id].log.len() > k
+                &&& ds_.server_states[id].log[k] == entry
+            })
+        };
+
+        let fresh_step_case = commit_quorum.contains(server_id) && !(k < s.log.len());
+        if fresh_step_case {
+            assert(commit_quorum.contains(server_id));
+            assert(ds_.server_states[server_id].log.len() > k);
+            assert(k + 1 <= s_.log.len());
+            assert(s_.log.len() <= s.log.len() + 1);
+            assert(k <= s.log.len());
+            assert(s.log.len() <= k);
+            assert(k == s.log.len());
+
+            assert(s_.log.len() > s.log.len());
+            assert(s_.log.len() >= s.log.len() + 1);
+            assert(s_.log.len() == s.log.len() + 1);
+            assert(ds_.server_states[server_id].log[k] == entry);
+
+            assert(exists |stepping: int| {
+                &&& 0 <= stepping < ds.num_servers
+                &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                    0 <= j < ds.num_servers && j != stepping ==>
+                    ds_.server_states[j] == ds.server_states[j])
+                &&& k == ds.server_states[stepping].log.len()
+                &&& ds_.server_states[stepping].log.len()
+                    == ds.server_states[stepping].log.len() + 1
+                &&& ds_.server_states[stepping].log[k] == entry
+            }) by {
+                let stepping = server_id;
+                assert(0 <= stepping < ds.num_servers);
+                assert(k == ds.server_states[stepping].log.len());
+                assert(ds_.server_states[stepping].log.len()
+                    == ds.server_states[stepping].log.len() + 1);
+                assert(ds_.server_states[stepping].log[k] == entry);
+            };
+        } else {
+            assert(EntryCommittedAt(ds, k, entry)) by {
+                assert(exists |q: Set<int>| {
+                    &&& q.len() >= ds.num_servers / 2 + 1
+                    &&& (forall |id: int| q.contains(id) ==> {
+                        &&& 0 <= id < ds.num_servers
+                        &&& ds.server_states[id].log.len() > k
+                        &&& ds.server_states[id].log[k] == entry
+                    })
+                }) by {
+                    let q = commit_quorum;
+                    assert(q.len() >= ds.num_servers / 2 + 1);
+                    assert forall |id: int| q.contains(id) implies {
+                        &&& 0 <= id < ds.num_servers
+                        &&& ds.server_states[id].log.len() > k
+                        &&& ds.server_states[id].log[k] == entry
+                    } by {
+                        assert(0 <= id < ds.num_servers);
+                        if id != server_id {
+                            assert(ds_.server_states[id] == ds.server_states[id]);
+                            assert(ds.server_states[id].log.len() > k);
+                            assert(ds.server_states[id].log[k] == entry);
+                        } else {
+                            assert(id == server_id);
+                            assert(q.contains(server_id));
+                            if !(k < s.log.len()) {
+                                assert(fresh_step_case);
+                                assert(false);
+                            }
+                            assert(k < s.log.len());
+                            assert(s.log.len() > k);
+                            assert(s_.log[k] == s.log[k]);
+                            assert(ds_.server_states[server_id].log[k] == entry);
+                            assert(ds.server_states[server_id].log[k] == entry);
+                        }
+                    };
+                };
+            };
+        }
     }
 
     /// Main induction lemma for Leader Completeness

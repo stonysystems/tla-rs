@@ -228,3 +228,32 @@ Validation status:
   `src/protocol/Raft/refinement_proof/invariants.rs` (undefined helper
   `lemma_leader_log_quorum_intersection`, around line 1442), before reaching
   the prior module-level trigger-inference blocker.
+
+## Update: 34.7.1.e.2 complete (2026-03-04)
+
+Implemented committed-witness transfer bridge helper in:
+
+- `src/protocol/Raft/refinement_proof/invariants.rs`
+  - `lemma_entry_committed_post_implies_pre_or_fresh_step_append(...)`
+
+What this helper proves:
+
+- From `EntryCommittedAt(ds_, k, entry)`, either:
+  - `EntryCommittedAt(ds, k, entry)` already held in the pre-state
+    (same quorum witness transfers), or
+  - there is an explicit fresh-step append witness on the stepping server:
+    `k == old_log_len`, post-step `log.len() == old_log_len + 1`, and
+    the appended slot at `k` is `entry`.
+
+Companion stabilization:
+
+- `lemma_leader_completeness_unchanged_leader_for_prestate_commit(...)`
+  was strengthened with `0 <= k` so the indexed postcondition proof is stable.
+
+Validation status:
+
+- Focused helper checks pass:
+  - `*leader_completeness_unchanged_leader_for_prestate_commit*`
+  - `*entry_committed_post_implies_pre_or_fresh_step_append*`
+- Full-crate Verus remains failing on pre-existing high-cost proof obligations
+  (rlimit/timeouts in unrelated large lemmas), now reported as 9 errors.
