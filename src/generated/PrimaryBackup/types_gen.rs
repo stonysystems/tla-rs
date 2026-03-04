@@ -67,7 +67,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CNodeRole {
     Primary,
     Backup,

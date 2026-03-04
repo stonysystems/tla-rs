@@ -23,20 +23,6 @@ ensures
 }
 
 
-/// Helper: clone CNodeRole preserving view (workaround for missing derive Clone spec).
-fn clone_role(r: &CNodeRole) -> (res: CNodeRole)
-ensures
-    res@ == r@,
-    res.valid() == r.valid(),
-{
-    match r {
-        CNodeRole::Backup => CNodeRole::Backup,
-        CNodeRole::Inactive => CNodeRole::Inactive,
-        CNodeRole::Primary => CNodeRole::Primary,
-    }
-}
-
-
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
     c.valid(),
@@ -70,18 +56,23 @@ ensures
     result.0.valid(),
     LPrimaryWrite(s@, result.0@, c@, *val as int, result.1@.map(|i, p: CPBMessage| p@)),
 {
-    let result = (CState {
+    let result = {
+        proof {
+            lemma_empty_seq_map();
+        }
+        (CState {
     has_pending: true,
     pending_value: *val,
     acked: false,
-    role: clone_role(&s.role),
+    role: s.role.clone(),
     log_length: s.log_length.clone(),
     last_value: s.last_value.clone(),
     backup_log_length: s.backup_log_length.clone(),
     backup_last_value: s.backup_last_value.clone(),
     backup_synced: s.backup_synced.clone(),
     view: s.view.clone(),
-}, vec![]);
+}, vec![])
+    };
     proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
@@ -102,7 +93,7 @@ ensures
     LPrimarySendReplicate(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
 {
     let result = (CState {
-    role: clone_role(&s.role),
+    role: s.role.clone(),
     log_length: s.log_length.clone(),
     last_value: s.last_value.clone(),
     has_pending: s.has_pending.clone(),
@@ -132,18 +123,23 @@ ensures
     result.0.valid(),
     LBackupReceiveReplicate(s@, result.0@, c@, *val as int, result.1@.map(|i, p: CPBMessage| p@)),
 {
-    let result = (CState {
+    let result = {
+        proof {
+            lemma_empty_seq_map();
+        }
+        (CState {
     backup_log_length: (s.backup_log_length + 1),
     backup_last_value: *val,
     backup_synced: true,
-    role: clone_role(&s.role),
+    role: s.role.clone(),
     log_length: s.log_length.clone(),
     last_value: s.last_value.clone(),
     has_pending: s.has_pending.clone(),
     pending_value: s.pending_value.clone(),
     acked: s.acked.clone(),
     view: s.view.clone(),
-}, vec![]);
+}, vec![])
+    };
     proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
@@ -163,7 +159,7 @@ ensures
     LBackupSendAck(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
 {
     let result = (CState {
-    role: clone_role(&s.role),
+    role: s.role.clone(),
     log_length: s.log_length.clone(),
     last_value: s.last_value.clone(),
     has_pending: s.has_pending.clone(),
@@ -191,9 +187,13 @@ ensures
     result.0.valid(),
     LPrimaryReceiveAck(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
 {
-    let result = (CState {
+    let result = {
+        proof {
+            lemma_empty_seq_map();
+        }
+        (CState {
     acked: true,
-    role: clone_role(&s.role),
+    role: s.role.clone(),
     log_length: s.log_length.clone(),
     last_value: s.last_value.clone(),
     has_pending: s.has_pending.clone(),
@@ -202,7 +202,8 @@ ensures
     backup_last_value: s.backup_last_value.clone(),
     backup_synced: s.backup_synced.clone(),
     view: s.view.clone(),
-}, vec![]);
+}, vec![])
+    };
     proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
@@ -223,18 +224,23 @@ ensures
     result.0.valid(),
     LPrimaryCommit(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
 {
-    let result = (CState {
+    let result = {
+        proof {
+            lemma_empty_seq_map();
+        }
+        (CState {
     log_length: (s.log_length + 1),
     last_value: s.pending_value.clone(),
     has_pending: false,
     pending_value: 0u64,
     acked: true,
-    role: clone_role(&s.role),
+    role: s.role.clone(),
     backup_log_length: s.backup_log_length.clone(),
     backup_last_value: s.backup_last_value.clone(),
     backup_synced: s.backup_synced.clone(),
     view: s.view.clone(),
-}, vec![]);
+}, vec![])
+    };
     proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
@@ -252,7 +258,11 @@ ensures
     result.0.valid(),
     LPrimaryFail(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
 {
-    let result = (CState {
+    let result = {
+        proof {
+            lemma_empty_seq_map();
+        }
+        (CState {
     has_pending: false,
     pending_value: 0u64,
     acked: true,
@@ -263,7 +273,8 @@ ensures
     backup_synced: false,
     view: s.view.clone(),
     role: CNodeRole::Inactive,
-}, vec![]);
+}, vec![])
+    };
     proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
@@ -282,7 +293,11 @@ ensures
     result.0.valid(),
     LBackupPromote(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
 {
-    let result = (CState {
+    let result = {
+        proof {
+            lemma_empty_seq_map();
+        }
+        (CState {
     log_length: s.backup_log_length.clone(),
     last_value: s.backup_last_value.clone(),
     has_pending: false,
@@ -293,7 +308,8 @@ ensures
     backup_synced: true,
     view: (s.view + 1),
     role: CNodeRole::Primary,
-}, vec![]);
+}, vec![])
+    };
     proof {
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());

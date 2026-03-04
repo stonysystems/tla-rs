@@ -836,20 +836,27 @@ impl<'a> ConfigInferer<'a> {
                     Type::Named(path) => {
                         let type_name = path.segments.last().unwrap_or(&String::new()).clone();
                         // Check if this is an enum type → clone_fields
+                        // Skip unit enums (all-unit variants) since they get #[derive(Copy)]
                         if enum_names.contains(&type_name) {
-                            if !config.clone_fields.contains(&field.name) {
-                                config.clone_fields.push(field.name.clone());
+                            let is_unit_enum = self.schema.enums.get(&type_name)
+                                .map_or(false, |e| e.variants.iter().all(|v| {
+                                    matches!(v.fields, crate::types::VariantFields::Unit)
+                                }));
+                            if !is_unit_enum {
+                                if !config.clone_fields.contains(&field.name) {
+                                    config.clone_fields.push(field.name.clone());
+                                }
+                                // Derive clone_field_types: field → CEnumName
+                                let exec_enum_name = if type_name.starts_with(spec_prefix) {
+                                    let base = &type_name[spec_prefix.len()..];
+                                    format!("{}{}", exec_prefix, base)
+                                } else {
+                                    format!("{}{}", exec_prefix, &type_name)
+                                };
+                                config
+                                    .clone_field_types
+                                    .insert(field.name.clone(), exec_enum_name);
                             }
-                            // Derive clone_field_types: field → CEnumName
-                            let exec_enum_name = if type_name.starts_with(spec_prefix) {
-                                let base = &type_name[spec_prefix.len()..];
-                                format!("{}{}", exec_prefix, base)
-                            } else {
-                                format!("{}{}", exec_prefix, &type_name)
-                            };
-                            config
-                                .clone_field_types
-                                .insert(field.name.clone(), exec_enum_name);
                         }
                     }
                     _ => {}
@@ -2354,12 +2361,10 @@ verus! {
         let inferer = ConfigInferer::new(&schema, &naming);
         let config = inferer.infer();
 
-        // Enum-typed fields → clone_fields
-        assert!(config.clone_fields.contains(&"role".to_string()));
-        assert_eq!(config.clone_fields.len(), 1);
-
-        // clone_field_types: field → CEnumName
-        assert_eq!(config.clone_field_types.get("role").unwrap(), "CServerRole");
+        // Unit enums (all-unit variants) are Copy → NOT in clone_fields
+        assert!(!config.clone_fields.contains(&"role".to_string()));
+        assert_eq!(config.clone_fields.len(), 0);
+        assert!(config.clone_field_types.get("role").is_none());
     }
 
     #[test]
@@ -2703,12 +2708,9 @@ verus! {
         assert!(config.collection_fields.contains(&"rm_aborted".to_string()));
         assert!(config.collection_fields.contains(&"rm".to_string()));
 
-        // Clone fields (enum-typed)
-        assert!(config.clone_fields.contains(&"tm_state".to_string()));
-        assert_eq!(
-            config.clone_field_types.get("tm_state").unwrap(),
-            "CTMState"
-        );
+        // Unit enums (CTMState) → Copy, NOT in clone_fields
+        assert!(!config.clone_fields.contains(&"tm_state".to_string()));
+        assert!(config.clone_field_types.get("tm_state").is_none());
 
         // Clone strategy (LState has Set<int> fields → verified)
         assert_eq!(
@@ -2759,9 +2761,9 @@ verus! {
             .collection_fields
             .contains(&"accepts_rcvd".to_string()));
 
-        // Clone fields
-        assert!(config.clone_fields.contains(&"phase".to_string()));
-        assert_eq!(config.clone_field_types.get("phase").unwrap(), "CPhase");
+        // Unit enums (CPhase) → Copy, NOT in clone_fields
+        assert!(!config.clone_fields.contains(&"phase".to_string()));
+        assert!(config.clone_field_types.get("phase").is_none());
     }
 
     #[test]
@@ -2800,9 +2802,9 @@ verus! {
             .collection_fields
             .contains(&"votes_granted".to_string()));
 
-        // Clone fields
-        assert!(config.clone_fields.contains(&"role".to_string()));
-        assert_eq!(config.clone_field_types.get("role").unwrap(), "CServerRole");
+        // Unit enums (CServerRole) → Copy, NOT in clone_fields
+        assert!(!config.clone_fields.contains(&"role".to_string()));
+        assert!(config.clone_field_types.get("role").is_none());
 
         // Clone strategy (Raft CState has Set<int> fields → verified)
         assert_eq!(

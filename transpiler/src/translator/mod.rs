@@ -134,6 +134,12 @@ pub struct TranslatorConfig {
     /// Used to distinguish HashSet.contains() (method call) from Vec.contains() (free function).
     /// Auto-populated from struct definitions when `generate_inline_types` is true.
     pub set_fields: HashSet<String>,
+    /// When true, use verified `clone_hashset_u64()` instead of generic `clone_hashset<K>`.
+    /// Auto-set when all HashSet fields are `HashSet<u64>` (inferred from clone_strategy).
+    pub use_verified_hashset_clone: bool,
+    /// When true, use `lemma_empty_msg_map` for inline empty-vec proofs.
+    /// When false, use `lemma_empty_seq_map`. Set when `msg_vec_type` is configured.
+    pub has_msg_vec_type: bool,
     /// When true, prepend `assume(false)` to all exec function bodies.
     /// This makes all postconditions trivially satisfied (trusted).
     /// Used in the TLA+ pipeline to get passing verification without full proofs.
@@ -180,6 +186,8 @@ impl Default for TranslatorConfig {
             arrow_variants: HashMap::new(),
             vec_element_ensures: Vec::new(),
             set_fields: HashSet::new(),
+            use_verified_hashset_clone: false,
+            has_msg_vec_type: false,
             assume_postconditions: false,
             proven_functions: HashSet::new(),
         }
@@ -2169,7 +2177,7 @@ impl Translator {
     ///   `if cond { (s_mid, vec![]) } else { CGrantVote(...) }`
     /// into:
     ///   `if cond { proof { lemma_empty_msg_map(); } (s_mid, vec![]) } else { CGrantVote(...) }`
-    fn inject_inline_empty_msg_proofs(expr: ExecExpr, msg_type: &str) -> ExecExpr {
+    fn inject_inline_empty_msg_proofs(expr: ExecExpr, msg_type: &str, lemma_name: &str) -> ExecExpr {
         match expr {
             ExecExpr::If {
                 cond,
@@ -2180,9 +2188,10 @@ impl Translator {
                 then_branch: Box::new(Self::inject_inline_empty_msg_proofs(
                     *then_branch,
                     msg_type,
+                    lemma_name,
                 )),
                 else_branch: else_branch.map(|eb| {
-                    Box::new(Self::inject_inline_empty_msg_proofs(*eb, msg_type))
+                    Box::new(Self::inject_inline_empty_msg_proofs(*eb, msg_type, lemma_name))
                 }),
             },
             ExecExpr::Block(stmts) => {
@@ -2195,11 +2204,11 @@ impl Translator {
                     if let ExecExpr::Let { ref pattern, ty: _, ref value } = stmt {
                         if let ExecExpr::VecLit(ref elems) = **value {
                             if elems.is_empty() {
-                                // Empty vec: proof { lemma_empty_msg_map(); }
+                                // Empty vec: proof { lemma_empty_<name>(); }
                                 new_stmts.push(stmt);
                                 new_stmts.push(ExecExpr::ProofBlock {
                                     stmts: vec![ExecExpr::Call {
-                                        func: "lemma_empty_msg_map".to_string(),
+                                        func: lemma_name.to_string(),
                                         args: vec![],
                                     }],
                                 });
@@ -2223,7 +2232,7 @@ impl Translator {
                 }
                 // Recurse into the last statement
                 if let Some(last) = new_stmts.pop() {
-                    let last = Self::inject_inline_empty_msg_proofs(last, msg_type);
+                    let last = Self::inject_inline_empty_msg_proofs(last, msg_type, lemma_name);
                     new_stmts.push(last);
                 }
                 ExecExpr::Block(new_stmts)
@@ -2236,7 +2245,7 @@ impl Translator {
                 if has_empty_vec {
                     let proof_call = ExecExpr::ProofBlock {
                         stmts: vec![ExecExpr::Call {
-                            func: "lemma_empty_msg_map".to_string(),
+                            func: lemma_name.to_string(),
                             args: vec![],
                         }],
                     };
@@ -3052,8 +3061,8 @@ impl Translator {
                 } else if self.is_vec_field(&fname) {
                     ExecExpr::Clone(Box::new(recv))
                 } else {
-                    // HashSet: clone_hashset(&receiver)
-                    Self::make_ref_call("clone_hashset".to_string(), recv)
+                    // HashSet: clone_hashset_u64(&receiver) or clone_hashset(&receiver)
+                    Self::make_ref_call(self.hashset_clone_fn().to_string(), recv)
                 };
 
                 // let mut __field = clone_hashset(&receiver);
@@ -3091,7 +3100,7 @@ impl Translator {
                 } else if self.is_vec_field(&fname) {
                     ExecExpr::Clone(Box::new(recv))
                 } else {
-                    Self::make_ref_call("clone_hashset".to_string(), recv)
+                    Self::make_ref_call(self.hashset_clone_fn().to_string(), recv)
                 };
 
                 pre_stmts.push(ExecExpr::Let {
@@ -3327,7 +3336,7 @@ impl Translator {
                         let prefix = self.get_map_field_prefix(field_name).unwrap().to_string();
                         Self::make_ref_call(format!("clone_{}", prefix), expr)
                     } else if self.is_hashset_field(field_name) {
-                        Self::make_ref_call("clone_hashset".to_string(), expr)
+                        Self::make_ref_call(self.hashset_clone_fn().to_string(), expr)
                     } else if self.is_clone_field(field_name) {
                         if let Some(helper) = self.get_clone_helper_name(field_name) {
                             Self::make_ref_call(helper, expr)
@@ -3360,7 +3369,7 @@ impl Translator {
                             let prefix = self.get_map_field_prefix(field_name).unwrap().to_string();
                             Self::make_ref_call(format!("clone_{}", prefix), *inner.clone())
                         } else if self.is_hashset_field(field_name) {
-                            Self::make_ref_call("clone_hashset".to_string(), *inner.clone())
+                            Self::make_ref_call(self.hashset_clone_fn().to_string(), *inner.clone())
                         } else if self.is_clone_field(field_name) {
                             if let Some(helper) = self.get_clone_helper_name(field_name) {
                                 Self::make_ref_call(helper, *inner.clone())
@@ -3390,6 +3399,16 @@ impl Translator {
     fn is_hashset_field(&self, field_name: &str) -> bool {
         self.config.collection_fields.contains(field_name)
             || self.config.set_fields.contains(field_name)
+    }
+
+    /// Returns the clone function name for HashSet fields:
+    /// `clone_hashset_u64` when verified clone is enabled, `clone_hashset` otherwise.
+    fn hashset_clone_fn(&self) -> &str {
+        if self.config.use_verified_hashset_clone {
+            "clone_hashset_u64"
+        } else {
+            "clone_hashset"
+        }
     }
 
     /// Check if a field is a Vec/HashMap type requiring `.clone()`.
@@ -3497,10 +3516,21 @@ impl Translator {
             ExecExpr::Binary { lhs, op, rhs } => {
                 let lhs = Self::strip_u64_casts_for_index(*lhs.clone());
                 let rhs = Self::strip_u64_casts_for_index(*rhs.clone());
-                ExecExpr::Binary {
-                    lhs: Box::new(lhs),
+                let binary = ExecExpr::Binary {
+                    lhs: Box::new(lhs.clone()),
                     op: op.clone(),
-                    rhs: Box::new(rhs),
+                    rhs: Box::new(rhs.clone()),
+                };
+                // If operands still involve u64 values (deref'd params, vars),
+                // wrap in `as usize` for Vec indexing
+                let needs_cast = matches!(&lhs,
+                    ExecExpr::Unary { op, .. } if op == "*") ||
+                    matches!(&lhs, ExecExpr::Var(_)) ||
+                    matches!(&lhs, ExecExpr::Field(..));
+                if needs_cast {
+                    ExecExpr::Cast(Box::new(binary), "usize".to_string())
+                } else {
+                    binary
                 }
             }
             _ => idx_expr,
@@ -6382,12 +6412,20 @@ impl Translator {
                 None
             };
             if let Some(ref msg_type_name) = msg_type {
-                // Inline proofs handle empty vec assertions, so clear redundant
-                // trailing proof block items to avoid the `let result` wrapping pattern
-                // which causes Verus to lose branch-specific type information.
-                needs.has_empty_vec = false;
-                needs.tuple_vec_lit_sites.clear();
-                Self::inject_inline_empty_msg_proofs(body, msg_type_name)
+                // Only clear trailing proof items for conditional branching cases,
+                // where `let result` wrapping causes Verus to lose branch-specific
+                // type information. For non-conditional cases, keep the trailing
+                // proof block with explicit assert for the solver.
+                if needs.has_delegating_call_in_conditional {
+                    needs.has_empty_vec = false;
+                    needs.tuple_vec_lit_sites.clear();
+                }
+                let lemma_name = if self.config.has_msg_vec_type {
+                    "lemma_empty_msg_map"
+                } else {
+                    "lemma_empty_seq_map"
+                };
+                Self::inject_inline_empty_msg_proofs(body, msg_type_name, lemma_name)
             } else {
                 body
             }
@@ -7171,6 +7209,28 @@ impl Translator {
         format!("{}{}", self.config.exec_prefix, spec_name)
     }
 
+    /// Like `translate_definition_name` but skips variant_remapping lookup.
+    /// Used for qualified multi-segment paths (e.g., `LPBFTMessage::PrePrepare`)
+    /// where the enum is already identified by the first segment and applying
+    /// variant_remapping would incorrectly remap to a different enum.
+    fn translate_definition_name_no_variant(&self, spec_name: &str) -> String {
+        // Check if type is in explicit remapping
+        if let Some(remapped) = self.config.type_remapping.get(spec_name) {
+            return remapped.clone();
+        }
+
+        // Check if type starts with spec prefix (e.g., "L") followed by an uppercase letter
+        if spec_name.starts_with(&self.config.spec_prefix) {
+            let rest = &spec_name[self.config.spec_prefix.len()..];
+            if rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                return format!("{}{}", self.config.exec_prefix, rest);
+            }
+        }
+
+        // Otherwise, prepend exec prefix to the full name
+        format!("{}{}", self.config.exec_prefix, spec_name)
+    }
+
     /// Reverse of translate_definition_name: convert exec function name back to spec name.
     /// Used for invariants/spec context where exec names must become spec names.
     /// CRequestsMatch -> RequestsMatch, CBalEq -> BalEq, etc.
@@ -7270,43 +7330,74 @@ impl Translator {
             let segment = &path.segments[0];
             // Check if this single segment contains "::" (parser quirk)
             if segment.contains("::") {
-                // Split and translate each part, but check if any translation already has ::
+                // Split and translate each part
                 let parts: Vec<&str> = segment.split("::").collect();
-                // Translate the last part first - if it already contains ::, use it directly
-                if let Some(last) = parts.last() {
+                if parts.len() >= 2 {
+                    // Translate all parts except the last normally (no variant_remapping)
+                    let mut result_parts: Vec<String> = parts[..parts.len() - 1]
+                        .iter()
+                        .map(|s| self.translate_definition_name_no_variant(s))
+                        .collect();
+                    // Last part: try translate_name (checks variant_remapping)
+                    let last = parts.last().unwrap();
                     let translated_last = self.translate_name(last);
                     if translated_last.contains("::") {
-                        // The last segment's remapping already includes the enum type
-                        return translated_last;
+                        // variant_remapping returned a qualified path (e.g., CPhase::PrePrepare).
+                        // Check if the enum prefix matches the translated first part.
+                        let remap_enum = translated_last.split("::").next().unwrap_or("");
+                        let first_part = result_parts.first().map(|s| s.as_str()).unwrap_or("");
+                        if remap_enum == first_part {
+                            // Same enum — use the remapped path directly
+                            return translated_last;
+                        } else {
+                            // Different enum — skip variant_remapping, use prefix translation
+                            result_parts.push(self.translate_definition_name_no_variant(last));
+                        }
+                    } else {
+                        result_parts.push(translated_last);
                     }
+                    result_parts.join("::")
+                } else {
+                    // Single part with :: (shouldn't happen), just translate
+                    self.translate_name(segment.as_str())
                 }
-                // Normal case: translate each part and join
-                let translated: Vec<String> =
-                    parts.iter().map(|s| self.translate_name(s)).collect();
-                translated.join("::")
             } else {
                 // Simple name, just translate it
                 self.translate_name(segment.as_str())
             }
         } else {
             // Multi-segment path (enum variant like Type::Variant)
-            // Check if the last segment's translation already contains "::"
-            // This happens when the remapping includes the full path (e.g., "RslMessage1b" -> "CMessage::CMessage1b")
-            if let Some(last_segment) = path.segments.last() {
-                let translated_last = self.translate_name(last_segment);
-                if translated_last.contains("::") {
-                    // The last segment's remapping already includes the enum type
-                    // Use it directly instead of joining all segments
-                    return translated_last;
+            // Translate the enum type segment(s) normally, then translate the
+            // variant (last segment) with variant_remapping — but ONLY if the
+            // remapped result's enum prefix matches the translated first segment.
+            // This prevents `LPBFTMessage::PrePrepare` from being remapped to
+            // `CPhase::PrePrepare` when variant_remapping has `PrePrepare -> CPhase::PrePrepare`.
+            let n = path.segments.len();
+            let mut result_parts = Vec::with_capacity(n);
+            for (i, seg) in path.segments.iter().enumerate() {
+                if i < n - 1 {
+                    result_parts.push(self.translate_definition_name_no_variant(seg));
+                } else {
+                    // Last segment: try translate_name (which checks variant_remapping)
+                    let translated = self.translate_name(seg);
+                    if translated.contains("::") {
+                        // variant_remapping returned a qualified path.
+                        // Check if the enum prefix matches the first segment.
+                        let remap_enum = translated.split("::").next().unwrap_or("");
+                        let first_seg = result_parts.first().map(|s| s.as_str()).unwrap_or("");
+                        if remap_enum == first_seg {
+                            // Same enum — use the remapped path directly
+                            return translated;
+                        } else {
+                            // Different enum — skip variant_remapping, use prefix translation
+                            result_parts.push(self.translate_definition_name_no_variant(seg));
+                        }
+                    } else {
+                        result_parts.push(translated);
+                    }
                 }
             }
-            // Normal case: translate each segment individually
-            let translated_segments: Vec<String> = path
-                .segments
-                .iter()
-                .map(|s| self.translate_name(s))
-                .collect();
-            translated_segments.join("::")
+            result_parts.join("::")
         }
     }
 
@@ -10685,7 +10776,7 @@ impl Translator {
             {
                 let tmp_name = "__set_tmp";
                 let clone_call =
-                    Self::make_ref_call("clone_hashset".to_string(), inner_recv);
+                    Self::make_ref_call(self.hashset_clone_fn().to_string(), inner_recv);
                 let translated_args: Result<Vec<ExecExpr>, _> = args
                     .iter()
                     .map(|a| self.transform_expr(a, ctx))
@@ -12167,7 +12258,7 @@ impl Translator {
                     let has_input_field_access = translated_fields.iter().any(|(_, expr)| {
                         matches!(expr, ExecExpr::Field(b, _) if Self::is_input_var(b, ctx))
                             || matches!(expr, ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Field(b, _) if Self::is_input_var(b, ctx)))
-                            || matches!(expr, ExecExpr::Call { func, .. } if func == "clone_hashset")
+                            || matches!(expr, ExecExpr::Call { func, .. } if func == "clone_hashset" || func == "clone_hashset_u64")
                     });
                     if has_input_field_access {
                         // Convert to explicit Struct with clone_hashset for input field accesses
@@ -12292,7 +12383,7 @@ impl Translator {
                                         translated_fields.iter().any(|(_, expr)| {
                                             matches!(expr, ExecExpr::Field(b, _) if Self::is_input_var(b, ctx))
                                                 || matches!(expr, ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Field(b, _) if Self::is_input_var(b, ctx)))
-                                                || matches!(expr, ExecExpr::Call { func, .. } if func == "clone_hashset")
+                                                || matches!(expr, ExecExpr::Call { func, .. } if func == "clone_hashset" || func == "clone_hashset_u64")
                                         });
                                     if has_input_field_access {
                                         let cloned_fields: Vec<_> = translated_fields
@@ -21463,23 +21554,14 @@ mod tests {
         let result = translator.maybe_append_proof_block(body, &return_type);
 
         // With inline msg proofs enabled, the empty vec gets a proof block prepended
-        // directly (no `let result` wrapping). The proof should call lemma_empty_msg_map.
-        match result {
-            ExecExpr::Block(stmts) => {
-                assert_eq!(stmts.len(), 2, "Expected ProofBlock + Tuple");
-                if let ExecExpr::ProofBlock { stmts: proof_stmts } = &stmts[0] {
-                    let proof_str = format!("{:?}", proof_stmts);
-                    assert!(
-                        proof_str.contains("lemma_empty_msg_map"),
-                        "Inline proof should call lemma_empty_msg_map, got: {}",
-                        proof_str
-                    );
-                } else {
-                    panic!("Expected ProofBlock at index 0, got {:?}", stmts[0]);
-                }
-            }
-            other => panic!("Expected Block, got {:?}", other),
-        }
+        // AND a trailing proof block with assert for the solver. For non-conditional
+        // cases, both are generated (trailing assert uses `let result` pattern).
+        let result_str = format!("{:?}", result);
+        assert!(
+            result_str.contains("lemma_empty_seq_map"),
+            "Should call lemma_empty_seq_map, got: {}",
+            result_str
+        );
     }
 
     #[test]

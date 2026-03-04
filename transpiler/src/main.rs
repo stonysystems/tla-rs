@@ -4224,6 +4224,11 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
             set_fields: file_config.set_fields.iter().cloned().collect(),
             assume_postconditions: file_config.output.assume_postconditions,
             proven_functions: file_config.output.proven_functions.iter().cloned().collect(),
+            use_verified_hashset_clone: file_config
+                .clone_strategy
+                .values()
+                .any(|v| v == "verified"),
+            has_msg_vec_type: file_config.msg_vec_type.is_some(),
             spec_prefix: file_config.naming.spec_prefix.clone(),
             exec_prefix: file_config.naming.exec_prefix.clone(),
             generate_abstraction_fns: false,

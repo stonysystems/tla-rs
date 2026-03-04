@@ -295,6 +295,14 @@ impl Transpiler {
                 }
             }
         }
+        // Auto-add clone_hashset_u64 import when verified hashset clone is active
+        if self.config.translator.use_verified_hashset_clone && self.needs_set_helpers() {
+            let hashset_import =
+                "use crate::common::collections::hashsets::clone_hashset_u64;".to_string();
+            if !sorted_imports.iter().any(|i| i.contains("clone_hashset_u64")) {
+                sorted_imports.push(hashset_import);
+            }
+        }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             output.push_str(import);
@@ -391,6 +399,7 @@ impl Transpiler {
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
                 &self.config.msg_vec_type,
+                self.config.translator.use_verified_hashset_clone,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -427,6 +436,7 @@ impl Transpiler {
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
                 &None,
+                self.config.translator.use_verified_hashset_clone,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -994,6 +1004,14 @@ impl Transpiler {
                 }
             }
         }
+        // Auto-add clone_hashset_u64 import when verified hashset clone is active
+        if self.config.translator.use_verified_hashset_clone && self.needs_set_helpers() {
+            let hashset_import =
+                "use crate::common::collections::hashsets::clone_hashset_u64;".to_string();
+            if !sorted_imports.iter().any(|i| i.contains("clone_hashset_u64")) {
+                sorted_imports.push(hashset_import);
+            }
+        }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             output.push_str(import);
@@ -1087,6 +1105,7 @@ impl Transpiler {
                 &self.config.translator.int_type,
                 &self.config.translator.clone_up_to_view_types,
                 &self.config.msg_vec_type,
+                self.config.translator.use_verified_hashset_clone,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -1212,6 +1231,7 @@ impl Transpiler {
         int_type: &str,
         clone_up_to_view_types: &std::collections::HashSet<String>,
         msg_vec_type: &Option<(String, String)>,
+        use_verified_hashset_clone: bool,
     ) -> String {
         let mut output = String::new();
 
@@ -1234,18 +1254,23 @@ impl Transpiler {
             output.push_str("    }\n");
             output.push_str("}\n\n");
 
-            // clone_hashset — external_body helper for cloning HashSet fields
-            output
-                .push_str("/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).\n");
-            output.push_str("#[verifier(external_body)]\n");
-            output.push_str(
-                "fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)\n"
-            );
-            output.push_str("ensures\n");
-            output.push_str("    res@ == s@,\n");
-            output.push_str("{\n");
-            output.push_str("    s.clone()\n");
-            output.push_str("}\n\n");
+            if !use_verified_hashset_clone {
+                // clone_hashset — external_body helper for cloning HashSet fields
+                output.push_str(
+                    "/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).\n",
+                );
+                output.push_str("#[verifier(external_body)]\n");
+                output.push_str(
+                    "fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)\n"
+                );
+                output.push_str("ensures\n");
+                output.push_str("    res@ == s@,\n");
+                output.push_str("{\n");
+                output.push_str("    s.clone()\n");
+                output.push_str("}\n\n");
+            }
+            // When use_verified_hashset_clone is true, clone_hashset_u64 is imported
+            // from crate::common::collections::hashsets instead.
         }
 
         // lemma_set_map_remove_commute — only when spec uses .remove() and has set fields
@@ -2842,7 +2867,7 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_content() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new(), &None);
+        let output = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new(), &None, false);
 
         // Verify lemma_empty_set_map
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2875,12 +2900,12 @@ mod tests {
 
         // When has_set_remove=false, remove_commute should NOT be present
         let output_no_remove =
-            Transpiler::generate_proof_helper_lemmas(false, true, false, &empty, "u64", &std::collections::HashSet::new(), &None);
+            Transpiler::generate_proof_helper_lemmas(false, true, false, &empty, "u64", &std::collections::HashSet::new(), &None, false);
         assert!(!output_no_remove.contains("lemma_set_map_remove_commute"));
 
         // When has_set_fields=false, set lemmas should NOT be present
         let output_no_sets =
-            Transpiler::generate_proof_helper_lemmas(false, false, false, &empty, "u64", &std::collections::HashSet::new(), &None);
+            Transpiler::generate_proof_helper_lemmas(false, false, false, &empty, "u64", &std::collections::HashSet::new(), &None, false);
         assert!(!output_no_sets.contains("lemma_empty_set_map"));
         assert!(!output_no_sets.contains("lemma_set_map_remove_commute"));
         assert!(!output_no_sets.contains("clone_hashset"));
@@ -2891,13 +2916,13 @@ mod tests {
         let empty = std::collections::HashMap::new();
 
         // With i64 int_type (TLA+ pipeline default)
-        let output_i64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "i64", &std::collections::HashSet::new(), &None);
+        let output_i64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "i64", &std::collections::HashSet::new(), &None, false);
         assert!(output_i64.contains("Set::<i64>::empty()"));
         assert!(output_i64.contains("|x: i64| x as int"));
         assert!(output_i64.contains("lemma_set_map_remove_commute(s: Set<i64>, elt: i64)"));
 
         // With u64 int_type (RSL protocol default)
-        let output_u64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new(), &None);
+        let output_u64 = Transpiler::generate_proof_helper_lemmas(false, true, true, &empty, "u64", &std::collections::HashSet::new(), &None, false);
         assert!(output_u64.contains("Set::<u64>::empty()"));
         assert!(output_u64.contains("|x: u64| x as int"));
     }
@@ -2905,7 +2930,7 @@ mod tests {
     #[test]
     fn test_generate_proof_helper_lemmas_with_vec_fields() {
         let empty = std::collections::HashMap::new();
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty, "u64", &std::collections::HashSet::new(), &None);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, true, &empty, "u64", &std::collections::HashSet::new(), &None, false);
 
         // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2923,7 +2948,7 @@ mod tests {
             "log".to_string(),
             ("CLogEntry".to_string(), "LLogEntry".to_string()),
         );
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &std::collections::HashSet::new(), &None);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &std::collections::HashSet::new(), &None, false);
 
         // Set lemmas should be present when has_set_fields=true
         assert!(output.contains("proof fn lemma_empty_set_map()"));
@@ -2955,7 +2980,7 @@ mod tests {
         // CRequest is in clone_up_to_view_types — should generate verified loop
         let mut cutv = std::collections::HashSet::new();
         cutv.insert("CRequest".to_string());
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv, &None);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv, &None, false);
 
         // Should generate clone_request_queue with verified loop, NOT external_body
         assert!(
@@ -3001,7 +3026,7 @@ mod tests {
         );
         // CLogEntry is NOT in clone_up_to_view_types — should use external_body
         let cutv = std::collections::HashSet::new();
-        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv, &None);
+        let output = Transpiler::generate_proof_helper_lemmas(true, true, false, &svf, "u64", &cutv, &None, false);
 
         assert!(
             output.contains("#[verifier(external_body)]"),
@@ -3440,6 +3465,7 @@ mod tests {
             "u64",
             &config.translator.clone_up_to_view_types,
             &None,
+            false,
         );
 
         // Should generate clone_log helper for struct_vec_fields
