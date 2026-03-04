@@ -617,3 +617,34 @@ Focused verification:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*overlap_voter_stale_vote_packet_context*' --rlimit 40`
 - Still rlimit-bounded (existing):
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness_inductive*' --rlimit 40`
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.c.b.a complete (2026-03-04)
+
+Decomposed stale-provenance leaf `...c.c.b` into smaller model/proof slices.
+The full closure is larger than a clean <500 LOC single iteration because it
+needs a new history-carrying invariant, not just local branch reasoning.
+
+Concrete non-vacuous stale-provenance contract (required by follow-up leaves):
+
+- For a granted stale vote packet witness
+  `VoteResponse{term: t, voter: v} (v -> leader)` with `v.current_term > t`,
+  and matching `RequestVote{term: t, candidate: leader, last_idx, last_term}`,
+  we need a vote-time witness state `v_pre` such that:
+  - `LHandleRequestVoteMsg(v_pre, v_post, c_v, t, leader, last_idx, last_term, sent)`
+    with `sent == [VoteResponse{term: t, granted: true, voter: v}]`.
+  - `v_pre.log` is prefix-preserved by current voter log (append-only transfer).
+  - For overlap path usage, `v_pre.log` still carries the overlap entry at `k`
+    (or an equivalent relation strong enough to recover it).
+
+Why current invariants are insufficient:
+
+- `VoteResponseIntegrity` allows stale packets via `v.current_term > t`, but
+  does not preserve vote-time voter-log witness.
+- `VoteResponseHasRequestVote` gives packet provenance only.
+- `RequestVoteSummaryStillValidAtSameTerm` constrains candidate summary only,
+  not voter vote-time log when voter term advanced.
+- `LogAppendOnly` is step-local and does not by itself reconstruct the specific
+  historical state that produced an old packet.
+
+So `...c.c.b` must introduce explicit stale-history carrier (ghost/payload) and
+its inductive preservation before the stale branch can discharge `...c.c.c`.
