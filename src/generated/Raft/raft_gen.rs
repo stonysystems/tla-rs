@@ -110,8 +110,12 @@ ensures
 }, vec![CRaftMessage::RequestVote {
     term: (s.current_term + 1),
     candidate: c.my_id.clone(),
-    last_log_index: 0u64,
-    last_log_term: 0u64,
+    last_log_index: (s.log.len() as u64),
+    last_log_term: (if s.log.len() == 0 {
+    0u64
+} else {
+    s.log[s.log.len() - 1].term
+}),
 }])
     };
     proof {

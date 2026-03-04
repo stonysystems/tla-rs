@@ -379,3 +379,21 @@ Required follow-up obligations (split in TODO leaf `34.7.1.e.4.b.2.b.2.b`):
    up-to-date as any retained RequestVote summary for the same election term.
 3. Consume that bridge in the overlap-voter subcase to replace the local
    `assume(ds_.server_states[leader_id].log[k] == entry)` with a proof.
+
+## Update: 34.7.1.e.4.b.2.b.2.b.2 complete (2026-03-04)
+
+Implemented RequestVote send-parameter alignment in:
+
+- `src/protocol/Raft/raft.rs` (`LTimeout`)
+- `src/generated/Raft/raft_gen.rs` (`CTimeout`)
+
+Change made:
+
+- Replaced fixed RequestVote `(last_log_index, last_log_term) = (0, 0)` with
+  sender-derived values:
+  - `last_log_index = s.log.len()`
+  - `last_log_term = if s.log.len() == 0 { 0 } else { s.log[last].term }`
+
+This removes the immediate mismatch between packet parameters and candidate log
+state at election start, which is required before proving the remaining
+packet-history bridge in the next leaf (`...b.3`).

@@ -37,8 +37,13 @@ verus! {
         &&& sent_packets == seq![LRaftMessage::RequestVote {
             term: s.current_term + 1,
             candidate: c.my_id,
-            last_log_index: 0,
-            last_log_term: 0,
+            // RequestVote must carry the candidate's current last-log summary.
+            last_log_index: s.log.len() as int,
+            last_log_term: if s.log.len() == 0 {
+                0int
+            } else {
+                s.log[s.log.len() - 1].term
+            },
         }]
     }
 
