@@ -2144,6 +2144,27 @@ verus! {
         // LFollowerAppendEntries: s_.log == s.log or s.log.push(entry), same argument
     }
 
+    /// If a step grows the log by one at `k == old_len`, the appended entry's
+    /// term is at least the pre-state current term.
+    proof fn lemma_lnext_fresh_append_entry_term_ge_pre_current(
+        s: LState, s_: LState, c: LConstants,
+        k: int, entry: LLogEntry,
+    )
+        requires
+            LNext(s, s_, c),
+            k == s.log.len(),
+            s_.log.len() == s.log.len() + 1,
+            s_.log[k] == entry,
+        ensures
+            entry.term >= s.current_term,
+    {
+        assert(s_.log[k].term == entry.term);
+        assert(entry.term >= s.current_term) by {
+            // Only LClientRequest and LFollowerAppendEntries can increase log
+            // length; both append entries with term >= pre current_term.
+        }
+    }
+
     /// Main induction lemma for Log Matching
     ///
     /// LogMatching states: if servers i and j have entries at index k with the
@@ -2483,6 +2504,7 @@ verus! {
                     &&& ds_.server_states[stepping].log.len()
                         == ds.server_states[stepping].log.len() + 1
                     &&& ds_.server_states[stepping].log[k] == entry
+                    &&& entry.term >= ds.server_states[stepping].current_term
                 }
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
@@ -2532,6 +2554,7 @@ verus! {
                 &&& ds_.server_states[stepping].log.len()
                     == ds.server_states[stepping].log.len() + 1
                 &&& ds_.server_states[stepping].log[k] == entry
+                &&& entry.term >= ds.server_states[stepping].current_term
             }) by {
                 let stepping = server_id;
                 assert(0 <= stepping < ds.num_servers);
@@ -2539,6 +2562,13 @@ verus! {
                 assert(ds_.server_states[stepping].log.len()
                     == ds.server_states[stepping].log.len() + 1);
                 assert(ds_.server_states[stepping].log[k] == entry);
+                lemma_lnext_fresh_append_entry_term_ge_pre_current(
+                    ds.server_states[stepping],
+                    ds_.server_states[stepping],
+                    ds.server_constants[stepping],
+                    k,
+                    entry,
+                );
             };
         } else {
             assert(EntryCommittedAt(ds, k, entry)) by {
@@ -2682,6 +2712,7 @@ verus! {
     /// message parameters are existentially quantified with no provenance linking
     /// them to the sender's state, so we cannot formally connect the voter's log
     /// at vote time to the committed entry's presence.
+    #[verifier::rlimit(80)]
     pub proof fn lemma_leader_completeness_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -2752,6 +2783,7 @@ verus! {
                     &&& ds_.server_states[stepping].log.len()
                         == ds.server_states[stepping].log.len() + 1
                     &&& ds_.server_states[stepping].log[k] == entry
+                    &&& entry.term >= ds.server_states[stepping].current_term
                 });
                 let stepping = choose |stepping: int| {
                     &&& 0 <= stepping < ds.num_servers
@@ -2762,6 +2794,7 @@ verus! {
                     &&& ds_.server_states[stepping].log.len()
                         == ds.server_states[stepping].log.len() + 1
                     &&& ds_.server_states[stepping].log[k] == entry
+                    &&& entry.term >= ds.server_states[stepping].current_term
                 };
 
                 if ds_.server_states[leader_id] == ds.server_states[leader_id] {
@@ -2790,7 +2823,88 @@ verus! {
                         assert(ds_.server_states[leader_id].log.len() > k);
                         assert(ds_.server_states[leader_id].log[k] == entry);
                     } else {
-                        // Pending 34.7.1.e.4.b.2 (leader not directly in post commit quorum).
+                        // Remaining unchanged-leader + fresh-step subcase:
+                        // leader is not directly in this post-state commit quorum.
+                        // Build overlap witness between commit quorum and the leader's
+                        // election quorum (votes_granted), then continue in follow-up leaf.
+                        assert(!commit_quorum.contains(leader_id));
+
+                        let vote_quorum = ds.server_states[leader_id].votes_granted;
+                        let n = ds.num_servers;
+                        let quorum_size = n / 2 + 1;
+                        let universe = Set::<int>::new(|j: int| 0 <= j < n);
+                        assert(LeaderHasQuorum(ds));
+                        assert(vote_quorum.len() >= ds.server_constants[leader_id].quorum_size);
+                        assert(ds.server_constants[leader_id].quorum_size == quorum_size);
+                        assert(!vote_quorum.contains(stepping)) by {
+                            if vote_quorum.contains(stepping) {
+                                assert(stepping != leader_id);
+                                lemma_vote_witness_from_votes_granted(ds, leader_id, stepping);
+                                assert(ds.server_states[stepping].current_term
+                                    > ds.server_states[leader_id].current_term
+                                    || (ds.server_states[stepping].current_term
+                                            == ds.server_states[leader_id].current_term
+                                        && ds.server_states[stepping].has_voted
+                                        && ds.server_states[stepping].voted_for == leader_id));
+                                assert(ds.server_states[leader_id].current_term > entry.term);
+                                assert(ds.server_states[stepping].current_term > entry.term) by {
+                                    if ds.server_states[stepping].current_term
+                                        > ds.server_states[leader_id].current_term {
+                                        assert(ds.server_states[stepping].current_term > entry.term);
+                                    } else {
+                                        assert(ds.server_states[stepping].current_term
+                                            == ds.server_states[leader_id].current_term);
+                                    }
+                                };
+                                assert(entry.term >= ds.server_states[stepping].current_term);
+                                assert(false);
+                            }
+                        };
+                        assert(commit_quorum.len() >= quorum_size);
+                        assert(vote_quorum.len() >= quorum_size);
+                        assert(commit_quorum.len() + vote_quorum.len()
+                            >= quorum_size + quorum_size);
+                        assert(quorum_size + quorum_size > n);
+                        lemma_range_set_finite(n);
+                        assert(universe.len() == n);
+                        assert(commit_quorum.len() + vote_quorum.len() > universe.len());
+
+                        assert(commit_quorum.subset_of(universe)) by {
+                            assert forall |id: int| commit_quorum.contains(id)
+                                implies universe.contains(id) by {
+                                assert(0 <= id < ds.num_servers);
+                            };
+                        };
+                        assert(vote_quorum.subset_of(universe)) by {
+                            assert forall |id: int| vote_quorum.contains(id)
+                                implies universe.contains(id) by {
+                                assert(VotesGrantedAreServers(ds));
+                            };
+                        };
+                        lemma_quorum_intersection(commit_quorum, vote_quorum, universe);
+                        let overlap_voter = choose |ov: int|
+                            commit_quorum.contains(ov) && vote_quorum.contains(ov);
+                        assert(0 <= overlap_voter < ds.num_servers);
+                        assert(ds_.server_states[overlap_voter].log.len() > k);
+                        assert(ds_.server_states[overlap_voter].log[k] == entry);
+                        assert(overlap_voter != leader_id) by {
+                            if overlap_voter == leader_id {
+                                assert(commit_quorum.contains(leader_id));
+                                assert(false);
+                            }
+                        };
+                        assert(overlap_voter != stepping) by {
+                            if overlap_voter == stepping {
+                                assert(vote_quorum.contains(stepping));
+                                assert(false);
+                            }
+                        };
+                        assert(ds_.server_states[overlap_voter]
+                            == ds.server_states[overlap_voter]);
+                        assert(ds.server_states[overlap_voter].log.len() > k);
+                        assert(ds.server_states[overlap_voter].log[k] == entry);
+
+                        // Pending 34.7.1.e.4.b.2.b: transfer overlap witness to leader log.
                         assume(
                             ds_.server_states[leader_id].log.len() > k
                                 && ds_.server_states[leader_id].log[k] == entry
