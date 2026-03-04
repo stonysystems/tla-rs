@@ -9826,7 +9826,7 @@ Network-level invariants that constrain what messages can exist in `sentPackets`
 
 This is the hardest step. Estimated ~300-500 LOC.
 
-- [ ] **34.6.1**: Prove `LogMatching(ds_)` inductive by case split on log-modifying actions:
+- [x] **34.6.1**: Prove `LogMatching(ds_)` inductive by case split on log-modifying actions. Implemented in `lemma_log_matching_inductive` + `lemma_log_matching_inner` + `lemma_log_matching_follower_append` in `src/protocol/Raft/refinement_proof/invariants.rs`. Also added explicit quantifier triggers for `EntryTermLeaderWitness` to keep verifier trigger inference stable. Focused check passes: `verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*log_matching_inductive*' --rlimit 40`.
   - **LClientRequest** (leader appends entry at index `log.len()` with `term = current_term`):
     - New entry: if another server `j` has an entry at same index with same term, then `j` received it from the same leader (by `ElectionSafety`, one leader per term). By `AppendEntriesIntegrity`, the AE packet content matches the leader's log. By induction hypothesis, the leader's log prefix matches `j`'s prefix.
   - **LHandleAppendEntriesMsg** (follower appends/overwrites):
