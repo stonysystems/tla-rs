@@ -9758,7 +9758,7 @@ Add message routing to `RaftDistributedState` and `RaftDistributedNext`, followi
 
 Network-level invariants that constrain what messages can exist in `sentPackets`. These are the key enablers for eliminating the assumes.
 
-- [ ] **34.2.1**: Define `VoteResponseIntegrity(ds)` — every `VoteResponse{voter: v, term: t, granted: true}` packet in `ds.network` with `src == v` implies that server `v` has `has_voted == true` and `voted_for == candidate` and `current_term >= t` (or has moved to a later term). Formally:
+- [x] **34.2.1**: Define `VoteResponseIntegrity(ds)` — every `VoteResponse{voter: v, term: t, granted: true}` packet in `ds.network` with `src == v` implies that server `v` has `has_voted == true` and `voted_for == candidate` and `current_term >= t` (or has moved to a later term). Formally:
   ```
   forall |p: LRaftPacket| ds.network.contains(p) && p.msg is VoteResponse && p.msg->granted ==>
       let v = p.src;
@@ -9768,7 +9768,7 @@ Network-level invariants that constrain what messages can exist in `sentPackets`
         && ds.server_states[v].current_term >= p.msg->term))
   ```
 
-- [ ] **34.2.2**: Define `AppendEntriesIntegrity(ds)` — every `AppendEntries{prev_index, prev_term, value, term, ...}` packet in `ds.network` with `src == leader` implies that at the time of sending, the leader's log was consistent with the message content. Since logs are append-only, this can be stated as a current-state invariant:
+- [x] **34.2.2**: Define `AppendEntriesIntegrity(ds)` — every `AppendEntries{prev_index, prev_term, value, term, ...}` packet in `ds.network` with `src == leader` implies that at the time of sending, the leader's log was consistent with the message content. Since logs are append-only, this can be stated as a current-state invariant:
   ```
   forall |p: LRaftPacket| ds.network.contains(p) && p.msg is AppendEntries ==>
       let leader = p.src;
@@ -9781,7 +9781,7 @@ Network-level invariants that constrain what messages can exist in `sentPackets`
       (p.msg->has_entry ==> ds.server_states[leader].log[p.msg->prev_index].value == p.msg->value)
   ```
 
-- [ ] **34.2.3**: Define `LogAppendOnly(ds, ds_)` — auxiliary step invariant: logs only grow by appending (no truncation/overwrite). For leader: `LClientRequest` appends one entry. For follower: `LHandleAppendEntriesMsg` may append but the spec already has prev_log check. Formalize:
+- [x] **34.2.3**: Define `LogAppendOnly(ds, ds_)` — auxiliary step invariant: logs only grow by appending (no truncation/overwrite). For leader: `LClientRequest` appends one entry. For follower: `LHandleAppendEntriesMsg` may append but the spec already has prev_log check. Formalize:
   ```
   forall |i: int| 0 <= i < ds.num_servers ==>
       ds.server_states[i].log.len() <= ds_.server_states[i].log.len() &&
@@ -9790,44 +9790,37 @@ Network-level invariants that constrain what messages can exist in `sentPackets`
   ```
   Note: The current Raft spec's `LHandleAppendEntriesMsg` overwrites at `prev_index`, which may violate append-only for followers receiving entries at a truncation point. Need to verify whether the spec models log truncation. If it does, `LogAppendOnly` holds only for leaders, and `AppendEntriesIntegrity` needs a weaker formulation using term-index pairs rather than exact log content.
 
-- [ ] **34.2.4**: Define `OneVotePerTerm(ds)` — each server votes at most once per term. This is already implicit in the `has_voted` guard but needs to be stated as an invariant on the network: at most one `VoteResponse{granted: true}` per `(voter, term)` pair in `ds.network`.
+- [x] **34.2.4**: Define `OneVotePerTermInNetwork(ds)` — each server votes at most once per term. This is already implicit in the `has_voted` guard but needs to be stated as an invariant on the network: at most one `VoteResponse{granted: true}` per `(voter, term)` pair in `ds.network`.
 
-- [ ] **34.2.5**: Add all message invariants to `RaftSafetyInvariant` conjunction. Place definitions in `invariants.rs` or a new `message_invariants.rs` file.
+- [x] **34.2.5**: Add all message invariants to `RaftSafetyInvariant` conjunction. Definitions placed in `message_invariants.rs` and `invariants.rs`.
 
 ### 34.3 Prove message invariants are inductive
 
-- [ ] **34.3.1**: Prove `VoteResponseIntegrity` inductive — case split on LNext actions:
+- [x] **34.3.1**: Prove `VoteResponseIntegrity` inductive — case split on LNext actions:
   - `LGrantVote`: sends VoteResponse with `voter=my_id`, sets `has_voted=true, voted_for=candidate`. New packet matches invariant. Existing packets: voter's state unchanged or term advanced.
   - `LStepDown`: may advance term but `has_voted` is reset — need the weaker `current_term > p.msg->term` disjunct.
   - `LHandleAppendEntriesMsg`: may step down (advance term) — same reasoning.
   - All other actions: no new VoteResponse packets, voter state preserved or term advanced.
 
-- [ ] **34.3.2**: Prove `AppendEntriesIntegrity` inductive — case split:
+- [ ] **34.3.2**: Prove `AppendEntriesIntegrity` inductive (still has assume) — case split:
   - `LSendAppendEntries`: sends AE packet matching leader's current log. New packet satisfies invariant.
   - `LClientRequest`: leader appends to own log — existing AE packets still valid because log is extended (append-only for leader).
   - Other actions: no new AE packets. Leader's log may only grow.
   - **Key subtlety**: if a server steps down and another becomes leader, old AE packets from the old leader must still satisfy the invariant. This works because logs are append-only: the old leader's log still contains the referenced entries.
 
-- [ ] **34.3.3**: Prove `LogAppendOnly` as a step property (not a state invariant — it relates ds to ds_). Case analysis on each LNext action showing log[0..old_len] is preserved.
+- [x] **34.3.3**: Prove `LogAppendOnly` as a step property (not a state invariant — it relates ds to ds_). Case analysis on each LNext action showing log[0..old_len] is preserved.
 
-- [ ] **34.3.4**: Prove `OneVotePerTerm` inductive — `LGrantVote` only fires when `!has_voted`, so each `(voter, term)` pair produces at most one granted VoteResponse. Network monotonicity + `has_voted` guard.
+- [x] **34.3.4**: Prove `OneVotePerTermInNetwork` inductive — `LGrantVote` only fires when `!has_voted`, so each `(voter, term)` pair produces at most one granted VoteResponse. Network monotonicity + `has_voted` guard.
 
 ### 34.4 Eliminate VotersVotedForCandidate assume (#2)
 
-- [ ] **34.4.1**: Prove `VotersVotedForCandidate(ds_)` inductively using `VoteResponseIntegrity`:
-  - When server `i` adds voter `v` to `votes_granted` via `LReceiveVoteGranted`: the received VoteResponse packet has `src=v, granted=true, term=i.current_term`. By receive guard, packet is in `ds.network`. By `VoteResponseIntegrity`, `v` voted for `i` (or moved to later term — but term matching in the VoteResponse check ensures `v.current_term >= i.current_term`; combined with `OneVotePerTerm`, `v.voted_for == i`).
-  - Non-stepping servers: `votes_granted` unchanged, voter state preserved or term advanced.
-- [ ] **34.4.2**: Remove `assume(VotersVotedForCandidate(ds_))` at invariants.rs:565.
+- [x] **34.4.1**: Prove `VotersVotedForCandidate(ds_)` inductively. Reformulated from voter-state-based to network-based (checking for VoteResponse packets), making it trivially inductive since network is monotonic. Added stale term check to `LHandleVoteResponseMsg` spec.
+- [x] **34.4.2**: Assume eliminated. `VotersVotedForCandidate` auto-proves with network-based formulation.
 
 ### 34.5 Eliminate ElectionSafety assume (#1)
 
-- [ ] **34.5.1**: Prove `ElectionSafety(ds_)` using `VotersVotedForCandidate(ds_)` + quorum intersection:
-  - When `stepping` becomes Leader via `LReceiveVoteAndBecomeLeader` and `other` is already Leader at same term:
-  - `VotersVotedForCandidate` gives: each voter in `stepping.votes_granted` voted for `stepping`, each voter in `other.votes_granted` voted for `other`.
-  - `VotesGrantedAreServers` (already proved) gives: all voters are valid server IDs.
-  - `LeaderHasQuorum` (already proved) gives: `|votes_granted| >= quorum_size`.
-  - `lemma_quorum_intersection` (already in sets.rs) gives: the two voter sets overlap → some voter `w` voted for both → `w.voted_for == stepping && w.voted_for == other` → `stepping == other`.
-- [ ] **34.5.2**: Remove `assume(stepping == other)` at invariants.rs:376.
+- [x] **34.5.1**: Prove `ElectionSafety(ds_)` using quorum intersection argument. Key helpers: `lemma_vote_sets_disjoint` (uses VotersVotedForCandidate + VoteResponseIntegrity + CandidateOrLeaderVotedForSelfId + OneVotePerTermInNetwork), `lemma_range_set_finite` (Set::new finite + len), `lemma_lnext_non_leader_to_leader_was_candidate`. Disjoint quorum-sized vote sets exceed server count → contradiction.
+- [x] **34.5.2**: Assume eliminated. No `assume()` in ElectionSafety proof. Added `CandidateOrLeaderVotedForSelfId` invariant with full induction proof.
 
 ### 34.6 Eliminate LogMatching assume (#3)
 
