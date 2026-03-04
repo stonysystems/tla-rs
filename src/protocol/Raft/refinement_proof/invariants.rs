@@ -1010,6 +1010,174 @@ verus! {
         };
     }
 
+    /// Package both overlap-voter packet witnesses needed by the bridge path:
+    /// - granted VoteResponse (`overlap_voter -> leader_id`) at leader term
+    /// - corresponding RequestVote (`leader_id -> overlap_voter`) with
+    ///   same-term sender-summary validity on the leader log.
+    proof fn lemma_overlap_voter_vote_request_packet_context(
+        ds: RaftDistributedState,
+        leader_id: int,
+        overlap_voter: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            0 <= leader_id < ds.num_servers,
+            0 <= overlap_voter < ds.num_servers,
+            overlap_voter != leader_id,
+            (ds.server_states[leader_id].role is Candidate
+                || ds.server_states[leader_id].role is Leader),
+            ds.server_states[leader_id].votes_granted.contains(overlap_voter),
+        ensures
+            exists |vote_pkt: LRaftPacket| {
+                &&& ds.network.contains(vote_pkt)
+                &&& vote_pkt.src == overlap_voter
+                &&& vote_pkt.dst == leader_id
+                &&& vote_pkt.msg matches LRaftMessage::VoteResponse {
+                    term: vote_term,
+                    granted: vote_granted,
+                    voter: vote_voter,
+                }
+                &&& vote_granted
+                &&& vote_voter == overlap_voter
+                &&& vote_term == ds.server_states[leader_id].current_term
+                &&& (ds.server_states[overlap_voter].current_term > vote_term
+                    || (ds.server_states[overlap_voter].current_term == vote_term
+                        && ds.server_states[overlap_voter].has_voted
+                        && ds.server_states[overlap_voter].voted_for == leader_id))
+            },
+            exists |req_pkt: LRaftPacket| {
+                &&& ds.network.contains(req_pkt)
+                &&& req_pkt.src == leader_id
+                &&& req_pkt.dst == overlap_voter
+                &&& req_pkt.msg matches LRaftMessage::RequestVote {
+                    term: req_term,
+                    candidate: req_candidate,
+                    last_log_index: req_last_log_index,
+                    last_log_term: req_last_log_term,
+                }
+                &&& req_term == ds.server_states[leader_id].current_term
+                &&& req_candidate == leader_id
+                &&& 0 <= req_last_log_index <= ds.server_states[leader_id].log.len()
+                &&& (req_last_log_index == 0 ==> req_last_log_term == 0)
+                &&& (req_last_log_index > 0 ==>
+                    ds.server_states[leader_id].log[req_last_log_index - 1].term
+                        == req_last_log_term)
+            },
+    {
+        lemma_vote_witness_from_votes_granted(ds, leader_id, overlap_voter);
+        let vote_pkt = choose |p: LRaftPacket| {
+            &&& ds.network.contains(p)
+            &&& p.src == overlap_voter
+            &&& p.dst == leader_id
+            &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter }
+            &&& granted
+            &&& term == ds.server_states[leader_id].current_term
+            &&& msg_voter == overlap_voter
+        };
+        let vote_term = vote_pkt.msg->VoteResponse_term;
+        assert(vote_term == ds.server_states[leader_id].current_term);
+        assert(
+            ds.server_states[overlap_voter].current_term > vote_term
+                || (ds.server_states[overlap_voter].current_term == vote_term
+                    && ds.server_states[overlap_voter].has_voted
+                    && ds.server_states[overlap_voter].voted_for == leader_id)
+        );
+
+        lemma_overlap_voter_request_vote_summary_context(ds, leader_id, overlap_voter);
+        let req_pkt = choose |req: LRaftPacket| {
+            &&& ds.network.contains(req)
+            &&& req.src == leader_id
+            &&& req.dst == overlap_voter
+            &&& req.msg matches LRaftMessage::RequestVote {
+                term,
+                candidate,
+                last_log_index,
+                last_log_term,
+            }
+            &&& term == ds.server_states[leader_id].current_term
+            &&& candidate == leader_id
+            &&& 0 <= last_log_index <= ds.server_states[leader_id].log.len()
+            &&& (last_log_index == 0 ==> last_log_term == 0)
+            &&& (last_log_index > 0 ==>
+                ds.server_states[leader_id].log[last_log_index - 1].term == last_log_term)
+        };
+        let req_term = req_pkt.msg->RequestVote_term;
+        assert(req_term == ds.server_states[leader_id].current_term);
+        assert(req_term == vote_term);
+
+        assert(exists |vote_wit: LRaftPacket| {
+            &&& ds.network.contains(vote_wit)
+            &&& vote_wit.src == overlap_voter
+            &&& vote_wit.dst == leader_id
+            &&& vote_wit.msg matches LRaftMessage::VoteResponse {
+                term: vote_term_wit,
+                granted: vote_granted_wit,
+                voter: vote_voter_wit,
+            }
+            &&& vote_granted_wit
+            &&& vote_voter_wit == overlap_voter
+            &&& vote_term_wit == ds.server_states[leader_id].current_term
+            &&& (ds.server_states[overlap_voter].current_term > vote_term_wit
+                || (ds.server_states[overlap_voter].current_term == vote_term_wit
+                    && ds.server_states[overlap_voter].has_voted
+                    && ds.server_states[overlap_voter].voted_for == leader_id))
+        }) by {
+            let vote_wit = vote_pkt;
+            assert(ds.network.contains(vote_wit));
+            assert(vote_wit.src == overlap_voter);
+            assert(vote_wit.dst == leader_id);
+            assert(vote_wit.msg is VoteResponse);
+            assert(vote_wit.msg->VoteResponse_granted);
+            assert(vote_wit.msg->VoteResponse_voter == overlap_voter);
+            assert(vote_wit.msg->VoteResponse_term == ds.server_states[leader_id].current_term);
+            assert(
+                ds.server_states[overlap_voter].current_term > vote_wit.msg->VoteResponse_term
+                    || (ds.server_states[overlap_voter].current_term
+                        == vote_wit.msg->VoteResponse_term
+                        && ds.server_states[overlap_voter].has_voted
+                        && ds.server_states[overlap_voter].voted_for == leader_id)
+            );
+        };
+
+        assert(exists |req_wit: LRaftPacket| {
+            &&& ds.network.contains(req_wit)
+            &&& req_wit.src == leader_id
+            &&& req_wit.dst == overlap_voter
+            &&& req_wit.msg matches LRaftMessage::RequestVote {
+                term: req_term_wit,
+                candidate: req_candidate_wit,
+                last_log_index: req_last_log_index_wit,
+                last_log_term: req_last_log_term_wit,
+            }
+            &&& req_term_wit == ds.server_states[leader_id].current_term
+            &&& req_candidate_wit == leader_id
+            &&& 0 <= req_last_log_index_wit <= ds.server_states[leader_id].log.len()
+            &&& (req_last_log_index_wit == 0 ==> req_last_log_term_wit == 0)
+            &&& (req_last_log_index_wit > 0 ==>
+                ds.server_states[leader_id].log[req_last_log_index_wit - 1].term
+                    == req_last_log_term_wit)
+        }) by {
+            let req_wit = req_pkt;
+            assert(ds.network.contains(req_wit));
+            assert(req_wit.src == leader_id);
+            assert(req_wit.dst == overlap_voter);
+            assert(req_wit.msg is RequestVote);
+            assert(req_wit.msg->RequestVote_term == ds.server_states[leader_id].current_term);
+            assert(req_wit.msg->RequestVote_candidate == leader_id);
+            assert(0 <= req_wit.msg->RequestVote_last_log_index <= ds.server_states[leader_id].log.len());
+            assert(req_wit.msg->RequestVote_last_log_index == 0
+                ==> req_wit.msg->RequestVote_last_log_term == 0);
+            if req_wit.msg->RequestVote_last_log_index > 0 {
+                assert(ds.server_states[leader_id].log[req_wit.msg->RequestVote_last_log_index - 1].term
+                    == req_wit.msg->RequestVote_last_log_term);
+            }
+        };
+    }
+
     /// Candidate log is at least as up-to-date as voter log
     /// (Raft RequestVote comparison relation).
     pub open spec fn log_not_older_than(candidate: LState, voter: LState) -> bool {
@@ -2142,14 +2310,153 @@ verus! {
             // 5b: CandidateVoteDestinationUnique(ds_) to show d ∉ sid_votes.
             lemma_candidate_vote_destination_unique_inductive(ds, ds_);
 
-            // 5c: Quorum overlap → d == server_id → contradiction.
-            // voters has >= quorum_size - 1 distinct elements in [0, n) \ {d}
-            // sid_votes has >= quorum_size elements in [0, n)
-            // After excluding d from sid_votes (provable via CandidateVoteDestinationUnique),
-            // both sets are in [0, n) \ {d, server_id} (after also excluding server_id from voters
-            // via VoteResponseIntegrity), giving overlap w. OneVotePerTermInNetwork → d == server_id.
-            // Pending: Seq→Set conversion and quorum intersection.
-            assume(false);
+            // 5c: Extract network monotonicity (ds.network ⊆ ds_.network).
+            let (_sp, _rf) =
+                choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
+                    &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
+                    &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
+                        ==> ds_.network.contains(pkt))
+                    &&& (forall |pkt: LRaftPacket|
+                        ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                            &&& pkt.src == server_id
+                            &&& 0 <= pkt.dst < ds.num_servers
+                            &&& (exists |i: int| 0 <= i < sp.len()
+                                && pkt.msg == sp[i])
+                        })
+                };
+
+            // 5d: Prove d ∉ sid_votes via CandidateVoteDestinationUnique.
+            //
+            // If d ∈ sid_votes, VotersVotedForCandidate(ds_) gives
+            // VoteResponse{T, voter: d, to server_id} in ds_.network.
+            // VoteResponseHasRequestVote(ds) + monotonicity gives
+            // RequestVote{T, candidate: d} in ds_.network.
+            // CandidateVoteDestinationUnique(ds_) → server_id == d. Contradiction.
+            assert(!sid_votes.contains(d)) by {
+                if sid_votes.contains(d) {
+                    assert(VotersVotedForCandidate(ds_));
+                    // VoteResponseHasRequestVote gives RequestVote{T, candidate: d}
+                    assert(VoteResponseHasRequestVote(ds));
+                    let v0_vr = LRaftPacket {
+                        src: voters[0],
+                        dst: d,
+                        msg: LRaftMessage::VoteResponse {
+                            term: T, granted: true, voter: voters[0],
+                        },
+                    };
+                    assert(ds.network.contains(v0_vr));
+                    // Instantiate VoteResponseHasRequestVote for v0_vr
+                    let req = choose |req: LRaftPacket| {
+                        &&& ds.network.contains(req)
+                        &&& req.src == d
+                        &&& req.dst == voters[0]
+                        &&& req.msg matches LRaftMessage::RequestVote {
+                            term, candidate,
+                            last_log_index: _, last_log_term: _,
+                        }
+                        &&& term == T
+                        &&& candidate == d
+                    };
+                    assert(ds_.network.contains(req));  // monotonicity
+                    // VotersVotedForCandidate: d ∈ sid_votes, d != server_id
+                    let vr_d = choose |p: LRaftPacket| {
+                        &&& ds_.network.contains(p)
+                        &&& p.dst == server_id
+                        &&& p.msg matches LRaftMessage::VoteResponse {
+                            term, granted, voter }
+                        &&& term == s_.current_term
+                        &&& granted
+                        &&& voter == d
+                    };
+                    // CandidateVoteDestinationUnique(ds_):
+                    // req (RequestVote{T, d}) + vr_d (VoteResponse{T, voter: d, to sid})
+                    // → vr_d.dst == d, i.e., server_id == d
+                    assert(CandidateVoteDestinationUnique(ds_));
+                }
+            };
+
+            // 5e: Convert voters to set and establish cardinality.
+            assert(voters.no_duplicates());
+            let voter_set = voters.to_set();
+            voters.unique_seq_to_set();
+            assert(voter_set.len() == voters.len());
+            assert(voter_set.len() >= quorum_size - 1);
+
+            // 5f: Build universe [0, n) \ {d}.
+            let universe_full = Set::<int>::new(|j: int| 0 <= j < n);
+            lemma_range_set_finite(n);
+            assert(universe_full.contains(d));
+            let universe = universe_full.remove(d);
+
+            // 5g: voter_set ⊆ universe ([0, n) \ {d})
+            assert(voter_set.subset_of(universe)) by {
+                assert forall |v: int| voter_set.contains(v)
+                    implies universe.contains(v) by
+                {
+                    let a = choose |a: int| 0 <= a < voters.len()
+                        && voters[a] == v;
+                    assert(0 <= voters[a] < n);
+                    assert(voters[a] != d);
+                };
+            };
+
+            // 5h: sid_votes ⊆ universe (all in [0, n), d ∉ sid_votes)
+            assert(sid_votes.subset_of(universe)) by {
+                assert forall |v: int| sid_votes.contains(v)
+                    implies universe.contains(v) by
+                {
+                    assert(VotesGrantedAreServers(ds_));
+                    assert(0 <= v < n);
+                    assert(v != d);
+                };
+            };
+
+            // 5i: |voter_set| + |sid_votes| > |universe| = n - 1.
+            // voter_set.len() >= quorum_size - 1 = n/2
+            // sid_votes.len() >= quorum_size = n/2 + 1
+            // Sum >= n/2 + n/2 + 1 = 2*(n/2) + 1 >= n > n - 1
+            assert(voter_set.len() + sid_votes.len() > universe.len());
+
+            // 5j: Quorum intersection → overlap voter w.
+            lemma_quorum_intersection(voter_set, sid_votes, universe);
+            let w = choose |w: int| voter_set.contains(w)
+                && sid_votes.contains(w);
+
+            // 5k: w ∈ voter_set → VoteResponse{T, voter: w, to d} ∈ ds_.network
+            assert(voters.contains(w));
+            let a_w = choose |a: int| 0 <= a < voters.len()
+                && voters[a] == w;
+            let vote_to_d = LRaftPacket {
+                src: w, dst: d,
+                msg: LRaftMessage::VoteResponse {
+                    term: T, granted: true, voter: w,
+                },
+            };
+            assert(ds.network.contains(vote_to_d));
+            assert(ds_.network.contains(vote_to_d));  // monotonicity
+
+            // 5l: Derive d == server_id → contradiction.
+            if w == server_id {
+                // VoteResponse{T, voter: server_id, to d} ∈ ds_.network.
+                // VoteResponseIntegrity(ds_): s_.current_term == T,
+                // so s_.voted_for == d. But CandidateOrLeaderVotedForSelfId:
+                // s_.voted_for == server_id. So d == server_id.
+                assert(VoteResponseIntegrity(ds_));
+                assert(CandidateOrLeaderVotedForSelfId(ds_));
+            } else {
+                // w != server_id, w ∈ sid_votes.
+                // VotersVotedForCandidate(ds_) gives
+                // VoteResponse{T, voter: w, to server_id} ∈ ds_.network.
+                assert(VotersVotedForCandidate(ds_));
+                assert(0 <= w < ds_.num_servers);
+                lemma_vote_witness_from_votes_granted(
+                    ds_, server_id, w);
+                // OneVotePerTermInNetwork(ds_): same voter w, same term T,
+                // both granted → d == server_id.
+                assert(OneVotePerTermInNetwork(ds_));
+            }
+            // d == server_id contradicts d != server_id.
+            assert(false);
         }
     }
 
@@ -3273,13 +3580,40 @@ verus! {
                         assert(ds.server_states[overlap_voter].log.len() > k);
                         assert(ds.server_states[overlap_voter].log[k] == entry);
 
-                        // Wire overlap voter to RequestVote provenance + bridge template.
+                        // Wire overlap-voter packet context and isolate
+                        // same-term-voter vs stale-vote packet subcases.
                         assert(VotersVotedForCandidate(ds));
                         assert(VoteResponseIntegrity(ds));
                         assert(VoteResponseHasRequestVote(ds));
                         assert(RequestVoteSummaryStillValidAtSameTerm(ds));
-                        lemma_overlap_voter_request_vote_summary_context(
+                        lemma_overlap_voter_vote_request_packet_context(
                             ds, leader_id, overlap_voter);
+                        let vote_pkt = choose |vote: LRaftPacket| {
+                            &&& ds.network.contains(vote)
+                            &&& vote.src == overlap_voter
+                            &&& vote.dst == leader_id
+                            &&& vote.msg matches LRaftMessage::VoteResponse {
+                                term: vote_term,
+                                granted: vote_granted,
+                                voter: vote_voter,
+                            }
+                            &&& vote_granted
+                            &&& vote_voter == overlap_voter
+                            &&& vote_term == ds.server_states[leader_id].current_term
+                            &&& (ds.server_states[overlap_voter].current_term > vote_term
+                                || (ds.server_states[overlap_voter].current_term == vote_term
+                                    && ds.server_states[overlap_voter].has_voted
+                                    && ds.server_states[overlap_voter].voted_for == leader_id))
+                        };
+                        let vote_term = vote_pkt.msg->VoteResponse_term;
+                        assert(vote_term == ds.server_states[leader_id].current_term);
+                        assert(
+                            ds.server_states[overlap_voter].current_term > vote_term
+                                || (ds.server_states[overlap_voter].current_term == vote_term
+                                    && ds.server_states[overlap_voter].has_voted
+                                    && ds.server_states[overlap_voter].voted_for == leader_id)
+                        );
+
                         let req_pkt = choose |req: LRaftPacket| {
                             &&& ds.network.contains(req)
                             &&& req.src == leader_id
@@ -3303,6 +3637,7 @@ verus! {
                         let req_last_log_index = req_pkt.msg->RequestVote_last_log_index;
                         let req_last_log_term = req_pkt.msg->RequestVote_last_log_term;
                         assert(req_term == ds.server_states[leader_id].current_term);
+                        assert(req_term == vote_term);
                         assert(req_candidate == leader_id);
                         assert(0 <= req_last_log_index <= ds.server_states[leader_id].log.len());
                         assert(req_last_log_index == 0 ==> req_last_log_term == 0);
@@ -3310,10 +3645,43 @@ verus! {
                             assert(ds.server_states[leader_id].log[req_last_log_index - 1].term
                                 == req_last_log_term);
                         }
-                        lemma_vote_grant_bridge_overlap_index_relation_template(
-                            overlap_voter, leader_id,
-                            req_term, req_last_log_index, req_last_log_term,
-                            ds.server_states[leader_id], k, entry);
+
+                        if ds.server_states[overlap_voter].current_term == req_term {
+                            assert(ds.server_states[overlap_voter].has_voted
+                                && ds.server_states[overlap_voter].voted_for == leader_id) by {
+                                if !(ds.server_states[overlap_voter].has_voted
+                                    && ds.server_states[overlap_voter].voted_for == leader_id) {
+                                    assert(ds.server_states[overlap_voter].current_term == vote_term);
+                                    assert(!(ds.server_states[overlap_voter].current_term > vote_term));
+                                    assert(false);
+                                }
+                            };
+                            assert(ds.server_states[overlap_voter].has_voted);
+                            assert(ds.server_states[overlap_voter].voted_for == leader_id);
+
+                            lemma_vote_grant_bridge_overlap_index_relation_template(
+                                overlap_voter, leader_id,
+                                req_term, req_last_log_index, req_last_log_term,
+                                ds.server_states[leader_id], k, entry);
+                        } else {
+                            assert(ds.server_states[overlap_voter].current_term > req_term) by {
+                                if !(ds.server_states[overlap_voter].current_term > req_term) {
+                                    assert(ds.server_states[overlap_voter].current_term < req_term);
+                                    assert(req_term == vote_term);
+                                    assert(ds.server_states[overlap_voter].current_term < vote_term);
+                                    assert(ds.server_states[overlap_voter].current_term
+                                        > vote_term
+                                        || (ds.server_states[overlap_voter].current_term
+                                            == vote_term
+                                            && ds.server_states[overlap_voter].has_voted
+                                            && ds.server_states[overlap_voter].voted_for
+                                                == leader_id));
+                                    assert(false);
+                                }
+                            };
+                            // Stale-vote packet subcase (voter term advanced past req_term):
+                            // closed in follow-up leaf 34.7.1.e.4.b.2.b.2.b.4.c.c.
+                        }
 
                         // Pending 34.7.1.e.4.b.2.b: final transfer overlap witness -> leader log.
                         assume(

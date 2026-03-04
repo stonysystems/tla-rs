@@ -549,3 +549,36 @@ Focused verification:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_grant_bridge_overlap_index_relation_template*' --rlimit 40`
 - Still rlimit-bounded (existing):
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness*' --rlimit 40`
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.a-c.b complete (2026-03-04)
+
+Completed the next two decomposition slices for `...b.4.c` in
+`src/protocol/Raft/refinement_proof/invariants.rs`:
+
+- `lemma_overlap_voter_vote_request_packet_context(...)` (leaf `...c.a`)
+  packages both concrete overlap-voter packet witnesses:
+  - granted `VoteResponse` (`overlap_voter -> leader_id`) with aligned leader
+    term plus voter-term/voted_for consistency facts, and
+  - corresponding `RequestVote` (`leader_id -> overlap_voter`) with same-term
+    sender summary validity (`last_log_index`/`last_log_term`) against the
+    leader's current log.
+- In `lemma_leader_completeness_inductive` unchanged-leader fresh-step overlap
+  branch (leaf `...c.b`), replaced the prior RequestVote-only extraction with
+  the new combined packet-context helper and explicit term split:
+  - same-term subcase: `overlap_voter.current_term == req_term`, deriving
+    concrete `has_voted && voted_for == leader_id` and reusing
+    `lemma_vote_grant_bridge_overlap_index_relation_template(...)`.
+  - stale-vote subcase: `overlap_voter.current_term > req_term`, isolated as a
+    separate proof obligation for follow-up leaf `...c.c`.
+
+Status after this update:
+
+- The local final transfer `assume(ds_.server_states[leader_id].log[k] == entry)`
+  remains in place.
+- Focused leader-completeness verification is still rlimit-bounded (no new hard
+  proof error observed in this slice).
+
+Focused verification:
+
+- Rlimit-bounded (existing):
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness_inductive*' --rlimit 40`
