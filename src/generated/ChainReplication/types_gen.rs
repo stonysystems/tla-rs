@@ -1,6 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
+use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::ChainReplication::chain::*;
 use crate::protocol::ChainReplication::types::*;
 use std::collections::HashSet;
@@ -23,16 +24,23 @@ pub struct CState {
 }
 
 impl Clone for CState {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.role == self.role,
+        res.committed_count == self.committed_count,
+        res.obj_value == self.obj_value,
+        res.has_predecessor == self.has_predecessor,
+        res.predecessor == self.predecessor,
+        res.has_successor == self.has_successor,
+        res.successor == self.successor,
+        res.alive == self.alive,
     {
         CState {
-            role: self.role.clone(),
+            role: self.role,
             history: self.history.clone(),
-            pending_sent: self.pending_sent.clone(),
+            pending_sent: clone_hashset_u64(&self.pending_sent),
             committed_count: self.committed_count,
             obj_value: self.obj_value,
             has_predecessor: self.has_predecessor,
@@ -92,7 +100,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CNodeRole {
     Head,
     Middle,

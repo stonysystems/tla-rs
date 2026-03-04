@@ -263,4 +263,40 @@ verus! {
         s@.finite(),
     {
     }
+
+    /// Verified clone for HashSet<u64>.
+    ///
+    /// Unlike the generic `clone_hashset<T>` (which is `external_body` because
+    /// Verus cannot verify HashSet iteration), this monomorphic version uses
+    /// `hashset_to_vec` + a while loop to build a proven-equal copy.
+    pub fn clone_hashset_u64(s: &HashSet<u64>) -> (res: HashSet<u64>)
+    ensures
+        res@ == s@,
+    {
+        broadcast use vstd::std_specs::hash::group_hash_axioms;
+        let vec = hashset_to_vec(s);
+        let mut cloned: HashSet<u64> = HashSet::new();
+        let mut i: usize = 0;
+        while i < vec.len()
+            invariant
+                0 <= i <= vec.len(),
+                forall |j: int| 0 <= j < vec@.len() ==> s@.contains(#[trigger] vec@[j]),
+                forall |x: u64| cloned@.contains(x) ==> s@.contains(x),
+                forall |j: int| 0 <= j < i ==> cloned@.contains(#[trigger] vec@[j]),
+            decreases vec.len() - i,
+        {
+            let val = vec[i];
+            assert(s@.contains(vec@[i as int]));
+            cloned.insert(val);
+            i += 1;
+        }
+        proof {
+            assert forall |x: u64| s@.contains(x) implies cloned@.contains(x) by {
+                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == x;
+                assert(cloned@.contains(vec@[j]));
+            };
+            assert(cloned@ =~= s@);
+        }
+        cloned
+    }
 }

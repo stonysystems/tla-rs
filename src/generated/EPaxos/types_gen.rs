@@ -1,6 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
+use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::EPaxos::epaxos::*;
 use crate::protocol::EPaxos::types::*;
 use std::collections::HashSet;
@@ -26,23 +27,32 @@ pub struct CState {
 }
 
 impl Clone for CState {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.ballot == self.ballot,
+        res.phase == self.phase,
+        res.cmd == self.cmd,
+        res.seq == self.seq,
+        res.dep_count == self.dep_count,
+        res.is_leader == self.is_leader,
+        res.committed_count == self.committed_count,
+        res.executed_count == self.executed_count,
+        res.has_conflict == self.has_conflict,
+        res.max_resp_seq == self.max_resp_seq,
     {
         CState {
             ballot: self.ballot,
-            phase: self.phase.clone(),
+            phase: self.phase,
             cmd: self.cmd,
             seq: self.seq,
             dep_count: self.dep_count,
             is_leader: self.is_leader,
             committed_count: self.committed_count,
             executed_count: self.executed_count,
-            preaccept_senders: self.preaccept_senders.clone(),
-            accept_senders: self.accept_senders.clone(),
+            preaccept_senders: clone_hashset_u64(&self.preaccept_senders),
+            accept_senders: clone_hashset_u64(&self.accept_senders),
             has_conflict: self.has_conflict,
             max_resp_seq: self.max_resp_seq,
         }
@@ -103,7 +113,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CInstancePhase {
     Empty,
     PreAccepted,

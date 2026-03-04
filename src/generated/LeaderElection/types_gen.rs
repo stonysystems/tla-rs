@@ -1,6 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
+use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::LeaderElection::election::*;
 use crate::protocol::LeaderElection::types::*;
 use std::collections::HashSet;
@@ -21,17 +22,22 @@ pub struct CState {
 }
 
 impl Clone for CState {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.has_leader == self.has_leader,
+        res.leader == self.leader,
+        res.has_highest == self.has_highest,
+        res.highest_heard == self.highest_heard,
+        res.waiting_answer == self.waiting_answer,
+        res.waiting_node == self.waiting_node,
     {
         CState {
-            electing: self.electing.clone(),
+            electing: clone_hashset_u64(&self.electing),
             has_leader: self.has_leader,
             leader: self.leader,
-            alive: self.alive.clone(),
+            alive: clone_hashset_u64(&self.alive),
             has_highest: self.has_highest,
             highest_heard: self.highest_heard,
             waiting_answer: self.waiting_answer,
@@ -69,14 +75,14 @@ pub struct CConstants {
 }
 
 impl Clone for CConstants {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.num_nodes == self.num_nodes,
     {
         CConstants {
-            nodes: self.nodes.clone(),
+            nodes: clone_hashset_u64(&self.nodes),
             num_nodes: self.num_nodes,
         }
     }
@@ -99,7 +105,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CNodeState {
     Normal,
     Election,

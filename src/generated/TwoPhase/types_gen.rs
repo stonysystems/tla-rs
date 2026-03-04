@@ -1,6 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
+use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::TwoPhase::twophase::*;
 use crate::protocol::TwoPhase::types::*;
 use std::collections::HashSet;
@@ -18,18 +19,18 @@ pub struct CState {
 }
 
 impl Clone for CState {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.tm_state == self.tm_state,
     {
         CState {
-            tm_state: self.tm_state.clone(),
-            tm_prepared: self.tm_prepared.clone(),
-            rm_prepared: self.rm_prepared.clone(),
-            rm_committed: self.rm_committed.clone(),
-            rm_aborted: self.rm_aborted.clone(),
+            tm_state: self.tm_state,
+            tm_prepared: clone_hashset_u64(&self.tm_prepared),
+            rm_prepared: clone_hashset_u64(&self.rm_prepared),
+            rm_committed: clone_hashset_u64(&self.rm_committed),
+            rm_aborted: clone_hashset_u64(&self.rm_aborted),
         }
     }
 }
@@ -59,14 +60,13 @@ pub struct CConstants {
 }
 
 impl Clone for CConstants {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
     {
         CConstants {
-            rm: self.rm.clone(),
+            rm: clone_hashset_u64(&self.rm),
         }
     }
 }
@@ -121,7 +121,7 @@ impl View for CTPCMessage {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CTMState {
     Init,
     Committed,
@@ -150,7 +150,7 @@ impl View for CTMState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CRMState {
     Working,
     Prepared,

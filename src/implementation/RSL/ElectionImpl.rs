@@ -231,39 +231,6 @@ impl CElectionState
 
 }
 
-    pub fn clone_hashset_u64(s: &HashSet<u64>) -> (res: HashSet<u64>)
-    ensures
-        res@ == s@,
-    {
-        let vec = hashset_to_vec(s);
-        let mut cloned: HashSet<u64> = HashSet::new();
-        let mut i: usize = 0;
-        while i < vec.len()
-            invariant
-                0 <= i <= vec.len(),
-                forall |j: int| 0 <= j < vec@.len() ==> s@.contains(#[trigger] vec@[j]),
-                forall |x: u64| cloned@.contains(x) ==> s@.contains(x),
-                forall |j: int| 0 <= j < i ==> cloned@.contains(#[trigger] vec@[j]),
-            decreases vec.len() - i,
-        {
-            let val = vec[i];
-            assert(s@.contains(vec@[i as int]));
-            cloned.insert(val);
-            i += 1;
-        }
-        proof {
-            // Backward: cloned@ ⊆ s@ (from first invariant)
-            // Forward: s@ ⊆ cloned@ (from hashset_to_vec coverage + second invariant)
-            assert forall |x: u64| s@.contains(x) implies cloned@.contains(x) by {
-                // hashset_to_vec ensures: exists j with vec@[j] == x
-                let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == x;
-                assert(cloned@.contains(vec@[j]));
-            };
-            assert(cloned@ =~= s@);
-        }
-        cloned
-    }
-
     pub fn clone_vec_crequest(v: &Vec<CRequest>) -> (res: Vec<CRequest>)
         requires
             forall |i: int| 0 <= i < v.len() ==> v[i].valid()

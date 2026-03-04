@@ -1,6 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
+use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::Paxos::paxos::*;
 use crate::protocol::Paxos::types::*;
 use std::collections::HashSet;
@@ -24,23 +25,31 @@ pub struct CState {
 }
 
 impl Clone for CState {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.promised_bal == self.promised_bal,
+        res.accepted_bal == self.accepted_bal,
+        res.accepted_val == self.accepted_val,
+        res.proposer_bal == self.proposer_bal,
+        res.phase == self.phase,
+        res.highest_accepted_bal == self.highest_accepted_bal,
+        res.highest_accepted_val == self.highest_accepted_val,
+        res.proposed_val == self.proposed_val,
+        res.decided_val == self.decided_val,
     {
         CState {
             promised_bal: self.promised_bal,
             accepted_bal: self.accepted_bal,
             accepted_val: self.accepted_val,
             proposer_bal: self.proposer_bal,
-            phase: self.phase.clone(),
-            promises_rcvd: self.promises_rcvd.clone(),
+            phase: self.phase,
+            promises_rcvd: clone_hashset_u64(&self.promises_rcvd),
             highest_accepted_bal: self.highest_accepted_bal,
             highest_accepted_val: self.highest_accepted_val,
             proposed_val: self.proposed_val,
-            accepts_rcvd: self.accepts_rcvd.clone(),
+            accepts_rcvd: clone_hashset_u64(&self.accepts_rcvd),
             decided_val: self.decided_val,
         }
     }
@@ -79,14 +88,15 @@ pub struct CConstants {
 }
 
 impl Clone for CConstants {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.quorum_size == self.quorum_size,
+        res.node_id == self.node_id,
     {
         CConstants {
-            acceptors: self.acceptors.clone(),
+            acceptors: clone_hashset_u64(&self.acceptors),
             quorum_size: self.quorum_size,
             node_id: self.node_id,
         }
@@ -111,7 +121,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CPhase {
     Idle,
     Phase1,

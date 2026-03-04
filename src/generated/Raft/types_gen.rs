@@ -1,6 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
+use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::implementation::Raft::helpers::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
@@ -61,7 +62,7 @@ impl Clone for CState {
     {
         CState {
             current_term: self.current_term,
-            role: self.role.clone(),
+            role: self.role,
             has_voted: self.has_voted,
             voted_for: self.voted_for,
             log: self.log.clone(),
@@ -104,7 +105,6 @@ pub struct CConstants {
 }
 
 impl Clone for CConstants {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
@@ -113,7 +113,7 @@ impl Clone for CConstants {
         res.my_id == self.my_id,
     {
         CConstants {
-            servers: self.servers.clone(),
+            servers: clone_hashset_u64(&self.servers),
             quorum_size: self.quorum_size,
             my_id: self.my_id,
         }
@@ -138,7 +138,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CServerRole {
     Follower,
     Candidate,

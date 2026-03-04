@@ -54,7 +54,7 @@ pub struct TypeGenerator {
     view_overrides: HashMap<String, String>,
     /// Extra fields for exec types (key: "ExecType.field_name", value: "type = default")
     extra_fields: HashMap<String, String>,
-    /// Clone strategy per exec type ("derive" or "external_body")
+    /// Clone strategy per exec type ("derive", "external_body", or "verified")
     clone_strategy: HashMap<String, String>,
     /// Custom derives per exec type (additional derives beyond Clone)
     custom_derives: HashMap<String, Vec<String>>,
@@ -70,6 +70,10 @@ pub struct TypeGenerator {
     /// These get `#[verifier(external_body)]` Hash/PartialEq/Eq impls since
     /// Verus doesn't verify these trait implementations.
     hashset_element_types: HashSet<String>,
+    /// Exec enum names that are unit enums (all variants have no fields).
+    /// These get `Copy` in addition to `Clone` and are treated as copy-scalar
+    /// in verified clone generation.
+    unit_enums: HashSet<String>,
 }
 
 impl TypeGenerator {
@@ -93,6 +97,7 @@ impl TypeGenerator {
             skip_view_types: HashSet::new(),
             generate_clone_up_to_view_simple: false,
             hashset_element_types: HashSet::new(),
+            unit_enums: HashSet::new(),
         }
     }
 
@@ -159,6 +164,10 @@ impl TypeGenerator {
         self.hashset_element_types = types;
     }
 
+    pub fn set_unit_enums(&mut self, enums: HashSet<String>) {
+        self.unit_enums = enums;
+    }
+
     /// Generate `#[derive(...)]` attribute and determine clone strategy for a type.
     ///
     /// Returns the clone strategy string ("derive" or "external_body") and appends
@@ -173,6 +182,10 @@ impl TypeGenerator {
         let mut derives = Vec::new();
         if clone_strat == "derive" {
             derives.push("Clone".to_string());
+        }
+        // Unit enums (all unit variants) get Copy for verified clone support
+        if self.unit_enums.contains(exec_name) && !derives.contains(&"Copy".to_string()) {
+            derives.push("Copy".to_string());
         }
         if let Some(custom) = self.custom_derives.get(exec_name) {
             for d in custom {
@@ -242,6 +255,68 @@ impl TypeGenerator {
         code.push_str("}\n\n");
     }
 
+    /// Check if a type is HashSet<u64> (Set<Int> or Set<Nat> in spec, becomes HashSet<u64>).
+    fn is_hashset_u64(ty: &Type) -> bool {
+        match ty {
+            Type::Set(inner) => match inner.as_ref() {
+                Type::Int | Type::Nat => true,
+                Type::Named(p) => {
+                    p.last().map_or(false, |n| n == "u64" || n == "i64" || n == "usize")
+                }
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// Generate verified Clone impl using `clone_hashset_u64` for HashSet<u64> fields.
+    /// No `#[verifier(external_body)]` — all field clones are verified.
+    fn generate_verified_clone(
+        &self,
+        exec_name: &str,
+        fields: &[&FieldDef],
+        code: &mut String,
+    ) {
+        code.push_str(&format!("impl Clone for {} {{\n", exec_name));
+        code.push_str(&format!(
+            "{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n",
+            self.indent, self.indent, self.indent,
+            self.indent,
+            self.validity_predicate_name, self.validity_predicate_name,
+        ));
+        for field in fields {
+            if Self::is_spec_equality_comparable(&field.ty) {
+                code.push_str(&format!(
+                    "{}    res.{} == self.{},\n",
+                    self.indent, field.name, field.name,
+                ));
+            }
+        }
+        code.push_str(&format!("{}{{\n", self.indent));
+        code.push_str(&format!("{}    {} {{\n", self.indent, exec_name));
+        for field in fields {
+            if self.is_copy_scalar_type_for_clone_up_to_view(&field.ty) {
+                code.push_str(&format!(
+                    "{}        {}: self.{},\n",
+                    self.indent, field.name, field.name
+                ));
+            } else if Self::is_hashset_u64(&field.ty) {
+                code.push_str(&format!(
+                    "{}        {}: clone_hashset_u64(&self.{}),\n",
+                    self.indent, field.name, field.name
+                ));
+            } else {
+                code.push_str(&format!(
+                    "{}        {}: self.{}.clone(),\n",
+                    self.indent, field.name, field.name
+                ));
+            }
+        }
+        code.push_str(&format!("{}    }}\n", self.indent));
+        code.push_str(&format!("{}}}\n", self.indent));
+        code.push_str("}\n\n");
+    }
+
     fn is_copy_scalar_type_for_clone_up_to_view(&self, ty: &Type) -> bool {
         match ty {
             Type::Bool | Type::Int | Type::Nat | Type::Unit => true,
@@ -253,8 +328,16 @@ impl TypeGenerator {
                 if is_copy_scalar_primitive_type(name) {
                     return true;
                 }
+                // Unit enums are Copy — can be directly copied without .clone()
+                let exec_name = self.get_exec_type(name);
+                if self.unit_enums.contains(&exec_name) {
+                    return true;
+                }
                 if let Some(remapped) = self.remapping.get(name) {
                     if self.primitive_types.contains(remapped) {
+                        return true;
+                    }
+                    if self.unit_enums.contains(remapped) {
                         return true;
                     }
                     return is_copy_scalar_primitive_type(remapped);
@@ -375,6 +458,8 @@ impl TypeGenerator {
 
         if clone_strat == "external_body" {
             self.generate_external_body_clone(&exec_name, &generated_fields, &mut code);
+        } else if clone_strat == "verified" {
+            self.generate_verified_clone(&exec_name, &generated_fields, &mut code);
         }
 
         // Generate Hash+PartialEq+Eq impls for types stored in HashSet
@@ -427,6 +512,8 @@ impl TypeGenerator {
 
         if clone_strat == "external_body" {
             self.generate_external_body_clone(&exec_name, &[], &mut code);
+        } else if clone_strat == "verified" {
+            self.generate_verified_clone(&exec_name, &[], &mut code);
         }
 
         // Generate well_formed predicate unless this type is configured for manual validity impl.
@@ -1189,6 +1276,21 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     generator.set_skip_validity_types(cfg.skip_validity_types.iter().cloned().collect());
     generator.set_skip_view_types(cfg.skip_view_types.iter().cloned().collect());
     generator.set_generate_clone_up_to_view_simple(cfg.generate_clone_up_to_view_simple);
+
+    // Detect unit enums (all variants have no fields) for Copy derive support
+    let mut unit_enums = HashSet::new();
+    for (name, enum_def) in &cfg.registry.enums {
+        let is_unit = enum_def
+            .variants
+            .iter()
+            .all(|v| matches!(v.fields, VariantFields::Unit));
+        if is_unit {
+            let exec_name = generator.get_exec_type(name);
+            unit_enums.insert(exec_name);
+        }
+    }
+    generator.set_unit_enums(unit_enums);
+
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
 
@@ -1196,11 +1298,22 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     all_code.push_str("// Auto-generated concrete types by verus-transpiler\n");
     all_code.push_str("// DO NOT EDIT MANUALLY\n\n");
 
+    // Auto-inject imports required by clone strategies
+    let needs_hashset_clone_import = cfg
+        .clone_strategy
+        .values()
+        .any(|v| v == "verified");
+
     // Custom imports (sorted case-insensitively for rustfmt compatibility)
     // Filter out self-referential types_gen imports that would cause
     // "cannot glob-import a module into itself" errors
     if cfg.custom_imports.is_empty() {
-        all_code.push_str("use vstd::prelude::*;\n\n");
+        all_code.push_str("use vstd::prelude::*;\n");
+        if needs_hashset_clone_import {
+            all_code.push_str("use crate::common::collections::hashsets::clone_hashset_u64;\n");
+            all_code.push_str("use std::collections::HashSet;\n");
+        }
+        all_code.push('\n');
     } else {
         let mut sorted_imports: Vec<String> = cfg
             .custom_imports
@@ -1208,6 +1321,14 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
             .filter(|imp| !imp.contains("types_gen"))
             .cloned()
             .collect();
+        // Add clone_hashset_u64 import when verified clone strategy is active
+        if needs_hashset_clone_import {
+            let hashset_import =
+                "use crate::common::collections::hashsets::clone_hashset_u64;".to_string();
+            if !sorted_imports.iter().any(|i| i.contains("clone_hashset_u64")) {
+                sorted_imports.push(hashset_import);
+            }
+        }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
         for import in &sorted_imports {
             all_code.push_str(import);

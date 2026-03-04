@@ -1,6 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
+use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::VerticalPaxos::types::*;
 use crate::protocol::VerticalPaxos::vpaxos::*;
 use std::collections::HashSet;
@@ -25,11 +26,20 @@ pub struct CState {
 }
 
 impl Clone for CState {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.config_num == self.config_num,
+        res.max_bal == self.max_bal,
+        res.max_v_bal == self.max_v_bal,
+        res.max_val == self.max_val,
+        res.has_voted == self.has_voted,
+        res.is_active == self.is_active,
+        res.committed == self.committed,
+        res.committed_val == self.committed_val,
+        res.witness_val == self.witness_val,
+        res.has_witness == self.has_witness,
     {
         CState {
             config_num: self.config_num,
@@ -38,8 +48,8 @@ impl Clone for CState {
             max_val: self.max_val,
             has_voted: self.has_voted,
             is_active: self.is_active,
-            promises_rcvd: self.promises_rcvd.clone(),
-            accepts_rcvd: self.accepts_rcvd.clone(),
+            promises_rcvd: clone_hashset_u64(&self.promises_rcvd),
+            accepts_rcvd: clone_hashset_u64(&self.accepts_rcvd),
             committed: self.committed,
             committed_val: self.committed_val,
             witness_val: self.witness_val,

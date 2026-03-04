@@ -861,27 +861,51 @@ impl<'a> ConfigInferer<'a> {
     /// Derive `[clone_strategy]` section.
     ///
     /// Any exec struct that contains a `Set<T>` field (becomes `HashSet` in exec)
-    /// needs `external_body` clone strategy.
+    /// needs special clone handling. When ALL Set fields have u64-compatible inner
+    /// types (Int, Nat, or named u64), uses "verified" strategy with `clone_hashset_u64`.
+    /// Otherwise falls back to "external_body".
     fn infer_clone_strategy(&self, config: &mut TranspilerConfig) {
         let spec_prefix = &self.naming.spec_prefix;
         let exec_prefix = &self.naming.exec_prefix;
 
         for (struct_name, struct_def) in &self.schema.structs {
-            let has_set_field = struct_def
+            let set_fields: Vec<_> = struct_def
                 .fields
                 .iter()
-                .any(|f| matches!(&f.ty, Type::Set(_)));
+                .filter(|f| matches!(&f.ty, Type::Set(_)))
+                .collect();
 
-            if has_set_field {
+            if !set_fields.is_empty() {
                 let exec_name = if struct_name.starts_with(spec_prefix) {
                     let base = &struct_name[spec_prefix.len()..];
                     format!("{}{}", exec_prefix, base)
                 } else {
                     struct_name.clone()
                 };
+
+                // Check if all Set fields have u64-compatible inner types
+                let all_u64_sets = set_fields.iter().all(|f| {
+                    if let Type::Set(inner) = &f.ty {
+                        match inner.as_ref() {
+                            Type::Int | Type::Nat => true,
+                            Type::Named(p) => p.last().map_or(false, |n| {
+                                n == "u64" || n == "i64" || n == "usize"
+                            }),
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    }
+                });
+
+                let strategy = if all_u64_sets {
+                    "verified"
+                } else {
+                    "external_body"
+                };
                 config
                     .clone_strategy
-                    .insert(exec_name, "external_body".to_string());
+                    .insert(exec_name, strategy.to_string());
             }
         }
     }
@@ -2364,16 +2388,16 @@ verus! {
         let inferer = ConfigInferer::new(&schema, &naming);
         let config = inferer.infer();
 
-        // Structs with Set fields need external_body clone
+        // Structs with Set<int> fields get verified clone (u64-compatible inner type)
         assert_eq!(
             config.clone_strategy.get("CState").unwrap(),
-            "external_body"
+            "verified"
         );
         assert_eq!(
             config.clone_strategy.get("CConstants").unwrap(),
-            "external_body"
+            "verified"
         );
-        // Structs without Set fields should NOT have external_body
+        // Structs without Set fields should NOT need special clone strategy
         assert!(!config.clone_strategy.contains_key("CConfig"));
     }
 
@@ -2686,10 +2710,10 @@ verus! {
             "CTMState"
         );
 
-        // Clone strategy (LState has Set fields)
+        // Clone strategy (LState has Set<int> fields → verified)
         assert_eq!(
             config.clone_strategy.get("CState").unwrap(),
-            "external_body"
+            "verified"
         );
     }
 
@@ -2780,10 +2804,10 @@ verus! {
         assert!(config.clone_fields.contains(&"role".to_string()));
         assert_eq!(config.clone_field_types.get("role").unwrap(), "CServerRole");
 
-        // Clone strategy
+        // Clone strategy (Raft CState has Set<int> fields → verified)
         assert_eq!(
             config.clone_strategy.get("CState").unwrap(),
-            "external_body"
+            "verified"
         );
     }
 
@@ -3269,11 +3293,11 @@ verus! {
                     "[{}] Should have clone_strategy but auto-inference produced none",
                     name
                 );
-                // All inferred clone strategies should be "external_body"
+                // All inferred clone strategies should be "verified" or "external_body"
                 for (k, v) in &inferred.clone_strategy {
-                    assert_eq!(
-                        v, "external_body",
-                        "[{}] clone_strategy for {} should be external_body, got {}",
+                    assert!(
+                        v == "verified" || v == "external_body",
+                        "[{}] clone_strategy for {} should be verified or external_body, got {}",
                         name, k, v
                     );
                 }

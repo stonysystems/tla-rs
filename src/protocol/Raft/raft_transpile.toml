@@ -55,6 +55,12 @@ set_fields = ["votes_granted", "servers"]
     "s.log@[*new_commit_index as int - 1].term == s.current_term",
 ]
 
+# Raft CState has Vec<CLogEntry> and HashMap<u64,u64> fields whose .clone()
+# doesn't have verified `ensures res@ == self@` in Verus (generic Clone limitation).
+# CConstants only has HashSet<u64> and can use verified clone.
+[clone_strategy]
+"CState" = "external_body"
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

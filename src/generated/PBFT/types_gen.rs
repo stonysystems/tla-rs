@@ -1,6 +1,7 @@
 // Auto-generated concrete types by verus-transpiler
 // DO NOT EDIT MANUALLY
 
+use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::PBFT::pbft::*;
 use crate::protocol::PBFT::types::*;
 use std::collections::HashSet;
@@ -24,17 +25,25 @@ pub struct CState {
 }
 
 impl Clone for CState {
-    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
         res.valid() == self.valid(),
+        res.view == self.view,
+        res.phase == self.phase,
+        res.seq_num == self.seq_num,
+        res.is_primary == self.is_primary,
+        res.request_digest == self.request_digest,
+        res.checkpoint_seq == self.checkpoint_seq,
+        res.checkpoint_digest == self.checkpoint_digest,
+        res.low_watermark == self.low_watermark,
+        res.high_watermark == self.high_watermark,
     {
         CState {
             view: self.view,
-            phase: self.phase.clone(),
-            prepare_senders: self.prepare_senders.clone(),
-            commit_senders: self.commit_senders.clone(),
+            phase: self.phase,
+            prepare_senders: clone_hashset_u64(&self.prepare_senders),
+            commit_senders: clone_hashset_u64(&self.commit_senders),
             seq_num: self.seq_num,
             is_primary: self.is_primary,
             request_digest: self.request_digest,
@@ -99,7 +108,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CPhase {
     PrePrepare,
     Prepare,
