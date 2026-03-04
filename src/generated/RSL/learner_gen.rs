@@ -220,7 +220,6 @@ ensures
 }
 
 /// Helper: filter CLearnerState keeping only entries with key >= threshold.
-#[verifier(external_body)]
 fn filter_clearnerstate(m: &CLearnerState, threshold: u64) -> (res: CLearnerState)
 requires
     clearnerstate_is_valid(*m),
@@ -228,19 +227,64 @@ ensures
     clearnerstate_is_valid(res),
     clearnerstate_is_abstractable(res),
     forall |k: COperationNumber| res@.contains_key(k) ==>
-        m@.contains_key(k) && k >= threshold && (#[trigger] res@[k])@ == m@[k]@,
+        m@.contains_key(k) && k >= threshold && (#[trigger] res@[k]) == m@[k],
     forall |k: COperationNumber| m@.contains_key(k) && k >= threshold ==>
         res@.contains_key(k),
     forall |k: COperationNumber| res@.contains_key(k) ==>
         m@.contains_key(k),
 {
-    let mut filtered = HashMap::new();
-    for (k, v) in m.iter() {
-        if *k >= threshold {
-            filtered.insert(*k, v.clone_up_to_view());
+    broadcast use vstd::std_specs::hash::group_hash_axioms;
+    broadcast use vstd::hash_map::group_hash_map_axioms;
+    broadcast use axiom_clearner_tuple_view;
+
+    let keys = hashmap_keys_to_vec(m);
+    let mut result: HashMap<COperationNumber, CLearnerTuple> = HashMap::new();
+    let mut i: usize = 0;
+    while i < keys.len()
+        invariant
+            0 <= i <= keys.len(),
+            clearnerstate_is_valid(*m),
+            forall |k: u64| result@.contains_key(k) ==> m@.contains_key(k),
+            forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == m@[k],
+            forall |k: u64| result@.contains_key(k) ==> k >= threshold,
+            forall |j: int| 0 <= j < i as int && keys@[j] >= threshold
+                ==> result@.contains_key(#[trigger] keys@[j]),
+            forall |k: int| 0 <= k < keys@.len() ==> m@.contains_key(#[trigger] keys@[k]),
+            forall |k: u64| m@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
+        decreases keys.len() - i,
+    {
+        let k = keys[i];
+        if k >= threshold {
+            let v = m.get(&k).unwrap().clone_up_to_view();
+            proof {
+                broadcast use axiom_clearner_tuple_view;
+                let ghost t1: CLearnerTuple = v;
+                let ghost t2: CLearnerTuple = m@[k];
+                assert(t1@ == t2@);
+            }
+            let _ = result.insert(k, v);
         }
+        i = i + 1;
     }
-    filtered
+    proof {
+        assert forall |k: u64| m@.contains_key(k) && k >= threshold
+            implies result@.contains_key(k) by {
+            let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
+            assert(keys@[j] >= threshold);
+            assert(result@.contains_key(keys@[j]));
+        };
+        assert forall |k: u64| #![auto] result@.contains_key(k)
+            implies COperationNumberIsAbstractable(k) && result@[k].abstractable() by {
+            assert(m@.contains_key(k));
+            assert(result@[k] == m@[k]);
+        };
+        assert forall |k: u64| #![auto] result@.contains_key(k)
+            implies COperationNumberIsValid(k) && result@[k].valid() by {
+            assert(m@.contains_key(k));
+            assert(result@[k] == m@[k]);
+        };
+    }
+    result
 }
 
 
