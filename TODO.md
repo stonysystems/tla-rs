@@ -9749,7 +9749,7 @@ Rules for this phase (do not cut corners):
 
 - [ ] **33.6.4 Strengthen evidence reproducibility discipline**
   - [x] Add a checked-in script target (or test helper) to run the full currently-supported source-first matrix and save JSON artifacts under `reports/model_check/`.
-  - [ ] Require `docs/model_checker_status.md` entries to point to:
+  - [x] Require `docs/model_checker_status.md` entries to point to:
     - source file path
     - model config path
     - automated test name and/or generated JSON artifact path

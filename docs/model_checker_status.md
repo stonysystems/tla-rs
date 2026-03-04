@@ -67,23 +67,23 @@ Status below is based on checked-in automated integration tests under `transpile
 
 ### 3.1 Bounded protocol safety runs (all pass)
 
-| Case | Input spec | Types spec | Model config | Automated test |
-| --- | --- | --- | --- | --- |
-| TwoPhase small bounded run | `src/protocol/TwoPhase/twophase.rs` | `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `test_model_check_twophase_bounded_run` |
-| PrimaryBackup small bounded run | `src/protocol/PrimaryBackup/primarybackup.rs` | `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `test_model_check_primarybackup_helper_call_branches_bounded_run` |
-| LeaderElection small bounded run | `src/protocol/LeaderElection/election.rs` | `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `test_model_check_leader_election_bounded_run` |
-| Paxos small bounded run | `src/protocol/Paxos/paxos.rs` | `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `test_model_check_paxos_bounded_run` |
+| Case | Input spec | Types spec | Model config | Automated test | JSON artifact path | Exact replay command |
+| --- | --- | --- | --- | --- | --- | --- |
+| TwoPhase small bounded run | `src/protocol/TwoPhase/twophase.rs` | `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `test_model_check_twophase_bounded_run` | `reports/model_check/twophase_small.json` | `§5.2 TwoPhase` |
+| PrimaryBackup small bounded run | `src/protocol/PrimaryBackup/primarybackup.rs` | `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `test_model_check_primarybackup_helper_call_branches_bounded_run` | `reports/model_check/primarybackup_small.json` | `§5.2 PrimaryBackup` |
+| LeaderElection small bounded run | `src/protocol/LeaderElection/election.rs` | `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `test_model_check_leader_election_bounded_run` | `reports/model_check/leaderelection_small.json` | `§5.2 LeaderElection` |
+| Paxos small bounded run | `src/protocol/Paxos/paxos.rs` | `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `test_model_check_paxos_bounded_run` | `reports/model_check/paxos_small.json` | `§5.2 Paxos` |
 
 Pass condition used by tests: command success + valid JSON + `summary.states > 0` + `summary.transitions > 0`.
 
 ### 3.2 Liveness/fairness fixtures (all pass expected outcomes)
 
-| Case | Input spec | Types spec | Model config | Expected result | Automated test |
-| --- | --- | --- | --- | --- | --- |
-| Avoidable cycle (no fairness) | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs` | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs` | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_violated.model.toml` | `leads_to_violated` | `test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes` |
-| Avoidable cycle + strong fairness | same as above | same as above | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_strong_fairness.model.toml` | `ok` | same |
-| Forced progress (no fairness) | `transpiler/tests/model_check_fixtures/liveness_forced.protocol.rs` | `transpiler/tests/model_check_fixtures/liveness_forced.types.rs` | `transpiler/tests/model_check_fixtures/liveness_forced_unfair.model.toml` | `ok` | same |
-| Forced progress + strong fairness | same as above | same as above | `transpiler/tests/model_check_fixtures/liveness_forced_strong_fairness.model.toml` | `ok` | same |
+| Case | Input spec | Types spec | Model config | Expected result | Automated test | JSON artifact path | Exact replay command |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Avoidable cycle (no fairness) | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs` | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs` | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_violated.model.toml` | `leads_to_violated` | `test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes` | `reports/model_check/liveness_avoidable_cycle_violated.json` | `§5.3 Avoidable cycle (no fairness)` |
+| Avoidable cycle + strong fairness | same as above | same as above | `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_strong_fairness.model.toml` | `ok` | same | `reports/model_check/liveness_avoidable_cycle_strong_fairness.json` | `§5.3 Avoidable cycle + strong fairness` |
+| Forced progress (no fairness) | `transpiler/tests/model_check_fixtures/liveness_forced.protocol.rs` | `transpiler/tests/model_check_fixtures/liveness_forced.types.rs` | `transpiler/tests/model_check_fixtures/liveness_forced_unfair.model.toml` | `ok` | same | `reports/model_check/liveness_forced_unfair.json` | `§5.3 Forced progress (no fairness)` |
+| Forced progress + strong fairness | same as above | same as above | `transpiler/tests/model_check_fixtures/liveness_forced_strong_fairness.model.toml` | `ok` | same | `reports/model_check/liveness_forced_strong_fairness.json` | `§5.3 Forced progress + strong fairness` |
 
 ### 3.3 Differential source-first vs wrapper outcomes
 
@@ -132,6 +132,8 @@ cargo build --manifest-path transpiler/Cargo.toml --bin verus-transpile
 
 ### 5.2 Run each passing protocol model-check
 
+TwoPhase:
+
 ```bash
 transpiler/target/debug/verus-transpile model-check \
   --input src/protocol/TwoPhase/twophase.rs \
@@ -140,6 +142,8 @@ transpiler/target/debug/verus-transpile model-check \
   --search bfs \
   --json-report
 ```
+
+PrimaryBackup:
 
 ```bash
 transpiler/target/debug/verus-transpile model-check \
@@ -150,6 +154,8 @@ transpiler/target/debug/verus-transpile model-check \
   --json-report
 ```
 
+LeaderElection:
+
 ```bash
 transpiler/target/debug/verus-transpile model-check \
   --input src/protocol/LeaderElection/election.rs \
@@ -158,6 +164,8 @@ transpiler/target/debug/verus-transpile model-check \
   --search bfs \
   --json-report
 ```
+
+Paxos:
 
 ```bash
 transpiler/target/debug/verus-transpile model-check \
@@ -170,6 +178,8 @@ transpiler/target/debug/verus-transpile model-check \
 
 ### 5.3 Run liveness/fairness fixtures
 
+Avoidable cycle (no fairness):
+
 ```bash
 transpiler/target/debug/verus-transpile model-check \
   --input transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs \
@@ -178,6 +188,8 @@ transpiler/target/debug/verus-transpile model-check \
   --search bfs \
   --json-report
 ```
+
+Avoidable cycle + strong fairness:
 
 ```bash
 transpiler/target/debug/verus-transpile model-check \
@@ -188,6 +200,8 @@ transpiler/target/debug/verus-transpile model-check \
   --json-report
 ```
 
+Forced progress (no fairness):
+
 ```bash
 transpiler/target/debug/verus-transpile model-check \
   --input transpiler/tests/model_check_fixtures/liveness_forced.protocol.rs \
@@ -196,6 +210,8 @@ transpiler/target/debug/verus-transpile model-check \
   --search bfs \
   --json-report
 ```
+
+Forced progress + strong fairness:
 
 ```bash
 transpiler/target/debug/verus-transpile model-check \
