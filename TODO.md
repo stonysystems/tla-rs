@@ -9647,6 +9647,12 @@ Rules for this phase (do not cut corners):
   - states / transitions / depth / elapsed time when available
   - first blocker when the protocol still does not run
 - [ ] Keep the smallest realistic checked-in model that reproduces each blocker or success.
+  - [x] Raft blocker model: add `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` and regression `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LLogEntry` missing domain).
+  - [ ] RSL blocker model + regression.
+  - [ ] VerticalPaxos blocker model + regression.
+  - [ ] EPaxos blocker model + regression.
+  - [ ] PBFT blocker model + regression.
+  - [ ] ChainReplication blocker model + regression.
 - [ ] Add/update automated integration coverage when a protocol moves from "unsupported/untracked" to "supported".
 
 ### 33.2 Unsupported-feature audit and regression-first workflow

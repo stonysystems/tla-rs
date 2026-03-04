@@ -7982,6 +7982,49 @@ fn test_model_check_paxos_bounded_run() {
 }
 
 #[test]
+fn test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+
+    let repo_root = resolve_repo_root_for_integration();
+    let input = repo_root.join("src/protocol/Raft/raft.rs");
+    let types = repo_root.join("src/protocol/Raft/types.rs");
+    let model_path = resolve_model_check_fixture_path("raft_missing_log_entry_domain.model.toml");
+    assert!(input.exists(), "Missing input spec: {}", input.display());
+    assert!(types.exists(), "Missing types spec: {}", types.display());
+
+    let output = std::process::Command::new(&transpiler_bin)
+        .args([
+            "model-check",
+            "--input",
+            input.to_str().unwrap(),
+            "--types",
+            types.to_str().unwrap(),
+            "--model",
+            model_path.to_str().unwrap(),
+            "--search",
+            "bfs",
+        ])
+        .output()
+        .expect("Failed to run model-check command");
+
+    assert!(
+        !output.status.success(),
+        "Raft model-check should fail until named type domains are provided."
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Missing domain for named type `LLogEntry`"),
+        "expected missing named-type domain blocker in stderr, got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("quantifiers.types.LLogEntry"),
+        "expected config path hint for missing named-type domain, got: {}",
+        stderr
+    );
+}
+
+#[test]
 fn test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
