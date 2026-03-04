@@ -17,6 +17,10 @@ verus! {
         pub server_constants: Seq<LConstants>, // Per-server constants
         pub network: Set<LRaftPacket>,      // Routed messages in transit
         pub num_servers: int,               // Number of servers in the cluster
+        // Ghost state: maps (voter_id, vote_term) → voter's log length at vote time.
+        // Used for stale-vote provenance in LeaderCompleteness proof (Phase 34.7).
+        // Only meaningful for granted votes; populated by LGrantVote.
+        pub vote_log_len: Map<(int, int), int>,
     }
 
     /// Well-formedness of the distributed state
@@ -37,6 +41,7 @@ verus! {
         &&& (forall |i: int| 0 <= i < ds.num_servers ==>
             LInit(ds.server_states[i], ds.server_constants[i]))
         &&& ds.network == Set::<LRaftPacket>::empty()
+        &&& ds.vote_log_len == Map::<(int, int), int>::empty()
     }
 
     /// Helper: which action branch was taken, producing the given sent_packets.
@@ -95,6 +100,33 @@ verus! {
                         None => true,
                     })
                 })
+            // Ghost state: vote_log_len tracks voter log length at vote time.
+            // Old entries preserved (monotonic). New entry added when a granted
+            // VoteResponse is sent: record (server_id, vote_term) → s.log.len().
+            &&& (forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+                ==> ds_.vote_log_len.dom().contains((v, t))
+                    && ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)])
+            // Ghost state new-entry clause: either a granted VoteResponse was
+            // sent and its provenance was recorded, or no granted VoteResponse was sent.
+            &&& ({
+                ||| (exists |vt: int| #![trigger ds_.vote_log_len.dom().contains((server_id, vt))] {
+                    // A granted VoteResponse was sent at term vt
+                    &&& (exists |i: int| #![trigger sent_packets[i]]
+                        0 <= i < sent_packets.len()
+                        && sent_packets[i] == LRaftMessage::VoteResponse {
+                            term: vt, granted: true, voter: server_id })
+                    // Record voter log length at vote time
+                    &&& ds_.vote_log_len.dom().contains((server_id, vt))
+                    &&& ds_.vote_log_len[(server_id, vt)] == s.log.len()
+                })
+                ||| (
+                    // No granted VoteResponse sent
+                    !(exists |i: int| #![trigger sent_packets[i]]
+                        0 <= i < sent_packets.len()
+                        && (sent_packets[i] is VoteResponse)
+                        && sent_packets[i]->VoteResponse_granted)
+                )
+            })
         }
     }
 
@@ -266,6 +298,7 @@ verus! {
                 server_constants: ds.server_constants.subrange(0, ds.num_servers - 1),
                 network: ds.network,
                 num_servers: ds.num_servers - 1,
+                vote_log_len: ds.vote_log_len,
             });
             if last_commit > rest_max { last_commit } else { rest_max }
         }
@@ -348,6 +381,7 @@ verus! {
                 server_constants: ds.server_constants.subrange(0, ds.num_servers - 1),
                 network: ds.network,
                 num_servers: ds.num_servers - 1,
+                vote_log_len: ds.vote_log_len,
             };
             assert(sub_ds.server_states.len() == ds.num_servers - 1);
             lemma_max_commit_index_eq_seq(sub_ds);
@@ -445,6 +479,7 @@ verus! {
             server_constants: ds.server_constants.subrange(0, n - 1),
             network: ds.network,
             num_servers: n - 1,
+            vote_log_len: ds.vote_log_len,
         };
         let rest_max = MaxCommitIndex(sub_ds);
         if last_commit >= MaxCommitIndex(ds) {

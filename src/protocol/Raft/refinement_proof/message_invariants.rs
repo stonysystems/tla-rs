@@ -191,6 +191,43 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 5: Vote Log Len Covers Network
+    // =========================================================================
+    //
+    // Every granted VoteResponse packet in the network from voter v at term t
+    // has (v, t) recorded in the ghost map vote_log_len.
+    // This follows from the ghost state update in RaftServerStepWithNetwork:
+    // when LGrantVote sends VoteResponse{granted: true, term: t, voter: v},
+    // (v, t) is added to vote_log_len.
+
+    pub open spec fn VoteLogLenCoversNetwork(ds: RaftDistributedState) -> bool {
+        forall |p: LRaftPacket| ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
+                    granted ==> {
+                        &&& ds.vote_log_len.dom().contains((v, t))
+                    }
+                }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
+    // Message Invariant 6: Vote Log Len Bounded
+    // =========================================================================
+    //
+    // For every (v, t) in vote_log_len, the recorded length is bounded by the
+    // voter's current log length: vote_log_len[(v, t)] <= server_states[v].log.len().
+    // This follows from LogAppendOnly: the voter's log only grows after voting.
+
+    pub open spec fn VoteLogLenBounded(ds: RaftDistributedState) -> bool {
+        forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t)) ==> {
+            &&& 0 <= v < ds.num_servers
+            &&& ds.vote_log_len[(v, t)] <= ds.server_states[v].log.len()
+        }
+    }
+
+    // =========================================================================
     // Step Property: Log Append Only
     // =========================================================================
     //

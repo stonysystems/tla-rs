@@ -9435,9 +9435,15 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 
 ---
 
-## Phase 31: RSL Refinement Proof — Eliminate external_body Proof Functions
+## Phase 31: RSL Refinement Proof — Eliminate external_body Proof Functions — INCOMPLETE (NOT VERIFIED)
 
 **Goal**: The RSL refinement proof (`src/protocol/RSL/refinement_proof/`) contains 20 `external_body` proof functions, and the supporting `common_proof/` has 8 more (total 28). These are trusted stubs inherited from the Dafny→Verus port. Fill in real proof bodies so Verus mechanically verifies them, reducing the trusted base.
+
+**⚠️ STATUS (2026-03-04)**: Both `common_proof` and `refinement_proof` modules are **commented out** in `src/protocol/RSL/mod.rs` and are NOT in the Verus verification path. Attempting to uncomment them produces **73 compilation errors** — missing functions (`lemma_2bMessageHasCorresponding2aMessage`, `lemma_2bMessageImplicationsForCAcceptor`, `lemma_ActionThatOverwritesVoteWithSameBallotDoesntChangeValue`, `lemma_VoteWithOpnImplies2aSent`, `lemma_CurrentVoteDoesNotExceedMaxBal`), undeclared types (`RslMessage`, `LServerRole`), etc. These proof files have **never been verified by Verus** in the current codebase state. The sub-phase checkboxes below reflect proof-body authoring work that was done, but the modules must be fixed to compile and pass Verus verification before Phase 31 can be considered complete.
+
+- [ ] **31.8**: Fix compilation errors in `common_proof/` and `refinement_proof/` so they can be uncommented in `src/protocol/RSL/mod.rs`.
+- [ ] **31.9**: Run Verus verification with both modules enabled and confirm 0 errors.
+- [ ] **31.10**: Uncomment `pub mod common_proof;` and `pub mod refinement_proof;` in `src/protocol/RSL/mod.rs` permanently.
 
 **Scope**: 28 external_body proof fns across 8 files:
 - `refinement_proof/chosen.rs` (4): `lemma_GetSequenceOfRequestBatches`, `lemma_GetMaximalQuorumOf2bsSequenceWithinBound`, `lemma_TwoMaximalQuorumsOf2bsMatch`, `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence`
@@ -9496,10 +9502,11 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 - [x] `lemma_DemonstrateRslSystemNextWhenBatchesAdded`: removed external_body, proof body verified
 - [x] `lemma_GetBehaviorRefinement`: removed external_body, proof body verified
 
-### 31.7 Verification and cleanup ✅
-- [x] Run full Verus verification after each sub-phase, ensure no regressions — 628 verified, 0 errors
+### 31.7 Verification and cleanup — INCOMPLETE
+- [x] Run full Verus verification after each sub-phase, ensure no regressions — 628 verified, 0 errors (NOTE: this was with modules uncommented at the time; subsequent codebase changes broke compilation)
 - [x] Update `reports/verification_gaps.md` with new external_body counts — 28 external_body removed (20 refinement_proof + 8 common_proof), 27 remaining in impl/generated/common, 77 assume() statements in proof files
 - [x] Run transpiler test suite to confirm no collateral damage — 1491 passed, 0 failed
+- [ ] **31.7.1**: Restore compilation of `common_proof/` and `refinement_proof/` after subsequent codebase changes broke them (73 errors as of 2026-03-04)
 
 ---
 
@@ -9929,8 +9936,8 @@ This is the hardest step. Estimated ~300-500 LOC.
                     - [x] **34.7.1.e.4.b.2.b.2.b.4.c.c.a**: Added helper `lemma_overlap_voter_stale_vote_packet_context` and used it in the stale branch of `lemma_leader_completeness_inductive` to package the stale subcase into explicit witnesses/facts: granted `VoteResponse` and matching `RequestVote` at `req_term == leader.current_term`, plus strict stale relation `overlap_voter.current_term > req_term`.
                     - [ ] **34.7.1.e.4.b.2.b.2.b.4.c.c.b**: Add a supporting historical/provenance invariant (or equivalent witness argument) that preserves enough vote-time log relation information when voter term has advanced beyond `req_term`; this is decomposed below because the full end-to-end model/proof change is larger than a clean <500 LOC leaf.
                       - [x] **34.7.1.e.4.b.2.b.2.b.4.c.c.b.a**: Captured a concrete stale-provenance contract in `docs/phase34-leader-completeness-breakdown.md` (non-vacuous requirements for vote-time witness recovery) and documented why current state-only packet invariants cannot derive it.
-                      - [ ] **34.7.1.e.4.b.2.b.2.b.4.c.c.b.b**: Introduce a model-level provenance carrier (ghost history or packet-attached witness data) that ties a granted `VoteResponse` at term `t` to a concrete vote-time voter log witness constrained by current-log prefix preservation.
-                      - [ ] **34.7.1.e.4.b.2.b.2.b.4.c.c.b.c**: Prove inductive preservation for the new stale-provenance invariant (old/new packet split under `RaftServerStepWithNetwork`) and integrate it into `RaftSafetyInvariant`.
+                      - [x] **34.7.1.e.4.b.2.b.2.b.4.c.c.b.b**: Introduce a model-level provenance carrier (ghost history or packet-attached witness data) that ties a granted `VoteResponse` at term `t` to a concrete vote-time voter log witness constrained by current-log prefix preservation. — Added `vote_log_len: Map<(int, int), int>` ghost field to `RaftDistributedState`, maintained by `RaftServerStepWithNetwork` ghost state clause; defined `VoteLogLenCoversNetwork` and `VoteLogLenBounded` invariants in `message_invariants.rs`.
+                      - [x] **34.7.1.e.4.b.2.b.2.b.4.c.c.b.c**: Prove inductive preservation for the new stale-provenance invariant (old/new packet split under `RaftServerStepWithNetwork`) and integrate it into `RaftSafetyInvariant`. — Added `lemma_vote_log_len_covers_network_inductive` and `lemma_vote_log_len_bounded_inductive` proof functions; integrated both into `RaftSafetyInvariant` and `lemma_safety_invariant_inductive`. Init proof updated. All previously-passing verification functions still pass at rlimit 60.
                       - [ ] **34.7.1.e.4.b.2.b.2.b.4.c.c.b.d**: Consume the new stale-provenance invariant in `lemma_leader_completeness_inductive` stale branch to recover a concrete vote-time log relation strong enough for overlap-entry transfer.
                     - [ ] **34.7.1.e.4.b.2.b.2.b.4.c.c.c**: Consume the stale-case invariant/witness to derive a concrete index relation strong enough to continue the overlap-entry transfer path.
                   - [ ] **34.7.1.e.4.b.2.b.2.b.4.c.d**: Remove the local `assume` in the unchanged-leader fresh-step branch by combining the concrete bridge consequences with overlap pre-state entry transfer and `LogMatching`-based index equality transfer.

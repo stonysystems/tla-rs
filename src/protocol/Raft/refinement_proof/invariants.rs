@@ -354,6 +354,9 @@ verus! {
         &&& RequestVoteSenderState(ds)
         &&& RequestVoteSummaryStillValidAtSameTerm(ds)
         &&& CandidateVoteDestinationUnique(ds)
+        // Ghost state invariants (Phase 34.7 — stale-vote provenance)
+        &&& VoteLogLenCoversNetwork(ds)
+        &&& VoteLogLenBounded(ds)
     }
 
     // =========================================================================
@@ -381,6 +384,8 @@ verus! {
         //   RequestVoteSenderState, RequestVoteSummaryStillValidAtSameTerm,
         //   CandidateVoteDestinationUnique:
         //   forall over empty set is vacuously true
+        // Ghost state invariants: vote_log_len empty + network empty, vacuously true
+        // - VoteLogLenCoversNetwork, VoteLogLenBounded
     }
 
     // =========================================================================
@@ -4889,6 +4894,152 @@ verus! {
     }
 
     // =========================================================================
+    // Ghost State Invariant Induction: VoteLogLenCoversNetwork
+    // =========================================================================
+    //
+    // Every granted VoteResponse in the post-network has (voter, term) in
+    // vote_log_len. For old packets this holds by IH + ghost-map monotonicity.
+    // For new packets: the only action producing granted VoteResponse is
+    // LGrantVote, and the ghost state update records (server_id, vt).
+
+    pub proof fn lemma_vote_log_len_covers_network_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            VoteLogLenCoversNetwork(ds_)
+    {
+        // VoteLogLenCoversNetwork(ds) holds by IH.
+        // RaftDistributedNext gives us:
+        // (1) network monotonicity: old packets preserved
+        // (2) ghost-map monotonicity: old vote_log_len entries preserved
+        // (3) new packets come from sent_packets of the stepping server
+        // (4) if a granted VoteResponse is in sent_packets, its (voter, term) is recorded
+
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
+                    granted ==> ds_.vote_log_len.dom().contains((v, t))
+                }
+                _ => true,
+            }
+        by {
+            if p.msg is VoteResponse && p.msg->VoteResponse_granted {
+                let t = p.msg->VoteResponse_term;
+                let v = p.msg->VoteResponse_voter;
+                if ds.network.contains(p) {
+                    // Old packet: IH + ghost-map monotonicity
+                    assert(VoteLogLenCoversNetwork(ds));
+                    assert(ds.vote_log_len.dom().contains((v, t)));
+                    // Ghost-map monotonicity (from RaftServerStepWithNetwork)
+                } else {
+                    // New packet: voter == server_id, ghost disjunction ensures recorded
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Ghost State Invariant Induction: VoteLogLenBounded
+    // =========================================================================
+    //
+    // For every (v, t) in vote_log_len, the recorded length <=
+    // server_states[v].log.len(). Old entries: IH + LogAppendOnly.
+    // New entries: recorded length == s.log.len() == pre-state log length
+    //   <= post-state log length (LogAppendOnly).
+
+    pub proof fn lemma_vote_log_len_bounded_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            VoteLogLenBounded(ds_)
+    {
+        // Establish LogAppendOnly as a step property
+        lemma_log_append_only(ds, ds_);
+
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        let (sent_packets, received_from) =
+            choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
+                &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
+                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
+                &&& (forall |pkt: LRaftPacket|
+                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                        &&& pkt.src == server_id
+                        &&& 0 <= pkt.dst < ds.num_servers
+                        &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
+                        &&& (match rf {
+                            Some(src) => pkt.dst == src,
+                            None => true,
+                        })
+                    })
+                &&& (forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+                    ==> ds_.vote_log_len.dom().contains((v, t))
+                        && ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)])
+                &&& ({
+                    ||| (exists |vt: int|
+                        #![trigger ds_.vote_log_len.dom().contains((server_id, vt))]
+                    {
+                        &&& (exists |i: int| #![trigger sp[i]]
+                            0 <= i < sp.len()
+                            && sp[i] == LRaftMessage::VoteResponse {
+                                term: vt, granted: true, voter: server_id })
+                        &&& ds_.vote_log_len.dom().contains((server_id, vt))
+                        &&& ds_.vote_log_len[(server_id, vt)] == s.log.len()
+                    })
+                    ||| (
+                        !(exists |i: int| #![trigger sp[i]]
+                            0 <= i < sp.len()
+                            && (sp[i] is VoteResponse)
+                            && sp[i]->VoteResponse_granted)
+                    )
+                })
+            };
+
+        assert forall |v: int, t: int| ds_.vote_log_len.dom().contains((v, t)) implies {
+            &&& 0 <= v < ds_.num_servers
+            &&& ds_.vote_log_len[(v, t)] <= ds_.server_states[v].log.len()
+        } by {
+            if ds.vote_log_len.dom().contains((v, t)) {
+                // Old entry: IH gives bounds, LogAppendOnly preserves
+                assert(VoteLogLenBounded(ds));
+                assert(0 <= v < ds.num_servers);
+                assert(ds.vote_log_len[(v, t)] <= ds.server_states[v].log.len());
+                assert(ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)]);
+                // LogAppendOnly: ds_.server_states[v].log.len() >= ds.server_states[v].log.len()
+                assert(LogAppendOnly(ds, ds_));
+                assert(ds_.server_states[v].log.len() >= ds.server_states[v].log.len());
+            } else {
+                // New entry: must be (server_id, vt) from the granted_vote_term witness
+                // ds_.vote_log_len[(server_id, vt)] == s.log.len()
+                // s == ds.server_states[server_id]
+                // LogAppendOnly: ds_.server_states[server_id].log.len() >= s.log.len()
+                assert(v == server_id);
+                assert(ds_.vote_log_len[(v, t)] == s.log.len());
+                assert(LogAppendOnly(ds, ds_));
+                assert(ds_.server_states[server_id].log.len() >= s.log.len());
+            }
+        }
+    }
+
+    // =========================================================================
     // Composite induction step
     // =========================================================================
 
@@ -4933,6 +5084,10 @@ verus! {
         lemma_request_vote_sender_state_inductive(ds, ds_);
         lemma_request_vote_summary_still_valid_inductive(ds, ds_);
         lemma_candidate_vote_destination_unique_inductive(ds, ds_);
+
+        // Ghost state invariants (Phase 34.7 — stale-vote provenance)
+        lemma_vote_log_len_covers_network_inductive(ds, ds_);
+        lemma_vote_log_len_bounded_inductive(ds, ds_);
     }
 
     // =========================================================================

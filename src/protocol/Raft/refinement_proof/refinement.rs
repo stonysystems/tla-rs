@@ -44,6 +44,7 @@ verus! {
                 server_constants: ds.server_constants.subrange(0, ds.num_servers - 1),
                 network: ds.network,
                 num_servers: ds.num_servers - 1,
+                vote_log_len: ds.vote_log_len,
             };
 
             assert forall |i: int| 0 <= i < sub_ds.num_servers
