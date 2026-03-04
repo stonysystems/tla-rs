@@ -9833,7 +9833,7 @@ This is the hardest step. Estimated ~300-500 LOC.
     - The prev_log check (Phase 32 spec strengthening) ensures `log[prev_index-1].term == ae_prev_term`. By `AppendEntriesIntegrity`, the leader's log at `prev_index-1` has the same term. By induction hypothesis on the leader's log, all preceding entries match. The new entry has the same value/term as the leader's log at `prev_index`.
   - Non-log-modifying actions: trivial (log unchanged → invariant preserved).
 
-- [ ] **34.6.2**: Handle log truncation carefully. If the Raft spec allows followers to overwrite divergent log entries (standard Raft behavior per §5.3), the proof must show that after overwrite, the follower's log is a prefix of the leader's log, which by `AppendEntriesIntegrity` + `ElectionSafety` implies LogMatching. Check whether the current spec models truncation or only appending.
+- [x] **34.6.2**: Handled via model audit: current Raft spec does **not** model follower overwrite/truncation; it models append-only followers. Evidence: `LHandleAppendEntriesMsg` rejects `ae_has_entry && ae_prev_index != s_mid.log.len()` (only append-at-end accepted), and `LFollowerAppendEntries` updates `s_.log` via `s.log.push(...)` only. Therefore the overwrite-prefix sub-proof is not required in the current model. Also validated append-only step lemma with focused check: `verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::message_invariants --verify-function '*log_append_only*' --rlimit 40`. If truncation semantics are added later, re-open this item and add a follower-overwrite prefix lemma.
 
 - [ ] **34.6.3**: Remove `assume(LogMatching(ds_))` at invariants.rs:775.
 
