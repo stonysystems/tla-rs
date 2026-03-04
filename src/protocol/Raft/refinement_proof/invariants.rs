@@ -352,6 +352,7 @@ verus! {
         &&& AppendEntriesIntegrity(ds)
         &&& OneVotePerTermInNetwork(ds)
         &&& RequestVoteSenderState(ds)
+        &&& RequestVoteSummaryStillValidAtSameTerm(ds)
         &&& CandidateVoteDestinationUnique(ds)
     }
 
@@ -377,7 +378,8 @@ verus! {
         // Message invariants: network is empty, all vacuously true
         // - SenderIntegrity, VoteResponseIntegrity, VoteResponseHasRequestVote,
         //   AppendEntriesIntegrity, OneVotePerTermInNetwork,
-        //   RequestVoteSenderState, CandidateVoteDestinationUnique:
+        //   RequestVoteSenderState, RequestVoteSummaryStillValidAtSameTerm,
+        //   CandidateVoteDestinationUnique:
         //   forall over empty set is vacuously true
     }
 
@@ -2726,7 +2728,27 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            ElectionSafety(ds),
+            LogMatching(ds),
+            LeaderCompleteness(ds),
+            StateMachineSafety(ds),
+            LeaderHasQuorum(ds),
+            CommitIndexBounded(ds),
+            LeaderLogLongEnough(ds),
+            EntryTermLeaderWitness(ds),
+            EntryTermHasVoteQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CandidateOrLeaderVotedForSelf(ds),
+            CandidateOrLeaderVotedForSelfId(ds),
+            VotersVotedForCandidate(ds),
+            SenderIntegrity(ds),
+            VoteResponseIntegrity(ds),
+            VoteResponseHasRequestVote(ds),
+            AppendEntriesIntegrity(ds),
+            OneVotePerTermInNetwork(ds),
+            RequestVoteSenderState(ds),
+            CandidateVoteDestinationUnique(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             LeaderCompleteness(ds_)
@@ -3559,6 +3581,50 @@ verus! {
         }
     }
 
+    pub proof fn lemma_request_vote_summary_still_valid_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            RequestVoteSummaryStillValidAtSameTerm(ds_)
+    {
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::RequestVote {
+                    term: t,
+                    candidate: d,
+                    last_log_index: last_idx,
+                    last_log_term: last_term,
+                } => {
+                    0 <= d < ds_.num_servers ==> (
+                        ds_.server_states[d].current_term == t ==> {
+                            &&& 0 <= last_idx <= ds_.server_states[d].log.len()
+                            &&& (last_idx == 0 ==> last_term == 0)
+                            &&& (last_idx > 0 ==> ds_.server_states[d].log[last_idx - 1].term == last_term)
+                        }
+                    )
+                }
+                _ => true,
+            }
+        by {
+            if p.msg is RequestVote {
+                let d = p.msg->RequestVote_candidate;
+                let t = p.msg->RequestVote_term;
+                if 0 <= d < ds_.num_servers {
+                    if ds_.server_states[d].current_term == t {
+                        if ds.network.contains(p) {
+                            lemma_request_vote_summary_old_packet_preserved(ds, ds_, p);
+                        } else {
+                            lemma_request_vote_summary_new_packet_established(ds, ds_, p);
+                        }
+                    }
+                }
+            }
+        };
+    }
+
     pub proof fn lemma_request_vote_sender_state_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -3875,6 +3941,7 @@ verus! {
         lemma_append_entries_integrity_inductive(ds, ds_);
         lemma_one_vote_per_term_inductive(ds, ds_);
         lemma_request_vote_sender_state_inductive(ds, ds_);
+        lemma_request_vote_summary_still_valid_inductive(ds, ds_);
         lemma_candidate_vote_destination_unique_inductive(ds, ds_);
     }
 

@@ -475,3 +475,41 @@ Focused verification:
 
 - Pass:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*request_vote_summary_new_packet_established*' --rlimit 40`
+
+## Update: 34.7.1.e.4.b.2.b.2.b.3.d complete (2026-03-04)
+
+Integrated the packet-history bridge into the composite safety invariant:
+
+- Added `RequestVoteSummaryStillValidAtSameTerm(ds)` to
+  `RaftSafetyInvariant` in
+  `src/protocol/Raft/refinement_proof/invariants.rs`.
+- Added inductive proof
+  `lemma_request_vote_summary_still_valid_inductive(ds, ds_)`.
+- Wired the new inductive lemma into
+  `lemma_safety_invariant_inductive`.
+- Narrowed `lemma_leader_completeness_inductive` preconditions to explicit
+  needed invariants (instead of `RaftSafetyInvariant(ds)`) to avoid pulling
+  unrelated new message-invariant quantifiers into that proof obligation.
+
+Proof structure for `lemma_request_vote_summary_still_valid_inductive`:
+
+1. Quantify over any `p` in `ds_.network`.
+2. Restrict to `RequestVote` packets and same-term candidate case
+   (`ds_.server_states[d].current_term == t`).
+3. Split old vs new packet membership:
+   - old packet (`ds.network.contains(p)`): use
+     `lemma_request_vote_summary_old_packet_preserved`.
+   - new packet (`!ds.network.contains(p)`): use
+     `lemma_request_vote_summary_new_packet_established`.
+
+Focused verification:
+
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*request_vote_summary_still_valid_inductive*' --rlimit 40`
+
+Status note:
+
+- Existing focused check
+  `*leader_completeness*` at `--rlimit 40` currently still reports rlimit
+  pressure in `lemma_leader_completeness_inductive`. This is tracked in the
+  remaining TODO leaf `34.7.1.e.4.b.2.b.3` (proof search reduction / stability).
