@@ -91,6 +91,40 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 2c: RequestVote summary stays valid for same term
+    // =========================================================================
+    //
+    // For any in-network RequestVote packet sent by candidate d at term t,
+    // if d is still at that same term, then d's current log still contains
+    // the packet's referenced last-log summary index/term.
+    //
+    // Intuition:
+    // - At send time (LTimeout), RequestVote carries d's exact log summary.
+    // - Logs are append-only (old prefix preserved), so that summary remains
+    //   valid while d stays in the same election term.
+
+    pub open spec fn RequestVoteSummaryStillValidAtSameTerm(ds: RaftDistributedState) -> bool {
+        forall |p: LRaftPacket| ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::RequestVote {
+                    term: t,
+                    candidate: d,
+                    last_log_index: last_idx,
+                    last_log_term: last_term,
+                } => {
+                    0 <= d < ds.num_servers ==> (
+                        ds.server_states[d].current_term == t ==> {
+                            &&& 0 <= last_idx <= ds.server_states[d].log.len()
+                            &&& (last_idx == 0 ==> last_term == 0)
+                            &&& (last_idx > 0 ==> ds.server_states[d].log[last_idx - 1].term == last_term)
+                        }
+                    )
+                }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
     // Message Invariant 3: AppendEntries Integrity
     // =========================================================================
     //

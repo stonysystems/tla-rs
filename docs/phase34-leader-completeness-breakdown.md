@@ -397,3 +397,27 @@ Change made:
 This removes the immediate mismatch between packet parameters and candidate log
 state at election start, which is required before proving the remaining
 packet-history bridge in the next leaf (`...b.3`).
+
+## Update: 34.7.1.e.4.b.2.b.2.b.3 decomposition (2026-03-04)
+
+Implemented the first concrete slice for `...b.3`:
+
+- Added message-level invariant definition
+  `RequestVoteSummaryStillValidAtSameTerm` in
+  `src/protocol/Raft/refinement_proof/message_invariants.rs`.
+- Invariant intent: for any in-network `RequestVote` packet, if sender
+  candidate is still at that packet term, sender log still contains the
+  packet summary slot/term (`last_idx`, `last_term`).
+
+Proof status:
+
+- A direct inductive proof attempt in `invariants.rs` hit persistent rlimit
+  blowups (focused `*request_vote_summary_still_valid*`, even with higher
+  rlimit), so the TODO leaf was split into smaller sub-leaves:
+  1. invariant definition (done),
+  2. old-packet preservation proof,
+  3. new-packet establishment from `LTimeout`,
+  4. integration into `RaftSafetyInvariant`.
+
+This keeps the work honest and incremental without masking the unresolved proof
+search bottleneck.
