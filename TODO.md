@@ -9802,7 +9802,7 @@ Network-level invariants that constrain what messages can exist in `sentPackets`
   - `LHandleAppendEntriesMsg`: may step down (advance term) — same reasoning.
   - All other actions: no new VoteResponse packets, voter state preserved or term advanced.
 
-- [ ] **34.3.2**: Prove `AppendEntriesIntegrity` inductive (still has assume) — case split:
+- [x] **34.3.2**: Prove `AppendEntriesIntegrity` inductive — case split:
   - `LSendAppendEntries`: sends AE packet matching leader's current log. New packet satisfies invariant.
   - `LClientRequest`: leader appends to own log — existing AE packets still valid because log is extended (append-only for leader).
   - Other actions: no new AE packets. Leader's log may only grow.
