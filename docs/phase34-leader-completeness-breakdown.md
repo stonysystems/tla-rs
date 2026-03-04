@@ -350,3 +350,32 @@ Focused verification status:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness*' --rlimit 40`
 - Still rlimit-bounded:
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*new_leader_provenance_bridge_wiring*' --rlimit 40`
+
+## Update: 34.7.1.e.4.b.2.b.2.b blocker analysis (2026-03-04)
+
+Current branch status in
+`lemma_leader_completeness_inductive`:
+
+- overlap voter `ov` is constructed and transferred to pre-state:
+  `ds.server_states[ov].log[k] == entry`
+- vote provenance wiring is in place:
+  `lemma_request_vote_witness_from_votes_granted`
+- bridge template is instantiated:
+  `lemma_vote_grant_bridge_template_for_overlap_voter(...)`
+
+Why the final transfer still cannot be closed yet:
+
+- The bridge template proves a conditional implication from
+  RequestVote handling to `log_not_older_than(leader, voter_mid)`.
+- To use it for concrete leader-state transfer at index `k`, the proof still
+  needs a packet-history bridge that relates in-network `RequestVote` summary
+  fields (`last_log_index`, `last_log_term`) to the sender's concrete log
+  state strongly enough in the current state.
+
+Required follow-up obligations (split in TODO leaf `34.7.1.e.4.b.2.b.2.b`):
+
+1. Align RequestVote send semantics with sender log summary at send time.
+2. Prove an inductive invariant that current sender log remains at least as
+   up-to-date as any retained RequestVote summary for the same election term.
+3. Consume that bridge in the overlap-voter subcase to replace the local
+   `assume(ds_.server_states[leader_id].log[k] == entry)` with a proof.
