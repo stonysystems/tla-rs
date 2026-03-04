@@ -107,18 +107,20 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
-| Protocol | Source-first status | Checked-in model + automation | Notes |
-| --- | --- | --- | --- |
-| `RSL` | Not yet covered | No | Highest-value missing consensus protocol. |
-| `Raft` | Not yet covered | No | Needs source-first model-check evidence separate from refinement proofs. |
-| `Paxos` | Bounded small-model pass | Yes | Fixture-backed integration test exists. |
-| `VerticalPaxos` | Not yet covered | No | Needs checked-in source-first model/check. |
-| `EPaxos` | Not yet covered | No | Needs checked-in source-first model/check. |
-| `PBFT` | Not yet covered | No | Needs checked-in source-first model/check. |
-| `ChainReplication` | Not yet covered | No | Needs checked-in source-first model/check. |
-| `PrimaryBackup` | Bounded small-model pass | Yes | Fixture-backed integration test exists. |
-| `TwoPhase` | Bounded small-model pass | Yes | Fixture-backed integration test exists. |
-| `LeaderElection` | Bounded small-model pass | Yes | Fixture-backed integration test exists. |
+Metrics shown for supported entries come from the latest JSON artifacts under `reports/model_check/` (generated via `./scripts/run_model_check_matrix.sh`; exact `elapsed_ms` may vary by machine/load).
+
+| Protocol | Exact source files used | Checked-in model file | Search mode / exactness | Result | States / transitions / depth / elapsed_ms | First blocker (if unsupported) | Automated evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `RSL` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first RSL model/check run yet (`33.5` highest-value backlog). | No |
+| `Raft` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first Raft model/check run yet (separate from refinement-proof progress). | No |
+| `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 10` | N/A | `test_model_check_paxos_bounded_run`, `reports/model_check/paxos_small.json` |
+| `VerticalPaxos` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first VerticalPaxos model/check run yet. | No |
+| `EPaxos` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first EPaxos model/check run yet. | No |
+| `PBFT` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first PBFT model/check run yet. | No |
+| `ChainReplication` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first ChainReplication model/check run yet. | No |
+| `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 2 / 1 / 64` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `reports/model_check/primarybackup_small.json` |
+| `TwoPhase` | `src/protocol/TwoPhase/twophase.rs`, `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `3 / 4 / 1 / 3206` | N/A | `test_model_check_twophase_bounded_run`, `reports/model_check/twophase_small.json` |
+| `LeaderElection` | `src/protocol/LeaderElection/election.rs`, `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `4 / 3 / 1 / 71` | N/A | `test_model_check_leader_election_bounded_run`, `reports/model_check/leaderelection_small.json` |
 
 ## 5. Exact reproduction commands
 

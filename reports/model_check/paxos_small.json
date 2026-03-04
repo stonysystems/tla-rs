@@ -1,0 +1,44 @@
+{
+  "deadlock": null,
+  "entrypoints": {
+    "init": "LInit",
+    "next": "LNext"
+  },
+  "invariant_violation": null,
+  "invariants": {
+    "configured": [],
+    "configured_count": 0,
+    "resolved": [],
+    "resolved_count": 0
+  },
+  "leads_to_violation": null,
+  "liveness": null,
+  "protocol": "src/protocol/Paxos/paxos.rs",
+  "result": "ok",
+  "search": {
+    "max_depth": 1,
+    "max_states": 200,
+    "por_heuristic": "none",
+    "por_pruned_branches": [],
+    "state_dedup": "canonical",
+    "strategy": "bfs",
+    "successor_semantics": "deadlock",
+    "symmetry_fields": [],
+    "timeout_ms": 10000
+  },
+  "stop_reason": "FrontierExhausted",
+  "summary": {
+    "candidate_evaluation_guardrail_per_state_branch": 10000,
+    "depth": 0,
+    "direct_assignment_branch_solves": 0,
+    "elapsed_ms": 10,
+    "enumeration_candidate_evaluations": 112,
+    "enumeration_fallback_branch_solves": 7,
+    "hash_compaction_collisions": 0,
+    "pruned_by_por": 0,
+    "states": 1,
+    "symmetry_collapses": 0,
+    "transitions": 2
+  },
+  "types": "src/protocol/Paxos/types.rs"
+}

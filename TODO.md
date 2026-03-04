@@ -9637,9 +9637,9 @@ Rules for this phase (do not cut corners):
 
 ### 33.1 Canonical status and evidence discipline
 
-- [ ] Maintain `docs/model_checker_status.md` as the canonical status page for the source-first model checker.
-- [ ] Keep a protocol matrix covering at least: `RSL`, `Raft`, `Paxos`, `VerticalPaxos`, `EPaxos`, `PBFT`, `ChainReplication`, `PrimaryBackup`, `TwoPhase`, and `LeaderElection`.
-- [ ] For each protocol entry, record:
+- [x] Maintain `docs/model_checker_status.md` as the canonical status page for the source-first model checker.
+- [x] Keep a protocol matrix covering at least: `RSL`, `Raft`, `Paxos`, `VerticalPaxos`, `EPaxos`, `PBFT`, `ChainReplication`, `PrimaryBackup`, `TwoPhase`, and `LeaderElection`.
+- [x] For each protocol entry, record:
   - exact source files used
   - checked-in model file
   - search mode and whether the run is exact or lossy
