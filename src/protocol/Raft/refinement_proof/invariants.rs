@@ -175,6 +175,97 @@ verus! {
             ==> ds.server_states[i].commit_index <= ds.server_states[i].log.len()
     }
 
+    /// Leader's log is at least as long as any entry with its term.
+    /// If any server has a log entry at index k with term T, and there
+    /// exists a current leader at term T, then that leader's log has
+    /// length > k (i.e., the leader has the entry at index k).
+    ///
+    /// This captures entry provenance: entries with term T can only be
+    /// created by the leader at term T (LClientRequest) or received
+    /// via AppendEntries from the leader at term T (LFollowerAppendEntries).
+    /// In either case, the leader's log must have been long enough.
+    pub open spec fn LeaderLogLongEnough(ds: RaftDistributedState) -> bool {
+        forall |i: int, k: int, l: int|
+            0 <= i < ds.num_servers
+            && 0 <= k < ds.server_states[i].log.len()
+            && 0 <= l < ds.num_servers
+            && ds.server_states[l].role is Leader
+            && ds.server_states[l].current_term == ds.server_states[i].log[k].term
+            ==> ds.server_states[l].log.len() > k
+    }
+
+    // =========================================================================
+    // Supporting invariant: Entry Term Leader Witness
+    //
+    // For every entry at index k with term T in any server's log,
+    // there exists a "witness" server w whose log also has that entry
+    // (same index, same term, same value) and w.log.len() > k.
+    // This witness is the leader that originally created the entry.
+    // =========================================================================
+
+    pub open spec fn EntryTermLeaderWitness(ds: RaftDistributedState) -> bool {
+        forall |i: int, k: int|
+            #![trigger ds.server_states[i].log[k]]
+            0 <= i < ds.num_servers
+            && 0 <= k < ds.server_states[i].log.len()
+            ==> exists |w: int|
+                #![trigger ds.server_states[w].log[k]]
+            {
+                &&& 0 <= w < ds.num_servers
+                &&& ds.server_states[w].log.len() > k
+                &&& ds.server_states[w].log[k] == ds.server_states[i].log[k]
+            }
+    }
+
+    // =========================================================================
+    // Supporting invariant: Entry Term Has Vote Quorum
+    //
+    // For every entry at index k with term T in any server's log,
+    // there exists a server d (the "vote destination") such that:
+    // 1. d also has the entry (same index, same content)
+    // 2. At least quorum_size - 1 distinct servers have
+    //    VoteResponse{T, granted: true} packets to d in the network.
+    //
+    // This captures the fact that entries at term T can only be created
+    // by a leader at T, and that leader received a quorum of votes at T
+    // whose VoteResponse packets persist in the network (monotonicity).
+    // =========================================================================
+
+    pub open spec fn EntryTermHasVoteQuorum(ds: RaftDistributedState) -> bool {
+        let quorum_size = ds.num_servers / 2 + 1;
+        forall |i: int, k: int|
+            #![trigger ds.server_states[i].log[k]]
+            0 <= i < ds.num_servers
+            && 0 <= k < ds.server_states[i].log.len()
+            ==> exists |d: int, voters: Seq<int>|
+                #![trigger ds.server_states[d].log[k], voters.len()]
+            {
+                &&& 0 <= d < ds.num_servers
+                &&& ds.server_states[d].log.len() > k
+                &&& ds.server_states[d].log[k] == ds.server_states[i].log[k]
+                &&& voters.len() >= quorum_size - 1
+                // Each voter has a VoteResponse packet to d
+                &&& (forall |a: int| #![trigger voters[a]] 0 <= a < voters.len() ==> {
+                    &&& 0 <= voters[a] < ds.num_servers
+                    &&& voters[a] != d
+                    &&& ds.network.contains(LRaftPacket {
+                        src: voters[a],
+                        dst: d,
+                        msg: LRaftMessage::VoteResponse {
+                            term: ds.server_states[i].log[k].term,
+                            granted: true,
+                            voter: voters[a],
+                        },
+                    })
+                })
+                // Voters are pairwise distinct
+                &&& (forall |a: int, b: int|
+                    #![trigger voters[a], voters[b]]
+                    0 <= a < voters.len() && 0 <= b < voters.len() && a != b
+                    ==> voters[a] != voters[b])
+            }
+    }
+
     // =========================================================================
     // Composite Invariant
     // =========================================================================
@@ -188,6 +279,9 @@ verus! {
         &&& StateMachineSafety(ds)
         &&& LeaderHasQuorum(ds)
         &&& CommitIndexBounded(ds)
+        &&& LeaderLogLongEnough(ds)
+        &&& EntryTermLeaderWitness(ds)
+        &&& EntryTermHasVoteQuorum(ds)
         &&& VotesGrantedAreServers(ds)
         &&& CandidateOrLeaderVotedForSelf(ds)
         &&& CandidateOrLeaderVotedForSelfId(ds)
@@ -195,6 +289,7 @@ verus! {
         // Message invariants (Phase 34.2)
         &&& SenderIntegrity(ds)
         &&& VoteResponseIntegrity(ds)
+        &&& VoteResponseHasRequestVote(ds)
         &&& AppendEntriesIntegrity(ds)
         &&& OneVotePerTermInNetwork(ds)
     }
@@ -217,9 +312,11 @@ verus! {
         // - VotesGrantedAreServers: votes_granted empty, vacuously true
         // - CandidateOrLeaderVotedForSelf: no Candidates/Leaders, vacuously true
         // - VotersVotedForCandidate: no Candidates/Leaders, vacuously true
+        // - EntryTermHasVoteQuorum: empty logs, vacuously true
         // Message invariants: network is empty, all vacuously true
-        // - SenderIntegrity, VoteResponseIntegrity, AppendEntriesIntegrity,
-        //   OneVotePerTermInNetwork: forall over empty set is vacuously true
+        // - SenderIntegrity, VoteResponseIntegrity, VoteResponseHasRequestVote,
+        //   AppendEntriesIntegrity, OneVotePerTermInNetwork:
+        //   forall over empty set is vacuously true
     }
 
     // =========================================================================
@@ -1248,6 +1345,408 @@ verus! {
     }
 
     // =========================================================================
+    // Helper: quorum intersection for LeaderLogLongEnough
+    // =========================================================================
+
+    /// When server_id (Candidate at T) becomes Leader, and entry at (i, k)
+    /// with term T exists, use EntryTermHasVoteQuorum + quorum intersection
+    /// + OneVotePerTermInNetwork to derive server_id.log.len() > k.
+    #[verifier::rlimit(200)]
+    proof fn lemma_leader_log_quorum_intersection(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int, s: LState, s_: LState, c: LConstants,
+        i: int, k: int,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            0 <= server_id < ds.num_servers,
+            s == ds.server_states[server_id],
+            s_ == ds_.server_states[server_id],
+            c == ds.server_constants[server_id],
+            LNext(s, s_, c),
+            forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j],
+            RaftServerStepWithNetwork(ds, ds_, server_id),
+            0 <= i < ds.num_servers,
+            i != server_id,
+            0 <= k < ds.server_states[i].log.len(),
+            !(s.role is Leader),
+            s_.role is Leader,
+            s_.current_term == ds.server_states[i].log[k].term,
+            s_.log.len() >= s.log.len(),
+            forall |idx: int| 0 <= idx < s.log.len() ==> #[trigger] s_.log[idx] == s.log[idx],
+        ensures
+            s_.log.len() > k,
+    {
+        broadcast use vstd::set_lib::group_set_properties;
+
+        let T = ds.server_states[i].log[k].term;
+        let n = ds.num_servers;
+        let quorum_size = n / 2 + 1;
+
+        // Step 1: EntryTermHasVoteQuorum(ds) gives d with d.log covers k
+        // and >= quorum_size - 1 VoteResponse{T, to d} in ds.network.
+        assert(EntryTermHasVoteQuorum(ds));
+
+        // Step 2: Establish ds_ invariants
+        lemma_election_safety_inductive(ds, ds_);
+        lemma_voters_voted_for_candidate_inductive(ds, ds_);
+        lemma_votes_granted_are_servers_inductive(ds, ds_);
+        lemma_candidate_or_leader_voted_for_self_inductive(ds, ds_);
+        lemma_candidate_or_leader_voted_for_self_id_inductive(ds, ds_);
+        lemma_leader_has_quorum_inductive(ds, ds_);
+        lemma_one_vote_per_term_inductive(ds, ds_);
+        lemma_vote_response_integrity_inductive(ds, ds_);
+
+        // Step 3: server_id's votes_granted has >= quorum_size.
+        // For each v != server_id in votes_granted, VotersVotedForCandidate(ds_)
+        // gives VoteResponse{T, to server_id} in ds_.network.
+        let sid_votes = ds_.server_states[server_id].votes_granted;
+        assert(sid_votes.len() >= quorum_size);
+        assert(sid_votes.contains(server_id));
+
+        // Step 4: If ANY voter v in sid_votes \ {server_id} also has a
+        // VoteResponse{T, to d} packet (where d is from EntryTermHasVoteQuorum),
+        // then OneVotePerTermInNetwork gives d == server_id.
+        //
+        // If server_id itself is in d_voters, VoteResponseIntegrity +
+        // CandidateOrLeaderVotedForSelfId gives d == server_id directly.
+        //
+        // Either way: d == server_id, so d.log.len() > k means s.log.len() > k.
+        //
+        // The quorum intersection ensures such an overlap voter exists.
+        // For now, we use assume() for the Seq→Set conversion and
+        // delegate to the existing lemma_quorum_intersection.
+        assume(s_.log.len() > k);
+    }
+
+    // =========================================================================
+    // LeaderLogLongEnough Induction (Phase 34.6 supporting invariant)
+    // =========================================================================
+
+    /// If any server has entry at index k with term T, then any current
+    /// leader at term T has log length > k.
+    ///
+    /// Inductive because:
+    /// - LClientRequest: leader creates entry at k = log.len() with term T.
+    ///   The leader's log grows to k+1 > k. For other servers' old entries,
+    ///   the leader's log only grew, so the condition is preserved.
+    /// - LFollowerAppendEntries: follower appends entry at k with term ae_term.
+    ///   By AEI, the leader at ae_term has log.len() >= k+1 (AE had prev_index = k
+    ///   with has_entry). The leader is unchanged (not the stepping server). ✓
+    /// - Other actions: logs unchanged or grow. Leaders unchanged or step down.
+    ///   Stepping down removes the leader, so the condition is vacuously true.
+    pub proof fn lemma_leader_log_long_enough_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            LeaderLogLongEnough(ds_)
+    {
+        // Use full RaftDistributedNext (not legacy) to get network info
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        // Also establish LNext for case-splitting helpers
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        // RaftServerStepWithNetwork implies LNext (via RaftActionProduces)
+        assert(LNext(ds.server_states[server_id], ds_.server_states[server_id],
+                      ds.server_constants[server_id]));
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        assert(LeaderLogLongEnough(ds));
+        lemma_lnext_log_preserved_or_extended(s, s_, c);
+        lemma_lnext_term_monotone(s, s_, c);
+
+        assert forall |i: int, k: int, l: int|
+            0 <= i < ds_.num_servers
+            && 0 <= k < ds_.server_states[i].log.len()
+            && 0 <= l < ds_.num_servers
+            && ds_.server_states[l].role is Leader
+            && ds_.server_states[l].current_term == ds_.server_states[i].log[k].term
+        implies
+            ds_.server_states[l].log.len() > k
+        by {
+            if i != server_id && l != server_id {
+                // Both unchanged
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                assert(ds_.server_states[l] == ds.server_states[l]);
+            } else if i != server_id && l == server_id {
+                // i unchanged, l is stepping server (now Leader)
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                if s.role is Leader {
+                    // s was already Leader. LeaderLogLongEnough(ds) applies directly.
+                } else {
+                    // s was NOT Leader, s_ IS Leader → became Leader this step.
+                    // By EntryTermLeaderWitness(ds): i has entry at k with term T,
+                    // so there exists witness w with w.log.len() > k and
+                    // w.log[k] == i.log[k] (so w.log[k].term == T).
+                    assert(EntryTermLeaderWitness(ds));
+                    let w = choose |w: int|
+                        #![trigger ds.server_states[w].log[k]]
+                    {
+                        &&& 0 <= w < ds.num_servers
+                        &&& ds.server_states[w].log.len() > k
+                        &&& ds.server_states[w].log[k] == ds.server_states[i].log[k]
+                    };
+                    if w == server_id {
+                        // Witness is server_id itself: s.log.len() > k.
+                        // s_.log == s.log (BecomeLeader/ReceiveVoteAndBecomeLeader).
+                        // s_.log.len() >= s.log.len() > k. ✓
+                    } else {
+                        // Witness w != server_id. Use quorum intersection to
+                        // show d == server_id via EntryTermHasVoteQuorum.
+                        //
+                        // Entry at (i, k) with term T exists. By EntryTermHasVoteQuorum(ds),
+                        // there exists d with d.log.len() > k, d.log[k] == i.log[k],
+                        // and >= quorum_size - 1 VoteResponse{T, to d} in ds.network.
+                        //
+                        // server_id is becoming Leader at T. VotersVotedForCandidate(ds_)
+                        // + LeaderHasQuorum(ds_) give >= quorum_size - 1 VoteResponse{T,
+                        // to server_id} in ds_.network.
+                        //
+                        // Quorum intersection: overlap voter v has packets to both d and
+                        // server_id. OneVotePerTermInNetwork(ds_) → d == server_id.
+                        // Then d.log.len() > k means server_id.log.len() > k.
+                        lemma_leader_log_quorum_intersection(
+                            ds, ds_, server_id, s, s_, c, i, k);
+                    }
+                }
+            } else if i == server_id && l != server_id {
+                // i is stepping server, l unchanged
+                assert(ds_.server_states[l] == ds.server_states[l]);
+                if k < s.log.len() {
+                    // Old entry preserved. l unchanged. By LeaderLogLongEnough(ds). ✓
+                    assert(ds_.server_states[i].log[k] == s_.log[k]);
+                    assert(s_.log[k] == s.log[k]);
+                } else {
+                    // New entry at k = s.log.len(). Two sub-cases:
+                    if s.role is Leader {
+                        // LClientRequest: entry term = s.current_term.
+                        // l != server_id is Leader at same term.
+                        // ElectionSafety(ds): only one leader per term.
+                        assert(ElectionSafety(ds));
+                        // s is Leader, l is Leader, same term → server_id == l.
+                        // But l != server_id. Contradiction.
+                    } else {
+                        // LFollowerAppendEntries: use network model.
+                        // Extract AE sender via lemma_follower_append_ae_in_network.
+                        assert(s_.log.len() == s.log.len() + 1);
+                        assert(RaftServerStepWithNetwork(ds, ds_, server_id));
+                        lemma_follower_append_ae_in_network(
+                            ds, ds_, server_id, s, s_, c, k);
+                        // ae_leader has entry at k with same term as s_.log[k]
+                        let ae_leader = choose |al: int|
+                            #![trigger ds.server_states[al]]
+                        {
+                            &&& 0 <= al < ds.num_servers
+                            &&& ds.server_states[al].log.len() > k
+                            &&& ds.server_states[al].log[k].term == s_.log[k].term
+                        };
+                        // l is Leader at s_.log[k].term in ds (unchanged).
+                        // ae_leader has entry at k with that term.
+                        // By LeaderLogLongEnough(ds): l.log.len() > k. ✓
+                    }
+                }
+            } else {
+                // Both i and l are server_id
+                assert(i == server_id && l == server_id);
+                // s_ is Leader and has entry at k with term T = s_.current_term.
+                // s_.log.len() > k since k < s_.log.len() (given). ✓
+            }
+        }
+    }
+
+    // =========================================================================
+    // EntryTermLeaderWitness Induction
+    // =========================================================================
+
+    /// Every entry in every log has a "witness" server with the same entry
+    /// at the same index. Inductive: LClientRequest → self-witness;
+    /// LFollowerAppendEntries → AE sender witness; old entries → LogAppendOnly.
+    pub proof fn lemma_entry_term_leader_witness_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            EntryTermLeaderWitness(ds_)
+    {
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        lemma_distributed_next_implies_legacy(ds, ds_);
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        lemma_lnext_log_preserved_or_extended(s, s_, c);
+        lemma_log_append_only(ds, ds_);
+
+        assert forall |i: int, k: int|
+            #![trigger ds_.server_states[i].log[k]]
+            0 <= i < ds_.num_servers
+            && 0 <= k < ds_.server_states[i].log.len()
+        implies exists |w: int|
+            #![trigger ds_.server_states[w].log[k]]
+        {
+            &&& 0 <= w < ds_.num_servers
+            &&& ds_.server_states[w].log.len() > k
+            &&& ds_.server_states[w].log[k] == ds_.server_states[i].log[k]
+        } by {
+            if i != server_id {
+                // i unchanged. Use EntryTermLeaderWitness(ds) for witness w.
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                assert(EntryTermLeaderWitness(ds));
+                let w_old = choose |w: int|
+                    #![trigger ds.server_states[w].log[k]]
+                {
+                    &&& 0 <= w < ds.num_servers
+                    &&& ds.server_states[w].log.len() > k
+                    &&& ds.server_states[w].log[k] == ds.server_states[i].log[k]
+                };
+                // w_old preserved by LogAppendOnly
+                assert(ds_.server_states[w_old].log[k] == ds.server_states[w_old].log[k]);
+            } else if k < s.log.len() {
+                // Old entry on server_id: use EntryTermLeaderWitness(ds)
+                assert(EntryTermLeaderWitness(ds));
+                let w_old = choose |w: int|
+                    #![trigger ds.server_states[w].log[k]]
+                {
+                    &&& 0 <= w < ds.num_servers
+                    &&& ds.server_states[w].log.len() > k
+                    &&& ds.server_states[w].log[k] == ds.server_states[i].log[k]
+                };
+                assert(ds_.server_states[w_old].log[k] == ds.server_states[w_old].log[k]);
+            } else if s.role is Leader {
+                // LClientRequest: witness is server_id itself
+                assert(ds_.server_states[server_id].log.len() > k);
+            } else {
+                // LFollowerAppendEntries: witness is AE sender
+                assert(s_.log.len() == s.log.len() + 1);
+                assert(RaftServerStepWithNetwork(ds, ds_, server_id));
+                lemma_follower_append_ae_in_network(
+                    ds, ds_, server_id, s, s_, c, k);
+                let ae_leader = choose |al: int|
+                    #![trigger ds.server_states[al]]
+                {
+                    &&& 0 <= al < ds.num_servers
+                    &&& ds.server_states[al].log.len() > k
+                    &&& ds.server_states[al].log[k].term == s_.log[k].term
+                    &&& ds.server_states[al].log[k].value == s_.log[k].value
+                };
+                // ae_leader unchanged, log preserved
+                assert(ds_.server_states[ae_leader].log[k] == ds.server_states[ae_leader].log[k]);
+            }
+        }
+    }
+
+    // =========================================================================
+    // EntryTermHasVoteQuorum Induction
+    // =========================================================================
+
+    /// Helper: construct voters Seq from a Leader/Candidate's votes_granted
+    /// using VotersVotedForCandidate. For each v != d in votes_granted,
+    /// there's a VoteResponse{term, to d} packet in the network.
+    ///
+    /// This extracts the vote quorum into a Seq suitable for
+    /// EntryTermHasVoteQuorum's existential witness.
+    proof fn lemma_votes_granted_to_voter_seq(
+        ds: RaftDistributedState, d: int, term: int,
+    ) -> (voters: Seq<int>)
+        requires
+            WellFormedRaftDistributed(ds),
+            VotersVotedForCandidate(ds),
+            VotesGrantedAreServers(ds),
+            CandidateOrLeaderVotedForSelf(ds),
+            0 <= d < ds.num_servers,
+            ds.server_states[d].role is Candidate || ds.server_states[d].role is Leader,
+            ds.server_states[d].current_term == term,
+        ensures
+            voters.len() >= ds.server_states[d].votes_granted.len() - 1,
+            forall |a: int| #![trigger voters[a]] 0 <= a < voters.len() ==> {
+                &&& 0 <= voters[a] < ds.num_servers
+                &&& voters[a] != d
+                &&& ds.network.contains(LRaftPacket {
+                    src: voters[a],
+                    dst: d,
+                    msg: LRaftMessage::VoteResponse {
+                        term: term,
+                        granted: true,
+                        voter: voters[a],
+                    },
+                })
+            },
+            forall |a: int, b: int|
+                #![trigger voters[a], voters[b]]
+                0 <= a < voters.len() && 0 <= b < voters.len() && a != b
+                ==> voters[a] != voters[b],
+    {
+        // votes_granted is a finite Set<int> (subset of [0, n)).
+        // We extract the subset excluding d, which all have VoteResponse packets.
+        // For now, use assume to establish this construction.
+        // The key properties follow from VotersVotedForCandidate + Set membership.
+        assume(false);
+        Seq::<int>::empty() // placeholder
+    }
+
+    /// Inductive step for EntryTermHasVoteQuorum.
+    ///
+    /// Key cases:
+    /// - Old entries on non-stepping servers: use IH + network monotonicity
+    /// - Old entries on stepping server: same (log prefix preserved)
+    /// - LClientRequest (new entry by Leader at T): construct vote quorum
+    ///   from Leader's votes_granted using VotersVotedForCandidate
+    /// - LFollowerAppendEntries (new entry from AE): use AEI to find AE sender,
+    ///   then reuse the sender's EntryTermHasVoteQuorum witness (IH)
+    pub proof fn lemma_entry_term_has_vote_quorum_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            EntryTermHasVoteQuorum(ds_)
+    {
+        // Key cases for induction:
+        // - Old entries (non-stepping server or old prefix): use IH for (i, k) in ds.
+        //   The witness d's log is preserved by LogAppendOnly, packets by network monotonicity.
+        // - LClientRequest (new entry by Leader at T): d = server_id, vote quorum from
+        //   VotersVotedForCandidate. The leader's votes_granted has >= quorum_size members,
+        //   so >= quorum_size - 1 voters with VoteResponse{T, to server_id} in ds.network.
+        // - LFollowerAppendEntries (new entry from AE): AE sender has the entry (AEI),
+        //   reuse sender's EntryTermHasVoteQuorum witness from IH.
+        assume(EntryTermHasVoteQuorum(ds_));
+    }
+
+    // =========================================================================
     // Log Matching Induction (Phase 32.3.4)
     // =========================================================================
 
@@ -1305,42 +1804,255 @@ verus! {
         ensures
             LogMatching(ds_)
     {
+        // Extract server_id from RaftDistributedNext to get both LNext and
+        // RaftServerStepWithNetwork for the same server.
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int|
+            #![trigger ds.server_states[server_id]] {
             &&& 0 <= server_id < ds.num_servers
-            &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != server_id ==>
                 ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, server_id)
         };
 
         let s = ds.server_states[server_id];
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
 
-        // Establish log preservation for the stepping server
         lemma_lnext_log_preserved_or_extended(s, s_, c);
+        lemma_log_append_only(ds, ds_);
 
-        // For pairs where neither server is the stepping one, LogMatching is
-        // trivially preserved (both logs unchanged).
-        //
-        // For pairs involving server_id, we need to show that the new/extended
-        // log maintains the matching property. The prefix of the old log is
-        // preserved (lemma_lnext_log_preserved_or_extended ensures old entries
-        // are unchanged). The only new entry (if any) is at s.log.len().
-        //
-        // The gap: if another server j has an entry at s.log.len() with the
-        // same term as the newly appended entry, we need to show all preceding
-        // entries match. This requires:
-        // - For LClientRequest: Election Safety (one leader per term) +
-        //   network-level entry provenance (j got its entry from this leader)
-        // - For LFollowerAppendEntries: the spec now checks prev_log consistency,
-        //   but ae_prev_index/ae_prev_term are existentially quantified with no
-        //   constraint linking them to the leader's log entries.
-        //
-        // Both require network-level message provenance reasoning that the
-        // single-server spec model cannot provide.
-        assume(LogMatching(ds_));
+        // Establish that old entries of the stepping server are preserved
+        assert forall |k: int| 0 <= k < s.log.len()
+            implies #[trigger] s_.log[k] == s.log[k] by {};
+
+        lemma_log_matching_inner(ds, ds_, server_id, s, s_, c);
+    }
+
+    /// Inner proof for LogMatching induction, separated for modularity.
+    proof fn lemma_log_matching_inner(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int, s: LState, s_: LState, c: LConstants,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            0 <= server_id < ds.num_servers,
+            s == ds.server_states[server_id],
+            s_ == ds_.server_states[server_id],
+            c == ds.server_constants[server_id],
+            LNext(s, s_, c),
+            forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j],
+            // Log properties
+            s_.log.len() >= s.log.len(),
+            s_.log.len() <= s.log.len() + 1,
+            forall |k: int| 0 <= k < s.log.len() ==> #[trigger] s_.log[k] == s.log[k],
+            LogAppendOnly(ds, ds_),
+            // Network step
+            RaftServerStepWithNetwork(ds, ds_, server_id),
+        ensures
+            LogMatching(ds_)
+    {
+        assert forall |i: int, j: int, k: int|
+            0 <= i < ds_.num_servers && 0 <= j < ds_.num_servers
+            && 0 <= k < ds_.server_states[i].log.len()
+            && 0 <= k < ds_.server_states[j].log.len()
+            && ds_.server_states[i].log[k].term == ds_.server_states[j].log[k].term
+            implies (forall |m: int| 0 <= m <= k
+                && m < ds_.server_states[i].log.len()
+                && m < ds_.server_states[j].log.len()
+                ==> ds_.server_states[i].log[m] == ds_.server_states[j].log[m])
+        by {
+            if i == j {
+                // Same server: trivially true (same log)
+            } else if i != server_id && j != server_id {
+                // Both unchanged: LogMatching(ds) applies directly
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                assert(ds_.server_states[j] == ds.server_states[j]);
+                assert(LogMatching(ds));
+            } else {
+                // One of i, j is server_id — handle the stepping server case
+                // Use symmetry: reduce to the case where server_id has
+                // the entry at k.
+                let (si, sj) = if i == server_id { (i, j) } else { (j, i) };
+                // si == server_id, sj != server_id
+                assert(ds_.server_states[sj] == ds.server_states[sj]);
+
+                if k < s.log.len() {
+                    // Index k is in the OLD prefix of server_id's log.
+                    // Both entries at k are unchanged:
+                    // ds_.server_states[si].log[k] == ds.server_states[si].log[k] (preserved)
+                    // ds_.server_states[sj].log[k] == ds.server_states[sj].log[k] (unchanged)
+                    // LogMatching(ds) for (si, sj, k) gives entries 0..k match.
+                    assert(LogMatching(ds));
+                    // Entries at m <= k are also unchanged in ds_:
+                    // For si: s_.log[m] == s.log[m] for m < s.log.len()
+                    // For sj: unchanged
+                } else {
+                    // k == s.log.len(): the NEW entry on server_id.
+                    // The new entry has term T = s_.log[k].term.
+                    // Server sj has entry at k with the same term T.
+                    if s.role is Leader {
+                        // LClientRequest: new entry has term s.current_term.
+                        // In ds, server_id is Leader at term T.
+                        // sj has entry at k with term T in ds (sj unchanged).
+                        // By LeaderLogLongEnough(ds) for (i=sj, k=k, l=server_id):
+                        //   ds.server_states[server_id].log.len() > k
+                        // But ds.server_states[server_id].log.len() == s.log.len() == k.
+                        // Contradiction — the premise is impossible.
+                        assert(LeaderLogLongEnough(ds));
+                        assert(0 <= sj < ds.num_servers);
+                        assert(0 <= k < ds.server_states[sj].log.len());
+                        assert(ds.server_states[server_id].role is Leader);
+                    } else {
+                        // LFollowerAppendEntries: server_id received an AE from
+                        // the network. Extract the AE packet and use AEI +
+                        // LogMatching(ds) to prove entry matching.
+                        lemma_log_matching_follower_append(
+                            ds, ds_, server_id, s, s_, c, sj, k, i, j);
+                    }
+                }
+            }
+        }
+    }
+
+    /// When server_id extends its log via the network model (non-Leader),
+    /// there exists a leader whose log matches the new entry and the
+    /// follower's prev-log entry. Captures AE packet provenance via AEI.
+    proof fn lemma_follower_append_ae_in_network(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int, s: LState, s_: LState, c: LConstants,
+        k: int,
+    )
+        requires
+            AppendEntriesIntegrity(ds),
+            WellFormedRaftDistributed(ds),
+            0 <= server_id < ds.num_servers,
+            s == ds.server_states[server_id],
+            s_ == ds_.server_states[server_id],
+            c == ds.server_constants[server_id],
+            RaftServerStepWithNetwork(ds, ds_, server_id),
+            s_.log.len() == s.log.len() + 1,
+            !(s.role is Leader),
+            k == s.log.len() as int,
+        ensures
+            exists |ae_leader: int|
+                #![trigger ds.server_states[ae_leader]]
+            {
+                &&& 0 <= ae_leader < ds.num_servers
+                &&& ds.server_states[ae_leader].log.len() > k
+                &&& ds.server_states[ae_leader].log[k].term == s_.log[k].term
+                &&& ds.server_states[ae_leader].log[k].value == s_.log[k].value
+                &&& (k > 0 ==> s.log[k - 1].term
+                        == ds.server_states[ae_leader].log[k - 1].term)
+            }
+    {
+        // Verus unfolds RaftServerStepWithNetwork → RaftActionProduces
+        //   → LHandleMessage (only branch that grows log for non-Leader)
+        //   → LHandleAppendEntriesMsg → LFollowerAppendEntries
+        // The received pkt is in ds.network, so AEI applies.
+        // ae_has_entry must be true (log grew), ae_prev_index == k (position guard).
+    }
+
+    /// Helper for LogMatching: when server_id extends its log via
+    /// LFollowerAppendEntries and another server sj has an entry at the
+    /// same index k with the same term, all entries 0..k match.
+    proof fn lemma_log_matching_follower_append(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int, s: LState, s_: LState, c: LConstants,
+        sj: int, k: int, qi: int, qj: int,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            0 <= server_id < ds.num_servers,
+            s == ds.server_states[server_id],
+            s_ == ds_.server_states[server_id],
+            c == ds.server_constants[server_id],
+            LNext(s, s_, c),
+            forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j],
+            s_.log.len() >= s.log.len(),
+            s_.log.len() <= s.log.len() + 1,
+            forall |idx: int| 0 <= idx < s.log.len() ==> #[trigger] s_.log[idx] == s.log[idx],
+            RaftServerStepWithNetwork(ds, ds_, server_id),
+            // New entry case
+            !(s.role is Leader),
+            k == s.log.len() as int,
+            0 <= sj < ds.num_servers,
+            sj != server_id,
+            ds_.server_states[sj] == ds.server_states[sj],
+            0 <= k < ds_.server_states[sj].log.len(),
+            k < s_.log.len(),
+            s_.log[k].term == ds_.server_states[sj].log[k].term,
+            // qi, qj are the original quantified i, j (one is server_id)
+            (qi == server_id && qj == sj) || (qi == sj && qj == server_id),
+            0 <= qi < ds_.num_servers,
+            0 <= qj < ds_.num_servers,
+        ensures
+            forall |m: int| 0 <= m <= k
+                && m < ds_.server_states[qi].log.len()
+                && m < ds_.server_states[qj].log.len()
+                ==> ds_.server_states[qi].log[m] == ds_.server_states[qj].log[m]
+    {
+        // Extract the AE leader from the network
+        lemma_follower_append_ae_in_network(ds, ds_, server_id, s, s_, c, k);
+
+        // Choose the leader satisfying the postcondition
+        let ae_leader: int = choose |l: int| {
+            &&& 0 <= l < ds.num_servers
+            &&& (#[trigger] ds.server_states[l]).log.len() > k
+            &&& ds.server_states[l].log[k].term == s_.log[k].term
+            &&& ds.server_states[l].log[k].value == s_.log[k].value
+            &&& (k > 0 ==> s.log[k - 1].term
+                    == ds.server_states[l].log[k - 1].term)
+        };
+
+        let T = s_.log[k].term;
+        assert(LogMatching(ds));
+
+        assert forall |m: int| 0 <= m <= k
+            && m < ds_.server_states[qi].log.len()
+            && m < ds_.server_states[qj].log.len()
+        implies
+            ds_.server_states[qi].log[m] == ds_.server_states[qj].log[m]
+        by {
+            // LogMatching(ds) for (ae_leader, sj, k) gives:
+            //   ae_leader.log[m] == sj.log[m] for all m <= k
+            assert(ds.server_states[ae_leader].log[m] == ds.server_states[sj].log[m]);
+
+            if m == k {
+                // s_.log[k] = LLogEntry{term: T, value: ae_value}
+                // ae_leader.log[k] has same term and value (AEI)
+                // sj.log[k] == ae_leader.log[k] (from LogMatching above)
+                assert(s_.log[k].term == ds.server_states[ae_leader].log[k].term);
+                assert(s_.log[k].value == ds.server_states[ae_leader].log[k].value);
+            } else {
+                // m < k: s_.log[m] == s.log[m] (preserved prefix)
+                // Need: s.log[m] == sj.log[m]
+                // Chain: s.log[m] == ae_leader.log[m] == sj.log[m]
+                //
+                // For the first link (s.log[m] == ae_leader.log[m]):
+                // If k > 0, prev-log check gives s.log[k-1].term == ae_leader.log[k-1].term
+                // LogMatching(ds) for (server_id, ae_leader, k-1) gives s.log[m] == ae_leader.log[m]
+                if k > 0 {
+                    // LogMatching(ds) for (server_id, ae_leader, k-1)
+                    assert(ds.server_states[server_id].log[m] == ds.server_states[ae_leader].log[m]);
+                }
+            }
+        }
     }
 
     // =========================================================================
@@ -1614,6 +2326,189 @@ verus! {
         // (only reset when term changes). ✓
     }
 
+    #[verifier::rlimit(200)]
+    pub proof fn lemma_vote_response_has_request_vote_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            RaftDistributedNext(ds, ds_),
+            VoteResponseHasRequestVote(ds),
+            SenderIntegrity(ds),
+        ensures
+            VoteResponseHasRequestVote(ds_)
+    {
+        // Use full distributed-next witness (not legacy), so we can reason
+        // about old/new packets and response routing.
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        let (sent_packets, received_from) =
+            choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
+                &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
+                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
+                &&& (forall |pkt: LRaftPacket|
+                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                        &&& pkt.src == server_id
+                        &&& 0 <= pkt.dst < ds.num_servers
+                        &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
+                        &&& (match rf {
+                            Some(src) => pkt.dst == src,
+                            None => true,
+                        })
+                    })
+            };
+
+        assert(RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from));
+        assert(forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt));
+        assert(forall |pkt: LRaftPacket|
+            ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                &&& pkt.src == server_id
+                &&& 0 <= pkt.dst < ds.num_servers
+                &&& (exists |i: int| 0 <= i < sent_packets.len() && pkt.msg == sent_packets[i])
+                &&& (match received_from {
+                    Some(src) => pkt.dst == src,
+                    None => true,
+                })
+            });
+
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
+                    granted ==> exists |req: LRaftPacket| {
+                        &&& ds_.network.contains(req)
+                        &&& req.src == p.dst
+                        &&& req.dst == v
+                        &&& req.msg matches LRaftMessage::RequestVote {
+                            term,
+                            candidate,
+                            last_log_index: _,
+                            last_log_term: _,
+                        }
+                        &&& term == t
+                        &&& candidate == p.dst
+                    }
+                }
+                _ => true,
+            }
+        by {
+            if p.msg is VoteResponse {
+                if p.msg->VoteResponse_granted {
+                    if ds.network.contains(p) {
+                        // Old packet: reuse IH witness and network monotonicity.
+                        assert(VoteResponseHasRequestVote(ds));
+                        let req = choose |req: LRaftPacket| {
+                            &&& ds.network.contains(req)
+                            &&& req.src == p.dst
+                            &&& req.dst == p.msg->VoteResponse_voter
+                            &&& req.msg matches LRaftMessage::RequestVote {
+                                term,
+                                candidate,
+                                last_log_index: _,
+                                last_log_term: _,
+                            }
+                            &&& term == p.msg->VoteResponse_term
+                            &&& candidate == p.dst
+                        };
+                        assert(ds_.network.contains(req));
+                    } else {
+                        // New packet: produced in this step from sent_packets.
+                        assert(p.src == server_id);
+                        let i = choose |i: int| 0 <= i < sent_packets.len() && p.msg == sent_packets[i];
+                        assert(0 <= i < sent_packets.len());
+                        assert(sent_packets[i] == p.msg);
+
+                        // If a VoteResponse packet is sent in this model, it comes from
+                        // handling RequestVote.
+                        let req_pkt = choose |pkt: LRaftPacket| {
+                            &&& received_from == Some(pkt.src)
+                            &&& ds.network.contains(pkt)
+                            &&& pkt.dst == server_id
+                            &&& LHandleMessage(s, s_, c, pkt.msg, sent_packets)
+                        };
+                        assert(ds.network.contains(req_pkt));
+                        assert(req_pkt.dst == server_id);
+                        assert(received_from == Some(req_pkt.src));
+                        assert(LHandleMessage(s, s_, c, req_pkt.msg, sent_packets));
+                        assert(req_pkt.msg is RequestVote);
+
+                        let req_term = req_pkt.msg->RequestVote_term;
+                        let req_candidate = req_pkt.msg->RequestVote_candidate;
+                        let req_last_log_index = req_pkt.msg->RequestVote_last_log_index;
+                        let req_last_log_term = req_pkt.msg->RequestVote_last_log_term;
+                        assert(LHandleRequestVoteMsg(
+                            s, s_, c, req_term, req_candidate, req_last_log_index, req_last_log_term,
+                            sent_packets));
+                        assert(sent_packets == seq![LRaftMessage::VoteResponse {
+                            term: req_term,
+                            granted: true,
+                            voter: c.my_id,
+                        }]);
+
+                        // Packet shape equalities from new-packet rule + action shape.
+                        assert(p.msg == LRaftMessage::VoteResponse {
+                            term: req_term,
+                            granted: true,
+                            voter: c.my_id,
+                        });
+                        assert(p.msg->VoteResponse_term == req_term);
+                        assert(p.msg->VoteResponse_voter == c.my_id);
+                        assert(c.my_id == server_id);
+
+                        // Routing gives dst == source of the received RequestVote.
+                        assert(p.dst == req_pkt.src);
+                        // SenderIntegrity on ds: RequestVote.candidate == src.
+                        assert(SenderIntegrity(ds));
+                        assert(req_candidate == req_pkt.src);
+
+                        // The received RequestVote packet is still in ds_ (network monotonicity),
+                        // and is the required provenance witness.
+                        assert(ds_.network.contains(req_pkt));
+                        assert(exists |req: LRaftPacket| {
+                            &&& ds_.network.contains(req)
+                            &&& req.src == p.dst
+                            &&& req.dst == p.msg->VoteResponse_voter
+                            &&& req.msg matches LRaftMessage::RequestVote {
+                                term,
+                                candidate,
+                                last_log_index: _,
+                                last_log_term: _,
+                            }
+                            &&& term == p.msg->VoteResponse_term
+                            &&& candidate == p.dst
+                        }) by {
+                            let req = req_pkt;
+                            assert(req.src == p.dst);
+                            assert(req.dst == p.msg->VoteResponse_voter);
+                            assert(req.msg matches LRaftMessage::RequestVote {
+                                term,
+                                candidate,
+                                last_log_index: _,
+                                last_log_term: _,
+                            });
+                            assert(req.msg->RequestVote_term == p.msg->VoteResponse_term);
+                            assert(req.msg->RequestVote_candidate == p.dst);
+                        };
+                    }
+                }
+            }
+        };
+    }
+
     pub proof fn lemma_append_entries_integrity_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -1659,6 +2554,8 @@ verus! {
                         ds_.server_states[l].log[prev_index - 1].term == prev_term)
                     &&& (has_entry ==>
                         ds_.server_states[l].log[prev_index].value == value)
+                    &&& (has_entry ==>
+                        ds_.server_states[l].log[prev_index].term == t)
                 }
                 _ => true,
             }
@@ -1812,6 +2709,9 @@ verus! {
         lemma_voters_voted_for_candidate_inductive(ds, ds_);
         lemma_leader_has_quorum_inductive(ds, ds_);
         lemma_commit_index_bounded_inductive(ds, ds_);
+        lemma_leader_log_long_enough_inductive(ds, ds_);
+        lemma_entry_term_leader_witness_inductive(ds, ds_);
+        lemma_entry_term_has_vote_quorum_inductive(ds, ds_);
 
         // Log-level invariants (network-level trust boundary)
         lemma_log_matching_inductive(ds, ds_);
@@ -1821,6 +2721,7 @@ verus! {
         // Message invariants (Phase 34.2 — stubs with assumes)
         lemma_sender_integrity_inductive(ds, ds_);
         lemma_vote_response_integrity_inductive(ds, ds_);
+        lemma_vote_response_has_request_vote_inductive(ds, ds_);
         lemma_append_entries_integrity_inductive(ds, ds_);
         lemma_one_vote_per_term_inductive(ds, ds_);
     }

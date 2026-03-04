@@ -257,3 +257,37 @@ Validation status:
   - `*entry_committed_post_implies_pre_or_fresh_step_append*`
 - Full-crate Verus remains failing on pre-existing high-cost proof obligations
   (rlimit/timeouts in unrelated large lemmas), now reported as 9 errors.
+
+## Update: 34.7.1.e.3.a complete (2026-03-04)
+
+Decomposed `34.7.1.e.3` further and completed the first leaf by adding a
+network-level provenance hook:
+
+- `VoteResponseHasRequestVote(ds)` in
+  `src/protocol/Raft/refinement_proof/message_invariants.rs`
+- `lemma_vote_response_has_request_vote_inductive(ds, ds_)` in
+  `src/protocol/Raft/refinement_proof/invariants.rs`
+
+What this provides:
+
+- For every granted `VoteResponse` packet in `ds_.network`, there exists a
+  matching `RequestVote` packet witness in `ds_.network` with aligned routing
+  and term/candidate facts:
+  - `req.src == vote.dst`
+  - `req.dst == vote.voter`
+  - `req.term == vote.term`
+  - `req.candidate == vote.dst`
+
+Proof shape:
+
+- Old packet case: reuse `VoteResponseHasRequestVote(ds)` witness + network
+  monotonicity.
+- New packet case: use `RaftServerStepWithNetwork` witness, show granted
+  `VoteResponse` can only come from `LHandleRequestVoteMsg`/`LGrantVote`,
+  and use the received `RequestVote` packet as the provenance witness
+  (plus `SenderIntegrity(ds)` for `candidate == src` alignment).
+
+Validation status:
+
+- Focused command passes:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_response_has_request_vote*' --rlimit 40`

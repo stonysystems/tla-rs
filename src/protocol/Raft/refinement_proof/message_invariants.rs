@@ -58,6 +58,39 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 2b: VoteResponse -> RequestVote provenance
+    // =========================================================================
+    //
+    // Every granted VoteResponse packet in the network has a matching
+    // RequestVote packet in the network from the candidate to the voter
+    // for the same term.
+    //
+    // This is a packet-level provenance hook needed when we later connect
+    // overlap-voter witnesses back to request-vote context.
+
+    pub open spec fn VoteResponseHasRequestVote(ds: RaftDistributedState) -> bool {
+        forall |p: LRaftPacket| ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
+                    granted ==> exists |req: LRaftPacket| {
+                        &&& ds.network.contains(req)
+                        &&& req.src == p.dst
+                        &&& req.dst == v
+                        &&& req.msg matches LRaftMessage::RequestVote {
+                            term,
+                            candidate,
+                            last_log_index: _,
+                            last_log_term: _,
+                        }
+                        &&& term == t
+                        &&& candidate == p.dst
+                    }
+                }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
     // Message Invariant 3: AppendEntries Integrity
     // =========================================================================
     //
@@ -91,6 +124,10 @@ verus! {
                     // The entry value matches leader's log
                     &&& (has_entry ==>
                         ds.server_states[l].log[prev_index].value == value)
+                    // The entry's term in leader's log matches the message term
+                    // (leader only sends entries from current term)
+                    &&& (has_entry ==>
+                        ds.server_states[l].log[prev_index].term == t)
                 }
                 _ => true,
             }
