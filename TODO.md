@@ -9754,7 +9754,7 @@ Rules for this phase (do not cut corners):
     - model config path
     - automated test name and/or generated JSON artifact path
     - exact replay command
-  - [ ] Add CI coverage to prevent stale status/evidence drift (fail if listed artifact paths are missing).
+  - [x] Add CI coverage to prevent stale status/evidence drift (fail if listed artifact paths are missing).
 
 ### 33.7 Completion gate
 

@@ -123,3 +123,29 @@ jobs:
       - name: Verify with Verus
         run: |
           scons --verus-path=$HOME/verus/verus
+
+  model-check-evidence:
+    name: Model-Check Evidence Drift Guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            transpiler/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('transpiler/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Rebuild source-first matrix artifacts
+        run: ./scripts/run_model_check_matrix.sh
+
+      - name: Verify status-doc evidence paths
+        run: ./scripts/verify_model_check_evidence_paths.sh

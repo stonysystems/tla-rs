@@ -241,6 +241,14 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 
 Generated outputs are written to `reports/model_check/` and include one JSON report per matrix case plus `MANIFEST.txt`.
 
+### 5.6 Verify status-doc evidence references
+
+```bash
+./scripts/verify_model_check_evidence_paths.sh
+```
+
+This fails if any `reports/model_check/*.json` path referenced in this status doc is missing.
+
 ## 6. Update rules (strict)
 
 - Never mark a protocol as source-first supported without checked-in model + automated evidence.
