@@ -39,28 +39,23 @@ verus! {
         &&& ds.network == Set::<LRaftPacket>::empty()
     }
 
-    /// Server step with network constraint: like LNext, but for message handling,
-    /// the received message must be in the network as a packet with dst == server_id.
-    /// This is strictly stronger than LNext (each branch implies the corresponding
-    /// LNext branch).
-    pub open spec fn RaftServerStep(
-        ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+    /// Helper: which action branch was taken, producing the given sent_packets.
+    /// Like LNext but (1) message handling requires packet in network, and
+    /// (2) sent_packets is exposed as a parameter for network update.
+    pub open spec fn RaftActionProduces(
+        ds: RaftDistributedState, server_id: int,
+        s: LState, s_: LState, c: LConstants,
+        sent_packets: Seq<LRaftMessage>,
     ) -> bool {
-        let s = ds.server_states[server_id];
-        let s_ = ds_.server_states[server_id];
-        let c = ds.server_constants[server_id];
         {
             // (A) Local/sending actions — no message received from network
-            ||| (exists |sent_packets: Seq<LRaftMessage>| LTimeout(s, s_, c, sent_packets))
-            ||| (exists |value: int, sent_packets: Seq<LRaftMessage>|
-                    LClientRequest(s, s_, c, value, sent_packets))
-            ||| (exists |follower: int, ev: int, pli: int, plt: int, he: bool,
-                        sent_packets: Seq<LRaftMessage>|
+            ||| LTimeout(s, s_, c, sent_packets)
+            ||| (exists |value: int| LClientRequest(s, s_, c, value, sent_packets))
+            ||| (exists |follower: int, ev: int, pli: int, plt: int, he: bool|
                     LSendAppendEntries(s, s_, c, follower, ev, pli, plt, he, sent_packets))
-            ||| (exists |nci: int, sent_packets: Seq<LRaftMessage>|
-                    LTryAdvanceCommitIndex(s, s_, c, nci, sent_packets))
+            ||| (exists |nci: int| LTryAdvanceCommitIndex(s, s_, c, nci, sent_packets))
             // (B) Message handling — received packet must be in network
-            ||| (exists |pkt: LRaftPacket, sent_packets: Seq<LRaftMessage>| {
+            ||| (exists |pkt: LRaftPacket| {
                     &&& ds.network.contains(pkt)
                     &&& pkt.dst == server_id
                     &&& LHandleMessage(s, s_, c, pkt.msg, sent_packets)
@@ -68,19 +63,30 @@ verus! {
         }
     }
 
-    /// Network update constraint: the network is monotonic (old messages preserved),
-    /// and new messages have valid routing from the stepping server.
-    pub open spec fn RaftNetworkUpdate(
+    /// Server step with full network semantics: the stepping server produces
+    /// sent_packets via an action, and new packets in the network correspond
+    /// to those sent_packets wrapped with src == server_id.
+    pub open spec fn RaftServerStepWithNetwork(
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
     ) -> bool {
-        // Old messages preserved
-        &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
-        // All new packets have src == server_id and valid dst
-        &&& (forall |pkt: LRaftPacket|
-            ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
-                &&& pkt.src == server_id
-                &&& 0 <= pkt.dst < ds.num_servers
-            })
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+        exists |sent_packets: Seq<LRaftMessage>|
+            #![trigger RaftActionProduces(ds, server_id, s, s_, c, sent_packets)]
+        {
+            // Action: which branch was taken
+            &&& RaftActionProduces(ds, server_id, s, s_, c, sent_packets)
+            // Network monotonicity: old packets preserved
+            &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
+            // New packets come from sent_packets
+            &&& (forall |pkt: LRaftPacket|
+                ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                    &&& pkt.src == server_id
+                    &&& 0 <= pkt.dst < ds.num_servers
+                    &&& (exists |i: int| 0 <= i < sent_packets.len() && pkt.msg == sent_packets[i])
+                })
+        }
     }
 
     /// Distributed system step: one server takes a step, with network routing.
@@ -91,8 +97,9 @@ verus! {
     /// (B) handles a message received from the network (LHandleMessage),
     ///     where the received packet must exist in ds.network with dst == server_id.
     ///
-    /// In both cases, the network is monotonic (messages are never removed) and
-    /// new messages are tagged with src == server_id.
+    /// In both cases, the network is monotonic (messages are never removed),
+    /// new messages are tagged with src == server_id, and new message payloads
+    /// correspond to what the action produced.
     pub open spec fn RaftDistributedNext(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
         &&& WellFormedRaftDistributed(ds_)
@@ -104,10 +111,8 @@ verus! {
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != server_id ==>
                 ds_.server_states[j] == ds.server_states[j])
-            // The stepping server takes an action (with network constraint on received messages)
-            &&& RaftServerStep(ds, ds_, server_id)
-            // Network update: monotonic, new packets from server_id
-            &&& RaftNetworkUpdate(ds, ds_, server_id)
+            // Server action + network update with message correspondence
+            &&& RaftServerStepWithNetwork(ds, ds_, server_id)
         }
     }
 

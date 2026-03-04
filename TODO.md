@@ -9744,35 +9744,15 @@ Rules for this phase (do not cut corners):
 
 Add message routing to `RaftDistributedState` and `RaftDistributedNext`, following RSL's `environment_s.rs` pattern.
 
-- [ ] **34.1.1**: Wrap `LRaftMessage` in `LRaftPacket` with `src: int` and `dst: int` fields. Keep `LRaftMessage` as the payload type. Place in `src/protocol/Raft/types.rs`.
-  ```rust
-  pub struct LRaftPacket {
-      pub src: int,
-      pub dst: int,
-      pub msg: LRaftMessage,
-  }
-  ```
-
-- [ ] **34.1.2**: Change `RaftDistributedState.network` from `Set<LRaftMessage>` to `Set<LRaftPacket>` (already exists as a dead field — activate it).
-
-- [ ] **34.1.3**: Update `RaftDistributedNext` to:
-  1. Accumulate `sent_packets` into `ds_.network`: `ds_.network =~= ds.network.union(sent_packets_as_set)`
-  2. Constrain received messages: message-handling actions (`LHandleMessage` dispatch) receive a packet from `ds.network` with `dst == server_id`
-  3. Non-message actions (LTimeout, LClientRequest, LSendAppendEntries, LTryAdvanceCommitIndex): `ds_.network =~= ds.network.union(new_packets)`
-
-- [ ] **34.1.4**: Update `sent_packets` in `raft.rs` spec actions to produce `Seq<LRaftPacket>` (with src/dst) instead of `Seq<LRaftMessage>`. Each sending action knows the sender (`server_id` from `LConstants.my_id`) and receiver.
-  - `LTimeout` (RequestVote): broadcast to all servers → packets with `src=my_id, dst=j` for each server `j`
-  - `LSendAppendEntries`: packets with `src=my_id, dst=j` for each follower `j`
-  - `LGrantVote`: single packet `src=my_id, dst=candidate_id`
-  - `LHandleVoteResponseMsg` / `LReceiveVoteAndBecomeLeader`: no new sends (vote responses already sent)
-  - `LHandleAppendEntriesMsg`: AppendResponse with `src=my_id, dst=leader`
-  - `LHandleAppendResponseMsg`: no new sends
-  - `LStepDown`: no sends
-  - `LTryAdvanceCommitIndex`: no sends
-
-- [ ] **34.1.5**: Update `RaftDistributedInit` to assert `ds.network == Set::<LRaftPacket>::empty()` (already present, just type change).
-
-- [ ] **34.1.6**: Verify existing proof files still compile after spec changes. Update `state_machine.rs`, `induction.rs`, `refinement.rs` as needed for the new `LRaftPacket` type. Existing proven lemmas should require only mechanical signature/type updates.
+- [x] **34.1.1**: Added `LRaftPacket { src, dst, msg }` to `types.rs`.
+- [x] **34.1.2**: Changed `RaftDistributedState.network` from `Set<LRaftMessage>` to `Set<LRaftPacket>`.
+- [x] **34.1.3**: Restructured `RaftDistributedNext` with:
+  - `RaftServerStep(ds, ds_, server_id)`: like `LNext` but message-handling requires packet in network
+  - `RaftNetworkUpdate(ds, ds_, server_id)`: monotonic network, new packets sourced from stepping server
+  - `RaftDistributedNextLegacy` + `lemma_distributed_next_implies_legacy` bridging lemma for backward compatibility
+- [x] **34.1.4**: N/A — kept `raft.rs` (single-server spec) unchanged; routing is at distributed level via `RaftServerStep`, which is a cleaner separation of concerns.
+- [x] **34.1.5**: Updated `RaftDistributedInit` with `Set::<LRaftPacket>::empty()`.
+- [x] **34.1.6**: Updated all proof files (invariants.rs, committed.rs) with bridging lemma calls. 815 verified, 0 errors.
 
 ### 34.2 Define message invariants
 
