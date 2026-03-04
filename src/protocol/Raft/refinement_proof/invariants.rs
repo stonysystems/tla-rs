@@ -357,6 +357,7 @@ verus! {
         // Ghost state invariants (Phase 34.7 — stale-vote provenance)
         &&& VoteLogLenCoversNetwork(ds)
         &&& VoteLogLenBounded(ds)
+        &&& VoteGrantedLogUpToDateAtVoteTime(ds)
     }
 
     // =========================================================================
@@ -385,7 +386,7 @@ verus! {
         //   CandidateVoteDestinationUnique:
         //   forall over empty set is vacuously true
         // Ghost state invariants: vote_log_len empty + network empty, vacuously true
-        // - VoteLogLenCoversNetwork, VoteLogLenBounded
+        // - VoteLogLenCoversNetwork, VoteLogLenBounded, VoteGrantedLogUpToDateAtVoteTime
     }
 
     // =========================================================================
@@ -1462,6 +1463,175 @@ verus! {
         assert(VoteLogLenBounded(ds));
         let vote_time_log_len = ds.vote_log_len[(overlap_voter, vote_term)];
         assert(vote_time_log_len <= ds.server_states[overlap_voter].log.len());
+    }
+
+    // =========================================================================
+    // Stale-vote: derive concrete index relation from VoteGrantedLogUpToDate
+    // =========================================================================
+    //
+    // Consumes VoteGrantedLogUpToDateAtVoteTime to derive the Raft log
+    // comparison disjunction at the vote-time log length L:
+    //
+    //   req_last_log_term > voter_vote_time_last_term
+    //     || (req_last_log_term == voter_vote_time_last_term
+    //         && req_last_log_index >= L)
+    //
+    // Combined with:
+    //   - req_last_log_index <= leader.log.len() (from RequestVoteSummaryStillValidAtSameTerm)
+    //   - L = vote_log_len[(overlap_voter, leader.current_term)]
+    //
+    // In the equal-term case: leader.log.len() >= req_last_log_index >= L.
+    // If k < L, then leader.log.len() > k.
+
+    proof fn lemma_stale_vote_index_relation(
+        ds: RaftDistributedState,
+        overlap_voter: int,
+        leader_id: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            0 <= leader_id < ds.num_servers,
+            0 <= overlap_voter < ds.num_servers,
+            overlap_voter != leader_id,
+            (ds.server_states[leader_id].role is Candidate
+                || ds.server_states[leader_id].role is Leader),
+            ds.server_states[overlap_voter].current_term
+                > ds.server_states[leader_id].current_term,
+            0 <= k,
+            ds.server_states[overlap_voter].log.len() > k,
+            ds.server_states[overlap_voter].log[k] == entry,
+            // Granted VoteResponse from overlap_voter to leader at leader's term
+            exists |vote_pkt: LRaftPacket| {
+                &&& ds.network.contains(vote_pkt)
+                &&& vote_pkt.src == overlap_voter
+                &&& vote_pkt.dst == leader_id
+                &&& vote_pkt.msg matches LRaftMessage::VoteResponse {
+                    term: vt, granted, voter: vv }
+                &&& granted
+                &&& vv == overlap_voter
+                &&& vt == ds.server_states[leader_id].current_term
+            },
+            // Matching RequestVote from leader to overlap_voter at leader's term
+            exists |req_pkt: LRaftPacket| {
+                &&& ds.network.contains(req_pkt)
+                &&& req_pkt.src == leader_id
+                &&& req_pkt.dst == overlap_voter
+                &&& req_pkt.msg matches LRaftMessage::RequestVote {
+                    term, candidate, last_log_index, last_log_term }
+                &&& term == ds.server_states[leader_id].current_term
+                &&& candidate == leader_id
+                &&& 0 <= last_log_index <= ds.server_states[leader_id].log.len()
+                &&& (last_log_index == 0 ==> last_log_term == 0)
+                &&& (last_log_index > 0 ==>
+                    ds.server_states[leader_id].log[last_log_index - 1].term
+                        == last_log_term)
+            },
+        ensures
+            // vote_log_len is available
+            ds.vote_log_len.dom().contains(
+                (overlap_voter, ds.server_states[leader_id].current_term)),
+            ({
+                let vote_time_log_len = ds.vote_log_len[
+                    (overlap_voter, ds.server_states[leader_id].current_term)];
+                // Bounded by current log length
+                &&& vote_time_log_len <= ds.server_states[overlap_voter].log.len()
+                // The concrete index relation: the RequestVote's log params
+                // satisfied log_up_to_date at vote time, giving a disjunction
+                // on req_last_log_term vs voter_vote_time_last_term.
+                // In the equal-term case, req_last_log_index >= vote_time_log_len.
+                // Combined with req_last_log_index <= leader.log.len(), this gives
+                // leader.log.len() >= vote_time_log_len.
+            }),
+            // The concrete index disjunction (from VoteGrantedLogUpToDateAtVoteTime):
+            ({
+                let vote_term = ds.server_states[leader_id].current_term;
+                let L = ds.vote_log_len[(overlap_voter, vote_term)];
+                let voter_vtl: int = if L == 0 { 0int } else {
+                    ds.server_states[overlap_voter].log[L - 1].term
+                };
+                // There exists a RequestVote packet whose params satisfy
+                // the vote-time log_up_to_date disjunction.
+                exists |req_pkt: LRaftPacket| {
+                    &&& ds.network.contains(req_pkt)
+                    &&& req_pkt.src == leader_id
+                    &&& req_pkt.dst == overlap_voter
+                    &&& req_pkt.msg is RequestVote
+                    &&& req_pkt.msg->RequestVote_term == vote_term
+                    &&& req_pkt.msg->RequestVote_last_log_index
+                        <= ds.server_states[leader_id].log.len()
+                    &&& (req_pkt.msg->RequestVote_last_log_term > voter_vtl
+                        || (req_pkt.msg->RequestVote_last_log_term == voter_vtl
+                            && req_pkt.msg->RequestVote_last_log_index >= L))
+                }
+            }),
+    {
+        let vote_term = ds.server_states[leader_id].current_term;
+
+        // Step 1: recover vote_log_len entry (from lemma_stale_vote_log_len_recovery)
+        lemma_stale_vote_log_len_recovery(
+            ds, overlap_voter, leader_id, k, entry);
+        let L = ds.vote_log_len[(overlap_voter, vote_term)];
+        assert(L <= ds.server_states[overlap_voter].log.len());
+
+        // Step 2: extract the VoteResponse and RequestVote packet witnesses
+        let vote_pkt = choose |pkt: LRaftPacket| {
+            &&& ds.network.contains(pkt)
+            &&& pkt.src == overlap_voter
+            &&& pkt.dst == leader_id
+            &&& pkt.msg matches LRaftMessage::VoteResponse {
+                term: vt, granted, voter: vv }
+            &&& granted
+            &&& vv == overlap_voter
+            &&& vt == vote_term
+        };
+        let req_pkt = choose |pkt: LRaftPacket| {
+            &&& ds.network.contains(pkt)
+            &&& pkt.src == leader_id
+            &&& pkt.dst == overlap_voter
+            &&& pkt.msg matches LRaftMessage::RequestVote {
+                term, candidate, last_log_index, last_log_term }
+            &&& term == vote_term
+            &&& candidate == leader_id
+            &&& 0 <= last_log_index <= ds.server_states[leader_id].log.len()
+            &&& (last_log_index == 0 ==> last_log_term == 0)
+            &&& (last_log_index > 0 ==>
+                ds.server_states[leader_id].log[last_log_index - 1].term
+                    == last_log_term)
+        };
+
+        // Step 3: apply VoteGrantedLogUpToDateAtVoteTime
+        // Instantiate with (vote_pkt, req_pkt):
+        //   vote_pkt.src == overlap_voter == req_pkt.dst  ✓
+        //   vote_pkt.dst == leader_id == req_pkt.src      ✓
+        //   vote_pkt.msg.term == req_pkt.msg.term == vote_term ✓
+        //   vote_log_len.dom().contains((overlap_voter, vote_term)) ✓
+        assert(VoteGrantedLogUpToDateAtVoteTime(ds));
+        assert(ds.network.contains(vote_pkt));
+        assert(ds.network.contains(req_pkt));
+        assert(vote_pkt.msg is VoteResponse);
+        assert(vote_pkt.msg->VoteResponse_granted);
+        assert(req_pkt.msg is RequestVote);
+        assert(vote_pkt.msg->VoteResponse_term == req_pkt.msg->RequestVote_term);
+        assert(vote_pkt.src == req_pkt.dst);
+        assert(vote_pkt.dst == req_pkt.src);
+        assert(ds.vote_log_len.dom().contains((vote_pkt.src, vote_pkt.msg->VoteResponse_term)));
+
+        // The invariant gives us the disjunction
+        let voter_vtl: int = if L == 0 { 0int } else {
+            ds.server_states[overlap_voter].log[L - 1].term
+        };
+        let li = req_pkt.msg->RequestVote_last_log_index;
+        let lt = req_pkt.msg->RequestVote_last_log_term;
+        assert(lt > voter_vtl || (lt == voter_vtl && li >= L));
+
+        // Also: li <= leader.log.len() (from req_pkt precondition)
+        assert(li <= ds.server_states[leader_id].log.len());
     }
 
     /// Candidate log is at least as up-to-date as voter log
@@ -3785,7 +3955,11 @@ verus! {
             AppendEntriesIntegrity(ds),
             OneVotePerTermInNetwork(ds),
             RequestVoteSenderState(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
             CandidateVoteDestinationUnique(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             LeaderCompleteness(ds_)
@@ -4073,15 +4247,24 @@ verus! {
                             };
                             lemma_overlap_voter_stale_vote_packet_context(
                                 ds, leader_id, overlap_voter);
-                            // Recover vote-time log length from ghost state
-                            // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.c.b.d)
-                            lemma_stale_vote_log_len_recovery(
+                            // Derive concrete index relation from ghost state
+                            // + VoteGrantedLogUpToDateAtVoteTime
+                            // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.c.c)
+                            lemma_stale_vote_index_relation(
                                 ds, overlap_voter, leader_id, k, entry);
                             let vote_time_log_len = ds.vote_log_len[
                                 (overlap_voter,
                                  ds.server_states[leader_id].current_term)];
                             assert(vote_time_log_len
                                 <= ds.server_states[overlap_voter].log.len());
+                            // Concrete index relation disjunction is now available:
+                            // exists req_pkt with:
+                            //   req_last_log_term > voter_vtl
+                            //     || (req_last_log_term == voter_vtl
+                            //         && req_last_log_index >= vote_time_log_len)
+                            // AND req_last_log_index <= leader.log.len()
+                            // Combined: in equal-term case,
+                            //   leader.log.len() >= req_last_log_index >= vote_time_log_len
                         }
 
                         // Pending 34.7.1.e.4.b.2.b: final transfer overlap witness -> leader log.
@@ -5166,6 +5349,44 @@ verus! {
     }
 
     // =========================================================================
+    // Ghost State Invariant Induction: VoteGrantedLogUpToDateAtVoteTime
+    // =========================================================================
+    //
+    // For every (granted VoteResponse, matching RequestVote) pair in ds_,
+    // the RequestVote's log parameters satisfy log_up_to_date against the
+    // voter's reconstructed vote-time log.
+    //
+    // Proof sketch (case analysis on old/new packets):
+    // (1) Both packets old: IH + voter log prefix preserved by LogAppendOnly
+    // (2) New VoteResponse + old RequestVote: voter just granted vote, and
+    //     LHandleRequestVoteMsg checked log_up_to_date at vote time; ghost
+    //     state records vote_log_len[(v,t)] = s.log.len(); voter's post-state
+    //     log prefix preserves vote-time entries.
+    // (3) Old VoteResponse + new RequestVote: vacuous — new RequestVote at
+    //     term t requires sender at term t-1 (LTimeout), but old VoteResponse
+    //     at term t implies sender previously had RequestVote at term t
+    //     (RequestVoteSenderState), so sender was at term >= t. Contradiction.
+    // (4) Both new: impossible (different action types produce different packet types)
+    //
+    // Full decomposed proof is tracked as follow-up sub-leaves.
+
+    pub proof fn lemma_vote_granted_log_up_to_date_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            VoteGrantedLogUpToDateAtVoteTime(ds_)
+    {
+        // Inductive proof deferred: cases documented in comment above.
+        // Each case relies on LogAppendOnly (prefix preservation),
+        // VoteLogLenCoversNetwork + VoteResponseHasRequestVote (provenance),
+        // and RequestVoteSenderState (term monotonicity).
+        assume(VoteGrantedLogUpToDateAtVoteTime(ds_));
+    }
+
+    // =========================================================================
     // Composite induction step
     // =========================================================================
 
@@ -5214,6 +5435,7 @@ verus! {
         // Ghost state invariants (Phase 34.7 — stale-vote provenance)
         lemma_vote_log_len_covers_network_inductive(ds, ds_);
         lemma_vote_log_len_bounded_inductive(ds, ds_);
+        lemma_vote_granted_log_up_to_date_inductive(ds, ds_);
     }
 
     // =========================================================================

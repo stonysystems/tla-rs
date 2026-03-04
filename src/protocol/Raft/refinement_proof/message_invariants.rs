@@ -228,6 +228,58 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 7: Vote Granted implies Log Up-To-Date at Vote Time
+    // =========================================================================
+    //
+    // For every pair of (granted VoteResponse, matching RequestVote) packets
+    // where the voter's log length at vote time is recorded in vote_log_len:
+    // the candidate's last-log parameters satisfy log_up_to_date against the
+    // voter's reconstructed vote-time log (prefix up to vote_log_len[(v, t)]).
+    //
+    // Restricted to the specific candidate the voter voted for, identified by
+    // vote_pkt.dst == req.src (VoteResponse destination = RequestVote sender).
+    //
+    // Since logs are append-only, the voter's current log preserves the vote-time
+    // prefix, so we can express the vote-time last-log-term using current state:
+    //   vote_time_last_term = if L == 0 { 0 } else { voter.log[L-1].term }
+    // where L = vote_log_len[(v, t)].
+    //
+    // Proof intuition:
+    // - At vote time, LHandleRequestVoteMsg checked log_up_to_date before granting.
+    // - The voter's log prefix up to L is preserved (LogAppendOnly), so the
+    //   vote-time last-log-term is still readable from the current state.
+    // - The RequestVote packet parameters are immutable in-network.
+
+    pub open spec fn VoteGrantedLogUpToDateAtVoteTime(ds: RaftDistributedState) -> bool {
+        forall |vote_pkt: LRaftPacket, req: LRaftPacket|
+            #![trigger ds.network.contains(vote_pkt), ds.network.contains(req)]
+            ds.network.contains(vote_pkt) && ds.network.contains(req)
+            && (vote_pkt.msg is VoteResponse)
+            && vote_pkt.msg->VoteResponse_granted
+            && (req.msg is RequestVote)
+            && vote_pkt.msg->VoteResponse_term == req.msg->RequestVote_term
+            && vote_pkt.src == req.dst   // voter
+            && vote_pkt.dst == req.src   // candidate
+            && ds.vote_log_len.dom().contains(
+                (vote_pkt.src, vote_pkt.msg->VoteResponse_term))
+            && 0 <= vote_pkt.src < ds.num_servers
+        ==> {
+            let v = vote_pkt.src;
+            let t = vote_pkt.msg->VoteResponse_term;
+            let L = ds.vote_log_len[(v, t)];
+            let voter_vote_time_last_term: int = if L == 0 {
+                0int
+            } else {
+                ds.server_states[v].log[L - 1].term
+            };
+            let li = req.msg->RequestVote_last_log_index;
+            let lt = req.msg->RequestVote_last_log_term;
+            lt > voter_vote_time_last_term
+                || (lt == voter_vote_time_last_term && li >= L)
+        }
+    }
+
+    // =========================================================================
     // Step Property: Log Append Only
     // =========================================================================
     //
