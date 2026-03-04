@@ -582,3 +582,38 @@ Focused verification:
 
 - Rlimit-bounded (existing):
   `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness_inductive*' --rlimit 40`
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.c.a complete (2026-03-04)
+
+Analyzed stale-vote branch (`overlap_voter.current_term > req_term`) and
+split the old monolithic leaf `...c.c` into smaller prerequisites.
+
+Key finding:
+
+- Under current state-only packet invariants, stale-vote is not contradictory:
+  `VoteResponseIntegrity` explicitly allows
+  `voter.current_term > vote_term`, and this can coexist with the overlap path.
+  So closing stale-vote needs additional historical/provenance strength, not
+  just local contradiction.
+
+Implemented first stale sub-leaf:
+
+- Added helper
+  `lemma_overlap_voter_stale_vote_packet_context(...)` in
+  `src/protocol/Raft/refinement_proof/invariants.rs`.
+- This helper specializes the overlap packet context to stale-vote and packages:
+  - concrete granted `VoteResponse` witness (`overlap_voter -> leader_id`),
+  - concrete matching `RequestVote` witness (`leader_id -> overlap_voter`) with
+    request-summary validity facts,
+  - strict stale inequality
+    `ds.server_states[overlap_voter].current_term > req_term`.
+- Wired this helper into stale branch of
+  `lemma_leader_completeness_inductive` so the remaining gap is isolated to a
+  dedicated stale-vote provenance obligation.
+
+Focused verification:
+
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*overlap_voter_stale_vote_packet_context*' --rlimit 40`
+- Still rlimit-bounded (existing):
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness_inductive*' --rlimit 40`
