@@ -2710,11 +2710,44 @@ verus! {
         // This argument requires LogMatching (assumed above) and network-level
         // message provenance. We assume it here.
         //
-        // e.3.c wiring lives in the dedicated helper to keep this top-level
-        // induction lemma lightweight for focused verification.
-        lemma_new_leader_provenance_bridge_wiring(ds, ds_);
+        // e.3.c wiring is used in the changed-leader branch (34.7.1.e.4.c).
+        assert(ds_.num_servers == ds.num_servers);
+        assert(LeaderCompleteness(ds));
 
-        assume(LeaderCompleteness(ds_));
+        assert forall |k: int, entry: LLogEntry, leader_id: int|
+            0 <= k
+            && EntryCommittedAt(ds_, k, entry)
+            && 0 <= leader_id < ds_.num_servers
+            && ds_.server_states[leader_id].role is Leader
+            && ds_.server_states[leader_id].current_term > entry.term
+        implies {
+            &&& ds_.server_states[leader_id].log.len() > k
+            &&& ds_.server_states[leader_id].log[k] == entry
+        } by {
+            lemma_entry_committed_post_implies_pre_or_fresh_step_append(ds, ds_, k, entry);
+
+            if EntryCommittedAt(ds, k, entry) {
+                if ds_.server_states[leader_id] == ds.server_states[leader_id] {
+                    assert(0 <= leader_id < ds.num_servers);
+                    assert(ds.server_states[leader_id].role is Leader);
+                    assert(ds.server_states[leader_id].current_term > entry.term);
+                    lemma_leader_completeness_unchanged_leader_for_prestate_commit(
+                        ds, ds_, leader_id, k, entry);
+                } else {
+                    // Pending 34.7.1.e.4.c (changed-leader branch).
+                    assume(
+                        ds_.server_states[leader_id].log.len() > k
+                            && ds_.server_states[leader_id].log[k] == entry
+                    );
+                }
+            } else {
+                // Pending 34.7.1.e.4.b (fresh-step append branch from post commit).
+                assume(
+                    ds_.server_states[leader_id].log.len() > k
+                        && ds_.server_states[leader_id].log[k] == entry
+                );
+            }
+        }
     }
 
     // =========================================================================
