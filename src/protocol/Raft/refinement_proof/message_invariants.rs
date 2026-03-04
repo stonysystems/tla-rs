@@ -137,4 +137,48 @@ verus! {
                 ds_.server_states[i].log[k] == ds.server_states[i].log[k])
         }
     }
+
+    // =========================================================================
+    // LogAppendOnly proof
+    // =========================================================================
+
+    /// Prove LogAppendOnly as a step property of RaftDistributedNext.
+    /// Every LNext branch either preserves the log (frame) or pushes one entry.
+    pub proof fn lemma_log_append_only(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            RaftDistributedNext(ds, ds_),
+        ensures
+            LogAppendOnly(ds, ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |i: int| 0 <= i < ds.num_servers implies {
+            &&& ds_.server_states[i].log.len() >= ds.server_states[i].log.len()
+            &&& (forall |k: int| #![trigger ds.server_states[i].log[k]]
+                0 <= k < ds.server_states[i].log.len() ==>
+                ds_.server_states[i].log[k] == ds.server_states[i].log[k])
+        } by {
+            if i != server_id {
+                // Non-stepping server: state unchanged
+                assert(ds_.server_states[i] == ds.server_states[i]);
+            }
+            // For i == server_id: all LNext branches either keep s_.log == s.log
+            // (frame conditions) or set s_.log == s.log.push(entry).
+            // Seq::push preserves existing elements and extends length by 1.
+        }
+    }
 }

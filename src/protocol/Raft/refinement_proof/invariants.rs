@@ -892,12 +892,10 @@ verus! {
         ensures
             SenderIntegrity(ds_)
     {
-        // Proof sketch: new packets have src == server_id, and each message
-        // type sets the identity field to c.my_id == server_id. Existing
-        // packets are preserved (network monotonicity) and already satisfy
-        // the invariant. Packet bounds (0 <= src/dst < num_servers) follow
-        // from the network model constraints.
-        assume(SenderIntegrity(ds_));
+        // Old packets: from SenderIntegrity(ds) + network monotonicity.
+        // New packets: src == server_id, msg identity field == c.my_id == server_id.
+        // All actions explicitly set identity fields to c.my_id (verified by SMT
+        // unfolding of RaftActionProduces + action definitions).
     }
 
     pub proof fn lemma_vote_response_integrity_inductive(
@@ -909,12 +907,15 @@ verus! {
         ensures
             VoteResponseIntegrity(ds_)
     {
-        // Proof sketch: new VoteResponse{granted: true} packets are created
-        // by LGrantVote, which sets has_voted = true and voted_for = candidate_id.
-        // The routing constraint ensures pkt.dst == received_from (the candidate
-        // who sent the RequestVote). Existing packets: voter's term either
-        // stayed the same (voted_for preserved) or advanced (current_term > t).
-        assume(VoteResponseIntegrity(ds_));
+        // New VoteResponse{granted: true}: created by LGrantVote which sets
+        // has_voted=true, voted_for=candidate_id. Routing: dst == received_from == RequestVote.src.
+        // By SenderIntegrity: RequestVote.src == candidate field == candidate_id.
+        // So dst == voted_for at the new term. ✓
+        //
+        // Old VoteResponse{voter: v, term: t}: from VoteResponseIntegrity(ds).
+        // If v's current_term increased (step_down, timeout, etc.): current_term > t. ✓
+        // If v's current_term unchanged at t: has_voted and voted_for preserved
+        // (only reset when term changes). ✓
     }
 
     pub proof fn lemma_append_entries_integrity_inductive(
@@ -926,11 +927,17 @@ verus! {
         ensures
             AppendEntriesIntegrity(ds_)
     {
-        // Proof sketch: new AppendEntries packets are created by
-        // LSendAppendEntries. The full invariant requires strengthening
-        // LSendAppendEntries to constrain prev_index/prev_term/value to
-        // match the leader's log (Phase 34.3). Existing packets: leader's
-        // log is append-only (LogAppendOnly), so entries are preserved.
+        // New AppendEntries packets: created by LSendAppendEntries with
+        // existentially quantified parameters (prev_index, prev_term, value,
+        // has_entry). The invariant requires these match the leader's log.
+        // Since LSendAppendEntries does NOT constrain these parameters to
+        // match the log, this invariant requires strengthening the spec.
+        //
+        // Old packets: leader's log is append-only (LogAppendOnly ensures
+        // existing entries are preserved), so AE content still matches.
+        //
+        // TODO(Phase 34.3): Strengthen LSendAppendEntries to constrain
+        // parameters to match the leader's log, then remove this assume.
         assume(AppendEntriesIntegrity(ds_));
     }
 
@@ -943,11 +950,12 @@ verus! {
         ensures
             OneVotePerTermInNetwork(ds_)
     {
-        // Proof sketch: LGrantVote only fires when !has_voted (first vote
-        // in the current term). Combined with network monotonicity, each
-        // (voter, term) pair produces at most one VoteResponse{granted: true}.
-        // The routing constraint ensures they all have the same dst.
-        assume(OneVotePerTermInNetwork(ds_));
+        // Old-old packet pairs: from OneVotePerTermInNetwork(ds) + network monotonicity.
+        // Old-new pair: new VoteResponse{granted: true} is only created by LGrantVote
+        // which requires !has_voted || voted_for == candidate. By VoteResponseIntegrity(ds),
+        // any existing VoteResponse for the same (voter, term) implies voter has voted,
+        // so voted_for must match, and routing ensures same dst.
+        // New-new: at most one VoteResponse per step, so p1 == p2.
     }
 
     // =========================================================================
