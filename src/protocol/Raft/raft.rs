@@ -140,6 +140,11 @@ verus! {
         &&& s.log.len() >= prev_log_index + (if has_entry { 1int } else { 0int })
         &&& (prev_log_index > 0 ==> s.log[prev_log_index - 1].term == prev_log_term)
         &&& (has_entry ==> s.log[prev_log_index].value == entry_value)
+        // Entry term must match leader's current term. This ensures
+        // replicated entries have the correct term (ae_term == entry's original term),
+        // which is needed for LogMatching. In the simplified spec (no log truncation),
+        // the leader only replicates entries from its current term.
+        &&& (has_entry ==> s.log[prev_log_index].term == s.current_term)
         // Frame
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role
@@ -378,6 +383,19 @@ verus! {
         ) {
             // Prev-log consistency check failed (Raft paper 5.3):
             // follower doesn't have a matching entry at prev_log_index
+            &&& s_ == s_mid
+            &&& sent_packets == seq![LRaftMessage::AppendResponse {
+                term: s_mid.current_term,
+                success: false,
+                match_index: 0int,
+                follower: c.my_id,
+            }]
+        } else if ae_has_entry && ae_prev_index != s_mid.log.len() {
+            // Log index mismatch: entry would go to the wrong index.
+            // Without log truncation, the follower can only accept entries that
+            // extend its log at the correct position (prev_index == log.len()).
+            // This guards LogMatching: entries are always placed at the index
+            // matching the leader's log.
             &&& s_ == s_mid
             &&& sent_packets == seq![LRaftMessage::AppendResponse {
                 term: s_mid.current_term,

@@ -159,6 +159,15 @@ ensures
             // No step-down, s_mid == s, s_ == s: stutter
             assert(s_ == s);
         }
+    } else if ae_has_entry && ae_prev_index != s_mid.log.len() {
+        // Rejection: log index mismatch, s_ == s_mid
+        let empty = Seq::<LRaftMessage>::empty();
+        if ae_term > s.current_term {
+            assert(LStepDown(s, s_, c, ae_term, empty));
+            assert(LNextAtomic(s, s_, c));
+        } else {
+            assert(s_ == s);
+        }
     } else {
         // Accepted: LFollowerAppendEntries(s_mid, s_, ...)
         // The atomic LFollowerAppendEntries handles step-down internally,

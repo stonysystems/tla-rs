@@ -286,6 +286,7 @@ requires
     s.log@.len() >= *prev_log_index as int + (if has_entry { 1int } else { 0int }),
     (*prev_log_index > 0) ==> (s.log@[*prev_log_index as int - 1].term as int == *prev_log_term as int),
     has_entry ==> (s.log@[*prev_log_index as int].value as int == *entry_value as int),
+    has_entry ==> (s.log@[*prev_log_index as int].term as int == s@.current_term),
 ensures
     result.0.valid(),
     LSendAppendEntries(s@, result.0@, c@, *follower as int, *entry_value as int, *prev_log_index as int, *prev_log_term as int, has_entry, result.1@.map(|i, p: CRaftMessage| p@)),
@@ -651,6 +652,18 @@ ensures
 
     } else {
         if ((*ae_prev_index > 0) && ((*ae_prev_index > (s_mid.log.len() as u64)) || (s_mid.log[((*ae_prev_index - 1) as usize)].term != *ae_prev_term))) {
+                        let _sent_0 = vec![CRaftMessage::AppendResponse {
+    term: s_mid.current_term,
+    success: false,
+    match_index: 0u64,
+    follower: c.my_id.clone(),
+}];
+            proof {
+                assert(_sent_0@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(_sent_0@[0]@));
+            }
+            (s_mid, _sent_0)
+
+        } else if ae_has_entry && (*ae_prev_index as usize != s_mid.log.len()) {
                         let _sent_0 = vec![CRaftMessage::AppendResponse {
     term: s_mid.current_term,
     success: false,

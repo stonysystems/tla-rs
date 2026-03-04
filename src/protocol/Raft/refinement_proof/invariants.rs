@@ -267,23 +267,26 @@ verus! {
     }
 
     // =========================================================================
-    // Invariant: VoteResponseTermBound
+    // Invariant: RequestVoteSenderState
     // =========================================================================
     //
-    // If a granted VoteResponse{term: T, voter: v} is in the network,
-    // then v's current_term >= T.
+    // If RequestVote{term: T, candidate: d} is in the network, then:
+    //   d.current_term > T, or (d.current_term == T && d.has_voted && d.voted_for == d)
     //
-    // Proof: at creation time, step_down_if_needed ensures v.current_term >= T.
-    // After creation, term monotonicity (current_term never decreases) preserves it.
+    // This is analogous to VoteResponseIntegrity but for RequestVote packets.
+    // At creation (LTimeout): d.current_term = T, has_voted = true, voted_for = d.
+    // After creation: term monotonicity + voted_for only changes when term changes.
 
-    pub open spec fn VoteResponseTermBound(ds: RaftDistributedState) -> bool {
+    pub open spec fn RequestVoteSenderState(ds: RaftDistributedState) -> bool {
         forall |p: LRaftPacket| ds.network.contains(p) ==>
             match p.msg {
-                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
-                    granted ==> {
-                        &&& 0 <= v < ds.num_servers
-                        &&& ds.server_states[v].current_term >= t
-                    }
+                LRaftMessage::RequestVote { term: t, candidate: d, .. } => {
+                    &&& 0 <= d < ds.num_servers
+                    &&& p.src == d
+                    &&& (ds.server_states[d].current_term > t
+                        || (ds.server_states[d].current_term == t
+                            && ds.server_states[d].has_voted
+                            && ds.server_states[d].voted_for == d))
                 }
                 _ => true,
             }
@@ -297,9 +300,15 @@ verus! {
     // VoteResponse{term: T, voter: d, granted: true, dst: c} are both
     // in the network, then c == d (i.e., d only voted for itself at term T).
     //
-    // This captures the temporal argument: a candidate at term T votes for
-    // itself (LTimeout sets voted_for = self, has_voted = true), so it can
-    // never subsequently grant a vote for another candidate at term T.
+    // Proof: by RequestVoteSenderState, d.current_term >= T.
+    // Case d.current_term == T: by RequestVoteSenderState, d.voted_for == d.
+    //   By VoteResponseIntegrity, d.voted_for == c. So c == d.
+    // Case d.current_term > T: by VoteResponseIntegrity, d.current_term > T or
+    //   (d.current_term == T && ...). Since d.current_term > T, both are consistent.
+    //   But the VoteResponse{T, voter: d, granted: true} could only have been created
+    //   when d.current_term was <= T. By the has_voted guard in LGrantVote, d could only
+    //   vote for the same candidate it first voted for at term T, which is d.
+    //   This case is handled inductively (not from single-state reasoning alone).
 
     pub open spec fn CandidateVoteDestinationUnique(ds: RaftDistributedState) -> bool {
         forall |p_req: LRaftPacket, p_vote: LRaftPacket|
@@ -342,7 +351,7 @@ verus! {
         &&& VoteResponseHasRequestVote(ds)
         &&& AppendEntriesIntegrity(ds)
         &&& OneVotePerTermInNetwork(ds)
-        &&& VoteResponseTermBound(ds)
+        &&& RequestVoteSenderState(ds)
         &&& CandidateVoteDestinationUnique(ds)
     }
 
@@ -368,7 +377,7 @@ verus! {
         // Message invariants: network is empty, all vacuously true
         // - SenderIntegrity, VoteResponseIntegrity, VoteResponseHasRequestVote,
         //   AppendEntriesIntegrity, OneVotePerTermInNetwork,
-        //   VoteResponseTermBound, CandidateVoteDestinationUnique:
+        //   RequestVoteSenderState, CandidateVoteDestinationUnique:
         //   forall over empty set is vacuously true
     }
 
@@ -2904,7 +2913,35 @@ verus! {
                         assert(ds.server_states[overlap_voter].log.len() > k);
                         assert(ds.server_states[overlap_voter].log[k] == entry);
 
-                        // Pending 34.7.1.e.4.b.2.b: transfer overlap witness to leader log.
+                        // Wire overlap voter to RequestVote provenance + bridge template.
+                        assert(VotersVotedForCandidate(ds));
+                        assert(VoteResponseIntegrity(ds));
+                        assert(VoteResponseHasRequestVote(ds));
+                        lemma_request_vote_witness_from_votes_granted(
+                            ds, leader_id, overlap_voter);
+                        let req_pkt = choose |req: LRaftPacket| {
+                            &&& ds.network.contains(req)
+                            &&& req.src == leader_id
+                            &&& req.dst == overlap_voter
+                            &&& req.msg matches LRaftMessage::RequestVote {
+                                term,
+                                candidate: req_candidate,
+                                last_log_index: _,
+                                last_log_term: _,
+                            }
+                            &&& term == ds.server_states[leader_id].current_term
+                            &&& req_candidate == leader_id
+                        };
+                        let req_term = req_pkt.msg->RequestVote_term;
+                        let req_last_log_index = req_pkt.msg->RequestVote_last_log_index;
+                        let req_last_log_term = req_pkt.msg->RequestVote_last_log_term;
+                        assert(req_term == ds.server_states[leader_id].current_term);
+                        lemma_vote_grant_bridge_template_for_overlap_voter(
+                            overlap_voter, leader_id,
+                            req_term, req_last_log_index, req_last_log_term,
+                            ds.server_states[leader_id]);
+
+                        // Pending 34.7.1.e.4.b.2.b: final transfer overlap witness -> leader log.
                         assume(
                             ds_.server_states[leader_id].log.len() > k
                                 && ds_.server_states[leader_id].log[k] == entry
@@ -3295,52 +3332,419 @@ verus! {
     }
 
     // =========================================================================
-    // VoteResponseTermBound inductive proof
+    // RequestVoteSenderState inductive proof
     // =========================================================================
 
-    pub proof fn lemma_vote_response_term_bound_inductive(
+    /// 34.7.1.e.4.b.2.b.2.b.3.b helper:
+    /// preserve RequestVote summary validity for packets that were already in
+    /// the pre-state network.
+    ///
+    /// If an old RequestVote packet remains in network and its candidate is
+    /// still at the packet term in post-state, then the packet summary
+    /// (last_log_index/last_log_term) is still justified by the candidate's
+    /// post-state log.
+    proof fn lemma_request_vote_summary_old_packet_preserved(
+        ds: RaftDistributedState, ds_: RaftDistributedState, p: LRaftPacket
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            RaftDistributedNext(ds, ds_),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            RequestVoteSenderState(ds),
+            ds.network.contains(p),
+            p.msg is RequestVote,
+            0 <= p.msg->RequestVote_candidate < ds_.num_servers,
+            ds_.server_states[p.msg->RequestVote_candidate].current_term
+                == p.msg->RequestVote_term,
+        ensures
+            ({
+                let d = p.msg->RequestVote_candidate;
+                let last_idx = p.msg->RequestVote_last_log_index;
+                let last_term = p.msg->RequestVote_last_log_term;
+                &&& 0 <= last_idx <= ds_.server_states[d].log.len()
+                &&& (last_idx == 0 ==> last_term == 0)
+                &&& (last_idx > 0 ==> ds_.server_states[d].log[last_idx - 1].term == last_term)
+            })
+    {
+        let d = p.msg->RequestVote_candidate;
+        let t = p.msg->RequestVote_term;
+        let last_idx = p.msg->RequestVote_last_log_index;
+        let last_term = p.msg->RequestVote_last_log_term;
+
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_lnext_term_monotone(s, s_, c);
+        lemma_lnext_log_preserved_or_extended(s, s_, c);
+        assert(RequestVoteSummaryStillValidAtSameTerm(ds));
+        assert(RequestVoteSenderState(ds));
+        assert(0 <= d < ds.num_servers);
+        assert(ds.server_states[d].current_term == t ==> {
+            &&& 0 <= last_idx <= ds.server_states[d].log.len()
+            &&& (last_idx == 0 ==> last_term == 0)
+            &&& (last_idx > 0 ==> ds.server_states[d].log[last_idx - 1].term == last_term)
+        });
+        assert(ds.server_states[d].current_term > t
+            || (ds.server_states[d].current_term == t
+                && ds.server_states[d].has_voted
+                && ds.server_states[d].voted_for == d));
+
+        if d != server_id {
+            assert(ds_.server_states[d] == ds.server_states[d]);
+            assert(ds.server_states[d].current_term == t);
+            assert(0 <= last_idx <= ds.server_states[d].log.len());
+            assert(last_idx == 0 ==> last_term == 0);
+            if last_idx > 0 {
+                assert(ds.server_states[d].log[last_idx - 1].term == last_term);
+            }
+        } else {
+            assert(ds.server_states[d] == s);
+            assert(ds_.server_states[d] == s_);
+            if ds.server_states[d].current_term > t {
+                assert(s_.current_term >= s.current_term);
+                assert(ds_.server_states[d].current_term > t);
+                assert(false);
+            }
+            assert(ds.server_states[d].current_term == t);
+
+            assert(0 <= last_idx <= ds.server_states[d].log.len());
+            assert(last_idx == 0 ==> last_term == 0);
+            assert(ds_.server_states[d].log.len() >= ds.server_states[d].log.len());
+            if last_idx > 0 {
+                assert(ds.server_states[d].log[last_idx - 1].term == last_term);
+                assert(last_idx - 1 < ds.server_states[d].log.len());
+                assert(ds_.server_states[d].log[last_idx - 1]
+                    == ds.server_states[d].log[last_idx - 1]);
+            }
+        }
+    }
+
+    /// 34.7.1.e.4.b.2.b.2.b.3.c helper:
+    /// establish RequestVote summary validity for packets that are newly added
+    /// to the network in this step.
+    ///
+    /// In this model, new RequestVote packets are produced by LTimeout and
+    /// carry the sender's exact last-log summary at send time.
+    proof fn lemma_request_vote_summary_new_packet_established(
+        ds: RaftDistributedState, ds_: RaftDistributedState, p: LRaftPacket
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            RaftDistributedNext(ds, ds_),
+            ds_.network.contains(p),
+            !ds.network.contains(p),
+            p.msg is RequestVote,
+            0 <= p.msg->RequestVote_candidate < ds_.num_servers,
+            ds_.server_states[p.msg->RequestVote_candidate].current_term
+                == p.msg->RequestVote_term,
+        ensures
+            ({
+                let d = p.msg->RequestVote_candidate;
+                let last_idx = p.msg->RequestVote_last_log_index;
+                let last_term = p.msg->RequestVote_last_log_term;
+                &&& 0 <= last_idx <= ds_.server_states[d].log.len()
+                &&& (last_idx == 0 ==> last_term == 0)
+                &&& (last_idx > 0 ==> ds_.server_states[d].log[last_idx - 1].term == last_term)
+            })
+    {
+        let d = p.msg->RequestVote_candidate;
+        let t = p.msg->RequestVote_term;
+        let last_idx = p.msg->RequestVote_last_log_index;
+        let last_term = p.msg->RequestVote_last_log_term;
+
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        let (sent_packets, received_from) =
+            choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
+                &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
+                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
+                &&& (forall |pkt: LRaftPacket|
+                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                        &&& pkt.src == server_id
+                        &&& 0 <= pkt.dst < ds.num_servers
+                        &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
+                        &&& (match rf {
+                            Some(src) => pkt.dst == src,
+                            None => true,
+                        })
+                    })
+            };
+
+        assert(RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from));
+        assert(forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt));
+        assert(forall |pkt: LRaftPacket|
+            ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                &&& pkt.src == server_id
+                &&& 0 <= pkt.dst < ds.num_servers
+                &&& (exists |i: int| 0 <= i < sent_packets.len() && pkt.msg == sent_packets[i])
+                &&& (match received_from {
+                    Some(src) => pkt.dst == src,
+                    None => true,
+                })
+            });
+
+        assert(p.src == server_id);
+        let i = choose |i: int| 0 <= i < sent_packets.len() && p.msg == sent_packets[i];
+        assert(0 <= i < sent_packets.len());
+        assert(sent_packets[i] == p.msg);
+
+        // The step that emits RequestVote packets is LTimeout.
+        assert(LTimeout(s, s_, c, sent_packets));
+        assert(sent_packets == seq![LRaftMessage::RequestVote {
+            term: s.current_term + 1,
+            candidate: c.my_id,
+            last_log_index: s.log.len() as int,
+            last_log_term: if s.log.len() == 0 {
+                0int
+            } else {
+                s.log[s.log.len() - 1].term
+            },
+        }]);
+
+        assert(sent_packets.len() == 1);
+        assert(i == 0);
+        assert(p.msg == sent_packets[0]);
+
+        assert(d == c.my_id);
+        assert(t == s.current_term + 1);
+        assert(c.my_id == server_id);
+        assert(d == server_id);
+        assert(ds_.server_states[d] == s_);
+        assert(s_.log == s.log);
+
+        assert(last_idx == s.log.len() as int);
+        assert(0 <= last_idx);
+        assert(last_idx <= ds_.server_states[d].log.len());
+
+        if last_idx == 0 {
+            assert(s.log.len() == 0);
+            assert(last_term == 0);
+        } else {
+            assert(last_idx > 0);
+            assert(s.log.len() > 0);
+            assert(last_term == s.log[s.log.len() - 1].term);
+            assert(last_idx - 1 == s.log.len() - 1);
+            assert(last_idx - 1 < ds_.server_states[d].log.len());
+            assert(ds_.server_states[d].log[last_idx - 1] == s.log[s.log.len() - 1]);
+        }
+    }
+
+    pub proof fn lemma_request_vote_sender_state_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
             RaftSafetyInvariant(ds),
             RaftDistributedNext(ds, ds_),
         ensures
-            VoteResponseTermBound(ds_)
+            RequestVoteSenderState(ds_)
     {
-        // Old packets: VoteResponseTermBound(ds) + term monotonicity.
-        // New packet (LGrantVote): step_down_if_needed ensures voter.current_term >= T
-        // at creation time, so VoteResponseTermBound holds for the new packet.
-        assume(VoteResponseTermBound(ds_));
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_lnext_term_monotone(s, s_, c);
+
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::RequestVote { term: t, candidate: d, .. } => {
+                    &&& 0 <= d < ds_.num_servers
+                    &&& p.src == d
+                    &&& (ds_.server_states[d].current_term > t
+                        || (ds_.server_states[d].current_term == t
+                            && ds_.server_states[d].has_voted
+                            && ds_.server_states[d].voted_for == d))
+                }
+                _ => true,
+            }
+        by {
+            if p.msg is RequestVote {
+                let t = p.msg->RequestVote_term;
+                let d = p.msg->RequestVote_candidate;
+                if ds.network.contains(p) {
+                    // Old packet: IH
+                    assert(RequestVoteSenderState(ds));
+                    assert(SenderIntegrity(ds));
+                    assert(0 <= d < ds.num_servers);
+                    assert(p.src == d);
+                    if d != server_id {
+                        // d unchanged
+                        assert(ds_.server_states[d] == ds.server_states[d]);
+                    } else {
+                        // d == server_id (stepping server)
+                        if ds.server_states[d].current_term > t {
+                            // Term was > T, stays >= it by monotonicity
+                            assert(s_.current_term >= s.current_term);
+                            assert(ds_.server_states[d].current_term > t);
+                        } else {
+                            // ds.server_states[d].current_term == t
+                            // && has_voted && voted_for == d
+                            assert(ds.server_states[d].current_term == t);
+                            assert(ds.server_states[d].has_voted);
+                            assert(ds.server_states[d].voted_for == d);
+                            if s_.current_term > t {
+                                // Term increased: first disjunct
+                            } else {
+                                // s_.current_term == t (can't decrease, and == t already)
+                                assert(s_.current_term == t);
+                                // voted_for stable when has_voted and term unchanged
+                                lemma_lnext_voted_for_stable(s, s_, c);
+                                assert(s_.has_voted);
+                                assert(s_.voted_for == d);
+                            }
+                        }
+                    }
+                } else {
+                    // New packet: LTimeout is the only action that creates RequestVote.
+                    // LTimeout: s_.current_term == s.current_term + 1 == T,
+                    //           has_voted = true, voted_for = c.my_id = server_id = d.
+                    assert(c.my_id == server_id);
+                }
+            }
+        };
     }
 
     // =========================================================================
     // CandidateVoteDestinationUnique inductive proof
     // =========================================================================
 
+    #[verifier::rlimit(200)]
     pub proof fn lemma_candidate_vote_destination_unique_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
             RaftDistributedNext(ds, ds_),
+            CandidateVoteDestinationUnique(ds),
+            RequestVoteSenderState(ds),
+            VoteResponseIntegrity(ds),
+            SenderIntegrity(ds),
         ensures
             CandidateVoteDestinationUnique(ds_)
     {
-        // Old-old pairs: from CandidateVoteDestinationUnique(ds) + network monotonicity.
-        // New RequestVote + old VoteResponse{voter: d}: VoteResponseTermBound shows
-        //   d.current_term >= T. But RequestVote is created by LTimeout which sets
-        //   current_term = old_term + 1, so T = old_term + 1. For a VoteResponse{T}
-        //   from d to exist, d must have had current_term >= T, but then d couldn't
-        //   have been at term old_term when it created the RequestVote... Actually,
-        //   the new RequestVote is from a different server than d. We need: if d
-        //   created a RequestVote{T}, d voted for itself at T (LTimeout sets
-        //   voted_for = self), so any VoteResponse{T, voter: d} must go to d
-        //   (by OneVotePerTermInNetwork style reasoning + VoteResponseIntegrity).
-        // Old RequestVote + new VoteResponse{voter: d}: similar, the new VoteResponse
-        //   is created by LGrantVote, and if d is also a candidate at T, d has
-        //   has_voted = true && voted_for = self. But this is d voting for someone
-        //   else, meaning d.current_term must have advanced past T.
-        assume(CandidateVoteDestinationUnique(ds_));
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        // Extract network witnesses
+        let (sent_packets, received_from) =
+            choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
+                &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
+                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
+                &&& (forall |pkt: LRaftPacket|
+                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                        &&& pkt.src == server_id
+                        &&& 0 <= pkt.dst < ds.num_servers
+                        &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
+                        &&& (match rf {
+                            Some(src) => pkt.dst == src,
+                            None => true,
+                        })
+                    })
+            };
+
+        assert forall |p_req: LRaftPacket, p_vote: LRaftPacket|
+            ds_.network.contains(p_req) && ds_.network.contains(p_vote) implies
+            match p_req.msg {
+                LRaftMessage::RequestVote { term: t_req, candidate: d, .. } =>
+                    match p_vote.msg {
+                        LRaftMessage::VoteResponse { term: t_vote, granted, voter: v } =>
+                            (granted && t_req == t_vote && v == d)
+                                ==> p_vote.dst == d,
+                        _ => true,
+                    },
+                _ => true,
+            }
+        by {
+            if p_req.msg is RequestVote && p_vote.msg is VoteResponse {
+                let t = p_req.msg->RequestVote_term;
+                let d = p_req.msg->RequestVote_candidate;
+                let v = p_vote.msg->VoteResponse_voter;
+                if p_vote.msg->VoteResponse_granted && t == p_vote.msg->VoteResponse_term && v == d {
+                    if ds.network.contains(p_req) && ds.network.contains(p_vote) {
+                        // Case 1: both old — IH
+                    } else if !ds.network.contains(p_req) && ds.network.contains(p_vote) {
+                        // Case 3: new RequestVote + old VoteResponse
+                        // p_req is new → p_req.src == server_id, and d == c.my_id == server_id
+                        // (from SenderIntegrity on new packet: candidate == src == server_id)
+                        // LTimeout: T = s.current_term + 1, so s.current_term = T - 1.
+                        // VoteResponseIntegrity on p_vote: d.current_term > T or == T.
+                        // But d == server_id, d.current_term == s.current_term == T - 1 < T.
+                        // Contradiction: VoteResponse granted can't exist.
+                        assert(p_req.src == server_id);
+                    } else if ds.network.contains(p_req) && !ds.network.contains(p_vote) {
+                        // Case 2: old RequestVote + new VoteResponse
+                        // p_vote is new → voter d == c.my_id == server_id
+                        assert(p_vote.src == server_id);
+                        assert(c.my_id == server_id);
+                        // d == server_id, so s == ds.server_states[d]
+                        // RequestVoteSenderState on p_req: s.current_term > T or (== T && voted_for == d)
+                        // Case s.current_term > T: step_down_if_needed(s, T) is no-op (T <= s.current_term).
+                        //   LHandleRequestVoteMsg: T < s.current_term → stale term → no VR → contradiction.
+                        // Case s.current_term == T: step_down_if_needed no-op. has_voted && voted_for == d.
+                        //   LGrantVote: !has_voted || voted_for == candidate_id → candidate_id == d.
+                        //   Routing: p_vote.dst == received_from source == candidate_id == d.
+                    } else {
+                        // Case 4: both new — impossible (single action, one msg type)
+                        assert(p_req.src == server_id);
+                        assert(p_vote.src == server_id);
+                    }
+                }
+            }
+        };
     }
 
     // =========================================================================
@@ -3354,6 +3758,33 @@ verus! {
     {
         // All LNext branches either keep current_term unchanged or increase it
         // (step_down_if_needed increases term when receiving a higher one).
+    }
+
+    // =========================================================================
+    // Helper: LNext voted_for stability when has_voted and term unchanged
+    // =========================================================================
+
+    /// If LNext preserves current_term and has_voted was true before,
+    /// then has_voted stays true and voted_for is unchanged.
+    /// This follows from analyzing all LNext branches:
+    /// - has_voted/voted_for only change via step_down_if_needed (term increases)
+    ///   or LGrantVote (requires !has_voted || voted_for == candidate_id).
+    /// - If term is unchanged and has_voted was true, LGrantVote can only proceed
+    ///   with voted_for == candidate_id, preserving voted_for.
+    proof fn lemma_lnext_voted_for_stable(s: LState, s_: LState, c: LConstants)
+        requires
+            LNext(s, s_, c),
+            s.has_voted,
+            s_.current_term == s.current_term,
+        ensures
+            s_.has_voted,
+            s_.voted_for == s.voted_for,
+    {
+        // All LNext branches: if current_term is unchanged, then either:
+        // - State fields (has_voted, voted_for) are unchanged (frame conditions), or
+        // - LGrantVote fires: requires s_mid.has_voted ==> voted_for == candidate_id.
+        //   s_mid == s (since step_down_if_needed doesn't change term).
+        //   So s_.voted_for == candidate_id == s.voted_for.
     }
 
     // =========================================================================
@@ -3443,7 +3874,7 @@ verus! {
         lemma_vote_response_has_request_vote_inductive(ds, ds_);
         lemma_append_entries_integrity_inductive(ds, ds_);
         lemma_one_vote_per_term_inductive(ds, ds_);
-        lemma_vote_response_term_bound_inductive(ds, ds_);
+        lemma_request_vote_sender_state_inductive(ds, ds_);
         lemma_candidate_vote_destination_unique_inductive(ds, ds_);
     }
 

@@ -421,3 +421,57 @@ Proof status:
 
 This keeps the work honest and incremental without masking the unresolved proof
 search bottleneck.
+
+## Update: 34.7.1.e.4.b.2.b.2.b.3.b complete (2026-03-04)
+
+Completed the old-packet slice in
+`src/protocol/Raft/refinement_proof/invariants.rs`:
+
+- Added helper
+  `lemma_request_vote_summary_old_packet_preserved(ds, ds_, p)`.
+- Scope: pre-state packet only (`ds.network.contains(p)`, `p.msg is RequestVote`).
+- Result: if candidate `d` is still at packet term `t` in post-state, then
+  packet summary fields remain justified by `ds_.server_states[d].log`.
+
+Proof split:
+
+1. `d != server_id` (non-stepping sender): direct state-frame equality
+   transfer.
+2. `d == server_id` (stepping sender): use `RequestVoteSenderState(ds)` plus
+   term monotonicity to force pre-term equality (`current_term == t`), then
+   lift summary facts with `lemma_lnext_log_preserved_or_extended`.
+
+Focused verification:
+
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*request_vote_summary_old_packet_preserved*' --rlimit 40`
+
+## Update: 34.7.1.e.4.b.2.b.2.b.3.c complete (2026-03-04)
+
+Completed the new-packet slice in
+`src/protocol/Raft/refinement_proof/invariants.rs`:
+
+- Added helper
+  `lemma_request_vote_summary_new_packet_established(ds, ds_, p)`.
+- Scope: post-state new packet only (`ds_.network.contains(p)` and
+  `!ds.network.contains(p)`), with `p.msg is RequestVote`.
+- Result: if candidate `d` is still at packet term `t` in `ds_`, then the
+  packet summary constraints hold in `ds_`:
+  - `0 <= last_idx <= ds_.server_states[d].log.len()`
+  - `last_idx == 0 ==> last_term == 0`
+  - `last_idx > 0 ==> ds_.server_states[d].log[last_idx - 1].term == last_term`
+
+Proof shape:
+
+1. Extracted `server_id` + `(sent_packets, received_from)` witnesses from
+   `RaftServerStepWithNetwork`.
+2. Used new-packet membership to recover `p.msg` from `sent_packets`.
+3. Instantiated the `LTimeout` send shape and transferred equalities:
+   candidate identity (`d == server_id`), last-index (`s.log.len()`), and
+   last-term (`0` or `s.log[last].term`).
+4. Lifted to `ds_` via the timeout frame fact `s_.log == s.log`.
+
+Focused verification:
+
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*request_vote_summary_new_packet_established*' --rlimit 40`
