@@ -513,3 +513,39 @@ Status note:
   `*leader_completeness*` at `--rlimit 40` currently still reports rlimit
   pressure in `lemma_leader_completeness_inductive`. This is tracked in the
   remaining TODO leaf `34.7.1.e.4.b.2.b.3` (proof search reduction / stability).
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.a-b complete (2026-03-04)
+
+Completed the first two slices of `...b.4` in
+`src/protocol/Raft/refinement_proof/invariants.rs`:
+
+- `lemma_overlap_voter_request_vote_summary_context(...)` (leaf `...b.4.a`)
+  packages overlap-voter RequestVote provenance with same-term sender-summary
+  validity (`RequestVoteSummaryStillValidAtSameTerm`), yielding concrete packet
+  summary facts against the current leader log.
+- `lemma_log_not_older_than_case_split_at_index(...)` +
+  `lemma_vote_grant_bridge_overlap_index_relation_template(...)`
+  (leaf `...b.4.b`) specialize the existing vote-grant bridge at target index
+  `k` and expose an explicit Raft last-log split:
+  - `leader_last_term > voter_last_term`, or
+  - `leader_last_term == voter_last_term && leader_log_len > k`.
+
+Integration note:
+
+- In `lemma_leader_completeness_inductive`, the unchanged-leader fresh-step
+  overlap branch now uses the packaged RequestVote-summary helper and the new
+  index-path relation template helper.
+- The final transfer to concrete
+  `ds_.server_states[leader_id].log[k] == entry` remains in next leaf
+  (`...b.4.c`), where the local `assume` is still present.
+
+Focused verification:
+
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*overlap_voter_request_vote_summary_context*' --rlimit 40`
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*log_not_older_than_case_split_at_index*' --rlimit 40`
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_grant_bridge_overlap_index_relation_template*' --rlimit 40`
+- Still rlimit-bounded (existing):
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*leader_completeness*' --rlimit 40`
