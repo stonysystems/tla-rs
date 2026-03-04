@@ -246,6 +246,98 @@ verus! {
         assert(CandidateOrLeaderVotedForSelfId(ds));
     }
 
+    /// Helper: turn vote-set membership into an explicit VoteResponse packet
+    /// witness and aligned voter facts from VoteResponseIntegrity.
+    proof fn lemma_vote_witness_from_votes_granted(
+        ds: RaftDistributedState, candidate: int, voter: int,
+    )
+        requires
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            0 <= candidate < ds.num_servers,
+            0 <= voter < ds.num_servers,
+            voter != candidate,
+            (ds.server_states[candidate].role is Candidate
+                || ds.server_states[candidate].role is Leader),
+            ds.server_states[candidate].votes_granted.contains(voter),
+        ensures
+            exists |p: LRaftPacket| {
+                &&& ds.network.contains(p)
+                &&& p.src == voter
+                &&& p.dst == candidate
+                &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter }
+                &&& granted
+                &&& term == ds.server_states[candidate].current_term
+                &&& msg_voter == voter
+            },
+            ds.server_states[voter].current_term
+                > ds.server_states[candidate].current_term
+                || (ds.server_states[voter].current_term
+                    == ds.server_states[candidate].current_term
+                    && ds.server_states[voter].has_voted
+                    && ds.server_states[voter].voted_for == candidate),
+    {
+        let p = choose |p: LRaftPacket| {
+            &&& ds.network.contains(p)
+            &&& p.dst == candidate
+            &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter }
+            &&& term == ds.server_states[candidate].current_term
+            &&& granted
+            &&& msg_voter == voter
+        };
+        assert(ds.network.contains(p));
+        assert(p.dst == candidate);
+        assert(p.msg is VoteResponse);
+        assert(p.msg->VoteResponse_granted);
+        assert(p.msg->VoteResponse_term == ds.server_states[candidate].current_term);
+        assert(p.msg->VoteResponse_voter == voter);
+
+        assert(
+            match p.msg {
+                LRaftMessage::VoteResponse { term: t, granted: g, voter: v } => {
+                    g ==> {
+                        &&& 0 <= v < ds.num_servers
+                        &&& p.src == v
+                        &&& (ds.server_states[v].current_term > t
+                            || (ds.server_states[v].current_term == t
+                                && ds.server_states[v].has_voted
+                                && ds.server_states[v].voted_for == p.dst))
+                    }
+                }
+                _ => true,
+            }
+        ) by {
+            assert(VoteResponseIntegrity(ds));
+        };
+
+        assert(p.src == voter);
+        assert(
+            ds.server_states[voter].current_term
+                > ds.server_states[candidate].current_term
+                || (ds.server_states[voter].current_term
+                    == ds.server_states[candidate].current_term
+                    && ds.server_states[voter].has_voted
+                    && ds.server_states[voter].voted_for == candidate)
+        );
+        assert(exists |pkt: LRaftPacket| {
+            &&& ds.network.contains(pkt)
+            &&& pkt.src == voter
+            &&& pkt.dst == candidate
+            &&& pkt.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter }
+            &&& granted
+            &&& term == ds.server_states[candidate].current_term
+            &&& msg_voter == voter
+        }) by {
+            assert(ds.network.contains(p));
+            assert(p.src == voter);
+            assert(p.dst == candidate);
+            assert(p.msg is VoteResponse);
+            assert(p.msg->VoteResponse_granted);
+            assert(p.msg->VoteResponse_term == ds.server_states[candidate].current_term);
+            assert(p.msg->VoteResponse_voter == voter);
+        };
+    }
+
     /// Helper: vote sets of two different servers (one becoming Leader, one
     /// already Leader at the same term) are completely disjoint.
     ///

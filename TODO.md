@@ -9839,14 +9839,13 @@ This is the hardest step. Estimated ~300-500 LOC.
 
 ### 34.7 Eliminate LeaderCompleteness assume (#4)
 
-- [ ] **34.7.1**: Prove `LeaderCompleteness(ds_)` inductive — the critical case is when a new leader is elected (`LReceiveVoteAndBecomeLeader`):
-  1. Entry `e` committed at index `k` in term `t` means a quorum `Q_c` of servers have `e` at index `k` (from `EntryCommittedAt` definition).
-  2. New leader's voter quorum `Q_v` satisfies `|Q_v| >= quorum_size`.
-  3. By `lemma_quorum_intersection`, `Q_c ∩ Q_v ≠ ∅` → some voter `w` has `e` at index `k`.
-  4. `w` granted vote to new leader, passing `log_up_to_date` check (via `VoteResponseIntegrity` + receive guard: RequestVote carries `last_log_index, last_log_term`; `w` checked these before voting).
-  5. By `log_up_to_date` semantics, new leader's log is at least as up-to-date as `w`'s.
-  6. By `LogMatching` (now proved), new leader has `e` at index `k`.
-  - Other actions: leaders don't remove entries (append-only), committed entries persist.
+- [ ] **34.7.1**: Prove `LeaderCompleteness(ds_)` inductive.  
+  Decomposed into smaller leaves (the full proof is larger than a clean <500 LOC single-step change once all witness/bridge lemmas are included):
+  - [x] **34.7.1.a**: Write a precise proof-obligation map for the `LReceiveVoteAndBecomeLeader` case, including exactly which existing invariants/lemmas already cover each step and which bridges are still missing. See `docs/phase34-leader-completeness-breakdown.md`.
+  - [x] **34.7.1.b**: Added `lemma_vote_witness_from_votes_granted` in `src/protocol/Raft/refinement_proof/invariants.rs` to turn `VotersVotedForCandidate` + `VoteResponseIntegrity` into an explicit vote packet witness (`src == voter`, `dst == candidate`, `term == candidate.current_term`) plus aligned voter-state fact (`current_term > candidate_term` or `current_term == candidate_term && voted_for == candidate`). Focused check command: `verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_witness_from_votes_granted*' --rlimit 40`; currently blocked by existing module-level trigger inference issue at `EntryTermLeaderWitness` (`invariants.rs:207`).
+  - [ ] **34.7.1.c**: Add a helper lemma connecting committed-quorum witness (`EntryCommittedAt`) with vote-quorum witness via `lemma_quorum_intersection`, yielding an overlap server `w` with both committed-entry and vote facts.
+  - [ ] **34.7.1.d**: Add/strengthen the log-up-to-date bridge needed for leader election reasoning (from vote grant context to new leader log relation for the overlapping voter).
+  - [ ] **34.7.1.e**: Prove `lemma_leader_completeness_inductive` without assume, using the new helper lemmas.
 
 - [ ] **34.7.2**: May need a supporting invariant `LeaderLogContainsCommitted(ds)` to strengthen the induction. Define if needed.
 
