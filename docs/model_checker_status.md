@@ -217,6 +217,14 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models -- --nocapture
 ```
 
+### 5.5 Generate checked-in JSON artifact bundle
+
+```bash
+./scripts/run_model_check_matrix.sh
+```
+
+Generated outputs are written to `reports/model_check/` and include one JSON report per matrix case plus `MANIFEST.txt`.
+
 ## 6. Update rules (strict)
 
 - Never mark a protocol as source-first supported without checked-in model + automated evidence.
