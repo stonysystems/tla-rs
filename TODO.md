@@ -9771,7 +9771,9 @@ Rules for this phase (do not cut corners):
       - Added unit coverage for direct named-struct and `Seq<named-struct>` existential expansion (`test_expand_branch_existentials_named_struct_without_override_uses_schema_fields`, `test_expand_branch_existentials_seq_of_named_struct_without_override`).
       - Re-classified Raft first blocker via source-first replay to missing primitive named domain `quantifiers.types.u64` using checked-in fixture `raft_missing_u64_domain.model.toml`.
   - [ ] **33.5.2.c Paxos (priority #3)**
-    - [ ] **33.5.2.c.1** Keep exact-mode source-first Paxos green with checked-in model + artifact + regression evidence.
+    - [x] **33.5.2.c.1** Keep exact-mode source-first Paxos green with checked-in model + artifact + regression evidence. [26:03:06, 08:05]
+      - Re-ran source-first exact-mode Paxos with checked-in fixture `transpiler/tests/model_check_fixtures/paxos_small.model.toml`; run remains green (`result=ok`, `states=1`, `transitions=2`, `depth=0`).
+      - Strengthened `test_model_check_paxos_bounded_run` to assert checked-in artifact `reports/model_check/paxos_small.json` exists and that stable fields match live replay (`result`, `search.state_dedup`, `summary.states`, `summary.transitions`, `summary.depth`).
     - [ ] **33.5.2.c.2** Upgrade toward real safety properties (not only smoke invariants) once executable in-source.
   - [ ] **33.5.2.d VerticalPaxos (priority #4)**
     - [ ] **33.5.2.d.1** Keep checked-in minimal blocker model and exact blocker classification current.

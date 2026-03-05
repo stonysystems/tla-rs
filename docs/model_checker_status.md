@@ -120,6 +120,7 @@ Status below is based on checked-in automated integration tests under `transpile
 | Paxos small bounded run | `src/protocol/Paxos/paxos.rs` | `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `test_model_check_paxos_bounded_run` | `reports/model_check/paxos_small.json` | `§5.2 Paxos` |
 
 Pass condition used by tests: command success + valid JSON + `summary.states > 0` + `summary.transitions > 0`.
+Paxos additionally enforces artifact parity for stable fields (`result`, `search.state_dedup`, `summary.states`, `summary.transitions`, `summary.depth`) against `reports/model_check/paxos_small.json`.
 
 ### 3.2 Liveness/fairness fixtures (all pass expected outcomes)
 

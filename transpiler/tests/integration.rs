@@ -9217,8 +9217,14 @@ fn test_model_check_paxos_bounded_run() {
     let input = repo_root.join("src/protocol/Paxos/paxos.rs");
     let types = repo_root.join("src/protocol/Paxos/types.rs");
     let model_path = resolve_model_check_fixture_path("paxos_small.model.toml");
+    let artifact_path = repo_root.join("reports/model_check/paxos_small.json");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
+    assert!(
+        artifact_path.exists(),
+        "Missing checked-in Paxos artifact: {}",
+        artifact_path.display()
+    );
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([
@@ -9244,6 +9250,40 @@ fn test_model_check_paxos_bounded_run() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let report: serde_json::Value =
         serde_json::from_str(&stdout).expect("model-check should emit valid JSON report");
+    let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read checked-in Paxos artifact {}: {}",
+            artifact_path.display(),
+            err
+        )
+    });
+    let artifact_report: serde_json::Value =
+        serde_json::from_str(&artifact_src).expect("checked-in Paxos artifact should be valid JSON");
+    let result = report
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let artifact_result = artifact_report
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, artifact_result,
+        "live Paxos source-first run result drifted from checked-in artifact. report={}",
+        stdout
+    );
+    let search_state_dedup = report
+        .pointer("/search/state_dedup")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let artifact_search_state_dedup = artifact_report
+        .pointer("/search/state_dedup")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        search_state_dedup, artifact_search_state_dedup,
+        "Paxos exactness mode drifted from checked-in artifact"
+    );
     let states = report
         .get("summary")
         .and_then(|s| s.get("states"))
@@ -9254,6 +9294,31 @@ fn test_model_check_paxos_bounded_run() {
         .and_then(|s| s.get("transitions"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
+    let depth = report
+        .get("summary")
+        .and_then(|s| s.get("depth"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_states = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_transitions = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_depth = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("depth"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        (states, transitions, depth),
+        (artifact_states, artifact_transitions, artifact_depth),
+        "Paxos summary reachability metrics drifted from checked-in artifact"
+    );
     assert!(
         states > 0,
         "expected at least one reached state in bounded Paxos run: {}",
