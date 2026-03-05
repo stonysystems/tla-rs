@@ -31,6 +31,7 @@ declare -a MATRIX_CASES=(
     "leaderelection_small|src/protocol/LeaderElection/election.rs|src/protocol/LeaderElection/types.rs|transpiler/tests/model_check_fixtures/leaderelection_small.model.toml"
     "leaderelection_safety_invariants|src/protocol/LeaderElection/election.rs|src/protocol/LeaderElection/types.rs|transpiler/tests/model_check_fixtures/leaderelection_safety_invariants.model.toml"
     "paxos_small|src/protocol/Paxos/paxos.rs|src/protocol/Paxos/types.rs|transpiler/tests/model_check_fixtures/paxos_small.model.toml"
+    "paxos_safety_invariants|src/protocol/Paxos/paxos.rs|src/protocol/Paxos/types.rs|transpiler/tests/model_check_fixtures/paxos_safety_invariants.model.toml"
     "pbft_small|src/protocol/PBFT/pbft.rs|src/protocol/PBFT/types.rs|transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml"
     "guard_pruned_enumeration|transpiler/tests/model_check_fixtures/guard_pruned_enumeration.protocol.rs|transpiler/tests/model_check_fixtures/guard_pruned_enumeration.types.rs|transpiler/tests/model_check_fixtures/guard_pruned_enumeration.model.toml"
     "liveness_avoidable_cycle_violated|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_violated.model.toml"

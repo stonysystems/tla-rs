@@ -8241,6 +8241,23 @@ fn test_model_check_telemetry_comparison_script_reports_expected_deltas() {
         matrix_script.contains("OPTIMIZATION_DELTAS.md"),
         "matrix script should emit optimization delta report artifact"
     );
+    for required_case in [
+        "twophase_small.model.toml",
+        "twophase_safety_invariants.model.toml",
+        "primarybackup_small.model.toml",
+        "primarybackup_safety_invariants.model.toml",
+        "leaderelection_small.model.toml",
+        "leaderelection_safety_invariants.model.toml",
+        "paxos_small.model.toml",
+        "paxos_safety_invariants.model.toml",
+        "pbft_state_expansion_limit.model.toml",
+    ] {
+        assert!(
+            matrix_script.contains(required_case),
+            "matrix script should include supported protocol evidence case `{}`",
+            required_case
+        );
+    }
 
     let status_doc = std::fs::read_to_string(repo_root.join("docs/model_checker_status.md"))
         .expect("failed to read docs/model_checker_status.md");

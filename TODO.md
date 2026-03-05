@@ -9890,7 +9890,7 @@ Rules for this phase (do not cut corners):
     - telemetry increments as expected
     - guardrail triggers clean config/runtime error
 
-- [ ] **33.6.4 Strengthen evidence reproducibility discipline**
+- [x] **33.6.4 Strengthen evidence reproducibility discipline** [26:03:06, 18:20]
   - [x] Add a checked-in script target (or test helper) to run the full currently-supported source-first matrix and save JSON artifacts under `reports/model_check/`.
   - [x] Require `docs/model_checker_status.md` entries to point to:
     - source file path
@@ -9898,6 +9898,7 @@ Rules for this phase (do not cut corners):
     - automated test name and/or generated JSON artifact path
     - exact replay command
   - [x] Add CI coverage to prevent stale status/evidence drift (fail if listed artifact paths are missing).
+  - [x] Keep matrix-case coverage aligned with all currently supported protocol evidence artifacts (including safety-invariant fixtures) via integration guard assertions over `scripts/run_model_check_matrix.sh`.
 
 ### 33.7 Completion gate
 
