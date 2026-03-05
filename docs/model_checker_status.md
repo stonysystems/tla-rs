@@ -118,9 +118,11 @@ Status below is based on checked-in automated integration tests under `transpile
 | PrimaryBackup small bounded run | `src/protocol/PrimaryBackup/primarybackup.rs` | `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `test_model_check_primarybackup_helper_call_branches_bounded_run` | `reports/model_check/primarybackup_small.json` | `§5.2 PrimaryBackup` |
 | LeaderElection small bounded run | `src/protocol/LeaderElection/election.rs` | `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `test_model_check_leader_election_bounded_run` | `reports/model_check/leaderelection_small.json` | `§5.2 LeaderElection` |
 | Paxos small bounded run | `src/protocol/Paxos/paxos.rs` | `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `test_model_check_paxos_bounded_run` | `reports/model_check/paxos_small.json` | `§5.2 Paxos` |
+| Paxos safety-invariant bounded run | `src/protocol/Paxos/paxos.rs` | `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_safety_invariants.model.toml` | `test_model_check_paxos_real_safety_invariants_bounded_run` | `reports/model_check/paxos_safety_invariants.json` | `§5.2 Paxos safety invariants` |
 
 Pass condition used by tests: command success + valid JSON + `summary.states > 0` + `summary.transitions > 0`.
 Paxos additionally enforces artifact parity for stable fields (`result`, `search.state_dedup`, `summary.states`, `summary.transitions`, `summary.depth`) against `reports/model_check/paxos_small.json`.
+Paxos safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/paxos_safety_invariants.json`.
 
 ### 3.2 Liveness/fairness fixtures (all pass expected outcomes)
 
@@ -254,7 +256,7 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `RSL` | `src/protocol/RSL/distributed_system.rs` | `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LConstants` (`quantifiers.types.LConstants`). | `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` |
 | `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `u64` (`quantifiers.types.u64`). | `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` |
-| `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 12` | N/A | `test_model_check_paxos_bounded_run`, `reports/model_check/paxos_small.json` |
+| `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 12` | N/A | `test_model_check_paxos_bounded_run`, `test_model_check_paxos_real_safety_invariants_bounded_run`, `reports/model_check/paxos_small.json`, `reports/model_check/paxos_safety_invariants.json` |
 | `VerticalPaxos` | `src/protocol/VerticalPaxos/vpaxos.rs`, `src/protocol/VerticalPaxos/types.rs` | `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` |
 | `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` |
 | `PBFT` | `src/protocol/PBFT/pbft.rs`, `src/protocol/PBFT/types.rs` | `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` |
@@ -362,6 +364,20 @@ transpiler/target/debug/verus-transpile model-check \
   --search bfs \
   --json-report
 ```
+
+Paxos safety invariants:
+
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input src/protocol/Paxos/paxos.rs \
+  --types src/protocol/Paxos/types.rs \
+  --model transpiler/tests/model_check_fixtures/paxos_safety_invariants.model.toml \
+  --search bfs \
+  --json-report
+```
+
+Expected result: command succeeds with `result = "ok"`, `invariant_violation = null`, and resolved invariants including:
+`LSafetyAcceptedBallotBoundedByPromise`, `LSafetyDecidedRequiresQuorum`, `LSafetyDecidedMatchesProposedValue`.
 
 ### 5.3 Run liveness/fairness fixtures
 
@@ -509,6 +525,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_raft_blocker_missing_u64_domain_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_real_safety_invariants_bounded_run -- --nocapture
 ```
 
 ### 5.11 Generate checked-in JSON artifact bundle

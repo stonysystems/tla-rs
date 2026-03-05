@@ -167,6 +167,21 @@ verus! {
         &&& s_.accepted_val == s.accepted_val
     }
 
+    /// Paxos safety invariant: an acceptor cannot have accepted above its promise.
+    pub open spec fn LSafetyAcceptedBallotBoundedByPromise(s: LState, c: LConstants) -> bool {
+        s.accepted_bal <= s.promised_bal
+    }
+
+    /// Paxos safety invariant: reaching Decided implies quorum evidence exists.
+    pub open spec fn LSafetyDecidedRequiresQuorum(s: LState, c: LConstants) -> bool {
+        (s.phase is Decided) ==> (s.accepts_rcvd.len() >= c.quorum_size)
+    }
+
+    /// Paxos safety invariant: decided value must match the value chosen in Phase2.
+    pub open spec fn LSafetyDecidedMatchesProposedValue(s: LState, c: LConstants) -> bool {
+        (s.phase is Decided) ==> (s.decided_val == s.proposed_val)
+    }
+
     /// Next-state relation: disjunction of all possible transitions
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
         ||| (exists |b: int| LSend1a(s, s_, c, b))

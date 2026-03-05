@@ -9774,7 +9774,16 @@ Rules for this phase (do not cut corners):
     - [x] **33.5.2.c.1** Keep exact-mode source-first Paxos green with checked-in model + artifact + regression evidence. [26:03:06, 08:05]
       - Re-ran source-first exact-mode Paxos with checked-in fixture `transpiler/tests/model_check_fixtures/paxos_small.model.toml`; run remains green (`result=ok`, `states=1`, `transitions=2`, `depth=0`).
       - Strengthened `test_model_check_paxos_bounded_run` to assert checked-in artifact `reports/model_check/paxos_small.json` exists and that stable fields match live replay (`result`, `search.state_dedup`, `summary.states`, `summary.transitions`, `summary.depth`).
-    - [ ] **33.5.2.c.2** Upgrade toward real safety properties (not only smoke invariants) once executable in-source.
+    - [x] **33.5.2.c.2** Upgrade toward real safety properties (not only smoke invariants) once executable in-source. [26:03:06, 08:35]
+      - Added in-source Paxos safety predicates in `src/protocol/Paxos/paxos.rs`:
+        - `LSafetyAcceptedBallotBoundedByPromise`
+        - `LSafetyDecidedRequiresQuorum`
+        - `LSafetyDecidedMatchesProposedValue`
+      - Added checked-in model + artifact + regression evidence for safety checks:
+        - model fixture: `transpiler/tests/model_check_fixtures/paxos_safety_invariants.model.toml`
+        - artifact: `reports/model_check/paxos_safety_invariants.json`
+        - integration test: `test_model_check_paxos_real_safety_invariants_bounded_run`
+      - Regression enforces non-violation and invariant-resolution evidence (`configured_count = 3`, `resolved_count = 3`) and checks stable live-vs-artifact parity.
   - [ ] **33.5.2.d VerticalPaxos (priority #4)**
     - [ ] **33.5.2.d.1** Keep checked-in minimal blocker model and exact blocker classification current.
     - [ ] **33.5.2.d.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
