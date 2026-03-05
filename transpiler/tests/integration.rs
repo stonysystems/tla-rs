@@ -7982,6 +7982,54 @@ fn test_model_check_paxos_bounded_run() {
 }
 
 #[test]
+fn test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+
+    let repo_root = resolve_repo_root_for_integration();
+    let input = repo_root.join("src/protocol/RSL/distributed_system.rs");
+    let model_path = resolve_model_check_fixture_path("rsl_incompatible_init_signature.model.toml");
+    assert!(input.exists(), "Missing input spec: {}", input.display());
+
+    let output = std::process::Command::new(&transpiler_bin)
+        .args([
+            "model-check",
+            "--input",
+            input.to_str().unwrap(),
+            "--init",
+            "RslInit",
+            "--next",
+            "RslNext",
+            "--model",
+            model_path.to_str().unwrap(),
+            "--search",
+            "bfs",
+        ])
+        .output()
+        .expect("Failed to run model-check command");
+
+    assert!(
+        !output.status.success(),
+        "RSL model-check should fail until source-first entrypoint signature constraints are relaxed."
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Incompatible `RslInit` signature"),
+        "expected incompatible RslInit signature blocker in stderr, got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("Expected: RslInit(s: LState, c: LConstants) -> bool"),
+        "expected signature expectation details in stderr, got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("Found: RslInit(con: LConstants, ps: RslState) -> bool"),
+        "expected found-signature details in stderr, got: {}",
+        stderr
+    );
+}
+
+#[test]
 fn test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 

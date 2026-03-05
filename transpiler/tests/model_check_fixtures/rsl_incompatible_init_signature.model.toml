@@ -1,0 +1,16 @@
+# Minimal checked-in model for reproducing the current source-first RSL blocker.
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.nat]
+max = 0
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"

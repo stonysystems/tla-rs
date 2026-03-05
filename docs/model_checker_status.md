@@ -108,6 +108,7 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 ### 3.5 Unsupported protocol blocker regressions
 
 - `transpiler/tests/integration.rs`:
+  - `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` (checked-in RSL blocker model reproduces current init-signature gate expecting `LState`/`LConstants`)
   - `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` (checked-in Raft blocker model reproduces missing `quantifiers.types.LLogEntry` domain requirement)
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
@@ -116,7 +117,7 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 
 | Protocol | Exact source files used | Checked-in model file | Search mode / exactness | Result | States / transitions / depth / elapsed_ms | First blocker (if unsupported) | Automated evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `RSL` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first RSL model/check run yet (`33.5` highest-value backlog). | No |
+| `RSL` | `src/protocol/RSL/distributed_system.rs` | `transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: incompatible `RslInit` signature (current source-first gate expects `(s: LState, c: LConstants)`). | `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` |
 | `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LLogEntry` (`quantifiers.types.LLogEntry`). | `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` |
 | `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 10` | N/A | `test_model_check_paxos_bounded_run`, `reports/model_check/paxos_small.json` |
 | `VerticalPaxos` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first VerticalPaxos model/check run yet. | No |
@@ -229,7 +230,20 @@ transpiler/target/debug/verus-transpile model-check \
   --json-report
 ```
 
-### 5.4 Replay currently checked-in unsupported blocker (Raft)
+### 5.4 Replay currently checked-in unsupported blocker (RSL)
+
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input src/protocol/RSL/distributed_system.rs \
+  --init RslInit \
+  --next RslNext \
+  --model transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml \
+  --search bfs
+```
+
+Expected result: command fails with `Configuration error: Incompatible \`RslInit\` signature.` and describes the currently required `(s: LState, c: LConstants)` shape.
+
+### 5.5 Replay currently checked-in unsupported blocker (Raft)
 
 ```bash
 transpiler/target/debug/verus-transpile model-check \
@@ -241,19 +255,20 @@ transpiler/target/debug/verus-transpile model-check \
 
 Expected result: command fails with `Configuration error: Missing domain for named type \`LLogEntry\`` and a hint to provide `quantifiers.types.LLogEntry`.
 
-### 5.5 Re-run automated evidence directly
+### 5.6 Re-run automated evidence directly
 
 ```bash
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_primarybackup_helper_call_branches_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_twophase_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_leader_election_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models -- --nocapture
 ```
 
-### 5.6 Generate checked-in JSON artifact bundle
+### 5.7 Generate checked-in JSON artifact bundle
 
 ```bash
 ./scripts/run_model_check_matrix.sh
@@ -261,7 +276,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 
 Generated outputs are written to `reports/model_check/` and include one JSON report per matrix case plus `MANIFEST.txt`.
 
-### 5.7 Verify status-doc evidence references
+### 5.8 Verify status-doc evidence references
 
 ```bash
 ./scripts/verify_model_check_evidence_paths.sh

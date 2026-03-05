@@ -9648,7 +9648,7 @@ Rules for this phase (do not cut corners):
   - first blocker when the protocol still does not run
 - [ ] Keep the smallest realistic checked-in model that reproduces each blocker or success.
   - [x] Raft blocker model: add `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` and regression `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LLogEntry` missing domain).
-  - [ ] RSL blocker model + regression.
+  - [x] RSL blocker model: add `transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml` and regression `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` to lock the current source-first init-signature gate requiring `(s: LState, c: LConstants)`.
   - [ ] VerticalPaxos blocker model + regression.
   - [ ] EPaxos blocker model + regression.
   - [ ] PBFT blocker model + regression.
