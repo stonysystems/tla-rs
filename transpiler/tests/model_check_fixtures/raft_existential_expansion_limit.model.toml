@@ -1,0 +1,32 @@
+# Minimal checked-in model to reproduce the current first Raft blocker:
+# bounded branch existential-domain expansion still exceeds max_states.
+# Primitive named integer types (for example `u64`) now infer domains from
+# `[quantifiers.nat]`, so no explicit `[quantifiers.types.u64]` override is used here.
+[constants.assignments]
+quorum_size = 1
+my_id = 0
+
+[constants.domains.servers]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[quantifiers.nat]
+max = 1
+
+[collections]
+max_seq_len = 1
+max_set_len = 1
+max_map_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"

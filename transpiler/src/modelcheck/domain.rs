@@ -310,6 +310,10 @@ fn expand_named_type_domain(
         );
     }
 
+    if let Some((primitive_name, kind)) = primitive_named_integer_kind(&candidates) {
+        return expand_primitive_named_integer_domain(&primitive_name, kind, model);
+    }
+
     Err(TranspileError::Config {
         message: format!(
             "Missing domain for named type `{}`. Provide `quantifiers.types.{}` in model.toml.",
@@ -863,6 +867,72 @@ fn find_struct<'a>(
     None
 }
 
+#[derive(Clone, Copy)]
+enum PrimitiveNamedIntegerKind {
+    Signed,
+    Unsigned,
+}
+
+fn primitive_named_integer_kind(candidates: &[String]) -> Option<(String, PrimitiveNamedIntegerKind)> {
+    for candidate in candidates {
+        let short = candidate.rsplit("::").next().unwrap_or(candidate.as_str());
+        let kind = match short {
+            "u64" | "u32" | "u16" | "u8" | "usize" => PrimitiveNamedIntegerKind::Unsigned,
+            "i64" | "i32" | "i16" | "i8" | "isize" => PrimitiveNamedIntegerKind::Signed,
+            _ => continue,
+        };
+        return Some((short.to_string(), kind));
+    }
+    None
+}
+
+fn expand_primitive_named_integer_domain(
+    type_name: &str,
+    kind: PrimitiveNamedIntegerKind,
+    model: &ModelConfig,
+) -> TranspileResult<Vec<RuntimeValue>> {
+    match kind {
+        PrimitiveNamedIntegerKind::Signed => {
+            let range = model
+                .quantifiers
+                .int
+                .as_ref()
+                .ok_or_else(|| TranspileError::Config {
+                    message: format!(
+                        "Missing domain for named type `{}` (signed integer). \
+                         Set `quantifiers.int` or provide `quantifiers.types.{}` in model.toml.",
+                        type_name, type_name
+                    ),
+                })?;
+            if range.min > range.max {
+                return Err(TranspileError::Config {
+                    message: format!(
+                        "Invalid int domain: min ({}) > max ({}).",
+                        range.min, range.max
+                    ),
+                });
+            }
+            Ok((range.min..=range.max)
+                .map(|v| RuntimeValue::Int(i128::from(v)))
+                .collect())
+        }
+        PrimitiveNamedIntegerKind::Unsigned => {
+            let range = model
+                .quantifiers
+                .nat
+                .as_ref()
+                .ok_or_else(|| TranspileError::Config {
+                    message: format!(
+                        "Missing domain for named type `{}` (unsigned integer). \
+                         Set `quantifiers.nat` or provide `quantifiers.types.{}` in model.toml.",
+                        type_name, type_name
+                    ),
+                })?;
+            Ok((0..=range.max).map(RuntimeValue::Nat).collect())
+        }
+    }
+}
+
 fn unique_sorted(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut set = BTreeSet::new();
     for value in values {
@@ -924,7 +994,7 @@ mod tests {
     use super::*;
     use crate::ast::{Path, Type};
     use crate::modelcheck::config::{
-        CollectionBounds, DomainSpec, IntDomain, ModelConfig, SearchLimits,
+        CollectionBounds, DomainSpec, IntDomain, ModelConfig, NatDomain, SearchLimits,
     };
     use crate::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
     use crate::spec_analyzer::SpecSchema;
@@ -1139,6 +1209,72 @@ mod tests {
 
         let assignments = expand_branch_existentials(&branch, &schema, &model).unwrap();
         assert_eq!(assignments.len(), 2);
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_named_unsigned_primitive_uses_nat_domain() {
+        let mut model = base_model();
+        model.quantifiers.nat = Some(NatDomain { max: 2 });
+        let branch = mk_branch(vec![ExistentialVarIr {
+            name: "id".to_string(),
+            ty: Some(Type::Named(Path::single("u64".to_string()))),
+        }]);
+
+        let assignments = expand_branch_existentials(&branch, &SpecSchema::new(), &model).unwrap();
+        assert_eq!(assignments.len(), 3);
+        assert!(assignments
+            .iter()
+            .any(|a| a.get("id") == Some(&RuntimeValue::Nat(0))));
+        assert!(assignments
+            .iter()
+            .any(|a| a.get("id") == Some(&RuntimeValue::Nat(1))));
+        assert!(assignments
+            .iter()
+            .any(|a| a.get("id") == Some(&RuntimeValue::Nat(2))));
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_named_signed_primitive_uses_int_domain() {
+        let mut model = base_model();
+        model.quantifiers.int = Some(IntDomain { min: -1, max: 1 });
+        let branch = mk_branch(vec![ExistentialVarIr {
+            name: "term".to_string(),
+            ty: Some(Type::Named(Path::single("i64".to_string()))),
+        }]);
+
+        let assignments = expand_branch_existentials(&branch, &SpecSchema::new(), &model).unwrap();
+        assert_eq!(assignments.len(), 3);
+        assert!(assignments
+            .iter()
+            .any(|a| a.get("term") == Some(&RuntimeValue::Int(-1))));
+        assert!(assignments
+            .iter()
+            .any(|a| a.get("term") == Some(&RuntimeValue::Int(0))));
+        assert!(assignments
+            .iter()
+            .any(|a| a.get("term") == Some(&RuntimeValue::Int(1))));
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_named_primitive_prefers_explicit_override() {
+        let mut model = base_model();
+        model.quantifiers.nat = Some(NatDomain { max: 1 });
+        model.quantifiers.types.insert(
+            "u64".to_string(),
+            DomainSpec::IntRange { min: 7, max: 7 },
+        );
+        let branch = mk_branch(vec![ExistentialVarIr {
+            name: "id".to_string(),
+            ty: Some(Type::Named(Path::single("u64".to_string()))),
+        }]);
+
+        let assignments = expand_branch_existentials(&branch, &SpecSchema::new(), &model).unwrap();
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(
+            assignments[0].get("id"),
+            Some(&RuntimeValue::Int(7)),
+            "explicit quantifiers.types override should win over primitive fallback"
+        );
     }
 
     #[test]

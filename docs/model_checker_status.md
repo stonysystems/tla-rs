@@ -59,7 +59,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 ### 2.2 Domain/solver/constants limitations
 
 - `transpiler/src/modelcheck/domain.rs` only expands generics for concrete built-ins (`Seq`, `Set`, `Map`) and rejects broader generic forms.
-- `transpiler/src/modelcheck/domain.rs` fails unresolved named-type domains with `Missing domain for named type ...` until `quantifiers.types.<TypeName>` is provided.
+- `transpiler/src/modelcheck/domain.rs` fails unresolved named-type domains with `Missing domain for named type ...` until `quantifiers.types.<TypeName>` is provided (primitive named integer types like `u64`/`i64` now fall back to `quantifiers.nat`/`quantifiers.int` when no explicit override exists).
 - `transpiler/src/main.rs` now explores all resolved `LConstants` valuations; model-check preflight still fails on zero matching `LConstants` valuations after applying assignments/domains.
 - `transpiler/src/modelcheck/solver.rs` now supports a predicate-only direct-solver hook path (used by source-first model check for direct helper-call branches such as `LStep(s, s_, c)`), and otherwise falls back to candidate-state enumeration for unresolved predicate-only/helper branches; fallback runs are bounded by a hard guardrail (`candidate_evaluation_guardrail_per_state_branch = 10000`) and expose telemetry in JSON/CLI summaries. Enumeration fallback also performs static-guard pruning before candidate loops and reports skipped work as `guard_pruned_candidate_evaluations`.
 - `transpiler/src/modelcheck/solver.rs` rejects predicate-only branches without candidate states using `no direct next-state equality constraints` errors.
@@ -170,7 +170,7 @@ Paxos safety-invariant run additionally enforces: three configured/resolved in-s
   - `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` (checked-in EPaxos blocker model reproduces bounded candidate expansion overflow for `LConstants` and enforces fixture intent/minimality)
   - `test_model_check_pbft_bounded_run` (checked-in PBFT bounded source-first run stays green and aligned with checked-in artifact)
   - `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` (checked-in ChainReplication blocker model reproduces bounded branch existential-domain expansion overflow)
-  - `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` (checked-in Raft blocker model reproduces missing `quantifiers.types.u64` domain requirement and enforces that the fixture intentionally omits that domain while staying minimal/bounded)
+  - `test_model_check_raft_blocker_existential_expansion_limit_is_reproducible` (checked-in Raft blocker model reproduces bounded branch existential-domain expansion overflow and enforces fixture intent/minimality)
 
 ### 3.6 Supported protocol evidence discipline guard
 
@@ -264,7 +264,7 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | Protocol | Exact source files used | Checked-in model file | Search mode / exactness | Result | States / transitions / depth / elapsed_ms | First blocker (if unsupported) | Automated evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `RSL` | `src/protocol/RSL/distributed_system.rs` | `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LConstants` (`quantifiers.types.LConstants`). | `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` |
-| `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `u64` (`quantifiers.types.u64`). | `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` |
+| `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_existential_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; pre-exploration branch-assignment expansion fails) | `unsupported` | N/A | Configuration error: existential domain expansion exceeded limit (200 assignments) during bounded branch existential enumeration. | `test_model_check_raft_blocker_existential_expansion_limit_is_reproducible` |
 | `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 12` | N/A | `test_model_check_paxos_bounded_run`, `test_model_check_paxos_real_safety_invariants_bounded_run`, `reports/model_check/paxos_small.json`, `reports/model_check/paxos_safety_invariants.json` |
 | `VerticalPaxos` | `src/protocol/VerticalPaxos/vpaxos.rs`, `src/protocol/VerticalPaxos/types.rs` | `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; pre-exploration branch-assignment expansion fails) | `unsupported` | N/A | Configuration error: existential domain expansion exceeded limit (200 assignments) during bounded branch existential enumeration. | `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` |
 | `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LConstants` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` |
@@ -495,11 +495,11 @@ Expected result: command fails with `Configuration error: Missing domain for nam
 transpiler/target/debug/verus-transpile model-check \
   --input src/protocol/Raft/raft.rs \
   --types src/protocol/Raft/types.rs \
-  --model transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml \
+  --model transpiler/tests/model_check_fixtures/raft_existential_expansion_limit.model.toml \
   --search bfs
 ```
 
-Expected result: command fails with `Configuration error: Missing domain for named type \`u64\`` and a hint to provide `quantifiers.types.u64`.
+Expected result: command fails with `Configuration error: Existential domain expansion exceeded limit (200 assignments).`
 
 ### 5.6 Replay currently checked-in unsupported blocker (VerticalPaxos)
 
@@ -576,7 +576,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_pbft_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible -- --nocapture
-cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_raft_blocker_missing_u64_domain_is_reproducible -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_raft_blocker_existential_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_real_safety_invariants_bounded_run -- --nocapture

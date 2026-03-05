@@ -9647,7 +9647,7 @@ Rules for this phase (do not cut corners):
   - states / transitions / depth / elapsed time when available
   - first blocker when the protocol still does not run
 - [x] Keep the smallest realistic checked-in model that reproduces each blocker or success.
-  - [x] Raft blocker model: keep `transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml` and regression `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.u64` missing domain).
+  - [x] Raft blocker model: keep `transpiler/tests/model_check_fixtures/raft_existential_expansion_limit.model.toml` and regression `test_model_check_raft_blocker_existential_expansion_limit_is_reproducible` to lock the current first blocker (`Existential domain expansion exceeded limit (200 assignments)` during bounded branch existential enumeration).
   - [x] RSL blocker model: add `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` and regression `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LConstants` missing domain).
   - [x] VerticalPaxos blocker model: add `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and regression `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` to lock the current first blocker (`Existential domain expansion exceeded limit (200 assignments)` during branch existential enumeration).
   - [x] EPaxos blocker model: add `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and regression `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LConstants` exceeds `search.max_states` during candidate construction).
@@ -9764,12 +9764,17 @@ Rules for this phase (do not cut corners):
       - Updated blocker fixture/test/doc matrix references from the retired init-signature blocker to `rsl_missing_constants_domain`.
   - [ ] **33.5.2.b Raft (priority #2)**
     - [x] **33.5.2.b.1** Keep a checked-in minimal exact-mode Raft source-first model and blocker regression stable; confirm first blocker remains the smallest reproducible one. [26:03:06, 06:10]
-      - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml` and command-level replay; first blocker is `Missing domain for named type \`u64\``.
-      - Regression `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` enforces fixture intent/minimality (intentional omission of `quantifiers.types.u64`, `max_depth = 1`, `max_states = 200`).
+      - Revalidated against the then-current minimal blocker fixture and command-level replay; first blocker at that point was `Missing domain for named type \`u64\``.
+      - Regression at that point enforced fixture intent/minimality (intentional omission of `quantifiers.types.u64`, `max_depth = 1`, `max_states = 200`).
     - [x] **33.5.2.b.2** Land one highest-leverage fix for the Raft first blocker class (unsupported construct / missing config / performance / real counterexample), then re-classify. [26:03:06, 07:30]
       - Implemented named-struct finite-domain expansion fallback in `transpiler/src/modelcheck/domain.rs` so schema-defined structs (for example `LLogEntry`) no longer require manual `quantifiers.types.<Struct>` overrides when their fields are already enumerable.
       - Added unit coverage for direct named-struct and `Seq<named-struct>` existential expansion (`test_expand_branch_existentials_named_struct_without_override_uses_schema_fields`, `test_expand_branch_existentials_seq_of_named_struct_without_override`).
-      - Re-classified Raft first blocker via source-first replay to missing primitive named domain `quantifiers.types.u64` using checked-in fixture `raft_missing_u64_domain.model.toml`.
+      - Re-classified Raft first blocker via source-first replay to missing primitive named domain `quantifiers.types.u64` on the then-current minimal blocker fixture.
+    - [x] **33.5.2.b.3** Land primitive named integer-domain fallback for model checking, then re-classify the Raft first blocker. [26:03:04, 23:25]
+      - Implemented primitive named integer fallback in `transpiler/src/modelcheck/domain.rs` so named integer primitives (for example `u64`, `i64`) use `quantifiers.nat` / `quantifiers.int` when no explicit `quantifiers.types.<Type>` override is configured.
+      - Added unit coverage for unsigned/signed primitive fallback and explicit-override precedence (`test_expand_branch_existentials_named_unsigned_primitive_uses_nat_domain`, `test_expand_branch_existentials_named_signed_primitive_uses_int_domain`, `test_expand_branch_existentials_named_primitive_prefers_explicit_override`).
+      - Re-ran source-first Raft with checked-in fixture `raft_existential_expansion_limit.model.toml`; first blocker re-classified to `Configuration error: Existential domain expansion exceeded limit (200 assignments)`.
+      - Updated blocker regression/doc matrix references to `test_model_check_raft_blocker_existential_expansion_limit_is_reproducible` + `transpiler/tests/model_check_fixtures/raft_existential_expansion_limit.model.toml`.
   - [ ] **33.5.2.c Paxos (priority #3)**
     - [x] **33.5.2.c.1** Keep exact-mode source-first Paxos green with checked-in model + artifact + regression evidence. [26:03:06, 08:05]
       - Re-ran source-first exact-mode Paxos with checked-in fixture `transpiler/tests/model_check_fixtures/paxos_small.model.toml`; run remains green (`result=ok`, `states=1`, `transitions=2`, `depth=0`).
