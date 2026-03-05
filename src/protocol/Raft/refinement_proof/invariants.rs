@@ -375,6 +375,9 @@ verus! {
         &&& VoteLogLenBounded(ds)
         &&& VoteLogLenEntryTermBound(ds)
         &&& VoteGrantedLogUpToDateAtVoteTime(ds)
+        // Log structure invariants (Phase 34.7 — strict-term transfer)
+        &&& CurrentTermGeLogTerms(ds)
+        &&& LogTermsMonotonic(ds)
     }
 
     // =========================================================================
@@ -406,6 +409,8 @@ verus! {
         // Ghost state invariants: vote_log_len empty + network empty, vacuously true
         // - VoteLogLenCoversNetwork, VoteLogLenBounded, VoteLogLenEntryTermBound,
         //   VoteGrantedLogUpToDateAtVoteTime
+        // Log structure invariants: empty logs, vacuously true
+        // - CurrentTermGeLogTerms, LogTermsMonotonic
     }
 
     // =========================================================================
@@ -6731,6 +6736,10 @@ verus! {
         lemma_vote_log_len_bounded_inductive(ds, ds_);
         lemma_vote_log_len_entry_term_bound_inductive(ds, ds_);
         lemma_vote_granted_log_up_to_date_inductive(ds, ds_);
+
+        // Log structure invariants (Phase 34.7 — strict-term transfer)
+        lemma_current_term_ge_log_terms_inductive(ds, ds_);
+        lemma_log_terms_monotonic_inductive(ds, ds_);
     }
 
     // =========================================================================
