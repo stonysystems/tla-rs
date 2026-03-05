@@ -231,6 +231,13 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
     - `class = "exact_proof_strength"` for canonical dedup fixture
     - `class = "lossy_bug_finding_accelerator"` with explicit lossy reason `hash_compaction64_collision_risk` for hash-compaction fixture
 
+### 3.18 Before/after telemetry comparison automation guard
+
+- `scripts/compare_model_check_telemetry.sh` computes fixed Phase 33.4.2 before/after/delta comparisons directly from checked-in `reports/model_check/*.json` artifacts and fails on reachable-state guard drift.
+- `scripts/run_model_check_matrix.sh` now regenerates `reports/model_check/OPTIMIZATION_DELTAS.md` on every matrix run.
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_telemetry_comparison_script_reports_expected_deltas` verifies the script output contains the required metric rows/deltas and that matrix automation is wired to produce the delta report.
+
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
 Metrics shown for supported entries come from the latest JSON artifacts under `reports/model_check/` (generated via `./scripts/run_model_check_matrix.sh`; exact `elapsed_ms` may vary by machine/load).
@@ -481,7 +488,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 ./scripts/run_model_check_matrix.sh
 ```
 
-Generated outputs are written to `reports/model_check/` and include one JSON report per matrix case plus `MANIFEST.txt`.
+Generated outputs are written to `reports/model_check/` and include one JSON report per matrix case, `OPTIMIZATION_DELTAS.md`, and `MANIFEST.txt`.
 
 ### 5.12 Verify status-doc evidence references
 
@@ -490,6 +497,14 @@ Generated outputs are written to `reports/model_check/` and include one JSON rep
 ```
 
 This fails if any `reports/model_check/*.json` path referenced in this status doc is missing.
+
+### 5.13 Compare optimization telemetry before/after deltas
+
+```bash
+./scripts/compare_model_check_telemetry.sh
+```
+
+This prints the Phase 33.4.2 before/after/delta table from checked-in artifacts and fails if the reachable-state guard drifts.
 
 ## 6. Update rules (strict)
 

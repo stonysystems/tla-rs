@@ -6,6 +6,7 @@
 #   ./scripts/run_model_check_matrix.sh
 #   OUTPUT_DIR=reports/model_check ./scripts/run_model_check_matrix.sh
 #   TRANSPILER_BIN=transpiler/target/release/verus-transpile ./scripts/run_model_check_matrix.sh
+#   TELEMETRY_DELTA_REPORT=reports/model_check/OPTIMIZATION_DELTAS.md ./scripts/run_model_check_matrix.sh
 
 set -euo pipefail
 
@@ -13,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-$PROJECT_ROOT/reports/model_check}"
 TRANSPILER_BIN="${TRANSPILER_BIN:-$PROJECT_ROOT/transpiler/target/debug/verus-transpile}"
+TELEMETRY_DELTA_REPORT="${TELEMETRY_DELTA_REPORT:-$OUTPUT_DIR/OPTIMIZATION_DELTAS.md}"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -56,6 +58,13 @@ for case_entry in "${MATRIX_CASES[@]}"; do
     fi
 done
 
+echo "Generating optimization telemetry comparison report..."
+(
+    cd "$PROJECT_ROOT"
+    ARTIFACT_DIR="$OUTPUT_DIR" OUTPUT_PATH="$TELEMETRY_DELTA_REPORT" \
+        bash "$PROJECT_ROOT/scripts/compare_model_check_telemetry.sh"
+)
+
 {
     echo "source_first_matrix_artifacts:"
     echo "  generated_by: scripts/run_model_check_matrix.sh"
@@ -66,6 +75,7 @@ done
         IFS='|' read -r case_name _ <<<"$case_entry"
         echo "    - ${case_name}.json"
     done
+    echo "    - $(basename "$TELEMETRY_DELTA_REPORT")"
 } >"$OUTPUT_DIR/MANIFEST.txt"
 
 echo "Model-check matrix artifacts written under ${OUTPUT_DIR#$PROJECT_ROOT/}."

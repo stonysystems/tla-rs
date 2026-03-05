@@ -8177,6 +8177,62 @@ fn test_model_check_exact_mode_optimization_delta_snapshot_matches_checked_in_ar
 }
 
 #[test]
+fn test_model_check_telemetry_comparison_script_reports_expected_deltas() {
+    let repo_root = resolve_repo_root_for_integration();
+    let script_path = repo_root.join("scripts/compare_model_check_telemetry.sh");
+    assert!(
+        script_path.exists(),
+        "missing telemetry comparison automation script: {}",
+        script_path.display()
+    );
+
+    let output = std::process::Command::new("bash")
+        .arg(script_path.to_str().unwrap())
+        .current_dir(&repo_root)
+        .output()
+        .expect("failed to run telemetry comparison script");
+    assert!(
+        output.status.success(),
+        "telemetry comparison script should succeed. stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for required in [
+        "# Model-Check Optimization Telemetry Comparison",
+        "| Optimization | Artifact | Metric | Before | After | Delta | Reachable-state guard |",
+        "reports/model_check/liveness_avoidable_cycle_violated.json",
+        "reports/model_check/guard_pruned_enumeration.json",
+        "`successor_cache_hits`",
+        "`successor_cache_misses`",
+        "`enumeration_candidate_evaluations`",
+        "`guard_pruned_candidate_evaluations`",
+        "`+3`",
+        "`-2`",
+        "`3/5 -> 3/5`",
+        "`1/0 -> 1/0`",
+    ] {
+        assert!(
+            stdout.contains(required),
+            "telemetry comparison output missing expected token `{}`. output={}",
+            required,
+            stdout
+        );
+    }
+
+    let matrix_script = std::fs::read_to_string(repo_root.join("scripts/run_model_check_matrix.sh"))
+        .expect("failed to read scripts/run_model_check_matrix.sh");
+    assert!(
+        matrix_script.contains("compare_model_check_telemetry.sh"),
+        "matrix script should invoke telemetry comparison automation"
+    );
+    assert!(
+        matrix_script.contains("OPTIMIZATION_DELTAS.md"),
+        "matrix script should emit optimization delta report artifact"
+    );
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_require_blocker_regressions() {
     let repo_root = resolve_repo_root_for_integration();
     let status_doc = repo_root.join("docs/model_checker_status.md");

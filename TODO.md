@@ -9725,7 +9725,11 @@ Rules for this phase (do not cut corners):
     - unit: `test_classify_search_evidence_mode_marks_canonical_as_exact_proof_strength`, `test_classify_search_evidence_mode_marks_hash_compaction_as_lossy_bug_finding`, `test_classify_search_evidence_mode_marks_symmetry_merging_as_lossy_bug_finding`
     - integration: `test_model_check_report_classifies_exact_vs_lossy_search_evidence_mode` with checked-in hash-compaction fixture `quantifier_forall_exists_hash_compaction.model.toml`.
   - Updated `docs/model_checker_status.md` and `docs/model-checking-source-first.md` to document the report contract and evidence anchors.
-- [ ] Add benchmark or regression automation that compares before/after telemetry on the same checked-in models.
+- [x] Add benchmark or regression automation that compares before/after telemetry on the same checked-in models. [26:03:06, 03:05]
+  - Added `scripts/compare_model_check_telemetry.sh` to compute Phase 33.4.2 before/after/delta telemetry rows directly from checked-in JSON artifacts and fail on reachable-state guard drift.
+  - Wired `scripts/run_model_check_matrix.sh` to regenerate `reports/model_check/OPTIMIZATION_DELTAS.md` on every matrix replay.
+  - Added integration regression `test_model_check_telemetry_comparison_script_reports_expected_deltas` to lock script output/delta rows and matrix wiring.
+  - Updated `docs/model_checker_status.md` with automation evidence + replay command (`§5.13`).
 - [ ] Reject any optimization that changes exact-mode reachable-state counts unless the change is explained by a correctness bug fix and documented.
 
 ### 33.5 Consensus protocol coverage drive
