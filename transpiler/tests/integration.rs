@@ -9935,6 +9935,20 @@ fn test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible() {
     let model_path = resolve_model_check_fixture_path("raft_missing_log_entry_domain.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
+    let model_src = std::fs::read_to_string(&model_path)
+        .unwrap_or_else(|err| panic!("failed to read raft blocker fixture: {}", err));
+    assert!(
+        model_src.contains("Intentionally omits `quantifiers.types.LLogEntry`"),
+        "raft blocker fixture should document intentional missing-domain setup"
+    );
+    assert!(
+        !model_src.contains("[quantifiers.types.LLogEntry]"),
+        "raft blocker fixture must keep `quantifiers.types.LLogEntry` absent to preserve the smallest reproducible first blocker"
+    );
+    assert!(
+        model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
+        "raft blocker fixture should stay minimal and bounded (`max_depth = 1`, `max_states = 200`)"
+    );
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([

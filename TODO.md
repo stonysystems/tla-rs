@@ -9763,7 +9763,9 @@ Rules for this phase (do not cut corners):
     - [x] **33.5.2.a.2** Re-ran exact-mode source-first RSL with a checked-in minimal model and re-classified the first blocker as missing `quantifiers.types.LConstants` domain config.
       - Updated blocker fixture/test/doc matrix references from the retired init-signature blocker to `rsl_missing_constants_domain`.
   - [ ] **33.5.2.b Raft (priority #2)**
-    - [ ] **33.5.2.b.1** Keep a checked-in minimal exact-mode Raft source-first model and blocker regression stable; confirm first blocker remains the smallest reproducible one.
+    - [x] **33.5.2.b.1** Keep a checked-in minimal exact-mode Raft source-first model and blocker regression stable; confirm first blocker remains the smallest reproducible one. [26:03:06, 06:10]
+      - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` and command-level replay; first blocker remains `Missing domain for named type \`LLogEntry\``.
+      - Strengthened regression `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` to enforce fixture intent/minimality (intentional omission of `quantifiers.types.LLogEntry`, `max_depth = 1`, `max_states = 200`).
     - [ ] **33.5.2.b.2** Land one highest-leverage fix for the Raft first blocker class (unsupported construct / missing config / performance / real counterexample), then re-classify.
   - [ ] **33.5.2.c Paxos (priority #3)**
     - [ ] **33.5.2.c.1** Keep exact-mode source-first Paxos green with checked-in model + artifact + regression evidence.

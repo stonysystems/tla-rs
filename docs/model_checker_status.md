@@ -158,7 +158,7 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
   - `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` (checked-in EPaxos blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` (checked-in PBFT blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` (checked-in ChainReplication blocker model reproduces bounded candidate expansion overflow for `LState`)
-  - `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` (checked-in Raft blocker model reproduces missing `quantifiers.types.LLogEntry` domain requirement)
+  - `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` (checked-in Raft blocker model reproduces missing `quantifiers.types.LLogEntry` domain requirement and enforces that the fixture intentionally omits that domain while staying minimal/bounded)
 
 ### 3.6 Supported protocol evidence discipline guard
 
