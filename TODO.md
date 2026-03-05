@@ -9652,7 +9652,7 @@ Rules for this phase (do not cut corners):
   - [x] VerticalPaxos blocker model: add `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and regression `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [x] EPaxos blocker model: add `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and regression `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [x] PBFT blocker model: add `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` and regression `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
-  - [ ] ChainReplication blocker model + regression.
+  - [x] ChainReplication blocker model: add `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` and regression `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
 - [ ] Add/update automated integration coverage when a protocol moves from "unsupported/untracked" to "supported".
 
 ### 33.2 Unsupported-feature audit and regression-first workflow
