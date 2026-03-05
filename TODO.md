@@ -9816,7 +9816,7 @@ Rules for this phase (do not cut corners):
       - Added regression `test_execute_model_check_linit_fallback_supports_constants_field_equalities` to lock constants-field fallback behavior under bounded `search.max_states`.
       - Re-ran source-first PBFT with checked-in fixture `pbft_state_expansion_limit.model.toml`; run is now supported (`result = ok`, `states = 1`, `transitions = 0`, `depth = 0`).
       - Re-classified PBFT in `docs/model_checker_status.md` from unsupported blocker to exact bounded run with checked-in artifact `reports/model_check/pbft_small.json` and regression `test_model_check_pbft_bounded_run`.
-  - [ ] **33.5.2.g ChainReplication (priority #7)**
+  - [x] **33.5.2.g ChainReplication (priority #7)** [26:03:04, 23:39]
     - [x] **33.5.2.g.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:06, 12:40]
       - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
       - Strengthened blocker regression `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` to enforce fixture intent/minimality (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`).
