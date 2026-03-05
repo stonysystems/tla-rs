@@ -10,12 +10,23 @@ use crate::modelcheck::ir::{
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub type PredicateOnlyBranchSolver<'a> = dyn Fn(
+        &TransitionIr,
+        &TransitionBranchIr,
+        &RuntimeValue,
+        Option<&RuntimeValue>,
+        &[ExistentialAssignment],
+        RuntimeCollectionBounds,
+    ) -> TranspileResult<Option<Vec<RuntimeValue>>>
+    + 'a;
+
 /// Optional evaluator hooks used while solving branch constraints.
 #[derive(Clone, Copy, Default)]
 pub struct SolverHooks<'a> {
     pub call_evaluator: Option<&'a CallEvaluator<'a>>,
     pub method_evaluator: Option<&'a MethodEvaluator<'a>>,
     pub quantifier_domain_evaluator: Option<&'a QuantifierDomainEvaluator<'a>>,
+    pub predicate_only_branch_solver: Option<&'a PredicateOnlyBranchSolver<'a>>,
 }
 
 /// Semantics to apply when `LNext` yields no enabled successors.
@@ -117,14 +128,49 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
 ) -> TranspileResult<BranchSolveResult> {
+    let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
+        vec![BTreeMap::new()]
+    } else {
+        existential_assignments.to_vec()
+    };
+    for assignment in &assignments {
+        if !assignment_compatible_with_branch(branch, assignment)? {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Branch `{}` received existential assignment missing required variables.",
+                    branch.label
+                ),
+            });
+        }
+    }
+
     if !branch_has_next_state_assignment(branch) {
+        if let Some(predicate_only_solver) = hooks.predicate_only_branch_solver {
+            if let Some(successors) = predicate_only_solver(
+                transition,
+                branch,
+                current_state,
+                constants,
+                &assignments,
+                bounds,
+            )? {
+                return Ok(BranchSolveResult {
+                    successors: deduplicate_successors(successors),
+                    telemetry: BranchSolveTelemetry {
+                        direct_assignment_branch_solves: 1,
+                        enumeration_fallback_branch_solves: 0,
+                        enumeration_candidate_evaluations: 0,
+                    },
+                });
+            }
+        }
         if let Some(candidates) = next_state_candidates {
             let (successors, candidate_evaluations) = solve_branch_by_candidate_enumeration(
                 transition,
                 branch,
                 current_state,
                 constants,
-                existential_assignments,
+                &assignments,
                 candidates,
                 max_candidate_evaluations_per_state_branch,
                 bounds,
@@ -152,22 +198,8 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
         ));
     }
 
-    let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
-        vec![BTreeMap::new()]
-    } else {
-        existential_assignments.to_vec()
-    };
-
     let mut successors = Vec::new();
     for assignment in assignments {
-        if !assignment_compatible_with_branch(branch, &assignment)? {
-            return Err(TranspileError::Config {
-                message: format!(
-                    "Branch `{}` received existential assignment missing required variables.",
-                    branch.label
-                ),
-            });
-        }
         if let Some(next_state) = solve_one_assignment(
             transition,
             branch,
@@ -999,6 +1031,7 @@ mod tests {
             call_evaluator: Some(&call_hook),
             method_evaluator: None,
             quantifier_domain_evaluator: None,
+            predicate_only_branch_solver: None,
         };
 
         let successors = solve_branch_successors_with_candidates(
@@ -1042,6 +1075,7 @@ mod tests {
             call_evaluator: Some(&call_hook),
             method_evaluator: None,
             quantifier_domain_evaluator: None,
+            predicate_only_branch_solver: None,
         };
 
         let result = solve_branch_successors_with_candidates_and_telemetry(
@@ -1092,6 +1126,54 @@ mod tests {
             .contains("candidate-enumeration guardrail exceeded"));
         assert!(err.to_string().contains("branch_0"));
         assert!(err.to_string().contains("limit = 1"));
+    }
+
+    #[test]
+    fn test_solve_branch_successors_with_direct_predicate_only_solver_hook() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![BranchConstraintIr::Predicate {
+                expr: Expr::Call {
+                    func: Path::single("LHelper".to_string()),
+                    args: vec![Expr::Ident("s".to_string()), Expr::Ident("s_".to_string())],
+                },
+            }],
+        };
+
+        let predicate_only_solver = |_transition: &TransitionIr,
+                                     _branch: &TransitionBranchIr,
+                                     _current_state: &RuntimeValue,
+                                     _constants: Option<&RuntimeValue>,
+                                     _existentials: &[ExistentialAssignment],
+                                     _bounds: RuntimeCollectionBounds|
+         -> TranspileResult<Option<Vec<RuntimeValue>>> {
+            Ok(Some(vec![state(9, 9)]))
+        };
+        let hooks = SolverHooks {
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain_evaluator: None,
+            predicate_only_branch_solver: Some(&predicate_only_solver),
+        };
+
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            None,
+            None,
+            bounds(),
+            hooks,
+        )
+        .unwrap();
+
+        assert_eq!(result.successors, vec![state(9, 9)]);
+        assert_eq!(result.telemetry.direct_assignment_branch_solves, 1);
+        assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 0);
+        assert_eq!(result.telemetry.enumeration_candidate_evaluations, 0);
     }
 
     #[test]

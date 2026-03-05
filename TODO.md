@@ -9683,11 +9683,14 @@ Rules for this phase (do not cut corners):
   - Replaced single-valuation resolution in `transpiler/src/main.rs` with multi-valuation filtering and per-valuation exploration, keeping constants fixed per run and aggregating exploration/solver telemetry across explored valuations.
   - Added model-check summary/report fields `constants_valuations_total` and `constants_valuations_explored` so multi-valuation behavior is auditable in CLI/JSON output.
   - Added unit coverage in `transpiler/src/main.rs` for multi-valuation execution + zero-match rejection and added protocol-style fixture `constants_multi_valuation` with regression `test_model_check_constants_multi_valuation_bounded_run`.
-- [ ] Improve predicate-only/helper-branch solving so the engine does not rely on full next-state candidate enumeration whenever a direct solve is possible.
-- [ ] For every new language feature above:
-  - add unit coverage
-  - add at least one protocol-driven integration regression
-  - update `docs/model_checker_status.md`
+- [x] Improve predicate-only/helper-branch solving so the engine does not rely on full next-state candidate enumeration whenever a direct solve is possible. [26:03:05, 20:55]
+  - Added a predicate-only direct-solver hook path in `transpiler/src/modelcheck/solver.rs` so branches without inline `s_.field == ...` assignments can still be solved without candidate enumeration when a caller-provided direct solver can discharge them.
+  - Implemented source-first helper-branch direct solving in `transpiler/src/main.rs` for `LNext` branches shaped as direct helper predicates (`LStep(s, s_, c)`), by reusing helper transition IR + branch existential expansion and solving helper branches directly when they carry explicit next-state equalities.
+  - Kept full candidate enumeration fallback for unresolved helper/predicate-only branches, with regression coverage for both fallback and direct-helper paths.
+- [x] For every new language feature above. [26:03:05, 22:20]
+  - Added explicit evaluator unit tests for `map.dom()` success/error paths (`test_eval_map_dom_method_returns_key_set`, `test_eval_map_dom_method_rejects_non_map_receiver`) so every Phase 33.3 feature has concrete unit-level anchors.
+  - Added integration guard `test_model_check_semantic_closure_features_require_unit_integration_and_status_doc_evidence` to enforce each semantic-closure feature keeps: unit regressions, integration regression(s), and status-doc evidence references.
+  - Updated `docs/model_checker_status.md` with section `3.14 Semantic-closure evidence discipline guard` and replay command coverage for the new guard test.
 
 ### 33.4 Modern performance work
 

@@ -2661,6 +2661,119 @@ fn eval_spec_function_call_recursive(
     })
 }
 
+fn try_solve_predicate_only_helper_branch(
+    transition: &verus_transpiler::modelcheck::ir::TransitionIr,
+    branch: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
+    current_state: &verus_transpiler::modelcheck::value::RuntimeValue,
+    constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
+    _existential_assignments: &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
+    bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+    bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds,
+) -> verus_transpiler::error::TranspileResult<
+    Option<Vec<verus_transpiler::modelcheck::value::RuntimeValue>>,
+> {
+    use verus_transpiler::ast::Expr;
+    use verus_transpiler::error::TranspileError;
+    use verus_transpiler::modelcheck::domain::expand_branch_existentials;
+    use verus_transpiler::modelcheck::ir::BranchConstraintIr;
+    use verus_transpiler::modelcheck::solver::{
+        solve_branch_successors_with_candidates_and_telemetry, SolverHooks,
+    };
+
+    if branch.constraints.len() != 1 {
+        return Ok(None);
+    }
+    let BranchConstraintIr::Predicate { expr } = &branch.constraints[0] else {
+        return Ok(None);
+    };
+    let Expr::Call { func, args } = expr else {
+        return Ok(None);
+    };
+
+    let expected_arity = if transition.constants_param.is_some() {
+        3
+    } else {
+        2
+    };
+    if args.len() != expected_arity {
+        return Ok(None);
+    }
+    if !matches!(&args[0], Expr::Ident(name) if name == &transition.current_state_param) {
+        return Ok(None);
+    }
+    if !matches!(&args[1], Expr::Ident(name) if name == &transition.next_state_param) {
+        return Ok(None);
+    }
+    if let Some(constants_param_name) = transition.constants_param.as_ref() {
+        if !matches!(&args[2], Expr::Ident(name) if name == constants_param_name) {
+            return Ok(None);
+        }
+        if constants.is_none() {
+            return Ok(None);
+        }
+    }
+
+    let helper_fn = match resolve_called_spec_function(&bundle.spec_functions, func) {
+        Ok(function) => function,
+        Err(_) => return Ok(None),
+    };
+    if helper_fn.params.len() != args.len() {
+        return Ok(None);
+    }
+
+    let helper_transition = match verus_transpiler::modelcheck::ir::build_transition_ir(helper_fn) {
+        Ok(transition) => transition,
+        Err(_) => return Ok(None),
+    };
+
+    let call_evaluator =
+        |func_path: &verus_transpiler::ast::Path,
+         args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
+            eval_spec_function_call_recursive(
+                &bundle.spec_functions,
+                &bundle.schema,
+                model_config,
+                func_path,
+                args,
+                bounds,
+                0,
+            )
+        };
+    let mut successors = Vec::new();
+    for helper_branch in &helper_transition.branches {
+        let helper_assignments =
+            expand_branch_existentials(helper_branch, &bundle.schema, model_config)?;
+        let solved = match solve_branch_successors_with_candidates_and_telemetry(
+            &helper_transition,
+            helper_branch,
+            current_state,
+            constants,
+            &helper_assignments,
+            None,
+            None,
+            bounds,
+            SolverHooks {
+                call_evaluator: Some(&call_evaluator),
+                method_evaluator: None,
+                quantifier_domain_evaluator: Some(&|binding: &verus_transpiler::ast::Binding| {
+                    expand_quantifier_domain_for_binding(binding, &bundle.schema, model_config)
+                }),
+                predicate_only_branch_solver: None,
+            },
+        ) {
+            Ok(solved) => solved,
+            Err(TranspileError::UnsupportedPattern { .. }) => return Ok(None),
+            Err(err) => return Err(err),
+        };
+        successors.extend(solved.successors);
+    }
+
+    Ok(Some(
+        verus_transpiler::modelcheck::solver::deduplicate_successors(successors),
+    ))
+}
+
 fn execute_model_check(
     bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
@@ -2838,9 +2951,28 @@ fn execute_model_check(
                                 func_path,
                                 args,
                                 bounds,
-                                0,
-                            )
-                        };
+                            0,
+                        )
+                    };
+                    let predicate_only_branch_solver =
+                    |transition_ir: &verus_transpiler::modelcheck::ir::TransitionIr,
+                     branch_ir: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
+                     current_state: &verus_transpiler::modelcheck::value::RuntimeValue,
+                     constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
+                     existential_assignments:
+                         &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
+                     bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds| {
+                        try_solve_predicate_only_helper_branch(
+                            transition_ir,
+                            branch_ir,
+                            current_state,
+                            constants,
+                            existential_assignments,
+                            bundle,
+                            model_config,
+                            bounds,
+                        )
+                    };
                     let solved = solve_branch_successors_with_candidates_and_telemetry(
                         &transition,
                         branch,
@@ -2854,6 +2986,7 @@ fn execute_model_check(
                             call_evaluator: Some(&call_evaluator),
                             method_evaluator: None,
                             quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+                            predicate_only_branch_solver: Some(&predicate_only_branch_solver),
                         },
                     )?;
                     run_enumeration_summary.direct_assignment_branch_solves +=
@@ -2930,34 +3063,54 @@ fn execute_model_check(
                             .get(&branch.label)
                             .map(Vec::as_slice)
                             .unwrap_or(&[]);
-                        let call_evaluator =
-                            |func_path: &verus_transpiler::ast::Path,
-                             args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
-                                eval_spec_function_call_recursive(
+                    let call_evaluator =
+                        |func_path: &verus_transpiler::ast::Path,
+                         args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
+                            eval_spec_function_call_recursive(
                                     &bundle.spec_functions,
                                     &bundle.schema,
                                     model_config,
                                     func_path,
                                     args,
                                     bounds,
-                                    0,
-                                )
-                            };
-                        let solved = solve_branch_successors_with_candidates_and_telemetry(
-                            &transition,
-                            branch,
-                            state,
+                                0,
+                            )
+                        };
+                    let predicate_only_branch_solver =
+                        |transition_ir: &verus_transpiler::modelcheck::ir::TransitionIr,
+                         branch_ir: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
+                         current_state: &verus_transpiler::modelcheck::value::RuntimeValue,
+                         constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
+                         existential_assignments:
+                             &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
+                         bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds| {
+                            try_solve_predicate_only_helper_branch(
+                                transition_ir,
+                                branch_ir,
+                                current_state,
+                                constants,
+                                existential_assignments,
+                                bundle,
+                                model_config,
+                                bounds,
+                            )
+                        };
+                    let solved = solve_branch_successors_with_candidates_and_telemetry(
+                        &transition,
+                        branch,
+                        state,
                             Some(constants_value),
                             branch_assignments,
                             Some(&state_candidates),
                             Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
                             bounds,
-                            SolverHooks {
-                                call_evaluator: Some(&call_evaluator),
-                                method_evaluator: None,
-                                quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
-                            },
-                        )?;
+                        SolverHooks {
+                            call_evaluator: Some(&call_evaluator),
+                            method_evaluator: None,
+                            quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+                            predicate_only_branch_solver: Some(&predicate_only_branch_solver),
+                        },
+                    )?;
                         let successors = solved.successors;
                         for successor in successors {
                             traced_successors.push(TracedSuccessor {
@@ -6351,8 +6504,7 @@ verus! {
             r#"
 verus! {
     pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
-        (s.value == 0 && s_.value == 1 && s_.value <= c.limit)
-        || (s.value == 1 && s_.value == 1 && s_.value <= c.limit)
+        s_.value <= c.limit
     }
 
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
@@ -6424,6 +6576,102 @@ max = 1
                 .enumeration
                 .candidate_evaluation_guardrail_per_state_branch,
             10_000
+        );
+    }
+
+    #[test]
+    fn test_execute_model_check_uses_direct_helper_branch_solving_when_possible() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 0 && s_.value == 1 && s_.value <= c.limit)
+        || (s.value == 1 && s_.value == 1 && s_.value <= c.limit)
+    }
+
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        LStep(s, s_, c)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .direct_assignment_branch_solves,
+            2
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_fallback_branch_solves,
+            0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_candidate_evaluations,
+            0
         );
     }
 

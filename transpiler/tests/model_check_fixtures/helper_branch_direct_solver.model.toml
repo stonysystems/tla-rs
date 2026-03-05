@@ -1,0 +1,10 @@
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[search]
+max_depth = 2
+max_states = 10

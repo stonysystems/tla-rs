@@ -59,7 +59,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - `transpiler/src/modelcheck/domain.rs` only expands generics for concrete built-ins (`Seq`, `Set`, `Map`) and rejects broader generic forms.
 - `transpiler/src/modelcheck/domain.rs` fails unresolved named-type domains with `Missing domain for named type ...` until `quantifiers.types.<TypeName>` is provided.
 - `transpiler/src/main.rs` now explores all resolved `LConstants` valuations; model-check preflight still fails on zero matching `LConstants` valuations after applying assignments/domains.
-- `transpiler/src/modelcheck/solver.rs` still uses candidate-state enumeration fallback for predicate-only/helper branches; runs are now bounded by a hard guardrail (`candidate_evaluation_guardrail_per_state_branch = 10000`) and expose fallback telemetry in JSON/CLI summaries.
+- `transpiler/src/modelcheck/solver.rs` now supports a predicate-only direct-solver hook path (used by source-first model check for direct helper-call branches such as `LStep(s, s_, c)`), and otherwise falls back to candidate-state enumeration for unresolved predicate-only/helper branches; fallback runs are bounded by a hard guardrail (`candidate_evaluation_guardrail_per_state_branch = 10000`) and expose telemetry in JSON/CLI summaries.
 - `transpiler/src/modelcheck/solver.rs` rejects predicate-only branches without candidate states using `no direct next-state equality constraints` errors.
 - `transpiler/src/main.rs` helper-call execution still errors when it could not resolve helper call names or when helper-call recursion exceeded depth limit.
 
@@ -191,6 +191,19 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 
 - `transpiler/tests/integration.rs`:
   - `test_model_check_constants_multi_valuation_bounded_run` verifies model-check execution explores multiple resolved `LConstants` valuations in one run and reports aggregated summary counts (`transpiler/tests/model_check_fixtures/constants_multi_valuation.*`).
+
+### 3.13 Predicate-only helper direct-solver fixture
+
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_helper_branch_direct_solver_bounded_run` verifies model-check execution can solve direct helper-call branches without candidate enumeration fallback when helper transition constraints are directly solvable (`transpiler/tests/model_check_fixtures/helper_branch_direct_solver.*`).
+
+### 3.14 Semantic-closure evidence discipline guard
+
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_semantic_closure_features_require_unit_integration_and_status_doc_evidence` enforces that each Phase 33.3 semantic-closure feature keeps all three evidence anchors:
+    - unit regression(s) in evaluator/main/solver sources
+    - integration regression in `transpiler/tests/integration.rs`
+    - status-doc evidence section + test references in this file
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
@@ -396,6 +409,8 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_struct_update_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_map_dom_method_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_constants_multi_valuation_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_helper_branch_direct_solver_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_semantic_closure_features_require_unit_integration_and_status_doc_evidence -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_supported_protocol_rows_require_automated_evidence -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_require_blocker_regressions -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers -- --nocapture

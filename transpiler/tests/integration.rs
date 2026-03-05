@@ -7754,6 +7754,19 @@ fn resolve_model_check_fixture_path(name: &str) -> std::path::PathBuf {
     path
 }
 
+fn collect_test_function_names(source: &str) -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("fn test_") {
+            if let Some(paren_index) = rest.find('(') {
+                names.insert(format!("test_{}", &rest[..paren_index]));
+            }
+        }
+    }
+    names
+}
+
 #[test]
 fn test_model_check_supported_protocol_rows_require_automated_evidence() {
     let repo_root = resolve_repo_root_for_integration();
@@ -7777,15 +7790,7 @@ fn test_model_check_supported_protocol_rows_require_automated_evidence() {
         )
     });
 
-    let mut integration_test_names = std::collections::BTreeSet::new();
-    for line in integration_src.lines() {
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix("fn test_") {
-            if let Some(paren_index) = rest.find('(') {
-                integration_test_names.insert(format!("test_{}", &rest[..paren_index]));
-            }
-        }
-    }
+    let integration_test_names = collect_test_function_names(&integration_src);
     assert!(
         !integration_test_names.is_empty(),
         "failed to discover integration test names in {}",
@@ -7903,15 +7908,7 @@ fn test_model_check_unsupported_protocol_rows_require_blocker_regressions() {
         )
     });
 
-    let mut integration_test_names = std::collections::BTreeSet::new();
-    for line in integration_src.lines() {
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix("fn test_") {
-            if let Some(paren_index) = rest.find('(') {
-                integration_test_names.insert(format!("test_{}", &rest[..paren_index]));
-            }
-        }
-    }
+    let integration_test_names = collect_test_function_names(&integration_src);
     assert!(
         !integration_test_names.is_empty(),
         "failed to discover integration test names in {}",
@@ -8330,6 +8327,218 @@ fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
             expected.source_file
         );
     }
+}
+
+#[test]
+fn test_model_check_semantic_closure_features_require_unit_integration_and_status_doc_evidence() {
+    let repo_root = resolve_repo_root_for_integration();
+    let status_doc = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_doc).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc.display(),
+            err
+        )
+    });
+
+    let evaluator_src_path = repo_root.join("transpiler/src/modelcheck/evaluator.rs");
+    let evaluator_src = std::fs::read_to_string(&evaluator_src_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read evaluator source {}: {}",
+            evaluator_src_path.display(),
+            err
+        )
+    });
+    let main_src_path = repo_root.join("transpiler/src/main.rs");
+    let main_src = std::fs::read_to_string(&main_src_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read main source {}: {}",
+            main_src_path.display(),
+            err
+        )
+    });
+    let solver_src_path = repo_root.join("transpiler/src/modelcheck/solver.rs");
+    let solver_src = std::fs::read_to_string(&solver_src_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read solver source {}: {}",
+            solver_src_path.display(),
+            err
+        )
+    });
+
+    let integration_src_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("integration.rs");
+    let integration_src = std::fs::read_to_string(&integration_src_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read integration source {}: {}",
+            integration_src_path.display(),
+            err
+        )
+    });
+    let integration_test_names = collect_test_function_names(&integration_src);
+
+    let assert_unit_tests =
+        |feature: &str, source_label: &str, source: &str, tests: &[&str]| {
+            for test_name in tests {
+                let anchor = format!("fn {}(", test_name);
+                assert!(
+                    source.contains(&anchor),
+                    "feature `{}` is missing unit regression `{}` in {}",
+                    feature,
+                    test_name,
+                    source_label
+                );
+            }
+        };
+
+    let assert_integration_tests = |feature: &str, tests: &[&str]| {
+        for test_name in tests {
+            assert!(
+                integration_test_names.contains(*test_name),
+                "feature `{}` is missing integration regression `{}` in transpiler/tests/integration.rs",
+                feature,
+                test_name
+            );
+        }
+    };
+
+    let assert_doc_fragments = |feature: &str, fragments: &[&str]| {
+        for fragment in fragments {
+            assert!(
+                status_src.contains(fragment),
+                "feature `{}` is missing status-doc evidence fragment `{}` in docs/model_checker_status.md",
+                feature,
+                fragment
+            );
+        }
+    };
+
+    assert_unit_tests(
+        "finite-domain quantifiers",
+        "transpiler/src/modelcheck/evaluator.rs",
+        &evaluator_src,
+        &[
+            "test_eval_quantifiers_with_finite_domain_resolver",
+            "test_eval_multi_variable_quantifiers_use_bounded_nested_expansion",
+        ],
+    );
+    assert_integration_tests(
+        "finite-domain quantifiers",
+        &["test_model_check_quantifier_forall_exists_bounded_run"],
+    );
+    assert_doc_fragments(
+        "finite-domain quantifiers",
+        &[
+            "### 3.8 Quantifier semantic-closure fixture",
+            "test_model_check_quantifier_forall_exists_bounded_run",
+        ],
+    );
+
+    assert_unit_tests(
+        "match expressions",
+        "transpiler/src/modelcheck/evaluator.rs",
+        &evaluator_src,
+        &[
+            "test_eval_match_expression_variant_binding_and_guard",
+            "test_eval_match_expression_struct_pattern_binds_fields",
+        ],
+    );
+    assert_integration_tests(
+        "match expressions",
+        &["test_model_check_match_expression_bounded_run"],
+    );
+    assert_doc_fragments(
+        "match expressions",
+        &[
+            "### 3.9 Match-expression semantic-closure fixture",
+            "test_model_check_match_expression_bounded_run",
+        ],
+    );
+
+    assert_unit_tests(
+        "struct-update expressions",
+        "transpiler/src/modelcheck/evaluator.rs",
+        &evaluator_src,
+        &[
+            "test_eval_struct_update_expression_updates_struct_fields",
+            "test_eval_struct_update_parser_form_with_dotdot_base",
+        ],
+    );
+    assert_integration_tests(
+        "struct-update expressions",
+        &["test_model_check_struct_update_bounded_run"],
+    );
+    assert_doc_fragments(
+        "struct-update expressions",
+        &[
+            "### 3.10 Struct-update semantic-closure fixture",
+            "test_model_check_struct_update_bounded_run",
+        ],
+    );
+
+    assert_unit_tests(
+        "map.dom builtin method",
+        "transpiler/src/modelcheck/evaluator.rs",
+        &evaluator_src,
+        &[
+            "test_eval_map_dom_method_returns_key_set",
+            "test_eval_map_dom_method_rejects_non_map_receiver",
+        ],
+    );
+    assert_integration_tests(
+        "map.dom builtin method",
+        &["test_model_check_map_dom_method_bounded_run"],
+    );
+    assert_doc_fragments(
+        "map.dom builtin method",
+        &[
+            "### 3.11 Map-domain builtin semantic-closure fixture",
+            "test_model_check_map_dom_method_bounded_run",
+        ],
+    );
+
+    assert_unit_tests(
+        "multi-valuation constants exploration",
+        "transpiler/src/main.rs",
+        &main_src,
+        &["test_execute_model_check_explores_multiple_constants_valuations"],
+    );
+    assert_integration_tests(
+        "multi-valuation constants exploration",
+        &["test_model_check_constants_multi_valuation_bounded_run"],
+    );
+    assert_doc_fragments(
+        "multi-valuation constants exploration",
+        &[
+            "### 3.12 Multi-constants valuation semantic-closure fixture",
+            "test_model_check_constants_multi_valuation_bounded_run",
+        ],
+    );
+
+    assert_unit_tests(
+        "predicate-only/helper direct solving",
+        "transpiler/src/main.rs",
+        &main_src,
+        &["test_execute_model_check_uses_direct_helper_branch_solving_when_possible"],
+    );
+    assert_unit_tests(
+        "predicate-only/helper direct solving",
+        "transpiler/src/modelcheck/solver.rs",
+        &solver_src,
+        &["test_solve_branch_successors_with_direct_predicate_only_solver_hook"],
+    );
+    assert_integration_tests(
+        "predicate-only/helper direct solving",
+        &["test_model_check_helper_branch_direct_solver_bounded_run"],
+    );
+    assert_doc_fragments(
+        "predicate-only/helper direct solving",
+        &[
+            "### 3.13 Predicate-only helper direct-solver fixture",
+            "test_model_check_helper_branch_direct_solver_bounded_run",
+        ],
+    );
 }
 
 fn run_model_check_json_report_from_fixtures(
@@ -8821,6 +9030,59 @@ fn test_model_check_constants_multi_valuation_bounded_run() {
     assert_eq!(
         transitions, 2,
         "fixture should aggregate two transitions (one per constants valuation); report={}",
+        report
+    );
+}
+
+#[test]
+fn test_model_check_helper_branch_direct_solver_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "helper_branch_direct_solver.protocol.rs",
+        "helper_branch_direct_solver.types.rs",
+        "helper_branch_direct_solver.model.toml",
+    );
+
+    let result = report
+        .get("result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, "ok",
+        "helper-branch direct-solver fixture should pass; report={}",
+        report
+    );
+
+    let summary = report
+        .get("summary")
+        .unwrap_or_else(|| panic!("missing summary in report: {}", report));
+    let direct = summary
+        .get("direct_assignment_branch_solves")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let fallback = summary
+        .get("enumeration_fallback_branch_solves")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let candidate_evals = summary
+        .get("enumeration_candidate_evaluations")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    assert_eq!(
+        direct, 2,
+        "helper branch should be solved directly for both explored states; report={}",
+        report
+    );
+    assert_eq!(
+        fallback, 0,
+        "helper branch should not use enumeration fallback when direct helper solving applies; report={}",
+        report
+    );
+    assert_eq!(
+        candidate_evals, 0,
+        "helper branch direct solving should avoid candidate enumeration; report={}",
         report
     );
 }

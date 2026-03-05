@@ -1328,6 +1328,44 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_map_dom_method_returns_key_set() {
+        let dom_expr = Expr::MethodCall {
+            receiver: Box::new(Expr::MapLit(vec![
+                (
+                    Expr::Literal(Literal::Int(1)),
+                    Expr::Literal(Literal::Bool(true)),
+                ),
+                (
+                    Expr::Literal(Literal::Int(2)),
+                    Expr::Literal(Literal::Bool(false)),
+                ),
+            ])),
+            method: "dom".to_string(),
+            args: vec![],
+        };
+
+        let dom_out = eval_expr(&dom_expr, &EvalContext::new(test_bounds())).unwrap();
+        let RuntimeValue::Set(keys) = dom_out else {
+            panic!("expected map.dom() to evaluate to a set");
+        };
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains(&RuntimeValue::Int(1)));
+        assert!(keys.contains(&RuntimeValue::Int(2)));
+    }
+
+    #[test]
+    fn test_eval_map_dom_method_rejects_non_map_receiver() {
+        let dom_expr = Expr::MethodCall {
+            receiver: Box::new(Expr::SeqLit(vec![Expr::Literal(Literal::Int(1))])),
+            method: "dom".to_string(),
+            args: vec![],
+        };
+
+        let err = eval_expr(&dom_expr, &EvalContext::new(test_bounds())).unwrap_err();
+        assert!(err.to_string().contains("`.dom()` expects Map receiver"));
+    }
+
+    #[test]
     fn test_eval_ident_resolves_enum_unit_variant_path() {
         let expr = Expr::Ident("LNodeRole::Primary".to_string());
         let out = eval_expr(&expr, &EvalContext::new(test_bounds())).unwrap();

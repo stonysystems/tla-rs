@@ -206,6 +206,8 @@ Finite-domain expansion and runtime values currently cover:
   - `symmetry_fields = [...]`: safe only when those fields are truly permutation-symmetric by protocol design.
   - `por_heuristic = "invisible_branch"`: safe only for safety checks under its conservative syntactic predicate; keep deadlock checking off.
 - Helper-call limitations:
+  - direct helper-call branch solving is available for simple `LStep(s, s_, c)`-style wrappers when helper branches expose direct next-state equalities.
+  - unresolved predicate-only helper branches still use bounded candidate enumeration fallback.
   - helper predicates/functions must resolve unambiguously from ingested sources.
   - recursive helper evaluation has a bounded recursion depth.
 
