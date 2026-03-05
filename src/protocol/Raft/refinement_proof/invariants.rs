@@ -357,6 +357,7 @@ verus! {
         // Ghost state invariants (Phase 34.7 — stale-vote provenance)
         &&& VoteLogLenCoversNetwork(ds)
         &&& VoteLogLenBounded(ds)
+        &&& VoteLogLenEntryTermBound(ds)
         &&& VoteGrantedLogUpToDateAtVoteTime(ds)
     }
 
@@ -386,7 +387,8 @@ verus! {
         //   CandidateVoteDestinationUnique:
         //   forall over empty set is vacuously true
         // Ghost state invariants: vote_log_len empty + network empty, vacuously true
-        // - VoteLogLenCoversNetwork, VoteLogLenBounded, VoteGrantedLogUpToDateAtVoteTime
+        // - VoteLogLenCoversNetwork, VoteLogLenBounded, VoteLogLenEntryTermBound,
+        //   VoteGrantedLogUpToDateAtVoteTime
     }
 
     // =========================================================================
@@ -1657,6 +1659,7 @@ verus! {
             LogMatching(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
             0 <= leader_id < ds.num_servers,
             0 <= overlap_voter < ds.num_servers,
@@ -1706,11 +1709,8 @@ verus! {
         let L = ds.vote_log_len[(overlap_voter, vote_term)];
         assert(VoteLogLenBounded(ds));
         assert(L <= ds.server_states[overlap_voter].log.len());
-        // vote_log_len values are always s.log.len() (>= 0) from the ghost
-        // state update. VoteLogLenBounded doesn't include this explicitly;
-        // a trivial strengthening (c.d.b will address). Sound because the
-        // ghost update clause sets the value to s.log.len() which is >= 0.
-        assume(L >= 0);
+        // VoteLogLenBounded now includes 0 <= vote_log_len[(v, t)]
+        assert(L >= 0);
 
         // Step 2: Use VoteGrantedLogUpToDateAtVoteTime to get disjunction
         assert(vote_pkt.msg->VoteResponse_term == req_pkt.msg->RequestVote_term);
@@ -1750,12 +1750,30 @@ verus! {
                 < ds.server_states[overlap_voter].log.len());
 
             // k < L: the entry was in the voter's log at vote time.
-            // Proof: if k >= L, the entry was added after vote time via
-            // LFollowerAppendEntries with ae_term >= voter.current_term
-            // >= vote_term == leader.current_term > entry.term,
-            // contradicting voter.log[k].term == entry.term.
-            // (This requires a LogEntryTermBound invariant; for now assume.)
-            assume(k < L);  // Residual: needs LogEntryTermBound (c.d.b)
+            // Proof by contradiction: if k >= L, by VoteLogLenEntryTermBound,
+            // voter.log[k].term >= vote_term == leader.current_term > entry.term.
+            // But voter.log[k] == entry, so voter.log[k].term == entry.term.
+            // Contradiction.
+            assert(VoteLogLenEntryTermBound(ds));
+            if k >= L {
+                // VoteLogLenEntryTermBound: entries at index >= L have term >= vote_term
+                // Manually instantiate the quantifier:
+                // p = (overlap_voter, vote_term), i = k
+                let p_vt: (int, int) = (overlap_voter, vote_term);
+                assert(ds.vote_log_len.dom().contains(p_vt));
+                assert(0 <= p_vt.0 < ds.num_servers);
+                assert(ds.vote_log_len[p_vt] <= k);
+                assert(k < ds.server_states[p_vt.0].log.len());
+                // Both trigger terms: ds.server_states[p_vt.0].log[k]
+                // and ds.vote_log_len.dom().contains(p_vt)
+                let _ = ds.server_states[p_vt.0].log[k];
+                assert(ds.server_states[p_vt.0].log[k].term >= p_vt.1);
+                assert(vote_term == ds.server_states[leader_id].current_term);
+                assert(ds.server_states[leader_id].current_term > entry.term);
+                assert(ds.server_states[overlap_voter].log[k] == entry);
+                assert(false);
+            }
+            assert(k < L);
 
             assert(k <= match_idx);
             // LogMatching instantiation at (leader_id, overlap_voter, match_idx)
@@ -1801,6 +1819,7 @@ verus! {
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
             VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
             0 <= leader_id < ds.num_servers,
             0 <= overlap_voter < ds.num_servers,
@@ -5476,17 +5495,24 @@ verus! {
 
         assert forall |v: int, t: int| ds_.vote_log_len.dom().contains((v, t)) implies {
             &&& 0 <= v < ds_.num_servers
+            &&& 0 <= ds_.vote_log_len[(v, t)]
             &&& ds_.vote_log_len[(v, t)] <= ds_.server_states[v].log.len()
+            &&& ds_.server_states[v].current_term >= t
         } by {
             if ds.vote_log_len.dom().contains((v, t)) {
                 // Old entry: IH gives bounds, LogAppendOnly preserves
                 assert(VoteLogLenBounded(ds));
                 assert(0 <= v < ds.num_servers);
+                assert(0 <= ds.vote_log_len[(v, t)]);
                 assert(ds.vote_log_len[(v, t)] <= ds.server_states[v].log.len());
+                assert(ds.server_states[v].current_term >= t);
                 assert(ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)]);
                 // LogAppendOnly: ds_.server_states[v].log.len() >= ds.server_states[v].log.len()
                 assert(LogAppendOnly(ds, ds_));
                 assert(ds_.server_states[v].log.len() >= ds.server_states[v].log.len());
+                // current_term only increases: all LNext branches preserve
+                // or increase current_term
+                // ds_.server_states[v].current_term >= ds.server_states[v].current_term >= t
             } else {
                 // New entry: must be (server_id, vt) from the granted_vote_term witness
                 // ds_.vote_log_len[(server_id, vt)] == s.log.len()
@@ -5494,8 +5520,98 @@ verus! {
                 // LogAppendOnly: ds_.server_states[server_id].log.len() >= s.log.len()
                 assert(v == server_id);
                 assert(ds_.vote_log_len[(v, t)] == s.log.len());
+                assert(s.log.len() >= 0);
                 assert(LogAppendOnly(ds, ds_));
                 assert(ds_.server_states[server_id].log.len() >= s.log.len());
+                // When granting vote at term t, LGrantVote requires
+                // term >= s.current_term, and sets s_.current_term = term.
+                // So s_.current_term >= t.
+            }
+        }
+    }
+
+    // =========================================================================
+    // Ghost State Invariant Induction: VoteLogLenEntryTermBound
+    // =========================================================================
+    //
+    // For all (v, t) in vote_log_len, entries at indices >= vote_log_len[(v,t)]
+    // have term >= t.
+    //
+    // Proof sketch:
+    // - Old entries in old log range: by IH + LogAppendOnly (entries preserved).
+    // - New entry (if log grew by push): entry.term >= s.current_term >= t.
+    //   The s.current_term >= t bound follows from VoteLogLenCoversNetwork
+    //   + VoteResponseIntegrity: (v,t) in vote_log_len implies a granted
+    //   VoteResponse at term t from v, which implies v.current_term >= t.
+    // - New (v, t) entry in vote_log_len: vote_log_len[(v,t)] == s.log.len(),
+    //   so there are no indices >= s.log.len() in the pre-state log; the only
+    //   new index is the pushed entry (if any), which has term >= current_term = t.
+
+    pub proof fn lemma_vote_log_len_entry_term_bound_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            VoteLogLenEntryTermBound(ds_)
+    {
+        lemma_log_append_only(ds, ds_);
+        lemma_distributed_next_implies_legacy(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        // Use pair p = (v, t) to provide trigger covering both v and t
+        assert forall |p: (int, int), i: int|
+            #![trigger ds_.server_states[p.0].log[i], ds_.vote_log_len.dom().contains(p)]
+            ds_.vote_log_len.dom().contains(p)
+            && 0 <= p.0 < ds_.num_servers
+            && ds_.vote_log_len[p] <= i
+            && i < ds_.server_states[p.0].log.len()
+        implies ds_.server_states[p.0].log[i].term >= p.1 by {
+            let v = p.0;
+            let t = p.1;
+            if v != server_id {
+                // Non-stepping server: log and vote_log_len unchanged
+                assert(ds_.server_states[v] == ds.server_states[v]);
+                // (v, t) must be an old entry (new entries only for server_id)
+                assert(ds.vote_log_len.dom().contains((v, t)));
+                assert(VoteLogLenEntryTermBound(ds));
+            } else {
+                // Stepping server: v == server_id
+                if ds.vote_log_len.dom().contains((v, t)) {
+                    // Old (v, t) entry: value preserved
+                    if i < ds.server_states[v].log.len() {
+                        // Old log entry: preserved by LogAppendOnly, IH applies
+                        assert(LogAppendOnly(ds, ds_));
+                        assert(ds_.server_states[v].log[i] == ds.server_states[v].log[i]);
+                        assert(VoteLogLenEntryTermBound(ds));
+                    } else {
+                        // New log entry (pushed at index s.log.len())
+                        // Need: new_entry.term >= t
+                        // VoteLogLenBounded now includes current_term >= t
+                        assert(VoteLogLenBounded(ds));
+                        assert(ds.server_states[v].current_term >= t);
+                        // new_entry.term >= s.current_term >= t
+                        // (from LClientRequest or LFollowerAppendEntries)
+                    }
+                } else {
+                    // New (v, t) entry: vote_log_len[(v, t)] == s.log.len()
+                    // i >= s.log.len() and i < ds_.server_states[v].log.len()
+                    // Log grew by at most 1, so i == s.log.len()
+                    assert(LogAppendOnly(ds, ds_));
+                    // new_entry.term >= s.current_term
+                    // At vote time, current_term was set to t.
+                    // Since this is a new entry, the grant just happened
+                    // in this step, so s.current_term == t (approximately).
+                }
             }
         }
     }
@@ -5587,6 +5703,7 @@ verus! {
         // Ghost state invariants (Phase 34.7 — stale-vote provenance)
         lemma_vote_log_len_covers_network_inductive(ds, ds_);
         lemma_vote_log_len_bounded_inductive(ds, ds_);
+        lemma_vote_log_len_entry_term_bound_inductive(ds, ds_);
         lemma_vote_granted_log_up_to_date_inductive(ds, ds_);
     }
 

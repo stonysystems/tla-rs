@@ -223,8 +223,33 @@ verus! {
     pub open spec fn VoteLogLenBounded(ds: RaftDistributedState) -> bool {
         forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t)) ==> {
             &&& 0 <= v < ds.num_servers
+            &&& 0 <= ds.vote_log_len[(v, t)]
             &&& ds.vote_log_len[(v, t)] <= ds.server_states[v].log.len()
+            &&& ds.server_states[v].current_term >= t
         }
+    }
+
+    // =========================================================================
+    // Message Invariant 6b: Vote Log Len Entry Term Bound
+    // =========================================================================
+    //
+    // For every (v, t) in vote_log_len, all log entries at indices >= the
+    // recorded vote-time length have term >= t.
+    //
+    // Intuition: when server v grants a vote at term t, vote_log_len records
+    // v's log length L. After that point, v's current_term >= t (terms only
+    // increase). Any new log entry added via LClientRequest or
+    // LFollowerAppendEntries has term >= current_term >= t. So entries at
+    // indices >= L all have term >= t.
+
+    pub open spec fn VoteLogLenEntryTermBound(ds: RaftDistributedState) -> bool {
+        forall |p: (int, int), i: int|
+            #![trigger ds.server_states[p.0].log[i], ds.vote_log_len.dom().contains(p)]
+            ds.vote_log_len.dom().contains(p)
+            && 0 <= p.0 < ds.num_servers
+            && ds.vote_log_len[p] <= i
+            && i < ds.server_states[p.0].log.len()
+        ==> ds.server_states[p.0].log[i].term >= p.1
     }
 
     // =========================================================================
