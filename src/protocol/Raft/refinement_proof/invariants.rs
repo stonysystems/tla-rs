@@ -1814,6 +1814,47 @@ verus! {
         } else if req_last_log_term > voter_vtl {
             // Residual (a): strict-term
             // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c)
+
+            // Shared fact: strict-term predicate
+            assert(req_last_log_term > voter_vtl);
+
+            // Shared fact: L >= 0 (already established above at line 1735)
+            assert(L >= 0);
+
+            // Shared fact: k < L by VoteLogLenEntryTermBound contradiction.
+            // If k >= L, then voter.log[k].term >= vote_term > entry.term,
+            // but voter.log[k] == entry, so voter.log[k].term == entry.term.
+            // Contradiction.
+            assert(VoteLogLenEntryTermBound(ds));
+            if k >= L {
+                let p_vt: (int, int) = (overlap_voter, vote_term);
+                assert(ds.vote_log_len.dom().contains(p_vt));
+                assert(0 <= p_vt.0 < ds.num_servers);
+                assert(ds.vote_log_len[p_vt] <= k);
+                assert(k < ds.server_states[p_vt.0].log.len());
+                let _ = ds.server_states[p_vt.0].log[k];
+                assert(ds.server_states[p_vt.0].log[k].term >= p_vt.1);
+                assert(vote_term == ds.server_states[leader_id].current_term);
+                assert(ds.server_states[leader_id].current_term > entry.term);
+                assert(ds.server_states[overlap_voter].log[k] == entry);
+                assert(false);
+            }
+            assert(k < L);
+
+            // Shared fact: packet alignment (already established above)
+            assert(vote_pkt.msg->VoteResponse_term
+                == req_pkt.msg->RequestVote_term);
+            assert(vote_pkt.src == req_pkt.dst);
+            assert(vote_pkt.dst == req_pkt.src);
+
+            // Shared fact: L > 0 (follows from k >= 0 and k < L)
+            assert(L > 0);
+
+            // Shared fact: req_last_log_index bounds
+            assert(0 <= req_last_log_index
+                <= ds.server_states[leader_id].log.len());
+
+            // Residual: constructive leader-entry transfer (Phase ...b.c.3)
             assume(
                 ds.server_states[leader_id].log.len() > k
                     && ds.server_states[leader_id].log[k] == entry
