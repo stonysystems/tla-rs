@@ -9694,7 +9694,10 @@ Rules for this phase (do not cut corners):
 
 ### 33.4 Modern performance work
 
-- [ ] Establish exact-mode baseline numbers for checked-in protocol models before changing performance code. Record at least: `states`, `transitions`, `depth`, `elapsed_ms`, and any reduction telemetry.
+- [x] Establish exact-mode baseline numbers for checked-in protocol models before changing performance code. [26:03:05, 23:05]
+  - Added an explicit Phase 33.4 baseline snapshot table in `docs/model_checker_status.md` section `4.1`, populated from checked-in exact-mode protocol artifacts (`reports/model_check/{paxos,primarybackup,twophase,leaderelection}_small.json`).
+  - Recorded required metrics per model: `states`, `transitions`, `depth`, `elapsed_ms`, and reduction telemetry (`pruned_by_por`, `symmetry_collapses`, `hash_compaction_collisions`).
+  - Added regression `test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts` to keep the baseline table synchronized with checked-in JSON artifacts and exact (`state_dedup=canonical`) mode.
 - [ ] Land at least two sound exact-mode optimizations beyond the current baseline, chosen because they unblock real workloads. Examples:
   - branch-enablement caching
   - helper-call/result memoization

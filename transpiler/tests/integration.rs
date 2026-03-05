@@ -7886,6 +7886,143 @@ fn test_model_check_supported_protocol_rows_require_automated_evidence() {
 }
 
 #[test]
+fn test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts() {
+    struct BaselineCase<'a> {
+        protocol: &'a str,
+        artifact_path: &'a str,
+    }
+
+    let cases = [
+        BaselineCase {
+            protocol: "Paxos",
+            artifact_path: "reports/model_check/paxos_small.json",
+        },
+        BaselineCase {
+            protocol: "PrimaryBackup",
+            artifact_path: "reports/model_check/primarybackup_small.json",
+        },
+        BaselineCase {
+            protocol: "TwoPhase",
+            artifact_path: "reports/model_check/twophase_small.json",
+        },
+        BaselineCase {
+            protocol: "LeaderElection",
+            artifact_path: "reports/model_check/leaderelection_small.json",
+        },
+    ];
+
+    let repo_root = resolve_repo_root_for_integration();
+    let status_doc = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_doc).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc.display(),
+            err
+        )
+    });
+
+    assert!(
+        status_src.contains("### 4.1 Exact-mode performance baseline snapshot (Phase 33.4)"),
+        "status doc is missing exact-mode baseline snapshot section"
+    );
+    let baseline_section = status_src
+        .split("### 4.1 Exact-mode performance baseline snapshot (Phase 33.4)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## 5. Exact reproduction commands").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate baseline section in {}; expected section 4.1 before section 5",
+                status_doc.display()
+            )
+        });
+    assert!(
+        baseline_section.contains("`pruned_by_por`")
+            && baseline_section.contains("`symmetry_collapses`")
+            && baseline_section.contains("`hash_compaction_collisions`"),
+        "baseline snapshot table must include reduction telemetry columns"
+    );
+
+    for case in cases {
+        let artifact_abs = repo_root.join(case.artifact_path);
+        let artifact_src = std::fs::read_to_string(&artifact_abs).unwrap_or_else(|err| {
+            panic!(
+                "failed to read baseline artifact {}: {}",
+                artifact_abs.display(),
+                err
+            )
+        });
+        let report: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(|err| {
+            panic!(
+                "failed to parse baseline artifact JSON {}: {}",
+                artifact_abs.display(),
+                err
+            )
+        });
+
+        let get_u64 = |pointer: &str| -> u64 {
+            report.pointer(pointer).and_then(|v| v.as_u64()).unwrap_or_else(|| {
+                panic!(
+                    "baseline artifact `{}` missing numeric pointer `{}`",
+                    case.artifact_path, pointer
+                )
+            })
+        };
+
+        assert_eq!(
+            report.get("result").and_then(|v| v.as_str()),
+            Some("ok"),
+            "baseline artifact `{}` must be a successful run",
+            case.artifact_path
+        );
+        assert_eq!(
+            report
+                .pointer("/search/state_dedup")
+                .and_then(|v| v.as_str()),
+            Some("canonical"),
+            "baseline artifact `{}` must use exact canonical dedup mode",
+            case.artifact_path
+        );
+
+        let states = get_u64("/summary/states");
+        let transitions = get_u64("/summary/transitions");
+        let depth = get_u64("/summary/depth");
+        let elapsed_ms = get_u64("/summary/elapsed_ms");
+        let pruned_by_por = get_u64("/summary/pruned_by_por");
+        let symmetry_collapses = get_u64("/summary/symmetry_collapses");
+        let hash_compaction_collisions = get_u64("/summary/hash_compaction_collisions");
+
+        let protocol_token = format!("| `{}` |", case.protocol);
+        let row = baseline_section
+            .lines()
+            .find(|line| line.contains(case.artifact_path) && line.contains(&protocol_token))
+            .unwrap_or_else(|| {
+                panic!(
+                    "baseline table row missing for protocol `{}` artifact `{}` in docs/model_checker_status.md",
+                    case.protocol, case.artifact_path
+                )
+            });
+        for value in [
+            states,
+            transitions,
+            depth,
+            elapsed_ms,
+            pruned_by_por,
+            symmetry_collapses,
+            hash_compaction_collisions,
+        ] {
+            let token = format!("`{}`", value);
+            assert!(
+                row.contains(&token),
+                "baseline row for `{}` missing metric token {}: {}",
+                case.artifact_path,
+                token,
+                row
+            );
+        }
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_require_blocker_regressions() {
     let repo_root = resolve_repo_root_for_integration();
     let status_doc = repo_root.join("docs/model_checker_status.md");
