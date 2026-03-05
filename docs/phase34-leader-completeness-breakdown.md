@@ -648,3 +648,64 @@ Why current invariants are insufficient:
 
 So `...c.c.b` must introduce explicit stale-history carrier (ghost/payload) and
 its inductive preservation before the stale branch can discharge `...c.c.c`.
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.c.b.b complete (2026-03-04)
+
+Implemented the model-level stale-vote provenance carrier using packet-attached
+vote-time voter-log summary data.
+
+Changes:
+
+- Extended `LRaftMessage::VoteResponse` in `src/protocol/Raft/types.rs` with:
+  - `voter_last_log_index`
+  - `voter_last_log_term`
+- Strengthened `LGrantVote` in `src/protocol/Raft/raft.rs` to populate these
+  fields from the voter's current log summary at vote time.
+- Threaded the new `VoteResponse` payload shape through:
+  - Raft message dispatch/refinement glue
+  - generated Raft model types/exec code (`src/generated/Raft/types_gen.rs`,
+    `src/generated/Raft/raft_gen.rs`)
+  - host wire conversion boundary (`src/implementation/Raft/host.rs`)
+- Updated refinement-proof vote-packet matching/witness formulas to account for
+  the widened message payload (using `..` where summary fields are irrelevant,
+  and existential packet witnesses where exact packet literals were too rigid).
+- Added the carrier contract definition in
+  `src/protocol/Raft/refinement_proof/message_invariants.rs`:
+  - `VoteResponseSummaryStillValidAtOrAboveTerm(ds)`.
+
+Scope note:
+
+- This leaf introduces the carrier and its state-level contract.
+- Inductive preservation and integration into `RaftSafetyInvariant` remain in
+  next leaf `...c.c.b.c`.
+
+Focused verification:
+
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*vote_witness_from_votes_granted*' --rlimit 40`
+- Pass:
+  `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::message_invariants --verify-function '*log_append_only*' --rlimit 40`
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c decomposition start (2026-03-04)
+
+Strict-term closure (`req_last_log_term > voter_vtl`) is now the first open leaf
+in the unchanged-leader overlap transfer path.
+
+Executed prerequisite leaf `...b.c.1` as an analysis checkpoint:
+
+- Audited the strict-term branch preconditions and identified that widened
+  `VoteResponse` payload matching (`voter_last_log_index`,
+  `voter_last_log_term`) touches stale-vote proof helpers in:
+  - `src/protocol/Raft/refinement_proof/state_machine.rs`
+  - `src/protocol/Raft/refinement_proof/message_invariants.rs`
+  - `src/protocol/Raft/refinement_proof/invariants.rs`
+- Recorded these as explicit prerequisite touchpoints so `...b.c.2` can focus
+  on strict-term obligation isolation without conflating compile-shape drift
+  with proof obligations.
+
+Remaining strict-term decomposition:
+
+1. `...b.c.2`: isolate strict-term-only obligations and remove shared branch
+   ambiguity with other residual cases (`L == 0`, `req_last_log_index > L`).
+2. `...b.c.3`: close the strict-term transfer constructively (no local assume)
+   while keeping focused verification stable.
