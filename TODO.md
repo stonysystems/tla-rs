@@ -9649,7 +9649,7 @@ Rules for this phase (do not cut corners):
 - [ ] Keep the smallest realistic checked-in model that reproduces each blocker or success.
   - [x] Raft blocker model: add `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` and regression `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LLogEntry` missing domain).
   - [x] RSL blocker model: add `transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml` and regression `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` to lock the current source-first init-signature gate requiring `(s: LState, c: LConstants)`.
-  - [ ] VerticalPaxos blocker model + regression.
+  - [x] VerticalPaxos blocker model: add `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and regression `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [ ] EPaxos blocker model + regression.
   - [ ] PBFT blocker model + regression.
   - [ ] ChainReplication blocker model + regression.
