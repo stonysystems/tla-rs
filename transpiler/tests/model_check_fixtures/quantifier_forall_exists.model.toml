@@ -1,5 +1,5 @@
 # Minimal fixture that exercises evaluator support for finite-domain
-# single-variable `forall` and expression-level `exists` in `LInit`.
+# single/multi-variable `forall` and expression-level `exists` in `LInit`.
 [constants.assignments]
 lower = 0
 upper = 1

@@ -11,6 +11,8 @@ verus! {
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
         &&& s.x == c.lower
         &&& forall |i: int| (i >= c.lower && i <= c.upper) ==> i >= c.lower
+        &&& forall |i: int, j: int| (i >= c.lower && j <= c.upper) ==> i <= j + c.upper
         &&& exists |k: int| k == s.x
+        &&& exists |a: int, b: int| a == c.upper && b == s.x
     }
 }

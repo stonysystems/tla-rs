@@ -332,48 +332,64 @@ fn eval_quantifier(
         let result = expect_bool(&eval_expr(body, ctx)?, "quantifier body")?;
         return Ok(RuntimeValue::Bool(result));
     }
-    if vars.len() > 1 {
-        return Err(unsupported_construct(
-            format!("multi-variable {} quantifier", kind.label()).as_str(),
-        ));
-    }
-
-    let binding = &vars[0];
-    let Pattern::Ident(name) = &binding.pattern else {
-        return Err(unsupported_construct(
-            format!("{} quantifier with non-identifier binding", kind.label()).as_str(),
-        ));
-    };
 
     let domain_evaluator = ctx.quantifier_domain_evaluator.ok_or_else(|| {
         unsupported_construct(
             format!("{} quantifier without domain resolver hook", kind.label()).as_str(),
         )
     })?;
-    let domain = domain_evaluator(binding)?;
+    let result = eval_quantifier_bindings(vars, 0, body, ctx, kind, domain_evaluator)?;
+    Ok(RuntimeValue::Bool(result))
+}
 
+fn eval_quantifier_bindings(
+    vars: &[Binding],
+    idx: usize,
+    body: &Expr,
+    ctx: &EvalContext<'_>,
+    kind: QuantifierKind,
+    domain_evaluator: &QuantifierDomainEvaluator<'_>,
+) -> TranspileResult<bool> {
+    if idx == vars.len() {
+        return expect_bool(
+            &eval_expr(body, ctx)?,
+            match kind {
+                QuantifierKind::Forall => "forall body",
+                QuantifierKind::Exists => "exists body",
+            },
+        );
+    }
+
+    let binding = &vars[idx];
+    let Pattern::Ident(name) = &binding.pattern else {
+        return Err(unsupported_construct(
+            format!("{} quantifier with non-identifier binding", kind.label()).as_str(),
+        ));
+    };
+    let domain = domain_evaluator(binding)?;
     if domain.is_empty() {
-        return Ok(RuntimeValue::Bool(matches!(kind, QuantifierKind::Forall)));
+        return Ok(matches!(kind, QuantifierKind::Forall));
     }
 
     match kind {
         QuantifierKind::Forall => {
             for value in domain {
                 let nested = ctx.child_with_binding(name.clone(), value);
-                if !expect_bool(&eval_expr(body, &nested)?, "forall body")? {
-                    return Ok(RuntimeValue::Bool(false));
+                if !eval_quantifier_bindings(vars, idx + 1, body, &nested, kind, domain_evaluator)?
+                {
+                    return Ok(false);
                 }
             }
-            Ok(RuntimeValue::Bool(true))
+            Ok(true)
         }
         QuantifierKind::Exists => {
             for value in domain {
                 let nested = ctx.child_with_binding(name.clone(), value);
-                if expect_bool(&eval_expr(body, &nested)?, "exists body")? {
-                    return Ok(RuntimeValue::Bool(true));
+                if eval_quantifier_bindings(vars, idx + 1, body, &nested, kind, domain_evaluator)? {
+                    return Ok(true);
                 }
             }
-            Ok(RuntimeValue::Bool(false))
+            Ok(false)
         }
     }
 }
@@ -1075,7 +1091,7 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_quantifiers_require_domain_resolver_and_single_var() {
+    fn test_eval_quantifiers_require_domain_resolver() {
         let forall_expr = Expr::Forall {
             vars: vec![int_binding("i")],
             triggers: vec![],
@@ -1085,19 +1101,65 @@ mod tests {
         assert!(err
             .to_string()
             .contains("does not support `forall quantifier without domain resolver hook`"));
+    }
 
-        let multi_var = Expr::Exists {
+    #[test]
+    fn test_eval_multi_variable_quantifiers_use_bounded_nested_expansion() {
+        let multi_exists = Expr::Exists {
+            vars: vec![int_binding("a"), int_binding("b")],
+            body: Box::new(Expr::Conjunction(vec![
+                Expr::Eq(
+                    Box::new(Expr::Ident("a".to_string())),
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                ),
+                Expr::Eq(
+                    Box::new(Expr::Ident("b".to_string())),
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                ),
+            ])),
+        };
+        let quantifier_domain =
+            |_binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
+                Ok(vec![RuntimeValue::Int(0), RuntimeValue::Int(1)])
+            };
+        let ctx = EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
+        let exists_out = eval_expr(&multi_exists, &ctx).unwrap();
+        assert_eq!(exists_out, RuntimeValue::Bool(true));
+
+        let multi_forall_false = Expr::Forall {
+            vars: vec![int_binding("x"), int_binding("y")],
+            triggers: vec![],
+            body: Box::new(Expr::Eq(
+                Box::new(Expr::Ident("x".to_string())),
+                Box::new(Expr::Ident("y".to_string())),
+            )),
+        };
+        let forall_out = eval_expr(&multi_forall_false, &ctx).unwrap();
+        assert_eq!(forall_out, RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_eval_multi_variable_quantifiers_handle_empty_domains() {
+        let multi_forall = Expr::Forall {
+            vars: vec![int_binding("a"), int_binding("b")],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(false))),
+        };
+        let multi_exists = Expr::Exists {
             vars: vec![int_binding("a"), int_binding("b")],
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
         let quantifier_domain =
-            |_binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                Ok(vec![RuntimeValue::Int(0)])
+            |binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
+                let name = binding.name().unwrap_or_default();
+                if name == "b" {
+                    Ok(vec![])
+                } else {
+                    Ok(vec![RuntimeValue::Int(0)])
+                }
             };
         let ctx = EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
-        let err = eval_expr(&multi_var, &ctx).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("does not support `multi-variable exists quantifier`"));
+        assert_eq!(eval_expr(&multi_forall, &ctx).unwrap(), RuntimeValue::Bool(true));
+        assert_eq!(eval_expr(&multi_exists, &ctx).unwrap(), RuntimeValue::Bool(false));
     }
 }

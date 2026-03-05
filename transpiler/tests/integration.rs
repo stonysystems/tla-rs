@@ -8185,8 +8185,8 @@ fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
     let expectations = [
         AuditExpectation {
             source_file: "transpiler/src/modelcheck/evaluator.rs",
-            source_fragment: "multi-variable {} quantifier",
-            doc_fragment: "multi-variable quantifiers remain unsupported",
+            source_fragment: "{} quantifier with non-identifier binding",
+            doc_fragment: "quantifier bindings must be identifiers",
         },
         AuditExpectation {
             source_file: "transpiler/src/modelcheck/evaluator.rs",
@@ -8575,7 +8575,7 @@ fn test_model_check_quantifier_forall_exists_bounded_run() {
         .unwrap_or("<missing>");
     assert_eq!(
         result, "ok",
-        "quantifier fixture should pass with finite-domain forall/exists support; report={}",
+        "quantifier fixture should pass with finite-domain single/multi-variable forall/exists support; report={}",
         report
     );
 

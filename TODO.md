@@ -9667,7 +9667,9 @@ Rules for this phase (do not cut corners):
 - [x] Add evaluator support for finite-domain `forall` and expression-level `exists` where the quantifier domain is concretely enumerable from the model configuration. [26:03:05, 17:35]
   - Landed evaluator quantifier execution for single-variable `forall`/`exists` behind a quantifier-domain resolver hook and threaded the hook through init/invariant/liveness/solver/helper-call evaluation paths.
   - Added evaluator unit coverage for finite-domain success + missing-resolver/multi-variable rejection, plus integration fixture `quantifier_forall_exists` and `test_model_check_quantifier_forall_exists_bounded_run`.
-- [ ] If real protocols require multi-variable quantifiers, support bounded nested expansion rather than keeping them permanently unsupported.
+- [x] If real protocols require multi-variable quantifiers, support bounded nested expansion rather than keeping them permanently unsupported. [26:03:05, 18:05]
+  - Real protocol specs do use multi-variable quantifiers (`exists` in `LNext` action parameterization and multi-variable `forall` in invariants/properties), so evaluator quantifier execution now supports multiple binders via bounded nested expansion over resolver-provided finite domains.
+  - Added evaluator coverage for multi-variable `exists`/`forall` truth-table behavior and empty-domain semantics, and extended the checked-in quantifier model-check fixture to exercise single+multi-variable quantifiers.
 - [ ] Add evaluator support for `match` expressions.
 - [ ] Add evaluator support for struct update expressions.
 - [ ] Extend builtin method/operator coverage only when a checked-in protocol/test proves it is needed; avoid speculative feature work.
