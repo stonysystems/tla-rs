@@ -9798,7 +9798,7 @@ Rules for this phase (do not cut corners):
       - Added regression `test_execute_model_check_uses_fully_pinned_linit_state_fallback_on_expansion_limit` to lock the fallback behavior under bounded `search.max_states`.
       - Re-ran source-first VerticalPaxos with checked-in fixture `verticalpaxos_state_expansion_limit.model.toml`; first blocker moved to `Configuration error: Existential domain expansion exceeded limit (200 assignments)`.
       - Updated blocker regression to `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` and synchronized `docs/model_checker_status.md` blocker matrix/evidence references.
-  - [ ] **33.5.2.e EPaxos (priority #5)**
+  - [x] **33.5.2.e EPaxos (priority #5)** [26:03:04, 23:34]
     - [x] **33.5.2.e.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:06, 10:40]
       - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
       - Strengthened regression fixture intent/minimality checks (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`); this check is now maintained as `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` after `33.5.2.e.2` reclassification.
