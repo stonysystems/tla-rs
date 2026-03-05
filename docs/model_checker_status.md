@@ -1,6 +1,6 @@
 # tla-rs Model Checker Status (Source-First)
 
-Last reviewed: 2026-03-04 (UTC)
+Last reviewed: 2026-03-05 (UTC)
 
 This is the canonical status page for `verus-transpile model-check`. Keep this synchronized with `TODO.md` Phase 33 whenever capabilities, blockers, coverage, or performance claims change.
 
@@ -16,6 +16,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - Enforce wall-clock exploration timeout via `search.timeout_ms` with concrete stop reason `TimeoutReached`.
 - Run bounded liveness checks for configured `leads_to` obligations on fully explored graphs, with branch-label weak/strong fairness filtering.
 - Reject unknown fairness labels at model-check preflight by validating `properties.fairness.{weak,strong}` against actual `LNext` branch labels.
+- Evaluate single-variable finite-domain quantifiers (`forall` and expression-level `exists`) when quantifier domains are concretely enumerable from model configuration.
 - Track solver fallback telemetry in run summaries/JSON (`direct_assignment_branch_solves`, `enumeration_fallback_branch_solves`, `enumeration_candidate_evaluations`) and enforce a per-state/branch candidate-enumeration guardrail.
 - Emit JSON reports including search settings, reduction telemetry, stop reason, and violation payloads.
 
@@ -43,8 +44,8 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 
 `transpiler/src/modelcheck/evaluator.rs` still rejects:
 
-- `forall` quantifier
-- expression-level `exists`
+- multi-variable quantifiers remain unsupported (`forall`/`exists` with more than one bound variable).
+- quantifier evaluation requires a domain resolver; evaluator-level quantifiers without this hook are rejected.
 - `match`
 - struct update expressions
 - bitwise/shift operators
@@ -163,6 +164,11 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
     - a non-empty first-blocker description,
     - and referenced blocker regression test(s) that exist in `integration.rs`.
   - `test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers` enforces that each unsupported protocol row maps to a specific checked-in minimal blocker model and exact blocker signature, and that blocker fixtures stay intentionally small (`max_depth = 1`, `max_states = 200`).
+
+### 3.8 Quantifier semantic-closure fixture
+
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_quantifier_forall_exists_bounded_run` verifies model-check execution succeeds on a checked-in fixture that uses finite-domain `forall` and expression-level `exists` in `LInit` (`transpiler/tests/model_check_fixtures/quantifier_forall_exists.*`).
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
@@ -363,6 +369,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_twophase_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_leader_election_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_quantifier_forall_exists_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_supported_protocol_rows_require_automated_evidence -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_require_blocker_regressions -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers -- --nocapture

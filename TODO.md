@@ -9664,7 +9664,9 @@ Rules for this phase (do not cut corners):
 
 ### 33.3 Semantic capability closure
 
-- [ ] Add evaluator support for finite-domain `forall` and expression-level `exists` where the quantifier domain is concretely enumerable from the model configuration.
+- [x] Add evaluator support for finite-domain `forall` and expression-level `exists` where the quantifier domain is concretely enumerable from the model configuration. [26:03:05, 17:35]
+  - Landed evaluator quantifier execution for single-variable `forall`/`exists` behind a quantifier-domain resolver hook and threaded the hook through init/invariant/liveness/solver/helper-call evaluation paths.
+  - Added evaluator unit coverage for finite-domain success + missing-resolver/multi-variable rejection, plus integration fixture `quantifier_forall_exists` and `test_model_check_quantifier_forall_exists_bounded_run`.
 - [ ] If real protocols require multi-variable quantifiers, support bounded nested expansion rather than keeping them permanently unsupported.
 - [ ] Add evaluator support for `match` expressions.
 - [ ] Add evaluator support for struct update expressions.

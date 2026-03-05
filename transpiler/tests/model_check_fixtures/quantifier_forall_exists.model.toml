@@ -1,0 +1,21 @@
+# Minimal fixture that exercises evaluator support for finite-domain
+# single-variable `forall` and expression-level `exists` in `LInit`.
+[constants.assignments]
+lower = 0
+upper = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[quantifiers.nat]
+max = 1
+
+[search]
+max_depth = 2
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"

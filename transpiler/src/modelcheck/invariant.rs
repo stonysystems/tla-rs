@@ -1,6 +1,8 @@
 use crate::ast::{SpecFunction, Type};
 use crate::error::{TranspileError, TranspileResult};
-use crate::modelcheck::evaluator::{eval_expr, CallEvaluator, EvalContext, MethodEvaluator};
+use crate::modelcheck::evaluator::{
+    eval_expr, CallEvaluator, EvalContext, MethodEvaluator, QuantifierDomainEvaluator,
+};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::collections::BTreeMap;
 
@@ -9,6 +11,7 @@ use std::collections::BTreeMap;
 pub struct InvariantHooks<'a> {
     pub call_evaluator: Option<&'a CallEvaluator<'a>>,
     pub method_evaluator: Option<&'a MethodEvaluator<'a>>,
+    pub quantifier_domain_evaluator: Option<&'a QuantifierDomainEvaluator<'a>>,
 }
 
 /// Resolve user-selected invariant names to concrete spec functions in user order.
@@ -57,6 +60,9 @@ pub fn first_invariant_violation(
         }
         if let Some(method_evaluator) = hooks.method_evaluator {
             ctx = ctx.with_method_evaluator(method_evaluator);
+        }
+        if let Some(quantifier_domain_evaluator) = hooks.quantifier_domain_evaluator {
+            ctx = ctx.with_quantifier_domain_evaluator(quantifier_domain_evaluator);
         }
 
         let holds = eval_expr(&invariant.body, &ctx).map_err(|err| TranspileError::Config {

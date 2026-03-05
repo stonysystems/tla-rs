@@ -2496,6 +2496,47 @@ fn normalize_call_path(path: &verus_transpiler::ast::Path) -> String {
         .join("::")
 }
 
+fn expand_quantifier_domain_for_binding(
+    binding: &verus_transpiler::ast::Binding,
+    schema: &verus_transpiler::spec_analyzer::SpecSchema,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+) -> verus_transpiler::error::TranspileResult<Vec<verus_transpiler::modelcheck::value::RuntimeValue>>
+{
+    use std::collections::BTreeSet;
+    use verus_transpiler::error::TranspileError;
+    use verus_transpiler::modelcheck::domain::expand_branch_existentials;
+    use verus_transpiler::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
+
+    let var_name = binding.name().ok_or_else(|| TranspileError::Config {
+        message: "Model-check quantifier evaluation requires identifier bindings.".to_string(),
+    })?;
+    let branch = TransitionBranchIr {
+        label: "__quantifier_domain__".to_string(),
+        existential_vars: vec![ExistentialVarIr {
+            name: var_name.to_string(),
+            ty: binding.ty.clone(),
+        }],
+        constraints: vec![],
+    };
+    let assignments = expand_branch_existentials(&branch, schema, model_config)?;
+
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for assignment in assignments {
+        let value = assignment.get(var_name).ok_or_else(|| TranspileError::Config {
+            message: format!(
+                "Internal model-check error: quantifier domain assignment missing `{}`.",
+                var_name
+            ),
+        })?;
+        if seen.insert(value.canonical_key()) {
+            out.push(value.clone());
+        }
+    }
+
+    Ok(out)
+}
+
 fn resolve_called_spec_function<'a>(
     functions: &'a [verus_transpiler::ast::SpecFunction],
     path: &verus_transpiler::ast::Path,
@@ -2552,6 +2593,8 @@ fn resolve_called_spec_function<'a>(
 
 fn eval_spec_function_call_recursive(
     functions: &[verus_transpiler::ast::SpecFunction],
+    schema: &verus_transpiler::spec_analyzer::SpecSchema,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
     func_path: &verus_transpiler::ast::Path,
     args: &[verus_transpiler::modelcheck::value::RuntimeValue],
     bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds,
@@ -2595,9 +2638,21 @@ fn eval_spec_function_call_recursive(
      -> verus_transpiler::error::TranspileResult<
         verus_transpiler::modelcheck::value::RuntimeValue,
     > {
-        eval_spec_function_call_recursive(functions, inner_path, inner_args, bounds, depth + 1)
+        eval_spec_function_call_recursive(
+            functions,
+            schema,
+            model_config,
+            inner_path,
+            inner_args,
+            bounds,
+            depth + 1,
+        )
+    };
+    let quantifier_domain = |binding: &verus_transpiler::ast::Binding| {
+        expand_quantifier_domain_for_binding(binding, schema, model_config)
     };
     ctx = ctx.with_call_evaluator(&recursive_call);
+    ctx = ctx.with_quantifier_domain_evaluator(&quantifier_domain);
 
     eval_expr(&function.body, &ctx).map_err(|err| TranspileError::Config {
         message: format!(
@@ -2662,6 +2717,9 @@ fn execute_model_check(
         }
     };
     let bounds = RuntimeCollectionBounds::from(&model_config.collections);
+    let quantifier_domain_evaluator = |binding: &verus_transpiler::ast::Binding| {
+        expand_quantifier_domain_for_binding(binding, &bundle.schema, model_config)
+    };
     let search_mode = cli_search_to_explorer_mode(selected_search);
     let limits = ExplorationLimits::from(&model_config.search);
     let empty_successor_semantics =
@@ -2716,6 +2774,8 @@ fn execute_model_check(
             call_evaluator: Some(&|func_path, args| {
                 eval_spec_function_call_recursive(
                     &bundle.spec_functions,
+                    &bundle.schema,
+                    model_config,
                     func_path,
                     args,
                     bounds,
@@ -2723,6 +2783,7 @@ fn execute_model_check(
                 )
             }),
             method_evaluator: None,
+            quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
         },
     )
     .map_err(|e| miette::miette!("{}", e))?;
@@ -2756,6 +2817,8 @@ fn execute_model_check(
                      args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
                         eval_spec_function_call_recursive(
                             &bundle.spec_functions,
+                            &bundle.schema,
+                            model_config,
                             func_path,
                             args,
                             bounds,
@@ -2774,6 +2837,7 @@ fn execute_model_check(
                     SolverHooks {
                         call_evaluator: Some(&call_evaluator),
                         method_evaluator: None,
+                        quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                     },
                 )?;
                 enumeration_summary.direct_assignment_branch_solves +=
@@ -2815,6 +2879,8 @@ fn execute_model_check(
                     call_evaluator: Some(&|func_path, args| {
                         eval_spec_function_call_recursive(
                             &bundle.spec_functions,
+                            &bundle.schema,
+                            model_config,
                             func_path,
                             args,
                             bounds,
@@ -2822,6 +2888,7 @@ fn execute_model_check(
                         )
                     }),
                     method_evaluator: None,
+                    quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                 },
             )
         },
@@ -2852,6 +2919,8 @@ fn execute_model_check(
                          args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
                             eval_spec_function_call_recursive(
                                 &bundle.spec_functions,
+                                &bundle.schema,
+                                model_config,
                                 func_path,
                                 args,
                                 bounds,
@@ -2870,6 +2939,7 @@ fn execute_model_check(
                         SolverHooks {
                             call_evaluator: Some(&call_evaluator),
                             method_evaluator: None,
+                            quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                         },
                     )?;
                     let successors = solved.successors;
@@ -2911,6 +2981,8 @@ fn execute_model_check(
                 call_evaluator: Some(&|func_path, args| {
                     eval_spec_function_call_recursive(
                         &bundle.spec_functions,
+                        &bundle.schema,
+                        model_config,
                         func_path,
                         args,
                         bounds,
@@ -2918,6 +2990,7 @@ fn execute_model_check(
                     )
                 }),
                 method_evaluator: None,
+                quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
             },
         )
         .map_err(|e| miette::miette!("{}", e))?;

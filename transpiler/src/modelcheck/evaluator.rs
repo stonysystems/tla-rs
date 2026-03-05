@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Expr, Path, Pattern, Type, UnaryOp};
+use crate::ast::{BinOp, Binding, Expr, Path, Pattern, Type, UnaryOp};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::collections::BTreeMap;
@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 pub type CallEvaluator<'a> = dyn Fn(&Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
 pub type MethodEvaluator<'a> =
     dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
+pub type QuantifierDomainEvaluator<'a> =
+    dyn Fn(&Binding) -> TranspileResult<Vec<RuntimeValue>> + 'a;
 
 /// Runtime evaluator context for source-first model checking.
 #[derive(Clone)]
@@ -14,6 +16,7 @@ pub struct EvalContext<'a> {
     bounds: RuntimeCollectionBounds,
     call_evaluator: Option<&'a CallEvaluator<'a>>,
     method_evaluator: Option<&'a MethodEvaluator<'a>>,
+    quantifier_domain_evaluator: Option<&'a QuantifierDomainEvaluator<'a>>,
 }
 
 impl<'a> EvalContext<'a> {
@@ -23,6 +26,7 @@ impl<'a> EvalContext<'a> {
             bounds,
             call_evaluator: None,
             method_evaluator: None,
+            quantifier_domain_evaluator: None,
         }
     }
 
@@ -41,6 +45,14 @@ impl<'a> EvalContext<'a> {
         self
     }
 
+    pub fn with_quantifier_domain_evaluator(
+        mut self,
+        evaluator: &'a QuantifierDomainEvaluator<'a>,
+    ) -> Self {
+        self.quantifier_domain_evaluator = Some(evaluator);
+        self
+    }
+
     fn child_with_binding(&self, name: String, value: RuntimeValue) -> Self {
         let mut bindings = self.bindings.clone();
         bindings.insert(name, value);
@@ -49,6 +61,7 @@ impl<'a> EvalContext<'a> {
             bounds: self.bounds,
             call_evaluator: self.call_evaluator,
             method_evaluator: self.method_evaluator,
+            quantifier_domain_evaluator: self.quantifier_domain_evaluator,
         }
     }
 }
@@ -288,9 +301,80 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
             let inner = eval_expr(inner, ctx)?;
             eval_unary(*op, &inner)
         }
-        Expr::Forall { .. } => Err(unsupported_construct("forall quantifier")),
-        Expr::Exists { .. } => Err(unsupported_construct("exists quantifier")),
+        Expr::Forall { vars, body, .. } => eval_quantifier(vars, body, ctx, QuantifierKind::Forall),
+        Expr::Exists { vars, body } => eval_quantifier(vars, body, ctx, QuantifierKind::Exists),
         Expr::Match { .. } => Err(unsupported_construct("match expression")),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum QuantifierKind {
+    Forall,
+    Exists,
+}
+
+impl QuantifierKind {
+    fn label(self) -> &'static str {
+        match self {
+            QuantifierKind::Forall => "forall",
+            QuantifierKind::Exists => "exists",
+        }
+    }
+}
+
+fn eval_quantifier(
+    vars: &[Binding],
+    body: &Expr,
+    ctx: &EvalContext<'_>,
+    kind: QuantifierKind,
+) -> TranspileResult<RuntimeValue> {
+    if vars.is_empty() {
+        let result = expect_bool(&eval_expr(body, ctx)?, "quantifier body")?;
+        return Ok(RuntimeValue::Bool(result));
+    }
+    if vars.len() > 1 {
+        return Err(unsupported_construct(
+            format!("multi-variable {} quantifier", kind.label()).as_str(),
+        ));
+    }
+
+    let binding = &vars[0];
+    let Pattern::Ident(name) = &binding.pattern else {
+        return Err(unsupported_construct(
+            format!("{} quantifier with non-identifier binding", kind.label()).as_str(),
+        ));
+    };
+
+    let domain_evaluator = ctx.quantifier_domain_evaluator.ok_or_else(|| {
+        unsupported_construct(
+            format!("{} quantifier without domain resolver hook", kind.label()).as_str(),
+        )
+    })?;
+    let domain = domain_evaluator(binding)?;
+
+    if domain.is_empty() {
+        return Ok(RuntimeValue::Bool(matches!(kind, QuantifierKind::Forall)));
+    }
+
+    match kind {
+        QuantifierKind::Forall => {
+            for value in domain {
+                let nested = ctx.child_with_binding(name.clone(), value);
+                if !expect_bool(&eval_expr(body, &nested)?, "forall body")? {
+                    return Ok(RuntimeValue::Bool(false));
+                }
+            }
+            Ok(RuntimeValue::Bool(true))
+        }
+        QuantifierKind::Exists => {
+            for value in domain {
+                let nested = ctx.child_with_binding(name.clone(), value);
+                if expect_bool(&eval_expr(body, &nested)?, "exists body")? {
+                    return Ok(RuntimeValue::Bool(true));
+                }
+            }
+            Ok(RuntimeValue::Bool(false))
+        }
     }
 }
 
@@ -596,7 +680,7 @@ fn type_error(message: &str) -> TranspileError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Literal, Path};
+    use crate::ast::{Binding, Literal, Path, Pattern, Type, VariableMode};
 
     fn test_bounds() -> RuntimeCollectionBounds {
         RuntimeCollectionBounds {
@@ -920,14 +1004,14 @@ mod tests {
 
     #[test]
     fn test_eval_unsupported_constructs_are_explicit_errors() {
-        let unsupported = Expr::Exists {
-            vars: vec![],
-            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        let unsupported = Expr::Match {
+            scrutinee: Box::new(Expr::Literal(Literal::Int(0))),
+            arms: vec![],
         };
         let err = eval_expr(&unsupported, &EvalContext::new(test_bounds())).unwrap_err();
         assert!(err
             .to_string()
-            .contains("does not support `exists quantifier`"));
+            .contains("does not support `match expression`"));
 
         let no_hook_call = Expr::Call {
             func: Path::single("Helper".to_string()),
@@ -945,5 +1029,75 @@ mod tests {
         );
         let err = eval_expr(&bad_cmp, &EvalContext::new(test_bounds())).unwrap_err();
         assert!(err.to_string().contains("expects numeric value"));
+    }
+
+    fn int_binding(name: &str) -> Binding {
+        Binding {
+            pattern: Pattern::Ident(name.to_string()),
+            ty: Some(Type::Int),
+            variable_mode: VariableMode::Exec,
+        }
+    }
+
+    #[test]
+    fn test_eval_quantifiers_with_finite_domain_resolver() {
+        let quantifier_domain =
+            |binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
+                let Some(Type::Int) = binding.ty else {
+                    return Err(TranspileError::Config {
+                        message: "test resolver expects int quantifier type".to_string(),
+                    });
+                };
+                Ok(vec![RuntimeValue::Int(0), RuntimeValue::Int(1)])
+            };
+        let ctx = EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
+
+        let forall_expr = Expr::Forall {
+            vars: vec![int_binding("i")],
+            triggers: vec![],
+            body: Box::new(Expr::Ge(
+                Box::new(Expr::Ident("i".to_string())),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            )),
+        };
+        let forall_out = eval_expr(&forall_expr, &ctx).unwrap();
+        assert_eq!(forall_out, RuntimeValue::Bool(true));
+
+        let exists_expr = Expr::Exists {
+            vars: vec![int_binding("k")],
+            body: Box::new(Expr::Eq(
+                Box::new(Expr::Ident("k".to_string())),
+                Box::new(Expr::Literal(Literal::Int(1))),
+            )),
+        };
+        let exists_out = eval_expr(&exists_expr, &ctx).unwrap();
+        assert_eq!(exists_out, RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_eval_quantifiers_require_domain_resolver_and_single_var() {
+        let forall_expr = Expr::Forall {
+            vars: vec![int_binding("i")],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        let err = eval_expr(&forall_expr, &EvalContext::new(test_bounds())).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("does not support `forall quantifier without domain resolver hook`"));
+
+        let multi_var = Expr::Exists {
+            vars: vec![int_binding("a"), int_binding("b")],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        let quantifier_domain =
+            |_binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
+                Ok(vec![RuntimeValue::Int(0)])
+            };
+        let ctx = EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
+        let err = eval_expr(&multi_var, &ctx).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("does not support `multi-variable exists quantifier`"));
     }
 }

@@ -1,7 +1,9 @@
 use crate::ast::Expr;
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::domain::ExistentialAssignment;
-use crate::modelcheck::evaluator::{eval_expr, CallEvaluator, EvalContext, MethodEvaluator};
+use crate::modelcheck::evaluator::{
+    eval_expr, CallEvaluator, EvalContext, MethodEvaluator, QuantifierDomainEvaluator,
+};
 use crate::modelcheck::ir::{
     BranchConstraintIr, ConstraintRoot, ConstraintTarget, TransitionBranchIr, TransitionIr,
 };
@@ -13,6 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct SolverHooks<'a> {
     pub call_evaluator: Option<&'a CallEvaluator<'a>>,
     pub method_evaluator: Option<&'a MethodEvaluator<'a>>,
+    pub quantifier_domain_evaluator: Option<&'a QuantifierDomainEvaluator<'a>>,
 }
 
 /// Semantics to apply when `LNext` yields no enabled successors.
@@ -446,6 +449,9 @@ fn eval_with_environment(
     }
     if let Some(method_evaluator) = hooks.method_evaluator {
         ctx = ctx.with_method_evaluator(method_evaluator);
+    }
+    if let Some(quantifier_domain_evaluator) = hooks.quantifier_domain_evaluator {
+        ctx = ctx.with_quantifier_domain_evaluator(quantifier_domain_evaluator);
     }
     eval_expr(expr, &ctx)
 }
@@ -992,6 +998,7 @@ mod tests {
         let hooks = SolverHooks {
             call_evaluator: Some(&call_hook),
             method_evaluator: None,
+            quantifier_domain_evaluator: None,
         };
 
         let successors = solve_branch_successors_with_candidates(
@@ -1034,6 +1041,7 @@ mod tests {
         let hooks = SolverHooks {
             call_evaluator: Some(&call_hook),
             method_evaluator: None,
+            quantifier_domain_evaluator: None,
         };
 
         let result = solve_branch_successors_with_candidates_and_telemetry(

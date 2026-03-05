@@ -8185,13 +8185,13 @@ fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
     let expectations = [
         AuditExpectation {
             source_file: "transpiler/src/modelcheck/evaluator.rs",
-            source_fragment: "unsupported_construct(\"forall quantifier\")",
-            doc_fragment: "`forall` quantifier",
+            source_fragment: "multi-variable {} quantifier",
+            doc_fragment: "multi-variable quantifiers remain unsupported",
         },
         AuditExpectation {
             source_file: "transpiler/src/modelcheck/evaluator.rs",
-            source_fragment: "unsupported_construct(\"exists quantifier\")",
-            doc_fragment: "expression-level `exists`",
+            source_fragment: "{} quantifier without domain resolver hook",
+            doc_fragment: "quantifier evaluation requires a domain resolver",
         },
         AuditExpectation {
             source_file: "transpiler/src/modelcheck/evaluator.rs",
@@ -8556,6 +8556,48 @@ fn test_model_check_paxos_bounded_run() {
         transitions > 0,
         "expected at least one transition in bounded Paxos run: {}",
         stdout
+    );
+}
+
+#[test]
+fn test_model_check_quantifier_forall_exists_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "quantifier_forall_exists.protocol.rs",
+        "quantifier_forall_exists.types.rs",
+        "quantifier_forall_exists.model.toml",
+    );
+
+    let result = report
+        .get("result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, "ok",
+        "quantifier fixture should pass with finite-domain forall/exists support; report={}",
+        report
+    );
+
+    let states = report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let transitions = report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert!(
+        states > 0,
+        "expected reached states in quantifier fixture run; report={}",
+        report
+    );
+    assert!(
+        transitions > 0,
+        "expected transitions in quantifier fixture run; report={}",
+        report
     );
 }
 

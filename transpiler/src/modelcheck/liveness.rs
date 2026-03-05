@@ -1,7 +1,9 @@
 use crate::ast::{SpecFunction, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{FairnessConfig, LeadsToProperty};
-use crate::modelcheck::evaluator::{eval_expr, CallEvaluator, EvalContext, MethodEvaluator};
+use crate::modelcheck::evaluator::{
+    eval_expr, CallEvaluator, EvalContext, MethodEvaluator, QuantifierDomainEvaluator,
+};
 use crate::modelcheck::explorer::{CounterexampleStep, CounterexampleTrace, StateDiffSummary};
 use crate::modelcheck::graph::{
     detect_cyclic_sccs_with_witness, ExploredGraphIndex, GraphEdgeKey, SccComponent,
@@ -32,6 +34,7 @@ pub struct LeadsToViolation {
 pub struct LivenessHooks<'a> {
     pub call_evaluator: Option<&'a CallEvaluator<'a>>,
     pub method_evaluator: Option<&'a MethodEvaluator<'a>>,
+    pub quantifier_domain_evaluator: Option<&'a QuantifierDomainEvaluator<'a>>,
 }
 
 pub fn resolve_leads_to_obligations(
@@ -383,6 +386,9 @@ fn eval_state_predicate(
     }
     if let Some(method_evaluator) = hooks.method_evaluator {
         ctx = ctx.with_method_evaluator(method_evaluator);
+    }
+    if let Some(quantifier_domain_evaluator) = hooks.quantifier_domain_evaluator {
+        ctx = ctx.with_quantifier_domain_evaluator(quantifier_domain_evaluator);
     }
 
     let value = eval_expr(&predicate.body, &ctx).map_err(|err| TranspileError::Config {
