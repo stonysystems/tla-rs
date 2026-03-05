@@ -9907,7 +9907,7 @@ Rules for this phase (do not cut corners):
 
 ### 33.7 Completion gate
 
-- [ ] Do not mark Phase 33 complete until all of the following are true:
+- [x] Do not mark Phase 33 complete until all of the following are true: [26:03:04, 23:48]
   - `docs/model_checker_status.md` is current and specific
   - the unsupported-feature list is shorter and backed by tests
   - at least one previously-uncovered consensus protocol has a checked-in automated source-first run
