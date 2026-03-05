@@ -8047,6 +8047,134 @@ fn test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers(
 }
 
 #[test]
+fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
+    struct ExpectedUnsupportedRow<'a> {
+        protocol: &'a str,
+        model_path: &'a str,
+        blocker_fragment: &'a str,
+    }
+
+    let expected_rows = [
+        ExpectedUnsupportedRow {
+            protocol: "RSL",
+            model_path: "transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml",
+            blocker_fragment: "incompatible `RslInit` signature",
+        },
+        ExpectedUnsupportedRow {
+            protocol: "Raft",
+            model_path: "transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml",
+            blocker_fragment: "missing domain for named type `LLogEntry`",
+        },
+        ExpectedUnsupportedRow {
+            protocol: "VerticalPaxos",
+            model_path: "transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml",
+            blocker_fragment: "struct `LState` exceeds `search.max_states` limit (200)",
+        },
+        ExpectedUnsupportedRow {
+            protocol: "EPaxos",
+            model_path: "transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml",
+            blocker_fragment: "struct `LState` exceeds `search.max_states` limit (200)",
+        },
+        ExpectedUnsupportedRow {
+            protocol: "PBFT",
+            model_path: "transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml",
+            blocker_fragment: "struct `LState` exceeds `search.max_states` limit (200)",
+        },
+        ExpectedUnsupportedRow {
+            protocol: "ChainReplication",
+            model_path: "transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml",
+            blocker_fragment: "struct `LState` exceeds `search.max_states` limit (200)",
+        },
+    ];
+
+    let repo_root = resolve_repo_root_for_integration();
+    let status_doc = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_doc).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc.display(),
+            err
+        )
+    });
+
+    let expected_by_protocol: std::collections::BTreeMap<&str, &ExpectedUnsupportedRow<'_>> =
+        expected_rows.iter().map(|row| (row.protocol, row)).collect();
+    let mut found = std::collections::BTreeSet::new();
+
+    for line in status_src.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("| `") {
+            continue;
+        }
+        let columns: Vec<&str> = trimmed.split('|').map(|col| col.trim()).collect();
+        if columns.len() < 9 {
+            continue;
+        }
+
+        let protocol = columns[1].trim_matches('`');
+        let model_path = columns[3].trim_matches('`');
+        let result = columns[5].trim_matches('`');
+        let blocker = columns[7];
+
+        if result != "unsupported" {
+            continue;
+        }
+
+        let expected = expected_by_protocol.get(protocol).unwrap_or_else(|| {
+            panic!(
+                "unsupported protocol `{}` is missing from exact-blocker expectation list; update this test intentionally",
+                protocol
+            )
+        });
+        found.insert(protocol.to_string());
+
+        assert_eq!(
+            model_path, expected.model_path,
+            "unsupported protocol `{}` must reference the exact checked-in minimal blocker model",
+            protocol
+        );
+        assert!(
+            blocker.contains(expected.blocker_fragment),
+            "unsupported protocol `{}` must record exact blocker fragment `{}`, got `{}`",
+            protocol,
+            expected.blocker_fragment,
+            blocker
+        );
+
+        let model_abs = repo_root.join(model_path);
+        let model_src = std::fs::read_to_string(&model_abs).unwrap_or_else(|err| {
+            panic!(
+                "failed to read blocker model fixture {}: {}",
+                model_abs.display(),
+                err
+            )
+        });
+        assert!(
+            model_src.to_lowercase().contains("blocker"),
+            "blocker model for `{}` should explicitly document blocker intent in comments",
+            protocol
+        );
+        assert!(
+            model_src.contains("max_depth = 1"),
+            "blocker model for `{}` should keep `max_depth = 1` to stay minimal",
+            protocol
+        );
+        assert!(
+            model_src.contains("max_states = 200"),
+            "blocker model for `{}` should keep bounded expansion (`max_states = 200`) for reproducibility",
+            protocol
+        );
+    }
+
+    let expected_protocols: std::collections::BTreeSet<String> =
+        expected_rows.iter().map(|row| row.protocol.to_string()).collect();
+    assert_eq!(
+        found, expected_protocols,
+        "unsupported protocol set in coverage matrix drifted from expected exact-blocker set"
+    );
+}
+
+#[test]
 fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
     struct AuditExpectation<'a> {
         source_file: &'a str,

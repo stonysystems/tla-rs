@@ -162,6 +162,7 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
     - a checked-in model file path that exists,
     - a non-empty first-blocker description,
     - and referenced blocker regression test(s) that exist in `integration.rs`.
+  - `test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers` enforces that each unsupported protocol row maps to a specific checked-in minimal blocker model and exact blocker signature, and that blocker fixtures stay intentionally small (`max_depth = 1`, `max_states = 200`).
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
@@ -365,6 +366,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_supported_protocol_rows_require_automated_evidence -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_require_blocker_regressions -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_status_doc_tracks_implementation_unsupported_surface -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
