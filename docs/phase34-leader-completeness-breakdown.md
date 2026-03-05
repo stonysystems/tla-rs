@@ -910,3 +910,32 @@ so decomposition into sub-leaves is warranted.
 
 - `b.c.3.a`: Document and formalize the proof strategy (this section).
 - `b.c.3.b`: Implement the chosen proof strategy.
+
+### Update: b.c.3.b.4.a complete — strict-term helper extracted
+
+Extracted strict-term derivations into `lemma_strict_term_entry_transfer` helper
+(invariants.rs, ~77 lines). This isolates `LogTermsMonotonic(ds)` and
+`EntryTermHasVoteQuorum(ds)` from the main function's Z3 context, preventing
+quantifier blow-up (the dual trigger on `log[j], log[k]` interacts badly with
+the many log accesses in the main function, causing Z3 to exceed rlimit).
+
+The helper derives `entry.term <= voter_vtl < req_last_log_term` (strict chain)
+using LogTermsMonotonic on the voter's log. Key facts established:
+- L > 0 (from k >= 0 and k < L)
+- entry.term <= voter.log[L-1].term = voter_vtl (LogTermsMonotonic, k <= L-1)
+- entry.term < req_last_log_term (strict, since vtl < rlt)
+
+Architecture findings for b.c.3.b.4.b:
+1. Proving `req_last_log_index > 0` needs term non-negativity (entry terms >= 0),
+   which isn't directly available from current requires. Options: add
+   `CurrentTermGeLogTerms(ds)` + a `TermsNonNegative(ds)` invariant, or use
+   a different proof path.
+2. The strict-term closure is fundamentally a quorum overlap argument: overlap
+   between `EntryTermHasVoteQuorum` witness's voters (at `entry.term`) and the
+   leader's voters (at `vote_term > entry.term`). This requires `LeaderHasQuorum`,
+   `VotesGrantedAreServers`, etc. — available at the outer proof level but not
+   currently propagated to this helper.
+3. The LogMatching chain from the overlap voter through `d` to the leader needs
+   careful construction. Unlike the equal-term case where a direct LogMatching
+   anchor exists (shared term at L-1), the strict-term case has no obvious
+   anchor between the leader and voter.

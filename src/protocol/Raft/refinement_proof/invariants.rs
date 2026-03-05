@@ -1667,6 +1667,83 @@ verus! {
     ///
     /// Transfer overlap-voter entry to leader log via LogMatching.
     ///
+    /// Strict-term sub-case of the overlap entry transfer.
+    /// When req_last_log_term > voter_vtl, derive intermediate facts:
+    /// - entry.term <= voter_vtl < req_last_log_term (strict chain)
+    /// Residual assume deferred to b.c.3.b.4.b.
+    proof fn lemma_strict_term_entry_transfer(
+        ds: RaftDistributedState,
+        overlap_voter: int,
+        leader_id: int,
+        k: int,
+        entry: LLogEntry,
+        vote_term: int,
+        req_last_log_index: int,
+        req_last_log_term: int,
+        voter_vtl: int,
+        L: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            LogTermsMonotonic(ds),
+            EntryTermHasVoteQuorum(ds),
+            0 <= leader_id < ds.num_servers,
+            0 <= overlap_voter < ds.num_servers,
+            overlap_voter != leader_id,
+            ds.server_states[leader_id].current_term > entry.term,
+            0 <= k,
+            ds.server_states[overlap_voter].log.len() > k,
+            ds.server_states[overlap_voter].log[k] == entry,
+            vote_term == ds.server_states[leader_id].current_term,
+            // L = vote_log_len[(overlap_voter, vote_term)]
+            0 <= L <= ds.server_states[overlap_voter].log.len(),
+            voter_vtl == (if L == 0 { 0int } else {
+                ds.server_states[overlap_voter].log[L - 1].term
+            }),
+            // Strict-term guard
+            req_last_log_term > voter_vtl,
+            // k < L (already proven)
+            k < L,
+            // req_last_log_index bounds
+            0 <= req_last_log_index
+                <= ds.server_states[leader_id].log.len(),
+            (req_last_log_index == 0 ==> req_last_log_term == 0),
+            (req_last_log_index > 0
+                ==> ds.server_states[leader_id].log[
+                    req_last_log_index - 1].term == req_last_log_term),
+        ensures
+            ds.server_states[leader_id].log.len() > k
+                && ds.server_states[leader_id].log[k] == entry,
+    {
+        // Derived fact: entry.term <= voter_vtl (strict inequality with rlt)
+        // From LogTermsMonotonic on voter: k < L means k <= L-1.
+        // voter.log[k].term <= voter.log[L-1].term = voter_vtl.
+        assert(L > 0);
+        assert(entry.term <= voter_vtl) by {
+            assert(LogTermsMonotonic(ds));
+            let _ = ds.server_states[overlap_voter].log[k];
+            let _ = ds.server_states[overlap_voter].log[L - 1];
+        };
+        assert(entry.term < req_last_log_term);
+
+        // Residual: constructive leader-entry transfer (Phase ...b.c.3)
+        // Established facts for the closure:
+        //   - entry.term <= voter_vtl < req_last_log_term (strict chain)
+        //   - 0 <= req_last_log_index <= leader.log.len()
+        //   - k < L (entry was in voter's vote-time log)
+        //   - EntryTermHasVoteQuorum(ds) available
+        // The full closure (b.c.3.b.4.b) requires:
+        //   - proving req_last_log_index > 0 (needs term non-negativity)
+        //   - quorum overlap between EntryTermHasVoteQuorum witness voters
+        //     and the leader's vote quorum
+        //   - LogMatching chain to transfer entry to leader's log
+        assume(
+            ds.server_states[leader_id].log.len() > k
+                && ds.server_states[leader_id].log[k] == entry
+        );
+    }
+
     /// Given a granted VoteResponse + matching RequestVote at the leader's
     /// term, use VoteGrantedLogUpToDateAtVoteTime to derive the vote-time
     /// log_up_to_date disjunction. In the equal-term, equal-length sub-case
@@ -1819,17 +1896,18 @@ verus! {
         } else if req_last_log_term > voter_vtl {
             // Residual (a): strict-term
             // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c)
+            // Strict-term derivations extracted to lemma_strict_term_entry_transfer
+            // to isolate expensive quantifiers from this function's Z3 context.
+            // Once b.c.3.b.4.b is complete, this assume will be replaced by
+            // a call to lemma_strict_term_entry_transfer with sufficient requires.
 
             // Shared fact: strict-term predicate
             assert(req_last_log_term > voter_vtl);
 
-            // Shared fact: L >= 0 (already established above at line 1735)
+            // Shared fact: L >= 0 (already established above)
             assert(L >= 0);
 
             // Shared fact: k < L by VoteLogLenEntryTermBound contradiction.
-            // If k >= L, then voter.log[k].term >= vote_term > entry.term,
-            // but voter.log[k] == entry, so voter.log[k].term == entry.term.
-            // Contradiction.
             assert(VoteLogLenEntryTermBound(ds));
             if k >= L {
                 let p_vt: (int, int) = (overlap_voter, vote_term);
@@ -1846,16 +1924,8 @@ verus! {
             }
             assert(k < L);
 
-            // Shared fact: packet alignment (already established above)
-            assert(vote_pkt.msg->VoteResponse_term
-                == req_pkt.msg->RequestVote_term);
-            assert(vote_pkt.src == req_pkt.dst);
-            assert(vote_pkt.dst == req_pkt.src);
-
-            // Shared fact: L > 0 (follows from k >= 0 and k < L)
+            // Shared fact: L > 0, packet alignment, req_last_log_index bounds
             assert(L > 0);
-
-            // Shared fact: req_last_log_index bounds
             assert(0 <= req_last_log_index
                 <= ds.server_states[leader_id].log.len());
 
