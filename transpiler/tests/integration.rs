@@ -7715,6 +7715,133 @@ fn resolve_model_check_fixture_path(name: &str) -> std::path::PathBuf {
     path
 }
 
+#[test]
+fn test_model_check_supported_protocol_rows_require_automated_evidence() {
+    let repo_root = resolve_repo_root_for_integration();
+    let status_doc = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_doc).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc.display(),
+            err
+        )
+    });
+
+    let integration_src_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("integration.rs");
+    let integration_src =
+        std::fs::read_to_string(&integration_src_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read integration source {}: {}",
+                integration_src_path.display(),
+                err
+            )
+        });
+
+    let mut integration_test_names = std::collections::BTreeSet::new();
+    for line in integration_src.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("fn test_") {
+            if let Some(paren_index) = rest.find('(') {
+                integration_test_names.insert(format!("test_{}", &rest[..paren_index]));
+            }
+        }
+    }
+    assert!(
+        !integration_test_names.is_empty(),
+        "failed to discover integration test names in {}",
+        integration_src_path.display()
+    );
+
+    let mut supported_rows = 0u64;
+    for line in status_src.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("| `") {
+            continue;
+        }
+
+        let columns: Vec<&str> = trimmed.split('|').map(|col| col.trim()).collect();
+        if columns.len() < 9 {
+            continue;
+        }
+
+        let protocol = columns[1].trim_matches('`');
+        let model_path = columns[3].trim_matches('`');
+        let result = columns[5].trim_matches('`');
+        let automated_evidence = columns[8];
+
+        if result != "ok" {
+            continue;
+        }
+        supported_rows += 1;
+
+        assert!(
+            !model_path.is_empty(),
+            "protocol `{}` is marked ok but missing model file column in {}",
+            protocol,
+            status_doc.display()
+        );
+        let model_abs = repo_root.join(model_path);
+        assert!(
+            model_abs.exists(),
+            "protocol `{}` is marked ok but model file does not exist: {}",
+            protocol,
+            model_abs.display()
+        );
+
+        let mut referenced_tests = Vec::new();
+        let mut referenced_reports = Vec::new();
+        for token in automated_evidence.split(',') {
+            let token = token.trim().trim_matches('`');
+            if token.starts_with("test_model_check_") {
+                referenced_tests.push(token.to_string());
+            }
+            if token.starts_with("reports/model_check/") {
+                referenced_reports.push(token.to_string());
+            }
+        }
+
+        assert!(
+            !referenced_tests.is_empty(),
+            "protocol `{}` is marked ok but Automated evidence has no integration test reference: `{}`",
+            protocol,
+            automated_evidence
+        );
+        assert!(
+            !referenced_reports.is_empty(),
+            "protocol `{}` is marked ok but Automated evidence has no report path reference: `{}`",
+            protocol,
+            automated_evidence
+        );
+
+        for test_name in referenced_tests {
+            assert!(
+                integration_test_names.contains(&test_name),
+                "protocol `{}` references missing integration test `{}`",
+                protocol,
+                test_name
+            );
+        }
+
+        for report_rel in referenced_reports {
+            let report_abs = repo_root.join(&report_rel);
+            assert!(
+                report_abs.exists(),
+                "protocol `{}` references missing report artifact `{}`",
+                protocol,
+                report_abs.display()
+            );
+        }
+    }
+
+    assert!(
+        supported_rows > 0,
+        "status matrix in {} has no protocols marked `ok`; coverage guard is not exercising any rows",
+        status_doc.display()
+    );
+}
+
 fn run_model_check_json_report_from_fixtures(
     transpiler_bin: &std::path::Path,
     input_fixture: &str,

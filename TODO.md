@@ -9646,14 +9646,14 @@ Rules for this phase (do not cut corners):
   - result (`ok`, violation, deadlock, limit hit, unsupported)
   - states / transitions / depth / elapsed time when available
   - first blocker when the protocol still does not run
-- [ ] Keep the smallest realistic checked-in model that reproduces each blocker or success.
+- [x] Keep the smallest realistic checked-in model that reproduces each blocker or success.
   - [x] Raft blocker model: add `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` and regression `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LLogEntry` missing domain).
   - [x] RSL blocker model: add `transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml` and regression `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` to lock the current source-first init-signature gate requiring `(s: LState, c: LConstants)`.
   - [x] VerticalPaxos blocker model: add `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and regression `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [x] EPaxos blocker model: add `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and regression `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [x] PBFT blocker model: add `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` and regression `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [x] ChainReplication blocker model: add `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` and regression `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
-- [ ] Add/update automated integration coverage when a protocol moves from "unsupported/untracked" to "supported".
+- [x] Add/update automated integration coverage when a protocol moves from "unsupported/untracked" to "supported". Added regression `test_model_check_supported_protocol_rows_require_automated_evidence` so every `Result = ok` protocol row in `docs/model_checker_status.md` must reference existing integration test(s) and checked-in `reports/model_check/*.json` artifact(s).
 
 ### 33.2 Unsupported-feature audit and regression-first workflow
 
