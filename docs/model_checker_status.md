@@ -75,6 +75,27 @@ This section is synchronized against these implementation files via
 - `transpiler/src/modelcheck/solver.rs`
 - `transpiler/src/main.rs`
 
+### 2.5 Real-protocol blocker triage priority
+
+Blocker-fix ordering is driven by real protocol specs (not theoretical completeness-only gaps),
+using the Phase 33.5 protocol priority:
+
+1. `RSL`
+2. `Raft`
+3. `Paxos`
+4. `VerticalPaxos`
+5. `EPaxos`
+6. `PBFT`
+7. `ChainReplication`
+8. `PrimaryBackup`
+9. `TwoPhase`
+10. `LeaderElection`
+
+Enforced by `test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers`:
+
+- Every `Result = unsupported` matrix row must reference real protocol source paths under `src/protocol/...`.
+- Unsupported rows must remain ordered by the priority list above (filtered to currently unsupported protocols).
+
 ## 3. Checked-in model-checking evidence (currently passing)
 
 Status below is based on checked-in automated integration tests under `transpiler/tests/integration.rs`.
@@ -343,6 +364,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_supported_protocol_rows_require_automated_evidence -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_require_blocker_regressions -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_status_doc_tracks_implementation_unsupported_surface -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture

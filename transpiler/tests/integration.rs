@@ -7957,6 +7957,96 @@ fn test_model_check_unsupported_protocol_rows_require_blocker_regressions() {
 }
 
 #[test]
+fn test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers() {
+    let repo_root = resolve_repo_root_for_integration();
+    let status_doc = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_doc).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc.display(),
+            err
+        )
+    });
+
+    assert!(
+        status_src.contains("### 2.5 Real-protocol blocker triage priority"),
+        "status doc is missing the real-protocol blocker triage section header"
+    );
+
+    let real_protocol_priority = [
+        "RSL",
+        "Raft",
+        "Paxos",
+        "VerticalPaxos",
+        "EPaxos",
+        "PBFT",
+        "ChainReplication",
+        "PrimaryBackup",
+        "TwoPhase",
+        "LeaderElection",
+    ];
+    let priority_set: std::collections::BTreeSet<&str> =
+        real_protocol_priority.iter().copied().collect();
+
+    let mut unsupported_protocols = Vec::new();
+    for line in status_src.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("| `") {
+            continue;
+        }
+        let columns: Vec<&str> = trimmed.split('|').map(|col| col.trim()).collect();
+        if columns.len() < 9 {
+            continue;
+        }
+
+        let protocol = columns[1].trim_matches('`');
+        let source_files = columns[2];
+        let result = columns[5].trim_matches('`');
+        if result != "unsupported" {
+            continue;
+        }
+
+        unsupported_protocols.push(protocol.to_string());
+        assert!(
+            priority_set.contains(protocol),
+            "unsupported protocol `{}` is missing from real-protocol priority list; update docs/tests intentionally",
+            protocol
+        );
+        assert!(
+            source_files.contains("src/protocol/"),
+            "unsupported protocol `{}` must be sourced from real protocol specs, got source column `{}`",
+            protocol,
+            source_files
+        );
+        assert!(
+            !source_files.contains("transpiler/tests/model_check_fixtures"),
+            "unsupported protocol `{}` should not be driven only by fixture-only specs; source column `{}`",
+            protocol,
+            source_files
+        );
+    }
+
+    assert!(
+        !unsupported_protocols.is_empty(),
+        "status matrix in {} has no protocols marked `unsupported`; triage-priority guard is not exercising rows",
+        status_doc.display()
+    );
+
+    let unsupported_set: std::collections::BTreeSet<&str> =
+        unsupported_protocols.iter().map(|s| s.as_str()).collect();
+    let expected_order: Vec<String> = real_protocol_priority
+        .iter()
+        .filter(|name| unsupported_set.contains(**name))
+        .map(|name| (*name).to_string())
+        .collect();
+
+    assert_eq!(
+        unsupported_protocols, expected_order,
+        "unsupported protocol rows must remain ordered by real-protocol triage priority in docs/model_checker_status.md"
+    );
+}
+
+#[test]
 fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
     struct AuditExpectation<'a> {
         source_file: &'a str,
