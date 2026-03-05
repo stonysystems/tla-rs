@@ -9706,6 +9706,11 @@ Rules for this phase (do not cut corners):
   - stronger sound POR than the current `invisible_branch` heuristic
   - generalized symmetry normalization for real protocol identity sets
   - exact frontier/state storage compaction
+  - [x] **33.4.2.a** Add run-scoped successor memoization keyed by `(state, constants)` and reuse it for liveness graph rebuild instead of re-solving all branches for each explored state. [26:03:05, 23:40]
+    - Implemented in `execute_model_check` via per-run `successor_cache` and a shared successor-solving closure used by both exploration and liveness graph indexing.
+    - Added summary telemetry (`successor_cache_hits`, `successor_cache_misses`) to CLI/JSON output and coverage in unit/integration tests.
+  - [ ] **33.4.2.b** Add a second exact-mode optimization (target: branch-enablement caching keyed by `(state, branch, constants)` or equivalent guard-driven pruning) with correctness-first tests.
+  - [ ] **33.4.2.c** Document and lock before/after exact-mode telemetry deltas for both optimizations on the checked-in baseline models.
 - [ ] Keep lossy modes (`hash_compaction64`) documented and reported as bug-finding accelerators, not proof-strength runs.
 - [ ] Add benchmark or regression automation that compares before/after telemetry on the same checked-in models.
 - [ ] Reject any optimization that changes exact-mode reachable-state counts unless the change is explained by a correctness bug fix and documented.

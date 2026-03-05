@@ -9608,6 +9608,30 @@ fn test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes()
             "did not expect skipped_reason for case `{}`",
             case.name
         );
+        let summary = report
+            .get("summary")
+            .and_then(|value| value.as_object())
+            .expect("summary section should be an object");
+        let successor_cache_hits = summary
+            .get("successor_cache_hits")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        let successor_cache_misses = summary
+            .get("successor_cache_misses")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        assert!(
+            successor_cache_hits > 0,
+            "expected successor-cache hits during liveness graph rebuild in case `{}`; report={}",
+            case.name,
+            report
+        );
+        assert!(
+            successor_cache_misses > 0,
+            "expected successor-cache misses during initial exploration in case `{}`; report={}",
+            case.name,
+            report
+        );
 
         let fairness = liveness
             .get("fairness")

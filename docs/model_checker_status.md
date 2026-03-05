@@ -15,6 +15,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - Explore state space with BFS/DFS, dedup, invariants, deadlock checks, and counterexample traces with action labels + state diffs.
 - Enforce wall-clock exploration timeout via `search.timeout_ms` with concrete stop reason `TimeoutReached`.
 - Run bounded liveness checks for configured `leads_to` obligations on fully explored graphs, with branch-label weak/strong fairness filtering.
+- Reuse per-run successor memoization during liveness graph indexing (avoids recomputing branch solving for already explored states) and report cache telemetry in JSON/CLI summaries (`successor_cache_hits`, `successor_cache_misses`).
 - Reject unknown fairness labels at model-check preflight by validating `properties.fairness.{weak,strong}` against actual `LNext` branch labels.
 - Evaluate finite-domain quantifiers (`forall` and expression-level `exists`), including multi-variable binders via bounded nested expansion, when quantifier domains are concretely enumerable from model configuration.
 - Evaluate `match` expressions with ordered arm selection, pattern bindings, and guard checks.
@@ -204,6 +205,11 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
     - unit regression(s) in evaluator/main/solver sources
     - integration regression in `transpiler/tests/integration.rs`
     - status-doc evidence section + test references in this file
+
+### 3.15 Liveness successor-memoization optimization guard
+
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes` now also verifies `summary.successor_cache_hits > 0` and `summary.successor_cache_misses > 0` for completed liveness runs, locking in the run-scoped successor-cache reuse path.
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 

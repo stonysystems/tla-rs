@@ -1932,6 +1932,8 @@ struct ModelCheckEnumerationSummary {
     enumeration_fallback_branch_solves: usize,
     enumeration_candidate_evaluations: usize,
     candidate_evaluation_guardrail_per_state_branch: usize,
+    successor_cache_hits: usize,
+    successor_cache_misses: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2839,6 +2841,8 @@ fn execute_model_check(
         enumeration_fallback_branch_solves: 0,
         enumeration_candidate_evaluations: 0,
         candidate_evaluation_guardrail_per_state_branch: CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
+        successor_cache_hits: 0,
+        successor_cache_misses: 0,
     };
 
     let state_ty = bundle
@@ -2898,6 +2902,8 @@ fn execute_model_check(
             enumeration_candidate_evaluations: 0,
             candidate_evaluation_guardrail_per_state_branch:
                 CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
+            successor_cache_hits: 0,
+            successor_cache_misses: 0,
         };
         let run_started = Instant::now();
 
@@ -2924,14 +2930,22 @@ fn execute_model_check(
         )
         .map_err(|e| miette::miette!("{}", e))?;
 
-        let exploration = explore_state_space_with_traces_and_dedup(
-            &initial_states,
-            search_mode,
-            limits,
-            model_config.search.state_dedup,
-            &model_config.search.symmetry_fields,
-            model_config.properties.check_deadlock,
-            |state| {
+        let mut successor_cache = BTreeMap::<String, Vec<TracedSuccessor>>::new();
+        let mut solve_traced_successors_for_state =
+            |state: &verus_transpiler::modelcheck::value::RuntimeValue,
+             update_enumeration_telemetry: bool|
+             -> verus_transpiler::error::TranspileResult<Vec<TracedSuccessor>> {
+                let state_key = state.canonical_key();
+                if let Some(cached) = successor_cache.get(&state_key) {
+                    run_enumeration_summary.successor_cache_hits = run_enumeration_summary
+                        .successor_cache_hits
+                        .saturating_add(1);
+                    return Ok(cached.clone());
+                }
+
+                run_enumeration_summary.successor_cache_misses = run_enumeration_summary
+                    .successor_cache_misses
+                    .saturating_add(1);
                 let mut traced_successors = Vec::new();
                 for branch in &transition.branches {
                     if por_pruned_branch_labels.contains(&branch.label) {
@@ -2951,28 +2965,28 @@ fn execute_model_check(
                                 func_path,
                                 args,
                                 bounds,
-                            0,
-                        )
-                    };
+                                0,
+                            )
+                        };
                     let predicate_only_branch_solver =
-                    |transition_ir: &verus_transpiler::modelcheck::ir::TransitionIr,
-                     branch_ir: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
-                     current_state: &verus_transpiler::modelcheck::value::RuntimeValue,
-                     constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
-                     existential_assignments:
-                         &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
-                     bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds| {
-                        try_solve_predicate_only_helper_branch(
-                            transition_ir,
-                            branch_ir,
-                            current_state,
-                            constants,
-                            existential_assignments,
-                            bundle,
-                            model_config,
-                            bounds,
-                        )
-                    };
+                        |transition_ir: &verus_transpiler::modelcheck::ir::TransitionIr,
+                         branch_ir: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
+                         current_state: &verus_transpiler::modelcheck::value::RuntimeValue,
+                         constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
+                         existential_assignments:
+                             &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
+                         bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds| {
+                            try_solve_predicate_only_helper_branch(
+                                transition_ir,
+                                branch_ir,
+                                current_state,
+                                constants,
+                                existential_assignments,
+                                bundle,
+                                model_config,
+                                bounds,
+                            )
+                        };
                     let solved = solve_branch_successors_with_candidates_and_telemetry(
                         &transition,
                         branch,
@@ -2989,14 +3003,17 @@ fn execute_model_check(
                             predicate_only_branch_solver: Some(&predicate_only_branch_solver),
                         },
                     )?;
-                    run_enumeration_summary.direct_assignment_branch_solves +=
-                        solved.telemetry.direct_assignment_branch_solves;
-                    run_enumeration_summary.enumeration_fallback_branch_solves +=
-                        solved.telemetry.enumeration_fallback_branch_solves;
-                    run_enumeration_summary.enumeration_candidate_evaluations +=
-                        solved.telemetry.enumeration_candidate_evaluations;
-                    let successors = solved.successors;
-                    for successor in successors {
+
+                    if update_enumeration_telemetry {
+                        run_enumeration_summary.direct_assignment_branch_solves +=
+                            solved.telemetry.direct_assignment_branch_solves;
+                        run_enumeration_summary.enumeration_fallback_branch_solves +=
+                            solved.telemetry.enumeration_fallback_branch_solves;
+                        run_enumeration_summary.enumeration_candidate_evaluations +=
+                            solved.telemetry.enumeration_candidate_evaluations;
+                    }
+
+                    for successor in solved.successors {
                         traced_successors.push(TracedSuccessor {
                             action_branch: branch.label.clone(),
                             state: successor,
@@ -3016,8 +3033,18 @@ fn execute_model_check(
                     });
                 }
 
+                successor_cache.insert(state_key, traced_successors.clone());
                 Ok(traced_successors)
-            },
+            };
+
+        let exploration = explore_state_space_with_traces_and_dedup(
+            &initial_states,
+            search_mode,
+            limits,
+            model_config.search.state_dedup,
+            &model_config.search.symmetry_fields,
+            model_config.properties.check_deadlock,
+            |state| solve_traced_successors_for_state(state, true),
             |state, _depth| {
                 first_invariant_violation(
                     &owned_invariants,
@@ -3051,91 +3078,11 @@ fn execute_model_check(
                 ExplorationStopReason::FrontierExhausted
             )
         {
-            let explored_graph = build_explored_graph_index(
-                &exploration.explored,
-                |state| -> verus_transpiler::error::TranspileResult<_> {
-                    let mut traced_successors = Vec::new();
-                    for branch in &transition.branches {
-                        if por_pruned_branch_labels.contains(&branch.label) {
-                            continue;
-                        }
-                        let branch_assignments = assignments_by_branch
-                            .get(&branch.label)
-                            .map(Vec::as_slice)
-                            .unwrap_or(&[]);
-                    let call_evaluator =
-                        |func_path: &verus_transpiler::ast::Path,
-                         args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
-                            eval_spec_function_call_recursive(
-                                    &bundle.spec_functions,
-                                    &bundle.schema,
-                                    model_config,
-                                    func_path,
-                                    args,
-                                    bounds,
-                                0,
-                            )
-                        };
-                    let predicate_only_branch_solver =
-                        |transition_ir: &verus_transpiler::modelcheck::ir::TransitionIr,
-                         branch_ir: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
-                         current_state: &verus_transpiler::modelcheck::value::RuntimeValue,
-                         constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
-                         existential_assignments:
-                             &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
-                         bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds| {
-                            try_solve_predicate_only_helper_branch(
-                                transition_ir,
-                                branch_ir,
-                                current_state,
-                                constants,
-                                existential_assignments,
-                                bundle,
-                                model_config,
-                                bounds,
-                            )
-                        };
-                    let solved = solve_branch_successors_with_candidates_and_telemetry(
-                        &transition,
-                        branch,
-                        state,
-                            Some(constants_value),
-                            branch_assignments,
-                            Some(&state_candidates),
-                            Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
-                            bounds,
-                        SolverHooks {
-                            call_evaluator: Some(&call_evaluator),
-                            method_evaluator: None,
-                            quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
-                            predicate_only_branch_solver: Some(&predicate_only_branch_solver),
-                        },
-                    )?;
-                        let successors = solved.successors;
-                        for successor in successors {
-                            traced_successors.push(TracedSuccessor {
-                                action_branch: branch.label.clone(),
-                                state: successor,
-                            });
-                        }
-                    }
-
-                    if traced_successors.is_empty()
-                        && matches!(
-                            empty_successor_semantics,
-                            verus_transpiler::modelcheck::solver::EmptySuccessorSemantics::Stuttering
-                        )
-                    {
-                        traced_successors.push(TracedSuccessor {
-                            action_branch: "stutter".to_string(),
-                            state: state.clone(),
-                        });
-                    }
-
-                    Ok(traced_successors)
-                },
-            )
-            .map_err(|e| miette::miette!("{}", e))?;
+            let explored_graph =
+                build_explored_graph_index(&exploration.explored, |state| {
+                    solve_traced_successors_for_state(state, false)
+                })
+                .map_err(|e| miette::miette!("{}", e))?;
 
             let resolved_leads_to = resolve_leads_to_obligations(
                 &bundle.spec_functions,
@@ -3231,6 +3178,12 @@ fn execute_model_check(
         enumeration_summary.enumeration_candidate_evaluations = enumeration_summary
             .enumeration_candidate_evaluations
             .saturating_add(run_summary.enumeration.enumeration_candidate_evaluations);
+        enumeration_summary.successor_cache_hits = enumeration_summary
+            .successor_cache_hits
+            .saturating_add(run_summary.enumeration.successor_cache_hits);
+        enumeration_summary.successor_cache_misses = enumeration_summary
+            .successor_cache_misses
+            .saturating_add(run_summary.enumeration.successor_cache_misses);
 
         let run_execution = ModelCheckExecution {
             summary: run_summary,
@@ -3520,6 +3473,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "enumeration_fallback_branch_solves": execution.summary.enumeration.enumeration_fallback_branch_solves,
                         "enumeration_candidate_evaluations": execution.summary.enumeration.enumeration_candidate_evaluations,
                         "candidate_evaluation_guardrail_per_state_branch": execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
+                        "successor_cache_hits": execution.summary.enumeration.successor_cache_hits,
+                        "successor_cache_misses": execution.summary.enumeration.successor_cache_misses,
                     },
                     "liveness": execution.summary.liveness.as_ref().map(|liveness| serde_json::json!({
                         "obligations": liveness.obligations,
@@ -3614,11 +3569,13 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 execution.exploration.stats.symmetry_collapses,
             );
             println!(
-                "  solver_enumeration: direct_assignment_branch_solves={}, enumeration_fallback_branch_solves={}, enumeration_candidate_evaluations={}, candidate_eval_guardrail_per_state_branch={}",
+                "  solver_enumeration: direct_assignment_branch_solves={}, enumeration_fallback_branch_solves={}, enumeration_candidate_evaluations={}, candidate_eval_guardrail_per_state_branch={}, successor_cache_hits={}, successor_cache_misses={}",
                 execution.summary.enumeration.direct_assignment_branch_solves,
                 execution.summary.enumeration.enumeration_fallback_branch_solves,
                 execution.summary.enumeration.enumeration_candidate_evaluations,
                 execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
+                execution.summary.enumeration.successor_cache_hits,
+                execution.summary.enumeration.successor_cache_misses,
             );
             if let Some(liveness) = &execution.summary.liveness {
                 println!(
@@ -6388,6 +6345,8 @@ leads_to = [{ name = "eventual_one", from = "LFrom", to = "LTo" }]
         assert_eq!(liveness.fairness_weak, 0);
         assert_eq!(liveness.fairness_strong, 0);
         assert!(liveness.skipped_reason.is_none());
+        assert!(execution.summary.enumeration.successor_cache_hits > 0);
+        assert!(execution.summary.enumeration.successor_cache_misses > 0);
     }
 
     #[test]
@@ -6475,6 +6434,8 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
         assert!(!liveness.violation_found);
         assert_eq!(liveness.obligations, 1);
         assert!(liveness.skipped_reason.is_none());
+        assert!(execution.summary.enumeration.successor_cache_hits > 0);
+        assert!(execution.summary.enumeration.successor_cache_misses > 0);
     }
 
     #[test]
@@ -6577,6 +6538,8 @@ max = 1
                 .candidate_evaluation_guardrail_per_state_branch,
             10_000
         );
+        assert_eq!(execution.summary.enumeration.successor_cache_hits, 0);
+        assert!(execution.summary.enumeration.successor_cache_misses > 0);
     }
 
     #[test]
@@ -6935,6 +6898,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             liveness.skipped_reason.as_deref(),
             Some("incomplete_exploration")
         );
+        assert_eq!(execution.summary.enumeration.successor_cache_hits, 0);
     }
 
     #[test]
@@ -7027,6 +6991,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             liveness.skipped_reason.as_deref(),
             Some("incomplete_exploration")
         );
+        assert_eq!(execution.summary.enumeration.successor_cache_hits, 0);
     }
 
     #[test]

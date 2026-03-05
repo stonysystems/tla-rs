@@ -94,6 +94,7 @@ With `--json-report`, output includes:
 - `summary.depth`
 - `summary.elapsed_ms`
 - reduction telemetry (`summary.pruned_by_por`, `summary.symmetry_collapses`, `summary.hash_compaction_collisions`)
+- solver/memoization telemetry (`summary.direct_assignment_branch_solves`, `summary.enumeration_fallback_branch_solves`, `summary.enumeration_candidate_evaluations`, `summary.successor_cache_hits`, `summary.successor_cache_misses`)
 - `liveness` summary (when temporal config is present):
   - `obligations`, `checked`, `violation_found`, `skipped_reason`
   - configured fairness labels (`fairness.weak` / `fairness.strong`) and counts
