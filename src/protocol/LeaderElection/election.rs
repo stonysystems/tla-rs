@@ -183,4 +183,19 @@ verus! {
         ||| exists |node: int, leader: int, sent_packets: Seq<LElectionMessage>| LReceiveCoordinator(s, s_, c, node, leader, sent_packets)
         ||| exists |node: int, sent_packets: Seq<LElectionMessage>| LNodeFail(s, s_, c, node, sent_packets)
     }
+
+    /// Safety: every node marked electing is alive.
+    pub open spec fn LSafetyElectingSubsetAlive(s: LState, c: LConstants) -> bool {
+        forall |node: int| s.electing.contains(node) ==> s.alive.contains(node)
+    }
+
+    /// Safety: if waiting for an answer, the tracked waiting node is alive.
+    pub open spec fn LSafetyWaitingNodeAliveWhenWaiting(s: LState, c: LConstants) -> bool {
+        s.waiting_answer ==> s.alive.contains(s.waiting_node)
+    }
+
+    /// Safety: when not waiting for an answer, waiting node id is cleared.
+    pub open spec fn LSafetyNoWaitingImpliesClearedWaitingNode(s: LState, c: LConstants) -> bool {
+        !s.waiting_answer ==> s.waiting_node == 0int
+    }
 }

@@ -1,0 +1,32 @@
+[constants.assignments]
+num_nodes = 0
+
+[constants.domains.nodes]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.types.LElectionMessage]
+kind = "enum_subset"
+variants = ["Election", "Answer", "Coordinator"]
+
+[collections]
+max_seq_len = 1
+max_set_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+invariants = [
+  "LSafetyElectingSubsetAlive",
+  "LSafetyWaitingNodeAliveWhenWaiting",
+  "LSafetyNoWaitingImpliesClearedWaitingNode",
+]
+check_deadlock = false
+successor_semantics = "deadlock"

@@ -119,6 +119,7 @@ Status below is based on checked-in automated integration tests under `transpile
 | PrimaryBackup small bounded run | `src/protocol/PrimaryBackup/primarybackup.rs` | `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `test_model_check_primarybackup_helper_call_branches_bounded_run` | `reports/model_check/primarybackup_small.json` | `§5.2 PrimaryBackup` |
 | PrimaryBackup safety-invariant bounded run | `src/protocol/PrimaryBackup/primarybackup.rs` | `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_safety_invariants.model.toml` | `test_model_check_primarybackup_real_safety_invariants_bounded_run` | `reports/model_check/primarybackup_safety_invariants.json` | `§5.2 PrimaryBackup safety invariants` |
 | LeaderElection small bounded run | `src/protocol/LeaderElection/election.rs` | `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `test_model_check_leader_election_bounded_run` | `reports/model_check/leaderelection_small.json` | `§5.2 LeaderElection` |
+| LeaderElection safety-invariant bounded run | `src/protocol/LeaderElection/election.rs` | `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_safety_invariants.model.toml` | `test_model_check_leader_election_real_safety_invariants_bounded_run` | `reports/model_check/leaderelection_safety_invariants.json` | `§5.2 LeaderElection safety invariants` |
 | Paxos small bounded run | `src/protocol/Paxos/paxos.rs` | `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `test_model_check_paxos_bounded_run` | `reports/model_check/paxos_small.json` | `§5.2 Paxos` |
 | Paxos safety-invariant bounded run | `src/protocol/Paxos/paxos.rs` | `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_safety_invariants.model.toml` | `test_model_check_paxos_real_safety_invariants_bounded_run` | `reports/model_check/paxos_safety_invariants.json` | `§5.2 Paxos safety invariants` |
 
@@ -126,6 +127,7 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 Paxos additionally enforces artifact parity for stable fields (`result`, `search.state_dedup`, `summary.states`, `summary.transitions`, `summary.depth`) against `reports/model_check/paxos_small.json`.
 TwoPhase safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/twophase_safety_invariants.json`.
 PrimaryBackup safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/primarybackup_safety_invariants.json`.
+LeaderElection safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/leaderelection_safety_invariants.json`.
 Paxos safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/paxos_safety_invariants.json`.
 
 ### 3.2 Liveness/fairness fixtures (all pass expected outcomes)
@@ -270,7 +272,7 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | `ChainReplication` | `src/protocol/ChainReplication/chain.rs`, `src/protocol/ChainReplication/types.rs` | `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; pre-exploration branch-assignment expansion fails) | `unsupported` | N/A | Configuration error: existential domain expansion exceeded limit (200 assignments) during bounded branch existential enumeration. | `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` |
 | `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 2 / 1 / 67` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `test_model_check_primarybackup_real_safety_invariants_bounded_run`, `reports/model_check/primarybackup_small.json`, `reports/model_check/primarybackup_safety_invariants.json` |
 | `TwoPhase` | `src/protocol/TwoPhase/twophase.rs`, `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `3 / 4 / 1 / 3268` | N/A | `test_model_check_twophase_bounded_run`, `test_model_check_twophase_real_safety_invariants_bounded_run`, `reports/model_check/twophase_small.json`, `reports/model_check/twophase_safety_invariants.json` |
-| `LeaderElection` | `src/protocol/LeaderElection/election.rs`, `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `4 / 3 / 1 / 77` | N/A | `test_model_check_leader_election_bounded_run`, `reports/model_check/leaderelection_small.json` |
+| `LeaderElection` | `src/protocol/LeaderElection/election.rs`, `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `4 / 3 / 1 / 77` | N/A | `test_model_check_leader_election_bounded_run`, `test_model_check_leader_election_real_safety_invariants_bounded_run`, `reports/model_check/leaderelection_small.json`, `reports/model_check/leaderelection_safety_invariants.json` |
 
 ### 4.1 Exact-mode performance baseline snapshot (Phase 33.4)
 
@@ -388,6 +390,20 @@ transpiler/target/debug/verus-transpile model-check \
   --search bfs \
   --json-report
 ```
+
+LeaderElection safety invariants:
+
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input src/protocol/LeaderElection/election.rs \
+  --types src/protocol/LeaderElection/types.rs \
+  --model transpiler/tests/model_check_fixtures/leaderelection_safety_invariants.model.toml \
+  --search bfs \
+  --json-report
+```
+
+Expected result: command succeeds with `result = "ok"`, `invariant_violation = null`, and resolved invariants including:
+`LSafetyElectingSubsetAlive`, `LSafetyWaitingNodeAliveWhenWaiting`, `LSafetyNoWaitingImpliesClearedWaitingNode`.
 
 Paxos:
 
@@ -541,6 +557,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_twophase_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_twophase_real_safety_invariants_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_leader_election_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_leader_election_real_safety_invariants_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_quantifier_forall_exists_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_match_expression_bounded_run -- --nocapture
