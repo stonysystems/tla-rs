@@ -9670,7 +9670,9 @@ Rules for this phase (do not cut corners):
 - [x] If real protocols require multi-variable quantifiers, support bounded nested expansion rather than keeping them permanently unsupported. [26:03:05, 18:05]
   - Real protocol specs do use multi-variable quantifiers (`exists` in `LNext` action parameterization and multi-variable `forall` in invariants/properties), so evaluator quantifier execution now supports multiple binders via bounded nested expansion over resolver-provided finite domains.
   - Added evaluator coverage for multi-variable `exists`/`forall` truth-table behavior and empty-domain semantics, and extended the checked-in quantifier model-check fixture to exercise single+multi-variable quantifiers.
-- [ ] Add evaluator support for `match` expressions.
+- [x] Add evaluator support for `match` expressions. [26:03:05, 18:25]
+  - Implemented evaluator `match` execution with ordered arm selection, arm-local bindings, guard evaluation, and explicit erroring when no arm matches.
+  - Added evaluator unit tests for variant/struct pattern matching and guard behavior, plus protocol-style integration fixture `match_expression` with regression `test_model_check_match_expression_bounded_run`.
 - [ ] Add evaluator support for struct update expressions.
 - [ ] Extend builtin method/operator coverage only when a checked-in protocol/test proves it is needed; avoid speculative feature work.
 - [ ] Remove the current "exactly one concrete `LConstants` valuation" restriction by allowing model-check initialization to explore multiple resolved constant valuations when the model config implies them.

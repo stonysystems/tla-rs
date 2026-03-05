@@ -1,0 +1,13 @@
+# Minimal fixture that exercises evaluator support for `match` expressions
+# (including guard evaluation) in `LInit`.
+[constants.assignments]
+preferred_a = true
+
+[search]
+max_depth = 2
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"

@@ -8195,11 +8195,6 @@ fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
         },
         AuditExpectation {
             source_file: "transpiler/src/modelcheck/evaluator.rs",
-            source_fragment: "unsupported_construct(\"match expression\")",
-            doc_fragment: "`match`",
-        },
-        AuditExpectation {
-            source_file: "transpiler/src/modelcheck/evaluator.rs",
             source_fragment: "unsupported_construct(\"struct update expression\")",
             doc_fragment: "struct update expressions",
         },
@@ -8597,6 +8592,48 @@ fn test_model_check_quantifier_forall_exists_bounded_run() {
     assert!(
         transitions > 0,
         "expected transitions in quantifier fixture run; report={}",
+        report
+    );
+}
+
+#[test]
+fn test_model_check_match_expression_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "match_expression.protocol.rs",
+        "match_expression.types.rs",
+        "match_expression.model.toml",
+    );
+
+    let result = report
+        .get("result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, "ok",
+        "match-expression fixture should pass with evaluator match support; report={}",
+        report
+    );
+
+    let states = report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let transitions = report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert!(
+        states > 0,
+        "expected reached states in match-expression fixture run; report={}",
+        report
+    );
+    assert!(
+        transitions > 0,
+        "expected transitions in match-expression fixture run; report={}",
         report
     );
 }

@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Binding, Expr, Path, Pattern, Type, UnaryOp};
+use crate::ast::{BinOp, Binding, Expr, MatchArm, Path, Pattern, Type, UnaryOp};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::collections::BTreeMap;
@@ -301,9 +301,13 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
             let inner = eval_expr(inner, ctx)?;
             eval_unary(*op, &inner)
         }
-        Expr::Forall { vars, body, .. } => eval_quantifier(vars, body, ctx, QuantifierKind::Forall),
+        Expr::Forall {
+            vars,
+            body,
+            ..
+        } => eval_quantifier(vars, body, ctx, QuantifierKind::Forall),
         Expr::Exists { vars, body } => eval_quantifier(vars, body, ctx, QuantifierKind::Exists),
-        Expr::Match { .. } => Err(unsupported_construct("match expression")),
+        Expr::Match { scrutinee, arms } => eval_match_expr(scrutinee, arms, ctx),
     }
 }
 
@@ -392,6 +396,188 @@ fn eval_quantifier_bindings(
             Ok(false)
         }
     }
+}
+
+fn eval_match_expr(
+    scrutinee: &Expr,
+    arms: &[MatchArm],
+    ctx: &EvalContext<'_>,
+) -> TranspileResult<RuntimeValue> {
+    let scrutinee_value = eval_expr(scrutinee, ctx)?;
+
+    for arm in arms {
+        let mut bindings = BTreeMap::new();
+        if !match_pattern(&arm.pattern, &scrutinee_value, &mut bindings)? {
+            continue;
+        }
+
+        let mut nested = ctx.clone();
+        for (name, value) in bindings {
+            nested = nested.child_with_binding(name, value);
+        }
+
+        if let Some(guard) = &arm.guard {
+            if !expect_bool(&eval_expr(guard, &nested)?, "match guard")? {
+                continue;
+            }
+        }
+
+        return eval_expr(&arm.body, &nested);
+    }
+
+    Err(type_error("match expression has no matching arm."))
+}
+
+fn match_pattern(
+    pattern: &Pattern,
+    value: &RuntimeValue,
+    bindings: &mut BTreeMap<String, RuntimeValue>,
+) -> TranspileResult<bool> {
+    match pattern {
+        Pattern::Wildcard => Ok(true),
+        Pattern::Ident(name) => {
+            if let Some(existing) = bindings.get(name) {
+                Ok(existing == value)
+            } else {
+                bindings.insert(name.clone(), value.clone());
+                Ok(true)
+            }
+        }
+        Pattern::Literal(lit) => Ok(match_literal_pattern(lit, value)),
+        Pattern::Tuple(patterns) => {
+            let RuntimeValue::Tuple(items) = value else {
+                return Ok(false);
+            };
+            if patterns.len() != items.len() {
+                return Ok(false);
+            }
+
+            for (pattern, item) in patterns.iter().zip(items.iter()) {
+                if !match_pattern(pattern, item, bindings)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        Pattern::Struct { name, fields } => match value {
+            RuntimeValue::Struct {
+                ty,
+                fields: runtime_fields,
+            } => {
+                if !path_matches_runtime_type(name, ty) {
+                    return Ok(false);
+                }
+                match_named_pattern_fields(fields, runtime_fields, bindings)
+            }
+            RuntimeValue::Enum {
+                ty,
+                variant,
+                fields: runtime_fields,
+            } => {
+                if !path_matches_enum_variant(name, ty, variant) {
+                    return Ok(false);
+                }
+                match_named_pattern_fields(fields, runtime_fields, bindings)
+            }
+            _ => Ok(false),
+        },
+        Pattern::Variant { name, fields } => {
+            let RuntimeValue::Enum {
+                ty,
+                variant,
+                fields: runtime_fields,
+            } = value
+            else {
+                return Ok(false);
+            };
+            if !path_matches_enum_variant(name, ty, variant) {
+                return Ok(false);
+            }
+            match_variant_pattern_fields(fields, runtime_fields, bindings)
+        }
+    }
+}
+
+fn match_named_pattern_fields(
+    fields: &[(String, Pattern)],
+    runtime_fields: &BTreeMap<String, RuntimeValue>,
+    bindings: &mut BTreeMap<String, RuntimeValue>,
+) -> TranspileResult<bool> {
+    for (field_name, field_pattern) in fields {
+        let Some(field_value) = runtime_fields.get(field_name) else {
+            return Ok(false);
+        };
+        if !match_pattern(field_pattern, field_value, bindings)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn match_variant_pattern_fields(
+    fields: &[Pattern],
+    runtime_fields: &BTreeMap<String, RuntimeValue>,
+    bindings: &mut BTreeMap<String, RuntimeValue>,
+) -> TranspileResult<bool> {
+    if fields.len() != runtime_fields.len() {
+        return Ok(false);
+    }
+
+    for (idx, field_pattern) in fields.iter().enumerate() {
+        let indexed_key = format!("_{idx}");
+        let plain_key = idx.to_string();
+        let Some(field_value) = runtime_fields
+            .get(&indexed_key)
+            .or_else(|| runtime_fields.get(&plain_key))
+        else {
+            return Ok(false);
+        };
+        if !match_pattern(field_pattern, field_value, bindings)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn match_literal_pattern(lit: &crate::ast::Literal, value: &RuntimeValue) -> bool {
+    match lit {
+        crate::ast::Literal::Bool(expected) => {
+            matches!(value, RuntimeValue::Bool(actual) if actual == expected)
+        }
+        crate::ast::Literal::Int(expected) => match value {
+            RuntimeValue::Int(actual) => actual == expected,
+            RuntimeValue::Nat(actual) => *expected >= 0 && (*actual as i128) == *expected,
+            _ => false,
+        },
+        crate::ast::Literal::String(expected) => {
+            matches!(value, RuntimeValue::String(actual) if actual == expected)
+        }
+    }
+}
+
+fn path_matches_runtime_type(pattern_path: &Path, runtime_ty: &str) -> bool {
+    normalized_path_segments(pattern_path) == normalized_runtime_path_segments(runtime_ty)
+}
+
+fn path_matches_enum_variant(pattern_path: &Path, runtime_ty: &str, runtime_variant: &str) -> bool {
+    let pattern_segments = normalized_path_segments(pattern_path);
+    if pattern_segments.is_empty() {
+        return false;
+    }
+
+    if pattern_segments.len() == 1 {
+        return pattern_segments[0] == runtime_variant;
+    }
+
+    let Some(pattern_variant) = pattern_segments.last() else {
+        return false;
+    };
+    if pattern_variant != runtime_variant {
+        return false;
+    }
+
+    let runtime_ty_segments = normalized_runtime_path_segments(runtime_ty);
+    pattern_segments[..pattern_segments.len() - 1] == runtime_ty_segments[..]
 }
 
 fn compare_numbers<F>(
@@ -660,6 +846,19 @@ fn normalized_path_segments(path: &Path) -> Vec<String> {
         .collect()
 }
 
+fn normalized_runtime_path_segments(path: &str) -> Vec<String> {
+    path.split("::")
+        .map(|segment| {
+            if let Some(idx) = segment.find("::<") {
+                segment[..idx].to_string()
+            } else {
+                segment.to_string()
+            }
+        })
+        .filter(|segment| !segment.is_empty())
+        .collect()
+}
+
 fn split_variant_path(path: &str) -> Option<(String, String)> {
     let mut segments = path.split("::");
     let first = segments.next()?;
@@ -696,7 +895,7 @@ fn type_error(message: &str) -> TranspileError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Binding, Literal, Path, Pattern, Type, VariableMode};
+    use crate::ast::{Binding, Literal, MatchArm, Path, Pattern, Type, VariableMode};
 
     fn test_bounds() -> RuntimeCollectionBounds {
         RuntimeCollectionBounds {
@@ -1020,14 +1219,18 @@ mod tests {
 
     #[test]
     fn test_eval_unsupported_constructs_are_explicit_errors() {
-        let unsupported = Expr::Match {
-            scrutinee: Box::new(Expr::Literal(Literal::Int(0))),
-            arms: vec![],
+        let unsupported = Expr::StructUpdate {
+            name: None,
+            base: Box::new(Expr::Struct {
+                name: Path::single("LState".to_string()),
+                fields: vec![],
+            }),
+            fields: vec![],
         };
         let err = eval_expr(&unsupported, &EvalContext::new(test_bounds())).unwrap_err();
         assert!(err
             .to_string()
-            .contains("does not support `match expression`"));
+            .contains("does not support `struct update expression`"));
 
         let no_hook_call = Expr::Call {
             func: Path::single("Helper".to_string()),
@@ -1045,6 +1248,94 @@ mod tests {
         );
         let err = eval_expr(&bad_cmp, &EvalContext::new(test_bounds())).unwrap_err();
         assert!(err.to_string().contains("expects numeric value"));
+    }
+
+    #[test]
+    fn test_eval_match_expression_variant_binding_and_guard() {
+        let msg = RuntimeValue::enum_value(
+            "LMsg",
+            "Data",
+            vec![("_0".to_string(), RuntimeValue::Int(2))],
+        )
+        .unwrap();
+        let ctx = EvalContext::new(test_bounds()).child_with_binding("msg".to_string(), msg);
+
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Ident("msg".to_string())),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Variant {
+                        name: Path::new(vec!["LMsg".to_string(), "Data".to_string()]),
+                        fields: vec![Pattern::Ident("v".to_string())],
+                    },
+                    guard: Some(Expr::Gt(
+                        Box::new(Expr::Ident("v".to_string())),
+                        Box::new(Expr::Literal(Literal::Int(1))),
+                    )),
+                    body: Expr::Ident("v".to_string()),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: Expr::Literal(Literal::Int(-1)),
+                },
+            ],
+        };
+
+        assert_eq!(eval_expr(&expr, &ctx).unwrap(), RuntimeValue::Int(2));
+    }
+
+    #[test]
+    fn test_eval_match_expression_struct_pattern_binds_fields() {
+        let state = RuntimeValue::struct_value(
+            "LState",
+            vec![
+                ("x".to_string(), RuntimeValue::Int(3)),
+                ("y".to_string(), RuntimeValue::Int(4)),
+            ],
+        )
+        .unwrap();
+        let ctx = EvalContext::new(test_bounds()).child_with_binding("state".to_string(), state);
+
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Ident("state".to_string())),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Struct {
+                        name: Path::single("LState".to_string()),
+                        fields: vec![
+                            ("x".to_string(), Pattern::Ident("captured_x".to_string())),
+                            ("y".to_string(), Pattern::Literal(Literal::Int(4))),
+                        ],
+                    },
+                    guard: None,
+                    body: Expr::Ident("captured_x".to_string()),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: Expr::Literal(Literal::Int(0)),
+                },
+            ],
+        };
+
+        assert_eq!(eval_expr(&expr, &ctx).unwrap(), RuntimeValue::Int(3));
+    }
+
+    #[test]
+    fn test_eval_match_expression_errors_when_no_arm_matches() {
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Literal(Literal::Bool(true))),
+            arms: vec![MatchArm {
+                pattern: Pattern::Literal(Literal::Bool(false)),
+                guard: None,
+                body: Expr::Literal(Literal::Int(0)),
+            }],
+        };
+        let err = eval_expr(&expr, &EvalContext::new(test_bounds())).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("match expression has no matching arm"));
     }
 
     fn int_binding(name: &str) -> Binding {
