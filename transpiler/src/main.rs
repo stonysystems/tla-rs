@@ -1931,6 +1931,7 @@ struct ModelCheckEnumerationSummary {
     direct_assignment_branch_solves: usize,
     enumeration_fallback_branch_solves: usize,
     enumeration_candidate_evaluations: usize,
+    guard_pruned_candidate_evaluations: usize,
     candidate_evaluation_guardrail_per_state_branch: usize,
     successor_cache_hits: usize,
     successor_cache_misses: usize,
@@ -2840,6 +2841,7 @@ fn execute_model_check(
         direct_assignment_branch_solves: 0,
         enumeration_fallback_branch_solves: 0,
         enumeration_candidate_evaluations: 0,
+        guard_pruned_candidate_evaluations: 0,
         candidate_evaluation_guardrail_per_state_branch: CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
         successor_cache_hits: 0,
         successor_cache_misses: 0,
@@ -2900,6 +2902,7 @@ fn execute_model_check(
             direct_assignment_branch_solves: 0,
             enumeration_fallback_branch_solves: 0,
             enumeration_candidate_evaluations: 0,
+            guard_pruned_candidate_evaluations: 0,
             candidate_evaluation_guardrail_per_state_branch:
                 CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
             successor_cache_hits: 0,
@@ -3011,6 +3014,8 @@ fn execute_model_check(
                             solved.telemetry.enumeration_fallback_branch_solves;
                         run_enumeration_summary.enumeration_candidate_evaluations +=
                             solved.telemetry.enumeration_candidate_evaluations;
+                        run_enumeration_summary.guard_pruned_candidate_evaluations +=
+                            solved.telemetry.guard_pruned_candidate_evaluations;
                     }
 
                     for successor in solved.successors {
@@ -3078,11 +3083,10 @@ fn execute_model_check(
                 ExplorationStopReason::FrontierExhausted
             )
         {
-            let explored_graph =
-                build_explored_graph_index(&exploration.explored, |state| {
-                    solve_traced_successors_for_state(state, false)
-                })
-                .map_err(|e| miette::miette!("{}", e))?;
+            let explored_graph = build_explored_graph_index(&exploration.explored, |state| {
+                solve_traced_successors_for_state(state, false)
+            })
+            .map_err(|e| miette::miette!("{}", e))?;
 
             let resolved_leads_to = resolve_leads_to_obligations(
                 &bundle.spec_functions,
@@ -3178,6 +3182,9 @@ fn execute_model_check(
         enumeration_summary.enumeration_candidate_evaluations = enumeration_summary
             .enumeration_candidate_evaluations
             .saturating_add(run_summary.enumeration.enumeration_candidate_evaluations);
+        enumeration_summary.guard_pruned_candidate_evaluations = enumeration_summary
+            .guard_pruned_candidate_evaluations
+            .saturating_add(run_summary.enumeration.guard_pruned_candidate_evaluations);
         enumeration_summary.successor_cache_hits = enumeration_summary
             .successor_cache_hits
             .saturating_add(run_summary.enumeration.successor_cache_hits);
@@ -3472,6 +3479,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "direct_assignment_branch_solves": execution.summary.enumeration.direct_assignment_branch_solves,
                         "enumeration_fallback_branch_solves": execution.summary.enumeration.enumeration_fallback_branch_solves,
                         "enumeration_candidate_evaluations": execution.summary.enumeration.enumeration_candidate_evaluations,
+                        "guard_pruned_candidate_evaluations": execution.summary.enumeration.guard_pruned_candidate_evaluations,
                         "candidate_evaluation_guardrail_per_state_branch": execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
                         "successor_cache_hits": execution.summary.enumeration.successor_cache_hits,
                         "successor_cache_misses": execution.summary.enumeration.successor_cache_misses,
@@ -3569,10 +3577,11 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 execution.exploration.stats.symmetry_collapses,
             );
             println!(
-                "  solver_enumeration: direct_assignment_branch_solves={}, enumeration_fallback_branch_solves={}, enumeration_candidate_evaluations={}, candidate_eval_guardrail_per_state_branch={}, successor_cache_hits={}, successor_cache_misses={}",
+                "  solver_enumeration: direct_assignment_branch_solves={}, enumeration_fallback_branch_solves={}, enumeration_candidate_evaluations={}, guard_pruned_candidate_evaluations={}, candidate_eval_guardrail_per_state_branch={}, successor_cache_hits={}, successor_cache_misses={}",
                 execution.summary.enumeration.direct_assignment_branch_solves,
                 execution.summary.enumeration.enumeration_fallback_branch_solves,
                 execution.summary.enumeration.enumeration_candidate_evaluations,
+                execution.summary.enumeration.guard_pruned_candidate_evaluations,
                 execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
                 execution.summary.enumeration.successor_cache_hits,
                 execution.summary.enumeration.successor_cache_misses,
@@ -6535,6 +6544,13 @@ max = 1
             execution
                 .summary
                 .enumeration
+                .guard_pruned_candidate_evaluations,
+            0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
                 .candidate_evaluation_guardrail_per_state_branch,
             10_000
         );
@@ -6635,6 +6651,118 @@ max = 1
                 .enumeration
                 .enumeration_candidate_evaluations,
             0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .guard_pruned_candidate_evaluations,
+            0
+        );
+    }
+
+    #[test]
+    fn test_execute_model_check_reports_guard_pruned_enumeration_telemetry() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value <= c.limit
+    }
+
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s.value == 1 && LStep(s, s_, c)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[properties]
+check_deadlock = false
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .direct_assignment_branch_solves,
+            0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_fallback_branch_solves,
+            1
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_candidate_evaluations,
+            0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .guard_pruned_candidate_evaluations,
+            2
         );
     }
 

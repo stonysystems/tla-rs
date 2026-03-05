@@ -9709,7 +9709,10 @@ Rules for this phase (do not cut corners):
   - [x] **33.4.2.a** Add run-scoped successor memoization keyed by `(state, constants)` and reuse it for liveness graph rebuild instead of re-solving all branches for each explored state. [26:03:05, 23:40]
     - Implemented in `execute_model_check` via per-run `successor_cache` and a shared successor-solving closure used by both exploration and liveness graph indexing.
     - Added summary telemetry (`successor_cache_hits`, `successor_cache_misses`) to CLI/JSON output and coverage in unit/integration tests.
-  - [ ] **33.4.2.b** Add a second exact-mode optimization (target: branch-enablement caching keyed by `(state, branch, constants)` or equivalent guard-driven pruning) with correctness-first tests.
+  - [x] **33.4.2.b** Add a second exact-mode optimization (target: branch-enablement caching keyed by `(state, branch, constants)` or equivalent guard-driven pruning) with correctness-first tests. [26:03:05, 23:55]
+    - Implemented guard-driven pruning in `solve_branch_by_candidate_enumeration`: candidate-independent constraints are evaluated once per `(state, branch, constants, existential assignment)` and branches with unsatisfied static guards skip per-candidate evaluation entirely.
+    - Added telemetry field `guard_pruned_candidate_evaluations` in solver/main summaries (CLI + JSON) so pruning impact is auditable without changing exact-mode state counts.
+    - Added correctness-first coverage in `transpiler/src/modelcheck/solver.rs` (`test_solve_branch_successors_with_candidates_prunes_static_guard`) and command-level coverage in `transpiler/src/main.rs` (`test_execute_model_check_reports_guard_pruned_enumeration_telemetry`).
   - [ ] **33.4.2.c** Document and lock before/after exact-mode telemetry deltas for both optimizations on the checked-in baseline models.
 - [ ] Keep lossy modes (`hash_compaction64`) documented and reported as bug-finding accelerators, not proof-strength runs.
 - [ ] Add benchmark or regression automation that compares before/after telemetry on the same checked-in models.

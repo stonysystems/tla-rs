@@ -48,6 +48,8 @@ pub struct BranchSolveTelemetry {
     pub enumeration_fallback_branch_solves: usize,
     /// Number of candidate next-state evaluations performed by fallback.
     pub enumeration_candidate_evaluations: usize,
+    /// Number of candidate next-state evaluations skipped by static guard pruning.
+    pub guard_pruned_candidate_evaluations: usize,
 }
 
 /// Result payload for one branch-solve attempt.
@@ -160,28 +162,31 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                         direct_assignment_branch_solves: 1,
                         enumeration_fallback_branch_solves: 0,
                         enumeration_candidate_evaluations: 0,
+                        guard_pruned_candidate_evaluations: 0,
                     },
                 });
             }
         }
         if let Some(candidates) = next_state_candidates {
-            let (successors, candidate_evaluations) = solve_branch_by_candidate_enumeration(
-                transition,
-                branch,
-                current_state,
-                constants,
-                &assignments,
-                candidates,
-                max_candidate_evaluations_per_state_branch,
-                bounds,
-                hooks,
-            )?;
+            let (successors, candidate_evaluations, guard_pruned_candidate_evaluations) =
+                solve_branch_by_candidate_enumeration(
+                    transition,
+                    branch,
+                    current_state,
+                    constants,
+                    &assignments,
+                    candidates,
+                    max_candidate_evaluations_per_state_branch,
+                    bounds,
+                    hooks,
+                )?;
             return Ok(BranchSolveResult {
                 successors,
                 telemetry: BranchSolveTelemetry {
                     direct_assignment_branch_solves: 0,
                     enumeration_fallback_branch_solves: 1,
                     enumeration_candidate_evaluations: candidate_evaluations,
+                    guard_pruned_candidate_evaluations,
                 },
             });
         }
@@ -219,6 +224,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
             direct_assignment_branch_solves: 1,
             enumeration_fallback_branch_solves: 0,
             enumeration_candidate_evaluations: 0,
+            guard_pruned_candidate_evaluations: 0,
         },
     })
 }
@@ -233,15 +239,23 @@ fn solve_branch_by_candidate_enumeration(
     max_candidate_evaluations_per_state_branch: Option<usize>,
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
-) -> TranspileResult<(Vec<RuntimeValue>, usize)> {
+) -> TranspileResult<(Vec<RuntimeValue>, usize, usize)> {
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
     } else {
         existential_assignments.to_vec()
     };
+    let (candidate_independent_constraints, candidate_dependent_constraints): (
+        Vec<&BranchConstraintIr>,
+        Vec<&BranchConstraintIr>,
+    ) = branch
+        .constraints
+        .iter()
+        .partition(|constraint| !constraint_depends_on_next_state(constraint, transition));
 
     let mut successors = Vec::new();
     let mut candidate_evaluations = 0usize;
+    let mut guard_pruned_candidate_evaluations = 0usize;
     for assignment in assignments {
         if !assignment_compatible_with_branch(branch, &assignment)? {
             return Err(TranspileError::Config {
@@ -250,6 +264,41 @@ fn solve_branch_by_candidate_enumeration(
                     branch.label
                 ),
             });
+        }
+
+        let env_without_next =
+            build_environment(transition, current_state, None, constants, &assignment);
+        let mut static_guard_enabled = true;
+        for constraint in &candidate_independent_constraints {
+            if !evaluate_constraint(constraint, &env_without_next, bounds, hooks)? {
+                static_guard_enabled = false;
+                break;
+            }
+        }
+        if !static_guard_enabled {
+            guard_pruned_candidate_evaluations =
+                guard_pruned_candidate_evaluations.saturating_add(next_state_candidates.len());
+            continue;
+        }
+
+        if candidate_dependent_constraints.is_empty() {
+            candidate_evaluations =
+                candidate_evaluations.saturating_add(next_state_candidates.len());
+            if let Some(limit) = max_candidate_evaluations_per_state_branch {
+                if candidate_evaluations > limit {
+                    return Err(TranspileError::Config {
+                        message: format!(
+                            "Model-check candidate-enumeration guardrail exceeded for branch `{}`: \
+                             evaluated {} candidate next-states for a single explored state/branch \
+                             (limit = {}). Reduce candidate-state domains, inline direct `s_.field == ...` \
+                             constraints, or simplify predicate-only helper branches.",
+                            branch.label, candidate_evaluations, limit
+                        ),
+                    });
+                }
+            }
+            successors.extend(next_state_candidates.iter().cloned());
+            continue;
         }
 
         for candidate_next_state in next_state_candidates {
@@ -276,7 +325,7 @@ fn solve_branch_by_candidate_enumeration(
             );
 
             let mut enabled = true;
-            for constraint in &branch.constraints {
+            for constraint in &candidate_dependent_constraints {
                 if !evaluate_constraint(constraint, &env, bounds, hooks)? {
                     enabled = false;
                     break;
@@ -288,7 +337,11 @@ fn solve_branch_by_candidate_enumeration(
         }
     }
 
-    Ok((deduplicate_successors(successors), candidate_evaluations))
+    Ok((
+        deduplicate_successors(successors),
+        candidate_evaluations,
+        guard_pruned_candidate_evaluations,
+    ))
 }
 
 /// Solve all `LNext` branches for one current state and return deduplicated successors.
@@ -619,6 +672,104 @@ fn branch_has_next_state_assignment(branch: &TransitionBranchIr) -> bool {
             }
         )
     })
+}
+
+fn constraint_depends_on_next_state(
+    constraint: &BranchConstraintIr,
+    transition: &TransitionIr,
+) -> bool {
+    match constraint {
+        BranchConstraintIr::Eq { target, value } => {
+            if matches!(target.root, ConstraintRoot::NextState) {
+                return true;
+            }
+            expr_mentions_identifier(value, &transition.next_state_param)
+        }
+        BranchConstraintIr::Predicate { expr } => {
+            expr_mentions_identifier(expr, &transition.next_state_param)
+        }
+    }
+}
+
+fn expr_mentions_identifier(expr: &Expr, ident: &str) -> bool {
+    match expr {
+        Expr::Conjunction(items) | Expr::Disjunction(items) => items
+            .iter()
+            .any(|item| expr_mentions_identifier(item, ident)),
+        Expr::Implies(lhs, rhs)
+        | Expr::Iff(lhs, rhs)
+        | Expr::Eq(lhs, rhs)
+        | Expr::Ne(lhs, rhs)
+        | Expr::Lt(lhs, rhs)
+        | Expr::Le(lhs, rhs)
+        | Expr::Gt(lhs, rhs)
+        | Expr::Ge(lhs, rhs)
+        | Expr::Index(lhs, rhs)
+        | Expr::Binary(lhs, _, rhs) => {
+            expr_mentions_identifier(lhs, ident) || expr_mentions_identifier(rhs, ident)
+        }
+        Expr::Not(inner) | Expr::View(inner) | Expr::Cast(inner, _) | Expr::Unary(_, inner) => {
+            expr_mentions_identifier(inner, ident)
+        }
+        Expr::Forall { body, triggers, .. } => {
+            expr_mentions_identifier(body, ident)
+                || triggers
+                    .iter()
+                    .flat_map(|trigger| trigger.exprs.iter())
+                    .any(|trigger_expr| expr_mentions_identifier(trigger_expr, ident))
+        }
+        Expr::Exists { body, .. } => expr_mentions_identifier(body, ident),
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            expr_mentions_identifier(cond, ident)
+                || expr_mentions_identifier(then_branch, ident)
+                || else_branch
+                    .as_ref()
+                    .map(|branch| expr_mentions_identifier(branch, ident))
+                    .unwrap_or(false)
+        }
+        Expr::Match { scrutinee, arms } => {
+            expr_mentions_identifier(scrutinee, ident)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .map(|guard| expr_mentions_identifier(guard, ident))
+                        .unwrap_or(false)
+                        || expr_mentions_identifier(&arm.body, ident)
+                })
+        }
+        Expr::Let { value, body, .. } => {
+            expr_mentions_identifier(value, ident) || expr_mentions_identifier(body, ident)
+        }
+        Expr::Is(base, _) | Expr::Field(base, _) | Expr::Arrow(base, _) => {
+            expr_mentions_identifier(base, ident)
+        }
+        Expr::Struct { fields, .. } => fields
+            .iter()
+            .any(|(_, field_expr)| expr_mentions_identifier(field_expr, ident)),
+        Expr::StructUpdate { base, fields, .. } => {
+            expr_mentions_identifier(base, ident)
+                || fields
+                    .iter()
+                    .any(|(_, field_expr)| expr_mentions_identifier(field_expr, ident))
+        }
+        Expr::SeqLit(items) | Expr::SetLit(items) => items
+            .iter()
+            .any(|item| expr_mentions_identifier(item, ident)),
+        Expr::MapLit(items) => items.iter().any(|(key, value)| {
+            expr_mentions_identifier(key, ident) || expr_mentions_identifier(value, ident)
+        }),
+        Expr::Call { args, .. } => args.iter().any(|arg| expr_mentions_identifier(arg, ident)),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_mentions_identifier(receiver, ident)
+                || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
+        }
+        Expr::Ident(name) => name == ident,
+        Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Literal(_) => false,
+    }
 }
 
 fn join_path(path: &[String]) -> String {
@@ -1095,6 +1246,7 @@ mod tests {
         assert_eq!(result.telemetry.direct_assignment_branch_solves, 0);
         assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 1);
         assert_eq!(result.telemetry.enumeration_candidate_evaluations, 2);
+        assert_eq!(result.telemetry.guard_pruned_candidate_evaluations, 0);
     }
 
     #[test]
@@ -1126,6 +1278,71 @@ mod tests {
             .contains("candidate-enumeration guardrail exceeded"));
         assert!(err.to_string().contains("branch_0"));
         assert!(err.to_string().contains("limit = 1"));
+    }
+
+    #[test]
+    fn test_solve_branch_successors_with_candidates_prunes_static_guard() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![
+                BranchConstraintIr::Predicate {
+                    expr: Expr::Eq(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("s".to_string())),
+                            "x".to_string(),
+                        )),
+                        Box::new(Expr::Literal(crate::ast::Literal::Int(1))),
+                    ),
+                },
+                BranchConstraintIr::Predicate {
+                    expr: Expr::Call {
+                        func: Path::single("LHelper".to_string()),
+                        args: vec![Expr::Ident("s".to_string()), Expr::Ident("s_".to_string())],
+                    },
+                },
+            ],
+        };
+        let candidate_next_states = vec![state(0, 0), state(1, 0)];
+        let helper_call_count = AtomicUsize::new(0);
+        let call_hook = |func: &Path, _args: &[RuntimeValue]| -> TranspileResult<RuntimeValue> {
+            if func.last() == Some("LHelper") {
+                helper_call_count.fetch_add(1, Ordering::Relaxed);
+                return Ok(RuntimeValue::Bool(true));
+            }
+            Err(unsupported_solver(
+                "Unexpected helper call in solver test",
+                None,
+            ))
+        };
+        let hooks = SolverHooks {
+            call_evaluator: Some(&call_hook),
+            method_evaluator: None,
+            quantifier_domain_evaluator: None,
+            predicate_only_branch_solver: None,
+        };
+
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidate_next_states),
+            None,
+            bounds(),
+            hooks,
+        )
+        .unwrap();
+
+        assert!(result.successors.is_empty());
+        assert_eq!(result.telemetry.direct_assignment_branch_solves, 0);
+        assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 1);
+        assert_eq!(result.telemetry.enumeration_candidate_evaluations, 0);
+        assert_eq!(result.telemetry.guard_pruned_candidate_evaluations, 2);
+        assert_eq!(helper_call_count.load(Ordering::Relaxed), 0);
     }
 
     #[test]
@@ -1174,6 +1391,7 @@ mod tests {
         assert_eq!(result.telemetry.direct_assignment_branch_solves, 1);
         assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 0);
         assert_eq!(result.telemetry.enumeration_candidate_evaluations, 0);
+        assert_eq!(result.telemetry.guard_pruned_candidate_evaluations, 0);
     }
 
     #[test]

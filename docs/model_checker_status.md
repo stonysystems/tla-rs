@@ -21,7 +21,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - Evaluate `match` expressions with ordered arm selection, pattern bindings, and guard checks.
 - Evaluate struct-update expressions (`Type { updated_field: ..., ..base }`) for struct/enum values.
 - Evaluate map-domain builtin method calls (`map.dom()`) for finite map values.
-- Track solver fallback telemetry in run summaries/JSON (`direct_assignment_branch_solves`, `enumeration_fallback_branch_solves`, `enumeration_candidate_evaluations`) and enforce a per-state/branch candidate-enumeration guardrail.
+- Track solver fallback telemetry in run summaries/JSON (`direct_assignment_branch_solves`, `enumeration_fallback_branch_solves`, `enumeration_candidate_evaluations`, `guard_pruned_candidate_evaluations`) and enforce a per-state/branch candidate-enumeration guardrail.
 - Emit JSON reports including search settings, reduction telemetry, stop reason, and violation payloads.
 
 ### 1.2 Reduction/analysis knobs currently implemented
@@ -60,7 +60,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - `transpiler/src/modelcheck/domain.rs` only expands generics for concrete built-ins (`Seq`, `Set`, `Map`) and rejects broader generic forms.
 - `transpiler/src/modelcheck/domain.rs` fails unresolved named-type domains with `Missing domain for named type ...` until `quantifiers.types.<TypeName>` is provided.
 - `transpiler/src/main.rs` now explores all resolved `LConstants` valuations; model-check preflight still fails on zero matching `LConstants` valuations after applying assignments/domains.
-- `transpiler/src/modelcheck/solver.rs` now supports a predicate-only direct-solver hook path (used by source-first model check for direct helper-call branches such as `LStep(s, s_, c)`), and otherwise falls back to candidate-state enumeration for unresolved predicate-only/helper branches; fallback runs are bounded by a hard guardrail (`candidate_evaluation_guardrail_per_state_branch = 10000`) and expose telemetry in JSON/CLI summaries.
+- `transpiler/src/modelcheck/solver.rs` now supports a predicate-only direct-solver hook path (used by source-first model check for direct helper-call branches such as `LStep(s, s_, c)`), and otherwise falls back to candidate-state enumeration for unresolved predicate-only/helper branches; fallback runs are bounded by a hard guardrail (`candidate_evaluation_guardrail_per_state_branch = 10000`) and expose telemetry in JSON/CLI summaries. Enumeration fallback also performs static-guard pruning before candidate loops and reports skipped work as `guard_pruned_candidate_evaluations`.
 - `transpiler/src/modelcheck/solver.rs` rejects predicate-only branches without candidate states using `no direct next-state equality constraints` errors.
 - `transpiler/src/main.rs` helper-call execution still errors when it could not resolve helper call names or when helper-call recursion exceeded depth limit.
 
@@ -210,6 +210,13 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 
 - `transpiler/tests/integration.rs`:
   - `test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes` now also verifies `summary.successor_cache_hits > 0` and `summary.successor_cache_misses > 0` for completed liveness runs, locking in the run-scoped successor-cache reuse path.
+
+### 3.16 Guard-pruned enumeration optimization guard
+
+- `transpiler/src/modelcheck/solver.rs`:
+  - `test_solve_branch_successors_with_candidates_prunes_static_guard` verifies candidate-enumeration fallback short-circuits when candidate-independent guards are unsatisfied and reports `guard_pruned_candidate_evaluations > 0`.
+- `transpiler/src/main.rs`:
+  - `test_execute_model_check_reports_guard_pruned_enumeration_telemetry` verifies command-level summary telemetry propagates the optimization (`guard_pruned_candidate_evaluations == 2`) while keeping exact fallback semantics.
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 

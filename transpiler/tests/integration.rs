@@ -9206,6 +9206,10 @@ fn test_model_check_helper_branch_direct_solver_bounded_run() {
         .get("enumeration_candidate_evaluations")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
+    let guard_pruned = summary
+        .get("guard_pruned_candidate_evaluations")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
 
     assert_eq!(
         direct, 2,
@@ -9220,6 +9224,11 @@ fn test_model_check_helper_branch_direct_solver_bounded_run() {
     assert_eq!(
         candidate_evals, 0,
         "helper branch direct solving should avoid candidate enumeration; report={}",
+        report
+    );
+    assert_eq!(
+        guard_pruned, 0,
+        "direct helper-branch solving should not report guard-pruned candidate evaluations; report={}",
         report
     );
 }
