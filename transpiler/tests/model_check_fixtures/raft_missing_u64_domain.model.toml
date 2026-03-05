@@ -1,4 +1,4 @@
-# Intentionally omits `quantifiers.types.LLogEntry` to capture the current
+# Intentionally omits `quantifiers.types.u64` to capture the current
 # source-first Raft blocker as a checked-in regression fixture.
 [constants.assignments]
 quorum_size = 1

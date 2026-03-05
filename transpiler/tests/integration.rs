@@ -8556,8 +8556,8 @@ fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
         },
         ExpectedUnsupportedRow {
             protocol: "Raft",
-            model_path: "transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml",
-            blocker_fragment: "missing domain for named type `LLogEntry`",
+            model_path: "transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml",
+            blocker_fragment: "missing domain for named type `u64`",
         },
         ExpectedUnsupportedRow {
             protocol: "VerticalPaxos",
@@ -9926,24 +9926,24 @@ fn test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducib
 }
 
 #[test]
-fn test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible() {
+fn test_model_check_raft_blocker_missing_u64_domain_is_reproducible() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
     let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/Raft/raft.rs");
     let types = repo_root.join("src/protocol/Raft/types.rs");
-    let model_path = resolve_model_check_fixture_path("raft_missing_log_entry_domain.model.toml");
+    let model_path = resolve_model_check_fixture_path("raft_missing_u64_domain.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
     let model_src = std::fs::read_to_string(&model_path)
         .unwrap_or_else(|err| panic!("failed to read raft blocker fixture: {}", err));
     assert!(
-        model_src.contains("Intentionally omits `quantifiers.types.LLogEntry`"),
+        model_src.contains("Intentionally omits `quantifiers.types.u64`"),
         "raft blocker fixture should document intentional missing-domain setup"
     );
     assert!(
-        !model_src.contains("[quantifiers.types.LLogEntry]"),
-        "raft blocker fixture must keep `quantifiers.types.LLogEntry` absent to preserve the smallest reproducible first blocker"
+        !model_src.contains("[quantifiers.types.u64]"),
+        "raft blocker fixture must keep `quantifiers.types.u64` absent to preserve the smallest reproducible first blocker"
     );
     assert!(
         model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
@@ -9971,12 +9971,12 @@ fn test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Missing domain for named type `LLogEntry`"),
+        stderr.contains("Missing domain for named type `u64`"),
         "expected missing named-type domain blocker in stderr, got: {}",
         stderr
     );
     assert!(
-        stderr.contains("quantifiers.types.LLogEntry"),
+        stderr.contains("quantifiers.types.u64"),
         "expected config path hint for missing named-type domain, got: {}",
         stderr
     );

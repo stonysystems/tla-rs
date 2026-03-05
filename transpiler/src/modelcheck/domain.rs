@@ -4,7 +4,7 @@ use crate::modelcheck::config::{DomainSpec, ModelConfig, ModelValue};
 use crate::modelcheck::ir::TransitionBranchIr;
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use crate::spec_analyzer::SpecSchema;
-use crate::types::{EnumDef, VariantFields};
+use crate::types::{EnumDef, StructDef, VariantFields};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Concrete assignment for existential variables in one `LNext` branch.
@@ -298,6 +298,17 @@ fn expand_named_type_domain(
             recursion_depth,
         );
     }
+    if let Some((struct_name, struct_def)) = find_struct(schema, &candidates) {
+        return expand_struct_values(
+            &struct_name,
+            struct_def,
+            schema,
+            model,
+            bounds,
+            expansion_limit,
+            recursion_depth,
+        );
+    }
 
     Err(TranspileError::Config {
         message: format!(
@@ -512,6 +523,73 @@ fn expand_enum_variants(
         });
     }
 
+    Ok(out)
+}
+
+fn expand_struct_values(
+    struct_name: &str,
+    struct_def: &StructDef,
+    schema: &SpecSchema,
+    model: &ModelConfig,
+    bounds: &RuntimeCollectionBounds,
+    expansion_limit: usize,
+    recursion_depth: usize,
+) -> TranspileResult<Vec<RuntimeValue>> {
+    let mut combinations: Vec<Vec<(String, RuntimeValue)>> = vec![Vec::new()];
+    for field in &struct_def.fields {
+        let field_values = unique_sorted(expand_type_domain(
+            &field.ty,
+            schema,
+            model,
+            bounds,
+            expansion_limit,
+            recursion_depth + 1,
+        )?);
+        if field_values.is_empty() {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Struct domain expansion for `{}` produced an empty domain for field `{}`.",
+                    struct_name, field.name
+                ),
+            });
+        }
+
+        let mut next = Vec::new();
+        for partial in &combinations {
+            for value in &field_values {
+                let mut candidate = partial.clone();
+                candidate.push((field.name.clone(), value.clone()));
+                next.push(candidate);
+                if next.len() > expansion_limit {
+                    return Err(TranspileError::Config {
+                        message: format!(
+                            "Struct domain expansion for `{}` exceeded limit {}.",
+                            struct_name, expansion_limit
+                        ),
+                    });
+                }
+            }
+        }
+        combinations = next;
+    }
+
+    let mut out = Vec::new();
+    for fields in combinations {
+        out.push(RuntimeValue::struct_value(struct_def.name.clone(), fields).map_err(
+            |err| TranspileError::Config {
+                message: format!(
+                    "Failed to construct runtime struct value for `{}`: {}",
+                    struct_name, err
+                ),
+            },
+        )?);
+    }
+    let out = unique_sorted(out);
+    if out.is_empty() {
+        return Err(TranspileError::Config {
+            message: format!("Struct domain expansion for `{}` is empty.", struct_name),
+        });
+    }
     Ok(out)
 }
 
@@ -773,6 +851,18 @@ fn find_enum<'a>(schema: &'a SpecSchema, candidates: &[String]) -> Option<(Strin
     None
 }
 
+fn find_struct<'a>(
+    schema: &'a SpecSchema,
+    candidates: &[String],
+) -> Option<(String, &'a StructDef)> {
+    for candidate in candidates {
+        if let Some(struct_def) = schema.structs.get(candidate) {
+            return Some((candidate.clone(), struct_def));
+        }
+    }
+    None
+}
+
 fn unique_sorted(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut set = BTreeSet::new();
     for value in values {
@@ -838,7 +928,7 @@ mod tests {
     };
     use crate::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
     use crate::spec_analyzer::SpecSchema;
-    use crate::types::{EnumDef, VariantDef};
+    use crate::types::{EnumDef, FieldDef, StructDef, VariantDef};
     use std::collections::HashMap;
 
     fn base_model() -> ModelConfig {
@@ -886,6 +976,28 @@ mod tests {
             },
         );
         schema.enum_order.push(enum_name.to_string());
+        schema
+    }
+
+    fn mk_struct_schema(struct_name: &str, fields: Vec<(&str, Type)>) -> SpecSchema {
+        let mut schema = SpecSchema::new();
+        schema.structs.insert(
+            struct_name.to_string(),
+            StructDef {
+                name: struct_name.to_string(),
+                generics: Default::default(),
+                fields: fields
+                    .into_iter()
+                    .map(|(name, ty)| FieldDef {
+                        name: name.to_string(),
+                        ty,
+                        is_public: false,
+                    })
+                    .collect(),
+                is_spec: true,
+            },
+        );
+        schema.struct_order.push(struct_name.to_string());
         schema
     }
 
@@ -1111,6 +1223,62 @@ mod tests {
         assert!(err
             .to_string()
             .contains("Missing domain for named type `UnknownType`"));
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_named_struct_without_override_uses_schema_fields() {
+        let mut model = base_model();
+        model.quantifiers.int = Some(IntDomain { min: 0, max: 0 });
+        let schema = mk_struct_schema(
+            "LLogEntry",
+            vec![("term", Type::Int), ("value", Type::Int)],
+        );
+        let branch = mk_branch(vec![ExistentialVarIr {
+            name: "entry".to_string(),
+            ty: Some(Type::Named(Path::single("LLogEntry".to_string()))),
+        }]);
+
+        let assignments = expand_branch_existentials(&branch, &schema, &model).unwrap();
+        assert_eq!(assignments.len(), 1);
+        assert!(assignments.iter().any(|a| {
+            a.get("entry")
+                == Some(
+                    &RuntimeValue::struct_value(
+                        "LLogEntry".to_string(),
+                        vec![
+                            ("term".to_string(), RuntimeValue::Int(0)),
+                            ("value".to_string(), RuntimeValue::Int(0)),
+                        ],
+                    )
+                    .unwrap(),
+                )
+        }));
+    }
+
+    #[test]
+    fn test_expand_branch_existentials_seq_of_named_struct_without_override() {
+        let mut model = base_model();
+        model.quantifiers.int = Some(IntDomain { min: 0, max: 0 });
+        model.collections.max_seq_len = 1;
+        let schema = mk_struct_schema("LLogEntry", vec![("term", Type::Int)]);
+        let branch = mk_branch(vec![ExistentialVarIr {
+            name: "log".to_string(),
+            ty: Some(Type::Seq(Box::new(Type::Named(Path::single(
+                "LLogEntry".to_string(),
+            ))))),
+        }]);
+
+        let assignments = expand_branch_existentials(&branch, &schema, &model).unwrap();
+        assert_eq!(assignments.len(), 2, "expected empty + single-entry sequences");
+        assert!(assignments.iter().any(
+            |a| matches!(a.get("log"), Some(RuntimeValue::Seq(values)) if values.is_empty())
+        ));
+        assert!(assignments.iter().any(|a| {
+            matches!(
+                a.get("log"),
+                Some(RuntimeValue::Seq(values)) if values.len() == 1
+            )
+        }));
     }
 
     #[test]

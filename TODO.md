@@ -9647,7 +9647,7 @@ Rules for this phase (do not cut corners):
   - states / transitions / depth / elapsed time when available
   - first blocker when the protocol still does not run
 - [x] Keep the smallest realistic checked-in model that reproduces each blocker or success.
-  - [x] Raft blocker model: add `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` and regression `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LLogEntry` missing domain).
+  - [x] Raft blocker model: keep `transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml` and regression `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.u64` missing domain).
   - [x] RSL blocker model: add `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` and regression `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LConstants` missing domain).
   - [x] VerticalPaxos blocker model: add `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and regression `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [x] EPaxos blocker model: add `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and regression `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
@@ -9764,9 +9764,12 @@ Rules for this phase (do not cut corners):
       - Updated blocker fixture/test/doc matrix references from the retired init-signature blocker to `rsl_missing_constants_domain`.
   - [ ] **33.5.2.b Raft (priority #2)**
     - [x] **33.5.2.b.1** Keep a checked-in minimal exact-mode Raft source-first model and blocker regression stable; confirm first blocker remains the smallest reproducible one. [26:03:06, 06:10]
-      - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` and command-level replay; first blocker remains `Missing domain for named type \`LLogEntry\``.
-      - Strengthened regression `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` to enforce fixture intent/minimality (intentional omission of `quantifiers.types.LLogEntry`, `max_depth = 1`, `max_states = 200`).
-    - [ ] **33.5.2.b.2** Land one highest-leverage fix for the Raft first blocker class (unsupported construct / missing config / performance / real counterexample), then re-classify.
+      - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml` and command-level replay; first blocker is `Missing domain for named type \`u64\``.
+      - Regression `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` enforces fixture intent/minimality (intentional omission of `quantifiers.types.u64`, `max_depth = 1`, `max_states = 200`).
+    - [x] **33.5.2.b.2** Land one highest-leverage fix for the Raft first blocker class (unsupported construct / missing config / performance / real counterexample), then re-classify. [26:03:06, 07:30]
+      - Implemented named-struct finite-domain expansion fallback in `transpiler/src/modelcheck/domain.rs` so schema-defined structs (for example `LLogEntry`) no longer require manual `quantifiers.types.<Struct>` overrides when their fields are already enumerable.
+      - Added unit coverage for direct named-struct and `Seq<named-struct>` existential expansion (`test_expand_branch_existentials_named_struct_without_override_uses_schema_fields`, `test_expand_branch_existentials_seq_of_named_struct_without_override`).
+      - Re-classified Raft first blocker via source-first replay to missing primitive named domain `quantifiers.types.u64` using checked-in fixture `raft_missing_u64_domain.model.toml`.
   - [ ] **33.5.2.c Paxos (priority #3)**
     - [ ] **33.5.2.c.1** Keep exact-mode source-first Paxos green with checked-in model + artifact + regression evidence.
     - [ ] **33.5.2.c.2** Upgrade toward real safety properties (not only smoke invariants) once executable in-source.

@@ -158,7 +158,7 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
   - `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` (checked-in EPaxos blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` (checked-in PBFT blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` (checked-in ChainReplication blocker model reproduces bounded candidate expansion overflow for `LState`)
-  - `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` (checked-in Raft blocker model reproduces missing `quantifiers.types.LLogEntry` domain requirement and enforces that the fixture intentionally omits that domain while staying minimal/bounded)
+  - `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` (checked-in Raft blocker model reproduces missing `quantifiers.types.u64` domain requirement and enforces that the fixture intentionally omits that domain while staying minimal/bounded)
 
 ### 3.6 Supported protocol evidence discipline guard
 
@@ -252,7 +252,7 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | Protocol | Exact source files used | Checked-in model file | Search mode / exactness | Result | States / transitions / depth / elapsed_ms | First blocker (if unsupported) | Automated evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `RSL` | `src/protocol/RSL/distributed_system.rs` | `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LConstants` (`quantifiers.types.LConstants`). | `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` |
-| `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LLogEntry` (`quantifiers.types.LLogEntry`). | `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` |
+| `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `u64` (`quantifiers.types.u64`). | `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` |
 | `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 12` | N/A | `test_model_check_paxos_bounded_run`, `reports/model_check/paxos_small.json` |
 | `VerticalPaxos` | `src/protocol/VerticalPaxos/vpaxos.rs`, `src/protocol/VerticalPaxos/types.rs` | `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` |
 | `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` |
@@ -427,11 +427,11 @@ Expected result: command fails with `Configuration error: Missing domain for nam
 transpiler/target/debug/verus-transpile model-check \
   --input src/protocol/Raft/raft.rs \
   --types src/protocol/Raft/types.rs \
-  --model transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml \
+  --model transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml \
   --search bfs
 ```
 
-Expected result: command fails with `Configuration error: Missing domain for named type \`LLogEntry\`` and a hint to provide `quantifiers.types.LLogEntry`.
+Expected result: command fails with `Configuration error: Missing domain for named type \`u64\`` and a hint to provide `quantifiers.types.u64`.
 
 ### 5.6 Replay currently checked-in unsupported blocker (VerticalPaxos)
 
@@ -505,7 +505,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_pbft_blocker_state_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible -- --nocapture
-cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_raft_blocker_missing_u64_domain_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models -- --nocapture
 ```
