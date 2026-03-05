@@ -9651,7 +9651,7 @@ Rules for this phase (do not cut corners):
   - [x] RSL blocker model: add `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` and regression `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LConstants` missing domain).
   - [x] VerticalPaxos blocker model: add `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and regression `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` to lock the current first blocker (`Existential domain expansion exceeded limit (200 assignments)` during branch existential enumeration).
   - [x] EPaxos blocker model: add `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and regression `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LConstants` exceeds `search.max_states` during candidate construction).
-  - [x] PBFT blocker model: add `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` and regression `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
+  - [x] PBFT small model: keep `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` as the checked-in bounded source-first fixture and guard it with `test_model_check_pbft_bounded_run` + `reports/model_check/pbft_small.json`.
   - [x] ChainReplication blocker model: add `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` and regression `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
 - [x] Add/update automated integration coverage when a protocol moves from "unsupported/untracked" to "supported". Added regression `test_model_check_supported_protocol_rows_require_automated_evidence` so every `Result = ok` protocol row in `docs/model_checker_status.md` must reference existing integration test(s) and checked-in `reports/model_check/*.json` artifact(s).
 
@@ -9805,8 +9805,12 @@ Rules for this phase (do not cut corners):
   - [ ] **33.5.2.f PBFT (priority #6)**
     - [x] **33.5.2.f.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:05, 23:50]
       - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
-      - Strengthened blocker regression `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` to enforce fixture intent/minimality (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`).
-    - [ ] **33.5.2.f.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
+      - Strengthened fixture intent/minimality checks (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`), now carried by `test_model_check_pbft_bounded_run`.
+    - [x] **33.5.2.f.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify. [26:03:06, 12:10]
+      - Extended `LInit` pinned-state fallback in `transpiler/src/main.rs` to support `s.field == c.field` assignments by resolving constants-field references against each concrete `LConstants` valuation.
+      - Added regression `test_execute_model_check_linit_fallback_supports_constants_field_equalities` to lock constants-field fallback behavior under bounded `search.max_states`.
+      - Re-ran source-first PBFT with checked-in fixture `pbft_state_expansion_limit.model.toml`; run is now supported (`result = ok`, `states = 1`, `transitions = 0`, `depth = 0`).
+      - Re-classified PBFT in `docs/model_checker_status.md` from unsupported blocker to exact bounded run with checked-in artifact `reports/model_check/pbft_small.json` and regression `test_model_check_pbft_bounded_run`.
   - [ ] **33.5.2.g ChainReplication (priority #7)**
     - [ ] **33.5.2.g.1** Keep checked-in minimal blocker model and exact blocker classification current.
     - [ ] **33.5.2.g.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.

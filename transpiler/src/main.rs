@@ -2429,6 +2429,18 @@ fn infer_init_state_param_name(init_fn: &verus_transpiler::ast::SpecFunction) ->
     state_param
 }
 
+fn infer_init_constants_param_name(init_fn: &verus_transpiler::ast::SpecFunction) -> Option<&str> {
+    use verus_transpiler::ast::Type;
+
+    init_fn.params.iter().find_map(|param| {
+        if matches!(&param.ty, Type::Named(path) if path.last() == Some("LConstants")) {
+            Some(param.name.as_str())
+        } else {
+            None
+        }
+    })
+}
+
 fn state_struct_definition_from_type<'a>(
     ty: &verus_transpiler::ast::Type,
     schema: &'a verus_transpiler::spec_analyzer::SpecSchema,
@@ -2454,6 +2466,24 @@ fn match_state_field_access(
             _ => None,
         },
         Expr::Cast(inner, _) | Expr::View(inner) => match_state_field_access(inner, state_param),
+        _ => None,
+    }
+}
+
+fn match_constants_field_access(
+    expr: &verus_transpiler::ast::Expr,
+    constants_param: &str,
+) -> Option<String> {
+    use verus_transpiler::ast::Expr;
+
+    match expr {
+        Expr::Field(base, field_name) => match base.as_ref() {
+            Expr::Ident(name) if name == constants_param => Some(field_name.clone()),
+            _ => None,
+        },
+        Expr::Cast(inner, _) | Expr::View(inner) => {
+            match_constants_field_access(inner, constants_param)
+        }
         _ => None,
     }
 }
@@ -2539,44 +2569,88 @@ fn expr_to_static_runtime_value(
     }
 }
 
-fn collect_state_field_literal_equalities(
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PinnedStateFieldAssignment {
+    Literal(verus_transpiler::modelcheck::value::RuntimeValue),
+    ConstantsField(String),
+}
+
+#[derive(Clone, Debug)]
+struct PinnedStateTemplate {
+    struct_name: String,
+    fields: Vec<(String, PinnedStateFieldAssignment)>,
+}
+
+fn upsert_pinned_state_assignment(
+    assignments: &mut std::collections::HashMap<String, PinnedStateFieldAssignment>,
+    field_name: String,
+    value: PinnedStateFieldAssignment,
+) -> bool {
+    if let Some(existing) = assignments.get(&field_name) {
+        return existing == &value;
+    }
+    assignments.insert(field_name, value);
+    true
+}
+
+fn collect_state_field_assignments(
     expr: &verus_transpiler::ast::Expr,
     state_param: &str,
+    constants_param: Option<&str>,
     field_types: &std::collections::HashMap<String, verus_transpiler::ast::Type>,
-    assignments: &mut std::collections::HashMap<
-        String,
-        verus_transpiler::modelcheck::value::RuntimeValue,
-    >,
+    assignments: &mut std::collections::HashMap<String, PinnedStateFieldAssignment>,
 ) -> bool {
     use verus_transpiler::ast::{Expr, Type};
     use verus_transpiler::modelcheck::value::RuntimeValue;
 
     match expr {
-        Expr::Conjunction(parts) => parts
-            .iter()
-            .all(|part| {
-                collect_state_field_literal_equalities(part, state_param, field_types, assignments)
-            }),
+        Expr::Conjunction(parts) => parts.iter().all(|part| {
+            collect_state_field_assignments(
+                part,
+                state_param,
+                constants_param,
+                field_types,
+                assignments,
+            )
+        }),
         Expr::Eq(lhs, rhs) => {
             if let Some(field_name) = match_state_field_access(lhs, state_param) {
-                let Some(value) = expr_to_static_runtime_value(rhs) else {
-                    return false;
-                };
-                if let Some(existing) = assignments.get(&field_name) {
-                    return existing == &value;
+                if let Some(value) = expr_to_static_runtime_value(rhs) {
+                    return upsert_pinned_state_assignment(
+                        assignments,
+                        field_name,
+                        PinnedStateFieldAssignment::Literal(value),
+                    );
                 }
-                assignments.insert(field_name, value);
-                return true;
+                if let Some(constants_field) =
+                    constants_param.and_then(|param| match_constants_field_access(rhs, param))
+                {
+                    return upsert_pinned_state_assignment(
+                        assignments,
+                        field_name,
+                        PinnedStateFieldAssignment::ConstantsField(constants_field),
+                    );
+                }
+                return false;
             }
             if let Some(field_name) = match_state_field_access(rhs, state_param) {
-                let Some(value) = expr_to_static_runtime_value(lhs) else {
-                    return false;
-                };
-                if let Some(existing) = assignments.get(&field_name) {
-                    return existing == &value;
+                if let Some(value) = expr_to_static_runtime_value(lhs) {
+                    return upsert_pinned_state_assignment(
+                        assignments,
+                        field_name,
+                        PinnedStateFieldAssignment::Literal(value),
+                    );
                 }
-                assignments.insert(field_name, value);
-                return true;
+                if let Some(constants_field) =
+                    constants_param.and_then(|param| match_constants_field_access(lhs, param))
+                {
+                    return upsert_pinned_state_assignment(
+                        assignments,
+                        field_name,
+                        PinnedStateFieldAssignment::ConstantsField(constants_field),
+                    );
+                }
+                return false;
             }
             true
         }
@@ -2601,26 +2675,25 @@ fn collect_state_field_literal_equalities(
             let Ok(value) = RuntimeValue::enum_value(enum_ty, variant.clone(), Vec::new()) else {
                 return false;
             };
-            if let Some(existing) = assignments.get(&field_name) {
-                return existing == &value;
-            }
-            assignments.insert(field_name, value);
-            true
+            upsert_pinned_state_assignment(
+                assignments,
+                field_name,
+                PinnedStateFieldAssignment::Literal(value),
+            )
         }
         _ => true,
     }
 }
 
-fn derive_fully_pinned_state_candidates_from_init(
+fn derive_fully_pinned_state_template_from_init(
     init_fn: &verus_transpiler::ast::SpecFunction,
     state_ty: &verus_transpiler::ast::Type,
     schema: &verus_transpiler::spec_analyzer::SpecSchema,
-) -> Result<Option<Vec<verus_transpiler::modelcheck::value::RuntimeValue>>> {
-    use verus_transpiler::modelcheck::value::RuntimeValue;
-
+) -> Result<Option<PinnedStateTemplate>> {
     let Some(state_param) = infer_init_state_param_name(init_fn) else {
         return Ok(None);
     };
+    let constants_param = infer_init_constants_param_name(init_fn);
     let Some(struct_def) = state_struct_definition_from_type(state_ty, schema) else {
         return Ok(None);
     };
@@ -2631,9 +2704,10 @@ fn derive_fully_pinned_state_candidates_from_init(
         .iter()
         .map(|field| (field.name.clone(), field.ty.clone()))
         .collect();
-    if !collect_state_field_literal_equalities(
+    if !collect_state_field_assignments(
         &init_fn.body,
         state_param,
+        constants_param,
         &field_types,
         &mut assignments,
     ) {
@@ -2654,14 +2728,50 @@ fn derive_fully_pinned_state_candidates_from_init(
         };
         fields.push((field.name.clone(), value));
     }
-    let state = RuntimeValue::struct_value(struct_def.name.clone(), fields).map_err(|err| {
+    Ok(Some(PinnedStateTemplate {
+        struct_name: struct_def.name.clone(),
+        fields,
+    }))
+}
+
+fn instantiate_pinned_state_candidate(
+    template: &PinnedStateTemplate,
+    constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
+) -> Result<verus_transpiler::modelcheck::value::RuntimeValue> {
+    use verus_transpiler::modelcheck::value::RuntimeValue;
+
+    let mut fields = Vec::with_capacity(template.fields.len());
+    for (field_name, assignment) in &template.fields {
+        let value = match assignment {
+            PinnedStateFieldAssignment::Literal(value) => value.clone(),
+            PinnedStateFieldAssignment::ConstantsField(constants_field) => {
+                let constants = constants.ok_or_else(|| {
+                    miette::miette!(
+                        "Failed to build `LInit`-derived state candidate for `{}`: missing `LConstants` valuation while resolving `{}.{}`.",
+                        template.struct_name,
+                        field_name,
+                        constants_field
+                    )
+                })?;
+                constants.field(constants_field).cloned().ok_or_else(|| {
+                    miette::miette!(
+                        "Failed to build `LInit`-derived state candidate for `{}`: constants field `{}` not found.",
+                        template.struct_name,
+                        constants_field
+                    )
+                })?
+            }
+        };
+        fields.push((field_name.clone(), value));
+    }
+
+    RuntimeValue::struct_value(template.struct_name.clone(), fields).map_err(|err| {
         miette::miette!(
             "Failed to build `LInit`-derived state candidate for `{}`: {}",
-            struct_def.name,
+            template.struct_name,
             err
         )
-    })?;
-    Ok(Some(vec![state]))
+    })
 }
 
 fn value_matches_domain_spec(
@@ -3081,6 +3191,7 @@ fn execute_model_check(
     selected_search: CliSearchMode,
     selected_invariants: &[&verus_transpiler::ast::SpecFunction],
 ) -> Result<ModelCheckExecution> {
+    use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
     use std::time::Instant;
     use verus_transpiler::modelcheck::config::PorHeuristic;
@@ -3173,26 +3284,31 @@ fn execute_model_check(
         .ty
         .clone();
 
-    let state_candidates = match expand_type_domain_candidates(
+    enum StateCandidatesSource {
+        Expanded(Vec<verus_transpiler::modelcheck::value::RuntimeValue>),
+        PinnedTemplate(PinnedStateTemplate),
+    }
+
+    let state_candidates_source = match expand_type_domain_candidates(
         "candidate_states",
         "candidate_state",
         &state_ty,
         &bundle.schema,
         model_config,
     ) {
-        Ok(candidates) => candidates,
+        Ok(candidates) => StateCandidatesSource::Expanded(candidates),
         Err(err)
             if err
                 .to_string()
                 .contains("Model-check candidate expansion for struct")
                 && err.to_string().contains("exceeded limit") =>
         {
-            match derive_fully_pinned_state_candidates_from_init(
+            match derive_fully_pinned_state_template_from_init(
                 &bundle.entrypoints.linit,
                 &state_ty,
                 &bundle.schema,
             )? {
-                Some(candidates) => candidates,
+                Some(template) => StateCandidatesSource::PinnedTemplate(template),
                 None => return Err(err),
             }
         }
@@ -3237,9 +3353,19 @@ fn execute_model_check(
         };
         let run_started = Instant::now();
 
+        let run_state_candidates = match &state_candidates_source {
+            StateCandidatesSource::Expanded(candidates) => Cow::Borrowed(candidates.as_slice()),
+            StateCandidatesSource::PinnedTemplate(template) => {
+                Cow::Owned(vec![instantiate_pinned_state_candidate(
+                    template,
+                    Some(constants_value),
+                )?])
+            }
+        };
+
         let initial_states = construct_initial_states(
             &bundle.entrypoints.linit,
-            &state_candidates,
+            run_state_candidates.as_ref(),
             Some(constants_value),
             bounds,
             InitHooks {
@@ -3323,7 +3449,7 @@ fn execute_model_check(
                         state,
                         Some(constants_value),
                         branch_assignments,
-                        Some(&state_candidates),
+                        Some(run_state_candidates.as_ref()),
                         Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
                         bounds,
                         SolverHooks {
@@ -6734,6 +6860,113 @@ max_states = 50
         assert_eq!(execution.summary.result, "ok");
         assert_eq!(execution.summary.states, 1);
         assert_eq!(execution.summary.transitions, 1);
+    }
+
+    #[test]
+    fn test_execute_model_check_linit_fallback_supports_constants_field_equalities() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState {
+        pub a: int,
+        pub b: int,
+        pub c: int,
+        pub d: int,
+        pub e: int,
+        pub f: int,
+        pub g: int,
+        pub h: int,
+    }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        &&& s.a == 0
+        &&& s.b == 0
+        &&& s.c == 0
+        &&& s.d == 0
+        &&& s.e == 0
+        &&& s.f == 0
+        &&& s.g == 0
+        &&& s.h == c.limit
+        &&& c.limit >= 0
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        &&& s_.a == s.a
+        &&& s_.b == s.b
+        &&& s_.c == s.c
+        &&& s_.d == s.d
+        &&& s_.e == s.e
+        &&& s_.f == s.f
+        &&& s_.g == s.g
+        &&& s_.h == s.h
+        &&& s.h <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.domains.limit]
+kind = "int_range"
+min = 1
+max = 2
+
+[quantifiers.int]
+min = 0
+max = 2
+
+[search]
+max_depth = 1
+max_states = 50
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(execution.summary.constants_valuations_total, 2);
+        assert_eq!(execution.summary.constants_valuations_explored, 2);
+        assert_eq!(execution.summary.states, 2);
+        assert_eq!(execution.summary.transitions, 2);
     }
 
     #[test]

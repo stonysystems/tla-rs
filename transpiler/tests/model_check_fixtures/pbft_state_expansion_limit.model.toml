@@ -1,5 +1,6 @@
-# Minimal checked-in model for reproducing the current source-first
-# PBFT blocker (LState candidate expansion limit).
+# Minimal checked-in bounded PBFT source-first model.
+# This fixture previously reproduced an LState expansion blocker, and now
+# stays as the small exact-mode regression model for PBFT coverage.
 [constants.assignments]
 f = 0
 n = 1

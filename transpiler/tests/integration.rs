@@ -8570,11 +8570,6 @@ fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
             blocker_fragment: "struct `LConstants` exceeds `search.max_states` limit (200)",
         },
         ExpectedUnsupportedRow {
-            protocol: "PBFT",
-            model_path: "transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml",
-            blocker_fragment: "struct `LState` exceeds `search.max_states` limit (200)",
-        },
-        ExpectedUnsupportedRow {
             protocol: "ChainReplication",
             model_path: "transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml",
             blocker_fragment: "struct `LState` exceeds `search.max_states` limit (200)",
@@ -10100,25 +10095,30 @@ fn test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible() {
 }
 
 #[test]
-fn test_model_check_pbft_blocker_state_expansion_limit_is_reproducible() {
+fn test_model_check_pbft_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
     let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/PBFT/pbft.rs");
     let types = repo_root.join("src/protocol/PBFT/types.rs");
     let model_path = resolve_model_check_fixture_path("pbft_state_expansion_limit.model.toml");
+    let artifact_path = repo_root.join("reports/model_check/pbft_small.json");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
     let model_src = std::fs::read_to_string(&model_path)
-        .unwrap_or_else(|err| panic!("failed to read PBFT blocker fixture: {}", err));
+        .unwrap_or_else(|err| panic!("failed to read PBFT fixture: {}", err));
     assert!(
-        model_src.contains("Minimal checked-in model")
-            && model_src.contains("LState candidate expansion limit"),
-        "PBFT blocker fixture should document intentional expansion-limit setup"
+        model_src.contains("Minimal checked-in bounded"),
+        "PBFT fixture should document intentional bounded setup"
     );
     assert!(
         model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
-        "PBFT blocker fixture should stay minimal and bounded (`max_depth = 1`, `max_states = 200`)"
+        "PBFT fixture should stay bounded (`max_depth = 1`, `max_states = 200`)"
+    );
+    assert!(
+        artifact_path.exists(),
+        "Missing checked-in PBFT artifact: {}",
+        artifact_path.display()
     );
 
     let output = std::process::Command::new(&transpiler_bin)
@@ -10132,24 +10132,92 @@ fn test_model_check_pbft_blocker_state_expansion_limit_is_reproducible() {
             model_path.to_str().unwrap(),
             "--search",
             "bfs",
+            "--json-report",
         ])
         .output()
         .expect("Failed to run model-check command");
 
     assert!(
-        !output.status.success(),
-        "PBFT model-check should fail until candidate expansion is pruned/bounded more precisely."
+        output.status.success(),
+        "PBFT bounded model-check should succeed. stderr={}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("Model-check candidate expansion for struct `LState` exceeded limit (200)"),
-        "expected LState candidate expansion blocker in stderr, got: {}",
-        stderr
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("model-check should emit valid JSON report");
+    let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read checked-in PBFT artifact {}: {}",
+            artifact_path.display(),
+            err
+        )
+    });
+    let artifact_report: serde_json::Value =
+        serde_json::from_str(&artifact_src).expect("checked-in PBFT artifact should be valid JSON");
+    let result = report
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let artifact_result = artifact_report
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, artifact_result,
+        "live PBFT source-first run result drifted from checked-in artifact. report={}",
+        stdout
+    );
+    let search_state_dedup = report
+        .pointer("/search/state_dedup")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let artifact_search_state_dedup = artifact_report
+        .pointer("/search/state_dedup")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        search_state_dedup, artifact_search_state_dedup,
+        "PBFT exactness mode drifted from checked-in artifact"
+    );
+    let states = report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let transitions = report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let depth = report
+        .get("summary")
+        .and_then(|s| s.get("depth"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_states = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_transitions = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_depth = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("depth"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        (states, transitions, depth),
+        (artifact_states, artifact_transitions, artifact_depth),
+        "PBFT summary reachability metrics drifted from checked-in artifact"
     );
     assert!(
-        stderr.contains("Narrow domains or increase `search.max_states`"),
-        "expected expansion-limit guidance in stderr, got: {}",
-        stderr
+        states > 0,
+        "expected at least one reached state in bounded PBFT run: {}",
+        stdout
     );
 }
 
