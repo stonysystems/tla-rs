@@ -43,7 +43,7 @@ verus! {
     pub open spec fn VoteResponseIntegrity(ds: RaftDistributedState) -> bool {
         forall |p: LRaftPacket| ds.network.contains(p) ==>
             match p.msg {
-                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
+                LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
                     granted ==> {
                         &&& 0 <= v < ds.num_servers
                         &&& p.src == v
@@ -71,7 +71,7 @@ verus! {
     pub open spec fn VoteResponseHasRequestVote(ds: RaftDistributedState) -> bool {
         forall |p: LRaftPacket| ds.network.contains(p) ==>
             match p.msg {
-                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
+                LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
                     granted ==> exists |req: LRaftPacket| {
                         &&& ds.network.contains(req)
                         &&& req.src == p.dst
@@ -119,6 +119,39 @@ verus! {
                             &&& (last_idx > 0 ==> ds.server_states[d].log[last_idx - 1].term == last_term)
                         }
                     )
+                }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
+    // Message Invariant 2d: VoteResponse summary stays valid at/above term
+    // =========================================================================
+    //
+    // For any in-network granted VoteResponse packet from voter v at term t,
+    // if v is currently at term >= t, then v's current log still contains the
+    // vote-time log summary embedded in the packet.
+    //
+    // Intuition:
+    // - At send time (LGrantVote), VoteResponse carries v's exact log summary.
+    // - Logs are append-only (old prefix preserved), so that summary remains
+    //   valid even if v has moved to a higher term.
+
+    pub open spec fn VoteResponseSummaryStillValidAtOrAboveTerm(ds: RaftDistributedState) -> bool {
+        forall |p: LRaftPacket| ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::VoteResponse {
+                    term: t,
+                    granted,
+                    voter: v,
+                    voter_last_log_index: last_idx,
+                    voter_last_log_term: last_term,
+                } => {
+                    granted && 0 <= v < ds.num_servers && ds.server_states[v].current_term >= t ==> {
+                        &&& 0 <= last_idx <= ds.server_states[v].log.len()
+                        &&& (last_idx == 0 ==> last_term == 0)
+                        &&& (last_idx > 0 ==> ds.server_states[v].log[last_idx - 1].term == last_term)
+                    }
                 }
                 _ => true,
             }
@@ -180,9 +213,9 @@ verus! {
         forall |p1: LRaftPacket, p2: LRaftPacket|
             ds.network.contains(p1) && ds.network.contains(p2) ==>
             match p1.msg {
-                LRaftMessage::VoteResponse { term: t1, granted: g1, voter: v1 } =>
+                LRaftMessage::VoteResponse { term: t1, granted: g1, voter: v1, .. } =>
                     match p2.msg {
-                        LRaftMessage::VoteResponse { term: t2, granted: g2, voter: v2 } =>
+                        LRaftMessage::VoteResponse { term: t2, granted: g2, voter: v2, .. } =>
                             (g1 && g2 && v1 == v2 && t1 == t2) ==> p1.dst == p2.dst,
                         _ => true,
                     },
@@ -203,7 +236,7 @@ verus! {
     pub open spec fn VoteLogLenCoversNetwork(ds: RaftDistributedState) -> bool {
         forall |p: LRaftPacket| ds.network.contains(p) ==>
             match p.msg {
-                LRaftMessage::VoteResponse { term: t, granted, voter: v } => {
+                LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
                     granted ==> {
                         &&& ds.vote_log_len.dom().contains((v, t))
                     }

@@ -743,3 +743,34 @@ Planned immediate code refactor for next sub-leaf (`...b.c.2.b`):
 - Keep equal-term/equal-length branch unchanged.
 - Keep non-strict residual cases isolated so strict-term proof obligations can
   be discharged without conflating assumptions across unrelated branches.
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c.2.b complete (2026-03-05)
+
+Implemented the control-flow refactor in
+`lemma_overlap_entry_transfer_equal_term_equal_len(...)`:
+
+- Preserved the existing proved branch:
+  - `req_last_log_term == voter_vtl && req_last_log_index == L && L > 0`.
+- Replaced merged residual fallback with explicit disjoint branches:
+  1. `req_last_log_term > voter_vtl` (strict-term),
+  2. `req_last_log_term == voter_vtl && L == 0`,
+  3. `req_last_log_term == voter_vtl && req_last_log_index > L`.
+
+This isolates strict-term obligations from the two equal-term residual
+sub-cases so `...b.c.2.c` can derive shared strict-term facts without
+cross-branch assumptions.
+
+Validation and unblock work completed in the same iteration:
+
+- Fixed currently-reachable compile-shape drift caused by widened
+  `VoteResponse` payload matching in:
+  - `src/protocol/Raft/refinement_proof/state_machine.rs`
+  - `src/protocol/Raft/refinement_proof/message_invariants.rs`
+  - `src/protocol/Raft/refinement_proof/invariants.rs`
+- Focused verification now passes:
+  - `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::Raft::refinement_proof::invariants --verify-function '*overlap_entry_transfer_equal_term_equal_len*' --rlimit 80`
+
+Next leaf remains:
+
+- `...b.c.2.c`: derive strict-term shared facts (`L >= 0`, `k < L`, packet
+  alignment, strict-term predicate) in-branch without fallback assumptions.

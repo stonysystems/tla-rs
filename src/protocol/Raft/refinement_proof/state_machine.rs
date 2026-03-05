@@ -113,8 +113,10 @@ verus! {
                     // A granted VoteResponse was sent at term vt
                     &&& (exists |i: int| #![trigger sent_packets[i]]
                         0 <= i < sent_packets.len()
-                        && sent_packets[i] == LRaftMessage::VoteResponse {
-                            term: vt, granted: true, voter: server_id })
+                        && sent_packets[i] is VoteResponse
+                        && sent_packets[i]->VoteResponse_term == vt
+                        && sent_packets[i]->VoteResponse_granted
+                        && sent_packets[i]->VoteResponse_voter == server_id)
                     // Record voter log length at vote time
                     &&& ds_.vote_log_len.dom().contains((server_id, vt))
                     &&& ds_.vote_log_len[(server_id, vt)] == s.log.len()
