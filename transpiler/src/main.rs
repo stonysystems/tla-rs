@@ -1920,6 +1920,8 @@ struct ModelCheckExecutionSummary {
     transitions: usize,
     depth: usize,
     elapsed_ms: u128,
+    constants_valuations_total: usize,
+    constants_valuations_explored: usize,
     enumeration: ModelCheckEnumerationSummary,
     liveness: Option<ModelCheckLivenessSummary>,
 }
@@ -2446,10 +2448,10 @@ fn constants_candidate_matches_config(
     Ok(true)
 }
 
-fn resolve_single_constants_value(
+fn resolve_constants_values(
     candidates: Vec<verus_transpiler::modelcheck::value::RuntimeValue>,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
-) -> Result<verus_transpiler::modelcheck::value::RuntimeValue> {
+) -> Result<Vec<verus_transpiler::modelcheck::value::RuntimeValue>> {
     use std::collections::BTreeSet;
 
     let mut seen = BTreeSet::new();
@@ -2470,15 +2472,8 @@ fn resolve_single_constants_value(
              Add/adjust `[constants.assignments]`, `[constants.domains]`, and quantifier domains."
         ));
     }
-    if filtered.len() > 1 {
-        return Err(miette::miette!(
-            "Model-check currently requires exactly one concrete `LConstants` valuation, \
-             but {} candidates matched the model config. Narrow constants domains/assignments.",
-            filtered.len()
-        ));
-    }
 
-    Ok(filtered.remove(0))
+    Ok(filtered)
 }
 
 fn normalize_call_path(path: &verus_transpiler::ast::Path) -> String {
@@ -2523,12 +2518,14 @@ fn expand_quantifier_domain_for_binding(
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
     for assignment in assignments {
-        let value = assignment.get(var_name).ok_or_else(|| TranspileError::Config {
-            message: format!(
-                "Internal model-check error: quantifier domain assignment missing `{}`.",
-                var_name
-            ),
-        })?;
+        let value = assignment
+            .get(var_name)
+            .ok_or_else(|| TranspileError::Config {
+                message: format!(
+                    "Internal model-check error: quantifier domain assignment missing `{}`.",
+                    var_name
+                ),
+            })?;
         if seen.insert(value.canonical_key()) {
             out.push(value.clone());
         }
@@ -2728,8 +2725,7 @@ fn execute_model_check(
         direct_assignment_branch_solves: 0,
         enumeration_fallback_branch_solves: 0,
         enumeration_candidate_evaluations: 0,
-        candidate_evaluation_guardrail_per_state_branch:
-            CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
+        candidate_evaluation_guardrail_per_state_branch: CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
     };
 
     let state_ty = bundle
@@ -2763,30 +2759,8 @@ fn execute_model_check(
         &bundle.schema,
         model_config,
     )?;
-    let constants_value = resolve_single_constants_value(constants_candidates, model_config)?;
-
-    let initial_states = construct_initial_states(
-        &bundle.entrypoints.linit,
-        &state_candidates,
-        Some(&constants_value),
-        bounds,
-        InitHooks {
-            call_evaluator: Some(&|func_path, args| {
-                eval_spec_function_call_recursive(
-                    &bundle.spec_functions,
-                    &bundle.schema,
-                    model_config,
-                    func_path,
-                    args,
-                    bounds,
-                    0,
-                )
-            }),
-            method_evaluator: None,
-            quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
-        },
-    )
-    .map_err(|e| miette::miette!("{}", e))?;
+    let constants_values = resolve_constants_values(constants_candidates, model_config)?;
+    let constants_valuations_total = constants_values.len();
 
     let mut assignments_by_branch = BTreeMap::new();
     for branch in &transition.branches {
@@ -2794,117 +2768,57 @@ fn execute_model_check(
             .map_err(|e| miette::miette!("{}", e))?;
         assignments_by_branch.insert(branch.label.clone(), assignments);
     }
+    let por_pruned_branches: Vec<String> = por_pruned_branch_labels.iter().cloned().collect();
+    let mut aggregated_states = 0usize;
+    let mut aggregated_transitions = 0usize;
+    let mut aggregated_depth = 0usize;
+    let mut constants_valuations_explored = 0usize;
+    let mut first_ok_execution: Option<ModelCheckExecution> = None;
+    let mut first_incomplete_execution: Option<ModelCheckExecution> = None;
+    let mut first_violation_execution: Option<ModelCheckExecution> = None;
 
-    let exploration = explore_state_space_with_traces_and_dedup(
-        &initial_states,
-        search_mode,
-        limits,
-        model_config.search.state_dedup,
-        &model_config.search.symmetry_fields,
-        model_config.properties.check_deadlock,
-        |state| {
-            let mut traced_successors = Vec::new();
-            for branch in &transition.branches {
-                if por_pruned_branch_labels.contains(&branch.label) {
-                    continue;
-                }
-                let branch_assignments = assignments_by_branch
-                    .get(&branch.label)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]);
-                let call_evaluator =
-                    |func_path: &verus_transpiler::ast::Path,
-                     args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
-                        eval_spec_function_call_recursive(
-                            &bundle.spec_functions,
-                            &bundle.schema,
-                            model_config,
-                            func_path,
-                            args,
-                            bounds,
-                            0,
-                        )
-                    };
-                let solved = solve_branch_successors_with_candidates_and_telemetry(
-                    &transition,
-                    branch,
-                    state,
-                    Some(&constants_value),
-                    branch_assignments,
-                    Some(&state_candidates),
-                    Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
-                    bounds,
-                    SolverHooks {
-                        call_evaluator: Some(&call_evaluator),
-                        method_evaluator: None,
-                        quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
-                    },
-                )?;
-                enumeration_summary.direct_assignment_branch_solves +=
-                    solved.telemetry.direct_assignment_branch_solves;
-                enumeration_summary.enumeration_fallback_branch_solves +=
-                    solved.telemetry.enumeration_fallback_branch_solves;
-                enumeration_summary.enumeration_candidate_evaluations +=
-                    solved.telemetry.enumeration_candidate_evaluations;
-                let successors = solved.successors;
-                for successor in successors {
-                    traced_successors.push(TracedSuccessor {
-                        action_branch: branch.label.clone(),
-                        state: successor,
-                    });
-                }
-            }
+    for constants_value in &constants_values {
+        constants_valuations_explored = constants_valuations_explored.saturating_add(1);
+        let mut run_enumeration_summary = ModelCheckEnumerationSummary {
+            direct_assignment_branch_solves: 0,
+            enumeration_fallback_branch_solves: 0,
+            enumeration_candidate_evaluations: 0,
+            candidate_evaluation_guardrail_per_state_branch:
+                CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
+        };
+        let run_started = Instant::now();
 
-            if traced_successors.is_empty()
-                && matches!(
-                    empty_successor_semantics,
-                    verus_transpiler::modelcheck::solver::EmptySuccessorSemantics::Stuttering
-                )
-            {
-                traced_successors.push(TracedSuccessor {
-                    action_branch: "stutter".to_string(),
-                    state: state.clone(),
-                });
-            }
-
-            Ok(traced_successors)
-        },
-        |state, _depth| {
-            first_invariant_violation(
-                &owned_invariants,
-                state,
-                Some(&constants_value),
-                bounds,
-                InvariantHooks {
-                    call_evaluator: Some(&|func_path, args| {
-                        eval_spec_function_call_recursive(
-                            &bundle.spec_functions,
-                            &bundle.schema,
-                            model_config,
-                            func_path,
-                            args,
-                            bounds,
-                            0,
-                        )
-                    }),
-                    method_evaluator: None,
-                    quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
-                },
-            )
-        },
-    )
-    .map_err(|e| miette::miette!("{}", e))?;
-
-    let mut leads_to_violation = None;
-    if !model_config.properties.leads_to.is_empty()
-        && matches!(
-            exploration.stop_reason,
-            ExplorationStopReason::FrontierExhausted
+        let initial_states = construct_initial_states(
+            &bundle.entrypoints.linit,
+            &state_candidates,
+            Some(constants_value),
+            bounds,
+            InitHooks {
+                call_evaluator: Some(&|func_path, args| {
+                    eval_spec_function_call_recursive(
+                        &bundle.spec_functions,
+                        &bundle.schema,
+                        model_config,
+                        func_path,
+                        args,
+                        bounds,
+                        0,
+                    )
+                }),
+                method_evaluator: None,
+                quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+            },
         )
-    {
-        let explored_graph = build_explored_graph_index(
-            &exploration.explored,
-            |state| -> verus_transpiler::error::TranspileResult<_> {
+        .map_err(|e| miette::miette!("{}", e))?;
+
+        let exploration = explore_state_space_with_traces_and_dedup(
+            &initial_states,
+            search_mode,
+            limits,
+            model_config.search.state_dedup,
+            &model_config.search.symmetry_fields,
+            model_config.properties.check_deadlock,
+            |state| {
                 let mut traced_successors = Vec::new();
                 for branch in &transition.branches {
                     if por_pruned_branch_labels.contains(&branch.label) {
@@ -2931,7 +2845,7 @@ fn execute_model_check(
                         &transition,
                         branch,
                         state,
-                        Some(&constants_value),
+                        Some(constants_value),
                         branch_assignments,
                         Some(&state_candidates),
                         Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
@@ -2942,6 +2856,12 @@ fn execute_model_check(
                             quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                         },
                     )?;
+                    run_enumeration_summary.direct_assignment_branch_solves +=
+                        solved.telemetry.direct_assignment_branch_solves;
+                    run_enumeration_summary.enumeration_fallback_branch_solves +=
+                        solved.telemetry.enumeration_fallback_branch_solves;
+                    run_enumeration_summary.enumeration_candidate_evaluations +=
+                        solved.telemetry.enumeration_candidate_evaluations;
                     let successors = solved.successors;
                     for successor in successors {
                         traced_successors.push(TracedSuccessor {
@@ -2965,93 +2885,247 @@ fn execute_model_check(
 
                 Ok(traced_successors)
             },
-        )
-        .map_err(|e| miette::miette!("{}", e))?;
-
-        let resolved_leads_to =
-            resolve_leads_to_obligations(&bundle.spec_functions, &model_config.properties.leads_to)
-                .map_err(|e| miette::miette!("{}", e))?;
-        leads_to_violation = check_leads_to_violations(
-            &explored_graph,
-            &resolved_leads_to,
-            &model_config.properties.fairness,
-            Some(&constants_value),
-            bounds,
-            LivenessHooks {
-                call_evaluator: Some(&|func_path, args| {
-                    eval_spec_function_call_recursive(
-                        &bundle.spec_functions,
-                        &bundle.schema,
-                        model_config,
-                        func_path,
-                        args,
-                        bounds,
-                        0,
-                    )
-                }),
-                method_evaluator: None,
-                quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+            |state, _depth| {
+                first_invariant_violation(
+                    &owned_invariants,
+                    state,
+                    Some(constants_value),
+                    bounds,
+                    InvariantHooks {
+                        call_evaluator: Some(&|func_path, args| {
+                            eval_spec_function_call_recursive(
+                                &bundle.spec_functions,
+                                &bundle.schema,
+                                model_config,
+                                func_path,
+                                args,
+                                bounds,
+                                0,
+                            )
+                        }),
+                        method_evaluator: None,
+                        quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+                    },
+                )
             },
         )
         .map_err(|e| miette::miette!("{}", e))?;
-    }
 
-    let result = if leads_to_violation.is_some() {
-        "leads_to_violated".to_string()
-    } else {
-        model_check_result_label(exploration.stop_reason).to_string()
-    };
-
-    let liveness_summary = if !model_config.properties.leads_to.is_empty()
-        || !model_config.properties.fairness.weak.is_empty()
-        || !model_config.properties.fairness.strong.is_empty()
-    {
-        let checked = !model_config.properties.leads_to.is_empty()
+        let mut leads_to_violation = None;
+        if !model_config.properties.leads_to.is_empty()
             && matches!(
                 exploration.stop_reason,
                 ExplorationStopReason::FrontierExhausted
-            );
-        let skipped_reason = if checked {
-            None
-        } else if model_config.properties.leads_to.is_empty() {
-            Some("no_leads_to_obligations".to_string())
+            )
+        {
+            let explored_graph = build_explored_graph_index(
+                &exploration.explored,
+                |state| -> verus_transpiler::error::TranspileResult<_> {
+                    let mut traced_successors = Vec::new();
+                    for branch in &transition.branches {
+                        if por_pruned_branch_labels.contains(&branch.label) {
+                            continue;
+                        }
+                        let branch_assignments = assignments_by_branch
+                            .get(&branch.label)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[]);
+                        let call_evaluator =
+                            |func_path: &verus_transpiler::ast::Path,
+                             args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
+                                eval_spec_function_call_recursive(
+                                    &bundle.spec_functions,
+                                    &bundle.schema,
+                                    model_config,
+                                    func_path,
+                                    args,
+                                    bounds,
+                                    0,
+                                )
+                            };
+                        let solved = solve_branch_successors_with_candidates_and_telemetry(
+                            &transition,
+                            branch,
+                            state,
+                            Some(constants_value),
+                            branch_assignments,
+                            Some(&state_candidates),
+                            Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
+                            bounds,
+                            SolverHooks {
+                                call_evaluator: Some(&call_evaluator),
+                                method_evaluator: None,
+                                quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+                            },
+                        )?;
+                        let successors = solved.successors;
+                        for successor in successors {
+                            traced_successors.push(TracedSuccessor {
+                                action_branch: branch.label.clone(),
+                                state: successor,
+                            });
+                        }
+                    }
+
+                    if traced_successors.is_empty()
+                        && matches!(
+                            empty_successor_semantics,
+                            verus_transpiler::modelcheck::solver::EmptySuccessorSemantics::Stuttering
+                        )
+                    {
+                        traced_successors.push(TracedSuccessor {
+                            action_branch: "stutter".to_string(),
+                            state: state.clone(),
+                        });
+                    }
+
+                    Ok(traced_successors)
+                },
+            )
+            .map_err(|e| miette::miette!("{}", e))?;
+
+            let resolved_leads_to = resolve_leads_to_obligations(
+                &bundle.spec_functions,
+                &model_config.properties.leads_to,
+            )
+            .map_err(|e| miette::miette!("{}", e))?;
+            leads_to_violation = check_leads_to_violations(
+                &explored_graph,
+                &resolved_leads_to,
+                &model_config.properties.fairness,
+                Some(constants_value),
+                bounds,
+                LivenessHooks {
+                    call_evaluator: Some(&|func_path, args| {
+                        eval_spec_function_call_recursive(
+                            &bundle.spec_functions,
+                            &bundle.schema,
+                            model_config,
+                            func_path,
+                            args,
+                            bounds,
+                            0,
+                        )
+                    }),
+                    method_evaluator: None,
+                    quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+                },
+            )
+            .map_err(|e| miette::miette!("{}", e))?;
+        }
+
+        let result = if leads_to_violation.is_some() {
+            "leads_to_violated".to_string()
         } else {
-            Some("incomplete_exploration".to_string())
+            model_check_result_label(exploration.stop_reason).to_string()
         };
 
-        Some(ModelCheckLivenessSummary {
-            obligations: model_config.properties.leads_to.len(),
-            fairness_weak: model_config.properties.fairness.weak.len(),
-            fairness_strong: model_config.properties.fairness.strong.len(),
-            checked,
-            violation_found: leads_to_violation.is_some(),
-            skipped_reason,
-        })
-    } else {
-        None
-    };
+        let liveness_summary = if !model_config.properties.leads_to.is_empty()
+            || !model_config.properties.fairness.weak.is_empty()
+            || !model_config.properties.fairness.strong.is_empty()
+        {
+            let checked = !model_config.properties.leads_to.is_empty()
+                && matches!(
+                    exploration.stop_reason,
+                    ExplorationStopReason::FrontierExhausted
+                );
+            let skipped_reason = if checked {
+                None
+            } else if model_config.properties.leads_to.is_empty() {
+                Some("no_leads_to_obligations".to_string())
+            } else {
+                Some("incomplete_exploration".to_string())
+            };
 
-    let summary = ModelCheckExecutionSummary {
-        result,
-        states: exploration.stats.visited_states,
-        transitions: exploration.stats.successors_considered,
-        depth: exploration
-            .explored
-            .iter()
-            .map(|s| s.depth)
-            .max()
-            .unwrap_or(0),
-        elapsed_ms: started.elapsed().as_millis(),
-        enumeration: enumeration_summary,
-        liveness: liveness_summary,
-    };
+            Some(ModelCheckLivenessSummary {
+                obligations: model_config.properties.leads_to.len(),
+                fairness_weak: model_config.properties.fairness.weak.len(),
+                fairness_strong: model_config.properties.fairness.strong.len(),
+                checked,
+                violation_found: leads_to_violation.is_some(),
+                skipped_reason,
+            })
+        } else {
+            None
+        };
 
-    Ok(ModelCheckExecution {
-        summary,
-        exploration,
-        por_pruned_branches: por_pruned_branch_labels.into_iter().collect(),
-        leads_to_violation,
-    })
+        let run_summary = ModelCheckExecutionSummary {
+            result,
+            states: exploration.stats.visited_states,
+            transitions: exploration.stats.successors_considered,
+            depth: exploration
+                .explored
+                .iter()
+                .map(|s| s.depth)
+                .max()
+                .unwrap_or(0),
+            elapsed_ms: run_started.elapsed().as_millis(),
+            constants_valuations_total,
+            constants_valuations_explored,
+            enumeration: run_enumeration_summary,
+            liveness: liveness_summary,
+        };
+
+        aggregated_states = aggregated_states.saturating_add(run_summary.states);
+        aggregated_transitions = aggregated_transitions.saturating_add(run_summary.transitions);
+        aggregated_depth = aggregated_depth.max(run_summary.depth);
+        enumeration_summary.direct_assignment_branch_solves = enumeration_summary
+            .direct_assignment_branch_solves
+            .saturating_add(run_summary.enumeration.direct_assignment_branch_solves);
+        enumeration_summary.enumeration_fallback_branch_solves = enumeration_summary
+            .enumeration_fallback_branch_solves
+            .saturating_add(run_summary.enumeration.enumeration_fallback_branch_solves);
+        enumeration_summary.enumeration_candidate_evaluations = enumeration_summary
+            .enumeration_candidate_evaluations
+            .saturating_add(run_summary.enumeration.enumeration_candidate_evaluations);
+
+        let run_execution = ModelCheckExecution {
+            summary: run_summary,
+            exploration,
+            por_pruned_branches: por_pruned_branches.clone(),
+            leads_to_violation,
+        };
+        if run_execution.leads_to_violation.is_some()
+            || matches!(
+                run_execution.exploration.stop_reason,
+                ExplorationStopReason::InvariantViolated | ExplorationStopReason::DeadlockDetected
+            )
+        {
+            first_violation_execution = Some(run_execution);
+            break;
+        }
+        if !matches!(
+            run_execution.exploration.stop_reason,
+            ExplorationStopReason::FrontierExhausted
+        ) {
+            if first_incomplete_execution.is_none() {
+                first_incomplete_execution = Some(run_execution);
+            }
+            continue;
+        }
+        if first_ok_execution.is_none() {
+            first_ok_execution = Some(run_execution);
+        }
+    }
+
+    let mut execution = first_violation_execution
+        .or(first_incomplete_execution)
+        .or(first_ok_execution)
+        .ok_or_else(|| {
+            miette::miette!(
+                "Model-check constants resolution produced no runnable `LConstants` valuations."
+            )
+        })?;
+
+    execution.summary.states = aggregated_states;
+    execution.summary.transitions = aggregated_transitions;
+    execution.summary.depth = aggregated_depth;
+    execution.summary.elapsed_ms = started.elapsed().as_millis();
+    execution.summary.constants_valuations_total = constants_valuations_total;
+    execution.summary.constants_valuations_explored = constants_valuations_explored;
+    execution.summary.enumeration = enumeration_summary;
+
+    Ok(execution)
 }
 
 fn run_model_check_command(
@@ -3284,6 +3358,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "transitions": execution.summary.transitions,
                         "depth": execution.summary.depth,
                         "elapsed_ms": execution.summary.elapsed_ms,
+                        "constants_valuations_total": execution.summary.constants_valuations_total,
+                        "constants_valuations_explored": execution.summary.constants_valuations_explored,
                         "pruned_by_por": execution.por_pruned_branches.len(),
                         "hash_compaction_collisions": execution.exploration.stats.hash_compaction_collisions,
                         "symmetry_collapses": execution.exploration.stats.symmetry_collapses,
@@ -3373,11 +3449,13 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             }
             println!("  result: {}", execution.summary.result);
             println!(
-                "  summary: states={}, transitions={}, depth={}, elapsed_ms={}, pruned_by_por={}, hash_compaction_collisions={}, symmetry_collapses={}",
+                "  summary: states={}, transitions={}, depth={}, elapsed_ms={}, constants_valuations_total={}, constants_valuations_explored={}, pruned_by_por={}, hash_compaction_collisions={}, symmetry_collapses={}",
                 execution.summary.states,
                 execution.summary.transitions,
                 execution.summary.depth,
                 execution.summary.elapsed_ms,
+                execution.summary.constants_valuations_total,
+                execution.summary.constants_valuations_explored,
                 execution.por_pruned_branches.len(),
                 execution.exploration.stats.hash_compaction_collisions,
                 execution.exploration.stats.symmetry_collapses,
@@ -5910,6 +5988,159 @@ invariants = ["LInvBad"]
     }
 
     #[test]
+    fn test_execute_model_check_explores_multiple_constants_valuations() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value == s.value && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.domains.limit]
+kind = "int_range"
+min = 1
+max = 2
+
+[quantifiers.int]
+min = 0
+max = 2
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(execution.summary.constants_valuations_total, 2);
+        assert_eq!(execution.summary.constants_valuations_explored, 2);
+        assert_eq!(execution.summary.states, 2);
+        assert_eq!(execution.summary.transitions, 2);
+    }
+
+    #[test]
+    fn test_execute_model_check_constants_resolution_still_rejects_zero_matches() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value <= c.limit }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value == s.value && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.domains.limit]
+kind = "int_range"
+min = 5
+max = 6
+
+[quantifiers.int]
+min = 0
+max = 2
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let err = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "Model-check constants resolution produced zero matching `LConstants` valuations"
+            ),
+            "expected zero-match constants resolution error, got: {}",
+            err
+        );
+    }
+
+    #[test]
     fn test_execute_model_check_reports_leads_to_violation_on_avoidable_cycle() {
         use verus_transpiler::modelcheck::config::parse_model_config_file;
         use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
@@ -6167,11 +6398,17 @@ max = 1
 
         assert_eq!(execution.summary.result, "ok");
         assert_eq!(
-            execution.summary.enumeration.direct_assignment_branch_solves,
+            execution
+                .summary
+                .enumeration
+                .direct_assignment_branch_solves,
             0
         );
         assert_eq!(
-            execution.summary.enumeration.enumeration_fallback_branch_solves,
+            execution
+                .summary
+                .enumeration
+                .enumeration_fallback_branch_solves,
             2
         );
         assert_eq!(

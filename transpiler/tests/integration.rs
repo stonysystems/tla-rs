@@ -1982,11 +1982,11 @@ fn test_rsl_generated_assume_false_footprint_drift_guard() {
     // Phase 24: All assume(false) eliminated; external_body removed from 8 functions + 7 lemmas.
     // Targeted assume() counts increased as function bodies are now verified with local assumes.
     let expected_targeted_counts: std::collections::BTreeMap<&str, usize> = [
-        ("election_gen.rs", 6usize),  // 3 original + 4 from unblocked CElectionStateReflectReceivedRequest - 1 cardinality (Phase 30)
-        ("executor_gen.rs", 1usize),  // 1 reply validity assume in lemma_CHandleRequestBatch_properties
-        ("learner_gen.rs", 5usize),   // 3 from CLearnerProcess2b (ballot valid + postconditions) + 2 from CLearnerForgetOperationsBefore
+        ("election_gen.rs", 6usize), // 3 original + 4 from unblocked CElectionStateReflectReceivedRequest - 1 cardinality (Phase 30)
+        ("executor_gen.rs", 1usize), // 1 reply validity assume in lemma_CHandleRequestBatch_properties
+        ("learner_gen.rs", 5usize), // 3 from CLearnerProcess2b (ballot valid + postconditions) + 2 from CLearnerForgetOperationsBefore
         ("proposer_gen.rs", 21usize), // 5 original + 17 from 3 Nominate functions - 1 cardinality (Phase 30)
-        ("replica_gen.rs", 6usize),   // 4 original + 3 from CReplicaNextProcess1b + 1 from CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints - 2 (Phase 30: cardinality + samesrc forall)
+        ("replica_gen.rs", 6usize), // 4 original + 3 from CReplicaNextProcess1b + 1 from CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints - 2 (Phase 30: cardinality + samesrc forall)
     ]
     .into_iter()
     .collect();
@@ -2006,8 +2006,8 @@ fn test_rsl_generated_assume_false_footprint_drift_guard() {
             continue;
         }
 
-        let source =
-            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("Failed to read {}", file_name));
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("Failed to read {}", file_name));
         let assume_sites: Vec<(usize, String)> = source
             .lines()
             .enumerate()
@@ -2083,23 +2083,24 @@ fn test_rsl_translate_todo_stub_elimination_progress() {
         ("proposer_gen.rs", "CProposerNominateOldValueAndSend2a"),
         ("proposer_gen.rs", "CProposerMaybeNominateValueAndSend2a"),
         ("replica_gen.rs", "CReplicaNextProcess1b"),
-        ("replica_gen.rs", "CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints"),
+        (
+            "replica_gen.rs",
+            "CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
+        ),
     ];
     let sources: std::collections::BTreeMap<&str, &str> = [
         ("election_gen.rs", election_src.as_str()),
         ("learner_gen.rs", learner_src.as_str()),
         ("proposer_gen.rs", proposer_src.as_str()),
         ("replica_gen.rs", replica_src.as_str()),
-    ].into_iter().collect();
+    ]
+    .into_iter()
+    .collect();
 
     for (file, fn_name) in &implemented_functions {
         let src = sources[file];
         let fn_sig = format!("pub exec fn {}(", fn_name);
-        assert!(
-            src.contains(&fn_sig),
-            "{} should define {}",
-            file, fn_name
-        );
+        assert!(src.contains(&fn_sig), "{} should define {}", file, fn_name);
         // Must NOT be external_body stub
         let stub_marker = format!(
             "// TRANSLATE-TODO: explicitly skipped (skip_functions)\n#[verifier(external_body)]\npub exec fn {}(",
@@ -2108,7 +2109,8 @@ fn test_rsl_translate_todo_stub_elimination_progress() {
         assert!(
             !src.contains(&stub_marker),
             "{} in {} should no longer be a TRANSLATE-TODO stub",
-            fn_name, file
+            fn_name,
+            file
         );
     }
 
@@ -2116,7 +2118,11 @@ fn test_rsl_translate_todo_stub_elimination_progress() {
     // (5 IO stubs remain but are out of scope for Phase 23.8)
 
     // Summary counts
-    assert_eq!(implemented_functions.len(), 11, "implemented non-IO stubs count");
+    assert_eq!(
+        implemented_functions.len(),
+        11,
+        "implemented non-IO stubs count"
+    );
 }
 
 /// Verify replica_gen.rs has all expected public functions
@@ -2341,7 +2347,9 @@ fn test_election_recursive_functions_generate_loop_code() {
         .expect("Failed to read election_transpile.toml");
 
     // Verify the recursive functions are NOT in skip_functions (they were removed in Phase 23.8.5.1)
-    let config: toml::Value = base_toml.parse().expect("Failed to parse election_transpile.toml");
+    let config: toml::Value = base_toml
+        .parse()
+        .expect("Failed to parse election_transpile.toml");
     let skip_fns = config
         .get("skip_functions")
         .and_then(|v| v.as_array())
@@ -2363,9 +2371,16 @@ fn test_election_recursive_functions_generate_loop_code() {
 
     let output = std::process::Command::new("cargo")
         .args([
-            "run", "--", "-i", spec_path, "-a", automan_path,
-            "-c", tmp_toml.to_str().unwrap(),
-            "-o", tmp_out.to_str().unwrap(),
+            "run",
+            "--",
+            "-i",
+            spec_path,
+            "-a",
+            automan_path,
+            "-c",
+            tmp_toml.to_str().unwrap(),
+            "-o",
+            tmp_out.to_str().unwrap(),
         ])
         .output()
         .expect("Failed to run transpiler");
@@ -2382,7 +2397,9 @@ fn test_election_recursive_functions_generate_loop_code() {
         generated.contains("pub exec fn CRemoveAllSatisfiedRequestsInSequence("),
         "Generated output must contain CRemoveAllSatisfiedRequestsInSequence"
     );
-    let filter_fn_start = generated.find("pub exec fn CRemoveAllSatisfiedRequestsInSequence(").unwrap();
+    let filter_fn_start = generated
+        .find("pub exec fn CRemoveAllSatisfiedRequestsInSequence(")
+        .unwrap();
     let filter_fn_end = generated[filter_fn_start + 1..]
         .find("\npub exec fn ")
         .map(|i| filter_fn_start + 1 + i)
@@ -2423,7 +2440,9 @@ fn test_election_recursive_functions_generate_loop_code() {
         generated.contains("pub exec fn CRemoveExecutedRequestBatch("),
         "Generated output must contain CRemoveExecutedRequestBatch"
     );
-    let fold_fn_start = generated.find("pub exec fn CRemoveExecutedRequestBatch(").unwrap();
+    let fold_fn_start = generated
+        .find("pub exec fn CRemoveExecutedRequestBatch(")
+        .unwrap();
     let fold_fn_end = generated[fold_fn_start + 1..]
         .find("\npub exec fn ")
         .map(|i| fold_fn_start + 1 + i)
@@ -2595,7 +2614,10 @@ fn test_replica_manual_code_removed_and_dispatch_fallbacks_present() {
     ] {
         let (_line, fn_source) = slice_exec_fn(&source, fn_name);
         assert!(
-            source.contains(&format!("#[verifier(external_body)]\npub exec fn {}(", fn_name)),
+            source.contains(&format!(
+                "#[verifier(external_body)]\npub exec fn {}(",
+                fn_name
+            )),
             "{} should be generated as an explicit external-body fallback",
             fn_name
         );
@@ -2617,7 +2639,8 @@ fn test_replica_manual_code_removed_and_dispatch_fallbacks_present() {
     let helpers_source = std::fs::read_to_string("../src/implementation/RSL/gen_helpers.rs")
         .expect("Failed to read gen_helpers.rs");
     assert!(
-        helpers_source.contains("#[verifier(external_body)]\npub exec fn CExtractSentPacketsFromIos"),
+        helpers_source
+            .contains("#[verifier(external_body)]\npub exec fn CExtractSentPacketsFromIos"),
         "gen_helpers.rs should carry CExtractSentPacketsFromIos as the external helper boundary"
     );
 }
@@ -5165,7 +5188,11 @@ fn test_classify_twophase_integration() {
         "Commit".to_string(),
         "Abort".to_string(),
     ];
-    verus_transpiler::classify_actions(&mut config, &variants, &verus_transpiler::ActionClassificationOverrides::default());
+    verus_transpiler::classify_actions(
+        &mut config,
+        &variants,
+        &verus_transpiler::ActionClassificationOverrides::default(),
+    );
 
     let msg_count = config
         .actions
@@ -5248,7 +5275,11 @@ fn test_classify_all_protocols_have_both_kinds() {
     for (spec_path, variant_strs) in &protocols {
         let mut config = analyze_lnext(spec_path);
         let variants: Vec<String> = variant_strs.iter().map(|s| s.to_string()).collect();
-        verus_transpiler::classify_actions(&mut config, &variants, &verus_transpiler::ActionClassificationOverrides::default());
+        verus_transpiler::classify_actions(
+            &mut config,
+            &variants,
+            &verus_transpiler::ActionClassificationOverrides::default(),
+        );
 
         let msg_count = config
             .actions
@@ -5279,7 +5310,11 @@ fn test_classify_toml_output_has_variants() {
         "Accept".to_string(),
         "Accepted".to_string(),
     ];
-    verus_transpiler::classify_actions(&mut config, &variants, &verus_transpiler::ActionClassificationOverrides::default());
+    verus_transpiler::classify_actions(
+        &mut config,
+        &variants,
+        &verus_transpiler::ActionClassificationOverrides::default(),
+    );
 
     let toml = verus_transpiler::scheduler_config_to_toml(&config);
     // RecvPromise should have message_variant = "Promise"
@@ -5621,7 +5656,11 @@ fn test_scheduler_toml_roundtrip() {
         "Commit".to_string(),
         "Abort".to_string(),
     ];
-    verus_transpiler::classify_actions(&mut config, &variants, &verus_transpiler::ActionClassificationOverrides::default());
+    verus_transpiler::classify_actions(
+        &mut config,
+        &variants,
+        &verus_transpiler::ActionClassificationOverrides::default(),
+    );
 
     // Generate TOML string from runtime SchedulerConfig
     let toml_str = verus_transpiler::scheduler_config_to_toml(&config);
@@ -5810,8 +5849,8 @@ fn test_exact_action_counts_per_protocol() {
         Expected {
             toml_path: "../src/protocol/Raft/raft_transpile.toml",
             protocol: "Raft",
-            total: 5,       // Phase 27.4: composite LNext
-            msg_driven: 1,  // LHandleMessage
+            total: 5,        // Phase 27.4: composite LNext
+            msg_driven: 1,   // LHandleMessage
             timer_driven: 4, // LTimeout, LClientRequest, LSendAppendEntries, LTryAdvanceCommitIndex
         },
         Expected {
@@ -6550,14 +6589,14 @@ fn test_manual_code_footprint_is_empty() {
 
     // Phase 23.3.2: acceptor uses manual_code for 5 proven action functions.
     // Phase 29.4.4: Raft manual_code eliminated — all 8 composite handlers auto-generated.
-    let expected: Vec<(String, String)> = vec![
-        ("../src/protocol/RSL/acceptor_transpile.toml".to_string(), "acceptor_manual.rs".to_string()),
-    ];
+    let expected: Vec<(String, String)> = vec![(
+        "../src/protocol/RSL/acceptor_transpile.toml".to_string(),
+        "acceptor_manual.rs".to_string(),
+    )];
     assert_eq!(
         manual_bindings, expected,
         "only acceptor should use manual_code"
     );
-
 }
 
 #[test]
@@ -7730,14 +7769,13 @@ fn test_model_check_supported_protocol_rows_require_automated_evidence() {
     let integration_src_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("integration.rs");
-    let integration_src =
-        std::fs::read_to_string(&integration_src_path).unwrap_or_else(|err| {
-            panic!(
-                "failed to read integration source {}: {}",
-                integration_src_path.display(),
-                err
-            )
-        });
+    let integration_src = std::fs::read_to_string(&integration_src_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read integration source {}: {}",
+            integration_src_path.display(),
+            err
+        )
+    });
 
     let mut integration_test_names = std::collections::BTreeSet::new();
     for line in integration_src.lines() {
@@ -8098,7 +8136,10 @@ fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     });
 
     let expected_by_protocol: std::collections::BTreeMap<&str, &ExpectedUnsupportedRow<'_>> =
-        expected_rows.iter().map(|row| (row.protocol, row)).collect();
+        expected_rows
+            .iter()
+            .map(|row| (row.protocol, row))
+            .collect();
     let mut found = std::collections::BTreeSet::new();
 
     for line in status_src.lines() {
@@ -8166,8 +8207,10 @@ fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
         );
     }
 
-    let expected_protocols: std::collections::BTreeSet<String> =
-        expected_rows.iter().map(|row| row.protocol.to_string()).collect();
+    let expected_protocols: std::collections::BTreeSet<String> = expected_rows
+        .iter()
+        .map(|row| row.protocol.to_string())
+        .collect();
     assert_eq!(
         found, expected_protocols,
         "unsupported protocol set in coverage matrix drifted from expected exact-blocker set"
@@ -8230,8 +8273,9 @@ fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
         },
         AuditExpectation {
             source_file: "transpiler/src/main.rs",
-            source_fragment: "Model-check currently requires exactly one concrete `LConstants` valuation",
-            doc_fragment: "exactly one resolved `LConstants` valuation",
+            source_fragment:
+                "Model-check constants resolution produced zero matching `LConstants` valuations",
+            doc_fragment: "zero matching `LConstants` valuations",
         },
         AuditExpectation {
             source_file: "transpiler/src/main.rs",
@@ -8718,6 +8762,65 @@ fn test_model_check_map_dom_method_bounded_run() {
     assert!(
         transitions > 0,
         "expected transitions in map-dom fixture run; report={}",
+        report
+    );
+}
+
+#[test]
+fn test_model_check_constants_multi_valuation_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "constants_multi_valuation.protocol.rs",
+        "constants_multi_valuation.types.rs",
+        "constants_multi_valuation.model.toml",
+    );
+
+    let result = report
+        .get("result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, "ok",
+        "multi-valuation constants fixture should pass; report={}",
+        report
+    );
+
+    let summary = report
+        .get("summary")
+        .unwrap_or_else(|| panic!("missing summary in report: {}", report));
+    let constants_total = summary
+        .get("constants_valuations_total")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let constants_explored = summary
+        .get("constants_valuations_explored")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let states = summary.get("states").and_then(|v| v.as_u64()).unwrap_or(0);
+    let transitions = summary
+        .get("transitions")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    assert_eq!(
+        constants_total, 2,
+        "fixture should resolve exactly two constants valuations; report={}",
+        report
+    );
+    assert_eq!(
+        constants_explored, 2,
+        "fixture should explore both constants valuations; report={}",
+        report
+    );
+    assert_eq!(
+        states, 2,
+        "fixture should aggregate two reached states (one per constants valuation); report={}",
+        report
+    );
+    assert_eq!(
+        transitions, 2,
+        "fixture should aggregate two transitions (one per constants valuation); report={}",
         report
     );
 }
@@ -9372,7 +9475,7 @@ fn test_phase22_source_first_model_checking_guide_has_supported_subset_and_limit
         "exists",
         "match",
         "bitwise/shift operators",
-        "exactly one concrete `LConstants` valuation",
+        "explores all resolved `LConstants` valuations",
         "Seq<T>",
         "Set<T>",
         "Map<K, V>",
@@ -9398,7 +9501,7 @@ fn test_phase22_source_first_model_checking_guide_has_troubleshooting() {
         "Unsupported Constructs",
         "Model-check evaluator does not support",
         "Constants Resolution Errors",
-        "exactly one concrete LConstants valuation",
+        "zero matching LConstants valuations",
         "Signature/Entrypoint Mismatches",
     ] {
         assert!(
@@ -9523,9 +9626,7 @@ fn test_acceptor_gen_no_delegate_patterns() {
     );
 
     // No external_body on action functions (they are verified, not trusted).
-    let external_body_count = source
-        .matches("#[verifier(external_body)]")
-        .count();
+    let external_body_count = source.matches("#[verifier(external_body)]").count();
     // Only the clone_hashset helper should have external_body.
     assert!(
         external_body_count <= 1,
@@ -10059,7 +10160,10 @@ fn test_property_bundles_complete_for_all_non_rsl_protocols() {
         .join("transpiler_generated_tla_with_properties");
 
     if !props_dir.exists() {
-        eprintln!("Skipping: properties directory not found at {:?}", props_dir);
+        eprintln!(
+            "Skipping: properties directory not found at {:?}",
+            props_dir
+        );
         return;
     }
 

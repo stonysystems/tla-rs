@@ -173,9 +173,15 @@ Finite-domain expansion and runtime values currently cover:
   - Fairness filtering is branch-label based over candidate SCCs and should be treated as a bounded-model diagnostic aid rather than a complete temporal proof procedure.
 - Current entrypoint assumptions:
   - model-check execution currently assumes `LInit(s, c)` and `LNext(s, s_, c)` style signatures.
-  - constants resolution currently requires exactly one concrete `LConstants` valuation after applying assignments/domains.
+  - constants resolution explores all resolved `LConstants` valuations after applying assignments/domains.
+- Supported evaluator additions:
+  - finite-domain `forall` / `exists`
+  - `match` expressions
+  - struct update expressions
 - Evaluator unsupported constructs:
-  - `forall`, `exists`, `match`, struct update expressions
+  - quantifier bindings that are not identifiers
+  - quantifier evaluation without a domain resolver hook
+  - struct updates whose base is not a struct/enum value
   - bitwise/shift operators
   - casts beyond `int`/`nat`/`bool`
   - non-identifier `let` patterns
@@ -240,8 +246,8 @@ transpiler/target/debug/verus-transpile model-check ... --max-depth 2 --max-stat
 Typical symptoms:
 
 - `Unsupported pattern: Model-check evaluator does not support ...`
-- errors mentioning unsupported quantifiers (`forall` / `exists`), `match`,
-  struct update, or bitwise/shift operators
+- errors mentioning quantifier binding/domain-hook requirements, unsupported bitwise/shift operators,
+  unsupported casts, or non-identifier `let` patterns
 - helper-call resolution errors (`could not resolve helper call`)
 
 Common causes:
@@ -260,15 +266,15 @@ Fixes:
 
 Typical symptom:
 
-- `requires exactly one concrete LConstants valuation`
+- `zero matching LConstants valuations`
 
 Cause:
 
-- constants assignments/domains leave zero or multiple matching constant values.
+- constants assignments/domains leave zero matching constant values.
 
 Fixes:
 
-1. Tighten `[constants.assignments]` and `[constants.domains]` to one valuation.
+1. Tighten/adjust `[constants.assignments]` and `[constants.domains]` so at least one valuation remains.
 2. Narrow type/quantifier domains used by constants fields.
 
 ### 10.4 Signature/Entrypoint Mismatches

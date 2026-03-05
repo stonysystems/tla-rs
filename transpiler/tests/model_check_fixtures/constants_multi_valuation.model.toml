@@ -1,0 +1,15 @@
+[constants.domains.limit]
+kind = "int_range"
+min = 1
+max = 2
+
+[quantifiers.int]
+min = 0
+max = 2
+
+[search]
+max_depth = 1
+max_states = 20
+
+[properties]
+invariants = ["LInv"]
