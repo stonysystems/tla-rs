@@ -9658,7 +9658,7 @@ Rules for this phase (do not cut corners):
 ### 33.2 Unsupported-feature audit and regression-first workflow
 
 - [x] Audit the current unsupported surface directly from the implementation and keep it synchronized in `docs/model_checker_status.md`. Minimum files audited: `transpiler/src/modelcheck/evaluator.rs`, `transpiler/src/modelcheck/domain.rs`, `transpiler/src/modelcheck/solver.rs`, and `transpiler/src/main.rs`. Added regression `test_model_check_status_doc_tracks_implementation_unsupported_surface` to keep the doc aligned with implementation-backed unsupported/guardrail anchors.
-- [ ] Add focused regression tests for each known blocker before fixing it, so progress is measurable and cannot be hand-waved.
+- [x] Add focused regression tests for each known blocker before fixing it, so progress is measurable and cannot be hand-waved. Added `test_model_check_unsupported_protocol_rows_require_blocker_regressions` to enforce that every `Result = unsupported` protocol row has a checked-in model, a non-empty blocker description, and referenced blocker regression test(s).
 - [ ] Prioritize blockers that appear in real protocol specs over theoretical completeness work.
 - [ ] Whenever a protocol still fails, reduce it to the smallest failing construct and record that exact blocker in the status doc instead of skipping the protocol.
 

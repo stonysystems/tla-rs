@@ -7843,6 +7843,120 @@ fn test_model_check_supported_protocol_rows_require_automated_evidence() {
 }
 
 #[test]
+fn test_model_check_unsupported_protocol_rows_require_blocker_regressions() {
+    let repo_root = resolve_repo_root_for_integration();
+    let status_doc = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_doc).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc.display(),
+            err
+        )
+    });
+
+    let integration_src_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("integration.rs");
+    let integration_src = std::fs::read_to_string(&integration_src_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read integration source {}: {}",
+            integration_src_path.display(),
+            err
+        )
+    });
+
+    let mut integration_test_names = std::collections::BTreeSet::new();
+    for line in integration_src.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("fn test_") {
+            if let Some(paren_index) = rest.find('(') {
+                integration_test_names.insert(format!("test_{}", &rest[..paren_index]));
+            }
+        }
+    }
+    assert!(
+        !integration_test_names.is_empty(),
+        "failed to discover integration test names in {}",
+        integration_src_path.display()
+    );
+
+    let mut unsupported_rows = 0u64;
+    for line in status_src.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("| `") {
+            continue;
+        }
+
+        let columns: Vec<&str> = trimmed.split('|').map(|col| col.trim()).collect();
+        if columns.len() < 9 {
+            continue;
+        }
+
+        let protocol = columns[1].trim_matches('`');
+        let model_path = columns[3].trim_matches('`');
+        let result = columns[5].trim_matches('`');
+        let blocker = columns[7];
+        let automated_evidence = columns[8];
+
+        if result != "unsupported" {
+            continue;
+        }
+        unsupported_rows += 1;
+
+        assert!(
+            !model_path.is_empty() && model_path != "N/A",
+            "protocol `{}` is marked unsupported but missing model file column in {}",
+            protocol,
+            status_doc.display()
+        );
+        let model_abs = repo_root.join(model_path);
+        assert!(
+            model_abs.exists(),
+            "protocol `{}` is marked unsupported but model file does not exist: {}",
+            protocol,
+            model_abs.display()
+        );
+
+        let blocker_trimmed = blocker.trim();
+        assert!(
+            !blocker_trimmed.is_empty() && blocker_trimmed != "N/A",
+            "protocol `{}` is marked unsupported but first-blocker column is empty/N/A",
+            protocol
+        );
+
+        let mut referenced_tests = Vec::new();
+        for token in automated_evidence.split(',') {
+            let token = token.trim().trim_matches('`');
+            if token.starts_with("test_model_check_") {
+                referenced_tests.push(token.to_string());
+            }
+        }
+
+        assert!(
+            !referenced_tests.is_empty(),
+            "protocol `{}` is marked unsupported but Automated evidence has no blocker regression test reference: `{}`",
+            protocol,
+            automated_evidence
+        );
+
+        for test_name in referenced_tests {
+            assert!(
+                integration_test_names.contains(&test_name),
+                "protocol `{}` references missing blocker regression test `{}`",
+                protocol,
+                test_name
+            );
+        }
+    }
+
+    assert!(
+        unsupported_rows > 0,
+        "status matrix in {} has no protocols marked `unsupported`; blocker coverage guard is not exercising any rows",
+        status_doc.display()
+    );
+}
+
+#[test]
 fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
     struct AuditExpectation<'a> {
         source_file: &'a str,

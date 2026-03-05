@@ -134,6 +134,14 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 - `transpiler/tests/integration.rs`:
   - `test_model_check_supported_protocol_rows_require_automated_evidence` enforces that every protocol row marked `Result = ok` in the coverage matrix references existing integration test evidence and checked-in `reports/model_check/*.json` artifacts.
 
+### 3.7 Unsupported protocol blocker discipline guard
+
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_unsupported_protocol_rows_require_blocker_regressions` enforces that every protocol row marked `Result = unsupported` in the coverage matrix has:
+    - a checked-in model file path that exists,
+    - a non-empty first-blocker description,
+    - and referenced blocker regression test(s) that exist in `integration.rs`.
+
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
 Metrics shown for supported entries come from the latest JSON artifacts under `reports/model_check/` (generated via `./scripts/run_model_check_matrix.sh`; exact `elapsed_ms` may vary by machine/load).
@@ -334,6 +342,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_leader_election_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_supported_protocol_rows_require_automated_evidence -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_require_blocker_regressions -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_status_doc_tracks_implementation_unsupported_surface -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
