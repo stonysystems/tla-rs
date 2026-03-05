@@ -7842,6 +7842,125 @@ fn test_model_check_supported_protocol_rows_require_automated_evidence() {
     );
 }
 
+#[test]
+fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
+    struct AuditExpectation<'a> {
+        source_file: &'a str,
+        source_fragment: &'a str,
+        doc_fragment: &'a str,
+    }
+
+    let expectations = [
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/evaluator.rs",
+            source_fragment: "unsupported_construct(\"forall quantifier\")",
+            doc_fragment: "`forall` quantifier",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/evaluator.rs",
+            source_fragment: "unsupported_construct(\"exists quantifier\")",
+            doc_fragment: "expression-level `exists`",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/evaluator.rs",
+            source_fragment: "unsupported_construct(\"match expression\")",
+            doc_fragment: "`match`",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/evaluator.rs",
+            source_fragment: "unsupported_construct(\"struct update expression\")",
+            doc_fragment: "struct update expressions",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/evaluator.rs",
+            source_fragment: "unsupported_construct(\"bitwise/shift binary operator\")",
+            doc_fragment: "bitwise/shift operators",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/evaluator.rs",
+            source_fragment: "unsupported_construct(\"non-identifier let binding\")",
+            doc_fragment: "non-identifier `let` patterns",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/domain.rs",
+            source_fragment: "existential domain expansion does not support generic type",
+            doc_fragment: "only expands generics for concrete built-ins (`Seq`, `Set`, `Map`)",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/domain.rs",
+            source_fragment: "Missing domain for named type",
+            doc_fragment: "Missing domain for named type",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/solver.rs",
+            source_fragment: "no direct next-state equality constraints (`s_.field == ...`)",
+            doc_fragment: "no direct next-state equality constraints",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/modelcheck/solver.rs",
+            source_fragment: "candidate-enumeration guardrail exceeded",
+            doc_fragment: "candidate-enumeration guardrail",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/main.rs",
+            source_fragment: "Model-check currently requires exactly one concrete `LConstants` valuation",
+            doc_fragment: "exactly one resolved `LConstants` valuation",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/main.rs",
+            source_fragment: "Model-check evaluator could not resolve helper call",
+            doc_fragment: "could not resolve helper call",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/main.rs",
+            source_fragment: "Model-check helper-call recursion exceeded depth limit",
+            doc_fragment: "helper-call recursion exceeded depth limit",
+        },
+        AuditExpectation {
+            source_file: "transpiler/src/main.rs",
+            source_fragment: "unknown fairness branch label(s)",
+            doc_fragment: "unknown fairness branch labels",
+        },
+    ];
+
+    let repo_root = resolve_repo_root_for_integration();
+    let status_doc = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_doc).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc.display(),
+            err
+        )
+    });
+    assert!(
+        status_src.contains("### 2.4 Required implementation audit anchors"),
+        "status doc is missing the required implementation-audit section header"
+    );
+
+    for expected in expectations {
+        let source_path = repo_root.join(expected.source_file);
+        let source_src = std::fs::read_to_string(&source_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read audit source file {}: {}",
+                source_path.display(),
+                err
+            )
+        });
+        assert!(
+            source_src.contains(expected.source_fragment),
+            "source fragment `{}` not found in {}; update audit expectations/docs",
+            expected.source_fragment,
+            source_path.display()
+        );
+        assert!(
+            status_src.contains(expected.doc_fragment),
+            "status doc missing unsupported-surface fragment `{}` from {}",
+            expected.doc_fragment,
+            expected.source_file
+        );
+    }
+}
+
 fn run_model_check_json_report_from_fixtures(
     transpiler_bin: &std::path::Path,
     input_fixture: &str,

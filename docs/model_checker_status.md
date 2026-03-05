@@ -54,12 +54,26 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 ### 2.2 Domain/solver/constants limitations
 
 - `transpiler/src/modelcheck/domain.rs` only expands generics for concrete built-ins (`Seq`, `Set`, `Map`) and rejects broader generic forms.
+- `transpiler/src/modelcheck/domain.rs` fails unresolved named-type domains with `Missing domain for named type ...` until `quantifiers.types.<TypeName>` is provided.
 - `transpiler/src/main.rs` currently requires exactly one resolved `LConstants` valuation.
 - `transpiler/src/modelcheck/solver.rs` still uses candidate-state enumeration fallback for predicate-only/helper branches; runs are now bounded by a hard guardrail (`candidate_evaluation_guardrail_per_state_branch = 10000`) and expose fallback telemetry in JSON/CLI summaries.
+- `transpiler/src/modelcheck/solver.rs` rejects predicate-only branches without candidate states using `no direct next-state equality constraints` errors.
+- `transpiler/src/main.rs` helper-call execution still errors when it could not resolve helper call names or when helper-call recursion exceeded depth limit.
 
 ### 2.3 Temporal/fairness/timeout limitations
 
 - Liveness checks are only performed when exploration is complete (`stop_reason = FrontierExhausted`); otherwise `liveness.skipped_reason = "incomplete_exploration"`.
+- Fairness labels must match actual `LNext` branch labels exactly; unknown fairness branch labels are rejected at preflight.
+
+### 2.4 Required implementation audit anchors
+
+This section is synchronized against these implementation files via
+`test_model_check_status_doc_tracks_implementation_unsupported_surface`:
+
+- `transpiler/src/modelcheck/evaluator.rs`
+- `transpiler/src/modelcheck/domain.rs`
+- `transpiler/src/modelcheck/solver.rs`
+- `transpiler/src/main.rs`
 
 ## 3. Checked-in model-checking evidence (currently passing)
 
@@ -320,6 +334,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_leader_election_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_supported_protocol_rows_require_automated_evidence -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_status_doc_tracks_implementation_unsupported_surface -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
