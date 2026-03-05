@@ -6755,13 +6755,198 @@ verus! {
         ensures
             OneVotePerTermInNetwork(ds_)
     {
-        // Old-old packet pairs: from OneVotePerTermInNetwork(ds) + network monotonicity.
-        // Old-new pair: new VoteResponse{granted: true} is only created by LGrantVote
-        // which requires !has_voted || voted_for == candidate. By VoteResponseIntegrity(ds),
-        // any existing VoteResponse for the same (voter, term) implies voter has voted,
-        // so voted_for must match, and routing ensures same dst.
-        // New-new: at most one VoteResponse per step, so p1 == p2.
-        assume(OneVotePerTermInNetwork(ds_));
+        let (server_id, sent_pkts, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        assert forall |p1: LRaftPacket, p2: LRaftPacket|
+            ds_.network.contains(p1) && ds_.network.contains(p2)
+        implies match p1.msg {
+            LRaftMessage::VoteResponse { term: t1, granted: g1, voter: v1, .. } =>
+                match p2.msg {
+                    LRaftMessage::VoteResponse { term: t2, granted: g2, voter: v2, .. } =>
+                        (g1 && g2 && v1 == v2 && t1 == t2) ==> p1.dst == p2.dst,
+                    _ => true,
+                },
+            _ => true,
+        } by {
+            if p1.msg is VoteResponse && p2.msg is VoteResponse
+                && p1.msg->VoteResponse_granted && p2.msg->VoteResponse_granted
+                && p1.msg->VoteResponse_voter == p2.msg->VoteResponse_voter
+                && p1.msg->VoteResponse_term == p2.msg->VoteResponse_term
+            {
+                let v = p1.msg->VoteResponse_voter;
+                let t = p1.msg->VoteResponse_term;
+
+                if ds.network.contains(p1) && ds.network.contains(p2) {
+                    // Both old: from OneVotePerTermInNetwork(ds)
+                    assert(OneVotePerTermInNetwork(ds));
+                } else if !ds.network.contains(p1) && !ds.network.contains(p2) {
+                    // Both new: from same step, same sent_pkts, same routing
+                    // Both p1.dst and p2.dst == recv_from (routing constraint)
+                    assert(match recv_from {
+                        Some(src) => p1.dst == src && p2.dst == src,
+                        None => true,
+                    });
+                    // If recv_from is None, both p1.dst and p2.dst are
+                    // unconstrained but they came from the same sent_pkts
+                    // with the same routing. Actually for VoteResponse,
+                    // recv_from must be Some (from LHandleMessage).
+                    lemma_action_granted_vr_implies_handle_request_vote(
+                        ds, server_id, s, s_, c, sent_pkts, recv_from,
+                        choose |i: int| 0 <= i < sent_pkts.len()
+                            && p1.msg == sent_pkts[i]);
+                    // recv_from is Some, so p1.dst == p2.dst
+                } else {
+                    // One old, one new. WLOG assume p1 is old, p2 is new.
+                    // (symmetric argument if p1 new, p2 old)
+                    if ds.network.contains(p1) && !ds.network.contains(p2) {
+                        lemma_one_vote_old_new_match(
+                            ds, ds_, server_id, s, s_, c,
+                            sent_pkts, recv_from, p1, p2);
+                    } else {
+                        // p1 new, p2 old: symmetric
+                        lemma_one_vote_old_new_match(
+                            ds, ds_, server_id, s, s_, c,
+                            sent_pkts, recv_from, p2, p1);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Helper: old-new pair in OneVotePerTermInNetwork.
+    /// If p_old is an old granted VoteResponse and p_new is a new one with
+    /// the same (voter, term), then p_old.dst == p_new.dst.
+    proof fn lemma_one_vote_old_new_match(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+        server_id: int,
+        s: LState, s_: LState, c: LConstants,
+        sent_pkts: Seq<LRaftMessage>,
+        recv_from: Option<int>,
+        p_old: LRaftPacket,
+        p_new: LRaftPacket,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            VoteResponseIntegrity(ds),
+            SenderIntegrity(ds),
+            0 <= server_id < ds.num_servers,
+            s == ds.server_states[server_id],
+            s_ == ds_.server_states[server_id],
+            c == ds.server_constants[server_id],
+            RaftActionProduces(ds, server_id, s, s_, c, sent_pkts, recv_from),
+            forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j],
+            forall |pkt: LRaftPacket|
+                ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                    &&& pkt.src == server_id
+                    &&& 0 <= pkt.dst < ds.num_servers
+                    &&& (exists |i: int| 0 <= i < sent_pkts.len() && pkt.msg == sent_pkts[i])
+                    &&& (match recv_from {
+                        Some(src) => pkt.dst == src,
+                        None => true,
+                    })
+                },
+            // p_old is old, p_new is new
+            ds.network.contains(p_old),
+            ds_.network.contains(p_new),
+            !ds.network.contains(p_new),
+            // Both are granted VoteResponse with same (voter, term)
+            p_old.msg is VoteResponse,
+            p_new.msg is VoteResponse,
+            p_old.msg->VoteResponse_granted,
+            p_new.msg->VoteResponse_granted,
+            p_old.msg->VoteResponse_voter == p_new.msg->VoteResponse_voter,
+            p_old.msg->VoteResponse_term == p_new.msg->VoteResponse_term,
+        ensures
+            p_old.dst == p_new.dst,
+    {
+        let v = p_old.msg->VoteResponse_voter;
+        let t = p_old.msg->VoteResponse_term;
+
+        // p_new is a new granted VoteResponse from this step.
+        // p_new.src == server_id, and from LGrantVote: voter == c.my_id == server_id
+        assert(p_new.src == server_id);
+        let idx = choose |i: int|
+            0 <= i < sent_pkts.len() && p_new.msg == sent_pkts[i];
+        // Use action-level helper: action must be LHandleMessage with RequestVote
+        lemma_action_granted_vr_implies_handle_request_vote(
+            ds, server_id, s, s_, c, sent_pkts, recv_from, idx);
+        let req_pkt = choose |pkt: LRaftPacket| {
+            &&& ds.network.contains(pkt)
+            &&& pkt.dst == server_id
+            &&& recv_from == Some(pkt.src)
+            &&& LHandleMessage(s, s_, c, pkt.msg, sent_pkts)
+            &&& pkt.msg is RequestVote
+        };
+
+        // From LHandleMessage helper: voter == c.my_id, term == s_.current_term
+        lemma_lhandle_message_granted_vote_response(
+            s, s_, c, req_pkt.msg, sent_pkts, idx);
+        assert(c.my_id == server_id) by { assert(WellFormedRaftDistributed(ds)); };
+        assert(v == server_id);
+        assert(t == s_.current_term);
+
+        // p_new.dst == recv_from.unwrap() (routing)
+        assert(recv_from is Some);
+        assert(p_new.dst == recv_from->Some_0);
+
+        // recv_from == Some(req_pkt.src), and SenderIntegrity gives req_pkt.src == candidate_id
+        assert(recv_from == Some(req_pkt.src));
+        assert(SenderIntegrity(ds));
+        assert(req_pkt.src == req_pkt.msg->RequestVote_candidate);
+        let candidate_id = req_pkt.msg->RequestVote_candidate;
+        assert(p_new.dst == candidate_id);
+
+        // s_.voted_for == candidate_id (from LHandleMessage helper)
+        assert(s_.voted_for == candidate_id);
+
+        // Now for p_old: VoteResponseIntegrity(ds) on p_old
+        assert(VoteResponseIntegrity(ds));
+        // v == server_id, t == s_.current_term
+        // VoteResponseIntegrity(ds) gives:
+        //   ds.server_states[v].current_term > t || (== t && has_voted && voted_for == p_old.dst)
+
+        // From LHandleRequestVoteMsg: s_mid = step_down_if_needed(s, candidate_term)
+        // where candidate_term comes from RequestVote. LGrantVote requires
+        // candidate_term >= s_mid.current_term. And t == s_.current_term == candidate_term.
+        // s_mid = step_down_if_needed(s, t).
+        // If t > s.current_term: s_mid steps down, s_mid.current_term = t,
+        //   s_mid.has_voted = false.
+        // If t <= s.current_term: s_mid == s.
+        // LGrantVote requires t >= s_mid.current_term (always true since s_mid.current_term <= t)
+
+        // Case analysis on VoteResponseIntegrity(ds) for p_old:
+        if ds.server_states[v].current_term > t {
+            // s.current_term > t. But LGrantVote needs candidate_term >= s_mid.current_term.
+            // If t <= s.current_term: s_mid == s, s_mid.current_term == s.current_term > t.
+            //   LGrantVote needs t >= s_mid.current_term = s.current_term > t. Contradiction.
+            // If t > s.current_term: impossible since s.current_term > t already.
+            assert(s.current_term > t);
+            // s_mid = step_down_if_needed(s, t) = s (since t <= s.current_term)
+            // LGrantVote: candidate_term (=t) >= s_mid.current_term (=s.current_term > t). Contradiction.
+            assert(false);
+        } else {
+            // ds.server_states[v].current_term == t && has_voted && voted_for == p_old.dst
+            assert(s.current_term == t);
+            assert(s.has_voted);
+            assert(s.voted_for == p_old.dst);
+
+            // s_mid = step_down_if_needed(s, t) = s (since t == s.current_term)
+            // LGrantVote guard: !s_mid.has_voted || s_mid.voted_for == candidate_id
+            // s_mid == s, s.has_voted == true, so s.voted_for == candidate_id
+            // p_old.dst == s.voted_for == candidate_id == p_new.dst
+            assert(p_old.dst == candidate_id);
+            assert(p_old.dst == p_new.dst);
+        }
     }
 
     // =========================================================================
