@@ -1,0 +1,28 @@
+# Minimal checked-in model for reproducing the current source-first
+# EPaxos blocker (LState candidate expansion limit).
+[constants.assignments]
+num_replicas = 3
+quorum_size = 2
+fast_quorum_size = 2
+my_id = 0
+
+[quantifiers.int]
+min = 0
+max = 3
+
+[quantifiers.nat]
+max = 0
+
+[collections]
+max_seq_len = 1
+max_set_len = 1
+max_map_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"

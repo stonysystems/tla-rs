@@ -110,6 +110,7 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 - `transpiler/tests/integration.rs`:
   - `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` (checked-in RSL blocker model reproduces current init-signature gate expecting `LState`/`LConstants`)
   - `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` (checked-in VerticalPaxos blocker model reproduces bounded candidate expansion overflow for `LState`)
+  - `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` (checked-in EPaxos blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` (checked-in Raft blocker model reproduces missing `quantifiers.types.LLogEntry` domain requirement)
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
@@ -122,7 +123,7 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LLogEntry` (`quantifiers.types.LLogEntry`). | `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` |
 | `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 10` | N/A | `test_model_check_paxos_bounded_run`, `reports/model_check/paxos_small.json` |
 | `VerticalPaxos` | `src/protocol/VerticalPaxos/vpaxos.rs`, `src/protocol/VerticalPaxos/types.rs` | `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` |
-| `EPaxos` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first EPaxos model/check run yet. | No |
+| `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` |
 | `PBFT` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first PBFT model/check run yet. | No |
 | `ChainReplication` | N/A (no checked-in source-first run yet) | N/A | N/A | `unsupported` | N/A | No checked-in source-first ChainReplication model/check run yet. | No |
 | `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 2 / 1 / 64` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `reports/model_check/primarybackup_small.json` |
@@ -268,7 +269,19 @@ transpiler/target/debug/verus-transpile model-check \
 
 Expected result: command fails with `Model-check candidate expansion for struct \`LState\` exceeded limit (200).`
 
-### 5.7 Re-run automated evidence directly
+### 5.7 Replay currently checked-in unsupported blocker (EPaxos)
+
+```bash
+transpiler/target/debug/verus-transpile model-check \
+  --input src/protocol/EPaxos/epaxos.rs \
+  --types src/protocol/EPaxos/types.rs \
+  --model transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml \
+  --search bfs
+```
+
+Expected result: command fails with `Model-check candidate expansion for struct \`LState\` exceeded limit (200).`
+
+### 5.8 Re-run automated evidence directly
 
 ```bash
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_primarybackup_helper_call_branches_bounded_run -- --nocapture
@@ -277,12 +290,13 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_liveness_fixtures_cover_fairness_and_non_fairness_outcomes -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models -- --nocapture
 ```
 
-### 5.8 Generate checked-in JSON artifact bundle
+### 5.9 Generate checked-in JSON artifact bundle
 
 ```bash
 ./scripts/run_model_check_matrix.sh
@@ -290,7 +304,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 
 Generated outputs are written to `reports/model_check/` and include one JSON report per matrix case plus `MANIFEST.txt`.
 
-### 5.9 Verify status-doc evidence references
+### 5.10 Verify status-doc evidence references
 
 ```bash
 ./scripts/verify_model_check_evidence_paths.sh
