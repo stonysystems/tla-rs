@@ -774,3 +774,139 @@ Next leaf remains:
 
 - `...b.c.2.c`: derive strict-term shared facts (`L >= 0`, `k < L`, packet
   alignment, strict-term predicate) in-branch without fallback assumptions.
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c.2.c complete (2026-03-04)
+
+Completed strict-term shared fact derivations in
+`lemma_overlap_entry_transfer_equal_term_equal_len(...)`:
+
+- `req_last_log_term > voter_vtl` (branch guard)
+- `L >= 0` (from `VoteLogLenBounded`)
+- `k < L` (by `VoteLogLenEntryTermBound` contradiction)
+- Packet alignment facts (from preconditions)
+- `L > 0` (from `k >= 0 ∧ k < L`)
+- `req_last_log_index` bounds (from preconditions)
+
+The only remaining `assume` in the strict-term branch is the constructive
+leader-entry transfer:
+```
+assume(leader.log.len() > k && leader.log[k] == entry)
+```
+
+Note: focused verification cannot run due to pre-existing compile errors from
+widened `VoteResponse` fields not yet added to `LRaftMessage` type.
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c.3 analysis and decomposition (2026-03-04)
+
+Task `...b.c.3` asks to close the strict-term branch constructively. This
+requires proving `leader.log[k] == entry` when `req_last_log_term > voter_vtl`.
+
+### Known facts at this point in the proof
+
+- `voter.log[k] == entry` with `entry.term < vote_term`
+- `k < L` (voter's vote-time log length at term `vote_term`)
+- `L > 0`
+- `req_last_log_term > voter_vtl` where `voter_vtl = voter.log[L-1].term`
+- `req_last_log_index >= 1` (leader's election-time log length, since `req_last_log_term > 0`)
+- `leader.log[req_last_log_index - 1].term == req_last_log_term` (if `req_last_log_index > 0`)
+- `0 <= req_last_log_index <= leader.log.len()` (RequestVote summary validity)
+
+### Key difficulty
+
+In the equal-term/equal-length case, the transfer works by finding a matching
+term at index `L-1` between leader and voter logs, then applying `LogMatching`
+to conclude all entries at `0..L-1` agree. The strict-term case breaks this
+pattern:
+
+1. **No guaranteed matching index**: `req_last_log_term > voter_vtl` means the
+   leader's last-log-term is strictly higher than the voter's vote-time last-log-term.
+   There may be no index `m` where `leader.log[m].term == voter.log[m].term`.
+
+2. **`req_last_log_index >= L` is NOT guaranteed**: The vote was granted on
+   strict-term alone (`rlt > voter_vtl`). The leader's log could be shorter
+   than the voter's vote-time log.
+
+3. **`LeaderCompleteness(ds)` IH does not apply directly**: The candidate is
+   `Candidate` in `ds`, not `Leader`, so the IH for committed entries in
+   existing leaders doesn't cover it.
+
+### Proof strategy options
+
+#### Option A: LogTermsMonotonic invariant (recommended)
+
+Add a new invariant: for all servers, `i <= j ==> log[i].term <= log[j].term`.
+
+This is provable for this simplified spec because:
+- `LClientRequest` appends at `s.current_term`; all existing entries have term
+  `<= s.current_term` (by IH).
+- `LFollowerAppendEntries` appends at `ae_term >= s.current_term`; same argument.
+- Logs are append-only (no truncation).
+
+With LogTermsMonotonic, the strict-term proof becomes:
+
+1. `k < L` and `voter_vtl = voter.log[L-1].term`, so by monotonicity in voter's log:
+   `entry.term = voter.log[k].term <= voter.log[L-1].term = voter_vtl`.
+2. `req_last_log_term > voter_vtl >= entry.term`.
+3. `leader.log[req_last_log_index - 1].term == req_last_log_term > entry.term`.
+
+Then we need to show `req_last_log_index > k` and transfer the entry. This
+still requires connecting via `EntryTermHasVoteQuorum` or `LogMatching`.
+
+However, even with LogTermsMonotonic, we lack a direct way to conclude
+`leader.log[k] == entry` from `leader.log[req_last_log_index - 1].term > entry.term`.
+
+To complete the proof, we need one of:
+- A `LogMatching` anchor at some index between the leader and `EntryTermHasVoteQuorum`
+  witness `d`, or
+- A transitive argument via `LeaderCompleteness(ds)` applied to a leader at an
+  intermediate term.
+
+#### Option B: EntryTermHasVoteQuorum + quorum chain (complex)
+
+Use `EntryTermHasVoteQuorum(ds)` on the leader's entry at `req_last_log_index - 1`
+to get witness `d'` at term `req_last_log_term`. Then `d'` has a vote quorum at
+`req_last_log_term`, which overlaps with the commit quorum of `entry`. The
+overlap server has `entry` at `k` AND voted for `d'`. If `d'` is a Leader in
+`ds`, then `LeaderCompleteness(ds)` gives `d'.log[k] == entry`, and then
+`LogMatching` transfers from `d'` to leader (they share the entry at
+`req_last_log_index - 1`).
+
+Issues:
+- `d'` may not be a Leader in `ds` (could be Candidate or have advanced term).
+- If `d'` is not a Leader, need to recurse on the term gap.
+- This approach is essentially re-proving LeaderCompleteness via nested induction.
+
+#### Option C: Strengthen EntryTermHasVoteQuorum witness to include LogMatching chain
+
+If the witness `d` from `EntryTermHasVoteQuorum` also satisfies `LogMatching`
+with the candidate (i.e., they share a common term at some index >= k), then
+the entry transfers. But this would require a much stronger invariant statement.
+
+### Recommended approach
+
+**Option A** with LogTermsMonotonic is the cleanest path:
+
+1. Add `LogTermsMonotonic(ds)` invariant (definition + inductive proof).
+2. Use it in the strict-term branch to derive `entry.term <= voter_vtl < req_last_log_term`.
+3. Use `EntryTermHasVoteQuorum(ds)` on the entry to get witness `d` with `d.log[k] == entry`.
+4. Show that `d`'s vote quorum at `entry.term` overlaps with the leader's vote quorum at `vote_term`.
+5. The overlap voter `w2` voted for both `d` (at `entry.term`) and the leader (at `vote_term`).
+6. By `VoteGrantedLogUpToDateAtVoteTime` for `w2`'s vote for the leader:
+   the leader's log was up-to-date compared to `w2`'s vote-time log at `vote_term`.
+7. By `VoteGrantedLogUpToDateAtVoteTime` for `w2`'s vote for `d`:
+   `d`'s log was up-to-date compared to `w2`'s vote-time log at `entry.term`.
+8. Chain these to show `d.log[k] == entry` is also in the leader's log via
+   LogMatching at the shared anchor point.
+
+However, step 8 still requires finding a LogMatching anchor between `d` and the
+leader. The full proof may need a nested argument or additional structural
+invariants.
+
+**Estimated size**: ~200-400 LOC for `LogTermsMonotonic` invariant + inductive
+proof, plus ~100-200 LOC for the strict-term branch closure. Total > 500 LOC,
+so decomposition into sub-leaves is warranted.
+
+### Decomposition
+
+- `b.c.3.a`: Document and formalize the proof strategy (this section).
+- `b.c.3.b`: Implement the chosen proof strategy.
