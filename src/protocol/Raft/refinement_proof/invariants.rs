@@ -5381,6 +5381,167 @@ verus! {
         }
     }
 
+    /// Helper for lemma_leader_completeness_inductive: handles the
+    /// changed-leader + pre-state committed case.
+    ///
+    /// When leader_id changed state and the entry was committed in pre-state:
+    /// - If already Leader in pre-state: LeaderCompleteness(ds) + log preservation
+    /// - If just became Leader (was Candidate): quorum overlap to transfer entry
+    proof fn lemma_leader_completeness_prestate_commit_changed_leader(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+        leader_id: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            LeaderCompleteness(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            VotesGrantedAreServers(ds),
+            RaftDistributedNext(ds, ds_),
+            0 <= k,
+            EntryCommittedAt(ds, k, entry),
+            0 <= leader_id < ds.num_servers,
+            ds_.server_states[leader_id].role is Leader,
+            ds_.server_states[leader_id].current_term > entry.term,
+            ds_.server_states[leader_id] != ds.server_states[leader_id],
+        ensures
+            ds_.server_states[leader_id].log.len() > k
+                && ds_.server_states[leader_id].log[k] == entry,
+    {
+        // leader_id changed, so leader_id == stepping_server.
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+        assert(leader_id == server_id) by {
+            if leader_id != server_id {
+                assert(ds_.server_states[leader_id] == ds.server_states[leader_id]);
+                assert(false);
+            }
+        };
+        let s = ds.server_states[leader_id];
+        let s_ = ds_.server_states[leader_id];
+        let c = ds.server_constants[leader_id];
+        lemma_lnext_log_preserved_or_extended(s, s_, c);
+
+        if s.role is Leader {
+            // Was already Leader in pre-state. LNext from Leader→Leader
+            // preserves current_term (stepping down would make Follower).
+            // LeaderCompleteness(ds) gives the entry in pre-state.
+            assert(ds.server_states[leader_id].log.len() > k);
+            assert(ds.server_states[leader_id].log[k] == entry);
+            assert(ds_.server_states[leader_id].log[k]
+                == ds.server_states[leader_id].log[k]);
+        } else if s.role is Candidate {
+            // Just became Leader via LReceiveVoteAndBecomeLeader.
+            // Log and current_term are preserved.
+            // Need quorum overlap between commit quorum and vote quorum.
+
+            // Commit quorum from pre-state
+            let commit_quorum = choose |q: Set<int>| {
+                &&& q.len() >= ds.num_servers / 2 + 1
+                &&& (forall |id: int| q.contains(id) ==> {
+                    &&& 0 <= id < ds.num_servers
+                    &&& ds.server_states[id].log.len() > k
+                    &&& ds.server_states[id].log[k] == entry
+                })
+            };
+            if commit_quorum.contains(leader_id) {
+                assert(ds.server_states[leader_id].log.len() > k);
+                assert(ds.server_states[leader_id].log[k] == entry);
+                assert(ds_.server_states[leader_id].log[k]
+                    == ds.server_states[leader_id].log[k]);
+            } else {
+                // Use post-state votes_granted for intersection (has quorum).
+                // Then check if overlap_voter is in pre-state votes_granted.
+                let vote_quorum = ds_.server_states[leader_id].votes_granted;
+                let n = ds.num_servers;
+                let quorum_size = n / 2 + 1;
+                let universe = Set::<int>::new(|j: int| 0 <= j < n);
+
+                // Post-state leader has quorum via LBecomeLeader
+                assert(ds_.server_constants[leader_id].quorum_size == quorum_size);
+                assert(vote_quorum.len() >= quorum_size);
+
+                assert(commit_quorum.len() >= quorum_size);
+                assert(commit_quorum.len() + vote_quorum.len()
+                    >= quorum_size + quorum_size);
+                assert(quorum_size + quorum_size > n);
+                lemma_range_set_finite(n);
+
+                assert(commit_quorum.subset_of(universe)) by {
+                    assert forall |id: int| commit_quorum.contains(id)
+                        implies universe.contains(id) by {
+                        assert(0 <= id < ds.num_servers);
+                    };
+                };
+                assert(vote_quorum.subset_of(universe)) by {
+                    assert forall |id: int| vote_quorum.contains(id)
+                        implies universe.contains(id) by {
+                        assert(VotesGrantedAreServers(ds));
+                    };
+                };
+                lemma_quorum_intersection(commit_quorum, vote_quorum, universe);
+                let overlap_voter = choose |ov: int|
+                    commit_quorum.contains(ov) && vote_quorum.contains(ov);
+                assert(0 <= overlap_voter < ds.num_servers);
+                assert(ds.server_states[overlap_voter].log.len() > k);
+                assert(ds.server_states[overlap_voter].log[k] == entry);
+
+                assert(overlap_voter != leader_id) by {
+                    if overlap_voter == leader_id {
+                        assert(commit_quorum.contains(leader_id));
+                        assert(false);
+                    }
+                };
+
+                // overlap_voter != leader_id == server_id, so state unchanged
+                assert(ds_.server_states[overlap_voter]
+                    == ds.server_states[overlap_voter]) by {
+                    assert(overlap_voter != server_id);
+                };
+
+                // Check if overlap_voter is in pre-state votes_granted
+                if ds.server_states[leader_id].votes_granted.contains(overlap_voter) {
+                    // In pre-state votes_granted: use existing transfer chain
+                    lemma_overlap_voter_entry_transfer(
+                        ds, leader_id, overlap_voter, k, entry);
+                    assert(ds_.server_states[leader_id].log[k]
+                        == ds.server_states[leader_id].log[k]);
+                } else {
+                    // overlap_voter is the newly added voter, not in pre-state
+                    // votes_granted. Same transfer argument applies but needs
+                    // direct packet extraction from the step being processed.
+                    // Deferred: Phase 34.7.1.e.4.c.new_voter
+                    assume(
+                        ds_.server_states[leader_id].log.len() > k
+                            && ds_.server_states[leader_id].log[k] == entry
+                    );
+                }
+            }
+        } else {
+            // Follower → Leader is impossible in one step.
+            // LTimeout: Follower → Candidate. LBecomeLeader requires Candidate.
+            // No LNext branch goes directly Follower → Leader.
+            assert(false);
+        }
+    }
+
     /// LeaderCompleteness states: if an entry is committed (replicated to a
     /// majority quorum) in some term, then every leader for all higher-numbered
     /// terms has that entry in its log.
@@ -5474,11 +5635,9 @@ verus! {
                     lemma_leader_completeness_unchanged_leader_for_prestate_commit(
                         ds, ds_, leader_id, k, entry);
                 } else {
-                    // Pending 34.7.1.e.4.c (changed-leader branch).
-                    assume(
-                        ds_.server_states[leader_id].log.len() > k
-                            && ds_.server_states[leader_id].log[k] == entry
-                    );
+                    // Changed-leader + pre-state committed (34.7.1.e.4.c).
+                    lemma_leader_completeness_prestate_commit_changed_leader(
+                        ds, ds_, leader_id, k, entry);
                 }
             } else {
                 // Post-only committed witness. From the decomposition helper and
@@ -5513,11 +5672,19 @@ verus! {
                     lemma_leader_completeness_fresh_commit_unchanged_leader(
                         ds, ds_, leader_id, k, entry, stepping);
                 } else {
-                    // Pending 34.7.1.e.4.c (changed-leader branch).
-                    assume(
-                        ds_.server_states[leader_id].log.len() > k
-                            && ds_.server_states[leader_id].log[k] == entry
-                    );
+                    // Changed-leader + fresh-step (34.7.1.e.4.c).
+                    // leader_id changed, so leader_id == stepping (frame condition).
+                    assert(leader_id == stepping) by {
+                        if leader_id != stepping {
+                            // frame: j != stepping ==> ds_.server_states[j] == ds.server_states[j]
+                            assert(ds_.server_states[leader_id]
+                                == ds.server_states[leader_id]);
+                            assert(false);
+                        }
+                    };
+                    // stepping appended the entry at index k
+                    assert(ds_.server_states[stepping].log[k] == entry);
+                    assert(ds_.server_states[leader_id].log[k] == entry);
                 }
             }
         }

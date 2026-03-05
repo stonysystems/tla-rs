@@ -10119,6 +10119,9 @@ This is the hardest step. Estimated ~300-500 LOC.
           - [ ] **34.7.1.e.4.b.2.b.3**: Remove the remaining local `assume` in this subcase and keep focused check `*leader_completeness*` stable (or reduce proof search so it no longer rlimit-fails at the target setting).
       - [ ] **34.7.1.e.4.b.3**: Remove all temporary assumptions from the unchanged-leader + fresh-step path and keep focused check `*leader_completeness*` passing.
     - [ ] **34.7.1.e.4.c**: Discharge changed-leader obligations using overlap/provenance bridge helpers (`lemma_overlap_request_vote_params_witness`, `lemma_vote_grant_bridge_template_for_overlap_voter`) plus log relation/log matching transfer.
+      - [x] **34.7.1.e.4.c.1**: Post-only committed + changed-leader case proved: `leader_id == stepping` by frame condition, so `ds_.server_states[leader_id].log[k] == entry` directly from the stepping witness.
+      - [x] **34.7.1.e.4.c.2**: Pre-state committed + changed-leader case: extracted `lemma_leader_completeness_prestate_commit_changed_leader`. Sub-case "was already Leader" uses `LeaderCompleteness(ds)` + log preservation. Sub-case "was Candidate → became Leader" uses post-state votes_granted quorum intersection + `lemma_overlap_voter_entry_transfer` when overlap_voter is in pre-state votes_granted.
+      - [ ] **34.7.1.e.4.c.3**: Eliminate residual assume for the new-voter subcase (overlap_voter not in pre-state votes_granted). Needs direct packet extraction from the VoteResponse being processed in this step, bypassing `VotersVotedForCandidate(ds)` which requires pre-state membership.
     - [ ] **34.7.1.e.4.d**: Remove all temporary assumptions in `lemma_leader_completeness_inductive` and make focused check `*leader_completeness*` pass with no `assume(LeaderCompleteness(ds_))`.
 
 - [ ] **34.7.2**: May need a supporting invariant `LeaderLogContainsCommitted(ds)` to strengthen the induction. Define if needed.
