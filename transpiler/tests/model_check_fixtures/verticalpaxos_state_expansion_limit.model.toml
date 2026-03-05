@@ -1,5 +1,5 @@
 # Minimal checked-in model for reproducing the current source-first
-# VerticalPaxos blocker (LState candidate expansion limit).
+# VerticalPaxos blocker (existential assignment expansion limit).
 [constants.assignments]
 quorum_size = 1
 num_nodes = 1

@@ -8562,7 +8562,7 @@ fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
         ExpectedUnsupportedRow {
             protocol: "VerticalPaxos",
             model_path: "transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml",
-            blocker_fragment: "struct `LState` exceeds `search.max_states` limit (200)",
+            blocker_fragment: "existential domain expansion exceeded limit (200 assignments)",
         },
         ExpectedUnsupportedRow {
             protocol: "EPaxos",
@@ -9978,7 +9978,7 @@ fn test_model_check_rsl_blocker_missing_constants_domain_is_reproducible() {
 }
 
 #[test]
-fn test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible() {
+fn test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
     let repo_root = resolve_repo_root_for_integration();
@@ -9992,7 +9992,7 @@ fn test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible(
         .unwrap_or_else(|err| panic!("failed to read VerticalPaxos blocker fixture: {}", err));
     assert!(
         model_src.contains("Minimal checked-in model")
-            && model_src.contains("LState candidate expansion limit"),
+            && model_src.contains("existential assignment expansion limit"),
         "VerticalPaxos blocker fixture should document intentional expansion-limit setup"
     );
     assert!(
@@ -10017,17 +10017,24 @@ fn test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible(
 
     assert!(
         !output.status.success(),
-        "VerticalPaxos model-check should fail until candidate expansion is pruned/bounded more precisely."
+        "VerticalPaxos model-check should fail until existential assignment expansion is pruned/bounded more precisely."
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Model-check candidate expansion for struct `LState` exceeded limit (200)"),
-        "expected LState candidate expansion blocker in stderr, got: {}",
+        stderr.contains("Existential domain expansion exceeded limit (200")
+            && stderr.contains("assignments"),
+        "expected existential assignment expansion blocker in stderr, got: {}",
         stderr
     );
     assert!(
-        stderr.contains("Narrow domains or increase `search.max_states`"),
+        stderr.contains("Reduce quantifier domains/collection bounds or increase")
+            && stderr.contains("max_states"),
         "expected expansion-limit guidance in stderr, got: {}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("candidate expansion for struct `LState`"),
+        "VerticalPaxos blocker should no longer be the pre-LInit LState candidate expansion path; got: {}",
         stderr
     );
 }
