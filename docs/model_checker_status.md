@@ -18,6 +18,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - Reject unknown fairness labels at model-check preflight by validating `properties.fairness.{weak,strong}` against actual `LNext` branch labels.
 - Evaluate finite-domain quantifiers (`forall` and expression-level `exists`), including multi-variable binders via bounded nested expansion, when quantifier domains are concretely enumerable from model configuration.
 - Evaluate `match` expressions with ordered arm selection, pattern bindings, and guard checks.
+- Evaluate struct-update expressions (`Type { updated_field: ..., ..base }`) for struct/enum values.
 - Track solver fallback telemetry in run summaries/JSON (`direct_assignment_branch_solves`, `enumeration_fallback_branch_solves`, `enumeration_candidate_evaluations`) and enforce a per-state/branch candidate-enumeration guardrail.
 - Emit JSON reports including search settings, reduction telemetry, stop reason, and violation payloads.
 
@@ -47,7 +48,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 
 - quantifier bindings must be identifiers (non-identifier quantifier patterns are rejected).
 - quantifier evaluation requires a domain resolver; evaluator-level quantifiers without this hook are rejected.
-- struct update expressions
+- struct update base must evaluate to struct/enum values (non-struct/enum bases are rejected).
 - bitwise/shift operators
 - non-identifier `let` patterns
 - casts beyond `int` / `nat` / `bool`
@@ -174,6 +175,11 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 
 - `transpiler/tests/integration.rs`:
   - `test_model_check_match_expression_bounded_run` verifies model-check execution succeeds on a checked-in fixture that uses `match` with guard evaluation in `LInit` (`transpiler/tests/model_check_fixtures/match_expression.*`).
+
+### 3.10 Struct-update semantic-closure fixture
+
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_struct_update_bounded_run` verifies model-check execution succeeds on a checked-in fixture that uses struct-update syntax in `LInit` (`transpiler/tests/model_check_fixtures/struct_update.*`).
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
@@ -376,6 +382,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_paxos_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_quantifier_forall_exists_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_match_expression_bounded_run -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_struct_update_bounded_run -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_supported_protocol_rows_require_automated_evidence -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_require_blocker_regressions -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers -- --nocapture

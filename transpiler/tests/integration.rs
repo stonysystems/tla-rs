@@ -8195,8 +8195,8 @@ fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
         },
         AuditExpectation {
             source_file: "transpiler/src/modelcheck/evaluator.rs",
-            source_fragment: "unsupported_construct(\"struct update expression\")",
-            doc_fragment: "struct update expressions",
+            source_fragment: "struct update base expects struct/enum value",
+            doc_fragment: "struct update base must evaluate to struct/enum",
         },
         AuditExpectation {
             source_file: "transpiler/src/modelcheck/evaluator.rs",
@@ -8634,6 +8634,48 @@ fn test_model_check_match_expression_bounded_run() {
     assert!(
         transitions > 0,
         "expected transitions in match-expression fixture run; report={}",
+        report
+    );
+}
+
+#[test]
+fn test_model_check_struct_update_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "struct_update.protocol.rs",
+        "struct_update.types.rs",
+        "struct_update.model.toml",
+    );
+
+    let result = report
+        .get("result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, "ok",
+        "struct-update fixture should pass with evaluator struct-update support; report={}",
+        report
+    );
+
+    let states = report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let transitions = report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert!(
+        states > 0,
+        "expected reached states in struct-update fixture run; report={}",
+        report
+    );
+    assert!(
+        transitions > 0,
+        "expected transitions in struct-update fixture run; report={}",
         report
     );
 }

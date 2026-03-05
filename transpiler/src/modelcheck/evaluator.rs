@@ -201,19 +201,10 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
                 )),
             }
         }
-        Expr::Struct { name, fields } => {
-            let ty_or_variant = path_name(name);
-            let mut resolved = Vec::with_capacity(fields.len());
-            for (field, value_expr) in fields {
-                resolved.push((field.clone(), eval_expr(value_expr, ctx)?));
-            }
-            if let Some((ty, variant)) = split_variant_path(&ty_or_variant) {
-                RuntimeValue::enum_value(ty, variant, resolved)
-            } else {
-                RuntimeValue::struct_value(ty_or_variant, resolved)
-            }
+        Expr::Struct { name, fields } => eval_struct_expr(name, fields, ctx),
+        Expr::StructUpdate { name, base, fields } => {
+            eval_struct_update_expr(name.as_ref(), base, fields, ctx)
         }
-        Expr::StructUpdate { .. } => Err(unsupported_construct("struct update expression")),
         Expr::SeqLit(items) => {
             let values = items
                 .iter()
@@ -396,6 +387,159 @@ fn eval_quantifier_bindings(
             Ok(false)
         }
     }
+}
+
+fn eval_struct_expr(
+    name: &Path,
+    fields: &[(String, Expr)],
+    ctx: &EvalContext<'_>,
+) -> TranspileResult<RuntimeValue> {
+    let mut base_expr = None;
+    let mut resolved = Vec::with_capacity(fields.len());
+    for (field, value_expr) in fields {
+        if field == ".." {
+            if base_expr.is_some() {
+                return Err(type_error(
+                    "struct update expression must contain at most one `..base` entry.",
+                ));
+            }
+            base_expr = Some(value_expr);
+            continue;
+        }
+        resolved.push((field.clone(), eval_expr(value_expr, ctx)?));
+    }
+
+    if let Some(base_expr) = base_expr {
+        let expected_name = if name.segments.is_empty() {
+            None
+        } else {
+            Some(name)
+        };
+        let base = eval_expr(base_expr, ctx)?;
+        return apply_struct_update(expected_name, base, resolved);
+    }
+
+    let ty_or_variant = path_name(name);
+    if let Some((ty, variant)) = split_variant_path(&ty_or_variant) {
+        RuntimeValue::enum_value(ty, variant, resolved)
+    } else {
+        RuntimeValue::struct_value(ty_or_variant, resolved)
+    }
+}
+
+fn eval_struct_update_expr(
+    name: Option<&Path>,
+    base: &Expr,
+    fields: &[(String, Expr)],
+    ctx: &EvalContext<'_>,
+) -> TranspileResult<RuntimeValue> {
+    let base = eval_expr(base, ctx)?;
+    let mut resolved = Vec::with_capacity(fields.len());
+    for (field, value_expr) in fields {
+        if field == ".." {
+            return Err(type_error(
+                "struct update fields must not contain nested `..base` entries.",
+            ));
+        }
+        resolved.push((field.clone(), eval_expr(value_expr, ctx)?));
+    }
+    apply_struct_update(name, base, resolved)
+}
+
+fn apply_struct_update(
+    expected_name: Option<&Path>,
+    base: RuntimeValue,
+    updates: Vec<(String, RuntimeValue)>,
+) -> TranspileResult<RuntimeValue> {
+    match base {
+        RuntimeValue::Struct {
+            ty,
+            mut fields,
+        } => {
+            validate_struct_update_target(expected_name, &ty, None)?;
+            for (field, value) in updates {
+                if !fields.contains_key(&field) {
+                    return Err(type_error(
+                        format!(
+                            "struct update field `{}` does not exist on struct `{}`.",
+                            field, ty
+                        )
+                        .as_str(),
+                    ));
+                }
+                fields.insert(field, value);
+            }
+            Ok(RuntimeValue::Struct { ty, fields })
+        }
+        RuntimeValue::Enum {
+            ty,
+            variant,
+            mut fields,
+        } => {
+            validate_struct_update_target(expected_name, &ty, Some(&variant))?;
+            for (field, value) in updates {
+                if !fields.contains_key(&field) {
+                    return Err(type_error(
+                        format!(
+                            "struct update field `{}` does not exist on enum variant `{}::{}`.",
+                            field, ty, variant
+                        )
+                        .as_str(),
+                    ));
+                }
+                fields.insert(field, value);
+            }
+            Ok(RuntimeValue::Enum {
+                ty,
+                variant,
+                fields,
+            })
+        }
+        other => Err(type_error(
+            format!(
+                "struct update base expects struct/enum value, got `{}`.",
+                other.canonical_key()
+            )
+            .as_str(),
+        )),
+    }
+}
+
+fn validate_struct_update_target(
+    expected_name: Option<&Path>,
+    runtime_ty: &str,
+    runtime_variant: Option<&str>,
+) -> TranspileResult<()> {
+    let Some(expected_name) = expected_name else {
+        return Ok(());
+    };
+    if expected_name.segments.is_empty() {
+        return Ok(());
+    }
+
+    let matches = match runtime_variant {
+        Some(runtime_variant) => {
+            path_matches_runtime_type(expected_name, runtime_ty)
+                || path_matches_enum_variant(expected_name, runtime_ty, runtime_variant)
+        }
+        None => path_matches_runtime_type(expected_name, runtime_ty),
+    };
+    if matches {
+        return Ok(());
+    }
+
+    let expected = path_name(expected_name);
+    let actual = match runtime_variant {
+        Some(runtime_variant) => format!("{}::{}", runtime_ty, runtime_variant),
+        None => runtime_ty.to_string(),
+    };
+    Err(type_error(
+        format!(
+            "struct update type mismatch: expected `{}`, got `{}`.",
+            expected, actual
+        )
+        .as_str(),
+    ))
 }
 
 fn eval_match_expr(
@@ -1177,6 +1321,80 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_struct_update_expression_updates_struct_fields() {
+        let ctx = EvalContext::new(test_bounds()).child_with_binding(
+            "s".to_string(),
+            RuntimeValue::struct_value(
+                "LState",
+                vec![
+                    ("x".to_string(), RuntimeValue::Int(0)),
+                    ("y".to_string(), RuntimeValue::Bool(true)),
+                ],
+            )
+            .unwrap(),
+        );
+
+        let updated = eval_expr(
+            &Expr::StructUpdate {
+                name: Some(Path::single("LState".to_string())),
+                base: Box::new(Expr::Ident("s".to_string())),
+                fields: vec![("x".to_string(), Expr::Literal(Literal::Int(9)))],
+            },
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(
+            updated,
+            RuntimeValue::struct_value(
+                "LState",
+                vec![
+                    ("x".to_string(), RuntimeValue::Int(9)),
+                    ("y".to_string(), RuntimeValue::Bool(true)),
+                ],
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_eval_struct_update_parser_form_with_dotdot_base() {
+        let ctx = EvalContext::new(test_bounds()).child_with_binding(
+            "base".to_string(),
+            RuntimeValue::struct_value(
+                "LState",
+                vec![
+                    ("x".to_string(), RuntimeValue::Int(2)),
+                    ("y".to_string(), RuntimeValue::Bool(false)),
+                ],
+            )
+            .unwrap(),
+        );
+
+        let updated = eval_expr(
+            &Expr::Struct {
+                name: Path::single("LState".to_string()),
+                fields: vec![
+                    ("x".to_string(), Expr::Literal(Literal::Int(7))),
+                    ("..".to_string(), Expr::Ident("base".to_string())),
+                ],
+            },
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(
+            updated,
+            RuntimeValue::struct_value(
+                "LState",
+                vec![
+                    ("x".to_string(), RuntimeValue::Int(7)),
+                    ("y".to_string(), RuntimeValue::Bool(false)),
+                ],
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
     fn test_eval_builtin_static_empty_calls() {
         let ctx = EvalContext::new(test_bounds());
 
@@ -1219,18 +1437,15 @@ mod tests {
 
     #[test]
     fn test_eval_unsupported_constructs_are_explicit_errors() {
-        let unsupported = Expr::StructUpdate {
-            name: None,
-            base: Box::new(Expr::Struct {
-                name: Path::single("LState".to_string()),
-                fields: vec![],
-            }),
-            fields: vec![],
-        };
+        let unsupported = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Int(1))),
+            BinOp::BitAnd,
+            Box::new(Expr::Literal(Literal::Int(1))),
+        );
         let err = eval_expr(&unsupported, &EvalContext::new(test_bounds())).unwrap_err();
         assert!(err
             .to_string()
-            .contains("does not support `struct update expression`"));
+            .contains("does not support `bitwise/shift binary operator`"));
 
         let no_hook_call = Expr::Call {
             func: Path::single("Helper".to_string()),

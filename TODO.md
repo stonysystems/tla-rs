@@ -9673,7 +9673,9 @@ Rules for this phase (do not cut corners):
 - [x] Add evaluator support for `match` expressions. [26:03:05, 18:25]
   - Implemented evaluator `match` execution with ordered arm selection, arm-local bindings, guard evaluation, and explicit erroring when no arm matches.
   - Added evaluator unit tests for variant/struct pattern matching and guard behavior, plus protocol-style integration fixture `match_expression` with regression `test_model_check_match_expression_bounded_run`.
-- [ ] Add evaluator support for struct update expressions.
+- [x] Add evaluator support for struct update expressions. [26:03:05, 18:45]
+  - Implemented evaluator struct-update execution for both AST `StructUpdate` and parser-emitted `Type { ..., ..base }` form, with field-overwrite semantics on struct/enum runtime values and explicit type/base validation errors.
+  - Added evaluator unit coverage for direct/pseudo-parser struct updates, plus protocol-style integration fixture `struct_update` and regression `test_model_check_struct_update_bounded_run`.
 - [ ] Extend builtin method/operator coverage only when a checked-in protocol/test proves it is needed; avoid speculative feature work.
 - [ ] Remove the current "exactly one concrete `LConstants` valuation" restriction by allowing model-check initialization to explore multiple resolved constant valuations when the model config implies them.
 - [ ] Improve predicate-only/helper-branch solving so the engine does not rely on full next-state candidate enumeration whenever a direct solve is possible.
