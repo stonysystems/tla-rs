@@ -179,6 +179,8 @@ pub enum CRaftMessage {
         term: u64,
         granted: bool,
         voter: u64,
+        voter_last_log_index: u64,
+        voter_last_log_term: u64,
     },
     AppendEntries {
         term: u64,
@@ -201,7 +203,7 @@ impl CRaftMessage {
     pub open spec fn valid(&self) -> bool {
         match self {
             CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } => true,
-            CRaftMessage::VoteResponse { term, granted, voter } => true,
+            CRaftMessage::VoteResponse { term, granted, voter, .. } => true,
             CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } => true,
             CRaftMessage::AppendResponse { term, success, match_index, follower } => true,
         }
@@ -214,7 +216,7 @@ impl View for CRaftMessage {
     open spec fn view(&self) -> LRaftMessage {
         match self {
             CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } => LRaftMessage::RequestVote { term: *term as int, candidate: *candidate as int, last_log_index: *last_log_index as int, last_log_term: *last_log_term as int },
-            CRaftMessage::VoteResponse { term, granted, voter } => LRaftMessage::VoteResponse { term: *term as int, granted: *granted, voter: *voter as int },
+            CRaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } => LRaftMessage::VoteResponse { term: *term as int, granted: *granted, voter: *voter as int, voter_last_log_index: *voter_last_log_index as int, voter_last_log_term: *voter_last_log_term as int },
             CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } => LRaftMessage::AppendEntries { term: *term as int, leader: *leader as int, prev_index: *prev_index as int, prev_term: *prev_term as int, value: *value as int, has_entry: *has_entry, leader_commit: *leader_commit as int },
             CRaftMessage::AppendResponse { term, success, match_index, follower } => LRaftMessage::AppendResponse { term: *term as int, success: *success, match_index: *match_index as int, follower: *follower as int },
         }

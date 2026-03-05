@@ -16,6 +16,8 @@ pub enum RaftMessage {
         term: u64,
         granted: bool,
         voter: u64,
+        voter_last_log_index: u64,
+        voter_last_log_term: u64,
     },
     /// Leader sends log entries (or heartbeats) to followers.
     AppendEntries {
@@ -89,12 +91,16 @@ impl ProtocolMessage for RaftMessage {
                 term,
                 granted,
                 voter,
+                voter_last_log_index,
+                voter_last_log_term,
             } => {
                 buf.extend_from_slice(&TAG_VOTE_RESPONSE.to_le_bytes());
                 buf.extend_from_slice(&term.to_le_bytes());
                 let granted_val: u64 = if *granted { 1 } else { 0 };
                 buf.extend_from_slice(&granted_val.to_le_bytes());
                 buf.extend_from_slice(&voter.to_le_bytes());
+                buf.extend_from_slice(&voter_last_log_index.to_le_bytes());
+                buf.extend_from_slice(&voter_last_log_term.to_le_bytes());
             }
             RaftMessage::AppendEntries {
                 term,
@@ -174,16 +180,20 @@ impl ProtocolMessage for RaftMessage {
                 })
             }
             TAG_VOTE_RESPONSE => {
-                if data.len() < 32 {
+                if data.len() < 48 {
                     return None;
                 }
                 let term = read_u64(data, 8);
                 let granted = read_u64(data, 16) != 0;
                 let voter = read_u64(data, 24);
+                let voter_last_log_index = read_u64(data, 32);
+                let voter_last_log_term = read_u64(data, 40);
                 Some(RaftMessage::VoteResponse {
                     term,
                     granted,
                     voter,
+                    voter_last_log_index,
+                    voter_last_log_term,
                 })
             }
             TAG_APPEND_ENTRIES => {

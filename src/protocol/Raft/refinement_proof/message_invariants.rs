@@ -338,7 +338,28 @@ verus! {
     }
 
     // =========================================================================
-    // Message Invariant 8: Log Terms Monotonic
+    // Message Invariant 8a: Current Term >= Log Entry Terms
+    // =========================================================================
+    //
+    // For every server, every log entry's term is <= the server's current_term.
+    //
+    // This is an auxiliary invariant needed for LogTermsMonotonic. It holds
+    // because every appended entry has term <= current_term at append time:
+    //   - LClientRequest: entry.term = s.current_term
+    //   - LFollowerAppendEntries: entry.term = ae_term, and s_.current_term = ae_term
+    // And current_term is monotonically non-decreasing, so existing entries
+    // remain bounded.
+
+    pub open spec fn CurrentTermGeLogTerms(ds: RaftDistributedState) -> bool {
+        forall |i: int, k: int|
+            #![trigger ds.server_states[i].log[k]]
+            0 <= i < ds.num_servers
+            && 0 <= k < ds.server_states[i].log.len()
+        ==> ds.server_states[i].log[k].term <= ds.server_states[i].current_term
+    }
+
+    // =========================================================================
+    // Message Invariant 8b: Log Terms Monotonic
     // =========================================================================
     //
     // For every server, log entry terms are monotonically non-decreasing:

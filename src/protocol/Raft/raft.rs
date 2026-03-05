@@ -69,6 +69,8 @@ verus! {
             term: candidate_term,
             granted: true,
             voter: c.my_id,
+            voter_last_log_index: s.log.len() as int,
+            voter_last_log_term: if s.log.len() == 0 { 0int } else { s.log[s.log.len() - 1].term },
         }]
     }
 
@@ -549,7 +551,7 @@ verus! {
             LRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } =>
                 LHandleRequestVoteMsg(s, s_, c, term, candidate, last_log_index,
                                       last_log_term, sent_packets),
-            LRaftMessage::VoteResponse { term, granted, voter } =>
+            LRaftMessage::VoteResponse { term, granted, voter, .. } =>
                 LHandleVoteResponseMsg(s, s_, c, term, granted, voter, sent_packets),
             LRaftMessage::AppendEntries { term, leader, prev_index, prev_term,
                                           value, has_entry, leader_commit } =>

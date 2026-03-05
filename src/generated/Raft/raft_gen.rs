@@ -159,6 +159,8 @@ ensures
     term: *candidate_term,
     granted: true,
     voter: c.my_id.clone(),
+    voter_last_log_index: s.log.len() as u64,
+    voter_last_log_term: if s.log.len() == 0 { 0u64 } else { s.log[s.log.len() - 1].term },
 }]);
     proof {
         assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
@@ -882,7 +884,7 @@ ensures
 {
 match msg {
         CRaftMessage::RequestVote { term: term, candidate: candidate, last_log_index: last_log_index, last_log_term: last_log_term } => CHandleRequestVoteMsg(&s, &c, &term, &candidate, &last_log_index, &last_log_term),
-        CRaftMessage::VoteResponse { term: term, granted: granted, voter: voter } => CHandleVoteResponseMsg(&s, &c, &term, *granted, &voter),
+        CRaftMessage::VoteResponse { term: term, granted: granted, voter: voter, .. } => CHandleVoteResponseMsg(&s, &c, &term, *granted, &voter),
         CRaftMessage::AppendEntries { term: term, leader: leader, prev_index: prev_index, prev_term: prev_term, value: value, has_entry: has_entry, leader_commit: leader_commit } => CHandleAppendEntriesMsg(&s, &c, &term, &leader, &prev_index, &prev_term, &value, *has_entry, &leader_commit),
         CRaftMessage::AppendResponse { term: term, success: success, match_index: match_index, follower: follower } => CHandleAppendResponseMsg(&s, &c, &term, *success, &match_index, &follower),
     }

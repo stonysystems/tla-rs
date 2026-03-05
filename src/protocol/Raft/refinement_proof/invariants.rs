@@ -6480,6 +6480,168 @@ verus! {
     }
 
     // =========================================================================
+    // Invariant Induction: CurrentTermGeLogTerms
+    // =========================================================================
+    //
+    // For all servers, every log entry's term is <= the server's current_term.
+    //
+    // Proof sketch:
+    // - Non-stepping server: state unchanged, IH transfers.
+    // - Stepping server, old entries: log prefix preserved (LogAppendOnly), and
+    //   s_.current_term >= s.current_term (lemma_lnext_term_monotone), so
+    //   entry.term <= s.current_term <= s_.current_term.
+    // - Stepping server, new entry (if log grew): entry.term >= s.current_term
+    //   (lemma_lnext_fresh_append_entry_term_ge_pre_current), and for
+    //   LClientRequest: entry.term == s.current_term == s_.current_term.
+    //   For LFollowerAppendEntries: entry.term == ae_term == s_.current_term.
+    //   In both cases entry.term <= s_.current_term.
+
+    pub proof fn lemma_current_term_ge_log_terms_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            CurrentTermGeLogTerms(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            CurrentTermGeLogTerms(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        assert forall |i: int, k: int|
+            #![trigger ds_.server_states[i].log[k]]
+            0 <= i < ds_.num_servers
+            && 0 <= k < ds_.server_states[i].log.len()
+        implies ds_.server_states[i].log[k].term
+            <= ds_.server_states[i].current_term by {
+            if i != server_id {
+                // Non-stepping server: state unchanged
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                assert(CurrentTermGeLogTerms(ds));
+            } else {
+                // Stepping server
+                lemma_lnext_log_preserved_or_extended(s, s_, c);
+                lemma_lnext_term_monotone(s, s_, c);
+                if k < s.log.len() {
+                    // Old entry: preserved by log extension
+                    assert(s_.log[k] == s.log[k]);
+                    assert(CurrentTermGeLogTerms(ds));
+                    // s.log[k].term <= s.current_term <= s_.current_term
+                } else {
+                    // New entry (k == s.log.len(), log grew by 1)
+                    assert(s_.log.len() == s.log.len() + 1);
+                    assert(k == s.log.len() as int);
+                    let entry = s_.log[k];
+                    lemma_lnext_fresh_append_entry_term_ge_pre_current(
+                        s, s_, c, k, entry);
+                    // entry.term >= s.current_term
+                    // Need: entry.term <= s_.current_term
+                    // From LNext case analysis: LClientRequest sets
+                    // entry.term = s.current_term = s_.current_term.
+                    // LFollowerAppendEntries sets entry.term = ae_term
+                    // = s_.current_term.
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Invariant Induction: LogTermsMonotonic
+    // =========================================================================
+    //
+    // For all servers, log entry terms are monotonically non-decreasing.
+    //
+    // Proof sketch:
+    // - Non-stepping server: state unchanged, IH transfers.
+    // - Stepping server:
+    //   - Both old entries (j, k < old_len): IH + log prefix preserved.
+    //   - Old j, new k (k == old_len): log[j].term <= current_term (from
+    //     CurrentTermGeLogTerms) and new entry term >= current_term (from
+    //     lemma_lnext_fresh_append_entry_term_ge_pre_current).
+    //   - j == k: trivially 0 == 0.
+
+    pub proof fn lemma_log_terms_monotonic_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogTermsMonotonic(ds),
+            CurrentTermGeLogTerms(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            LogTermsMonotonic(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        assert forall |i: int, j: int, k: int|
+            #![trigger ds_.server_states[i].log[j], ds_.server_states[i].log[k]]
+            0 <= i < ds_.num_servers
+            && 0 <= j <= k
+            && k < ds_.server_states[i].log.len()
+        implies ds_.server_states[i].log[j].term
+            <= ds_.server_states[i].log[k].term by {
+            if i != server_id {
+                // Non-stepping server: state unchanged
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                assert(LogTermsMonotonic(ds));
+            } else {
+                // Stepping server
+                lemma_lnext_log_preserved_or_extended(s, s_, c);
+                if k < s.log.len() {
+                    // Both j and k are old entries
+                    assert(s_.log[j] == s.log[j]);
+                    assert(s_.log[k] == s.log[k]);
+                    assert(LogTermsMonotonic(ds));
+                } else {
+                    // k is the new entry (k == s.log.len())
+                    assert(s_.log.len() == s.log.len() + 1);
+                    assert(k == s.log.len() as int);
+                    if j < s.log.len() {
+                        // j is an old entry, k is the new entry
+                        assert(s_.log[j] == s.log[j]);
+                        let new_entry = s_.log[k];
+                        // old entry: log[j].term <= current_term
+                        assert(CurrentTermGeLogTerms(ds));
+                        // new entry: term >= current_term
+                        lemma_lnext_fresh_append_entry_term_ge_pre_current(
+                            s, s_, c, k, new_entry);
+                        // log[j].term <= current_term <= new_entry.term
+                    } else {
+                        // j == k (both are the new entry), trivially equal
+                        assert(j == k);
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
     // Ghost State Invariant Induction: VoteGrantedLogUpToDateAtVoteTime
     // =========================================================================
     //

@@ -342,7 +342,7 @@ ensures
                 lemma_handle_request_vote_refines(
                     s, s_, c, term, candidate, last_log_index, last_log_term, sent_packets);
             }
-            LRaftMessage::VoteResponse { term, granted, voter } => {
+            LRaftMessage::VoteResponse { term, granted, voter, .. } => {
                 lemma_handle_vote_response_refines(
                     s, s_, c, term, granted, voter, sent_packets);
             }

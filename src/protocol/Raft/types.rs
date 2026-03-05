@@ -17,7 +17,7 @@ verus! {
     /// Raft protocol messages
     pub enum LRaftMessage {
         RequestVote { term: int, candidate: int, last_log_index: int, last_log_term: int },
-        VoteResponse { term: int, granted: bool, voter: int },
+        VoteResponse { term: int, granted: bool, voter: int, voter_last_log_index: int, voter_last_log_term: int },
         AppendEntries { term: int, leader: int, prev_index: int, prev_term: int, value: int, has_entry: bool, leader_commit: int },
         AppendResponse { term: int, success: bool, match_index: int, follower: int },
     }

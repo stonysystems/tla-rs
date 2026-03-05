@@ -21,8 +21,8 @@ fn to_wire(cm: &CRaftMessage) -> RaftMessage {
     match cm {
         CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } =>
             RaftMessage::RequestVote { term: *term, candidate_id: *candidate, last_log_index: *last_log_index, last_log_term: *last_log_term },
-        CRaftMessage::VoteResponse { term, granted, voter } =>
-            RaftMessage::VoteResponse { term: *term, granted: *granted, voter: *voter },
+        CRaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } =>
+            RaftMessage::VoteResponse { term: *term, granted: *granted, voter: *voter, voter_last_log_index: *voter_last_log_index, voter_last_log_term: *voter_last_log_term },
         CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } =>
             RaftMessage::AppendEntries { term: *term, leader_id: *leader, prev_log_index: *prev_index, prev_log_term: *prev_term, value: *value, has_entry: *has_entry, leader_commit: *leader_commit },
         CRaftMessage::AppendResponse { term, success, match_index, follower } =>
@@ -34,8 +34,8 @@ fn from_wire(msg: &RaftMessage) -> Option<CRaftMessage> {
     match msg {
         RaftMessage::RequestVote { term, candidate_id, last_log_index, last_log_term } =>
             Some(CRaftMessage::RequestVote { term: *term, candidate: *candidate_id, last_log_index: *last_log_index, last_log_term: *last_log_term }),
-        RaftMessage::VoteResponse { term, granted, voter } =>
-            Some(CRaftMessage::VoteResponse { term: *term, granted: *granted, voter: *voter }),
+        RaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } =>
+            Some(CRaftMessage::VoteResponse { term: *term, granted: *granted, voter: *voter, voter_last_log_index: *voter_last_log_index, voter_last_log_term: *voter_last_log_term }),
         RaftMessage::AppendEntries { term, leader_id, prev_log_index, prev_log_term, value, has_entry, leader_commit } =>
             Some(CRaftMessage::AppendEntries { term: *term, leader: *leader_id, prev_index: *prev_log_index, prev_term: *prev_log_term, value: *value, has_entry: *has_entry, leader_commit: *leader_commit }),
         RaftMessage::AppendResponse { term, success, match_index, follower } =>
