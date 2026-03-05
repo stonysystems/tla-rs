@@ -9789,7 +9789,7 @@ Rules for this phase (do not cut corners):
         - artifact: `reports/model_check/paxos_safety_invariants.json`
         - integration test: `test_model_check_paxos_real_safety_invariants_bounded_run`
       - Regression enforces non-violation and invariant-resolution evidence (`configured_count = 3`, `resolved_count = 3`) and checks stable live-vs-artifact parity.
-  - [ ] **33.5.2.d VerticalPaxos (priority #4)**
+  - [x] **33.5.2.d VerticalPaxos (priority #4)** [26:03:04, 23:33]
     - [x] **33.5.2.d.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:06, 09:05]
       - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
       - Strengthened blocker regression fixture intent/minimality checks (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`); this check is now maintained as `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` after `33.5.2.d.2` reclassification.
