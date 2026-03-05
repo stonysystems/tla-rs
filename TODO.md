@@ -9775,7 +9775,7 @@ Rules for this phase (do not cut corners):
       - Added unit coverage for unsigned/signed primitive fallback and explicit-override precedence (`test_expand_branch_existentials_named_unsigned_primitive_uses_nat_domain`, `test_expand_branch_existentials_named_signed_primitive_uses_int_domain`, `test_expand_branch_existentials_named_primitive_prefers_explicit_override`).
       - Re-ran source-first Raft with checked-in fixture `raft_existential_expansion_limit.model.toml`; first blocker re-classified to `Configuration error: Existential domain expansion exceeded limit (200 assignments)`.
       - Updated blocker regression/doc matrix references to `test_model_check_raft_blocker_existential_expansion_limit_is_reproducible` + `transpiler/tests/model_check_fixtures/raft_existential_expansion_limit.model.toml`.
-  - [ ] **33.5.2.c Paxos (priority #3)**
+  - [x] **33.5.2.c Paxos (priority #3)** [26:03:04, 23:31]
     - [x] **33.5.2.c.1** Keep exact-mode source-first Paxos green with checked-in model + artifact + regression evidence. [26:03:06, 08:05]
       - Re-ran source-first exact-mode Paxos with checked-in fixture `transpiler/tests/model_check_fixtures/paxos_small.model.toml`; run remains green (`result=ok`, `states=1`, `transitions=2`, `depth=0`).
       - Strengthened `test_model_check_paxos_bounded_run` to assert checked-in artifact `reports/model_check/paxos_small.json` exists and that stable fields match live replay (`result`, `search.state_dedup`, `summary.states`, `summary.transitions`, `summary.depth`).
