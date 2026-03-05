@@ -1861,14 +1861,293 @@ verus! {
         (w, d)
     }
 
+    /// Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c.3.b.4.b.4a
+    ///
+    /// Given that w.log[k] == entry and w voted for candidate_id at
+    /// candidate_term (with VoteResponse + RequestVote in network),
+    /// transfer entry to candidate's log via LogMatching in the
+    /// equal-term sub-case of VoteGrantedLogUpToDateAtVoteTime.
+    ///
+    /// Returns true if the equal-term case applied (proof complete),
+    /// false if the strict-term case applies (caller must handle).
+    proof fn lemma_equal_term_log_transfer(
+        ds: RaftDistributedState,
+        candidate_id: int,
+        w: int,
+        k: int,
+        entry: LLogEntry,
+        vote_pkt: LRaftPacket,
+        req_pkt: LRaftPacket,
+    ) -> (is_equal_term: bool)
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            0 <= candidate_id < ds.num_servers,
+            0 <= w < ds.num_servers,
+            w != candidate_id,
+            0 <= k,
+            ds.server_states[w].log.len() > k,
+            ds.server_states[w].log[k] == entry,
+            ds.server_states[candidate_id].current_term > entry.term,
+            // VoteResponse from w to candidate at candidate's term
+            ds.network.contains(vote_pkt),
+            vote_pkt.src == w,
+            vote_pkt.dst == candidate_id,
+            vote_pkt.msg is VoteResponse,
+            vote_pkt.msg->VoteResponse_granted,
+            vote_pkt.msg->VoteResponse_voter == w,
+            vote_pkt.msg->VoteResponse_term
+                == ds.server_states[candidate_id].current_term,
+            // RequestVote from candidate to w at candidate's term
+            ds.network.contains(req_pkt),
+            req_pkt.src == candidate_id,
+            req_pkt.dst == w,
+            req_pkt.msg is RequestVote,
+            req_pkt.msg->RequestVote_term
+                == ds.server_states[candidate_id].current_term,
+            req_pkt.msg->RequestVote_candidate == candidate_id,
+            0 <= req_pkt.msg->RequestVote_last_log_index
+                <= ds.server_states[candidate_id].log.len(),
+            (req_pkt.msg->RequestVote_last_log_index == 0
+                ==> req_pkt.msg->RequestVote_last_log_term == 0),
+            (req_pkt.msg->RequestVote_last_log_index > 0
+                ==> ds.server_states[candidate_id].log[
+                        req_pkt.msg->RequestVote_last_log_index - 1].term
+                    == req_pkt.msg->RequestVote_last_log_term),
+        ensures
+            is_equal_term ==> (
+                ds.server_states[candidate_id].log.len() > k
+                && ds.server_states[candidate_id].log[k] == entry
+            ),
+    {
+        let vote_term = ds.server_states[candidate_id].current_term;
+        let rli = req_pkt.msg->RequestVote_last_log_index;
+        let rlt = req_pkt.msg->RequestVote_last_log_term;
+
+        // Extract vote-time log length for w at candidate's term
+        assert(VoteLogLenCoversNetwork(ds));
+        assert(ds.vote_log_len.dom().contains((w, vote_term)));
+        let W_L = ds.vote_log_len[(w, vote_term)];
+        assert(VoteLogLenBounded(ds));
+        assert(0 <= W_L <= ds.server_states[w].log.len());
+
+        // Prove k < W_L via VoteLogLenEntryTermBound
+        assert(VoteLogLenEntryTermBound(ds));
+        if k >= W_L {
+            let p_wt: (int, int) = (w, vote_term);
+            assert(ds.vote_log_len.dom().contains(p_wt));
+            assert(0 <= p_wt.0 < ds.num_servers);
+            assert(ds.vote_log_len[p_wt] <= k);
+            assert(k < ds.server_states[p_wt.0].log.len());
+            let _ = ds.server_states[p_wt.0].log[k];
+            assert(ds.server_states[p_wt.0].log[k].term >= p_wt.1);
+            assert(vote_term == ds.server_states[candidate_id].current_term);
+            assert(ds.server_states[candidate_id].current_term > entry.term);
+            assert(ds.server_states[w].log[k] == entry);
+            assert(false);
+        }
+        assert(k < W_L);
+
+        // Get vote-time last log term
+        let w_vtl: int = if W_L == 0 { 0int } else {
+            ds.server_states[w].log[W_L - 1].term
+        };
+
+        // Apply VoteGrantedLogUpToDateAtVoteTime
+        assert(VoteGrantedLogUpToDateAtVoteTime(ds));
+        assert(vote_pkt.msg->VoteResponse_term
+            == req_pkt.msg->RequestVote_term);
+        assert(vote_pkt.src == req_pkt.dst);
+        assert(vote_pkt.dst == req_pkt.src);
+        assert(ds.vote_log_len.dom().contains(
+            (vote_pkt.src, vote_pkt.msg->VoteResponse_term)));
+        assert(rlt > w_vtl || (rlt == w_vtl && rli >= W_L));
+
+        if rlt == w_vtl && rli == W_L {
+            // Equal-term, equal-length: LogMatching anchor at W_L - 1
+            assert(W_L > 0) by {
+                // k < W_L and k >= 0, so W_L > 0
+            };
+            let match_idx: int = W_L - 1;
+            // rli == W_L, so match_idx == rli - 1
+            // candidate.log[rli-1].term == rlt == w_vtl == w.log[W_L-1].term
+            assert(match_idx == rli - 1);
+            assert(rli <= ds.server_states[candidate_id].log.len());
+            assert(match_idx < ds.server_states[candidate_id].log.len());
+            assert(match_idx < ds.server_states[w].log.len());
+            assert(ds.server_states[candidate_id].log[match_idx].term
+                == rlt);
+            assert(ds.server_states[w].log[match_idx].term == w_vtl);
+            assert(ds.server_states[candidate_id].log[match_idx].term
+                == ds.server_states[w].log[match_idx].term);
+
+            // LogMatching at (candidate_id, w, match_idx)
+            assert(k <= match_idx);
+            assert(ds.server_states[candidate_id].log[k]
+                == ds.server_states[w].log[k]);
+            assert(ds.server_states[candidate_id].log[k] == entry);
+            assert(ds.server_states[candidate_id].log.len() > k);
+            true
+        } else {
+            // Either strict-term (rlt > w_vtl) or equal-term with
+            // rli > W_L. Both require additional machinery to close:
+            // - Strict-term: term-induction (future work)
+            // - Equal-term with rli > W_L: same problem as task b.e
+            false
+        }
+    }
+
+    /// Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c.3.b.4.b.4b
+    ///
+    /// Given quorum overlap results (w, d), transfer d.log[k] == entry
+    /// to leader.log[k] via LogMatching chain through w.
+    ///
+    /// Does NOT require EntryTermHasVoteQuorum or LogTermsMonotonic
+    /// (those are isolated in the caller and quorum overlap helper).
+    proof fn lemma_w_to_leader_log_transfer(
+        ds: RaftDistributedState,
+        leader_id: int,
+        k: int,
+        entry: LLogEntry,
+        w: int,
+        d: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term > entry.term,
+            0 <= k,
+            // Quorum overlap results
+            0 <= w < ds.num_servers,
+            0 <= d < ds.num_servers,
+            ds.server_states[leader_id].votes_granted.contains(w),
+            ds.server_states[d].log.len() > k,
+            ds.server_states[d].log[k] == entry,
+            (w == d || ExistsGrantedVoteResponse(ds, w, d, entry.term)),
+        ensures
+            ds.server_states[leader_id].log.len() > k
+                && ds.server_states[leader_id].log[k] == entry,
+    {
+        // Case 1: w == d == leader_id: trivial
+        if w == d && d == leader_id {
+            assert(ds.server_states[leader_id].log.len() > k);
+            assert(ds.server_states[leader_id].log[k] == entry);
+        } else {
+            // Step A: Establish w.log[k] == entry
+            if w == d {
+                assert(ds.server_states[w].log.len() > k);
+                assert(ds.server_states[w].log[k] == entry);
+            } else {
+                // w voted for d at entry.term
+                assert(ExistsGrantedVoteResponse(ds, w, d, entry.term));
+                // Residual: transfer d.log[k] == entry to w.log[k]
+                // via (w, d) voting chain at entry.term.
+                // Deferred: needs packet extraction + equal-term/strict-term
+                // handling at entry.term (Phase b.c.3.b.4.b.4.w_d).
+                assume(
+                    ds.server_states[w].log.len() > k
+                    && ds.server_states[w].log[k] == entry
+                );
+            }
+
+            // Step B: Transfer w.log[k] to leader.log[k]
+            if w == leader_id {
+                assert(ds.server_states[leader_id].log[k] == entry);
+                assert(ds.server_states[leader_id].log.len() > k);
+            } else {
+                // w != leader_id, w ∈ leader.votes_granted
+                // Extract VoteResponse from w to leader
+                assert(VotersVotedForCandidate(ds));
+                assert(ds.server_states[leader_id].votes_granted.contains(w));
+                let w_vote_pkt = choose |pkt: LRaftPacket| {
+                    &&& ds.network.contains(pkt)
+                    &&& pkt.dst == leader_id
+                    &&& pkt.msg matches LRaftMessage::VoteResponse {
+                        term, granted, voter, .. }
+                    &&& term == ds.server_states[leader_id].current_term
+                    &&& granted
+                    &&& voter == w
+                };
+                // Extract RequestVote from leader to w
+                assert(VoteResponseHasRequestVote(ds));
+                assert(ds.network.contains(w_vote_pkt));
+                assert(w_vote_pkt.msg is VoteResponse);
+                assert(w_vote_pkt.msg->VoteResponse_granted);
+                let w_req_pkt = choose |req: LRaftPacket| {
+                    &&& ds.network.contains(req)
+                    &&& req.src == w_vote_pkt.dst
+                    &&& req.dst == w
+                    &&& req.msg is RequestVote
+                    &&& req.msg->RequestVote_term
+                        == w_vote_pkt.msg->VoteResponse_term
+                    &&& req.msg->RequestVote_candidate == w_vote_pkt.dst
+                };
+                // RequestVoteSummaryStillValidAtSameTerm gives
+                // req_last_log_index/term bounds
+                assert(RequestVoteSummaryStillValidAtSameTerm(ds));
+                assert(w_req_pkt.msg->RequestVote_candidate == leader_id);
+                assert(w_req_pkt.msg->RequestVote_term
+                    == ds.server_states[leader_id].current_term);
+                let w_rli = w_req_pkt.msg->RequestVote_last_log_index;
+                let w_rlt = w_req_pkt.msg->RequestVote_last_log_term;
+                assert(0 <= w_rli
+                    <= ds.server_states[leader_id].log.len());
+                assert(w_rli == 0 ==> w_rlt == 0);
+                assert(w_rli > 0 ==>
+                    ds.server_states[leader_id].log[w_rli - 1].term
+                        == w_rlt);
+
+                // Packet alignment
+                assert(w_vote_pkt.src == w) by {
+                    assert(VoteResponseIntegrity(ds));
+                    assert(w_vote_pkt.msg->VoteResponse_voter == w);
+                };
+                assert(w_vote_pkt.dst == leader_id);
+                assert(w_req_pkt.src == leader_id);
+                assert(w_req_pkt.dst == w);
+
+                // Try equal-term LogMatching transfer
+                let transferred = lemma_equal_term_log_transfer(
+                    ds, leader_id, w, k, entry,
+                    w_vote_pkt, w_req_pkt);
+
+                if !transferred {
+                    // Strict-term or equal-term-with-rli>W_L case
+                    // Requires term-induction to close.
+                    // (Phase b.c.3.b.4.b.4.w_leader_strict)
+                    assume(
+                        ds.server_states[leader_id].log.len() > k
+                        && ds.server_states[leader_id].log[k] == entry
+                    );
+                }
+            }
+        }
+    }
+
     /// Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.a
     ///
-    /// Transfer overlap-voter entry to leader log via LogMatching.
+    /// Strict-term sub-case: ETHVQ quorum overlap.
     ///
-    /// Strict-term sub-case of the overlap entry transfer.
-    /// When req_last_log_term > voter_vtl, derive intermediate facts:
-    /// - entry.term <= voter_vtl < req_last_log_term (strict chain)
-    /// Residual assume deferred to b.c.3.b.4.b.
+    /// When req_last_log_term > voter_vtl, derive intermediate facts
+    /// and produce quorum overlap witness (w, d) via ETHVQ.
+    /// Returns (w, d) for the caller to feed to lemma_w_to_leader_log_transfer.
+    ///
+    /// Isolates LogTermsMonotonic and EntryTermHasVoteQuorum from the
+    /// message-invariant-heavy LogMatching transfer step.
     proof fn lemma_strict_term_entry_transfer(
         ds: RaftDistributedState,
         overlap_voter: int,
@@ -1880,7 +2159,7 @@ verus! {
         req_last_log_term: int,
         voter_vtl: int,
         L: int,
-    )
+    ) -> (result: (int, int))
         requires
             WellFormedRaftDistributed(ds),
             LogMatching(ds),
@@ -1915,13 +2194,17 @@ verus! {
             (req_last_log_index > 0
                 ==> ds.server_states[leader_id].log[
                     req_last_log_index - 1].term == req_last_log_term),
-        ensures
-            ds.server_states[leader_id].log.len() > k
-                && ds.server_states[leader_id].log[k] == entry,
+        ensures ({
+            let (w, d) = result;
+            &&& 0 <= w < ds.num_servers
+            &&& 0 <= d < ds.num_servers
+            &&& ds.server_states[leader_id].votes_granted.contains(w)
+            &&& ds.server_states[d].log.len() > k
+            &&& ds.server_states[d].log[k] == entry
+            &&& (w == d || ExistsGrantedVoteResponse(ds, w, d, entry.term))
+        }),
     {
         // Derived fact: entry.term <= voter_vtl (strict inequality with rlt)
-        // From LogTermsMonotonic on voter: k < L means k <= L-1.
-        // voter.log[k].term <= voter.log[L-1].term = voter_vtl.
         assert(L > 0);
         assert(entry.term <= voter_vtl) by {
             assert(LogTermsMonotonic(ds));
@@ -1931,8 +2214,6 @@ verus! {
         assert(entry.term < req_last_log_term);
 
         // Derived fact: voter_vtl >= 0 (from TermsNonNegative)
-        // When L > 0: voter_vtl == voter.log[L-1].term >= 0
-        // When L == 0: voter_vtl == 0 (by definition)
         assert(voter_vtl >= 0) by {
             if L > 0 {
                 assert(TermsNonNegative(ds));
@@ -1944,35 +2225,15 @@ verus! {
         assert(req_last_log_term > 0);
 
         // Derived fact: req_last_log_index > 0
-        // By contrapositive: if rli == 0, then rlt == 0 (from requires),
-        // contradicting rlt > 0.
         assert(req_last_log_index > 0);
 
         // Derived fact: leader.log[rli - 1].term == req_last_log_term
-        // (follows from rli > 0 and the existing requires)
         assert(ds.server_states[leader_id].log[
             req_last_log_index - 1].term == req_last_log_term);
 
-        // Step: Quorum overlap (b.c.3.b.4.b.3)
-        // Split into two sub-lemmas to avoid Z3 blow-up:
-        // (a) Extract ETHVQ witness d + voters
-        // (b) Perform set-based quorum overlap with leader's votes_granted
-        let (w, d) = lemma_entry_term_quorum_overlap(
-            ds, overlap_voter, leader_id, k, entry);
-        // w ∈ leader's votes_granted, d.log[k] == entry,
-        // and (w == d or ExistsGrantedVoteResponse(ds, w, d, entry.term))
-
-        // Residual: LogMatching chain through w (Phase ...b.c.3.b.4.b.4)
-        // Established facts:
-        //   - entry.term < req_last_log_term, entry.term <= voter_vtl
-        //   - quorum overlap witness w ∈ leader's votes_granted
-        //   - d.log[k] == entry, w == d or w voted for d at entry.term
-        //   - req_last_log_index > 0, leader.log[rli-1].term == rlt
-        //   - LogMatching(ds) available
-        assume(
-            ds.server_states[leader_id].log.len() > k
-                && ds.server_states[leader_id].log[k] == entry
-        );
+        // ETHVQ quorum overlap (b.c.3.b.4.b.3)
+        lemma_entry_term_quorum_overlap(
+            ds, overlap_voter, leader_id, k, entry)
     }
 
     /// Given a granted VoteResponse + matching RequestVote at the leader's
