@@ -9762,7 +9762,7 @@ Rules for this phase (do not cut corners):
       - Updated model-check init-state binding to infer `LConstants` parameter by type and bind reversed `(constants, state)` init signatures correctly.
     - [x] **33.5.2.a.2** Re-ran exact-mode source-first RSL with a checked-in minimal model and re-classified the first blocker as missing `quantifiers.types.LConstants` domain config.
       - Updated blocker fixture/test/doc matrix references from the retired init-signature blocker to `rsl_missing_constants_domain`.
-  - [ ] **33.5.2.b Raft (priority #2)**
+  - [x] **33.5.2.b Raft (priority #2)** [26:03:04, 23:29]
     - [x] **33.5.2.b.1** Keep a checked-in minimal exact-mode Raft source-first model and blocker regression stable; confirm first blocker remains the smallest reproducible one. [26:03:06, 06:10]
       - Revalidated against the then-current minimal blocker fixture and command-level replay; first blocker at that point was `Missing domain for named type \`u64\``.
       - Regression at that point enforced fixture intent/minimality (intentional omission of `quantifiers.types.u64`, `max_depth = 1`, `max_states = 200`).
