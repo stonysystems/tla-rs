@@ -8023,6 +8023,160 @@ fn test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts() 
 }
 
 #[test]
+fn test_model_check_exact_mode_optimization_delta_snapshot_matches_checked_in_artifacts() {
+    #[derive(Clone, Copy)]
+    struct DeltaCase<'a> {
+        artifact_path: &'a str,
+        metric: &'a str,
+        metric_pointer: &'a str,
+        before: i64,
+        expected_state_transition_guard_after: &'a str,
+    }
+
+    let cases = [
+        DeltaCase {
+            artifact_path: "reports/model_check/liveness_avoidable_cycle_violated.json",
+            metric: "successor_cache_hits",
+            metric_pointer: "/summary/successor_cache_hits",
+            before: 0,
+            expected_state_transition_guard_after: "3/5",
+        },
+        DeltaCase {
+            artifact_path: "reports/model_check/liveness_avoidable_cycle_violated.json",
+            metric: "successor_cache_misses",
+            metric_pointer: "/summary/successor_cache_misses",
+            before: 0,
+            expected_state_transition_guard_after: "3/5",
+        },
+        DeltaCase {
+            artifact_path: "reports/model_check/guard_pruned_enumeration.json",
+            metric: "enumeration_candidate_evaluations",
+            metric_pointer: "/summary/enumeration_candidate_evaluations",
+            before: 2,
+            expected_state_transition_guard_after: "1/0",
+        },
+        DeltaCase {
+            artifact_path: "reports/model_check/guard_pruned_enumeration.json",
+            metric: "guard_pruned_candidate_evaluations",
+            metric_pointer: "/summary/guard_pruned_candidate_evaluations",
+            before: 0,
+            expected_state_transition_guard_after: "1/0",
+        },
+    ];
+
+    let repo_root = resolve_repo_root_for_integration();
+    let status_doc = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_doc).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc.display(),
+            err
+        )
+    });
+
+    assert!(
+        status_src.contains("### 4.2 Exact-mode optimization delta snapshot (Phase 33.4.2)"),
+        "status doc is missing exact-mode optimization delta snapshot section"
+    );
+    let delta_section = status_src
+        .split("### 4.2 Exact-mode optimization delta snapshot (Phase 33.4.2)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## 5. Exact reproduction commands").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate optimization delta section in {}; expected section 4.2 before section 5",
+                status_doc.display()
+            )
+        });
+
+    for case in cases {
+        let artifact_abs = repo_root.join(case.artifact_path);
+        let artifact_src = std::fs::read_to_string(&artifact_abs).unwrap_or_else(|err| {
+            panic!(
+                "failed to read optimization delta artifact {}: {}",
+                artifact_abs.display(),
+                err
+            )
+        });
+        let report: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(|err| {
+            panic!(
+                "failed to parse optimization delta artifact JSON {}: {}",
+                artifact_abs.display(),
+                err
+            )
+        });
+
+        let after = report
+            .pointer(case.metric_pointer)
+            .and_then(|v| v.as_i64())
+            .unwrap_or_else(|| {
+                panic!(
+                    "optimization delta artifact `{}` missing numeric pointer `{}`",
+                    case.artifact_path, case.metric_pointer
+                )
+            });
+        let states = report
+            .pointer("/summary/states")
+            .and_then(|v| v.as_u64())
+            .unwrap_or_else(|| {
+                panic!(
+                    "optimization delta artifact `{}` missing `/summary/states`",
+                    case.artifact_path
+                )
+            });
+        let transitions = report
+            .pointer("/summary/transitions")
+            .and_then(|v| v.as_u64())
+            .unwrap_or_else(|| {
+                panic!(
+                    "optimization delta artifact `{}` missing `/summary/transitions`",
+                    case.artifact_path
+                )
+            });
+        let after_guard = format!("{}/{}", states, transitions);
+        assert_eq!(
+            after_guard, case.expected_state_transition_guard_after,
+            "reachable-state guard changed for `{}`; update docs/metrics only with an intentional exactness explanation",
+            case.artifact_path
+        );
+
+        let delta = after - case.before;
+        let delta_token = if delta >= 0 {
+            format!("`+{}`", delta)
+        } else {
+            format!("`{}`", delta)
+        };
+        let before_token = format!("`{}`", case.before);
+        let after_token = format!("`{}`", after);
+        let guard_token = format!(
+            "`{before} -> {after}`",
+            before = case.expected_state_transition_guard_after,
+            after = case.expected_state_transition_guard_after
+        );
+        let row = delta_section
+            .lines()
+            .find(|line| line.contains(case.artifact_path) && line.contains(case.metric))
+            .unwrap_or_else(|| {
+                panic!(
+                    "optimization delta table row missing for `{}` metric `{}` in docs/model_checker_status.md",
+                    case.artifact_path, case.metric
+                )
+            });
+
+        for token in [before_token, after_token, delta_token, guard_token] {
+            assert!(
+                row.contains(&token),
+                "optimization delta row for `{}` metric `{}` missing token {}: {}",
+                case.artifact_path,
+                case.metric,
+                token,
+                row
+            );
+        }
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_require_blocker_regressions() {
     let repo_root = resolve_repo_root_for_integration();
     let status_doc = repo_root.join("docs/model_checker_status.md");
@@ -9229,6 +9383,68 @@ fn test_model_check_helper_branch_direct_solver_bounded_run() {
     assert_eq!(
         guard_pruned, 0,
         "direct helper-branch solving should not report guard-pruned candidate evaluations; report={}",
+        report
+    );
+}
+
+#[test]
+fn test_model_check_guard_pruned_enumeration_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "guard_pruned_enumeration.protocol.rs",
+        "guard_pruned_enumeration.types.rs",
+        "guard_pruned_enumeration.model.toml",
+    );
+
+    let result = report
+        .get("result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, "ok",
+        "guard-pruned enumeration fixture should pass; report={}",
+        report
+    );
+
+    let summary = report
+        .get("summary")
+        .unwrap_or_else(|| panic!("missing summary in report: {}", report));
+    let direct = summary
+        .get("direct_assignment_branch_solves")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let fallback = summary
+        .get("enumeration_fallback_branch_solves")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let candidate_evals = summary
+        .get("enumeration_candidate_evaluations")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let guard_pruned = summary
+        .get("guard_pruned_candidate_evaluations")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    assert_eq!(
+        direct, 0,
+        "guard-pruned fixture should use enumeration fallback rather than direct solving; report={}",
+        report
+    );
+    assert_eq!(
+        fallback, 1,
+        "guard-pruned fixture should run exactly one fallback branch solve; report={}",
+        report
+    );
+    assert_eq!(
+        candidate_evals, 0,
+        "guard-pruned fixture should skip candidate evaluations when static guard is false; report={}",
+        report
+    );
+    assert_eq!(
+        guard_pruned, 2,
+        "guard-pruned fixture should report skipped candidate evaluations for both state candidates; report={}",
         report
     );
 }

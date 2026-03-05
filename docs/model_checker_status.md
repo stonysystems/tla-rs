@@ -217,6 +217,8 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
   - `test_solve_branch_successors_with_candidates_prunes_static_guard` verifies candidate-enumeration fallback short-circuits when candidate-independent guards are unsatisfied and reports `guard_pruned_candidate_evaluations > 0`.
 - `transpiler/src/main.rs`:
   - `test_execute_model_check_reports_guard_pruned_enumeration_telemetry` verifies command-level summary telemetry propagates the optimization (`guard_pruned_candidate_evaluations == 2`) while keeping exact fallback semantics.
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_guard_pruned_enumeration_bounded_run` replays a checked-in fixture and verifies report telemetry (`enumeration_candidate_evaluations == 0`, `guard_pruned_candidate_evaluations == 2`) through the CLI/JSON surface.
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
@@ -226,14 +228,14 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `RSL` | `src/protocol/RSL/distributed_system.rs` | `transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: incompatible `RslInit` signature (current source-first gate expects `(s: LState, c: LConstants)`). | `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` |
 | `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LLogEntry` (`quantifiers.types.LLogEntry`). | `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` |
-| `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 10` | N/A | `test_model_check_paxos_bounded_run`, `reports/model_check/paxos_small.json` |
+| `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 12` | N/A | `test_model_check_paxos_bounded_run`, `reports/model_check/paxos_small.json` |
 | `VerticalPaxos` | `src/protocol/VerticalPaxos/vpaxos.rs`, `src/protocol/VerticalPaxos/types.rs` | `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` |
 | `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` |
 | `PBFT` | `src/protocol/PBFT/pbft.rs`, `src/protocol/PBFT/types.rs` | `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` |
 | `ChainReplication` | `src/protocol/ChainReplication/chain.rs`, `src/protocol/ChainReplication/types.rs` | `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` |
-| `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 2 / 1 / 64` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `reports/model_check/primarybackup_small.json` |
-| `TwoPhase` | `src/protocol/TwoPhase/twophase.rs`, `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `3 / 4 / 1 / 3206` | N/A | `test_model_check_twophase_bounded_run`, `reports/model_check/twophase_small.json` |
-| `LeaderElection` | `src/protocol/LeaderElection/election.rs`, `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `4 / 3 / 1 / 71` | N/A | `test_model_check_leader_election_bounded_run`, `reports/model_check/leaderelection_small.json` |
+| `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 2 / 1 / 67` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `reports/model_check/primarybackup_small.json` |
+| `TwoPhase` | `src/protocol/TwoPhase/twophase.rs`, `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `3 / 4 / 1 / 3268` | N/A | `test_model_check_twophase_bounded_run`, `reports/model_check/twophase_small.json` |
+| `LeaderElection` | `src/protocol/LeaderElection/election.rs`, `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `4 / 3 / 1 / 77` | N/A | `test_model_check_leader_election_bounded_run`, `reports/model_check/leaderelection_small.json` |
 
 ### 4.1 Exact-mode performance baseline snapshot (Phase 33.4)
 
@@ -242,10 +244,21 @@ This table is the pre-optimization reference point for exact-mode performance wo
 
 | Protocol | Artifact | `states` | `transitions` | `depth` | `elapsed_ms` | `pruned_by_por` | `symmetry_collapses` | `hash_compaction_collisions` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `Paxos` | `reports/model_check/paxos_small.json` | `1` | `2` | `0` | `10` | `0` | `0` | `0` |
-| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `2` | `2` | `1` | `64` | `0` | `0` | `0` |
-| `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `3206` | `0` | `0` | `0` |
-| `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `71` | `0` | `0` | `0` |
+| `Paxos` | `reports/model_check/paxos_small.json` | `1` | `2` | `0` | `12` | `0` | `0` | `0` |
+| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `2` | `2` | `1` | `67` | `0` | `0` | `0` |
+| `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `3268` | `0` | `0` | `0` |
+| `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `77` | `0` | `0` | `0` |
+
+### 4.2 Exact-mode optimization delta snapshot (Phase 33.4.2)
+
+The table below locks explicit before/after telemetry deltas for the two exact-mode optimizations landed in Phase 33.4.2. "Before" values are the pre-optimization baselines; "After" values come from checked-in replayable JSON artifacts generated by `./scripts/run_model_check_matrix.sh`.
+
+| Optimization | Baseline artifact | Metric | Before | After | Delta | Reachable-state guard |
+| --- | --- | --- | --- | --- | --- | --- |
+| 33.4.2.a successor memoization | `reports/model_check/liveness_avoidable_cycle_violated.json` | `successor_cache_hits` | `0` | `3` | `+3` | `3/5 -> 3/5` |
+| 33.4.2.a successor memoization | `reports/model_check/liveness_avoidable_cycle_violated.json` | `successor_cache_misses` | `0` | `3` | `+3` | `3/5 -> 3/5` |
+| 33.4.2.b guard-pruned fallback enumeration | `reports/model_check/guard_pruned_enumeration.json` | `enumeration_candidate_evaluations` | `2` | `0` | `-2` | `1/0 -> 1/0` |
+| 33.4.2.b guard-pruned fallback enumeration | `reports/model_check/guard_pruned_enumeration.json` | `guard_pruned_candidate_evaluations` | `0` | `2` | `+2` | `1/0 -> 1/0` |
 
 ## 5. Exact reproduction commands
 

@@ -12,49 +12,38 @@
     "resolved_count": 0
   },
   "leads_to_violation": null,
-  "liveness": {
-    "checked": true,
-    "fairness": {
-      "strong": [],
-      "strong_count": 0,
-      "weak": [],
-      "weak_count": 0
-    },
-    "obligations": 1,
-    "skipped_reason": null,
-    "violation_found": false
-  },
-  "protocol": "transpiler/tests/model_check_fixtures/liveness_forced.protocol.rs",
+  "liveness": null,
+  "protocol": "transpiler/tests/model_check_fixtures/guard_pruned_enumeration.protocol.rs",
   "result": "ok",
   "search": {
-    "max_depth": 4,
-    "max_states": 100,
+    "max_depth": 10,
+    "max_states": 1000,
     "por_heuristic": "none",
     "por_pruned_branches": [],
     "state_dedup": "canonical",
     "strategy": "bfs",
     "successor_semantics": "deadlock",
     "symmetry_fields": [],
-    "timeout_ms": 10000
+    "timeout_ms": 5000
   },
   "stop_reason": "FrontierExhausted",
   "summary": {
     "candidate_evaluation_guardrail_per_state_branch": 10000,
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
-    "depth": 1,
-    "direct_assignment_branch_solves": 4,
+    "depth": 0,
+    "direct_assignment_branch_solves": 0,
     "elapsed_ms": 0,
     "enumeration_candidate_evaluations": 0,
-    "enumeration_fallback_branch_solves": 0,
-    "guard_pruned_candidate_evaluations": 0,
+    "enumeration_fallback_branch_solves": 1,
+    "guard_pruned_candidate_evaluations": 2,
     "hash_compaction_collisions": 0,
     "pruned_by_por": 0,
-    "states": 2,
-    "successor_cache_hits": 2,
-    "successor_cache_misses": 2,
+    "states": 1,
+    "successor_cache_hits": 0,
+    "successor_cache_misses": 1,
     "symmetry_collapses": 0,
-    "transitions": 2
+    "transitions": 0
   },
-  "types": "transpiler/tests/model_check_fixtures/liveness_forced.types.rs"
+  "types": "transpiler/tests/model_check_fixtures/guard_pruned_enumeration.types.rs"
 }

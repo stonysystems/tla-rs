@@ -9698,7 +9698,7 @@ Rules for this phase (do not cut corners):
   - Added an explicit Phase 33.4 baseline snapshot table in `docs/model_checker_status.md` section `4.1`, populated from checked-in exact-mode protocol artifacts (`reports/model_check/{paxos,primarybackup,twophase,leaderelection}_small.json`).
   - Recorded required metrics per model: `states`, `transitions`, `depth`, `elapsed_ms`, and reduction telemetry (`pruned_by_por`, `symmetry_collapses`, `hash_compaction_collisions`).
   - Added regression `test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts` to keep the baseline table synchronized with checked-in JSON artifacts and exact (`state_dedup=canonical`) mode.
-- [ ] Land at least two sound exact-mode optimizations beyond the current baseline, chosen because they unblock real workloads. Examples:
+- [x] Land at least two sound exact-mode optimizations beyond the current baseline, chosen because they unblock real workloads. [26:03:06, 00:25] Examples:
   - branch-enablement caching
   - helper-call/result memoization
   - successor memoization keyed by `(state, branch, constants)`
@@ -9713,7 +9713,12 @@ Rules for this phase (do not cut corners):
     - Implemented guard-driven pruning in `solve_branch_by_candidate_enumeration`: candidate-independent constraints are evaluated once per `(state, branch, constants, existential assignment)` and branches with unsatisfied static guards skip per-candidate evaluation entirely.
     - Added telemetry field `guard_pruned_candidate_evaluations` in solver/main summaries (CLI + JSON) so pruning impact is auditable without changing exact-mode state counts.
     - Added correctness-first coverage in `transpiler/src/modelcheck/solver.rs` (`test_solve_branch_successors_with_candidates_prunes_static_guard`) and command-level coverage in `transpiler/src/main.rs` (`test_execute_model_check_reports_guard_pruned_enumeration_telemetry`).
-  - [ ] **33.4.2.c** Document and lock before/after exact-mode telemetry deltas for both optimizations on the checked-in baseline models.
+  - [x] **33.4.2.c** Document and lock before/after exact-mode telemetry deltas for both optimizations on the checked-in baseline models. [26:03:06, 00:25]
+    - Added `docs/model_checker_status.md` section `4.2` with explicit before/after/delta rows for:
+      - successor-cache telemetry (`successor_cache_hits`, `successor_cache_misses`) on `reports/model_check/liveness_avoidable_cycle_violated.json`
+      - guard-pruned fallback telemetry (`enumeration_candidate_evaluations`, `guard_pruned_candidate_evaluations`) on `reports/model_check/guard_pruned_enumeration.json`
+    - Added integration guard `test_model_check_exact_mode_optimization_delta_snapshot_matches_checked_in_artifacts` so delta rows stay synchronized with checked-in JSON artifacts and reachable-state guards.
+    - Added replayable fixture + matrix artifact for guard-pruned enumeration (`guard_pruned_enumeration.*`, included in `scripts/run_model_check_matrix.sh`).
 - [ ] Keep lossy modes (`hash_compaction64`) documented and reported as bug-finding accelerators, not proof-strength runs.
 - [ ] Add benchmark or regression automation that compares before/after telemetry on the same checked-in models.
 - [ ] Reject any optimization that changes exact-mode reachable-state counts unless the change is explained by a correctness bug fix and documented.

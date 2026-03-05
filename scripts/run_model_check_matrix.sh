@@ -26,6 +26,7 @@ declare -a MATRIX_CASES=(
     "primarybackup_small|src/protocol/PrimaryBackup/primarybackup.rs|src/protocol/PrimaryBackup/types.rs|transpiler/tests/model_check_fixtures/primarybackup_small.model.toml"
     "leaderelection_small|src/protocol/LeaderElection/election.rs|src/protocol/LeaderElection/types.rs|transpiler/tests/model_check_fixtures/leaderelection_small.model.toml"
     "paxos_small|src/protocol/Paxos/paxos.rs|src/protocol/Paxos/types.rs|transpiler/tests/model_check_fixtures/paxos_small.model.toml"
+    "guard_pruned_enumeration|transpiler/tests/model_check_fixtures/guard_pruned_enumeration.protocol.rs|transpiler/tests/model_check_fixtures/guard_pruned_enumeration.types.rs|transpiler/tests/model_check_fixtures/guard_pruned_enumeration.model.toml"
     "liveness_avoidable_cycle_violated|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_violated.model.toml"
     "liveness_avoidable_cycle_strong_fairness|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs|transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_strong_fairness.model.toml"
     "liveness_forced_unfair|transpiler/tests/model_check_fixtures/liveness_forced.protocol.rs|transpiler/tests/model_check_fixtures/liveness_forced.types.rs|transpiler/tests/model_check_fixtures/liveness_forced_unfair.model.toml"

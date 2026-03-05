@@ -1,0 +1,16 @@
+[search]
+max_depth = 10
+max_states = 1000
+timeout_ms = 5000
+state_dedup = "canonical"
+
+[constants.assignments]
+limit = 1
+
+[properties]
+invariants = []
+check_deadlock = false
+
+[quantifiers.int]
+min = 0
+max = 1
