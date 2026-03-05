@@ -125,6 +125,28 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 2c': RequestVote log params consistent per (candidate, term)
+    // =========================================================================
+    //
+    // All RequestVote packets from the same candidate at the same term carry
+    // identical (last_log_index, last_log_term). This holds because LTimeout
+    // produces exactly one message per invocation and increments the term,
+    // so all copies at a given term originate from the same step.
+
+    pub open spec fn RequestVoteLogParamsConsistent(ds: RaftDistributedState) -> bool {
+        forall |p1: LRaftPacket, p2: LRaftPacket|
+            #![trigger ds.network.contains(p1), ds.network.contains(p2)]
+            ds.network.contains(p1) && ds.network.contains(p2)
+            && (p1.msg is RequestVote) && (p2.msg is RequestVote)
+            && p1.msg->RequestVote_term == p2.msg->RequestVote_term
+            && p1.msg->RequestVote_candidate == p2.msg->RequestVote_candidate
+        ==> {
+            &&& p1.msg->RequestVote_last_log_index == p2.msg->RequestVote_last_log_index
+            &&& p1.msg->RequestVote_last_log_term == p2.msg->RequestVote_last_log_term
+        }
+    }
+
+    // =========================================================================
     // Message Invariant 2d: VoteResponse summary stays valid at/above term
     // =========================================================================
     //

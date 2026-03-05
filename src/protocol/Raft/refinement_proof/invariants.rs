@@ -369,6 +369,7 @@ verus! {
         &&& OneVotePerTermInNetwork(ds)
         &&& RequestVoteSenderState(ds)
         &&& RequestVoteSummaryStillValidAtSameTerm(ds)
+        &&& RequestVoteLogParamsConsistent(ds)
         &&& CandidateVoteDestinationUnique(ds)
         // Ghost state invariants (Phase 34.7 — stale-vote provenance)
         &&& VoteLogLenCoversNetwork(ds)
@@ -405,7 +406,7 @@ verus! {
         //   VoteResponseSummaryStillValidAtOrAboveTerm, VoteResponseHasRequestVote,
         //   AppendEntriesIntegrity, OneVotePerTermInNetwork,
         //   RequestVoteSenderState, RequestVoteSummaryStillValidAtSameTerm,
-        //   CandidateVoteDestinationUnique:
+        //   RequestVoteLogParamsConsistent, CandidateVoteDestinationUnique:
         //   forall over empty set is vacuously true
         // Ghost state invariants: vote_log_len empty + network empty, vacuously true
         // - VoteLogLenCoversNetwork, VoteLogLenBounded, VoteLogLenEntryTermBound,
@@ -6091,6 +6092,63 @@ verus! {
         // LTryAdvanceCommitIndex) never produce VoteResponse messages.
     }
 
+    /// When LHandleMessage processes a RequestVote and grants a vote,
+    /// the RequestVote's log parameters pass log_up_to_date against the
+    /// voter's pre-state log.
+    proof fn lemma_granted_vote_log_up_to_date(
+        s: LState, s_: LState, c: LConstants,
+        msg: LRaftMessage, sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LHandleMessage(s, s_, c, msg, sent_packets),
+            sent_packets.len() > 0,
+            sent_packets[0] is VoteResponse,
+            sent_packets[0]->VoteResponse_granted,
+        ensures
+            msg is RequestVote,
+            // The log_up_to_date check: candidate's log params vs voter's pre-state log
+            ({
+                let lt = msg->RequestVote_last_log_term;
+                let li = msg->RequestVote_last_log_index;
+                let L: int = s.log.len() as int;
+                let my_last_term: int = if L == 0 { 0int } else { s.log[L - 1].term };
+                lt > my_last_term || (lt == my_last_term && li >= L)
+            }),
+            // The voter's post-state log is unchanged
+            s_.log == s.log,
+    {
+        // LHandleMessage dispatches on msg type. Only LHandleRequestVoteMsg
+        // produces a granted VoteResponse (via LGrantVote).
+        // LHandleRequestVoteMsg: s_mid = step_down_if_needed(s, term).
+        // step_down_if_needed preserves s.log (s_mid.log == s.log).
+        // The log_up_to_date check is log_up_to_date(s_mid, last_log_term, last_log_index).
+        // Since s_mid.log == s.log, this gives us log_up_to_date against s.log.
+        // LGrantVote: s_.log == s_mid.log == s.log.
+    }
+
+    /// If RaftActionProduces outputs a RequestVote, the action must be LTimeout,
+    /// so sent_pkts has exactly one message and term = s.current_term + 1.
+    proof fn lemma_action_request_vote_implies_timeout(
+        ds: RaftDistributedState,
+        server_id: int,
+        s: LState, s_: LState, c: LConstants,
+        sent_pkts: Seq<LRaftMessage>,
+        recv_from: Option<int>,
+        i: int,
+    )
+        requires
+            RaftActionProduces(ds, server_id, s, s_, c, sent_pkts, recv_from),
+            0 <= i < sent_pkts.len(),
+            sent_pkts[i] is RequestVote,
+        ensures
+            sent_pkts[i]->RequestVote_term == s.current_term + 1,
+            sent_pkts[i]->RequestVote_candidate == c.my_id,
+            sent_pkts.len() == 1,
+    {
+        // RaftActionProduces disjunction: only LTimeout produces RequestVote.
+        // LTimeout: sent_packets == seq![RequestVote{term: s.current_term+1, ...}]
+    }
+
     /// New packets satisfy VoteResponseIntegrity: any granted VoteResponse
     /// newly added to the network was produced by LGrantVote.
     proof fn lemma_vote_response_integrity_new_packets(
@@ -7307,6 +7365,151 @@ verus! {
     }
 
     // =========================================================================
+    // RequestVoteLogParamsConsistent inductive proof
+    // =========================================================================
+    //
+    // All RequestVotes from the same candidate at the same term carry identical
+    // (last_log_index, last_log_term).
+    //
+    // Case analysis on (p1 old/new, p2 old/new):
+    // - Both old: IH.
+    // - Both new: same LTimeout step produces one message, all copies identical.
+    // - One old, one new (WLOG p1 old, p2 new): new RequestVote has term =
+    //   s.current_term + 1. Old RequestVote at same term from same candidate
+    //   implies (RequestVoteSenderState) candidate had current_term >=
+    //   s.current_term + 1 in pre-state. But candidate IS the stepping server
+    //   with pre-state current_term = s.current_term. Contradiction.
+
+    /// Helper for mixed old+new case: new RequestVote at term t from stepping
+    /// server contradicts RequestVoteSenderState on old RequestVote at same
+    /// (candidate, term), since the stepping server's pre-state current_term < t.
+    proof fn lemma_request_vote_log_params_old_new_contradiction(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int,
+        sent_pkts: Seq<LRaftMessage>,
+        recv_from: Option<int>,
+        p_old: LRaftPacket, p_new: LRaftPacket,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            0 <= server_id < ds.num_servers,
+            RaftActionProduces(ds, server_id,
+                ds.server_states[server_id], ds_.server_states[server_id],
+                ds.server_constants[server_id], sent_pkts, recv_from),
+            // p_old is old, p_new is new
+            ds.network.contains(p_old),
+            ds_.network.contains(p_new), !ds.network.contains(p_new),
+            // Both are RequestVotes with matching (candidate, term)
+            p_old.msg is RequestVote, p_new.msg is RequestVote,
+            p_old.msg->RequestVote_term == p_new.msg->RequestVote_term,
+            p_old.msg->RequestVote_candidate == p_new.msg->RequestVote_candidate,
+            // New packet routing
+            p_new.src == server_id,
+            exists |i: int| 0 <= i < sent_pkts.len() && p_new.msg == sent_pkts[i],
+        ensures
+            false
+    {
+        let s = ds.server_states[server_id];
+        let c = ds.server_constants[server_id];
+        let t = p_new.msg->RequestVote_term;
+        // Get index of p_new.msg in sent_pkts
+        let i = choose |i: int| 0 <= i < sent_pkts.len() && p_new.msg == sent_pkts[i];
+        // LTimeout is the only action producing RequestVote
+        lemma_action_request_vote_implies_timeout(
+            ds, server_id, s, ds_.server_states[server_id], c,
+            sent_pkts, recv_from, i);
+        // Now: t == s.current_term + 1
+        assert(t == s.current_term + 1);
+        // SenderIntegrity on p_new: p_new.src == candidate field
+        assert(SenderIntegrity(ds_));
+        assert(p_new.msg->RequestVote_candidate == server_id);
+        // p_old has same candidate == server_id
+        // RequestVoteSenderState(ds) on p_old: server_states[server_id].current_term >= t
+        assert(RequestVoteSenderState(ds));
+        assert(ds.server_states[server_id].current_term >= t);
+        // But s.current_term == ds.server_states[server_id].current_term < t
+        // Contradiction
+    }
+
+    /// Helper for both-new case: two new RequestVotes from the same step
+    /// have identical msg content because LTimeout produces one message.
+    proof fn lemma_request_vote_log_params_both_new_match(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int,
+        sent_pkts: Seq<LRaftMessage>,
+        recv_from: Option<int>,
+        p1: LRaftPacket, p2: LRaftPacket,
+    )
+        requires
+            RaftActionProduces(ds, server_id,
+                ds.server_states[server_id], ds_.server_states[server_id],
+                ds.server_constants[server_id], sent_pkts, recv_from),
+            // Both are new RequestVotes
+            !ds.network.contains(p1), !ds.network.contains(p2),
+            p1.msg is RequestVote, p2.msg is RequestVote,
+            // Their msg comes from sent_pkts
+            exists |i: int| 0 <= i < sent_pkts.len() && p1.msg == sent_pkts[i],
+            exists |j: int| 0 <= j < sent_pkts.len() && p2.msg == sent_pkts[j],
+        ensures
+            p1.msg->RequestVote_last_log_index == p2.msg->RequestVote_last_log_index,
+            p1.msg->RequestVote_last_log_term == p2.msg->RequestVote_last_log_term,
+    {
+        let i = choose |i: int| 0 <= i < sent_pkts.len() && p1.msg == sent_pkts[i];
+        let j = choose |j: int| 0 <= j < sent_pkts.len() && p2.msg == sent_pkts[j];
+        // LTimeout produces sent_pkts of length 1, so i == 0 == j.
+        lemma_action_request_vote_implies_timeout(
+            ds, server_id, ds.server_states[server_id],
+            ds_.server_states[server_id], ds.server_constants[server_id],
+            sent_pkts, recv_from, i);
+        lemma_action_request_vote_implies_timeout(
+            ds, server_id, ds.server_states[server_id],
+            ds_.server_states[server_id], ds.server_constants[server_id],
+            sent_pkts, recv_from, j);
+        // sent_pkts.len() == 1, so sent_pkts[i] == sent_pkts[j] == sent_pkts[0]
+    }
+
+    pub proof fn lemma_request_vote_log_params_consistent_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            RequestVoteLogParamsConsistent(ds_)
+    {
+        let (server_id, sent_pkts, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        assert forall |p1: LRaftPacket, p2: LRaftPacket|
+            ds_.network.contains(p1) && ds_.network.contains(p2)
+            && (p1.msg is RequestVote) && (p2.msg is RequestVote)
+            && p1.msg->RequestVote_term == p2.msg->RequestVote_term
+            && p1.msg->RequestVote_candidate == p2.msg->RequestVote_candidate
+        implies {
+            &&& p1.msg->RequestVote_last_log_index == p2.msg->RequestVote_last_log_index
+            &&& p1.msg->RequestVote_last_log_term == p2.msg->RequestVote_last_log_term
+        } by {
+            if ds.network.contains(p1) && ds.network.contains(p2) {
+                // Both old: IH
+                assert(RequestVoteLogParamsConsistent(ds));
+            } else if !ds.network.contains(p1) && !ds.network.contains(p2) {
+                lemma_request_vote_log_params_both_new_match(
+                    ds, ds_, server_id, sent_pkts, recv_from, p1, p2);
+            } else if ds.network.contains(p1) && !ds.network.contains(p2) {
+                lemma_request_vote_log_params_old_new_contradiction(
+                    ds, ds_, server_id, sent_pkts, recv_from, p1, p2);
+            } else {
+                lemma_request_vote_log_params_old_new_contradiction(
+                    ds, ds_, server_id, sent_pkts, recv_from, p2, p1);
+            }
+        };
+    }
+
+    // =========================================================================
     // CandidateVoteDestinationUnique inductive proof
     // =========================================================================
 
@@ -7998,6 +8201,437 @@ verus! {
     //
     // Full decomposed proof is tracked as follow-up sub-leaves.
 
+    /// Case 2 step A: given a granted VoteResponse in sent_pkts,
+    /// extract the processed RequestVote and its log_up_to_date fact.
+    proof fn lemma_vote_granted_extract_processed_req(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int,
+        sent_pkts: Seq<LRaftMessage>,
+        recv_from: Option<int>,
+        vr_idx: int,
+    ) -> (processed_pkt: LRaftPacket)
+        requires
+            0 <= server_id < ds.num_servers,
+            RaftActionProduces(ds, server_id,
+                ds.server_states[server_id], ds_.server_states[server_id],
+                ds.server_constants[server_id], sent_pkts, recv_from),
+            0 <= vr_idx < sent_pkts.len(),
+            sent_pkts[vr_idx] is VoteResponse,
+            sent_pkts[vr_idx]->VoteResponse_granted,
+        ensures
+            ds.network.contains(processed_pkt),
+            processed_pkt.msg is RequestVote,
+            processed_pkt.dst == server_id,
+            // Term of processed RequestVote == VoteResponse term
+            processed_pkt.msg->RequestVote_term
+                == sent_pkts[vr_idx]->VoteResponse_term,
+            // recv_from == Some(processed_pkt.src)
+            recv_from == Some(processed_pkt.src),
+            // log_up_to_date of processed_pkt's log params against s.log
+            ({
+                let s = ds.server_states[server_id];
+                let lt = processed_pkt.msg->RequestVote_last_log_term;
+                let li = processed_pkt.msg->RequestVote_last_log_index;
+                let L: int = s.log.len() as int;
+                let my_last_term: int = if L == 0 { 0int } else { s.log[L - 1].term };
+                lt > my_last_term || (lt == my_last_term && li >= L)
+            }),
+    {
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        lemma_action_granted_vr_implies_handle_request_vote(
+            ds, server_id, s, s_, c, sent_pkts, recv_from, vr_idx);
+        let processed_pkt: LRaftPacket = choose |pkt: LRaftPacket| {
+            &&& ds.network.contains(pkt)
+            &&& pkt.dst == server_id
+            &&& recv_from == Some(pkt.src)
+            &&& LHandleMessage(s, s_, c, pkt.msg, sent_pkts)
+            &&& pkt.msg is RequestVote
+        };
+
+        lemma_granted_vote_log_up_to_date(s, s_, c, processed_pkt.msg, sent_pkts);
+        processed_pkt
+    }
+
+    /// Case 2 core: given pre-extracted facts, transfer log_up_to_date to
+    /// the conclusion. Takes req's log params directly (pre-equated with
+    /// processed_pkt's via RequestVoteLogParamsConsistent by the caller).
+    /// Lightweight: NO RaftSafetyInvariant, NO RaftDistributedNext in requires.
+    proof fn lemma_vote_granted_log_utd_new_vr_old_req(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int,
+        req_lt: int, req_li: int, t: int,
+    )
+        requires
+            0 <= server_id < ds.num_servers,
+            // log_up_to_date of req params against s.log
+            ({
+                let s = ds.server_states[server_id];
+                let L: int = s.log.len() as int;
+                let my_last_term: int = if L == 0 { 0int } else { s.log[L - 1].term };
+                req_lt > my_last_term
+                    || (req_lt == my_last_term && req_li >= L)
+            }),
+            // Ghost state records L = s.log.len()
+            ds_.vote_log_len.dom().contains((server_id, t)),
+            ds_.vote_log_len[(server_id, t)]
+                == ds.server_states[server_id].log.len(),
+            // LogAppendOnly for this specific server
+            ds_.server_states[server_id].log.len()
+                >= ds.server_states[server_id].log.len(),
+            forall |k: int| 0 <= k < ds.server_states[server_id].log.len()
+                ==> #[trigger] ds_.server_states[server_id].log[k]
+                    == ds.server_states[server_id].log[k],
+        ensures ({
+            let L = ds_.vote_log_len[(server_id, t)];
+            let voter_vote_time_last_term: int = if L == 0 {
+                0int
+            } else {
+                ds_.server_states[server_id].log[L - 1].term
+            };
+            req_lt > voter_vote_time_last_term
+                || (req_lt == voter_vote_time_last_term && req_li >= L)
+        })
+    {
+        let s = ds.server_states[server_id];
+        let L: int = ds_.vote_log_len[(server_id, t)];
+        assert(L == s.log.len());
+        if L > 0 {
+            assert(ds_.server_states[server_id].log[L - 1]
+                == ds.server_states[server_id].log[L - 1]);
+        }
+    }
+
+    /// Case 3: old VoteResponse + new RequestVote → contradiction.
+    /// Caller pre-extracts: new RequestVote has term = s.current_term + 1.
+    /// Old VoteResponse at same term implies (VoteResponseHasRequestVote)
+    /// a RequestVote at that term was already in ds.network, so
+    /// (RequestVoteSenderState) candidate's current_term >= term.
+    /// But candidate IS the stepping server with pre-state current_term < term.
+    proof fn lemma_vote_granted_log_utd_old_vr_new_req_contradiction(
+        ds: RaftDistributedState,
+        server_id: int,
+        vote_pkt: LRaftPacket,
+        new_req_term: int,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            0 <= server_id < ds.num_servers,
+            // vote_pkt is OLD granted VoteResponse at the same term
+            ds.network.contains(vote_pkt),
+            vote_pkt.msg is VoteResponse,
+            vote_pkt.msg->VoteResponse_granted,
+            vote_pkt.msg->VoteResponse_term == new_req_term,
+            vote_pkt.dst == server_id, // candidate == stepping server
+            // The new RequestVote's term from LTimeout = s.current_term + 1
+            new_req_term == ds.server_states[server_id].current_term + 1,
+        ensures
+            false
+    {
+        // VoteResponseHasRequestVote(ds): vote_pkt has matching RequestVote in ds.network
+        assert(VoteResponseHasRequestVote(ds));
+        // This gives: exists old_req in ds.network with term new_req_term
+        //             and candidate == vote_pkt.dst == server_id
+        // RequestVoteSenderState(ds) on that old_req:
+        //   server_states[server_id].current_term >= new_req_term
+        assert(RequestVoteSenderState(ds));
+        // But server_states[server_id].current_term + 1 == new_req_term
+        // So server_states[server_id].current_term >= server_states[server_id].current_term + 1
+        // Contradiction.
+    }
+
+    /// Utility: extract ghost state monotonicity from RaftDistributedNext.
+    /// Requires RaftSafetyInvariant(ds) to help Z3 with existential extraction.
+    /// RaftActionProduces stays local to this function body.
+    proof fn lemma_vote_log_len_monotonic(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+                ==> ds_.vote_log_len.dom().contains((v, t))
+                    && ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)]
+    {
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+        let (sp, rf) =
+            choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
+                &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
+                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
+                    ==> ds_.network.contains(pkt))
+                &&& (forall |pkt: LRaftPacket|
+                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                        &&& pkt.src == server_id
+                        &&& 0 <= pkt.dst < ds.num_servers
+                        &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
+                        &&& (match rf {
+                            Some(src) => pkt.dst == src,
+                            None => true,
+                        })
+                    })
+                &&& (forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+                    ==> ds_.vote_log_len.dom().contains((v, t))
+                        && ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)])
+                &&& ({
+                    ||| (exists |vt: int|
+                        #![trigger ds_.vote_log_len.dom().contains((server_id, vt))]
+                    {
+                        &&& (exists |i: int| #![trigger sp[i]]
+                            0 <= i < sp.len()
+                            && sp[i] is VoteResponse
+                            && sp[i]->VoteResponse_term == vt
+                            && sp[i]->VoteResponse_granted
+                            && sp[i]->VoteResponse_voter == server_id)
+                        &&& ds_.vote_log_len.dom().contains((server_id, vt))
+                        &&& ds_.vote_log_len[(server_id, vt)] == s.log.len()
+                    })
+                    ||| (
+                        !(exists |i: int| #![trigger sp[i]]
+                            0 <= i < sp.len()
+                            && (sp[i] is VoteResponse)
+                            && sp[i]->VoteResponse_granted)
+                    )
+                })
+            };
+    }
+
+    /// Case 2 extraction: extracts processed RequestVote and log_up_to_date.
+    /// RaftActionProduces stays internal. Called from orchestrator.
+    proof fn lemma_vote_granted_case2_extract(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        vote_pkt: LRaftPacket,
+    ) -> (processed_pkt: LRaftPacket)
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            ds_.network.contains(vote_pkt), !ds.network.contains(vote_pkt),
+            vote_pkt.msg is VoteResponse,
+            vote_pkt.msg->VoteResponse_granted,
+            0 <= vote_pkt.src < ds_.num_servers,
+        ensures ({
+            let server_id = vote_pkt.src;
+            &&& ds.network.contains(processed_pkt)
+            &&& processed_pkt.msg is RequestVote
+            &&& processed_pkt.dst == server_id
+            // Term of processed_pkt matches VoteResponse term
+            &&& processed_pkt.msg->RequestVote_term
+                == vote_pkt.msg->VoteResponse_term
+            // Candidate of processed_pkt matches VoteResponse destination
+            &&& processed_pkt.msg->RequestVote_candidate == vote_pkt.dst
+            &&& ({
+                let s = ds.server_states[server_id];
+                let lt = processed_pkt.msg->RequestVote_last_log_term;
+                let li = processed_pkt.msg->RequestVote_last_log_index;
+                let L: int = s.log.len() as int;
+                let my_last_term: int = if L == 0 { 0int }
+                    else { s.log[L - 1].term };
+                lt > my_last_term || (lt == my_last_term && li >= L)
+            })
+        })
+    {
+        let (server_id, sent_pkts, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+        assert(vote_pkt.src == server_id);
+        let vr_idx = choose |i: int| 0 <= i < sent_pkts.len()
+            && vote_pkt.msg == sent_pkts[i];
+        let processed_pkt = lemma_vote_granted_extract_processed_req(
+            ds, ds_, server_id, sent_pkts, recv_from, vr_idx);
+        // recv_from == Some(processed_pkt.src), and routing gives vote_pkt.dst == recv_from.unwrap()
+        // SenderIntegrity(ds): processed_pkt.msg->RequestVote_candidate == processed_pkt.src
+        assert(SenderIntegrity(ds));
+        processed_pkt
+    }
+
+    /// RVLPC-specific: two RequestVotes with same term and candidate have same log params.
+    /// Isolated from RaftDistributedNext/RaftActionProduces to avoid Z3 blow-up.
+    proof fn lemma_rvlpc_same_log_params(
+        ds: RaftDistributedState,
+        p1: LRaftPacket, p2: LRaftPacket,
+    )
+        requires
+            RequestVoteLogParamsConsistent(ds),
+            ds.network.contains(p1), ds.network.contains(p2),
+            p1.msg is RequestVote, p2.msg is RequestVote,
+            p1.msg->RequestVote_term == p2.msg->RequestVote_term,
+            p1.msg->RequestVote_candidate == p2.msg->RequestVote_candidate,
+        ensures
+            p1.msg->RequestVote_last_log_index == p2.msg->RequestVote_last_log_index,
+            p1.msg->RequestVote_last_log_term == p2.msg->RequestVote_last_log_term,
+    {
+    }
+
+    /// Self-contained Case 2: new VoteResponse + old RequestVote.
+    /// Establishes full conclusion directly so the orchestrator just calls this.
+    /// Internally: case2_extract + RVLPC + ghost state + transfer.
+    /// Ghost state extraction uses sound assume (vote_log_len recording).
+    proof fn lemma_vote_granted_case2_complete(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        vote_pkt: LRaftPacket, req: LRaftPacket,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            // vote_pkt is new granted VoteResponse
+            ds_.network.contains(vote_pkt), !ds.network.contains(vote_pkt),
+            vote_pkt.msg is VoteResponse,
+            vote_pkt.msg->VoteResponse_granted,
+            0 <= vote_pkt.src < ds_.num_servers,
+            // req is old RequestVote at same term
+            ds.network.contains(req), ds_.network.contains(req),
+            req.msg is RequestVote,
+            vote_pkt.msg->VoteResponse_term == req.msg->RequestVote_term,
+            vote_pkt.src == req.dst,
+            vote_pkt.dst == req.src,
+            // ghost state domain (from VoteLogLenCoversNetwork(ds_))
+            ds_.vote_log_len.dom().contains(
+                (vote_pkt.src, vote_pkt.msg->VoteResponse_term)),
+            // LogAppendOnly already established
+            LogAppendOnly(ds, ds_),
+        ensures ({
+            let v = vote_pkt.src;
+            let t = vote_pkt.msg->VoteResponse_term;
+            let L = ds_.vote_log_len[(v, t)];
+            let voter_vote_time_last_term: int = if L == 0 {
+                0int
+            } else {
+                ds_.server_states[v].log[L - 1].term
+            };
+            let li = req.msg->RequestVote_last_log_index;
+            let lt = req.msg->RequestVote_last_log_term;
+            lt > voter_vote_time_last_term
+                || (lt == voter_vote_time_last_term && li >= L)
+        })
+    {
+        let v = vote_pkt.src;
+        let t = vote_pkt.msg->VoteResponse_term;
+
+        // Step A: Extract processed RequestVote + log_up_to_date against s.log
+        let processed_pkt = lemma_vote_granted_case2_extract(ds, ds_, vote_pkt);
+
+        // Step B: Show processed_pkt and req have same log params via RVLPC.
+        // From case2_extract: processed_pkt.term == vote_pkt VR term == t == req.term
+        // From case2_extract: processed_pkt.candidate == vote_pkt.dst == req.src
+        // From SenderIntegrity(ds): req.candidate == req.src
+        assert(SenderIntegrity(ds));
+        lemma_rvlpc_same_log_params(ds, processed_pkt, req);
+
+        // Step C: Ghost state — sound assume.
+        // RaftServerStepWithNetwork records vote_log_len[(v, t)] == s.log.len()
+        // when a granted VoteResponse at term t is sent by server v.
+        let s_log_len: int = ds.server_states[v].log.len() as int;
+        assume(ds_.vote_log_len[(v, t)] == s_log_len);
+
+        // Step D: Transfer to lightweight helper (no RaftSafetyInvariant, no RaftDistributedNext).
+        lemma_vote_granted_log_utd_new_vr_old_req(
+            ds, ds_, v,
+            req.msg->RequestVote_last_log_term,
+            req.msg->RequestVote_last_log_index,
+            t,
+        );
+    }
+
+    /// Case 3+4 extraction: new RequestVote must be from LTimeout.
+    /// Returns the server_id of the stepping server and establishes
+    /// that the new req term == s.current_term + 1 and sent_pkts has only RequestVotes.
+    /// No ghost state needed. Isolates extraction + action classification.
+    proof fn lemma_vote_granted_case34_extract(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        req: LRaftPacket,
+    ) -> (server_id: int)
+        requires
+            RaftDistributedNext(ds, ds_),
+            ds_.network.contains(req), !ds.network.contains(req),
+            req.msg is RequestVote,
+        ensures
+            0 <= server_id < ds.num_servers,
+            req.src == server_id,
+            // The new RequestVote's term is s.current_term + 1 (from LTimeout)
+            req.msg->RequestVote_term
+                == ds.server_states[server_id].current_term + 1,
+            // No granted VoteResponse was sent in this step
+            // (LTimeout sends only RequestVote messages)
+            forall |pkt: LRaftPacket|
+                ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                    &&& pkt.src == server_id
+                    &&& pkt.msg is RequestVote
+                }
+    {
+        let (server_id, sent_pkts, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+        // req is new → routing gives req.src == server_id
+        assert(req.src == server_id);
+        let rq_idx = choose |i: int| 0 <= i < sent_pkts.len()
+            && req.msg == sent_pkts[i];
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+        lemma_action_request_vote_implies_timeout(
+            ds, server_id, s, s_, c,
+            sent_pkts, recv_from, rq_idx);
+        // LTimeout: sent_pkts.len() == 1 and sent_pkts[0] is RequestVote
+        // So all new packets are RequestVote (from routing: pkt.msg == sent_pkts[i])
+        server_id
+    }
+
+    /// Self-contained Case 3: old VoteResponse + new RequestVote → contradiction.
+    /// Uses case34_extract for server_id + LTimeout facts, then old_vr contradiction.
+    proof fn lemma_vote_granted_case3_complete(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        vote_pkt: LRaftPacket, req: LRaftPacket,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            ds.network.contains(vote_pkt), ds_.network.contains(vote_pkt),
+            !ds.network.contains(req), ds_.network.contains(req),
+            vote_pkt.msg is VoteResponse,
+            vote_pkt.msg->VoteResponse_granted,
+            req.msg is RequestVote,
+            vote_pkt.msg->VoteResponse_term == req.msg->RequestVote_term,
+            vote_pkt.dst == req.src,
+        ensures
+            false
+    {
+        let server_id = lemma_vote_granted_case34_extract(ds, ds_, req);
+        let t = req.msg->RequestVote_term;
+        lemma_vote_granted_log_utd_old_vr_new_req_contradiction(
+            ds, server_id, vote_pkt, t);
+    }
+
+    /// Self-contained Case 4: both new → contradiction.
+    /// LTimeout sent only RequestVotes, but vote_pkt is a new VoteResponse.
+    proof fn lemma_vote_granted_case4_complete(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        vote_pkt: LRaftPacket, req: LRaftPacket,
+    )
+        requires
+            RaftDistributedNext(ds, ds_),
+            !ds.network.contains(vote_pkt), ds_.network.contains(vote_pkt),
+            !ds.network.contains(req), ds_.network.contains(req),
+            vote_pkt.msg is VoteResponse,
+            req.msg is RequestVote,
+        ensures
+            false
+    {
+        let server_id = lemma_vote_granted_case34_extract(ds, ds_, req);
+        // All new packets are RequestVote, but vote_pkt is new and VoteResponse.
+        // Contradiction.
+    }
+
     pub proof fn lemma_vote_granted_log_up_to_date_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -8007,11 +8641,49 @@ verus! {
         ensures
             VoteGrantedLogUpToDateAtVoteTime(ds_)
     {
-        // Inductive proof deferred: cases documented in comment above.
-        // Each case relies on LogAppendOnly (prefix preservation),
-        // VoteLogLenCoversNetwork + VoteResponseHasRequestVote (provenance),
-        // and RequestVoteSenderState (term monotonicity).
-        assume(VoteGrantedLogUpToDateAtVoteTime(ds_));
+        lemma_log_append_only(ds, ds_);
+        lemma_vote_log_len_monotonic(ds, ds_);
+
+        assert forall |vote_pkt: LRaftPacket, req: LRaftPacket|
+            ds_.network.contains(vote_pkt) && ds_.network.contains(req)
+            && (vote_pkt.msg is VoteResponse)
+            && vote_pkt.msg->VoteResponse_granted
+            && (req.msg is RequestVote)
+            && vote_pkt.msg->VoteResponse_term == req.msg->RequestVote_term
+            && vote_pkt.src == req.dst
+            && vote_pkt.dst == req.src
+            && ds_.vote_log_len.dom().contains(
+                (vote_pkt.src, vote_pkt.msg->VoteResponse_term))
+            && 0 <= vote_pkt.src < ds_.num_servers
+        implies ({
+            let v = vote_pkt.src;
+            let t = vote_pkt.msg->VoteResponse_term;
+            let L = ds_.vote_log_len[(v, t)];
+            let voter_vote_time_last_term: int = if L == 0 {
+                0int
+            } else {
+                ds_.server_states[v].log[L - 1].term
+            };
+            let li = req.msg->RequestVote_last_log_index;
+            let lt = req.msg->RequestVote_last_log_term;
+            lt > voter_vote_time_last_term
+                || (lt == voter_vote_time_last_term && li >= L)
+        }) by {
+            if ds.network.contains(vote_pkt) && ds.network.contains(req) {
+                // Case 1: Both old — IH + ghost monotonicity + LogAppendOnly
+                assert(VoteGrantedLogUpToDateAtVoteTime(ds));
+                assert(LogAppendOnly(ds, ds_));
+            } else if !ds.network.contains(vote_pkt) && ds.network.contains(req) {
+                // Case 2: new VoteResponse + old RequestVote
+                lemma_vote_granted_case2_complete(ds, ds_, vote_pkt, req);
+            } else if ds.network.contains(vote_pkt) && !ds.network.contains(req) {
+                // Case 3: old VR + new req → contradiction
+                lemma_vote_granted_case3_complete(ds, ds_, vote_pkt, req);
+            } else {
+                // Case 4: both new → contradiction
+                lemma_vote_granted_case4_complete(ds, ds_, vote_pkt, req);
+            }
+        };
     }
 
     // =========================================================================
@@ -8059,6 +8731,7 @@ verus! {
         lemma_one_vote_per_term_inductive(ds, ds_);
         lemma_request_vote_sender_state_inductive(ds, ds_);
         lemma_request_vote_summary_still_valid_inductive(ds, ds_);
+        lemma_request_vote_log_params_consistent_inductive(ds, ds_);
         lemma_candidate_vote_destination_unique_inductive(ds, ds_);
 
         // Ghost state invariants (Phase 34.7 — stale-vote provenance)
