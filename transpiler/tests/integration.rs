@@ -10232,6 +10232,17 @@ fn test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducib
         resolve_model_check_fixture_path("chainreplication_state_expansion_limit.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
+    let model_src = std::fs::read_to_string(&model_path)
+        .unwrap_or_else(|err| panic!("failed to read ChainReplication blocker fixture: {}", err));
+    assert!(
+        model_src.contains("Minimal checked-in model")
+            && model_src.contains("LState candidate expansion limit"),
+        "ChainReplication blocker fixture should document intentional expansion-limit setup"
+    );
+    assert!(
+        model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
+        "ChainReplication blocker fixture should stay minimal and bounded (`max_depth = 1`, `max_states = 200`)"
+    );
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([

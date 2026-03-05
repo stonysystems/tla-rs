@@ -9812,7 +9812,9 @@ Rules for this phase (do not cut corners):
       - Re-ran source-first PBFT with checked-in fixture `pbft_state_expansion_limit.model.toml`; run is now supported (`result = ok`, `states = 1`, `transitions = 0`, `depth = 0`).
       - Re-classified PBFT in `docs/model_checker_status.md` from unsupported blocker to exact bounded run with checked-in artifact `reports/model_check/pbft_small.json` and regression `test_model_check_pbft_bounded_run`.
   - [ ] **33.5.2.g ChainReplication (priority #7)**
-    - [ ] **33.5.2.g.1** Keep checked-in minimal blocker model and exact blocker classification current.
+    - [x] **33.5.2.g.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:06, 12:40]
+      - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
+      - Strengthened blocker regression `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` to enforce fixture intent/minimality (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`).
     - [ ] **33.5.2.g.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
   - [ ] **33.5.2.h PrimaryBackup (priority #8)**
     - [ ] **33.5.2.h.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence.
