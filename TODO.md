@@ -9652,7 +9652,7 @@ Rules for this phase (do not cut corners):
   - [x] VerticalPaxos blocker model: add `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and regression `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` to lock the current first blocker (`Existential domain expansion exceeded limit (200 assignments)` during branch existential enumeration).
   - [x] EPaxos blocker model: add `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and regression `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LConstants` exceeds `search.max_states` during candidate construction).
   - [x] PBFT small model: keep `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` as the checked-in bounded source-first fixture and guard it with `test_model_check_pbft_bounded_run` + `reports/model_check/pbft_small.json`.
-  - [x] ChainReplication blocker model: add `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` and regression `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
+  - [x] ChainReplication blocker model: add `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` and regression `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` to lock the current branch existential-domain expansion blocker (`Existential domain expansion exceeded limit (200 assignments)`).
 - [x] Add/update automated integration coverage when a protocol moves from "unsupported/untracked" to "supported". Added regression `test_model_check_supported_protocol_rows_require_automated_evidence` so every `Result = ok` protocol row in `docs/model_checker_status.md` must reference existing integration test(s) and checked-in `reports/model_check/*.json` artifact(s).
 
 ### 33.2 Unsupported-feature audit and regression-first workflow
@@ -9814,8 +9814,12 @@ Rules for this phase (do not cut corners):
   - [ ] **33.5.2.g ChainReplication (priority #7)**
     - [x] **33.5.2.g.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:06, 12:40]
       - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
-      - Strengthened blocker regression `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` to enforce fixture intent/minimality (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`).
-    - [ ] **33.5.2.g.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
+      - Strengthened blocker regression `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` to enforce fixture intent/minimality (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`).
+    - [x] **33.5.2.g.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify. [26:03:06, 14:15]
+      - Extended `LInit` pinned-state fallback in `transpiler/src/main.rs` to handle implication-gated assignments (`==>`) and constants-dependent RHS expressions (including `if ... { ... } else { ... }`), so fallback derivation can consume real protocol init constraints instead of only direct literal / `c.field` equalities.
+      - Added regression `test_execute_model_check_linit_fallback_supports_implication_and_if_constants_expressions` to lock implication + constants-expression fallback behavior under bounded `search.max_states`.
+      - Re-ran source-first ChainReplication with checked-in fixture `chainreplication_state_expansion_limit.model.toml`; first blocker re-classified to `Configuration error: Existential domain expansion exceeded limit (200 assignments)`.
+      - Updated blocker regression to `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` and synchronized `docs/model_checker_status.md` blocker matrix/evidence references.
   - [ ] **33.5.2.h PrimaryBackup (priority #8)**
     - [ ] **33.5.2.h.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence.
   - [ ] **33.5.2.i TwoPhase (priority #9)**

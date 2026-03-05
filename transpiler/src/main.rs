@@ -2569,28 +2569,160 @@ fn expr_to_static_runtime_value(
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 enum PinnedStateFieldAssignment {
     Literal(verus_transpiler::modelcheck::value::RuntimeValue),
     ConstantsField(String),
+    ConstantsExpr(verus_transpiler::ast::Expr),
+}
+
+#[derive(Clone, Debug)]
+struct PinnedStateFieldConstraint {
+    condition: Option<verus_transpiler::ast::Expr>,
+    assignment: PinnedStateFieldAssignment,
 }
 
 #[derive(Clone, Debug)]
 struct PinnedStateTemplate {
     struct_name: String,
-    fields: Vec<(String, PinnedStateFieldAssignment)>,
+    constants_param: Option<String>,
+    fields: Vec<(String, Vec<PinnedStateFieldConstraint>)>,
 }
 
-fn upsert_pinned_state_assignment(
-    assignments: &mut std::collections::HashMap<String, PinnedStateFieldAssignment>,
-    field_name: String,
-    value: PinnedStateFieldAssignment,
-) -> bool {
-    if let Some(existing) = assignments.get(&field_name) {
-        return existing == &value;
+fn expr_mentions_identifier(expr: &verus_transpiler::ast::Expr, ident: &str) -> bool {
+    use verus_transpiler::ast::Expr;
+
+    match expr {
+        Expr::Ident(name) => name == ident,
+        Expr::Conjunction(items) | Expr::Disjunction(items) => items
+            .iter()
+            .any(|item| expr_mentions_identifier(item, ident)),
+        Expr::Implies(lhs, rhs)
+        | Expr::Iff(lhs, rhs)
+        | Expr::Eq(lhs, rhs)
+        | Expr::Ne(lhs, rhs)
+        | Expr::Lt(lhs, rhs)
+        | Expr::Le(lhs, rhs)
+        | Expr::Gt(lhs, rhs)
+        | Expr::Ge(lhs, rhs)
+        | Expr::Binary(lhs, _, rhs)
+        | Expr::Index(lhs, rhs) => {
+            expr_mentions_identifier(lhs, ident) || expr_mentions_identifier(rhs, ident)
+        }
+        Expr::Not(inner)
+        | Expr::View(inner)
+        | Expr::Cast(inner, _)
+        | Expr::Unary(_, inner)
+        | Expr::Field(inner, _)
+        | Expr::Arrow(inner, _)
+        | Expr::Is(inner, _) => expr_mentions_identifier(inner, ident),
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            expr_mentions_identifier(cond, ident)
+                || expr_mentions_identifier(then_branch, ident)
+                || else_branch
+                    .as_deref()
+                    .map(|branch| expr_mentions_identifier(branch, ident))
+                    .unwrap_or(false)
+        }
+        Expr::Match { scrutinee, arms } => {
+            expr_mentions_identifier(scrutinee, ident)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .map(|guard| expr_mentions_identifier(guard, ident))
+                        .unwrap_or(false)
+                        || expr_mentions_identifier(&arm.body, ident)
+                })
+        }
+        Expr::Let {
+            binding,
+            value,
+            body,
+        } => {
+            expr_mentions_identifier(value, ident)
+                || (binding.name() != Some(ident) && expr_mentions_identifier(body, ident))
+        }
+        Expr::Forall {
+            vars,
+            triggers,
+            body,
+        } => {
+            let shadowed = vars.iter().any(|var| var.name() == Some(ident));
+            triggers.iter().any(|trigger| {
+                trigger
+                    .exprs
+                    .iter()
+                    .any(|expr| expr_mentions_identifier(expr, ident))
+            }) || (!shadowed && expr_mentions_identifier(body, ident))
+        }
+        Expr::Exists { vars, body } => {
+            let shadowed = vars.iter().any(|var| var.name() == Some(ident));
+            !shadowed && expr_mentions_identifier(body, ident)
+        }
+        Expr::Struct { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_mentions_identifier(value, ident)),
+        Expr::StructUpdate { base, fields, .. } => {
+            expr_mentions_identifier(base, ident)
+                || fields
+                    .iter()
+                    .any(|(_, value)| expr_mentions_identifier(value, ident))
+        }
+        Expr::SeqLit(items) | Expr::SetLit(items) => items
+            .iter()
+            .any(|item| expr_mentions_identifier(item, ident)),
+        Expr::MapLit(entries) => entries.iter().any(|(key, value)| {
+            expr_mentions_identifier(key, ident) || expr_mentions_identifier(value, ident)
+        }),
+        Expr::Call { args, .. } => args.iter().any(|arg| expr_mentions_identifier(arg, ident)),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_mentions_identifier(receiver, ident)
+                || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
+        }
+        Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty => false,
     }
-    assignments.insert(field_name, value);
-    true
+}
+
+fn expression_to_pinned_assignment(
+    expr: &verus_transpiler::ast::Expr,
+    state_param: &str,
+    constants_param: Option<&str>,
+) -> Option<PinnedStateFieldAssignment> {
+    if let Some(value) = expr_to_static_runtime_value(expr) {
+        return Some(PinnedStateFieldAssignment::Literal(value));
+    }
+    if let Some(constants_field) =
+        constants_param.and_then(|param| match_constants_field_access(expr, param))
+    {
+        return Some(PinnedStateFieldAssignment::ConstantsField(constants_field));
+    }
+    if expr_mentions_identifier(expr, state_param) {
+        return None;
+    }
+    let constants_param = constants_param?;
+    if expr_mentions_identifier(expr, constants_param) {
+        return Some(PinnedStateFieldAssignment::ConstantsExpr(expr.clone()));
+    }
+    None
+}
+
+fn push_pinned_state_assignment(
+    assignments: &mut std::collections::HashMap<String, Vec<PinnedStateFieldConstraint>>,
+    field_name: String,
+    assignment: PinnedStateFieldAssignment,
+    condition: Option<&verus_transpiler::ast::Expr>,
+) {
+    assignments
+        .entry(field_name)
+        .or_default()
+        .push(PinnedStateFieldConstraint {
+            condition: condition.cloned(),
+            assignment,
+        });
 }
 
 fn collect_state_field_assignments(
@@ -2598,7 +2730,8 @@ fn collect_state_field_assignments(
     state_param: &str,
     constants_param: Option<&str>,
     field_types: &std::collections::HashMap<String, verus_transpiler::ast::Type>,
-    assignments: &mut std::collections::HashMap<String, PinnedStateFieldAssignment>,
+    condition: Option<&verus_transpiler::ast::Expr>,
+    assignments: &mut std::collections::HashMap<String, Vec<PinnedStateFieldConstraint>>,
 ) -> bool {
     use verus_transpiler::ast::{Expr, Type};
     use verus_transpiler::modelcheck::value::RuntimeValue;
@@ -2610,45 +2743,44 @@ fn collect_state_field_assignments(
                 state_param,
                 constants_param,
                 field_types,
+                condition,
                 assignments,
             )
         }),
+        Expr::Implies(antecedent, consequent) => {
+            if expr_mentions_identifier(antecedent, state_param) {
+                return false;
+            }
+            let combined_condition = if let Some(existing) = condition {
+                Expr::Conjunction(vec![existing.clone(), antecedent.as_ref().clone()])
+            } else {
+                antecedent.as_ref().clone()
+            };
+            collect_state_field_assignments(
+                consequent,
+                state_param,
+                constants_param,
+                field_types,
+                Some(&combined_condition),
+                assignments,
+            )
+        }
         Expr::Eq(lhs, rhs) => {
             if let Some(field_name) = match_state_field_access(lhs, state_param) {
-                if let Some(value) = expr_to_static_runtime_value(rhs) {
-                    return upsert_pinned_state_assignment(
-                        assignments,
-                        field_name,
-                        PinnedStateFieldAssignment::Literal(value),
-                    );
-                }
-                if let Some(constants_field) =
-                    constants_param.and_then(|param| match_constants_field_access(rhs, param))
+                if let Some(value) =
+                    expression_to_pinned_assignment(rhs, state_param, constants_param)
                 {
-                    return upsert_pinned_state_assignment(
-                        assignments,
-                        field_name,
-                        PinnedStateFieldAssignment::ConstantsField(constants_field),
-                    );
+                    push_pinned_state_assignment(assignments, field_name, value, condition);
+                    return true;
                 }
                 return false;
             }
             if let Some(field_name) = match_state_field_access(rhs, state_param) {
-                if let Some(value) = expr_to_static_runtime_value(lhs) {
-                    return upsert_pinned_state_assignment(
-                        assignments,
-                        field_name,
-                        PinnedStateFieldAssignment::Literal(value),
-                    );
-                }
-                if let Some(constants_field) =
-                    constants_param.and_then(|param| match_constants_field_access(lhs, param))
+                if let Some(value) =
+                    expression_to_pinned_assignment(lhs, state_param, constants_param)
                 {
-                    return upsert_pinned_state_assignment(
-                        assignments,
-                        field_name,
-                        PinnedStateFieldAssignment::ConstantsField(constants_field),
-                    );
+                    push_pinned_state_assignment(assignments, field_name, value, condition);
+                    return true;
                 }
                 return false;
             }
@@ -2675,13 +2807,15 @@ fn collect_state_field_assignments(
             let Ok(value) = RuntimeValue::enum_value(enum_ty, variant.clone(), Vec::new()) else {
                 return false;
             };
-            upsert_pinned_state_assignment(
+            push_pinned_state_assignment(
                 assignments,
                 field_name,
                 PinnedStateFieldAssignment::Literal(value),
-            )
+                condition,
+            );
+            true
         }
-        _ => true,
+        _ => !expr_mentions_identifier(expr, state_param),
     }
 }
 
@@ -2709,6 +2843,7 @@ fn derive_fully_pinned_state_template_from_init(
         state_param,
         constants_param,
         &field_types,
+        None,
         &mut assignments,
     ) {
         return Ok(None);
@@ -2730,6 +2865,7 @@ fn derive_fully_pinned_state_template_from_init(
     }
     Ok(Some(PinnedStateTemplate {
         struct_name: struct_def.name.clone(),
+        constants_param: constants_param.map(str::to_string),
         fields,
     }))
 }
@@ -2737,41 +2873,99 @@ fn derive_fully_pinned_state_template_from_init(
 fn instantiate_pinned_state_candidate(
     template: &PinnedStateTemplate,
     constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
-) -> Result<verus_transpiler::modelcheck::value::RuntimeValue> {
+    bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds,
+) -> Result<Option<verus_transpiler::modelcheck::value::RuntimeValue>> {
+    use verus_transpiler::modelcheck::evaluator::{eval_expr, EvalContext};
     use verus_transpiler::modelcheck::value::RuntimeValue;
 
-    let mut fields = Vec::with_capacity(template.fields.len());
-    for (field_name, assignment) in &template.fields {
-        let value = match assignment {
-            PinnedStateFieldAssignment::Literal(value) => value.clone(),
-            PinnedStateFieldAssignment::ConstantsField(constants_field) => {
-                let constants = constants.ok_or_else(|| {
-                    miette::miette!(
-                        "Failed to build `LInit`-derived state candidate for `{}`: missing `LConstants` valuation while resolving `{}.{}`.",
-                        template.struct_name,
-                        field_name,
-                        constants_field
-                    )
-                })?;
-                constants.field(constants_field).cloned().ok_or_else(|| {
-                    miette::miette!(
-                        "Failed to build `LInit`-derived state candidate for `{}`: constants field `{}` not found.",
-                        template.struct_name,
-                        constants_field
-                    )
-                })?
+    let evaluate_expr_with_constants =
+        |expr: &verus_transpiler::ast::Expr| -> Result<RuntimeValue> {
+            let mut ctx = EvalContext::new(bounds);
+            if let Some(constants_param) = template.constants_param.as_deref() {
+                let constants_value = constants.ok_or_else(|| {
+                miette::miette!(
+                    "Failed to build `LInit`-derived state candidate for `{}`: missing `LConstants` valuation while resolving constants-dependent expression.",
+                    template.struct_name
+                )
+            })?;
+                ctx = ctx.with_binding(constants_param.to_string(), constants_value.clone());
             }
+            eval_expr(expr, &ctx).map_err(|err| {
+            miette::miette!(
+                "Failed to build `LInit`-derived state candidate for `{}`: could not evaluate constants-dependent expression in `LInit` ({:?}): {}",
+                template.struct_name,
+                expr,
+                err
+            )
+        })
+        };
+
+    let mut fields = Vec::with_capacity(template.fields.len());
+    for (field_name, constraints) in &template.fields {
+        let mut resolved_value: Option<RuntimeValue> = None;
+        for constraint in constraints {
+            if let Some(condition) = &constraint.condition {
+                let condition_value = evaluate_expr_with_constants(condition)?;
+                let RuntimeValue::Bool(is_active) = condition_value else {
+                    return Err(miette::miette!(
+                        "Failed to build `LInit`-derived state candidate for `{}`: implication guard for field `{}` did not evaluate to bool.",
+                        template.struct_name,
+                        field_name
+                    ));
+                };
+                if !is_active {
+                    continue;
+                }
+            }
+
+            let value = match &constraint.assignment {
+                PinnedStateFieldAssignment::Literal(value) => value.clone(),
+                PinnedStateFieldAssignment::ConstantsField(constants_field) => {
+                    let constants = constants.ok_or_else(|| {
+                        miette::miette!(
+                            "Failed to build `LInit`-derived state candidate for `{}`: missing `LConstants` valuation while resolving `{}.{}`.",
+                            template.struct_name,
+                            field_name,
+                            constants_field
+                        )
+                    })?;
+                    constants.field(constants_field).cloned().ok_or_else(|| {
+                        miette::miette!(
+                            "Failed to build `LInit`-derived state candidate for `{}`: constants field `{}` not found.",
+                            template.struct_name,
+                            constants_field
+                        )
+                    })?
+                }
+                PinnedStateFieldAssignment::ConstantsExpr(expr) => {
+                    evaluate_expr_with_constants(expr)?
+                }
+            };
+
+            if let Some(existing_value) = &resolved_value {
+                if existing_value != &value {
+                    return Ok(None);
+                }
+            } else {
+                resolved_value = Some(value);
+            }
+        }
+
+        let Some(value) = resolved_value else {
+            return Ok(None);
         };
         fields.push((field_name.clone(), value));
     }
 
-    RuntimeValue::struct_value(template.struct_name.clone(), fields).map_err(|err| {
-        miette::miette!(
-            "Failed to build `LInit`-derived state candidate for `{}`: {}",
-            template.struct_name,
-            err
-        )
-    })
+    RuntimeValue::struct_value(template.struct_name.clone(), fields)
+        .map(Some)
+        .map_err(|err| {
+            miette::miette!(
+                "Failed to build `LInit`-derived state candidate for `{}`: {}",
+                template.struct_name,
+                err
+            )
+        })
 }
 
 fn value_matches_domain_spec(
@@ -3355,12 +3549,11 @@ fn execute_model_check(
 
         let run_state_candidates = match &state_candidates_source {
             StateCandidatesSource::Expanded(candidates) => Cow::Borrowed(candidates.as_slice()),
-            StateCandidatesSource::PinnedTemplate(template) => {
-                Cow::Owned(vec![instantiate_pinned_state_candidate(
-                    template,
-                    Some(constants_value),
-                )?])
-            }
+            StateCandidatesSource::PinnedTemplate(template) => Cow::Owned(
+                instantiate_pinned_state_candidate(template, Some(constants_value), bounds)?
+                    .into_iter()
+                    .collect(),
+            ),
         };
 
         let initial_states = construct_initial_states(
@@ -6970,6 +7163,124 @@ max_states = 50
     }
 
     #[test]
+    fn test_execute_model_check_linit_fallback_supports_implication_and_if_constants_expressions() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub enum LRole { Head, Tail }
+
+    pub struct LState {
+        pub a: int,
+        pub b: int,
+        pub c: int,
+        pub d: int,
+        pub e: int,
+        pub f: int,
+        pub g: int,
+        pub h: int,
+        pub role: LRole,
+        pub has_predecessor: bool,
+        pub predecessor: int,
+        pub alive: bool,
+    }
+    pub struct LConstants { pub node_id: int, pub chain_len: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        &&& s.a == 0
+        &&& s.b == 0
+        &&& s.c == 0
+        &&& s.d == 0
+        &&& s.e == 0
+        &&& s.f == 0
+        &&& s.g == 0
+        &&& s.h == 0
+        &&& (c.node_id == 0 ==> s.role is Head)
+        &&& (c.node_id == c.chain_len - 1 ==> s.role is Tail)
+        &&& s.has_predecessor == (c.node_id > 0)
+        &&& s.predecessor == (if c.node_id > 0 { c.node_id - 1 } else { 0int })
+        &&& s.alive == true
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        &&& s_.a == s.a
+        &&& s_.b == s.b
+        &&& s_.c == s.c
+        &&& s_.d == s.d
+        &&& s_.e == s.e
+        &&& s_.f == s.f
+        &&& s_.g == s.g
+        &&& s_.h == s.h
+        &&& s_.role == s.role
+        &&& s_.has_predecessor == s.has_predecessor
+        &&& s_.predecessor == s.predecessor
+        &&& s_.alive == s.alive
+        &&& s.predecessor <= c.chain_len
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+node_id = 0
+chain_len = 2
+
+[quantifiers.int]
+min = 0
+max = 2
+
+[search]
+max_depth = 1
+max_states = 50
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(execution.summary.states, 1);
+        assert_eq!(execution.summary.transitions, 1);
+    }
+
+    #[test]
     fn test_execute_model_check_constants_resolution_still_rejects_zero_matches() {
         use verus_transpiler::modelcheck::config::parse_model_config_file;
         use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
@@ -8011,7 +8322,10 @@ state_dedup = "hash_compaction64"
 
         assert_eq!(evidence.class, "lossy_bug_finding_accelerator");
         assert!(!evidence.proof_strength);
-        assert_eq!(evidence.lossy_reasons, vec!["hash_compaction64_collision_risk"]);
+        assert_eq!(
+            evidence.lossy_reasons,
+            vec!["hash_compaction64_collision_risk"]
+        );
         assert!(evidence.guidance.contains("bug-finding"));
     }
 
@@ -8025,7 +8339,10 @@ state_dedup = "hash_compaction64"
 
         assert_eq!(evidence.class, "lossy_bug_finding_accelerator");
         assert!(!evidence.proof_strength);
-        assert_eq!(evidence.lossy_reasons, vec!["symmetry_fields_state_merging"]);
+        assert_eq!(
+            evidence.lossy_reasons,
+            vec!["symmetry_fields_state_merging"]
+        );
     }
 
     #[test]
