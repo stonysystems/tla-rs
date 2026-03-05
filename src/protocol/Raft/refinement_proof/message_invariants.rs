@@ -338,6 +338,32 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 8: Log Terms Monotonic
+    // =========================================================================
+    //
+    // For every server, log entry terms are monotonically non-decreasing:
+    //   forall j, k: 0 <= j <= k < log.len() ==> log[j].term <= log[k].term
+    //
+    // This holds because the simplified Raft spec only appends entries, and
+    // every appended entry has term >= current_term at the time of the append:
+    //   - LClientRequest: appends LLogEntry { term: s.current_term, .. }
+    //   - LFollowerAppendEntries: appends LLogEntry { term: ae_term, .. }
+    //     where ae_term >= s.current_term
+    // Since current_term is monotonically non-decreasing and existing entries
+    // are never modified (no log truncation), the last entry's term is always
+    // >= the current_term at the time of the previous append, ensuring
+    // monotonicity across the entire log.
+
+    pub open spec fn LogTermsMonotonic(ds: RaftDistributedState) -> bool {
+        forall |i: int, j: int, k: int|
+            #![trigger ds.server_states[i].log[j], ds.server_states[i].log[k]]
+            0 <= i < ds.num_servers
+            && 0 <= j <= k
+            && k < ds.server_states[i].log.len()
+        ==> ds.server_states[i].log[j].term <= ds.server_states[i].log[k].term
+    }
+
+    // =========================================================================
     // Step Property: Log Append Only
     // =========================================================================
     //
