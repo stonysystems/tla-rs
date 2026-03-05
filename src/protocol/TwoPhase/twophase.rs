@@ -121,4 +121,19 @@ verus! {
         ||| (exists |rm: int, sent_packets: Seq<LTPCMessage>| LRMReceiveCommit(s, s_, c, rm, sent_packets))
         ||| (exists |rm: int, sent_packets: Seq<LTPCMessage>| LRMReceiveAbort(s, s_, c, rm, sent_packets))
     }
+
+    /// Safety: no resource manager can be both committed and aborted.
+    pub open spec fn LSafetyNoCommitAbortOverlap(s: LState, c: LConstants) -> bool {
+        forall |rm: int| s.rm_committed.contains(rm) ==> !s.rm_aborted.contains(rm)
+    }
+
+    /// Safety: committed resource managers must have been prepared.
+    pub open spec fn LSafetyCommittedSubsetPrepared(s: LState, c: LConstants) -> bool {
+        forall |rm: int| s.rm_committed.contains(rm) ==> s.rm_prepared.contains(rm)
+    }
+
+    /// Safety: TM can only be in committed state after all RMs prepared.
+    pub open spec fn LSafetyTmCommittedRequiresAllPrepared(s: LState, c: LConstants) -> bool {
+        s.tm_state is Committed ==> s.tm_prepared == c.rm
+    }
 }

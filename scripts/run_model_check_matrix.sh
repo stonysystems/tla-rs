@@ -25,6 +25,7 @@ fi
 
 declare -a MATRIX_CASES=(
     "twophase_small|src/protocol/TwoPhase/twophase.rs|src/protocol/TwoPhase/types.rs|transpiler/tests/model_check_fixtures/twophase_small.model.toml"
+    "twophase_safety_invariants|src/protocol/TwoPhase/twophase.rs|src/protocol/TwoPhase/types.rs|transpiler/tests/model_check_fixtures/twophase_safety_invariants.model.toml"
     "primarybackup_small|src/protocol/PrimaryBackup/primarybackup.rs|src/protocol/PrimaryBackup/types.rs|transpiler/tests/model_check_fixtures/primarybackup_small.model.toml"
     "leaderelection_small|src/protocol/LeaderElection/election.rs|src/protocol/LeaderElection/types.rs|transpiler/tests/model_check_fixtures/leaderelection_small.model.toml"
     "paxos_small|src/protocol/Paxos/paxos.rs|src/protocol/Paxos/types.rs|transpiler/tests/model_check_fixtures/paxos_small.model.toml"

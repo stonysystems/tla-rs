@@ -9844,6 +9844,11 @@ Rules for this phase (do not cut corners):
     - checked-in wrapper fixtures (`transpiler/tests/mc_wrapper_fixtures/*.golden.{tla,cfg}`) with module/source-module shape checks
     - checked-in source-first artifact parity (`reports/model_check/{twophase,leaderelection,primarybackup,paxos}_small.json`) for stable fields (`result`, `search.state_dedup`, `summary.states/transitions/depth`)
 - [ ] Prefer real protocol safety invariants/properties over toy fixtures once the engine can execute them.
+  - [x] **33.5.3.a TwoPhase** Add in-source safety invariants and checked-in bounded source-first evidence. [26:03:06, 17:05]
+    - Added Three TwoPhase safety predicates in source spec (`LSafetyNoCommitAbortOverlap`, `LSafetyCommittedSubsetPrepared`, `LSafetyTmCommittedRequiresAllPrepared`) and a dedicated bounded model fixture `twophase_safety_invariants.model.toml`.
+    - Added checked-in artifact `reports/model_check/twophase_safety_invariants.json` and integration guard `test_model_check_twophase_real_safety_invariants_bounded_run` (enforces configured/resolved invariants, non-violation, exactness parity, and stable summary parity vs artifact).
+  - [ ] **33.5.3.b PrimaryBackup** Add in-source safety invariants and checked-in bounded source-first evidence.
+  - [ ] **33.5.3.c LeaderElection** Add in-source safety invariants and checked-in bounded source-first evidence.
 
 ### 33.6 Code-review findings converted to no-corners tasks (2026-03-04)
 

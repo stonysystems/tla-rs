@@ -1,0 +1,28 @@
+[constants.domains.rm]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.types.LTPCMessage]
+kind = "enum_subset"
+variants = ["Prepare", "Commit", "Abort"]
+
+[collections]
+max_set_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+invariants = [
+  "LSafetyNoCommitAbortOverlap",
+  "LSafetyCommittedSubsetPrepared",
+  "LSafetyTmCommittedRequiresAllPrepared",
+]
+check_deadlock = false
+successor_semantics = "deadlock"
