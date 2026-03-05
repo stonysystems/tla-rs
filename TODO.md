@@ -9807,7 +9807,7 @@ Rules for this phase (do not cut corners):
       - Added regression `test_execute_model_check_linit_fallback_supports_enum_variant_is_constraints` to lock enum-`is` support in overflow fallback behavior.
       - Re-ran source-first EPaxos with checked-in fixture `epaxos_state_expansion_limit.model.toml`; first blocker moved to `Model-check candidate expansion for struct \`LConstants\` exceeded limit (200)`.
       - Updated blocker regression to `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` and synchronized `docs/model_checker_status.md` blocker matrix/evidence references.
-  - [ ] **33.5.2.f PBFT (priority #6)**
+  - [x] **33.5.2.f PBFT (priority #6)** [26:03:04, 23:35]
     - [x] **33.5.2.f.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:05, 23:50]
       - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
       - Strengthened fixture intent/minimality checks (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`), now carried by `test_model_check_pbft_bounded_run`.
