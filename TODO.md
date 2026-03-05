@@ -9794,7 +9794,9 @@ Rules for this phase (do not cut corners):
       - Re-ran source-first VerticalPaxos with checked-in fixture `verticalpaxos_state_expansion_limit.model.toml`; first blocker moved to `Configuration error: Existential domain expansion exceeded limit (200 assignments)`.
       - Updated blocker regression to `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` and synchronized `docs/model_checker_status.md` blocker matrix/evidence references.
   - [ ] **33.5.2.e EPaxos (priority #5)**
-    - [ ] **33.5.2.e.1** Keep checked-in minimal blocker model and exact blocker classification current.
+    - [x] **33.5.2.e.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:06, 10:40]
+      - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
+      - Strengthened regression `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` to enforce fixture intent/minimality (`Minimal checked-in model ... LState candidate expansion limit`, `max_depth = 1`, `max_states = 200`).
     - [ ] **33.5.2.e.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
   - [ ] **33.5.2.f PBFT (priority #6)**
     - [ ] **33.5.2.f.1** Keep checked-in minimal blocker model and exact blocker classification current.
