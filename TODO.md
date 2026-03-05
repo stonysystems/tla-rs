@@ -9833,7 +9833,7 @@ Rules for this phase (do not cut corners):
     - [x] **33.5.2.i.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence. [26:03:06, 15:30]
       - Re-ran source-first exact-mode TwoPhase with checked-in fixture `transpiler/tests/model_check_fixtures/twophase_small.model.toml`; run remains green (`result = ok`, `states = 3`, `transitions = 4`, `depth = 1`).
       - Strengthened `test_model_check_twophase_bounded_run` to enforce bounded fixture intent (`max_depth = 1`, `max_states = 200`), checked-in artifact presence (`reports/model_check/twophase_small.json`), and stable live-vs-artifact parity (`result`, `search.state_dedup`, `summary.states/transitions/depth`).
-  - [ ] **33.5.2.j LeaderElection (priority #10)**
+  - [x] **33.5.2.j LeaderElection (priority #10)** [26:03:04, 23:43]
     - [x] **33.5.2.j.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence. [26:03:06, 15:50]
       - Re-ran source-first exact-mode LeaderElection with checked-in fixture `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml`; run remains green (`result = ok`, `states = 4`, `transitions = 3`, `depth = 1`).
       - Strengthened `test_model_check_leader_election_bounded_run` to enforce bounded fixture intent (`max_depth = 1`, `max_states = 200`), checked-in artifact presence (`reports/model_check/leaderelection_small.json`), and stable live-vs-artifact parity (`result`, `search.state_dedup`, `summary.states/transitions/depth`).
