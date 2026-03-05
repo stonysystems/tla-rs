@@ -9719,7 +9719,12 @@ Rules for this phase (do not cut corners):
       - guard-pruned fallback telemetry (`enumeration_candidate_evaluations`, `guard_pruned_candidate_evaluations`) on `reports/model_check/guard_pruned_enumeration.json`
     - Added integration guard `test_model_check_exact_mode_optimization_delta_snapshot_matches_checked_in_artifacts` so delta rows stay synchronized with checked-in JSON artifacts and reachable-state guards.
     - Added replayable fixture + matrix artifact for guard-pruned enumeration (`guard_pruned_enumeration.*`, included in `scripts/run_model_check_matrix.sh`).
-- [ ] Keep lossy modes (`hash_compaction64`) documented and reported as bug-finding accelerators, not proof-strength runs.
+- [x] Keep lossy modes (`hash_compaction64`) documented and reported as bug-finding accelerators, not proof-strength runs. [26:03:06, 02:05]
+  - Added explicit search evidence classification in model-check outputs (`search.evidence_mode.{class,proof_strength,lossy_reasons,guidance}` in JSON + CLI summary line/note) so lossy runs are mechanically labeled `lossy_bug_finding_accelerator`.
+  - Added regression coverage:
+    - unit: `test_classify_search_evidence_mode_marks_canonical_as_exact_proof_strength`, `test_classify_search_evidence_mode_marks_hash_compaction_as_lossy_bug_finding`, `test_classify_search_evidence_mode_marks_symmetry_merging_as_lossy_bug_finding`
+    - integration: `test_model_check_report_classifies_exact_vs_lossy_search_evidence_mode` with checked-in hash-compaction fixture `quantifier_forall_exists_hash_compaction.model.toml`.
+  - Updated `docs/model_checker_status.md` and `docs/model-checking-source-first.md` to document the report contract and evidence anchors.
 - [ ] Add benchmark or regression automation that compares before/after telemetry on the same checked-in models.
 - [ ] Reject any optimization that changes exact-mode reachable-state counts unless the change is explained by a correctness bug fix and documented.
 

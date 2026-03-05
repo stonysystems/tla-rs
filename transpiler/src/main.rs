@@ -2151,6 +2151,46 @@ fn successor_semantics_to_solver_semantics(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SearchEvidenceMode {
+    class: &'static str,
+    proof_strength: bool,
+    lossy_reasons: Vec<&'static str>,
+    guidance: &'static str,
+}
+
+fn classify_search_evidence_mode(
+    search: &verus_transpiler::modelcheck::config::SearchLimits,
+) -> SearchEvidenceMode {
+    use verus_transpiler::modelcheck::config::StateDedupMode;
+
+    let mut lossy_reasons = Vec::new();
+    if matches!(search.state_dedup, StateDedupMode::HashCompaction64) {
+        lossy_reasons.push("hash_compaction64_collision_risk");
+    }
+    if !search.symmetry_fields.is_empty() {
+        lossy_reasons.push("symmetry_fields_state_merging");
+    }
+
+    if lossy_reasons.is_empty() {
+        SearchEvidenceMode {
+            class: "exact_proof_strength",
+            proof_strength: true,
+            lossy_reasons,
+            guidance:
+                "Exact search settings preserve explored-state distinctions for proof-strength bounded evidence.",
+        }
+    } else {
+        SearchEvidenceMode {
+            class: "lossy_bug_finding_accelerator",
+            proof_strength: false,
+            lossy_reasons,
+            guidance:
+                "Lossy search settings can merge distinct states and miss behaviors; use only as bug-finding acceleration.",
+        }
+    }
+}
+
 fn validate_fairness_labels_against_lnext_branches(
     fairness: &verus_transpiler::modelcheck::config::FairnessConfig,
     available_labels: &std::collections::BTreeSet<String>,
@@ -3439,6 +3479,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 *timeout_ms,
                 model.as_path(),
             )?;
+            let search_evidence_mode = classify_search_evidence_mode(&model_config.search);
 
             if *json_report {
                 let report = serde_json::json!({
@@ -3465,6 +3506,12 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "max_depth": model_config.search.max_depth,
                         "max_states": model_config.search.max_states,
                         "timeout_ms": model_config.search.timeout_ms,
+                        "evidence_mode": {
+                            "class": search_evidence_mode.class,
+                            "proof_strength": search_evidence_mode.proof_strength,
+                            "lossy_reasons": search_evidence_mode.lossy_reasons,
+                            "guidance": search_evidence_mode.guidance,
+                        },
                     },
                     "summary": {
                         "states": execution.summary.states,
@@ -3560,6 +3607,15 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 model_config.search.max_states,
                 model_config.search.timeout_ms
             );
+            println!(
+                "  search_evidence: class={}, proof_strength={}, lossy_reasons={}",
+                search_evidence_mode.class,
+                search_evidence_mode.proof_strength,
+                search_evidence_mode.lossy_reasons.join(",")
+            );
+            if !search_evidence_mode.proof_strength {
+                println!("  search_evidence_note: {}", search_evidence_mode.guidance);
+            }
             if !execution.por_pruned_branches.is_empty() {
                 println!("  por_pruned_branches: {:?}", execution.por_pruned_branches);
             }
@@ -7199,6 +7255,46 @@ state_dedup = "hash_compaction64"
         assert_eq!(execution.summary.result, "ok");
         assert!(execution.summary.states >= 1);
         assert_eq!(execution.exploration.stats.hash_compaction_collisions, 0);
+    }
+
+    #[test]
+    fn test_classify_search_evidence_mode_marks_canonical_as_exact_proof_strength() {
+        use verus_transpiler::modelcheck::config::SearchLimits;
+
+        let search = SearchLimits::default();
+        let evidence = classify_search_evidence_mode(&search);
+
+        assert_eq!(evidence.class, "exact_proof_strength");
+        assert!(evidence.proof_strength);
+        assert!(evidence.lossy_reasons.is_empty());
+        assert!(evidence.guidance.contains("proof-strength"));
+    }
+
+    #[test]
+    fn test_classify_search_evidence_mode_marks_hash_compaction_as_lossy_bug_finding() {
+        use verus_transpiler::modelcheck::config::{SearchLimits, StateDedupMode};
+
+        let mut search = SearchLimits::default();
+        search.state_dedup = StateDedupMode::HashCompaction64;
+        let evidence = classify_search_evidence_mode(&search);
+
+        assert_eq!(evidence.class, "lossy_bug_finding_accelerator");
+        assert!(!evidence.proof_strength);
+        assert_eq!(evidence.lossy_reasons, vec!["hash_compaction64_collision_risk"]);
+        assert!(evidence.guidance.contains("bug-finding"));
+    }
+
+    #[test]
+    fn test_classify_search_evidence_mode_marks_symmetry_merging_as_lossy_bug_finding() {
+        use verus_transpiler::modelcheck::config::SearchLimits;
+
+        let mut search = SearchLimits::default();
+        search.symmetry_fields = vec!["node_a".to_string()];
+        let evidence = classify_search_evidence_mode(&search);
+
+        assert_eq!(evidence.class, "lossy_bug_finding_accelerator");
+        assert!(!evidence.proof_strength);
+        assert_eq!(evidence.lossy_reasons, vec!["symmetry_fields_state_merging"]);
     }
 
     #[test]

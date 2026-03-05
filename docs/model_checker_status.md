@@ -22,13 +22,13 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - Evaluate struct-update expressions (`Type { updated_field: ..., ..base }`) for struct/enum values.
 - Evaluate map-domain builtin method calls (`map.dom()`) for finite map values.
 - Track solver fallback telemetry in run summaries/JSON (`direct_assignment_branch_solves`, `enumeration_fallback_branch_solves`, `enumeration_candidate_evaluations`, `guard_pruned_candidate_evaluations`) and enforce a per-state/branch candidate-enumeration guardrail.
-- Emit JSON reports including search settings, reduction telemetry, stop reason, and violation payloads.
+- Emit JSON reports including search settings, reduction telemetry, explicit exact-vs-lossy evidence classification (`search.evidence_mode.*`), stop reason, and violation payloads.
 
 ### 1.2 Reduction/analysis knobs currently implemented
 
-- `search.state_dedup = "canonical"` (exact dedup).
-- `search.state_dedup = "hash_compaction64"` (lossy dedup; collision-prone by design).
-- `search.symmetry_fields = [...]` (field-level symmetry normalization before dedup).
+- `search.state_dedup = "canonical"` (exact dedup; report class `exact_proof_strength`).
+- `search.state_dedup = "hash_compaction64"` (lossy dedup; collision-prone by design; report class `lossy_bug_finding_accelerator`).
+- `search.symmetry_fields = [...]` (field-level symmetry normalization before dedup; treated as lossy evidence mode).
 - `search.por_heuristic = "invisible_branch"` (syntactic branch-pruning heuristic).
 - `properties.successor_semantics = "deadlock" | "stuttering"`.
 
@@ -219,6 +219,17 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
   - `test_execute_model_check_reports_guard_pruned_enumeration_telemetry` verifies command-level summary telemetry propagates the optimization (`guard_pruned_candidate_evaluations == 2`) while keeping exact fallback semantics.
 - `transpiler/tests/integration.rs`:
   - `test_model_check_guard_pruned_enumeration_bounded_run` replays a checked-in fixture and verifies report telemetry (`enumeration_candidate_evaluations == 0`, `guard_pruned_candidate_evaluations == 2`) through the CLI/JSON surface.
+
+### 3.17 Exact-vs-lossy evidence classification guard
+
+- `transpiler/src/main.rs`:
+  - `test_classify_search_evidence_mode_marks_canonical_as_exact_proof_strength`
+  - `test_classify_search_evidence_mode_marks_hash_compaction_as_lossy_bug_finding`
+  - `test_classify_search_evidence_mode_marks_symmetry_merging_as_lossy_bug_finding`
+- `transpiler/tests/integration.rs`:
+  - `test_model_check_report_classifies_exact_vs_lossy_search_evidence_mode` verifies JSON report field `search.evidence_mode` is:
+    - `class = "exact_proof_strength"` for canonical dedup fixture
+    - `class = "lossy_bug_finding_accelerator"` with explicit lossy reason `hash_compaction64_collision_risk` for hash-compaction fixture
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 

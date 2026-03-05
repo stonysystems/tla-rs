@@ -79,7 +79,7 @@ If `--types` is omitted, the tool defaults to sibling `types.rs`.
 `model.toml` can also choose state dedup mode under `[search]`:
 
 - `state_dedup = "canonical"` (default, exact)
-- `state_dedup = "hash_compaction64"` (lossy hash compaction)
+- `state_dedup = "hash_compaction64"` (lossy hash compaction; bug-finding only)
 - `symmetry_fields = ["field_a", "field_b"]` (optional top-level `LState` fields to symmetry-normalize before dedup)
 - `por_heuristic = "none" | "invisible_branch"` (optional conservative branch-pruning mode; requires `properties.check_deadlock = false`)
 
@@ -95,6 +95,7 @@ With `--json-report`, output includes:
 - `summary.elapsed_ms`
 - reduction telemetry (`summary.pruned_by_por`, `summary.symmetry_collapses`, `summary.hash_compaction_collisions`)
 - solver/memoization telemetry (`summary.direct_assignment_branch_solves`, `summary.enumeration_fallback_branch_solves`, `summary.enumeration_candidate_evaluations`, `summary.guard_pruned_candidate_evaluations`, `summary.successor_cache_hits`, `summary.successor_cache_misses`)
+- explicit search evidence classification (`search.evidence_mode.class`, `search.evidence_mode.proof_strength`, `search.evidence_mode.lossy_reasons`, `search.evidence_mode.guidance`) so lossy runs are labeled as bug-finding accelerators
 - `liveness` summary (when temporal config is present):
   - `obligations`, `checked`, `violation_found`, `skipped_reason`
   - configured fairness labels (`fairness.weak` / `fairness.strong`) and counts
@@ -195,6 +196,7 @@ Finite-domain expansion and runtime values currently cover:
 - Hash-compaction caveat:
   - `search.state_dedup = "hash_compaction64"` is intentionally lossy and can merge distinct states on hash collisions.
   - Treat it as a bug-finding acceleration mode, not as a sound proof mode.
+  - JSON reports mark this explicitly as `search.evidence_mode.class = "lossy_bug_finding_accelerator"` and `proof_strength = false`.
 - Symmetry-field caveat:
   - `search.symmetry_fields` intentionally merges states by anonymizing selected top-level field identities before dedup.
   - Use only when the selected fields are truly symmetric by protocol design.

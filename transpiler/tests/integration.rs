@@ -9141,6 +9141,96 @@ fn test_model_check_quantifier_forall_exists_bounded_run() {
 }
 
 #[test]
+fn test_model_check_report_classifies_exact_vs_lossy_search_evidence_mode() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+
+    let exact_report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "quantifier_forall_exists.protocol.rs",
+        "quantifier_forall_exists.types.rs",
+        "quantifier_forall_exists.model.toml",
+    );
+    assert_eq!(
+        exact_report
+            .pointer("/search/evidence_mode/class")
+            .and_then(|v| v.as_str()),
+        Some("exact_proof_strength"),
+        "canonical dedup should be classified as exact proof-strength mode; report={}",
+        exact_report
+    );
+    assert_eq!(
+        exact_report
+            .pointer("/search/evidence_mode/proof_strength")
+            .and_then(|v| v.as_bool()),
+        Some(true),
+        "canonical dedup should keep proof_strength=true; report={}",
+        exact_report
+    );
+    let exact_lossy_reasons = exact_report
+        .pointer("/search/evidence_mode/lossy_reasons")
+        .and_then(|v| v.as_array())
+        .unwrap_or_else(|| {
+            panic!(
+                "exact run should expose lossy_reasons array in report: {}",
+                exact_report
+            )
+        });
+    assert!(
+        exact_lossy_reasons.is_empty(),
+        "exact run should have no lossy reasons; report={}",
+        exact_report
+    );
+
+    let lossy_report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "quantifier_forall_exists.protocol.rs",
+        "quantifier_forall_exists.types.rs",
+        "quantifier_forall_exists_hash_compaction.model.toml",
+    );
+    assert_eq!(
+        lossy_report
+            .pointer("/search/evidence_mode/class")
+            .and_then(|v| v.as_str()),
+        Some("lossy_bug_finding_accelerator"),
+        "hash_compaction64 dedup should be classified as lossy bug-finding mode; report={}",
+        lossy_report
+    );
+    assert_eq!(
+        lossy_report
+            .pointer("/search/evidence_mode/proof_strength")
+            .and_then(|v| v.as_bool()),
+        Some(false),
+        "hash_compaction64 dedup should set proof_strength=false; report={}",
+        lossy_report
+    );
+    let lossy_reasons = lossy_report
+        .pointer("/search/evidence_mode/lossy_reasons")
+        .and_then(|v| v.as_array())
+        .unwrap_or_else(|| {
+            panic!(
+                "lossy run should expose lossy_reasons array in report: {}",
+                lossy_report
+            )
+        });
+    assert!(
+        lossy_reasons.iter().any(
+            |reason| reason.as_str() == Some("hash_compaction64_collision_risk")
+        ),
+        "hash-compaction run should record collision-risk reason; report={}",
+        lossy_report
+    );
+    let guidance = lossy_report
+        .pointer("/search/evidence_mode/guidance")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert!(
+        guidance.contains("bug-finding"),
+        "lossy run guidance should explicitly flag bug-finding-only usage; report={}",
+        lossy_report
+    );
+}
+
+#[test]
 fn test_model_check_match_expression_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
     let report = run_model_check_json_report_from_fixtures(
