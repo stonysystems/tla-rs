@@ -378,6 +378,7 @@ verus! {
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         &&& CurrentTermGeLogTerms(ds)
         &&& LogTermsMonotonic(ds)
+        &&& TermsNonNegative(ds)
     }
 
     // =========================================================================
@@ -409,8 +410,8 @@ verus! {
         // Ghost state invariants: vote_log_len empty + network empty, vacuously true
         // - VoteLogLenCoversNetwork, VoteLogLenBounded, VoteLogLenEntryTermBound,
         //   VoteGrantedLogUpToDateAtVoteTime
-        // Log structure invariants: empty logs, vacuously true
-        // - CurrentTermGeLogTerms, LogTermsMonotonic
+        // Log structure invariants: empty logs + current_term = 0, vacuously/trivially true
+        // - CurrentTermGeLogTerms, LogTermsMonotonic, TermsNonNegative
     }
 
     // =========================================================================
@@ -6717,6 +6718,81 @@ verus! {
     }
 
     // =========================================================================
+    // Invariant Induction: TermsNonNegative
+    // =========================================================================
+    //
+    // All current_terms and log entry terms are >= 0.
+    //
+    // Proof sketch:
+    // - Non-stepping server: state unchanged, IH transfers.
+    // - Stepping server: current_term only goes up (from >= 0 to >= 0).
+    //   Old entries preserved. New entry term >= current_term >= 0.
+
+    pub proof fn lemma_terms_non_negative_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            TermsNonNegative(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            TermsNonNegative(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        // current_term non-negativity
+        assert forall |i: int|
+            #![trigger ds_.server_states[i].current_term]
+            0 <= i < ds_.num_servers
+        implies ds_.server_states[i].current_term >= 0 by {
+            if i != server_id {
+                assert(ds_.server_states[i] == ds.server_states[i]);
+            } else {
+                lemma_lnext_term_monotone(s, s_, c);
+                // s_.current_term >= s.current_term >= 0
+            }
+        };
+
+        // log entry term non-negativity
+        assert forall |i: int, k: int|
+            #![trigger ds_.server_states[i].log[k]]
+            0 <= i < ds_.num_servers
+            && 0 <= k < ds_.server_states[i].log.len()
+        implies ds_.server_states[i].log[k].term >= 0 by {
+            if i != server_id {
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                assert(TermsNonNegative(ds));
+            } else {
+                lemma_lnext_log_preserved_or_extended(s, s_, c);
+                if k < s.log.len() {
+                    assert(s_.log[k] == s.log[k]);
+                    assert(TermsNonNegative(ds));
+                } else {
+                    // New entry
+                    assert(s_.log.len() == s.log.len() + 1);
+                    let entry = s_.log[k];
+                    lemma_lnext_fresh_append_entry_term_ge_pre_current(
+                        s, s_, c, k, entry);
+                    // entry.term >= s.current_term >= 0
+                }
+            }
+        };
+    }
+
+    // =========================================================================
     // Ghost State Invariant Induction: VoteGrantedLogUpToDateAtVoteTime
     // =========================================================================
     //
@@ -6810,6 +6886,7 @@ verus! {
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         lemma_current_term_ge_log_terms_inductive(ds, ds_);
         lemma_log_terms_monotonic_inductive(ds, ds_);
+        lemma_terms_non_negative_inductive(ds, ds_);
     }
 
     // =========================================================================

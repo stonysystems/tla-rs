@@ -385,6 +385,33 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 8c: Terms Non-Negative
+    // =========================================================================
+    //
+    // For every server:
+    //   - current_term >= 0
+    //   - All log entry terms >= 0
+    //
+    // This holds because:
+    //   - LInit sets current_term = 0 and log = []
+    //   - LTimeout: current_term' = current_term + 1 >= 1
+    //   - LClientRequest: appends at current_term >= 0
+    //   - LFollowerAppendEntries: ae_term >= current_term >= 0
+    //   - Step-ups to higher terms maintain non-negativity by IH
+
+    pub open spec fn TermsNonNegative(ds: RaftDistributedState) -> bool {
+        &&& (forall |i: int|
+            #![trigger ds.server_states[i].current_term]
+            0 <= i < ds.num_servers
+            ==> ds.server_states[i].current_term >= 0)
+        &&& (forall |i: int, k: int|
+            #![trigger ds.server_states[i].log[k]]
+            0 <= i < ds.num_servers
+            && 0 <= k < ds.server_states[i].log.len()
+            ==> ds.server_states[i].log[k].term >= 0)
+    }
+
+    // =========================================================================
     // Step Property: Log Append Only
     // =========================================================================
     //
