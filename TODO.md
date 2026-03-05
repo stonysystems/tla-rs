@@ -9829,7 +9829,7 @@ Rules for this phase (do not cut corners):
     - [x] **33.5.2.h.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence. [26:03:06, 15:05]
       - Re-ran source-first exact-mode PrimaryBackup with checked-in fixture `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml`; run remains green (`result = ok`, `states = 2`, `transitions = 2`, `depth = 1`).
       - Strengthened `test_model_check_primarybackup_helper_call_branches_bounded_run` to enforce bounded fixture intent (`max_depth = 1`, `max_states = 200`), checked-in artifact presence (`reports/model_check/primarybackup_small.json`), and stable live-vs-artifact parity (`result`, `search.state_dedup`, `summary.states/transitions/depth`).
-  - [ ] **33.5.2.i TwoPhase (priority #9)**
+  - [x] **33.5.2.i TwoPhase (priority #9)** [26:03:04, 23:42]
     - [x] **33.5.2.i.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence. [26:03:06, 15:30]
       - Re-ran source-first exact-mode TwoPhase with checked-in fixture `transpiler/tests/model_check_fixtures/twophase_small.model.toml`; run remains green (`result = ok`, `states = 3`, `transitions = 4`, `depth = 1`).
       - Strengthened `test_model_check_twophase_bounded_run` to enforce bounded fixture intent (`max_depth = 1`, `max_states = 200`), checked-in artifact presence (`reports/model_check/twophase_small.json`), and stable live-vs-artifact parity (`result`, `search.state_dedup`, `summary.states/transitions/depth`).
