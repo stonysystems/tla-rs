@@ -125,6 +125,68 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 2c'': RequestVote log summary always valid
+    // =========================================================================
+    //
+    // For any in-network RequestVote packet sent by candidate d, d's current
+    // log ALWAYS satisfies the packet's referenced last-log summary, regardless
+    // of whether d has advanced to a higher term. This holds because:
+    //   - At send time (LTimeout), RequestVote carries d's exact log summary.
+    //   - Logs are append-only: existing entries are never removed or modified.
+    //   - Therefore the summary remains valid at all future states.
+    //
+    // This is strictly stronger than RequestVoteSummaryStillValidAtSameTerm
+    // (which requires d.current_term == packet.term). It is needed for the
+    // term-induction proof of LeaderCompleteness (Phase 34.7.4), where the
+    // ETHVQ intermediate server d may have advanced past the RequestVote's term.
+
+    pub open spec fn RequestVoteSummaryAlwaysValid(ds: RaftDistributedState) -> bool {
+        forall |p: LRaftPacket| ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::RequestVote {
+                    term: t,
+                    candidate: d,
+                    last_log_index: last_idx,
+                    last_log_term: last_term,
+                } => {
+                    0 <= d < ds.num_servers ==> {
+                        &&& 0 <= last_idx <= ds.server_states[d].log.len()
+                        &&& (last_idx == 0 ==> last_term == 0)
+                        &&& (last_idx > 0 ==> ds.server_states[d].log[last_idx - 1].term == last_term)
+                    }
+                }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
+    // Message Invariant 2b'': RequestVote last_log_term < term
+    // =========================================================================
+    //
+    // For any in-network RequestVote with last_log_index > 0, we have
+    // last_log_term < term. This holds because LTimeout creates the RV
+    // with term = s.current_term + 1 and last_log_term = s.log.last().term,
+    // and CurrentTermGeLogTerms gives s.log.last().term <= s.current_term < term.
+    //
+    // When last_log_index == 0, last_log_term == 0, so the bound is trivially
+    // satisfied as long as term > 0 (which holds since term starts at 1+).
+
+    pub open spec fn RequestVoteLastLogTermBound(ds: RaftDistributedState) -> bool {
+        forall |p: LRaftPacket| ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::RequestVote {
+                    term: t,
+                    last_log_index: last_idx,
+                    last_log_term: last_term,
+                    ..
+                } => {
+                    last_idx > 0 ==> last_term < t
+                }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
     // Message Invariant 2c': RequestVote log params consistent per (candidate, term)
     // =========================================================================
     //

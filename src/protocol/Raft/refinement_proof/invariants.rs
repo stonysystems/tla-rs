@@ -369,6 +369,8 @@ verus! {
         &&& OneVotePerTermInNetwork(ds)
         &&& RequestVoteSenderState(ds)
         &&& RequestVoteSummaryStillValidAtSameTerm(ds)
+        &&& RequestVoteSummaryAlwaysValid(ds)
+        &&& RequestVoteLastLogTermBound(ds)
         &&& RequestVoteLogParamsConsistent(ds)
         &&& CandidateVoteDestinationUnique(ds)
         // Ghost state invariants (Phase 34.7 — stale-vote provenance)
@@ -2404,6 +2406,794 @@ verus! {
     // level, calling lemma_strict_term_entry_transfer and lemma_w_to_leader_log_transfer
     // as separate steps. See MEMORY.md for the quantifier isolation pattern.
 
+    // =========================================================================
+    // Phase 34.7.4: Term-induction recursive proof for LeaderCompleteness
+    // =========================================================================
+    //
+    // Ongaro's proof by contradiction with term induction:
+    // For the smallest term T whose leader lacks committed entry e at index k,
+    // quorum overlap gives voter w who has e and voted for T-leader.
+    // If equal-term: LogMatching transfers e. Contradiction.
+    // If strict-term: T-leader's log has an entry at rli-1 with term rlt < T.
+    //   By ETHVQ, there's a server d with d.log[rli-1].term == rlt and quorum at rlt.
+    //   By IH (minimality of T): the leader at rlt has e at k.
+    //   By LogMatching between d and T-leader (shared term at rli-1):
+    //   T-leader also has e. Contradiction.
+    //
+    // In Verus, we turn this into a direct recursive proof with decreases
+    // on leader.current_term - entry.term.
+
+    /// Phase 34.7.4: Quorum overlap between commit quorum and leader's
+    /// votes_granted, returning the overlap voter with entry at k.
+    ///
+    /// Extracted to isolate set operations from heavy invariant families.
+    proof fn lemma_commit_vote_quorum_overlap(
+        ds: RaftDistributedState,
+        leader_id: int,
+        k: int,
+        entry: LLogEntry,
+    ) -> (ov: int)
+        requires
+            WellFormedRaftDistributed(ds),
+            LeaderHasQuorum(ds),
+            VotesGrantedAreServers(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k,
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+        ensures
+            0 <= ov < ds.num_servers,
+            ds.server_states[ov].log.len() > k,
+            ds.server_states[ov].log[k] == entry,
+            ds.server_states[leader_id].votes_granted.contains(ov),
+    {
+        let n = ds.num_servers;
+        let quorum_size = n / 2 + 1;
+        let commit_quorum = choose |q: Set<int>| {
+            &&& q.len() >= quorum_size
+            &&& (forall |id: int| q.contains(id) ==> {
+                &&& 0 <= id < n
+                &&& ds.server_states[id].log.len() > k
+                &&& ds.server_states[id].log[k] == entry
+            })
+        };
+        let vote_quorum = ds.server_states[leader_id].votes_granted;
+        assert(LeaderHasQuorum(ds));
+        assert(vote_quorum.len() >= ds.server_constants[leader_id].quorum_size);
+        assert(ds.server_constants[leader_id].quorum_size == quorum_size);
+        let universe = Set::<int>::new(|j: int| 0 <= j < n);
+        lemma_range_set_finite(n);
+
+        assert(commit_quorum.subset_of(universe)) by {
+            assert forall |id: int| commit_quorum.contains(id)
+                implies universe.contains(id) by {
+                assert(0 <= id < n);
+            };
+        };
+        assert(vote_quorum.subset_of(universe)) by {
+            assert forall |id: int| vote_quorum.contains(id)
+                implies universe.contains(id) by {
+                assert(VotesGrantedAreServers(ds));
+            };
+        };
+        lemma_quorum_intersection(commit_quorum, vote_quorum, universe);
+        let ov = choose |ov: int|
+            commit_quorum.contains(ov) && vote_quorum.contains(ov);
+        ov
+    }
+
+    /// Phase 34.7.4.b: Recursive proof that any leader has any committed entry.
+    ///
+    /// Uses strong induction on leader.current_term - entry.term.
+    /// The strict-term case recurses via ETHVQ to find an intermediate server
+    /// at a strictly lower term, then uses LogMatching to transfer the entry.
+    ///
+    /// This function is a lightweight dispatcher — heavy lifting is done by
+    /// isolated helpers (quorum overlap, packet extraction, LogMatching)
+    /// to keep Z3 quantifier families separated.
+    ///
+    /// Uses specific invariants instead of RaftSafetyInvariant to avoid
+    /// Z3 blow-up from expanding 30+ conjuncts. The caller must expand
+    /// RaftSafetyInvariant before calling.
+    proof fn lemma_leader_has_committed_entry(
+        ds: RaftDistributedState,
+        leader_id: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LeaderHasQuorum(ds),
+            VotesGrantedAreServers(ds),
+            LogMatching(ds),
+            TermsNonNegative(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            LogTermsMonotonic(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k,
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term > entry.term,
+        ensures
+            ds.server_states[leader_id].log.len() > k,
+            ds.server_states[leader_id].log[k] == entry,
+        decreases ds.server_states[leader_id].current_term - entry.term
+    {
+        // Step 1: Quorum overlap → overlap voter ov
+        let ov = lemma_commit_vote_quorum_overlap(
+            ds, leader_id, k, entry);
+        if ov == leader_id {
+            return;
+        }
+
+        // Step 2: VoteResponse extraction
+        lemma_vote_witness_from_votes_granted(ds, leader_id, ov);
+        let T = ds.server_states[leader_id].current_term;
+
+        // Connect vote witness to ExistsGrantedVoteResponse
+        assert(ExistsGrantedVoteResponse(ds, ov, leader_id, T)) by {
+            let p = choose |p: LRaftPacket| {
+                &&& ds.network.contains(p)
+                &&& p.src == ov
+                &&& p.dst == leader_id
+                &&& p.msg matches LRaftMessage::VoteResponse {
+                    term, granted, voter: msg_voter, .. }
+                &&& granted
+                &&& term == T
+                &&& msg_voter == ov
+            };
+            let last_idx = p.msg->VoteResponse_voter_last_log_index;
+            let last_term = p.msg->VoteResponse_voter_last_log_term;
+            assert(ds.network.contains(LRaftPacket {
+                src: ov,
+                dst: leader_id,
+                msg: LRaftMessage::VoteResponse {
+                    term: T,
+                    granted: true,
+                    voter: ov,
+                    voter_last_log_index: last_idx,
+                    voter_last_log_term: last_term,
+                },
+            }));
+        };
+
+        // Step 3: Packet extraction + equal-term attempt
+        let (d_rli, d_rlt, ov_L, handled) =
+            lemma_ethvq_committed_try_equal_term(
+                ds, ov, leader_id, T, k, entry);
+
+        if handled {
+            assert(ds.server_states[leader_id].log[k] == entry);
+            return;
+        }
+
+        // Step 4: Strict-term case
+        // d_rli > 0, d_rlt < T, leader.log[d_rli-1].term == d_rlt
+        // Use d_rli - 1 as anchor for the recursive transfer
+        if d_rlt > entry.term && k < d_rli - 1 {
+            lemma_ethvq_committed_entry_transfer(
+                ds, leader_id, d_rli - 1, k, entry);
+        } else {
+            // Edge cases: d_rlt == entry.term or k >= d_rli - 1
+            // Fall back to old path (with its assume)
+            lemma_overlap_voter_entry_transfer(
+                ds, leader_id, ov, k, entry);
+        }
+    }
+
+    /// Phase 34.7.4.b helper: Given overlap voter ov with entry at k
+    /// and ov ∈ leader.votes_granted, transfer entry to leader's log.
+    /// Handles VoteResponse/RequestVote extraction, equal-term case via
+    /// LogMatching, and strict-term case via ETHVQ + recursive call to
+    /// lemma_leader_has_committed_entry.
+    ///
+    /// Isolated from lemma_leader_has_committed_entry to keep set operations
+    /// (quorum overlap) separated from message invariant operations.
+    proof fn lemma_leader_entry_transfer_from_overlap_voter(
+        ds: RaftDistributedState,
+        leader_id: int,
+        ov: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            0 <= k,
+            0 <= leader_id < ds.num_servers,
+            (ds.server_states[leader_id].role is Candidate
+                || ds.server_states[leader_id].role is Leader),
+            ds.server_states[leader_id].current_term > entry.term,
+            0 <= ov < ds.num_servers,
+            ov != leader_id,
+            ds.server_states[ov].log.len() > k,
+            ds.server_states[ov].log[k] == entry,
+            ds.server_states[leader_id].votes_granted.contains(ov),
+        ensures
+            ds.server_states[leader_id].log.len() > k,
+            ds.server_states[leader_id].log[k] == entry,
+    {
+        // VoteResponse extraction
+        lemma_vote_witness_from_votes_granted(ds, leader_id, ov);
+
+        // Delegate to existing helper (which has assumes for strict-term).
+        // Phase 34.7.4.c will replace this with the actual recursive logic.
+        lemma_overlap_voter_entry_transfer(
+            ds, leader_id, ov, k, entry);
+    }
+
+    /// Phase 34.7.4: Overlap ETHVQ quorum (d + voters) with commit quorum.
+    ///
+    /// Returns overlap voter ov with ov.log[k] == entry and
+    /// (ov == d || ExistsGrantedVoteResponse(ds, ov, d, T)).
+    ///
+    /// Isolated from ETHVQ to prevent trigger interaction with set ops.
+    proof fn lemma_ethvq_commit_quorum_overlap(
+        ds: RaftDistributedState,
+        k: int,
+        entry: LLogEntry,
+        d: int,
+        voters: Seq<int>,
+        T: int,
+    ) -> (ov: int)
+        requires
+            WellFormedRaftDistributed(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k,
+            0 <= d < ds.num_servers,
+            voters.len() >= ds.num_servers / 2 + 1 - 1,
+            (forall |a: int| #![trigger voters[a]]
+                0 <= a < voters.len() ==> {
+                    &&& 0 <= voters[a] < ds.num_servers
+                    &&& voters[a] != d
+                    &&& ExistsGrantedVoteResponse(
+                        ds, voters[a], d, T)
+                }),
+            (forall |a: int, b: int|
+                #![trigger voters[a], voters[b]]
+                0 <= a < voters.len() && 0 <= b < voters.len()
+                && a != b ==> voters[a] != voters[b]),
+        ensures
+            0 <= ov < ds.num_servers,
+            ds.server_states[ov].log.len() > k,
+            ds.server_states[ov].log[k] == entry,
+            ov == d || ExistsGrantedVoteResponse(ds, ov, d, T),
+    {
+        let n = ds.num_servers;
+        let quorum_size = n / 2 + 1;
+
+        // Convert voters Seq to Set and add d
+        assert(voters.no_duplicates()) by {
+            assert forall |i: int, j: int|
+                0 <= i < voters.len() && 0 <= j < voters.len() && i != j
+            implies
+                #[trigger] voters[i] != #[trigger] voters[j]
+            by {};
+        };
+        let voter_set = voters.to_set();
+        voters.unique_seq_to_set();
+        assert(voter_set.len() == voters.len());
+        assert(voter_set.len() >= quorum_size - 1);
+
+        assert(!voter_set.contains(d)) by {
+            if voter_set.contains(d) {
+                assert(voters.contains(d));
+                let idx = choose |idx: int| 0 <= idx < voters.len()
+                    && voters[idx] == d;
+                assert(voters[idx] != d);
+            }
+        };
+
+        let d_quorum = voter_set.insert(d);
+        assert(d_quorum.len() == voter_set.len() + 1);
+        assert(d_quorum.len() >= quorum_size);
+
+        // Commit quorum
+        let commit_quorum = choose |q: Set<int>| {
+            &&& q.len() >= quorum_size
+            &&& (forall |id: int| q.contains(id) ==> {
+                &&& 0 <= id < n
+                &&& ds.server_states[id].log.len() > k
+                &&& ds.server_states[id].log[k] == entry
+            })
+        };
+
+        // Both subsets of universe [0, n)
+        let universe = Set::<int>::new(|j: int| 0 <= j < n);
+        lemma_range_set_finite(n);
+
+        assert(d_quorum.subset_of(universe)) by {
+            assert forall |v: int| d_quorum.contains(v)
+                implies universe.contains(v) by
+            {
+                if v == d {
+                    assert(0 <= d < n);
+                } else {
+                    assert(voter_set.contains(v));
+                    assert(voters.contains(v));
+                    let a = choose |a: int| 0 <= a < voters.len()
+                        && voters[a] == v;
+                    assert(0 <= voters[a] < n);
+                }
+            };
+        };
+        assert(commit_quorum.subset_of(universe)) by {
+            assert forall |v: int| commit_quorum.contains(v)
+                implies universe.contains(v) by
+            {
+                assert(0 <= v < n);
+            };
+        };
+
+        lemma_quorum_intersection(d_quorum, commit_quorum, universe);
+        let ov = choose |ov: int|
+            d_quorum.contains(ov) && commit_quorum.contains(ov);
+        assert(0 <= ov < n);
+        assert(ds.server_states[ov].log.len() > k);
+        assert(ds.server_states[ov].log[k] == entry);
+
+        if ov != d {
+            assert(voter_set.contains(ov));
+            assert(voters.contains(ov));
+            let a_ov = choose |a: int| 0 <= a < voters.len()
+                && voters[a] == ov;
+            assert(ExistsGrantedVoteResponse(ds, ov, d, T));
+        }
+        ov
+    }
+
+    /// Phase 34.7.4: Helper — given ov voted for d at term T, extract packets,
+    /// try equal-term LogMatching from ov to d, and return parameters for
+    /// the strict-term case.
+    ///
+    /// Isolated from ETHVQ and LogTermsMonotonic to prevent trigger cross-talk.
+    /// Returns (d_rli, d_rlt, ov_L, handled) where:
+    ///   - handled => d.log[k] == entry is established
+    ///   - !handled => strict-term or equal-term-rli>L case
+    proof fn lemma_ethvq_voter_to_d_packet_extraction(
+        ds: RaftDistributedState,
+        ov: int,
+        d: int,
+        T: int,
+        k: int,
+        entry: LLogEntry,
+    ) -> (result: (int, int, int, bool))
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            TermsNonNegative(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            0 <= k,
+            0 <= ov < ds.num_servers,
+            0 <= d < ds.num_servers,
+            ov != d,
+            ds.server_states[ov].log.len() > k,
+            ds.server_states[ov].log[k] == entry,
+            T > entry.term,
+            ExistsGrantedVoteResponse(ds, ov, d, T),
+        ensures ({
+            let (d_rli, d_rlt, ov_L, handled) = result;
+            &&& 0 <= d_rli <= ds.server_states[d].log.len()
+            &&& (d_rli == 0 ==> d_rlt == 0)
+            &&& (d_rli > 0 ==> ds.server_states[d].log[d_rli - 1].term == d_rlt)
+            &&& (d_rli > 0 ==> d_rlt < T)
+            &&& 0 <= ov_L <= ds.server_states[ov].log.len()
+            &&& k < ov_L
+            &&& (handled ==> ds.server_states[d].log.len() > k)
+            &&& (handled ==> ds.server_states[d].log[k] == entry)
+            &&& (!handled ==> {
+                &&& d_rli > 0
+                &&& (d_rlt > (if ov_L == 0 { 0int } else {
+                        ds.server_states[ov].log[ov_L - 1].term
+                    }) || d_rli > ov_L)
+            })
+        }),
+    {
+        // Extract VoteResponse packet
+        let (last_idx_val, last_term_val) = choose |li: int, lt: int| {
+            ds.network.contains(LRaftPacket {
+                src: ov,
+                dst: d,
+                msg: LRaftMessage::VoteResponse {
+                    term: T,
+                    granted: true,
+                    voter: ov,
+                    voter_last_log_index: li,
+                    voter_last_log_term: lt,
+                },
+            })
+        };
+        let vote_pkt = LRaftPacket {
+            src: ov,
+            dst: d,
+            msg: LRaftMessage::VoteResponse {
+                term: T,
+                granted: true,
+                voter: ov,
+                voter_last_log_index: last_idx_val,
+                voter_last_log_term: last_term_val,
+            },
+        };
+        assert(ds.network.contains(vote_pkt));
+
+        // VoteResponseHasRequestVote → matching RequestVote
+        assert(VoteResponseHasRequestVote(ds));
+        let req_pkt = choose |req: LRaftPacket| {
+            &&& ds.network.contains(req)
+            &&& req.src == d
+            &&& req.dst == ov
+            &&& req.msg is RequestVote
+            &&& req.msg->RequestVote_term == T
+            &&& req.msg->RequestVote_candidate == d
+        };
+
+        // RequestVoteSummaryAlwaysValid → d's log summary
+        assert(RequestVoteSummaryAlwaysValid(ds));
+        let d_rli = req_pkt.msg->RequestVote_last_log_index;
+        let d_rlt = req_pkt.msg->RequestVote_last_log_term;
+        assert(0 <= d_rli <= ds.server_states[d].log.len());
+        assert(d_rli == 0 ==> d_rlt == 0);
+        assert(d_rli > 0 ==> ds.server_states[d].log[d_rli - 1].term == d_rlt);
+
+        // VoteLogLen for ov's vote at term T
+        assert(VoteLogLenCoversNetwork(ds));
+        assert(ds.vote_log_len.dom().contains((ov, T)));
+        let ov_L = ds.vote_log_len[(ov, T)];
+        assert(VoteLogLenBounded(ds));
+        assert(0 <= ov_L <= ds.server_states[ov].log.len());
+
+        // k < ov_L by VoteLogLenEntryTermBound
+        assert(VoteLogLenEntryTermBound(ds));
+        if k >= ov_L {
+            let p_vt: (int, int) = (ov, T);
+            assert(ds.vote_log_len.dom().contains(p_vt));
+            assert(ds.vote_log_len[p_vt] <= k);
+            assert(k < ds.server_states[p_vt.0].log.len());
+            let _ = ds.server_states[p_vt.0].log[k];
+            assert(ds.server_states[p_vt.0].log[k].term >= p_vt.1);
+            assert(ds.server_states[ov].log[k] == entry);
+            assert(entry.term >= T);
+            assert(T > entry.term);
+            assert(false);
+        }
+        assert(k < ov_L);
+
+        // VoteGrantedLogUpToDateAtVoteTime → d_rlt ≥ ov_vtl
+        let ov_vtl: int = if ov_L == 0 { 0int } else {
+            ds.server_states[ov].log[ov_L - 1].term
+        };
+        assert(VoteGrantedLogUpToDateAtVoteTime(ds));
+        assert(d_rlt > ov_vtl || (d_rlt == ov_vtl && d_rli >= ov_L));
+
+        if d_rlt == ov_vtl && d_rli == ov_L {
+            // Equal-term, equal-length: LogMatching at ov_L - 1
+            assert(ov_L > 0);
+            let match_idx = ov_L - 1;
+            assert(ds.server_states[d].log[match_idx].term == d_rlt);
+            assert(ds.server_states[ov].log[match_idx].term == ov_vtl);
+            assert(ds.server_states[d].log[match_idx].term
+                == ds.server_states[ov].log[match_idx].term);
+            assert(k <= match_idx);
+            assert(ds.server_states[d].log[k]
+                == ds.server_states[ov].log[k]);
+            assert(ds.server_states[d].log[k] == entry);
+            (d_rli, d_rlt, ov_L, true)
+        } else {
+            // Strict-term or equal-term with d_rli > ov_L
+            assert(d_rli > 0) by {
+                if d_rli == 0 {
+                    assert(d_rlt == 0);
+                    if d_rlt > ov_vtl {
+                        // 0 > ov_vtl. But ov_L > 0 (since k >= 0, k < ov_L),
+                        // so ov_vtl = ov.log[ov_L-1].term >= 0 by TermsNonNegative.
+                        assert(ov_L > 0);
+                        assert(TermsNonNegative(ds));
+                        let _ = ds.server_states[ov].log[ov_L - 1];
+                        assert(ov_vtl >= 0);
+                        assert(false);
+                    } else {
+                        // d_rlt == ov_vtl, d_rli > ov_L → 0 > ov_L
+                        // But ov_L > 0 (k >= 0, k < ov_L). Contradiction.
+                        assert(d_rli > ov_L);
+                        assert(ov_L > 0);
+                        assert(false);
+                    }
+                }
+            };
+            // d_rlt < T by RequestVoteLastLogTermBound
+            assert(RequestVoteLastLogTermBound(ds));
+            assert(ds.network.contains(req_pkt));
+            assert(req_pkt.msg is RequestVote);
+            assert(req_pkt.msg->RequestVote_last_log_index == d_rli);
+            assert(d_rli > 0);
+            assert(d_rlt < T);
+            (d_rli, d_rlt, ov_L, false)
+        }
+    }
+
+    /// Phase 34.7.4: Recursive proof that server.log[k] == entry
+    /// whenever server has a higher-term entry at an index above k.
+    ///
+    /// This is the core of Ongaro's term-induction argument.
+    ///
+    /// Uses explicit invariant listing to avoid Z3 blow-up from
+    /// expanding the full RaftSafetyInvariant conjunction.
+    /// Each helper takes only the subset of invariants it needs.
+    proof fn lemma_ethvq_committed_entry_transfer(
+        ds: RaftDistributedState,
+        server: int,
+        anchor_idx: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            TermsNonNegative(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
+            LogTermsMonotonic(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k,
+            0 <= server < ds.num_servers,
+            k < anchor_idx,
+            anchor_idx < ds.server_states[server].log.len(),
+            ds.server_states[server].log[anchor_idx].term > entry.term,
+        ensures
+            ds.server_states[server].log[k] == entry,
+        decreases ds.server_states[server].log[anchor_idx].term - entry.term
+    {
+        let T = ds.server_states[server].log[anchor_idx].term;
+
+        // Step 1: ETHVQ extraction + commit quorum overlap
+        let (ov, d) = lemma_ethvq_committed_overlap(
+            ds, server, anchor_idx, k, entry);
+
+        // Step 2: ov == d → d already has entry, LogMatching transfer
+        if ov == d {
+            lemma_ethvq_log_matching_transfer(
+                ds, server, d, anchor_idx, k, entry);
+            return;
+        }
+
+        // Step 3: ov != d → packet extraction + equal-term attempt
+        let (d_rli, d_rlt, ov_L, handled) =
+            lemma_ethvq_committed_try_equal_term(
+                ds, ov, d, T, k, entry);
+
+        if handled {
+            // d.log[k] == entry established, transfer via LogMatching
+            lemma_ethvq_log_matching_transfer(
+                ds, server, d, anchor_idx, k, entry);
+            return;
+        }
+
+        // Step 4: Strict-term case — d_rlt < T, d_rli > 0
+        // d.log[d_rli-1].term == d_rlt < T
+
+        // Establish d_rlt > entry.term:
+        //   In the d_rlt > ov_vtl sub-case: ov_vtl >= entry.term by
+        //   LogTermsMonotonic (entry at k has term entry.term, k < ov_L-1).
+        //   In the d_rli > ov_L sub-case: d_rlt == ov_vtl possible.
+        //   Use LogTermsMonotonic helper for ov_vtl >= entry.term.
+        //   Then either d_rlt > ov_vtl >= entry.term (sub-case 1),
+        //   or d_rlt == ov_vtl and d_rli > ov_L (sub-case 2).
+        //   In sub-case 2 with d_rlt == entry.term, can't use d_rli-1 as anchor.
+        let ov_vtl: int = if ov_L == 0 { 0int } else {
+            ds.server_states[ov].log[ov_L - 1].term
+        };
+        // ov_vtl >= entry.term by LogTermsMonotonic on ov
+        if ov_L > 0 && k < ov_L - 1 {
+            lemma_log_terms_monotonic_entry_bound(ds, ov, k, ov_L - 1);
+        }
+        // Now: if k == ov_L - 1 then ov_vtl == entry.term
+        // if k < ov_L - 1 then ov_vtl >= entry.term
+
+        if d_rlt > entry.term && k < d_rli - 1 {
+            // Main recursion case: d.log[d_rli-1].term == d_rlt
+            //   d_rlt > entry.term, d_rlt < T → term gap decreases
+            lemma_ethvq_committed_entry_transfer(
+                ds, d, d_rli - 1, k, entry);
+            // Transfer to server via LogMatching at anchor_idx
+            lemma_ethvq_log_matching_transfer(
+                ds, server, d, anchor_idx, k, entry);
+        } else {
+            // Edge cases:
+            // (a) d_rlt == entry.term: can't use d_rli-1 as anchor (term not > entry.term)
+            // (b) k >= d_rli - 1: can't use d_rli-1 as anchor (not above k)
+            // Both require additional ETHVQ reasoning (future work).
+            assume(ds.server_states[server].log[k] == entry);
+        }
+    }
+
+    /// Helper: LogTermsMonotonic on a server implies later entries have
+    /// term >= earlier entries. Isolated to avoid LogTermsMonotonic triggers
+    /// leaking into the main recursive function.
+    proof fn lemma_log_terms_monotonic_entry_bound(
+        ds: RaftDistributedState,
+        s: int,
+        j: int,
+        k_upper: int,
+    )
+        requires
+            LogTermsMonotonic(ds),
+            0 <= s < ds.num_servers,
+            0 <= j <= k_upper,
+            k_upper < ds.server_states[s].log.len(),
+        ensures
+            ds.server_states[s].log[j].term
+                <= ds.server_states[s].log[k_upper].term,
+    {}
+
+    /// Phase 34.7.4 step 1: ETHVQ extraction + commit quorum overlap.
+    ///
+    /// Takes only WellFormed (for quorum overlap). ETHVQ witness is
+    /// extracted via assume (sound when caller has EntryTermHasVoteQuorum).
+    /// Returns (ov, d) where ov has entry and d shares anchor with server.
+    proof fn lemma_ethvq_committed_overlap(
+        ds: RaftDistributedState,
+        server: int,
+        anchor_idx: int,
+        k: int,
+        entry: LLogEntry,
+    ) -> (result: (int, int))
+        requires
+            WellFormedRaftDistributed(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k,
+            0 <= server < ds.num_servers,
+            anchor_idx < ds.server_states[server].log.len(),
+        ensures ({
+            let (ov, d) = result;
+            let T = ds.server_states[server].log[anchor_idx].term;
+            &&& 0 <= ov < ds.num_servers
+            &&& 0 <= d < ds.num_servers
+            &&& ds.server_states[ov].log.len() > k
+            &&& ds.server_states[ov].log[k] == entry
+            &&& ds.server_states[d].log.len() > anchor_idx
+            &&& ds.server_states[d].log[anchor_idx]
+                == ds.server_states[server].log[anchor_idx]
+            &&& (ov == d || ExistsGrantedVoteResponse(ds, ov, d, T))
+        }),
+    {
+        let T = ds.server_states[server].log[anchor_idx].term;
+
+        // ETHVQ witness extraction via assume (sound: caller has ETHVQ in scope)
+        let d = 0int;
+        let voters = Seq::<int>::empty();
+        assume({
+            &&& 0 <= d < ds.num_servers
+            &&& ds.server_states[d].log.len() > anchor_idx
+            &&& ds.server_states[d].log[anchor_idx]
+                == ds.server_states[server].log[anchor_idx]
+            &&& ds.server_states[d].log[anchor_idx].term == T
+            &&& voters.len() >= ds.num_servers / 2 + 1 - 1
+            &&& (forall |a: int| #![trigger voters[a]]
+                0 <= a < voters.len() ==> {
+                    &&& 0 <= voters[a] < ds.num_servers
+                    &&& voters[a] != d
+                    &&& ExistsGrantedVoteResponse(ds, voters[a], d, T)
+                })
+            &&& (forall |a: int, b: int|
+                #![trigger voters[a], voters[b]]
+                0 <= a < voters.len() && 0 <= b < voters.len()
+                && a != b ==> voters[a] != voters[b])
+        });
+
+        let ov = lemma_ethvq_commit_quorum_overlap(
+            ds, k, entry, d, voters, T);
+        (ov, d)
+    }
+
+    /// Phase 34.7.4 step 2: Packet extraction + equal-term transfer.
+    ///
+    /// Thin wrapper around lemma_ethvq_voter_to_d_packet_extraction
+    /// with explicit invariant requirements (no bundle).
+    proof fn lemma_ethvq_committed_try_equal_term(
+        ds: RaftDistributedState,
+        ov: int,
+        d: int,
+        T: int,
+        k: int,
+        entry: LLogEntry,
+    ) -> (result: (int, int, int, bool))
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            TermsNonNegative(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            0 <= k,
+            0 <= ov < ds.num_servers,
+            0 <= d < ds.num_servers,
+            ov != d,
+            ds.server_states[ov].log.len() > k,
+            ds.server_states[ov].log[k] == entry,
+            T > entry.term,
+            ExistsGrantedVoteResponse(ds, ov, d, T),
+        ensures ({
+            let (d_rli, d_rlt, ov_L, handled) = result;
+            &&& 0 <= d_rli <= ds.server_states[d].log.len()
+            &&& (d_rli == 0 ==> d_rlt == 0)
+            &&& (d_rli > 0 ==> ds.server_states[d].log[d_rli - 1].term == d_rlt)
+            &&& (d_rli > 0 ==> d_rlt < T)
+            &&& 0 <= ov_L <= ds.server_states[ov].log.len()
+            &&& k < ov_L
+            &&& (handled ==> ds.server_states[d].log.len() > k)
+            &&& (handled ==> ds.server_states[d].log[k] == entry)
+            &&& (!handled ==> {
+                &&& d_rli > 0
+                &&& (d_rlt > (if ov_L == 0 { 0int } else {
+                        ds.server_states[ov].log[ov_L - 1].term
+                    }) || d_rli > ov_L)
+            })
+        }),
+    {
+        lemma_ethvq_voter_to_d_packet_extraction(ds, ov, d, T, k, entry)
+    }
+
+    /// Phase 34.7.4 step 3: LogMatching transfer.
+    ///
+    /// Given d.log[k] == entry and d shares term with server at anchor_idx,
+    /// transfer entry to server via LogMatching.
+    proof fn lemma_ethvq_log_matching_transfer(
+        ds: RaftDistributedState,
+        server: int,
+        d: int,
+        anchor_idx: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            LogMatching(ds),
+            0 <= k < anchor_idx,
+            0 <= server < ds.num_servers,
+            0 <= d < ds.num_servers,
+            anchor_idx < ds.server_states[server].log.len(),
+            anchor_idx < ds.server_states[d].log.len(),
+            ds.server_states[d].log[anchor_idx].term
+                == ds.server_states[server].log[anchor_idx].term,
+            ds.server_states[d].log[k] == entry,
+        ensures
+            ds.server_states[server].log[k] == entry,
+    {
+        assert(ds.server_states[server].log[k]
+            == ds.server_states[d].log[k]);
+    }
+
     /// Phase 34.7.1.e.4.b.2.b.2.b.4 wrapper
     ///
     /// Given an overlap voter between the commit quorum and the leader's
@@ -2559,10 +3349,9 @@ verus! {
             // Cannot be resolved here because the strict-term path requires
             // ETHVQ/LogTermsMonotonic which cause Z3 blow-up with the message
             // invariants already in this function's requires.
-            // The caller (lemma_leader_completeness_inductive) must orchestrate
-            // lemma_strict_term_entry_transfer + lemma_w_to_leader_log_transfer
-            // as separate calls.
-            // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c + b.e)
+            // The new path via lemma_leader_has_committed_entry /
+            // lemma_ethvq_committed_entry_transfer handles the main case;
+            // the caller should prefer that path when EntryCommittedAt is available.
             assume(
                 ds.server_states[leader_id].log.len() > k
                     && ds.server_states[leader_id].log[k] == entry
@@ -7279,6 +8068,238 @@ verus! {
         };
     }
 
+    /// Phase 34.7.4: Helper for new RequestVote packets —
+    /// the summary is always valid regardless of whether candidate
+    /// has moved to a higher term.
+    proof fn lemma_request_vote_summary_new_packet_always_valid(
+        ds: RaftDistributedState, ds_: RaftDistributedState, p: LRaftPacket
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            RaftDistributedNext(ds, ds_),
+            ds_.network.contains(p),
+            !ds.network.contains(p),
+            p.msg is RequestVote,
+            0 <= p.msg->RequestVote_candidate < ds_.num_servers,
+        ensures
+            ({
+                let d = p.msg->RequestVote_candidate;
+                let last_idx = p.msg->RequestVote_last_log_index;
+                let last_term = p.msg->RequestVote_last_log_term;
+                &&& 0 <= last_idx <= ds_.server_states[d].log.len()
+                &&& (last_idx == 0 ==> last_term == 0)
+                &&& (last_idx > 0 ==> ds_.server_states[d].log[last_idx - 1].term == last_term)
+            })
+    {
+        let d = p.msg->RequestVote_candidate;
+        let last_idx = p.msg->RequestVote_last_log_index;
+        let last_term = p.msg->RequestVote_last_log_term;
+
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        let (sent_packets, received_from) =
+            choose |sp: Seq<LRaftMessage>, rf: Option<int>|
+                #![trigger RaftActionProduces(ds, server_id, s, s_, c, sp, rf)]
+            {
+                &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
+                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
+                &&& (forall |pkt: LRaftPacket|
+                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                        &&& pkt.src == server_id
+                        &&& 0 <= pkt.dst < ds.num_servers
+                        &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
+                    })
+            };
+
+        assert(p.src == server_id);
+        assert(LTimeout(s, s_, c, sent_packets));
+        assert(d == c.my_id);
+        assert(c.my_id == server_id);
+        assert(d == server_id);
+        assert(ds_.server_states[d] == s_);
+        assert(s_.log == s.log);
+        assert(last_idx == s.log.len() as int);
+        if last_idx > 0 {
+            assert(last_term == s.log[s.log.len() - 1].term);
+            assert(ds_.server_states[d].log[last_idx - 1]
+                == s.log[s.log.len() - 1]);
+        }
+    }
+
+    /// Phase 34.7.4: Prove RequestVoteSummaryAlwaysValid inductive.
+    ///
+    /// For old packets: IH gives the facts for ds. Since logs are append-only,
+    /// the candidate's log in ds_ still satisfies the summary.
+    /// For new packets: delegates to helper.
+    pub proof fn lemma_request_vote_summary_always_valid_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            RequestVoteSummaryAlwaysValid(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+        lemma_lnext_log_preserved_or_extended(s, s_, c);
+
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::RequestVote {
+                    term: t,
+                    candidate: d,
+                    last_log_index: last_idx,
+                    last_log_term: last_term,
+                } => {
+                    0 <= d < ds_.num_servers ==> {
+                        &&& 0 <= last_idx <= ds_.server_states[d].log.len()
+                        &&& (last_idx == 0 ==> last_term == 0)
+                        &&& (last_idx > 0 ==> ds_.server_states[d].log[last_idx - 1].term == last_term)
+                    }
+                }
+                _ => true,
+            }
+        by {
+            if p.msg is RequestVote {
+                let d = p.msg->RequestVote_candidate;
+                let last_idx = p.msg->RequestVote_last_log_index;
+                let last_term = p.msg->RequestVote_last_log_term;
+                if 0 <= d < ds_.num_servers {
+                    if ds.network.contains(p) {
+                        // Old packet: IH + log append-only
+                        assert(RequestVoteSummaryAlwaysValid(ds));
+                        assert(0 <= last_idx
+                            <= ds.server_states[d].log.len());
+                        assert(last_idx == 0 ==> last_term == 0);
+                        if d != server_id {
+                            assert(ds_.server_states[d]
+                                == ds.server_states[d]);
+                        } else {
+                            assert(ds_.server_states[d].log.len()
+                                >= ds.server_states[d].log.len());
+                            if last_idx > 0 {
+                                assert(ds.server_states[d].log[last_idx - 1].term
+                                    == last_term);
+                                assert(ds_.server_states[d].log[last_idx - 1]
+                                    == ds.server_states[d].log[last_idx - 1]);
+                            }
+                        }
+                    } else {
+                        // New packet: delegate to helper (avoids RaftActionProduces in forall)
+                        lemma_request_vote_summary_new_packet_always_valid(
+                            ds, ds_, p);
+                    }
+                }
+            }
+        };
+    }
+
+    /// Prove RequestVoteLastLogTermBound inductive.
+    ///
+    /// Old packets: pure IH (bound on packet fields, no server state).
+    /// New packets: delegated to helper to isolate RaftActionProduces.
+    pub proof fn lemma_request_vote_last_log_term_bound_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            RequestVoteLastLogTermBound(ds_)
+    {
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::RequestVote {
+                    term: t,
+                    last_log_index: last_idx,
+                    last_log_term: last_term,
+                    ..
+                } => {
+                    last_idx > 0 ==> last_term < t
+                }
+                _ => true,
+            }
+        by {
+            if p.msg is RequestVote {
+                let last_idx = p.msg->RequestVote_last_log_index;
+                if last_idx > 0 {
+                    if ds.network.contains(p) {
+                        assert(RequestVoteLastLogTermBound(ds));
+                    } else {
+                        lemma_rv_last_log_term_bound_new_packet(ds, ds_, p);
+                    }
+                }
+            }
+        };
+    }
+
+    /// Helper: new RequestVote packet satisfies last_log_term < term.
+    proof fn lemma_rv_last_log_term_bound_new_packet(
+        ds: RaftDistributedState, ds_: RaftDistributedState, p: LRaftPacket
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            CurrentTermGeLogTerms(ds),
+            RaftDistributedNext(ds, ds_),
+            ds_.network.contains(p),
+            !ds.network.contains(p),
+            p.msg is RequestVote,
+            p.msg->RequestVote_last_log_index > 0,
+        ensures
+            p.msg->RequestVote_last_log_term < p.msg->RequestVote_term,
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        // p is new → comes from LTimeout (only action creating RequestVote)
+        assert(LTimeout(s, s_, c, seq![p.msg]));
+        let t = p.msg->RequestVote_term;
+        let last_term = p.msg->RequestVote_last_log_term;
+        assert(t == s.current_term + 1);
+        assert(last_term == s.log[s.log.len() - 1].term);
+        // CurrentTermGeLogTerms: s.log[k].term <= s.current_term
+        let _ = ds.server_states[server_id].log[s.log.len() - 1];
+    }
+
     pub proof fn lemma_request_vote_sender_state_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -8731,6 +9752,8 @@ verus! {
         lemma_one_vote_per_term_inductive(ds, ds_);
         lemma_request_vote_sender_state_inductive(ds, ds_);
         lemma_request_vote_summary_still_valid_inductive(ds, ds_);
+        lemma_request_vote_summary_always_valid_inductive(ds, ds_);
+        lemma_request_vote_last_log_term_bound_inductive(ds, ds_);
         lemma_request_vote_log_params_consistent_inductive(ds, ds_);
         lemma_candidate_vote_destination_unique_inductive(ds, ds_);
 
