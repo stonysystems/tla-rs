@@ -10109,6 +10109,17 @@ fn test_model_check_pbft_blocker_state_expansion_limit_is_reproducible() {
     let model_path = resolve_model_check_fixture_path("pbft_state_expansion_limit.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
+    let model_src = std::fs::read_to_string(&model_path)
+        .unwrap_or_else(|err| panic!("failed to read PBFT blocker fixture: {}", err));
+    assert!(
+        model_src.contains("Minimal checked-in model")
+            && model_src.contains("LState candidate expansion limit"),
+        "PBFT blocker fixture should document intentional expansion-limit setup"
+    );
+    assert!(
+        model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
+        "PBFT blocker fixture should stay minimal and bounded (`max_depth = 1`, `max_states = 200`)"
+    );
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([

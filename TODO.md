@@ -9803,7 +9803,9 @@ Rules for this phase (do not cut corners):
       - Re-ran source-first EPaxos with checked-in fixture `epaxos_state_expansion_limit.model.toml`; first blocker moved to `Model-check candidate expansion for struct \`LConstants\` exceeded limit (200)`.
       - Updated blocker regression to `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` and synchronized `docs/model_checker_status.md` blocker matrix/evidence references.
   - [ ] **33.5.2.f PBFT (priority #6)**
-    - [ ] **33.5.2.f.1** Keep checked-in minimal blocker model and exact blocker classification current.
+    - [x] **33.5.2.f.1** Keep checked-in minimal blocker model and exact blocker classification current. [26:03:05, 23:50]
+      - Revalidated with checked-in fixture `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` and command-level replay; first blocker remains `Model-check candidate expansion for struct \`LState\` exceeded limit (200)`.
+      - Strengthened blocker regression `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` to enforce fixture intent/minimality (`Minimal checked-in model ...`, `max_depth = 1`, `max_states = 200`).
     - [ ] **33.5.2.f.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
   - [ ] **33.5.2.g ChainReplication (priority #7)**
     - [ ] **33.5.2.g.1** Keep checked-in minimal blocker model and exact blocker classification current.
