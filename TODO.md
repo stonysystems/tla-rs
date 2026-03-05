@@ -9742,7 +9742,7 @@ Rules for this phase (do not cut corners):
 
 ### 33.5 Consensus protocol coverage drive
 
-- [ ] Highest-value protocol order for source-first model checking:
+- [x] Highest-value protocol order for source-first model checking: [26:03:06, 04:05]
   1. `RSL`
   2. `Raft`
   3. `Paxos`
@@ -9753,6 +9753,8 @@ Rules for this phase (do not cut corners):
   8. `PrimaryBackup`
   9. `TwoPhase`
   10. `LeaderElection` (secondary control protocol; keep it green)
+  - Added regression `test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status_matrix` to enforce the exact canonical order across both `TODO.md` and `docs/model_checker_status.md` protocol matrix rows.
+  - Extended `docs/model_checker_status.md` section `2.5` to record both enforcement guards (`unsupported`-row priority and full canonical order alignment).
 - [ ] For each protocol in that list:
   - add a checked-in source-first `model.toml`
   - try exact-mode source-first model checking first

@@ -8448,6 +8448,99 @@ fn test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers(
 }
 
 #[test]
+fn test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status_matrix() {
+    let expected_order = [
+        "RSL",
+        "Raft",
+        "Paxos",
+        "VerticalPaxos",
+        "EPaxos",
+        "PBFT",
+        "ChainReplication",
+        "PrimaryBackup",
+        "TwoPhase",
+        "LeaderElection",
+    ];
+
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path).unwrap_or_else(|err| {
+        panic!("failed to read TODO {}: {}", todo_path.display(), err)
+    });
+    let todo_section = todo_src
+        .split("### 33.5 Consensus protocol coverage drive")
+        .nth(1)
+        .and_then(|tail| tail.split("- [ ] For each protocol in that list:").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate Phase 33.5 priority-order list in {}",
+                todo_path.display()
+            )
+        });
+    let todo_order: Vec<String> = todo_section
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let starts_with_digit = trimmed
+                .chars()
+                .next()
+                .map(|ch| ch.is_ascii_digit())
+                .unwrap_or(false);
+            if !starts_with_digit {
+                return None;
+            }
+            trimmed.split('`').nth(1).map(|name| name.to_string())
+        })
+        .collect();
+    let expected_owned: Vec<String> = expected_order.iter().map(|s| (*s).to_string()).collect();
+    assert_eq!(
+        todo_order, expected_owned,
+        "Phase 33.5 priority list in TODO.md drifted; update intentionally if protocol priority changes"
+    );
+
+    let status_path = repo_root.join("docs/model_checker_status.md");
+    let status_src = std::fs::read_to_string(&status_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_path.display(),
+            err
+        )
+    });
+    let matrix_section = status_src
+        .split("## 4. Protocol coverage matrix (source-first, checked-in evidence)")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("### 4.1 Exact-mode performance baseline snapshot (Phase 33.4)")
+                .next()
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate protocol coverage matrix section in {}",
+                status_path.display()
+            )
+        });
+    let matrix_order: Vec<String> = matrix_section
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if !trimmed.starts_with("| `") {
+                return None;
+            }
+            let columns: Vec<&str> = trimmed.split('|').map(|col| col.trim()).collect();
+            if columns.len() < 2 {
+                return None;
+            }
+            Some(columns[1].trim_matches('`').to_string())
+        })
+        .collect();
+    assert_eq!(
+        matrix_order, expected_owned,
+        "status coverage matrix protocol row order must match canonical Phase 33.5 priority order"
+    );
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,

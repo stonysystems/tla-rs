@@ -95,10 +95,15 @@ using the Phase 33.5 protocol priority:
 9. `TwoPhase`
 10. `LeaderElection`
 
-Enforced by `test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers`:
+Enforced by:
 
 - Every `Result = unsupported` matrix row must reference real protocol source paths under `src/protocol/...`.
 - Unsupported rows must remain ordered by the priority list above (filtered to currently unsupported protocols).
+  - `test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers`
+- The full Phase 33.5 priority order stays canonical across:
+  - `TODO.md` priority list and
+  - `§4` protocol coverage matrix row order.
+  - `test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status_matrix`
 
 ## 3. Checked-in model-checking evidence (currently passing)
 
