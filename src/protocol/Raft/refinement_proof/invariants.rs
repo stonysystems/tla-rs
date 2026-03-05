@@ -1689,9 +1689,15 @@ verus! {
             LogMatching(ds),
             LogTermsMonotonic(ds),
             EntryTermHasVoteQuorum(ds),
+            TermsNonNegative(ds),
+            LeaderHasQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CandidateOrLeaderVotedForSelfId(ds),
             0 <= leader_id < ds.num_servers,
             0 <= overlap_voter < ds.num_servers,
             overlap_voter != leader_id,
+            (ds.server_states[leader_id].role is Candidate
+                || ds.server_states[leader_id].role is Leader),
             ds.server_states[leader_id].current_term > entry.term,
             0 <= k,
             ds.server_states[overlap_voter].log.len() > k,
@@ -1728,14 +1734,37 @@ verus! {
         };
         assert(entry.term < req_last_log_term);
 
+        // Derived fact: voter_vtl >= 0 (from TermsNonNegative)
+        // When L > 0: voter_vtl == voter.log[L-1].term >= 0
+        // When L == 0: voter_vtl == 0 (by definition)
+        assert(voter_vtl >= 0) by {
+            if L > 0 {
+                assert(TermsNonNegative(ds));
+                let _ = ds.server_states[overlap_voter].log[L - 1];
+            }
+        };
+
+        // Derived fact: req_last_log_term > 0
+        assert(req_last_log_term > 0);
+
+        // Derived fact: req_last_log_index > 0
+        // By contrapositive: if rli == 0, then rlt == 0 (from requires),
+        // contradicting rlt > 0.
+        assert(req_last_log_index > 0);
+
+        // Derived fact: leader.log[rli - 1].term == req_last_log_term
+        // (follows from rli > 0 and the existing requires)
+        assert(ds.server_states[leader_id].log[
+            req_last_log_index - 1].term == req_last_log_term);
+
         // Residual: constructive leader-entry transfer (Phase ...b.c.3)
         // Established facts for the closure:
         //   - entry.term <= voter_vtl < req_last_log_term (strict chain)
-        //   - 0 <= req_last_log_index <= leader.log.len()
+        //   - req_last_log_index > 0, leader.log[rli-1].term == rlt
         //   - k < L (entry was in voter's vote-time log)
-        //   - EntryTermHasVoteQuorum(ds) available
-        // The full closure (b.c.3.b.4.b) requires:
-        //   - proving req_last_log_index > 0 (needs term non-negativity)
+        //   - EntryTermHasVoteQuorum(ds), LeaderHasQuorum(ds),
+        //     VotesGrantedAreServers(ds), CandidateOrLeaderVotedForSelfId(ds)
+        // Remaining closure (b.c.3.b.4.b.3 + b.c.3.b.4.b.4):
         //   - quorum overlap between EntryTermHasVoteQuorum witness voters
         //     and the leader's vote quorum
         //   - LogMatching chain to transfer entry to leader's log
