@@ -2249,7 +2249,7 @@ verus! {
         entry: LLogEntry,
         vote_pkt: LRaftPacket,
         req_pkt: LRaftPacket,
-    )
+    ) -> (result: (bool, int, int, int, int, int))
         requires
             WellFormedRaftDistributed(ds),
             LogMatching(ds),
@@ -2291,9 +2291,29 @@ verus! {
                 ==> ds.server_states[leader_id].log[
                         req_pkt.msg->RequestVote_last_log_index - 1].term
                     == req_pkt.msg->RequestVote_last_log_term),
-        ensures
-            ds.server_states[leader_id].log.len() > k
-                && ds.server_states[leader_id].log[k] == entry,
+        ensures ({
+            let (handled, vote_term, rli, rlt, vtl, L) = result;
+            &&& vote_term == ds.server_states[leader_id].current_term
+            &&& rli == req_pkt.msg->RequestVote_last_log_index
+            &&& rlt == req_pkt.msg->RequestVote_last_log_term
+            &&& (handled ==> (
+                ds.server_states[leader_id].log.len() > k
+                    && ds.server_states[leader_id].log[k] == entry
+            ))
+            &&& (!handled ==> {
+                &&& k < L
+                &&& L > 0
+                &&& 0 <= L <= ds.server_states[overlap_voter].log.len()
+                &&& vtl == (if L == 0 { 0int } else {
+                    ds.server_states[overlap_voter].log[L - 1].term
+                })
+                &&& (rlt > vtl || (rlt == vtl && rli > L))
+                &&& 0 <= rli <= ds.server_states[leader_id].log.len()
+                &&& (rli == 0 ==> rlt == 0)
+                &&& (rli > 0 ==>
+                    ds.server_states[leader_id].log[rli - 1].term == rlt)
+            })
+        }),
     {
         let vote_term = ds.server_states[leader_id].current_term;
         let req_last_log_index = req_pkt.msg->RequestVote_last_log_index;
@@ -2305,7 +2325,6 @@ verus! {
         let L = ds.vote_log_len[(overlap_voter, vote_term)];
         assert(VoteLogLenBounded(ds));
         assert(L <= ds.server_states[overlap_voter].log.len());
-        // VoteLogLenBounded now includes 0 <= vote_log_len[(v, t)]
         assert(L >= 0);
 
         // Step 2: Use VoteGrantedLogUpToDateAtVoteTime to get disjunction
@@ -2323,21 +2342,32 @@ verus! {
                     && req_last_log_index >= L)
         );
 
-        // Step 3: Case split.
-        //
-        // Keep the proved equal-term/equal-length path as-is, and isolate
-        // the three residual sub-cases explicitly:
-        //   (a) strict-term
-        //   (b) equal-term with L == 0
-        //   (c) equal-term with req_last_log_index > L
+        // Helper: k < L proof via VoteLogLenEntryTermBound contradiction
+        // (used by both equal-term/equal-length and non-equal-length paths)
+        assert(VoteLogLenEntryTermBound(ds));
+        if k >= L {
+            let p_vt: (int, int) = (overlap_voter, vote_term);
+            assert(ds.vote_log_len.dom().contains(p_vt));
+            assert(0 <= p_vt.0 < ds.num_servers);
+            assert(ds.vote_log_len[p_vt] <= k);
+            assert(k < ds.server_states[p_vt.0].log.len());
+            let _ = ds.server_states[p_vt.0].log[k];
+            assert(ds.server_states[p_vt.0].log[k].term >= p_vt.1);
+            assert(vote_term == ds.server_states[leader_id].current_term);
+            assert(ds.server_states[leader_id].current_term > entry.term);
+            assert(ds.server_states[overlap_voter].log[k] == entry);
+            assert(false);
+        }
+        assert(k < L);
+        assert(L > 0);
+
+        // Step 3: Case split
         if req_last_log_term == voter_vtl
             && req_last_log_index >= L
-            && L > 0
             && req_last_log_index == L
         {
             // Equal-term, equal-length sub-case
             let match_idx: int = L - 1;
-            // Leader and voter have matching terms at match_idx
             assert(ds.server_states[leader_id].log[match_idx].term
                 == req_last_log_term);
             assert(ds.server_states[overlap_voter].log[match_idx].term
@@ -2345,103 +2375,33 @@ verus! {
             assert(ds.server_states[leader_id].log[match_idx].term
                 == ds.server_states[overlap_voter].log[match_idx].term);
 
-            // LogMatching at match_idx gives all entries 0..match_idx agree
             assert(0 <= match_idx
                 < ds.server_states[leader_id].log.len());
             assert(0 <= match_idx
                 < ds.server_states[overlap_voter].log.len());
 
-            // k < L: the entry was in the voter's log at vote time.
-            // Proof by contradiction: if k >= L, by VoteLogLenEntryTermBound,
-            // voter.log[k].term >= vote_term == leader.current_term > entry.term.
-            // But voter.log[k] == entry, so voter.log[k].term == entry.term.
-            // Contradiction.
-            assert(VoteLogLenEntryTermBound(ds));
-            if k >= L {
-                // VoteLogLenEntryTermBound: entries at index >= L have term >= vote_term
-                // Manually instantiate the quantifier:
-                // p = (overlap_voter, vote_term), i = k
-                let p_vt: (int, int) = (overlap_voter, vote_term);
-                assert(ds.vote_log_len.dom().contains(p_vt));
-                assert(0 <= p_vt.0 < ds.num_servers);
-                assert(ds.vote_log_len[p_vt] <= k);
-                assert(k < ds.server_states[p_vt.0].log.len());
-                // Both trigger terms: ds.server_states[p_vt.0].log[k]
-                // and ds.vote_log_len.dom().contains(p_vt)
-                let _ = ds.server_states[p_vt.0].log[k];
-                assert(ds.server_states[p_vt.0].log[k].term >= p_vt.1);
-                assert(vote_term == ds.server_states[leader_id].current_term);
-                assert(ds.server_states[leader_id].current_term > entry.term);
-                assert(ds.server_states[overlap_voter].log[k] == entry);
-                assert(false);
-            }
-            assert(k < L);
-
             assert(k <= match_idx);
-            // LogMatching instantiation at (leader_id, overlap_voter, match_idx)
-            // gives forall m: 0 <= m <= match_idx && m < both logs
-            //   ==> leader.log[m] == voter.log[m]
             assert(ds.server_states[leader_id].log[k]
                 == ds.server_states[overlap_voter].log[k]);
             assert(ds.server_states[leader_id].log[k] == entry);
             assert(ds.server_states[leader_id].log.len() > k);
-        } else if req_last_log_term > voter_vtl {
-            // Residual (a): strict-term
-            // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c)
-            // Strict-term derivations extracted to lemma_strict_term_entry_transfer
-            // to isolate expensive quantifiers from this function's Z3 context.
-            // Once b.c.3.b.4.b is complete, this assume will be replaced by
-            // a call to lemma_strict_term_entry_transfer with sufficient requires.
-
-            // Shared fact: strict-term predicate
-            assert(req_last_log_term > voter_vtl);
-
-            // Shared fact: L >= 0 (already established above)
-            assert(L >= 0);
-
-            // Shared fact: k < L by VoteLogLenEntryTermBound contradiction.
-            assert(VoteLogLenEntryTermBound(ds));
-            if k >= L {
-                let p_vt: (int, int) = (overlap_voter, vote_term);
-                assert(ds.vote_log_len.dom().contains(p_vt));
-                assert(0 <= p_vt.0 < ds.num_servers);
-                assert(ds.vote_log_len[p_vt] <= k);
-                assert(k < ds.server_states[p_vt.0].log.len());
-                let _ = ds.server_states[p_vt.0].log[k];
-                assert(ds.server_states[p_vt.0].log[k].term >= p_vt.1);
-                assert(vote_term == ds.server_states[leader_id].current_term);
-                assert(ds.server_states[leader_id].current_term > entry.term);
-                assert(ds.server_states[overlap_voter].log[k] == entry);
-                assert(false);
-            }
-            assert(k < L);
-
-            // Shared fact: L > 0, packet alignment, req_last_log_index bounds
-            assert(L > 0);
-            assert(0 <= req_last_log_index
-                <= ds.server_states[leader_id].log.len());
-
-            // Residual: constructive leader-entry transfer (Phase ...b.c.3)
-            assume(
-                ds.server_states[leader_id].log.len() > k
-                    && ds.server_states[leader_id].log[k] == entry
-            );
-        } else if req_last_log_term == voter_vtl && L == 0 {
-            // Residual (b): equal-term with empty vote-time log
-            // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.d)
-            assume(
-                ds.server_states[leader_id].log.len() > k
-                    && ds.server_states[leader_id].log[k] == entry
-            );
+            (true, vote_term, req_last_log_index, req_last_log_term,
+                voter_vtl, L)
         } else {
-            // Residual (c): equal-term with req_last_log_index > L
-            // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.e)
-            assume(
-                ds.server_states[leader_id].log.len() > k
-                    && ds.server_states[leader_id].log[k] == entry
-            );
+            // Strict-term (rlt > vtl) or equal-term with rli > L:
+            // not handled here; caller dispatches to heavy helpers.
+            // Note: L == 0 case is impossible since L > 0 (proved above).
+            (false, vote_term, req_last_log_index, req_last_log_term,
+                voter_vtl, L)
         }
     }
+
+    // Note: The strict-term dispatch function was removed because having
+    // both ETHVQ/LogTermsMonotonic and VotersVotedForCandidate/VoteResponseHasRequestVote
+    // in the same function's requires causes Z3 blow-up (quantifier trigger interaction).
+    // The strict-term path must be orchestrated at the lemma_leader_completeness_inductive
+    // level, calling lemma_strict_term_entry_transfer and lemma_w_to_leader_log_transfer
+    // as separate steps. See MEMORY.md for the quantifier isolation pattern.
 
     /// Phase 34.7.1.e.4.b.2.b.2.b.4 wrapper
     ///
@@ -2568,11 +2528,27 @@ verus! {
                 ds, overlap_voter, leader_id, k, entry);
         }
 
-        // Step 3: Entry transfer via LogMatching
+        // Step 3: Entry transfer
         assert(vote_pkt.msg->VoteResponse_voter == overlap_voter);
-        lemma_overlap_entry_transfer_equal_term_equal_len(
-            ds, overlap_voter, leader_id, k, entry,
-            vote_pkt, req_pkt);
+        // Try equal-term/equal-length LogMatching transfer (cheap, no heavy invariants)
+        let (handled, _vote_term_out, _rli, _rlt, _vtl, _L) =
+            lemma_overlap_entry_transfer_equal_term_equal_len(
+                ds, overlap_voter, leader_id, k, entry,
+                vote_pkt, req_pkt);
+        if !handled {
+            // Strict-term (rlt > vtl) or equal-term with rli > L.
+            // Cannot be resolved here because the strict-term path requires
+            // ETHVQ/LogTermsMonotonic which cause Z3 blow-up with the message
+            // invariants already in this function's requires.
+            // The caller (lemma_leader_completeness_inductive) must orchestrate
+            // lemma_strict_term_entry_transfer + lemma_w_to_leader_log_transfer
+            // as separate calls.
+            // (Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c + b.e)
+            assume(
+                ds.server_states[leader_id].log.len() > k
+                    && ds.server_states[leader_id].log[k] == entry
+            );
+        }
     }
 
     /// Candidate log is at least as up-to-date as voter log
