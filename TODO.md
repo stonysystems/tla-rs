@@ -9676,7 +9676,9 @@ Rules for this phase (do not cut corners):
 - [x] Add evaluator support for struct update expressions. [26:03:05, 18:45]
   - Implemented evaluator struct-update execution for both AST `StructUpdate` and parser-emitted `Type { ..., ..base }` form, with field-overwrite semantics on struct/enum runtime values and explicit type/base validation errors.
   - Added evaluator unit coverage for direct/pseudo-parser struct updates, plus protocol-style integration fixture `struct_update` and regression `test_model_check_struct_update_bounded_run`.
-- [ ] Extend builtin method/operator coverage only when a checked-in protocol/test proves it is needed; avoid speculative feature work.
+- [x] Extend builtin method/operator coverage only when a checked-in protocol/test proves it is needed; avoid speculative feature work. [26:03:05, 19:05]
+  - Landed evaluator builtin support for map-domain method calls (`map.dom()`), chosen from real protocol usage patterns (for example, `vote_log_len.dom().contains(...)`-style predicates in Raft proofs/specs) rather than speculative API expansion.
+  - Added unit coverage and protocol-style integration fixture `map_dom_method` with regression `test_model_check_map_dom_method_bounded_run` to keep the extension evidence-backed.
 - [ ] Remove the current "exactly one concrete `LConstants` valuation" restriction by allowing model-check initialization to explore multiple resolved constant valuations when the model config implies them.
 - [ ] Improve predicate-only/helper-branch solving so the engine does not rely on full next-state candidate enumeration whenever a direct solve is possible.
 - [ ] For every new language feature above:

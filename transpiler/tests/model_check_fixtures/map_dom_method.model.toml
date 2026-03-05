@@ -1,0 +1,25 @@
+# Minimal fixture that exercises evaluator builtin map-domain support
+# via `map.dom().contains(...)` in `LInit`.
+[constants.assignments]
+probe = 0
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[quantifiers.nat]
+max = 1
+
+[collections]
+max_seq_len = 2
+max_set_len = 4
+max_map_len = 2
+
+[search]
+max_depth = 2
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"

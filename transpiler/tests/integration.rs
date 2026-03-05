@@ -8681,6 +8681,48 @@ fn test_model_check_struct_update_bounded_run() {
 }
 
 #[test]
+fn test_model_check_map_dom_method_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+    let report = run_model_check_json_report_from_fixtures(
+        &transpiler_bin,
+        "map_dom_method.protocol.rs",
+        "map_dom_method.types.rs",
+        "map_dom_method.model.toml",
+    );
+
+    let result = report
+        .get("result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, "ok",
+        "map-dom fixture should pass with evaluator map `.dom()` support; report={}",
+        report
+    );
+
+    let states = report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let transitions = report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert!(
+        states > 0,
+        "expected reached states in map-dom fixture run; report={}",
+        report
+    );
+    assert!(
+        transitions > 0,
+        "expected transitions in map-dom fixture run; report={}",
+        report
+    );
+}
+
+#[test]
 fn test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 

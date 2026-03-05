@@ -255,7 +255,7 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
                 .map(|arg| eval_expr(arg, ctx))
                 .collect::<TranspileResult<Vec<_>>>()?;
 
-            if let Some(value) = eval_builtin_method(&receiver, method, &args)? {
+            if let Some(value) = eval_builtin_method(&receiver, method, &args, ctx.bounds)? {
                 return Ok(value);
             }
             if let Some(evaluator) = ctx.method_evaluator {
@@ -742,6 +742,7 @@ fn eval_builtin_method(
     receiver: &RuntimeValue,
     method: &str,
     args: &[RuntimeValue],
+    _bounds: RuntimeCollectionBounds,
 ) -> TranspileResult<Option<RuntimeValue>> {
     match method {
         "len" => {
@@ -804,6 +805,24 @@ fn eval_builtin_method(
                 }
             };
             Ok(Some(RuntimeValue::Bool(present)))
+        }
+        "dom" => {
+            if !args.is_empty() {
+                return Err(type_error("`.dom()` expects zero arguments."));
+            }
+            match receiver {
+                RuntimeValue::Map(entries) => {
+                    let keys = entries.keys().cloned().collect();
+                    Ok(Some(RuntimeValue::Set(keys)))
+                }
+                other => Err(type_error(
+                    format!(
+                        "`.dom()` expects Map receiver, got `{}`.",
+                        other.canonical_key()
+                    )
+                    .as_str(),
+                )),
+            }
         }
         "insert" => {
             if args.len() != 1 {
@@ -1290,6 +1309,22 @@ mod tests {
         let contains_key_out =
             eval_expr(&contains_key_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(contains_key_out, RuntimeValue::Bool(true));
+
+        let dom_contains_expr = Expr::MethodCall {
+            receiver: Box::new(Expr::MethodCall {
+                receiver: Box::new(Expr::MapLit(vec![(
+                    Expr::Literal(Literal::Int(1)),
+                    Expr::Literal(Literal::Bool(true)),
+                )])),
+                method: "dom".to_string(),
+                args: vec![],
+            }),
+            method: "contains".to_string(),
+            args: vec![Expr::Literal(Literal::Int(1))],
+        };
+        let dom_contains_out =
+            eval_expr(&dom_contains_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(dom_contains_out, RuntimeValue::Bool(true));
     }
 
     #[test]
