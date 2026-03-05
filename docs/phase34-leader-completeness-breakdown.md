@@ -709,3 +709,37 @@ Remaining strict-term decomposition:
    ambiguity with other residual cases (`L == 0`, `req_last_log_index > L`).
 2. `...b.c.3`: close the strict-term transfer constructively (no local assume)
    while keeping focused verification stable.
+
+## Update: 34.7.1.e.4.b.2.b.2.b.4.c.d.b.c.2.a complete (2026-03-04)
+
+Prepared an explicit branch-partition obligation map for
+`lemma_overlap_entry_transfer_equal_term_equal_len(...)` so the strict-term
+work is isolated from the other residual sub-cases.
+
+Current residual branch (old single `else`) covers three disjoint sub-cases:
+
+1. Strict-term:
+   `req_last_log_term > voter_vtl`.
+2. Equal-term + empty vote-time log:
+   `req_last_log_term == voter_vtl && L == 0`.
+3. Equal-term + strictly longer request summary:
+   `req_last_log_term == voter_vtl && req_last_log_index > L`.
+
+For `...b.c.2`, only case (1) is in scope. The shared strict-term facts that
+must be explicit before constructive transfer (`...b.c.3`) are:
+
+- `L >= 0` and `L <= overlap_voter.log.len()` from `VoteLogLenBounded`.
+- `k < L` from `VoteLogLenEntryTermBound` + `entry.term < vote_term`.
+- packet alignment facts already required by the lemma preconditions:
+  - `vote_pkt.src == overlap_voter`, `vote_pkt.dst == leader_id`
+  - `req_pkt.src == leader_id`, `req_pkt.dst == overlap_voter`
+  - `vote_pkt.term == req_pkt.term == leader.current_term`
+- strict-term guard itself:
+  `req_last_log_term > voter_vtl`.
+
+Planned immediate code refactor for next sub-leaf (`...b.c.2.b`):
+
+- Replace the merged residual `else` with explicit three-way branch structure.
+- Keep equal-term/equal-length branch unchanged.
+- Keep non-strict residual cases isolated so strict-term proof obligations can
+  be discharged without conflating assumptions across unrelated branches.
