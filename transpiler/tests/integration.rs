@@ -9162,6 +9162,177 @@ fn test_model_check_primarybackup_helper_call_branches_bounded_run() {
 }
 
 #[test]
+fn test_model_check_primarybackup_real_safety_invariants_bounded_run() {
+    let transpiler_bin = resolve_transpiler_binary_for_integration();
+
+    let repo_root = resolve_repo_root_for_integration();
+    let input = repo_root.join("src/protocol/PrimaryBackup/primarybackup.rs");
+    let types = repo_root.join("src/protocol/PrimaryBackup/types.rs");
+    let model_path = resolve_model_check_fixture_path("primarybackup_safety_invariants.model.toml");
+    let artifact_path = repo_root.join("reports/model_check/primarybackup_safety_invariants.json");
+    assert!(input.exists(), "Missing input spec: {}", input.display());
+    assert!(types.exists(), "Missing types spec: {}", types.display());
+    let model_src = std::fs::read_to_string(&model_path)
+        .unwrap_or_else(|err| panic!("failed to read PrimaryBackup safety fixture: {}", err));
+    assert!(
+        model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
+        "PrimaryBackup safety fixture should stay bounded (`max_depth = 1`, `max_states = 200`)"
+    );
+    assert!(
+        artifact_path.exists(),
+        "Missing checked-in PrimaryBackup safety artifact: {}",
+        artifact_path.display()
+    );
+
+    let output = std::process::Command::new(&transpiler_bin)
+        .args([
+            "model-check",
+            "--input",
+            input.to_str().unwrap(),
+            "--types",
+            types.to_str().unwrap(),
+            "--model",
+            model_path.to_str().unwrap(),
+            "--search",
+            "bfs",
+            "--json-report",
+        ])
+        .output()
+        .expect("Failed to run model-check command");
+
+    assert!(
+        output.status.success(),
+        "PrimaryBackup safety-invariant model-check should succeed. stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("model-check should emit valid JSON report");
+    let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read checked-in PrimaryBackup safety artifact {}: {}",
+            artifact_path.display(),
+            err
+        )
+    });
+    let artifact_report: serde_json::Value = serde_json::from_str(&artifact_src)
+        .expect("checked-in PrimaryBackup safety artifact should be valid JSON");
+
+    let result = report
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, "ok",
+        "PrimaryBackup safety-invariant run should be non-violating. report={}",
+        stdout
+    );
+    assert!(
+        report
+            .get("invariant_violation")
+            .map(serde_json::Value::is_null)
+            .unwrap_or(true),
+        "PrimaryBackup safety-invariant run unexpectedly reported a violation. report={}",
+        stdout
+    );
+
+    let configured_count = report
+        .pointer("/invariants/configured_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let resolved_count = report
+        .pointer("/invariants/resolved_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(configured_count, 3, "expected 3 configured safety invariants");
+    assert_eq!(resolved_count, 3, "expected 3 resolved safety invariants");
+
+    let expected_invariants = [
+        "LSafetyNoPendingImpliesClearedValue",
+        "LSafetyUnackedImpliesPending",
+        "LSafetyInactiveStateIsQuiescent",
+    ];
+    for name in expected_invariants {
+        assert!(
+            report
+                .pointer("/invariants/resolved")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .any(|resolved| resolved == name)
+                })
+                .unwrap_or(false),
+            "expected invariant `{}` to be resolved in live PrimaryBackup safety run; report={}",
+            name,
+            stdout
+        );
+    }
+
+    let states = report
+        .pointer("/summary/states")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let transitions = report
+        .pointer("/summary/transitions")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert!(
+        states > 0 && transitions > 0,
+        "expected non-empty explored graph for PrimaryBackup safety run; report={}",
+        stdout
+    );
+
+    let artifact_result = artifact_report
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let search_state_dedup = report
+        .pointer("/search/state_dedup")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let artifact_search_state_dedup = artifact_report
+        .pointer("/search/state_dedup")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let artifact_configured_count = artifact_report
+        .pointer("/invariants/configured_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_resolved_count = artifact_report
+        .pointer("/invariants/resolved_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_states = artifact_report
+        .pointer("/summary/states")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_transitions = artifact_report
+        .pointer("/summary/transitions")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        result, artifact_result,
+        "PrimaryBackup safety result drifted from artifact"
+    );
+    assert_eq!(
+        search_state_dedup, artifact_search_state_dedup,
+        "PrimaryBackup safety exactness mode drifted from artifact"
+    );
+    assert_eq!(
+        (configured_count, resolved_count),
+        (artifact_configured_count, artifact_resolved_count),
+        "PrimaryBackup safety invariant-count evidence drifted from artifact"
+    );
+    assert_eq!(
+        (states, transitions),
+        (artifact_states, artifact_transitions),
+        "PrimaryBackup safety reachability telemetry drifted from artifact"
+    );
+}
+
+#[test]
 fn test_model_check_twophase_bounded_run() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 

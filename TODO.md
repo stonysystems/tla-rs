@@ -9847,7 +9847,9 @@ Rules for this phase (do not cut corners):
   - [x] **33.5.3.a TwoPhase** Add in-source safety invariants and checked-in bounded source-first evidence. [26:03:06, 17:05]
     - Added Three TwoPhase safety predicates in source spec (`LSafetyNoCommitAbortOverlap`, `LSafetyCommittedSubsetPrepared`, `LSafetyTmCommittedRequiresAllPrepared`) and a dedicated bounded model fixture `twophase_safety_invariants.model.toml`.
     - Added checked-in artifact `reports/model_check/twophase_safety_invariants.json` and integration guard `test_model_check_twophase_real_safety_invariants_bounded_run` (enforces configured/resolved invariants, non-violation, exactness parity, and stable summary parity vs artifact).
-  - [ ] **33.5.3.b PrimaryBackup** Add in-source safety invariants and checked-in bounded source-first evidence.
+  - [x] **33.5.3.b PrimaryBackup** Add in-source safety invariants and checked-in bounded source-first evidence. [26:03:06, 17:35]
+    - Added three PrimaryBackup safety predicates in source spec (`LSafetyNoPendingImpliesClearedValue`, `LSafetyUnackedImpliesPending`, `LSafetyInactiveStateIsQuiescent`) and a bounded model fixture `primarybackup_safety_invariants.model.toml`.
+    - Added checked-in artifact `reports/model_check/primarybackup_safety_invariants.json` and integration guard `test_model_check_primarybackup_real_safety_invariants_bounded_run` (enforces configured/resolved invariants, non-violation, exactness parity, and stable summary parity vs artifact).
   - [ ] **33.5.3.c LeaderElection** Add in-source safety invariants and checked-in bounded source-first evidence.
 
 ### 33.6 Code-review findings converted to no-corners tasks (2026-03-04)

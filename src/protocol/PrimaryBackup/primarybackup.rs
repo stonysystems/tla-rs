@@ -192,4 +192,19 @@ pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
     ||| (exists |sent_packets: Seq<LPBMessage>| LBackupPromote(s, s_, c, sent_packets))
 }
 
+/// Safety: when there is no pending write, pending_value must be cleared.
+pub open spec fn LSafetyNoPendingImpliesClearedValue(s: LState, c: LConstants) -> bool {
+    !s.has_pending ==> s.pending_value == 0
+}
+
+/// Safety: an unacknowledged state always corresponds to a pending write.
+pub open spec fn LSafetyUnackedImpliesPending(s: LState, c: LConstants) -> bool {
+    !s.acked ==> s.has_pending
+}
+
+/// Safety: inactive mode has no pending write and no sync channel.
+pub open spec fn LSafetyInactiveStateIsQuiescent(s: LState, c: LConstants) -> bool {
+    s.role is Inactive ==> (!s.has_pending && s.acked && !s.backup_synced)
+}
+
 }
