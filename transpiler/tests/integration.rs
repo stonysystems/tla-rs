@@ -8201,8 +8201,14 @@ fn test_model_check_telemetry_comparison_script_reports_expected_deltas() {
     for required in [
         "# Model-Check Optimization Telemetry Comparison",
         "| Optimization | Artifact | Metric | Before | After | Delta | Reachable-state guard |",
+        "## Exact-Mode Reachable-State Guard Policy",
+        "| Artifact | Baseline guard | Observed guard | Policy status |",
         "reports/model_check/liveness_avoidable_cycle_violated.json",
         "reports/model_check/guard_pruned_enumeration.json",
+        "reports/model_check/paxos_small.json",
+        "reports/model_check/primarybackup_small.json",
+        "reports/model_check/twophase_small.json",
+        "reports/model_check/leaderelection_small.json",
         "`successor_cache_hits`",
         "`successor_cache_misses`",
         "`enumeration_candidate_evaluations`",
@@ -8211,6 +8217,11 @@ fn test_model_check_telemetry_comparison_script_reports_expected_deltas() {
         "`-2`",
         "`3/5 -> 3/5`",
         "`1/0 -> 1/0`",
+        "`1/2`",
+        "`2/2`",
+        "`3/4`",
+        "`4/3`",
+        "| `reports/model_check/paxos_small.json` | `1/2` | `1/2` | ok |",
     ] {
         assert!(
             stdout.contains(required),
@@ -8229,6 +8240,14 @@ fn test_model_check_telemetry_comparison_script_reports_expected_deltas() {
     assert!(
         matrix_script.contains("OPTIMIZATION_DELTAS.md"),
         "matrix script should emit optimization delta report artifact"
+    );
+
+    let status_doc = std::fs::read_to_string(repo_root.join("docs/model_checker_status.md"))
+        .expect("failed to read docs/model_checker_status.md");
+    assert!(
+        status_doc.contains("### 4.3 Exact-mode reachable-state change policy (Phase 33.4)")
+            && status_doc.contains("correctness bug fix"),
+        "status doc should define the exact-mode reachable-state change policy with correctness bug-fix documentation requirements"
     );
 }
 

@@ -9730,7 +9730,15 @@ Rules for this phase (do not cut corners):
   - Wired `scripts/run_model_check_matrix.sh` to regenerate `reports/model_check/OPTIMIZATION_DELTAS.md` on every matrix replay.
   - Added integration regression `test_model_check_telemetry_comparison_script_reports_expected_deltas` to lock script output/delta rows and matrix wiring.
   - Updated `docs/model_checker_status.md` with automation evidence + replay command (`§5.13`).
-- [ ] Reject any optimization that changes exact-mode reachable-state counts unless the change is explained by a correctness bug fix and documented.
+- [x] Reject any optimization that changes exact-mode reachable-state counts unless the change is explained by a correctness bug fix and documented. [26:03:06, 03:35]
+  - Extended `scripts/compare_model_check_telemetry.sh` with an exact-mode reachable-state policy guard over fixed baseline artifacts (`paxos_small`, `primarybackup_small`, `twophase_small`, `leaderelection_small`, `liveness_avoidable_cycle_violated`, `guard_pruned_enumeration`).
+  - Policy behavior: drift is rejected unless `docs/model_checker_status.md` contains an exception row with artifact path, guard token `` `old -> new` ``, and rationale containing `correctness bug fix`.
+  - Added/updated regression `test_model_check_telemetry_comparison_script_reports_expected_deltas` to enforce:
+    - telemetry delta table output,
+    - exact-mode policy table output,
+    - matrix-script wiring,
+    - status-doc policy section presence.
+  - Updated `docs/model_checker_status.md` with `§4.3 Exact-mode reachable-state change policy` and exception-row contract.
 
 ### 33.5 Consensus protocol coverage drive
 

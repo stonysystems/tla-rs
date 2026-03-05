@@ -237,6 +237,7 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 - `scripts/run_model_check_matrix.sh` now regenerates `reports/model_check/OPTIMIZATION_DELTAS.md` on every matrix run.
 - `transpiler/tests/integration.rs`:
   - `test_model_check_telemetry_comparison_script_reports_expected_deltas` verifies the script output contains the required metric rows/deltas and that matrix automation is wired to produce the delta report.
+  - The same regression also locks the exact-mode reachable-state policy section (`§4.3`) so exactness-changing optimizations require explicit correctness bug-fix documentation.
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
@@ -277,6 +278,27 @@ The table below locks explicit before/after telemetry deltas for the two exact-m
 | 33.4.2.a successor memoization | `reports/model_check/liveness_avoidable_cycle_violated.json` | `successor_cache_misses` | `0` | `3` | `+3` | `3/5 -> 3/5` |
 | 33.4.2.b guard-pruned fallback enumeration | `reports/model_check/guard_pruned_enumeration.json` | `enumeration_candidate_evaluations` | `2` | `0` | `-2` | `1/0 -> 1/0` |
 | 33.4.2.b guard-pruned fallback enumeration | `reports/model_check/guard_pruned_enumeration.json` | `guard_pruned_candidate_evaluations` | `0` | `2` | `+2` | `1/0 -> 1/0` |
+
+### 4.3 Exact-mode reachable-state change policy (Phase 33.4)
+
+Any optimization that changes exact-mode reachable-state counts (`states/transitions`) is rejected unless both are true:
+
+1. The change is due to a correctness bug fix (not a performance-only tweak).
+2. The status doc records the change explicitly with old/new guard and rationale.
+
+Automation enforcement:
+
+- `scripts/compare_model_check_telemetry.sh` validates a fixed exact-mode baseline guard set and fails on undocumented drift.
+- If an exactness-changing correctness fix is intentional, add an exception row below that includes:
+  - artifact path
+  - guard change token formatted as `` `old -> new` ``
+  - phrase `correctness bug fix` in the rationale text
+
+Exception rows (approved exactness-changing fixes):
+
+| Artifact | Guard change | Rationale |
+| --- | --- | --- |
+| _None_ | _N/A_ | _No approved exactness-changing correctness bug fixes currently._ |
 
 ## 5. Exact reproduction commands
 
@@ -504,7 +526,10 @@ This fails if any `reports/model_check/*.json` path referenced in this status do
 ./scripts/compare_model_check_telemetry.sh
 ```
 
-This prints the Phase 33.4.2 before/after/delta table from checked-in artifacts and fails if the reachable-state guard drifts.
+This prints the Phase 33.4.2 before/after/delta table plus exact-mode policy checks from checked-in artifacts and fails on either:
+
+- reachable-state guard drift in the optimization delta cases, or
+- undocumented exact-mode reachable-state changes (missing `correctness bug fix` exception entry in `§4.3`).
 
 ## 6. Update rules (strict)
 
