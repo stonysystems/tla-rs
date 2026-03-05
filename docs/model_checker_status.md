@@ -157,7 +157,7 @@ Paxos safety-invariant run additionally enforces: three configured/resolved in-s
 
 - `transpiler/tests/integration.rs`:
   - `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` (checked-in RSL blocker model reproduces missing `quantifiers.types.LConstants` domain requirement)
-  - `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` (checked-in VerticalPaxos blocker model reproduces bounded candidate expansion overflow for `LState`)
+  - `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` (checked-in VerticalPaxos blocker model reproduces bounded candidate expansion overflow for `LState` and enforces fixture intent/minimality)
   - `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` (checked-in EPaxos blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` (checked-in PBFT blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` (checked-in ChainReplication blocker model reproduces bounded candidate expansion overflow for `LState`)

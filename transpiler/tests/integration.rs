@@ -9988,6 +9988,17 @@ fn test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible(
         resolve_model_check_fixture_path("verticalpaxos_state_expansion_limit.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
+    let model_src = std::fs::read_to_string(&model_path)
+        .unwrap_or_else(|err| panic!("failed to read VerticalPaxos blocker fixture: {}", err));
+    assert!(
+        model_src.contains("Minimal checked-in model")
+            && model_src.contains("LState candidate expansion limit"),
+        "VerticalPaxos blocker fixture should document intentional expansion-limit setup"
+    );
+    assert!(
+        model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
+        "VerticalPaxos blocker fixture should stay minimal and bounded (`max_depth = 1`, `max_states = 200`)"
+    );
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([
