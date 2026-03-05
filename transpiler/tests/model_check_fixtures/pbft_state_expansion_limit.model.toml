@@ -1,0 +1,28 @@
+# Minimal checked-in model for reproducing the current source-first
+# PBFT blocker (LState candidate expansion limit).
+[constants.assignments]
+f = 0
+n = 1
+node_id = 0
+checkpoint_interval = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[quantifiers.nat]
+max = 1
+
+[collections]
+max_seq_len = 1
+max_set_len = 1
+max_map_len = 1
+
+[search]
+max_depth = 1
+max_states = 200
+timeout_ms = 10000
+
+[properties]
+check_deadlock = false
+successor_semantics = "deadlock"
