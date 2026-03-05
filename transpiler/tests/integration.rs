@@ -8567,7 +8567,7 @@ fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
         ExpectedUnsupportedRow {
             protocol: "EPaxos",
             model_path: "transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml",
-            blocker_fragment: "struct `LState` exceeds `search.max_states` limit (200)",
+            blocker_fragment: "struct `LConstants` exceeds `search.max_states` limit (200)",
         },
         ExpectedUnsupportedRow {
             protocol: "PBFT",
@@ -10040,7 +10040,7 @@ fn test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reprodu
 }
 
 #[test]
-fn test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible() {
+fn test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
     let repo_root = resolve_repo_root_for_integration();
@@ -10053,7 +10053,7 @@ fn test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible() {
         .unwrap_or_else(|err| panic!("failed to read EPaxos blocker fixture: {}", err));
     assert!(
         model_src.contains("Minimal checked-in model")
-            && model_src.contains("LState candidate expansion limit"),
+            && model_src.contains("LConstants candidate expansion limit"),
         "EPaxos blocker fixture should document intentional expansion-limit setup"
     );
     assert!(
@@ -10078,17 +10078,23 @@ fn test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible() {
 
     assert!(
         !output.status.success(),
-        "EPaxos model-check should fail until candidate expansion is pruned/bounded more precisely."
+        "EPaxos model-check should fail until LConstants expansion is pruned/bounded more precisely."
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Model-check candidate expansion for struct `LState` exceeded limit (200)"),
-        "expected LState candidate expansion blocker in stderr, got: {}",
+        stderr.contains("Model-check candidate expansion for struct `LConstants` exceeded limit")
+            && stderr.contains("(200)"),
+        "expected LConstants candidate expansion blocker in stderr, got: {}",
         stderr
     );
     assert!(
         stderr.contains("Narrow domains or increase `search.max_states`"),
         "expected expansion-limit guidance in stderr, got: {}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("candidate expansion for struct `LState`"),
+        "EPaxos blocker should no longer be the pre-LInit LState candidate expansion path; got: {}",
         stderr
     );
 }

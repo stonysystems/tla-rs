@@ -1,5 +1,5 @@
 # Minimal checked-in model for reproducing the current source-first
-# EPaxos blocker (LState candidate expansion limit).
+# EPaxos blocker (LConstants candidate expansion limit).
 [constants.assignments]
 num_replicas = 3
 quorum_size = 2

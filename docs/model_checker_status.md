@@ -158,7 +158,7 @@ Paxos safety-invariant run additionally enforces: three configured/resolved in-s
 - `transpiler/tests/integration.rs`:
   - `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` (checked-in RSL blocker model reproduces missing `quantifiers.types.LConstants` domain requirement)
   - `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` (checked-in VerticalPaxos blocker model reproduces bounded existential-assignment expansion overflow and enforces fixture intent/minimality)
-  - `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` (checked-in EPaxos blocker model reproduces bounded candidate expansion overflow for `LState` and enforces fixture intent/minimality)
+  - `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` (checked-in EPaxos blocker model reproduces bounded candidate expansion overflow for `LConstants` and enforces fixture intent/minimality)
   - `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` (checked-in PBFT blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` (checked-in ChainReplication blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` (checked-in Raft blocker model reproduces missing `quantifiers.types.u64` domain requirement and enforces that the fixture intentionally omits that domain while staying minimal/bounded)
@@ -258,7 +258,7 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_u64_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `u64` (`quantifiers.types.u64`). | `test_model_check_raft_blocker_missing_u64_domain_is_reproducible` |
 | `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 12` | N/A | `test_model_check_paxos_bounded_run`, `test_model_check_paxos_real_safety_invariants_bounded_run`, `reports/model_check/paxos_small.json`, `reports/model_check/paxos_safety_invariants.json` |
 | `VerticalPaxos` | `src/protocol/VerticalPaxos/vpaxos.rs`, `src/protocol/VerticalPaxos/types.rs` | `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; pre-exploration branch-assignment expansion fails) | `unsupported` | N/A | Configuration error: existential domain expansion exceeded limit (200 assignments) during bounded branch existential enumeration. | `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` |
-| `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` |
+| `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LConstants` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` |
 | `PBFT` | `src/protocol/PBFT/pbft.rs`, `src/protocol/PBFT/types.rs` | `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` |
 | `ChainReplication` | `src/protocol/ChainReplication/chain.rs`, `src/protocol/ChainReplication/types.rs` | `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible` |
 | `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 2 / 1 / 67` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `reports/model_check/primarybackup_small.json` |
@@ -472,7 +472,7 @@ transpiler/target/debug/verus-transpile model-check \
   --search bfs
 ```
 
-Expected result: command fails with `Model-check candidate expansion for struct \`LState\` exceeded limit (200).`
+Expected result: command fails with `Model-check candidate expansion for struct \`LConstants\` exceeded limit (200).`
 
 ### 5.8 Replay currently checked-in unsupported blocker (PBFT)
 
@@ -519,7 +519,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_status_doc_tracks_implementation_unsupported_surface -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_missing_constants_domain_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible -- --nocapture
-cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_pbft_blocker_state_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_chainreplication_blocker_state_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_raft_blocker_missing_u64_domain_is_reproducible -- --nocapture

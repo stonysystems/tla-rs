@@ -2542,17 +2542,21 @@ fn expr_to_static_runtime_value(
 fn collect_state_field_literal_equalities(
     expr: &verus_transpiler::ast::Expr,
     state_param: &str,
+    field_types: &std::collections::HashMap<String, verus_transpiler::ast::Type>,
     assignments: &mut std::collections::HashMap<
         String,
         verus_transpiler::modelcheck::value::RuntimeValue,
     >,
 ) -> bool {
-    use verus_transpiler::ast::Expr;
+    use verus_transpiler::ast::{Expr, Type};
+    use verus_transpiler::modelcheck::value::RuntimeValue;
 
     match expr {
         Expr::Conjunction(parts) => parts
             .iter()
-            .all(|part| collect_state_field_literal_equalities(part, state_param, assignments)),
+            .all(|part| {
+                collect_state_field_literal_equalities(part, state_param, field_types, assignments)
+            }),
         Expr::Eq(lhs, rhs) => {
             if let Some(field_name) = match_state_field_access(lhs, state_param) {
                 let Some(value) = expr_to_static_runtime_value(rhs) else {
@@ -2576,6 +2580,33 @@ fn collect_state_field_literal_equalities(
             }
             true
         }
+        Expr::Is(base, variant) => {
+            let Some(field_name) = match_state_field_access(base, state_param) else {
+                return true;
+            };
+            let Some(field_ty) = field_types.get(&field_name) else {
+                return false;
+            };
+            let enum_ty = match field_ty {
+                Type::Named(path) => path.last().map(str::to_string),
+                Type::Reference { ty, .. } => match ty.as_ref() {
+                    Type::Named(path) => path.last().map(str::to_string),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let Some(enum_ty) = enum_ty else {
+                return false;
+            };
+            let Ok(value) = RuntimeValue::enum_value(enum_ty, variant.clone(), Vec::new()) else {
+                return false;
+            };
+            if let Some(existing) = assignments.get(&field_name) {
+                return existing == &value;
+            }
+            assignments.insert(field_name, value);
+            true
+        }
         _ => true,
     }
 }
@@ -2595,7 +2626,17 @@ fn derive_fully_pinned_state_candidates_from_init(
     };
 
     let mut assignments = std::collections::HashMap::new();
-    if !collect_state_field_literal_equalities(&init_fn.body, state_param, &mut assignments) {
+    let field_types: std::collections::HashMap<String, verus_transpiler::ast::Type> = struct_def
+        .fields
+        .iter()
+        .map(|field| (field.name.clone(), field.ty.clone()))
+        .collect();
+    if !collect_state_field_literal_equalities(
+        &init_fn.body,
+        state_param,
+        &field_types,
+        &mut assignments,
+    ) {
         return Ok(None);
     }
     if struct_def
@@ -6538,6 +6579,114 @@ verus! {
         &&& s_.f == s.f
         &&& s_.g == s.g
         &&& s_.h == s.h
+        &&& s.a <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 0
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[search]
+max_depth = 1
+max_states = 50
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(execution.summary.states, 1);
+        assert_eq!(execution.summary.transitions, 1);
+    }
+
+    #[test]
+    fn test_execute_model_check_linit_fallback_supports_enum_variant_is_constraints() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub enum LPhase { Empty, Busy }
+
+    pub struct LState {
+        pub a: int,
+        pub b: int,
+        pub c: int,
+        pub d: int,
+        pub e: int,
+        pub f: int,
+        pub g: int,
+        pub h: int,
+        pub phase: LPhase,
+    }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        &&& s.a == 0
+        &&& s.b == 0
+        &&& s.c == 0
+        &&& s.d == 0
+        &&& s.e == 0
+        &&& s.f == 0
+        &&& s.g == 0
+        &&& s.h == 0
+        &&& s.phase is Empty
+        &&& c.limit >= 0
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        &&& s_.a == s.a
+        &&& s_.b == s.b
+        &&& s_.c == s.c
+        &&& s_.d == s.d
+        &&& s_.e == s.e
+        &&& s_.f == s.f
+        &&& s_.g == s.g
+        &&& s_.h == s.h
+        &&& s_.phase == s.phase
         &&& s.a <= c.limit
     }
 }
