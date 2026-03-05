@@ -1,4 +1,5 @@
-# Minimal checked-in model for reproducing the current source-first RSL blocker.
+# Minimal checked-in blocker model for reproducing the current source-first RSL blocker:
+# missing `quantifiers.types.LConstants` domain configuration.
 [quantifiers.int]
 min = 0
 max = 0

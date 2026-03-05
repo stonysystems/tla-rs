@@ -2889,18 +2889,29 @@ fn execute_model_check(
 
     let state_ty = bundle
         .entrypoints
-        .linit
+        .lnext
         .params
         .first()
-        .ok_or_else(|| miette::miette!("Missing state parameter in init entrypoint."))?
+        .ok_or_else(|| miette::miette!("Missing current-state parameter in next entrypoint."))?
         .ty
         .clone();
     let constants_ty = bundle
         .entrypoints
         .linit
         .params
-        .get(1)
-        .ok_or_else(|| miette::miette!("Missing constants parameter in init entrypoint."))?
+        .iter()
+        .find(|param| {
+            matches!(
+                &param.ty,
+                verus_transpiler::ast::Type::Named(path) if path.last() == Some("LConstants")
+            )
+        })
+        .ok_or_else(|| {
+            miette::miette!(
+                "Missing `LConstants` parameter in init entrypoint `{}`.",
+                bundle.entrypoints.linit.name
+            )
+        })?
         .ty
         .clone();
 

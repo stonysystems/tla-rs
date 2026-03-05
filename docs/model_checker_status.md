@@ -9,6 +9,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 ### 1.1 Implemented source-first pipeline
 
 - Ingest protocol spec + types sources and resolve entrypoints (`LInit`, `LNext`) from Rust/Verus input.
+- Entrypoint validation is role-based (state/state' type agreement + `LConstants` parameter presence), so protocol-local parameter names/order and 2-arg `LNext(state, state_)` forms are accepted.
 - Parse/validate `model.toml`, apply CLI overrides, and resolve selected invariants.
 - Build normalized branch IR from `LNext` (disjunction flattening, branch labels, branch-level existential extraction).
 - Construct initial states by evaluating `LInit` over finite candidate states and resolved constants.
@@ -152,7 +153,7 @@ Pass condition used by tests: command success + valid JSON + `summary.states > 0
 ### 3.5 Unsupported protocol blocker regressions
 
 - `transpiler/tests/integration.rs`:
-  - `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` (checked-in RSL blocker model reproduces current init-signature gate expecting `LState`/`LConstants`)
+  - `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` (checked-in RSL blocker model reproduces missing `quantifiers.types.LConstants` domain requirement)
   - `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` (checked-in VerticalPaxos blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` (checked-in EPaxos blocker model reproduces bounded candidate expansion overflow for `LState`)
   - `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` (checked-in PBFT blocker model reproduces bounded candidate expansion overflow for `LState`)
@@ -250,7 +251,7 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 
 | Protocol | Exact source files used | Checked-in model file | Search mode / exactness | Result | States / transitions / depth / elapsed_ms | First blocker (if unsupported) | Automated evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `RSL` | `src/protocol/RSL/distributed_system.rs` | `transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: incompatible `RslInit` signature (current source-first gate expects `(s: LState, c: LConstants)`). | `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` |
+| `RSL` | `src/protocol/RSL/distributed_system.rs` | `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LConstants` (`quantifiers.types.LConstants`). | `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` |
 | `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LLogEntry` (`quantifiers.types.LLogEntry`). | `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` |
 | `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 12` | N/A | `test_model_check_paxos_bounded_run`, `reports/model_check/paxos_small.json` |
 | `VerticalPaxos` | `src/protocol/VerticalPaxos/vpaxos.rs`, `src/protocol/VerticalPaxos/types.rs` | `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LState` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` |
@@ -414,11 +415,11 @@ transpiler/target/debug/verus-transpile model-check \
   --input src/protocol/RSL/distributed_system.rs \
   --init RslInit \
   --next RslNext \
-  --model transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml \
+  --model transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml \
   --search bfs
 ```
 
-Expected result: command fails with `Configuration error: Incompatible \`RslInit\` signature.` and describes the currently required `(s: LState, c: LConstants)` shape.
+Expected result: command fails with `Configuration error: Missing domain for named type \`LConstants\`` and a hint to provide `quantifiers.types.LConstants`.
 
 ### 5.5 Replay currently checked-in unsupported blocker (Raft)
 
@@ -499,7 +500,7 @@ cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_c
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_status_doc_tracks_implementation_unsupported_surface -- --nocapture
-cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible -- --nocapture
+cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_rsl_blocker_missing_constants_domain_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible -- --nocapture
 cargo test --manifest-path transpiler/Cargo.toml --test integration test_model_check_pbft_blocker_state_expansion_limit_is_reproducible -- --nocapture

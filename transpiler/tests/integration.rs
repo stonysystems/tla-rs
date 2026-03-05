@@ -8551,8 +8551,8 @@ fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     let expected_rows = [
         ExpectedUnsupportedRow {
             protocol: "RSL",
-            model_path: "transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml",
-            blocker_fragment: "incompatible `RslInit` signature",
+            model_path: "transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml",
+            blocker_fragment: "missing domain for named type `LConstants`",
         },
         ExpectedUnsupportedRow {
             protocol: "Raft",
@@ -9708,12 +9708,12 @@ fn test_model_check_guard_pruned_enumeration_bounded_run() {
 }
 
 #[test]
-fn test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible() {
+fn test_model_check_rsl_blocker_missing_constants_domain_is_reproducible() {
     let transpiler_bin = resolve_transpiler_binary_for_integration();
 
     let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/RSL/distributed_system.rs");
-    let model_path = resolve_model_check_fixture_path("rsl_incompatible_init_signature.model.toml");
+    let model_path = resolve_model_check_fixture_path("rsl_missing_constants_domain.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
 
     let output = std::process::Command::new(&transpiler_bin)
@@ -9735,22 +9735,18 @@ fn test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible() {
 
     assert!(
         !output.status.success(),
-        "RSL model-check should fail until source-first entrypoint signature constraints are relaxed."
+        "RSL model-check should fail until `LConstants` domain configuration is provided."
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Incompatible `RslInit` signature"),
-        "expected incompatible RslInit signature blocker in stderr, got: {}",
+        stderr.contains("Missing domain for named type `LConstants`"),
+        "expected missing LConstants domain blocker in stderr, got: {}",
         stderr
     );
     assert!(
-        stderr.contains("Expected: RslInit(s: LState, c: LConstants) -> bool"),
-        "expected signature expectation details in stderr, got: {}",
-        stderr
-    );
-    assert!(
-        stderr.contains("Found: RslInit(con: LConstants, ps: RslState) -> bool"),
-        "expected found-signature details in stderr, got: {}",
+        stderr.contains("Provide")
+            && stderr.contains("`quantifiers.types.LConstants` in model.toml"),
+        "expected model-config guidance for missing LConstants domain in stderr, got: {}",
         stderr
     );
 }

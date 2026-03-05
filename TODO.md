@@ -9648,7 +9648,7 @@ Rules for this phase (do not cut corners):
   - first blocker when the protocol still does not run
 - [x] Keep the smallest realistic checked-in model that reproduces each blocker or success.
   - [x] Raft blocker model: add `transpiler/tests/model_check_fixtures/raft_missing_log_entry_domain.model.toml` and regression `test_model_check_raft_blocker_missing_log_entry_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LLogEntry` missing domain).
-  - [x] RSL blocker model: add `transpiler/tests/model_check_fixtures/rsl_incompatible_init_signature.model.toml` and regression `test_model_check_rsl_blocker_incompatible_init_signature_is_reproducible` to lock the current source-first init-signature gate requiring `(s: LState, c: LConstants)`.
+  - [x] RSL blocker model: add `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` and regression `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` to lock the current first blocker (`quantifiers.types.LConstants` missing domain).
   - [x] VerticalPaxos blocker model: add `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` and regression `test_model_check_verticalpaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [x] EPaxos blocker model: add `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` and regression `test_model_check_epaxos_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
   - [x] PBFT blocker model: add `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` and regression `test_model_check_pbft_blocker_state_expansion_limit_is_reproducible` to lock the current finite-domain expansion blocker (`LState` exceeds `search.max_states` during candidate construction).
@@ -9756,15 +9756,42 @@ Rules for this phase (do not cut corners):
   - Added regression `test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status_matrix` to enforce the exact canonical order across both `TODO.md` and `docs/model_checker_status.md` protocol matrix rows.
   - Extended `docs/model_checker_status.md` section `2.5` to record both enforcement guards (`unsupported`-row priority and full canonical order alignment).
 - [ ] For each protocol in that list:
-  - add a checked-in source-first `model.toml`
-  - try exact-mode source-first model checking first
-  - if it fails, classify the first blocker as one of:
-    - unsupported construct
-    - missing domain/config support
-    - state explosion/performance gap
-    - real counterexample
-  - land the highest-leverage code fix instead of skipping to an easier protocol
-  - if the protocol remains infeasible, record the exact blocker and next code task in `docs/model_checker_status.md`
+  - [x] **33.5.2.a RSL (priority #1)** [26:03:06, 05:10]
+    - [x] **33.5.2.a.1** Relaxed source-first entrypoint validation/binding so protocol-local signatures are accepted (`RslInit(con, ps)` order and `RslNext(ps, ps_)` without explicit constants param).
+      - Updated `resolve_required_entrypoints_named`/signature checks to validate by type-role compatibility (state/state' agreement + `LConstants` presence), not hard-coded parameter names/order.
+      - Updated model-check init-state binding to infer `LConstants` parameter by type and bind reversed `(constants, state)` init signatures correctly.
+    - [x] **33.5.2.a.2** Re-ran exact-mode source-first RSL with a checked-in minimal model and re-classified the first blocker as missing `quantifiers.types.LConstants` domain config.
+      - Updated blocker fixture/test/doc matrix references from the retired init-signature blocker to `rsl_missing_constants_domain`.
+  - [ ] **33.5.2.b Raft (priority #2)**
+    - [ ] **33.5.2.b.1** Keep a checked-in minimal exact-mode Raft source-first model and blocker regression stable; confirm first blocker remains the smallest reproducible one.
+    - [ ] **33.5.2.b.2** Land one highest-leverage fix for the Raft first blocker class (unsupported construct / missing config / performance / real counterexample), then re-classify.
+  - [ ] **33.5.2.c Paxos (priority #3)**
+    - [ ] **33.5.2.c.1** Keep exact-mode source-first Paxos green with checked-in model + artifact + regression evidence.
+    - [ ] **33.5.2.c.2** Upgrade toward real safety properties (not only smoke invariants) once executable in-source.
+  - [ ] **33.5.2.d VerticalPaxos (priority #4)**
+    - [ ] **33.5.2.d.1** Keep checked-in minimal blocker model and exact blocker classification current.
+    - [ ] **33.5.2.d.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
+  - [ ] **33.5.2.e EPaxos (priority #5)**
+    - [ ] **33.5.2.e.1** Keep checked-in minimal blocker model and exact blocker classification current.
+    - [ ] **33.5.2.e.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
+  - [ ] **33.5.2.f PBFT (priority #6)**
+    - [ ] **33.5.2.f.1** Keep checked-in minimal blocker model and exact blocker classification current.
+    - [ ] **33.5.2.f.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
+  - [ ] **33.5.2.g ChainReplication (priority #7)**
+    - [ ] **33.5.2.g.1** Keep checked-in minimal blocker model and exact blocker classification current.
+    - [ ] **33.5.2.g.2** Land one highest-leverage fix for the first blocker class, then re-measure and re-classify.
+  - [ ] **33.5.2.h PrimaryBackup (priority #8)**
+    - [ ] **33.5.2.h.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence.
+  - [ ] **33.5.2.i TwoPhase (priority #9)**
+    - [ ] **33.5.2.i.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence.
+  - [ ] **33.5.2.j LeaderElection (priority #10)**
+    - [ ] **33.5.2.j.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence.
+  - For every protocol leaf above:
+    - use a checked-in source-first `model.toml`
+    - try exact-mode source-first model checking first
+    - classify first blocker as: unsupported construct / missing domain-config support / state explosion-performance gap / real counterexample
+    - land the highest-leverage fix instead of skipping to easier protocols
+    - if still infeasible, record exact blocker + next code task in `docs/model_checker_status.md`
 - [ ] Where TLC wrappers already exist, add differential comparison on shared small models so source-first and wrapper outcomes agree qualitatively.
 - [ ] Prefer real protocol safety invariants/properties over toy fixtures once the engine can execute them.
 

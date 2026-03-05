@@ -102,8 +102,53 @@ fn validate_init_signature<'a>(
         });
     }
 
-    let state_param = init_fn.params[0].name.as_str();
-    let constants_param = init_fn.params.get(1).map(|param| param.name.as_str());
+    let mut state_param: Option<&str> = None;
+    let mut constants_param: Option<&str> = None;
+    for param in &init_fn.params {
+        let is_lconstants = matches!(
+            &param.ty,
+            Type::Named(path) if path.last() == Some("LConstants")
+        );
+        if is_lconstants {
+            if constants_param.is_some() {
+                return Err(TranspileError::Config {
+                    message: format!(
+                        "Cannot construct initial states from `{}`: expected at most one `LConstants` parameter.",
+                        init_fn.name
+                    ),
+                });
+            }
+            constants_param = Some(param.name.as_str());
+            continue;
+        }
+        if state_param.is_none() {
+            state_param = Some(param.name.as_str());
+        } else {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Cannot construct initial states from `{}`: could not infer a unique state parameter.",
+                    init_fn.name
+                ),
+            });
+        }
+    }
+
+    // Backward-compatible fallback for non-`LConstants` second parameter signatures.
+    if state_param.is_none() {
+        state_param = init_fn.params.first().map(|param| param.name.as_str());
+    }
+    if init_fn.params.len() == 2 && constants_param.is_none() {
+        constants_param = init_fn.params.get(1).map(|param| param.name.as_str());
+    }
+
+    let Some(state_param) = state_param else {
+        return Err(TranspileError::Config {
+            message: format!(
+                "Cannot construct initial states from `{}`: missing state parameter.",
+                init_fn.name
+            ),
+        });
+    };
     if constants_param.is_some() && constants.is_none() {
         return Err(TranspileError::Config {
             message: format!(
@@ -223,6 +268,37 @@ mod tests {
         .unwrap();
 
         assert_eq!(result, vec![state(0), state(2)]);
+    }
+
+    #[test]
+    fn test_construct_initial_states_supports_constants_first_signature_order() {
+        let init = init_fn(
+            vec![
+                param("con", Type::Named(Path::single("LConstants".to_string()))),
+                param("ps", Type::Named(Path::single("RslState".to_string()))),
+            ],
+            Expr::Eq(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("ps".to_string())),
+                    "x".to_string(),
+                )),
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("con".to_string())),
+                    "limit".to_string(),
+                )),
+            ),
+        );
+
+        let result = construct_initial_states(
+            &init,
+            &[state(0), state(1)],
+            Some(&constants(1)),
+            bounds(),
+            InitHooks::default(),
+        )
+        .unwrap();
+
+        assert_eq!(result, vec![state(1)]);
     }
 
     #[test]

@@ -245,8 +245,8 @@ pub fn analyze_spec_files_with_ast<P: AsRef<Path>>(
 /// Resolve and validate required model-check entrypoints from parsed spec functions.
 ///
 /// Required signatures:
-/// - `LInit(s: LState, c: LConstants) -> bool`
-/// - `LNext(s: LState, s_: LState, c: LConstants) -> bool`
+/// - `LNext(state, state_[, constants]) -> bool` where the first two params share a type
+/// - `LInit(state, constants) -> bool` (parameter order/name may vary)
 pub fn resolve_required_entrypoints(
     spec_functions: &[SpecFunction],
 ) -> TranspileResult<RequiredEntrypoints> {
@@ -272,7 +272,7 @@ pub fn resolve_required_entrypoints_named(
         .cloned()
         .ok_or_else(|| crate::error::TranspileError::Config {
             message: format!(
-                "Missing required entrypoint `{}(s: LState, c: LConstants) -> bool`.\nFound spec functions: {}.\nFix: add/rename a function to `{}` with the required signature.",
+                "Missing required entrypoint `{}(state, constants) -> bool`.\nFound spec functions: {}.\nFix: add/rename a function to `{}` with the required signature.",
                 init_name, available_names_text, init_name
             ),
         })?;
@@ -282,18 +282,22 @@ pub fn resolve_required_entrypoints_named(
         .cloned()
         .ok_or_else(|| crate::error::TranspileError::Config {
             message: format!(
-                "Missing required entrypoint `{}(s: LState, s_: LState, c: LConstants) -> bool`.\nFound spec functions: {}.\nFix: add/rename a function to `{}` with the required signature.",
+                "Missing required entrypoint `{}(state, state_[, constants]) -> bool`.\nFound spec functions: {}.\nFix: add/rename a function to `{}` with the required signature.",
                 next_name, available_names_text, next_name
             ),
         })?;
 
-    validate_linit_signature(&linit, init_name)?;
-    validate_lnext_signature(&lnext, next_name)?;
+    let lnext_state_type = validate_lnext_signature(&lnext, next_name)?;
+    validate_linit_signature(&linit, init_name, lnext_state_type)?;
 
     Ok(RequiredEntrypoints { linit, lnext })
 }
 
-fn validate_linit_signature(linit: &SpecFunction, expected_name: &str) -> TranspileResult<()> {
+fn validate_linit_signature(
+    linit: &SpecFunction,
+    expected_name: &str,
+    expected_state_type: &Type,
+) -> TranspileResult<()> {
     let mut issues = Vec::new();
     if linit.params.len() != 2 {
         issues.push(format!(
@@ -307,43 +311,36 @@ fn validate_linit_signature(linit: &SpecFunction, expected_name: &str) -> Transp
             format_type_for_diagnostic(&linit.return_type)
         ));
     }
-    if let Some(first) = linit.params.first() {
-        if first.name != "s" {
+    if linit.params.len() == 2 {
+        let first_is_state = linit.params[0].ty == *expected_state_type;
+        let second_is_state = linit.params[1].ty == *expected_state_type;
+        let first_is_constants = is_named_type(&linit.params[0].ty, "LConstants");
+        let second_is_constants = is_named_type(&linit.params[1].ty, "LConstants");
+
+        if first_is_state == second_is_state {
             issues.push(format!(
-                "expected first parameter name `s`, found `{}`",
-                first.name
+                "expected exactly one state parameter of type `{}` matching `{}`",
+                format_type_for_diagnostic(expected_state_type),
+                expected_name
             ));
         }
-        if !is_named_type(&first.ty, "LState") {
-            issues.push(format!(
-                "expected first parameter type `LState`, found `{}`",
-                format_type_for_diagnostic(&first.ty)
-            ));
-        }
-    }
-    if let Some(second) = linit.params.get(1) {
-        if second.name != "c" {
-            issues.push(format!(
-                "expected second parameter name `c`, found `{}`",
-                second.name
-            ));
-        }
-        if !is_named_type(&second.ty, "LConstants") {
-            issues.push(format!(
-                "expected second parameter type `LConstants`, found `{}`",
-                format_type_for_diagnostic(&second.ty)
-            ));
+        if first_is_constants == second_is_constants {
+            issues.push(
+                "expected exactly one constants parameter of type `LConstants`".to_string(),
+            );
         }
     }
 
     if !issues.is_empty() {
         return Err(crate::error::TranspileError::Config {
             message: format!(
-                "Incompatible `{}` signature.\nExpected: {}(s: LState, c: LConstants) -> bool\nFound: {}\nIssues: {}\nFix: rename/retype parameters to match the expected entrypoint.",
+                "Incompatible `{}` signature.\nExpected: {}(state: {}, constants: LConstants) -> bool (parameter order/name may vary)\nFound: {}\nIssues: {}\nFix: provide one state parameter matching `{}` and one `LConstants` parameter.",
                 expected_name,
                 expected_name,
+                format_type_for_diagnostic(expected_state_type),
                 format_signature_for_diagnostic(linit),
-                issues.join("; ")
+                issues.join("; "),
+                expected_name
             ),
         });
     }
@@ -351,11 +348,14 @@ fn validate_linit_signature(linit: &SpecFunction, expected_name: &str) -> Transp
     Ok(())
 }
 
-fn validate_lnext_signature(lnext: &SpecFunction, expected_name: &str) -> TranspileResult<()> {
+fn validate_lnext_signature<'a>(
+    lnext: &'a SpecFunction,
+    expected_name: &str,
+) -> TranspileResult<&'a Type> {
     let mut issues = Vec::new();
-    if lnext.params.len() != 3 {
+    if lnext.params.len() != 2 && lnext.params.len() != 3 {
         issues.push(format!(
-            "expected 3 parameters, found {}",
+            "expected 2 or 3 parameters, found {}",
             lnext.params.len()
         ));
     }
@@ -365,44 +365,19 @@ fn validate_lnext_signature(lnext: &SpecFunction, expected_name: &str) -> Transp
             format_type_for_diagnostic(&lnext.return_type)
         ));
     }
-    if let Some(first) = lnext.params.first() {
-        if first.name != "s" {
+    if let (Some(first), Some(second)) = (lnext.params.first(), lnext.params.get(1)) {
+        if first.ty != second.ty {
             issues.push(format!(
-                "expected first parameter name `s`, found `{}`",
-                first.name
-            ));
-        }
-        if !is_named_type(&first.ty, "LState") {
-            issues.push(format!(
-                "expected first parameter type `LState`, found `{}`",
-                format_type_for_diagnostic(&first.ty)
-            ));
-        }
-    }
-    if let Some(second) = lnext.params.get(1) {
-        if second.name != "s_" {
-            issues.push(format!(
-                "expected second parameter name `s_`, found `{}`",
-                second.name
-            ));
-        }
-        if !is_named_type(&second.ty, "LState") {
-            issues.push(format!(
-                "expected second parameter type `LState`, found `{}`",
+                "expected first and second parameter types to match, found `{}` and `{}`",
+                format_type_for_diagnostic(&first.ty),
                 format_type_for_diagnostic(&second.ty)
             ));
         }
     }
     if let Some(third) = lnext.params.get(2) {
-        if third.name != "c" {
-            issues.push(format!(
-                "expected third parameter name `c`, found `{}`",
-                third.name
-            ));
-        }
         if !is_named_type(&third.ty, "LConstants") {
             issues.push(format!(
-                "expected third parameter type `LConstants`, found `{}`",
+                "expected optional third parameter type `LConstants`, found `{}`",
                 format_type_for_diagnostic(&third.ty)
             ));
         }
@@ -411,7 +386,7 @@ fn validate_lnext_signature(lnext: &SpecFunction, expected_name: &str) -> Transp
     if !issues.is_empty() {
         return Err(crate::error::TranspileError::Config {
             message: format!(
-                "Incompatible `{}` signature.\nExpected: {}(s: LState, s_: LState, c: LConstants) -> bool\nFound: {}\nIssues: {}\nFix: rename/retype parameters to match the expected entrypoint.",
+                "Incompatible `{}` signature.\nExpected: {}(state: T, state_: T[, constants: LConstants]) -> bool (parameter names may vary)\nFound: {}\nIssues: {}\nFix: ensure first two parameters share one state type and optional constants parameter is `LConstants`.",
                 expected_name,
                 expected_name,
                 format_signature_for_diagnostic(lnext),
@@ -420,7 +395,7 @@ fn validate_lnext_signature(lnext: &SpecFunction, expected_name: &str) -> Transp
         });
     }
 
-    Ok(())
+    Ok(&lnext.params[0].ty)
 }
 
 fn is_named_type(ty: &Type, expected_name: &str) -> bool {
@@ -1867,7 +1842,7 @@ verus! {
     }
 
     #[test]
-    fn test_ingest_protocol_sources_rejects_incompatible_linit_signature() {
+    fn test_ingest_protocol_sources_accepts_noncanonical_linit_parameter_names() {
         let dir = tempdir().unwrap();
         let types_path = dir.path().join("types.rs");
         let proto_path = dir.path().join("demo.rs");
@@ -1893,12 +1868,46 @@ verus! {
         )
         .unwrap();
 
-        let err = ingest_protocol_sources(&proto_path).unwrap_err();
-        assert!(matches!(err, crate::error::TranspileError::Config { .. }));
-        let msg = err.to_string();
-        assert!(msg.contains("Incompatible `LInit` signature"));
-        assert!(msg.contains("Expected: LInit(s: LState, c: LConstants) -> bool"));
-        assert!(msg.contains("expected first parameter name `s`, found `state`"));
+        let bundle = ingest_protocol_sources(&proto_path).unwrap();
+        assert_eq!(bundle.entrypoints.linit.name, "LInit");
+        assert_eq!(bundle.entrypoints.lnext.name, "LNext");
+    }
+
+    #[test]
+    fn test_ingest_protocol_sources_accepts_rsl_style_entrypoint_shapes() {
+        let dir = tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+
+        fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LConstants { pub limit: int }
+    pub struct RslState { pub x: int }
+    pub open spec fn RslInit(con: LConstants, ps: RslState) -> bool { ps.x <= con.limit }
+}
+"#,
+        )
+        .unwrap();
+        fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn RslNext(ps: RslState, ps_: RslState) -> bool {
+        ps_.x >= ps.x
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let (_, spec_functions) =
+            analyze_spec_files_with_ast(&[types_path.as_path(), proto_path.as_path()]).unwrap();
+        let entrypoints =
+            resolve_required_entrypoints_named(&spec_functions, "RslInit", "RslNext").unwrap();
+        assert_eq!(entrypoints.linit.name, "RslInit");
+        assert_eq!(entrypoints.lnext.name, "RslNext");
     }
 
     #[test]
