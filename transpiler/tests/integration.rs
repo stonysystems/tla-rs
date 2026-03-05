@@ -9297,8 +9297,20 @@ fn test_model_check_leader_election_bounded_run() {
     let input = repo_root.join("src/protocol/LeaderElection/election.rs");
     let types = repo_root.join("src/protocol/LeaderElection/types.rs");
     let model_path = resolve_model_check_fixture_path("leaderelection_small.model.toml");
+    let artifact_path = repo_root.join("reports/model_check/leaderelection_small.json");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
+    let model_src = std::fs::read_to_string(&model_path)
+        .unwrap_or_else(|err| panic!("failed to read LeaderElection fixture: {}", err));
+    assert!(
+        model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
+        "LeaderElection fixture should stay bounded (`max_depth = 1`, `max_states = 200`)"
+    );
+    assert!(
+        artifact_path.exists(),
+        "Missing checked-in LeaderElection artifact: {}",
+        artifact_path.display()
+    );
 
     let output = std::process::Command::new(&transpiler_bin)
         .args([
@@ -9324,6 +9336,40 @@ fn test_model_check_leader_election_bounded_run() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let report: serde_json::Value =
         serde_json::from_str(&stdout).expect("model-check should emit valid JSON report");
+    let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read checked-in LeaderElection artifact {}: {}",
+            artifact_path.display(),
+            err
+        )
+    });
+    let artifact_report: serde_json::Value = serde_json::from_str(&artifact_src)
+        .expect("checked-in LeaderElection artifact should be valid JSON");
+    let result = report
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let artifact_result = artifact_report
+        .get("result")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        result, artifact_result,
+        "live LeaderElection source-first run result drifted from checked-in artifact. report={}",
+        stdout
+    );
+    let search_state_dedup = report
+        .pointer("/search/state_dedup")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    let artifact_search_state_dedup = artifact_report
+        .pointer("/search/state_dedup")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert_eq!(
+        search_state_dedup, artifact_search_state_dedup,
+        "LeaderElection exactness mode drifted from checked-in artifact"
+    );
     let states = report
         .get("summary")
         .and_then(|s| s.get("states"))
@@ -9334,6 +9380,31 @@ fn test_model_check_leader_election_bounded_run() {
         .and_then(|s| s.get("transitions"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
+    let depth = report
+        .get("summary")
+        .and_then(|s| s.get("depth"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_states = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("states"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_transitions = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("transitions"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let artifact_depth = artifact_report
+        .get("summary")
+        .and_then(|s| s.get("depth"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    assert_eq!(
+        (states, transitions, depth),
+        (artifact_states, artifact_transitions, artifact_depth),
+        "LeaderElection summary reachability metrics drifted from checked-in artifact"
+    );
     assert!(
         states > 0,
         "expected at least one reached state in bounded LeaderElection run: {}",
@@ -10668,13 +10739,21 @@ fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
     let repo_root = resolve_repo_root_for_integration();
     let tlc_outcomes_doc = std::fs::read_to_string("../docs/conversion-testing-guide.md")
         .expect("Failed to read TLC outcomes doc");
+    let wrapper_fixture_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("mc_wrapper_fixtures");
 
     struct DiffCase<'a> {
         protocol_name: &'a str,
         input: &'a str,
         types: &'a str,
         model_fixture: &'a str,
+        artifact_path: &'a str,
         expected_tlc_label: &'a str,
+        wrapper_tla_fixture: &'a str,
+        wrapper_cfg_fixture: &'a str,
+        wrapper_source_module: &'a str,
+        wrapper_module_name: &'a str,
     }
 
     let cases = [
@@ -10683,28 +10762,48 @@ fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
             input: "src/protocol/TwoPhase/twophase.rs",
             types: "src/protocol/TwoPhase/types.rs",
             model_fixture: "twophase_small.model.toml",
+            artifact_path: "reports/model_check/twophase_small.json",
             expected_tlc_label: "PASS",
+            wrapper_tla_fixture: "Twophase_MC.golden.tla",
+            wrapper_cfg_fixture: "Twophase_MC.golden.cfg",
+            wrapper_source_module: "Twophase",
+            wrapper_module_name: "Twophase_MC",
         },
         DiffCase {
             protocol_name: "LeaderElection",
             input: "src/protocol/LeaderElection/election.rs",
             types: "src/protocol/LeaderElection/types.rs",
             model_fixture: "leaderelection_small.model.toml",
+            artifact_path: "reports/model_check/leaderelection_small.json",
             expected_tlc_label: "PASS",
+            wrapper_tla_fixture: "Election_MC.golden.tla",
+            wrapper_cfg_fixture: "Election_MC.golden.cfg",
+            wrapper_source_module: "Election",
+            wrapper_module_name: "Election_MC",
         },
         DiffCase {
             protocol_name: "PrimaryBackup",
             input: "src/protocol/PrimaryBackup/primarybackup.rs",
             types: "src/protocol/PrimaryBackup/types.rs",
             model_fixture: "primarybackup_small.model.toml",
+            artifact_path: "reports/model_check/primarybackup_small.json",
             expected_tlc_label: "PASS",
+            wrapper_tla_fixture: "Primarybackup_MC.golden.tla",
+            wrapper_cfg_fixture: "Primarybackup_MC.golden.cfg",
+            wrapper_source_module: "Primarybackup",
+            wrapper_module_name: "Primarybackup_MC",
         },
         DiffCase {
             protocol_name: "Paxos",
             input: "src/protocol/Paxos/paxos.rs",
             types: "src/protocol/Paxos/types.rs",
             model_fixture: "paxos_small.model.toml",
+            artifact_path: "reports/model_check/paxos_small.json",
             expected_tlc_label: "PARTIAL",
+            wrapper_tla_fixture: "Paxos_MC.golden.tla",
+            wrapper_cfg_fixture: "Paxos_MC.golden.cfg",
+            wrapper_source_module: "Paxos",
+            wrapper_module_name: "Paxos_MC",
         },
     ];
 
@@ -10723,8 +10822,62 @@ fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
         let input = repo_root.join(case.input);
         let types = repo_root.join(case.types);
         let model_path = resolve_model_check_fixture_path(case.model_fixture);
+        let artifact_path = repo_root.join(case.artifact_path);
+        let wrapper_tla_path = wrapper_fixture_dir.join(case.wrapper_tla_fixture);
+        let wrapper_cfg_path = wrapper_fixture_dir.join(case.wrapper_cfg_fixture);
         assert!(input.exists(), "Missing input spec: {}", input.display());
         assert!(types.exists(), "Missing types spec: {}", types.display());
+        assert!(
+            artifact_path.exists(),
+            "Missing checked-in source-first artifact for {}: {}",
+            case.protocol_name,
+            artifact_path.display()
+        );
+        assert!(
+            wrapper_tla_path.exists(),
+            "Missing checked-in wrapper fixture for {}: {}",
+            case.protocol_name,
+            wrapper_tla_path.display()
+        );
+        assert!(
+            wrapper_cfg_path.exists(),
+            "Missing checked-in wrapper cfg fixture for {}: {}",
+            case.protocol_name,
+            wrapper_cfg_path.display()
+        );
+
+        let wrapper_tla_src = std::fs::read_to_string(&wrapper_tla_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read wrapper fixture {}: {}",
+                wrapper_tla_path.display(),
+                err
+            )
+        });
+        let wrapper_cfg_src = std::fs::read_to_string(&wrapper_cfg_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read wrapper cfg fixture {}: {}",
+                wrapper_cfg_path.display(),
+                err
+            )
+        });
+
+        assert!(
+            wrapper_tla_src.contains(&format!("---- MODULE {} ----", case.wrapper_module_name)),
+            "wrapper fixture {} should declare module `{}`",
+            wrapper_tla_path.display(),
+            case.wrapper_module_name
+        );
+        assert!(
+            wrapper_tla_src.contains(&format!("EXTENDS {}", case.wrapper_source_module)),
+            "wrapper fixture {} should extend source module `{}`",
+            wrapper_tla_path.display(),
+            case.wrapper_source_module
+        );
+        assert!(
+            wrapper_cfg_src.contains("SPECIFICATION Spec"),
+            "wrapper cfg fixture {} should declare SPECIFICATION Spec",
+            wrapper_cfg_path.display()
+        );
 
         let output = std::process::Command::new(&transpiler_bin)
             .args([
@@ -10771,6 +10924,16 @@ fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
             .and_then(|s| s.get("transitions"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
+        let depth = report
+            .get("summary")
+            .and_then(|s| s.get("depth"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let search_state_dedup = report
+            .get("search")
+            .and_then(|s| s.get("state_dedup"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>");
 
         assert_eq!(
             result, "ok",
@@ -10808,6 +10971,57 @@ fn test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models() {
             case.protocol_name,
             stop_reason,
             stdout
+        );
+
+        let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read checked-in artifact {}: {}",
+                artifact_path.display(),
+                err
+            )
+        });
+        let artifact_report: serde_json::Value = serde_json::from_str(&artifact_src)
+            .expect("checked-in differential artifact should be valid JSON");
+        let artifact_result = artifact_report
+            .get("result")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>");
+        let artifact_search_state_dedup = artifact_report
+            .get("search")
+            .and_then(|s| s.get("state_dedup"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>");
+        let artifact_states = artifact_report
+            .get("summary")
+            .and_then(|s| s.get("states"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let artifact_transitions = artifact_report
+            .get("summary")
+            .and_then(|s| s.get("transitions"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let artifact_depth = artifact_report
+            .get("summary")
+            .and_then(|s| s.get("depth"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        assert_eq!(
+            result, artifact_result,
+            "differential run result drifted from checked-in source-first artifact for {}",
+            case.protocol_name
+        );
+        assert_eq!(
+            search_state_dedup, artifact_search_state_dedup,
+            "differential exactness mode drifted from checked-in source-first artifact for {}",
+            case.protocol_name
+        );
+        assert_eq!(
+            (states, transitions, depth),
+            (artifact_states, artifact_transitions, artifact_depth),
+            "differential reachability summary drifted from checked-in source-first artifact for {}",
+            case.protocol_name
         );
     }
 }

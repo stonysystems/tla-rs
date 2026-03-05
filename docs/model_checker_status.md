@@ -135,7 +135,10 @@ Paxos safety-invariant run additionally enforces: three configured/resolved in-s
 
 ### 3.3 Differential source-first vs wrapper outcomes
 
-- `test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models` checks qualitative agreement for shared small models (TwoPhase, LeaderElection, PrimaryBackup, Paxos) against the TLC outcomes documented in `docs/conversion-testing-guide.md`.
+- `test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models` checks qualitative agreement for shared small models (TwoPhase, LeaderElection, PrimaryBackup, Paxos) and now enforces all three evidence anchors per case:
+  - TLC qualitative outcome row in `docs/conversion-testing-guide.md` (`PASS`/`PARTIAL`)
+  - checked-in wrapper fixtures in `transpiler/tests/mc_wrapper_fixtures/` (`*.golden.tla` + `*.golden.cfg`) with module/source-module structure checks
+  - checked-in source-first artifact parity against `reports/model_check/{twophase,leaderelection,primarybackup,paxos}_small.json` for stable fields (`result`, `search.state_dedup`, `summary.states/transitions/depth`)
 
 ### 3.4 Timeout semantics coverage
 

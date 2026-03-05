@@ -9829,14 +9829,20 @@ Rules for this phase (do not cut corners):
       - Re-ran source-first exact-mode TwoPhase with checked-in fixture `transpiler/tests/model_check_fixtures/twophase_small.model.toml`; run remains green (`result = ok`, `states = 3`, `transitions = 4`, `depth = 1`).
       - Strengthened `test_model_check_twophase_bounded_run` to enforce bounded fixture intent (`max_depth = 1`, `max_states = 200`), checked-in artifact presence (`reports/model_check/twophase_small.json`), and stable live-vs-artifact parity (`result`, `search.state_dedup`, `summary.states/transitions/depth`).
   - [ ] **33.5.2.j LeaderElection (priority #10)**
-    - [ ] **33.5.2.j.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence.
+    - [x] **33.5.2.j.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence. [26:03:06, 15:50]
+      - Re-ran source-first exact-mode LeaderElection with checked-in fixture `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml`; run remains green (`result = ok`, `states = 4`, `transitions = 3`, `depth = 1`).
+      - Strengthened `test_model_check_leader_election_bounded_run` to enforce bounded fixture intent (`max_depth = 1`, `max_states = 200`), checked-in artifact presence (`reports/model_check/leaderelection_small.json`), and stable live-vs-artifact parity (`result`, `search.state_dedup`, `summary.states/transitions/depth`).
   - For every protocol leaf above:
     - use a checked-in source-first `model.toml`
     - try exact-mode source-first model checking first
     - classify first blocker as: unsupported construct / missing domain-config support / state explosion-performance gap / real counterexample
     - land the highest-leverage fix instead of skipping to easier protocols
     - if still infeasible, record exact blocker + next code task in `docs/model_checker_status.md`
-- [ ] Where TLC wrappers already exist, add differential comparison on shared small models so source-first and wrapper outcomes agree qualitatively.
+- [x] Where TLC wrappers already exist, add differential comparison on shared small models so source-first and wrapper outcomes agree qualitatively. [26:03:06, 16:20]
+  - Strengthened `test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models` to require all shared evidence anchors per protocol case:
+    - qualitative TLC outcome row in `docs/conversion-testing-guide.md`
+    - checked-in wrapper fixtures (`transpiler/tests/mc_wrapper_fixtures/*.golden.{tla,cfg}`) with module/source-module shape checks
+    - checked-in source-first artifact parity (`reports/model_check/{twophase,leaderelection,primarybackup,paxos}_small.json`) for stable fields (`result`, `search.state_dedup`, `summary.states/transitions/depth`)
 - [ ] Prefer real protocol safety invariants/properties over toy fixtures once the engine can execute them.
 
 ### 33.6 Code-review findings converted to no-corners tasks (2026-03-04)
