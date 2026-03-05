@@ -2422,8 +2422,6 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             LogMatching(ds),
-            VotersVotedForCandidate(ds),
-            VoteResponseIntegrity(ds),
             VoteResponseHasRequestVote(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
@@ -2439,14 +2437,30 @@ verus! {
             0 <= k,
             ds.server_states[overlap_voter].log.len() > k,
             ds.server_states[overlap_voter].log[k] == entry,
-            ds.server_states[leader_id].votes_granted.contains(overlap_voter),
+            // VoteResponse packet from overlap_voter to leader_id exists in network
+            exists |vote: LRaftPacket| {
+                &&& ds.network.contains(vote)
+                &&& vote.src == overlap_voter
+                &&& vote.dst == leader_id
+                &&& vote.msg matches LRaftMessage::VoteResponse {
+                    term: vote_term,
+                    granted: vote_granted,
+                    voter: vote_voter,
+                    ..
+                }
+                &&& vote_granted
+                &&& vote_voter == overlap_voter
+                &&& vote_term == ds.server_states[leader_id].current_term
+                &&& (ds.server_states[overlap_voter].current_term > vote_term
+                    || (ds.server_states[overlap_voter].current_term == vote_term
+                        && ds.server_states[overlap_voter].has_voted
+                        && ds.server_states[overlap_voter].voted_for == leader_id))
+            },
         ensures
             ds.server_states[leader_id].log.len() > k
                 && ds.server_states[leader_id].log[k] == entry,
     {
-        // Step 1: Wire up packet context
-        lemma_overlap_voter_vote_request_packet_context(
-            ds, leader_id, overlap_voter);
+        // Step 1: Extract VoteResponse packet from precondition
         let vote_pkt = choose |vote: LRaftPacket| {
             &&& ds.network.contains(vote)
             &&& vote.src == overlap_voter
@@ -2468,6 +2482,12 @@ verus! {
         let vote_term = vote_pkt.msg->VoteResponse_term;
         assert(vote_term == ds.server_states[leader_id].current_term);
 
+        // Derive RequestVote packet from VoteResponseHasRequestVote
+        assert(VoteResponseHasRequestVote(ds));
+        assert(ds.network.contains(vote_pkt));
+        assert(vote_pkt.msg is VoteResponse);
+        assert(vote_pkt.msg->VoteResponse_granted);
+
         let req_pkt = choose |req: LRaftPacket| {
             &&& ds.network.contains(req)
             &&& req.src == leader_id
@@ -2480,12 +2500,11 @@ verus! {
             }
             &&& term == ds.server_states[leader_id].current_term
             &&& candidate == leader_id
-            &&& 0 <= last_log_index <= ds.server_states[leader_id].log.len()
-            &&& (last_log_index == 0 ==> last_log_term == 0)
-            &&& (last_log_index > 0
-                ==> ds.server_states[leader_id].log[last_log_index - 1].term
-                        == last_log_term)
         };
+        // Apply RequestVoteSummaryStillValidAtSameTerm for log summary facts
+        assert(RequestVoteSummaryStillValidAtSameTerm(ds));
+        assert(0 <= req_pkt.msg->RequestVote_last_log_index
+            <= ds.server_states[leader_id].log.len());
         let req_term = req_pkt.msg->RequestVote_term;
         let req_last_log_index = req_pkt.msg->RequestVote_last_log_index;
         let req_last_log_term = req_pkt.msg->RequestVote_last_log_term;
@@ -2522,8 +2541,7 @@ verus! {
                     assert(false);
                 }
             };
-            lemma_overlap_voter_stale_vote_packet_context(
-                ds, leader_id, overlap_voter);
+            // Stale case: packets already available from precondition + VoteResponseHasRequestVote
             lemma_stale_vote_index_relation(
                 ds, overlap_voter, leader_id, k, entry);
         }
@@ -5372,6 +5390,9 @@ verus! {
             assert(ds.server_states[overlap_voter].log.len() > k);
             assert(ds.server_states[overlap_voter].log[k] == entry);
 
+            // Establish VoteResponse packet existence for overlap_voter
+            lemma_vote_witness_from_votes_granted(
+                ds, leader_id, overlap_voter);
             // Transfer entry from overlap_voter's log to leader's log
             lemma_overlap_voter_entry_transfer(
                 ds, leader_id, overlap_voter, k, entry);
@@ -5518,20 +5539,126 @@ verus! {
 
                 // Check if overlap_voter is in pre-state votes_granted
                 if ds.server_states[leader_id].votes_granted.contains(overlap_voter) {
-                    // In pre-state votes_granted: use existing transfer chain
+                    // In pre-state votes_granted: establish VoteResponse packet
+                    lemma_vote_witness_from_votes_granted(
+                        ds, leader_id, overlap_voter);
                     lemma_overlap_voter_entry_transfer(
                         ds, leader_id, overlap_voter, k, entry);
                     assert(ds_.server_states[leader_id].log[k]
                         == ds.server_states[leader_id].log[k]);
                 } else {
-                    // overlap_voter is the newly added voter, not in pre-state
-                    // votes_granted. Same transfer argument applies but needs
-                    // direct packet extraction from the step being processed.
-                    // Deferred: Phase 34.7.1.e.4.c.new_voter
-                    assume(
-                        ds_.server_states[leader_id].log.len() > k
-                            && ds_.server_states[leader_id].log[k] == entry
-                    );
+                    // overlap_voter is the newly added voter. It's not in the
+                    // pre-state votes_granted but IS in post-state votes_granted.
+                    // Since s_.votes_granted == s.votes_granted.insert(voter),
+                    // overlap_voter must be the voter from the VoteResponse being
+                    // processed in this step. Extract the packet from the step.
+
+                    // From RaftDistributedNext, extract the step's packet.
+                    // leader_id == server_id, and the action is LHandleMessage
+                    // processing a VoteResponse (since Candidate → Leader).
+                    assert(RaftServerStepWithNetwork(ds, ds_, leader_id));
+                    let (sent_pkts, recv_from) = choose |sp: Seq<LRaftMessage>, rf: Option<int>|
+                        #![trigger RaftActionProduces(ds, leader_id, s, s_, c, sp, rf)]
+                        {
+                            &&& RaftActionProduces(ds, leader_id, s, s_, c, sp, rf)
+                            &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
+                            &&& (forall |pkt: LRaftPacket|
+                                ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                                    &&& pkt.src == leader_id
+                                    &&& 0 <= pkt.dst < ds.num_servers
+                                    &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
+                                })
+                        };
+
+                    // The only action branch that takes Candidate → Leader is
+                    // LHandleMessage → LHandleVoteResponseMsg → LReceiveVoteAndBecomeLeader.
+                    // Extract the packet from the LHandleMessage existential.
+                    let step_pkt = choose |pkt: LRaftPacket| {
+                        &&& recv_from == Some(pkt.src)
+                        &&& ds.network.contains(pkt)
+                        &&& pkt.dst == leader_id
+                        &&& LHandleMessage(s, s_, c, pkt.msg, sent_pkts)
+                    };
+
+                    // step_pkt.msg must be VoteResponse (only VoteResponse dispatch
+                    // goes through LHandleVoteResponseMsg → LReceiveVoteAndBecomeLeader).
+                    // Extract the VoteResponse fields.
+                    assert(step_pkt.msg is VoteResponse) by {
+                        // LHandleMessage dispatches on msg type.
+                        // RequestVote: LHandleRequestVoteMsg never produces Leader role
+                        // AppendEntries: LHandleAppendEntriesMsg never produces Leader role
+                        // AppendResponse: LHandleAppendResponseMsg from Candidate stays Candidate or steps down
+                        // Only VoteResponse → LHandleVoteResponseMsg → LReceiveVoteAndBecomeLeader
+                        // can go Candidate → Leader.
+                    };
+                    let vote_term = step_pkt.msg->VoteResponse_term;
+                    let vote_voter = step_pkt.msg->VoteResponse_voter;
+
+                    // From LHandleVoteResponseMsg → LReceiveVoteAndBecomeLeader:
+                    // - step_down_if_needed(s, vote_term) == s (since s_.role is Leader, no step-down)
+                    // - vote_term >= s.current_term (not stale)
+                    // - granted == true, c.servers.contains(voter)
+                    // - s_.votes_granted == s.votes_granted.insert(voter)
+                    assert(vote_term == s.current_term) by {
+                        // If vote_term > s.current_term, step_down produces Follower,
+                        // and s_mid.role is Follower, so LHandleVoteResponseMsg
+                        // would set s_ = s_mid (Follower), contradicting s_.role is Leader.
+                        // If vote_term < s.current_term, it's a stale term no-op,
+                        // s_ = s (still Candidate), contradicting s_.role is Leader.
+                    };
+
+                    // s_.votes_granted == s.votes_granted.insert(vote_voter)
+                    // overlap_voter is in s_.votes_granted but not s.votes_granted
+                    // Therefore overlap_voter == vote_voter
+                    assert(s_.votes_granted
+                        == s.votes_granted.insert(vote_voter));
+                    assert(overlap_voter == vote_voter) by {
+                        // overlap_voter is in s_.votes_granted = s.votes_granted.insert(vote_voter)
+                        // but not in s.votes_granted
+                        // The only new element is vote_voter
+                        assert(vote_quorum.contains(overlap_voter));
+                        assert(vote_quorum == s_.votes_granted);
+                        assert(s_.votes_granted.contains(overlap_voter));
+                        assert(!s.votes_granted.contains(overlap_voter));
+                        // s_.votes_granted == s.votes_granted.insert(vote_voter)
+                        // For any x in s_.votes_granted: x in s.votes_granted || x == vote_voter
+                        // Since overlap_voter not in s.votes_granted: overlap_voter == vote_voter
+                    };
+
+                    // Now step_pkt is a VoteResponse in ds.network from overlap_voter
+                    // to leader_id with term == s.current_term == ds.server_states[leader_id].current_term
+                    // Apply VoteResponseIntegrity(ds) to get src and has_voted/voted_for
+                    assert(step_pkt.msg->VoteResponse_granted);
+                    assert(VoteResponseIntegrity(ds));
+                    assert(step_pkt.src == overlap_voter);
+                    assert(step_pkt.dst == leader_id);
+                    assert(vote_term
+                        == ds.server_states[leader_id].current_term);
+
+                    // Establish the existential precondition for lemma_overlap_voter_entry_transfer
+                    assert(exists |vote: LRaftPacket| {
+                        &&& ds.network.contains(vote)
+                        &&& vote.src == overlap_voter
+                        &&& vote.dst == leader_id
+                        &&& vote.msg matches LRaftMessage::VoteResponse {
+                            term: vt,
+                            granted: vg,
+                            voter: vv,
+                            ..
+                        }
+                        &&& vg
+                        &&& vv == overlap_voter
+                        &&& vt == ds.server_states[leader_id].current_term
+                        &&& (ds.server_states[overlap_voter].current_term > vt
+                            || (ds.server_states[overlap_voter].current_term == vt
+                                && ds.server_states[overlap_voter].has_voted
+                                && ds.server_states[overlap_voter].voted_for == leader_id))
+                    });
+
+                    lemma_overlap_voter_entry_transfer(
+                        ds, leader_id, overlap_voter, k, entry);
+                    assert(ds_.server_states[leader_id].log[k]
+                        == ds.server_states[leader_id].log[k]);
                 }
             }
         } else {
