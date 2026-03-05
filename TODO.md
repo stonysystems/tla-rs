@@ -9821,7 +9821,9 @@ Rules for this phase (do not cut corners):
       - Re-ran source-first ChainReplication with checked-in fixture `chainreplication_state_expansion_limit.model.toml`; first blocker re-classified to `Configuration error: Existential domain expansion exceeded limit (200 assignments)`.
       - Updated blocker regression to `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` and synchronized `docs/model_checker_status.md` blocker matrix/evidence references.
   - [ ] **33.5.2.h PrimaryBackup (priority #8)**
-    - [ ] **33.5.2.h.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence.
+    - [x] **33.5.2.h.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence. [26:03:06, 15:05]
+      - Re-ran source-first exact-mode PrimaryBackup with checked-in fixture `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml`; run remains green (`result = ok`, `states = 2`, `transitions = 2`, `depth = 1`).
+      - Strengthened `test_model_check_primarybackup_helper_call_branches_bounded_run` to enforce bounded fixture intent (`max_depth = 1`, `max_states = 200`), checked-in artifact presence (`reports/model_check/primarybackup_small.json`), and stable live-vs-artifact parity (`result`, `search.state_dedup`, `summary.states/transitions/depth`).
   - [ ] **33.5.2.i TwoPhase (priority #9)**
     - [ ] **33.5.2.i.1** Keep exact-mode source-first run green with checked-in model + artifact + regression evidence.
   - [ ] **33.5.2.j LeaderElection (priority #10)**
