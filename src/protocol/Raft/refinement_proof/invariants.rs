@@ -6402,7 +6402,6 @@ verus! {
             ElectionSafety(ds),
             LogMatching(ds),
             LeaderCompleteness(ds),
-            StateMachineSafety(ds),
             LeaderHasQuorum(ds),
             CommitIndexBounded(ds),
             LeaderLogLongEnough(ds),
@@ -6497,16 +6496,16 @@ verus! {
     /// StateMachineSafety states: for any two servers i and j, entries below
     /// both commit_index[i] and commit_index[j] are identical.
     ///
-    /// This follows from LeaderCompleteness + LogMatching:
-    /// - Committed entries were replicated by a leader in some term.
-    /// - By LeaderCompleteness, all subsequent leaders have these entries.
-    /// - By LogMatching, servers that received entries from these leaders
-    ///   have matching prefixes.
-    /// - Therefore all committed entries agree across all servers.
+    /// SPEC LIMITATION: SMS is NOT provable with the current spec.
+    /// LAdvanceCommitIndex allows a leader to advance commit_index without
+    /// verifying quorum replication (only checks log[nci-1].term == current_term).
+    /// A counter-example exists: two leaders at different terms can each advance
+    /// commit_index past index k with different entries, violating SMS.
     ///
-    /// Since this depends on LeaderCompleteness (which we assume), we also
-    /// assume StateMachineSafety. Alternatively, once LogMatching and
-    /// LeaderCompleteness are proved, StateMachineSafety follows.
+    /// The implementation (host.rs:find_commit_index) correctly does quorum
+    /// scanning, but the spec is too permissive. Fixing requires strengthening
+    /// the spec (e.g., adding a quorum guard to RaftActionProduces for
+    /// LTryAdvanceCommitIndex).
     pub proof fn lemma_state_machine_safety_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -6516,8 +6515,7 @@ verus! {
         ensures
             StateMachineSafety(ds_)
     {
-        // StateMachineSafety depends on LogMatching + LeaderCompleteness.
-        // Both are network-level invariants assumed above.
+        // Unprovable without spec change. See doc comment above.
         assume(StateMachineSafety(ds_));
     }
 
