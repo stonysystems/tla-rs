@@ -9356,42 +9356,4 @@ verus! {
         lemma_log_terms_monotonic_inductive(ds, ds_);
         lemma_terms_non_negative_inductive(ds, ds_);
     }
-
-    // =========================================================================
-    // Invariant holds for all reachable states (by induction on behavior)
-    // =========================================================================
-
-    /// Prove the invariant holds at step k of a valid behavior.
-    /// Uses recursion on k (strong induction via decreases k).
-    pub proof fn lemma_invariant_at_step(b: RaftBehavior, k: int)
-        requires
-            IsValidRaftBehavior(b),
-            0 <= k < b.len(),
-        ensures
-            RaftSafetyInvariant(b[k])
-        decreases k
-    {
-        if k == 0 {
-            lemma_init_establishes_invariant(b[0]);
-        } else {
-            // By recursion, the invariant holds at step k-1
-            lemma_invariant_at_step(b, k - 1);
-            // b[k-1] -> b[k] is a valid RaftDistributedNext step
-            assert(RaftDistributedNext(b[k - 1], b[k]));
-            // By the inductive step, the invariant is preserved
-            lemma_safety_invariant_inductive(b[k - 1], b[k]);
-        }
-    }
-
-    /// The invariant holds for all reachable states in a valid behavior.
-    pub proof fn lemma_invariant_holds_for_behavior(b: RaftBehavior)
-        requires IsValidRaftBehavior(b)
-        ensures forall |i: int| #![trigger b[i]] 0 <= i < b.len() ==> RaftSafetyInvariant(b[i])
-    {
-        assert forall |i: int| #![trigger b[i]]
-            0 <= i < b.len()
-        implies RaftSafetyInvariant(b[i]) by {
-            lemma_invariant_at_step(b, i);
-        }
-    }
 }

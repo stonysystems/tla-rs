@@ -159,8 +159,8 @@ verus! {
         }
     }
 
-    /// Legacy RaftDistributedNext without network routing.
-    /// Kept for backward compatibility with existing proofs during Phase 34 migration.
+    /// RaftDistributedNext without network routing.
+    /// Omits sent_packets and recv_from, keeping only the server step and frame.
     /// Every step of RaftDistributedNext implies a step of RaftDistributedNextLegacy.
     pub open spec fn RaftDistributedNextLegacy(ds: RaftDistributedState, ds_: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
@@ -178,9 +178,7 @@ verus! {
         }
     }
 
-    /// The new RaftDistributedNext implies the legacy version.
-    /// This allows existing proofs to work unchanged during migration.
-    ///
+    /// RaftDistributedNext implies the legacy version (without network routing).
     /// Each action category in RaftDistributedNext (LTimeout, LClientRequest,
     /// LSendAppendEntries, LTryAdvanceCommitIndex, LHandleMessage) directly
     /// corresponds to a branch of LNext. The same server_id witness works
