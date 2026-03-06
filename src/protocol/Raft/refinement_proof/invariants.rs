@@ -2071,10 +2071,49 @@ verus! {
             // Main recursion: anchor at d_rli - 1
             lemma_ethvq_committed_entry_transfer(
                 ds, d, d_rli - 1, k, entry);
+        } else if d_rlt == entry.term {
+            // Edge case (a): d_rlt == entry.term.
+            // Prove ov_vtl >= entry.term by LogTermsMonotonic on ov,
+            // since ov.log[k].term == entry.term and k <= ov_L - 1.
+            let ov_vtl: int = if ov_L == 0 { 0int } else {
+                ds.server_states[ov].log[ov_L - 1].term
+            };
+            if ov_L > 0 && k < ov_L - 1 {
+                lemma_log_terms_monotonic_entry_bound(ds, ov, k, ov_L - 1);
+            }
+            // ov_vtl >= entry.term. Since d_rlt == entry.term >= ov_vtl
+            // and d_rlt >= ov_vtl (postcondition), d_rlt == ov_vtl.
+            // The disjunction gives d_rli > ov_L.
+            assert(ov_vtl <= entry.term);
+            assert(d_rlt == ov_vtl ==> d_rli > ov_L);
+            assert(d_rlt == ov_vtl);
+            assert(d_rli > ov_L);
+            assert(ov_L > k);
+            assert(ov_L > 0);
+            // LogTermsMonotonic on d: d.log[ov_L-1].term <= d.log[d_rli-1].term == entry.term
+            if ov_L - 1 < d_rli - 1 {
+                lemma_log_terms_monotonic_entry_bound(ds, d, ov_L - 1, d_rli - 1);
+            }
+            assert(ds.server_states[d].log[ov_L - 1].term <= entry.term);
+            if ds.server_states[d].log[ov_L - 1].term == entry.term {
+                // LogMatching between d and ov at ov_L - 1
+                assert(ds.server_states[d].log[ov_L - 1].term
+                    == ds.server_states[ov].log[ov_L - 1].term);
+                assert(k <= ov_L - 1);
+                assert(ov_L - 1 < ds.server_states[d].log.len());
+                assert(ov_L - 1 < ds.server_states[ov].log.len());
+                assert(ds.server_states[d].log[k]
+                    == ds.server_states[ov].log[k]);
+                assert(ds.server_states[d].log[k] == entry);
+            } else {
+                // d.log[ov_L-1].term < entry.term: log divergence.
+                assume(
+                    ds.server_states[d].log.len() > k
+                        && ds.server_states[d].log[k] == entry
+                );
+            }
         } else {
-            // Edge cases: d_rlt == entry.term or k >= d_rli - 1.
-            // These hit the narrowed assumes inside
-            // lemma_ethvq_committed_entry_transfer (lines 2553/2592).
+            // d_rlt > entry.term && k >= d_rli - 1.
             assume(
                 ds.server_states[d].log.len() > k
                     && ds.server_states[d].log[k] == entry
@@ -2584,9 +2623,54 @@ verus! {
                             ds, d, d2, k + 1, k, entry);
                         lemma_ethvq_log_matching_transfer(
                             ds, server, d, anchor_idx, k, entry);
+                    } else if d2_rlt == entry.term {
+                        // d2's edge case (a): d2_rlt == entry.term.
+                        let ov2_vtl: int = if ov2_L == 0 { 0int } else {
+                            ds.server_states[ov2].log[ov2_L - 1].term
+                        };
+                        if ov2_L > 0 && k < ov2_L - 1 {
+                            lemma_log_terms_monotonic_entry_bound(
+                                ds, ov2, k, ov2_L - 1);
+                        }
+                        assert(ov2_vtl <= entry.term);
+                        assert(d2_rlt == ov2_vtl ==> d2_rli > ov2_L);
+                        assert(d2_rlt == ov2_vtl);
+                        assert(d2_rli > ov2_L);
+                        assert(ov2_L > k);
+                        assert(ov2_L > 0);
+                        if ov2_L - 1 < d2_rli - 1 {
+                            lemma_log_terms_monotonic_entry_bound(
+                                ds, d2, ov2_L - 1, d2_rli - 1);
+                        }
+                        assert(ds.server_states[d2].log[ov2_L - 1].term
+                            <= entry.term);
+                        if ds.server_states[d2].log[ov2_L - 1].term
+                            == entry.term
+                        {
+                            // LogMatching: d2 and ov2 agree at ov2_L-1
+                            assert(ds.server_states[d2].log[ov2_L - 1].term
+                                == ds.server_states[ov2].log[ov2_L - 1].term);
+                            assert(k <= ov2_L - 1);
+                            assert(ov2_L - 1
+                                < ds.server_states[d2].log.len());
+                            assert(ov2_L - 1
+                                < ds.server_states[ov2].log.len());
+                            assert(ds.server_states[d2].log[k]
+                                == ds.server_states[ov2].log[k]);
+                            assert(ds.server_states[d2].log[k] == entry);
+                            // Transfer d2→d→server
+                            lemma_ethvq_log_matching_transfer(
+                                ds, d, d2, k + 1, k, entry);
+                            lemma_ethvq_log_matching_transfer(
+                                ds, server, d, anchor_idx, k, entry);
+                        } else {
+                            // d2.log[ov2_L-1].term < entry.term:
+                            // log divergence.
+                            assume(ds.server_states[server].log[k]
+                                == entry);
+                        }
                     } else {
-                        // d2's edge cases (same as lines 2555-2593).
-                        // Residual assume.
+                        // d2_rlt > entry.term && k >= d2_rli - 1.
                         assume(ds.server_states[server].log[k] == entry);
                     }
                 }
