@@ -2871,6 +2871,7 @@ verus! {
         requires
             WellFormedRaftDistributed(ds),
             LogMatching(ds),
+            LogTermsMonotonic(ds),
             VoteResponseHasRequestVote(ds),
             RequestVoteSummaryStillValidAtSameTerm(ds),
             VoteLogLenCoversNetwork(ds),
@@ -3003,17 +3004,44 @@ verus! {
                 ds, overlap_voter, leader_id, k, entry,
                 vote_pkt, req_pkt);
         if !handled {
-            // Strict-term (rlt > vtl) or equal-term with rli > L.
-            // Cannot be resolved here because the strict-term path requires
-            // ETHVQ/LogTermsMonotonic which cause Z3 blow-up with the message
-            // invariants already in this function's requires.
-            // The new path via lemma_leader_has_committed_entry /
-            // lemma_ethvq_committed_entry_transfer handles the main case;
-            // the caller should prefer that path when EntryCommittedAt is available.
-            assume(
-                ds.server_states[leader_id].log.len() > k
-                    && ds.server_states[leader_id].log[k] == entry
-            );
+            let (_vote_term, rli, rlt, vtl, L) =
+                (_vote_term_out, _rli, _rlt, _vtl, _L);
+            if rlt == vtl {
+                // Equal-term, rli > L > k. leader.log[rli-1].term == rlt.
+                // LogTermsMonotonic on leader: leader.log[L-1].term <= leader.log[rli-1].term
+                assert(rli > L);
+                assert(L > 0);
+                assert(rli - 1 < ds.server_states[leader_id].log.len());
+                assert(L - 1 < rli - 1);
+                lemma_log_terms_monotonic_entry_bound(
+                    ds, leader_id, L - 1, rli - 1);
+                assert(ds.server_states[leader_id].log[L - 1].term <= rlt);
+                if ds.server_states[leader_id].log[L - 1].term == rlt {
+                    // LogMatching at L - 1: leader.log[L-1].term == rlt == vtl == ov.log[L-1].term
+                    assert(ds.server_states[leader_id].log[L - 1].term
+                        == ds.server_states[overlap_voter].log[L - 1].term);
+                    assert(k <= L - 1);
+                    assert(L - 1 < ds.server_states[leader_id].log.len());
+                    assert(L - 1 < ds.server_states[overlap_voter].log.len());
+                    assert(ds.server_states[leader_id].log[k]
+                        == ds.server_states[overlap_voter].log[k]);
+                    assert(ds.server_states[leader_id].log[k] == entry);
+                } else {
+                    // leader.log[L-1].term < rlt: log divergence.
+                    assume(
+                        ds.server_states[leader_id].log.len() > k
+                            && ds.server_states[leader_id].log[k] == entry
+                    );
+                }
+            } else {
+                // Strict-term (rlt > vtl). Requires ETHVQ for recursive
+                // term-induction, which causes Z3 blow-up with message
+                // invariants in this function's scope.
+                assume(
+                    ds.server_states[leader_id].log.len() > k
+                        && ds.server_states[leader_id].log[k] == entry
+                );
+            }
         }
     }
 
@@ -5979,6 +6007,7 @@ verus! {
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
+            LogTermsMonotonic(ds),
             RaftDistributedNext(ds, ds_),
             0 <= k,
             EntryCommittedAt(ds_, k, entry),
@@ -6433,6 +6462,7 @@ verus! {
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
+            LogTermsMonotonic(ds),
             RaftDistributedNext(ds, ds_),
             0 <= k,
             !EntryCommittedAt(ds, k, entry),
