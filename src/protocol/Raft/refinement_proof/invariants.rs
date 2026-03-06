@@ -2107,9 +2107,10 @@ verus! {
                 assert(ds.server_states[d].log[k] == entry);
             } else {
                 // d.log[ov_L-1].term < entry.term: log divergence.
+                // d.log.len() >= d_rli > ov_L > k is provable.
+                assert(ds.server_states[d].log.len() > k);
                 assume(
-                    ds.server_states[d].log.len() > k
-                        && ds.server_states[d].log[k] == entry
+                    ds.server_states[d].log[k] == entry
                 );
             }
         } else {
@@ -3028,9 +3029,10 @@ verus! {
                     assert(ds.server_states[leader_id].log[k] == entry);
                 } else {
                     // leader.log[L-1].term < rlt: log divergence.
+                    // leader.log.len() >= rli > L > k is provable.
+                    assert(ds.server_states[leader_id].log.len() > k);
                     assume(
-                        ds.server_states[leader_id].log.len() > k
-                            && ds.server_states[leader_id].log[k] == entry
+                        ds.server_states[leader_id].log[k] == entry
                     );
                 }
             } else {
@@ -3059,13 +3061,28 @@ verus! {
                         assert(ds.server_states[leader_id].log[k] == entry);
                     } else {
                         // leader.log[L-1].term != vtl: log divergence.
+                        // leader.log.len() >= rli > L > k is provable.
+                        assert(ds.server_states[leader_id].log.len() > k);
                         assume(
-                            ds.server_states[leader_id].log.len() > k
-                                && ds.server_states[leader_id].log[k] == entry
+                            ds.server_states[leader_id].log[k] == entry
                         );
                     }
+                } else if k < rli {
+                    // rli <= L but k < rli: leader.log.len() >= rli > k.
+                    assert(rli > 0);
+                    assert(ds.server_states[leader_id].log.len() >= rli);
+                    assert(ds.server_states[leader_id].log.len() > k);
+                    // leader.log[rli-1].term == rlt > vtl == ov.log[L-1].term.
+                    // By LogTermsMonotonic on ov:
+                    // ov.log[rli-1].term <= ov.log[L-1].term = vtl (since rli-1 < L-1 when rli<=L).
+                    // So leader.log[rli-1].term == rlt > vtl >= ov.log[rli-1].term.
+                    // No LogMatching anchor at rli-1.
+                    // Try LogMatching at k: need leader.log[k].term == entry.term.
+                    assume(
+                        ds.server_states[leader_id].log[k] == entry
+                    );
                 } else {
-                    // rli <= L: leader's log may not reach index L-1.
+                    // rli <= L and k >= rli: leader's log may not reach index k.
                     assume(
                         ds.server_states[leader_id].log.len() > k
                             && ds.server_states[leader_id].log[k] == entry
