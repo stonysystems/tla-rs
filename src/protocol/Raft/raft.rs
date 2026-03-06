@@ -258,7 +258,10 @@ verus! {
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 
-    /// Advance commit index: leader commits entries replicated on a quorum
+    /// Advance commit index: leader commits entries replicated on a quorum.
+    /// Requires a quorum of servers to have replicated log up to new_commit_index:
+    /// the leader itself counts (it has the entry), and followers are tracked
+    /// via match_index.
     pub open spec fn LAdvanceCommitIndex(
         s: LState, s_: LState, c: LConstants,
         new_commit_index: int, sent_packets: Seq<LRaftMessage>,
@@ -267,6 +270,17 @@ verus! {
         &&& new_commit_index > s.commit_index
         &&& new_commit_index <= s.log.len()
         &&& s.log[new_commit_index - 1].term == s.current_term
+        // Quorum replication guard: at least quorum_size servers have the entry
+        &&& exists |quorum: Set<int>| {
+            &&& quorum.subset_of(c.servers)
+            &&& quorum.finite()
+            &&& quorum.len() >= c.quorum_size
+            &&& forall |v: int| quorum.contains(v) ==> (
+                v == c.my_id
+                || (s.match_index.contains_key(v as u64)
+                    && s.match_index[v as u64] as int >= new_commit_index)
+            )
+        }
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
@@ -508,17 +522,15 @@ verus! {
     // Commit index advancement (Phase 27.2)
     //
     // Combines guard check + LAdvanceCommitIndex into one composite
-    // action. The quorum scan logic stays in the implementation
-    // (host.rs / transpiler-generated code); the spec nondeterministically
-    // picks any valid new_commit_index via existential quantification
-    // in LNext.
+    // action. The spec requires quorum replication (via existential
+    // quantification over a quorum set); the implementation computes
+    // the concrete quorum via match_index scanning in host.rs.
     // ---------------------------------------------------------------
 
     /// Advance commit index: combines guard check + LAdvanceCommitIndex.
     /// If not leader or new_commit_index is not an advancement, stutter.
-    /// The actual quorum replication check is an implementation concern --
-    /// the spec allows any valid new_commit_index, and the exec code
-    /// computes the correct one via the quorum scan loop.
+    /// LAdvanceCommitIndex requires quorum replication; the exec code
+    /// computes the concrete quorum via the match_index scan loop.
     pub open spec fn LTryAdvanceCommitIndex(
         s: LState, s_: LState, c: LConstants,
         new_commit_index: int,

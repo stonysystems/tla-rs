@@ -6040,16 +6040,10 @@ verus! {
     /// StateMachineSafety states: for any two servers i and j, entries below
     /// both commit_index[i] and commit_index[j] are identical.
     ///
-    /// SPEC LIMITATION: SMS is NOT provable with the current spec.
-    /// LAdvanceCommitIndex allows a leader to advance commit_index without
-    /// verifying quorum replication (only checks log[nci-1].term == current_term).
-    /// A counter-example exists: two leaders at different terms can each advance
-    /// commit_index past index k with different entries, violating SMS.
-    ///
-    /// The implementation (host.rs:find_commit_index) correctly does quorum
-    /// scanning, but the spec is too permissive. Fixing requires strengthening
-    /// the spec (e.g., adding a quorum guard to RaftActionProduces for
-    /// LTryAdvanceCommitIndex).
+    /// Now provable in principle: LAdvanceCommitIndex has a quorum replication
+    /// guard. The proof requires LeaderCompleteness (which still has assumes
+    /// for the well-founded term-induction argument). Once LeaderCompleteness
+    /// is fully proved, SMS should follow from quorum overlap + LogMatching.
     pub proof fn lemma_state_machine_safety_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -6059,7 +6053,8 @@ verus! {
         ensures
             StateMachineSafety(ds_)
     {
-        // Unprovable without spec change. See doc comment above.
+        // Requires LeaderCompleteness + quorum overlap argument.
+        // Deferred until LeaderCompleteness assumes are resolved.
         assume(StateMachineSafety(ds_));
     }
 
