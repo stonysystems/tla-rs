@@ -2114,60 +2114,32 @@ verus! {
             }
         } else {
             // d_rlt > entry.term && k >= d_rli - 1.
-            assume(
-                ds.server_states[d].log.len() > k
-                    && ds.server_states[d].log[k] == entry
-            );
+            // d.log[d_rli-1].term == d_rlt > entry.term.
+            // By LogTermsMonotonic: d.log[k].term >= d_rlt > entry.term
+            // if k < d.log.len() and k >= d_rli - 1.
+            if k == d_rli - 1 {
+                // d.log.len() >= d_rli = k + 1, so d.log.len() > k.
+                assert(ds.server_states[d].log.len() > k);
+                assert(ds.server_states[d].log[k].term == d_rlt);
+                assert(ds.server_states[d].log[k].term > entry.term);
+                if ds.server_states[d].log.len() as int > k + 1 {
+                    // Use k + 1 as anchor on d.
+                    lemma_log_terms_monotonic_entry_bound(ds, d, k, k + 1);
+                    assert(ds.server_states[d].log[k + 1].term > entry.term);
+                    lemma_ethvq_committed_entry_transfer(
+                        ds, d, k + 1, k, entry);
+                } else {
+                    // d.log.len() == k + 1: no entry past k for anchor.
+                    assume(ds.server_states[d].log[k] == entry);
+                }
+            } else {
+                // k > d_rli - 1: d.log.len() may not exceed k.
+                assume(
+                    ds.server_states[d].log.len() > k
+                        && ds.server_states[d].log[k] == entry
+                );
+            }
         }
-    }
-
-    /// Phase 34.7.4.b helper: Given overlap voter ov with entry at k
-    /// and ov ∈ leader.votes_granted, transfer entry to leader's log.
-    /// Handles VoteResponse/RequestVote extraction, equal-term case via
-    /// LogMatching, and strict-term case via ETHVQ + recursive call to
-    /// lemma_leader_has_committed_entry.
-    ///
-    /// Isolated from lemma_leader_has_committed_entry to keep set operations
-    /// (quorum overlap) separated from message invariant operations.
-    proof fn lemma_leader_entry_transfer_from_overlap_voter(
-        ds: RaftDistributedState,
-        leader_id: int,
-        ov: int,
-        k: int,
-        entry: LLogEntry,
-    )
-        requires
-            WellFormedRaftDistributed(ds),
-            LogMatching(ds),
-            VotersVotedForCandidate(ds),
-            VoteResponseIntegrity(ds),
-            VoteResponseHasRequestVote(ds),
-            RequestVoteSummaryStillValidAtSameTerm(ds),
-            VoteLogLenCoversNetwork(ds),
-            VoteLogLenBounded(ds),
-            VoteLogLenEntryTermBound(ds),
-            VoteGrantedLogUpToDateAtVoteTime(ds),
-            0 <= k,
-            0 <= leader_id < ds.num_servers,
-            (ds.server_states[leader_id].role is Candidate
-                || ds.server_states[leader_id].role is Leader),
-            ds.server_states[leader_id].current_term > entry.term,
-            0 <= ov < ds.num_servers,
-            ov != leader_id,
-            ds.server_states[ov].log.len() > k,
-            ds.server_states[ov].log[k] == entry,
-            ds.server_states[leader_id].votes_granted.contains(ov),
-        ensures
-            ds.server_states[leader_id].log.len() > k,
-            ds.server_states[leader_id].log[k] == entry,
-    {
-        // VoteResponse extraction
-        lemma_vote_witness_from_votes_granted(ds, leader_id, ov);
-
-        // Delegate to existing helper (which has assumes for strict-term).
-        // Phase 34.7.4.c will replace this with the actual recursive logic.
-        lemma_overlap_voter_entry_transfer(
-            ds, leader_id, ov, k, entry);
     }
 
     /// Phase 34.7.4: Overlap ETHVQ quorum (d + voters) with commit quorum.
