@@ -2228,6 +2228,9 @@ verus! {
             &&& (handled ==> ds.server_states[d].log[k] == entry)
             &&& (!handled ==> {
                 &&& d_rli > 0
+                &&& d_rlt >= (if ov_L == 0 { 0int } else {
+                        ds.server_states[ov].log[ov_L - 1].term
+                    })
                 &&& (d_rlt > (if ov_L == 0 { 0int } else {
                         ds.server_states[ov].log[ov_L - 1].term
                     }) || d_rli > ov_L)
@@ -2391,7 +2394,8 @@ verus! {
             ds.server_states[server].log[anchor_idx].term > entry.term,
         ensures
             ds.server_states[server].log[k] == entry,
-        decreases ds.server_states[server].log[anchor_idx].term - entry.term
+        decreases ds.server_states[server].log[anchor_idx].term - entry.term,
+                  anchor_idx - k
     {
         let T = ds.server_states[server].log[anchor_idx].term;
 
@@ -2447,12 +2451,76 @@ verus! {
             // Transfer to server via LogMatching at anchor_idx
             lemma_ethvq_log_matching_transfer(
                 ds, server, d, anchor_idx, k, entry);
+        } else if d_rlt > entry.term {
+            // Edge case (b): k >= d_rli - 1 but d_rlt > entry.term.
+            // d.log[d_rli-1].term == d_rlt > entry.term, and k >= d_rli - 1.
+            // By LogTermsMonotonic: d.log[k].term >= d_rlt > entry.term.
+            // Use k + 1 as anchor on d (k + 1 <= anchor_idx since k < anchor_idx).
+            // d.log[k+1].term >= d.log[k].term > entry.term.
+            assert(k >= d_rli - 1);
+            lemma_log_terms_monotonic_entry_bound(ds, d, d_rli - 1, k);
+            assert(ds.server_states[d].log[k].term >= d_rlt);
+            assert(ds.server_states[d].log[k].term > entry.term);
+            // anchor_idx > k (from requires), so k + 1 <= anchor_idx
+            assert(k + 1 <= anchor_idx);
+            assert(k + 1 < ds.server_states[d].log.len());
+            // d.log[k+1].term >= d.log[k].term > entry.term
+            lemma_log_terms_monotonic_entry_bound(ds, d, k, k + 1);
+            assert(ds.server_states[d].log[k + 1].term > entry.term);
+            if k + 1 < anchor_idx {
+                // Lex decreases: (d.log[k+1].term - entry.term, k+1 - k)
+                //   If d.log[k+1].term < T: first component decreases.
+                //   If d.log[k+1].term == T: first same, but k+1 - k = 1 < anchor_idx - k.
+                // Either way, (term_gap, anchor_gap) strictly decreases.
+                lemma_ethvq_committed_entry_transfer(
+                    ds, d, k + 1, k, entry);
+                lemma_ethvq_log_matching_transfer(
+                    ds, server, d, anchor_idx, k, entry);
+            } else {
+                // anchor_idx == k + 1: narrowest case, lex metric can't decrease.
+                // d.log[k+1].term == T (since d.log[anchor_idx].term == T).
+                // Remaining edge case — future work.
+                assume(ds.server_states[server].log[k] == entry);
+            }
         } else {
-            // Edge cases:
-            // (a) d_rlt == entry.term: can't use d_rli-1 as anchor (term not > entry.term)
-            // (b) k >= d_rli - 1: can't use d_rli-1 as anchor (not above k)
-            // Both require additional ETHVQ reasoning (future work).
-            assume(ds.server_states[server].log[k] == entry);
+            // Edge case (a): d_rlt == entry.term (and d_rli > ov_L > k).
+            // d.log[d_rli-1].term == entry.term. By LogTermsMonotonic on d:
+            // d.log[ov_L-1].term <= d.log[d_rli-1].term == entry.term.
+            // If d.log[ov_L-1].term == entry.term, LogMatching between d
+            // and ov at ov_L - 1 gives d.log[k] == ov.log[k] == entry.
+            assert(d_rlt == entry.term);
+            assert(d_rli > ov_L);
+            assert(ov_L > k);  // k < ov_L from postcondition
+            assert(d_rli - 1 > k);  // d_rli > ov_L > k, so d_rli - 1 >= ov_L > k
+            assert(ov_L > 0);  // ov_L > k >= 0
+            assert(ov_L - 1 < d_rli - 1);  // ov_L < d_rli
+            // d has entries up to anchor_idx (from overlap)
+            assert(ds.server_states[d].log.len() > anchor_idx);
+            assert(ov_L - 1 < ds.server_states[d].log.len());
+            // LogTermsMonotonic on d: d.log[ov_L-1].term <= d.log[d_rli-1].term
+            lemma_log_terms_monotonic_entry_bound(ds, d, ov_L - 1, d_rli - 1);
+            assert(ds.server_states[d].log[ov_L - 1].term <= entry.term);
+            if ds.server_states[d].log[ov_L - 1].term == entry.term {
+                // LogMatching between d and ov at ov_L - 1:
+                // d.log[ov_L-1].term == entry.term == ov.log[ov_L-1].term
+                assert(ds.server_states[d].log[ov_L - 1].term
+                    == ds.server_states[ov].log[ov_L - 1].term);
+                assert(0 <= k);
+                assert(k <= ov_L - 1);  // k < ov_L
+                assert(ov_L - 1 < ds.server_states[d].log.len());
+                assert(ov_L - 1 < ds.server_states[ov].log.len());
+                // LogMatching gives d.log[k] == ov.log[k] == entry
+                assert(ds.server_states[d].log[k]
+                    == ds.server_states[ov].log[k]);
+                assert(ds.server_states[d].log[k] == entry);
+                // Transfer from d to server via LogMatching at anchor_idx
+                lemma_ethvq_log_matching_transfer(
+                    ds, server, d, anchor_idx, k, entry);
+            } else {
+                // d.log[ov_L-1].term < entry.term: d and ov diverge
+                // at ov_L - 1. Requires chain reasoning — future work.
+                assume(ds.server_states[server].log[k] == entry);
+            }
         }
     }
 
@@ -2578,6 +2646,9 @@ verus! {
             &&& (handled ==> ds.server_states[d].log[k] == entry)
             &&& (!handled ==> {
                 &&& d_rli > 0
+                &&& d_rlt >= (if ov_L == 0 { 0int } else {
+                        ds.server_states[ov].log[ov_L - 1].term
+                    })
                 &&& (d_rlt > (if ov_L == 0 { 0int } else {
                         ds.server_states[ov].log[ov_L - 1].term
                     }) || d_rli > ov_L)
@@ -6141,6 +6212,82 @@ verus! {
         }
     }
 
+    /// Helper for lemma_leader_completeness_inductive: handles the
+    /// fresh-commit case (entry committed in ds_ but not in ds).
+    ///
+    /// Extracts the stepping server and dispatches to unchanged-leader
+    /// or changed-leader sub-cases.
+    proof fn lemma_leader_completeness_fresh_commit(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+        leader_id: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            LeaderHasQuorum(ds),
+            VotesGrantedAreServers(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            RaftDistributedNext(ds, ds_),
+            0 <= k,
+            !EntryCommittedAt(ds, k, entry),
+            EntryCommittedAt(ds_, k, entry),
+            0 <= leader_id < ds_.num_servers,
+            ds_.server_states[leader_id].role is Leader,
+            ds_.server_states[leader_id].current_term > entry.term,
+            // Fresh-step-append witness exists
+            exists |stepping: int| {
+                &&& 0 <= stepping < ds.num_servers
+                &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                    0 <= j < ds.num_servers && j != stepping ==>
+                    ds_.server_states[j] == ds.server_states[j])
+                &&& k == ds.server_states[stepping].log.len()
+                &&& ds_.server_states[stepping].log.len()
+                    == ds.server_states[stepping].log.len() + 1
+                &&& ds_.server_states[stepping].log[k] == entry
+                &&& entry.term >= ds.server_states[stepping].current_term
+            },
+        ensures
+            ds_.server_states[leader_id].log.len() > k
+                && ds_.server_states[leader_id].log[k] == entry,
+    {
+        let stepping = choose |stepping: int| {
+            &&& 0 <= stepping < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != stepping ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& k == ds.server_states[stepping].log.len()
+            &&& ds_.server_states[stepping].log.len()
+                == ds.server_states[stepping].log.len() + 1
+            &&& ds_.server_states[stepping].log[k] == entry
+            &&& entry.term >= ds.server_states[stepping].current_term
+        };
+
+        if ds_.server_states[leader_id] == ds.server_states[leader_id] {
+            lemma_leader_completeness_fresh_commit_unchanged_leader(
+                ds, ds_, leader_id, k, entry, stepping);
+        } else {
+            assert(leader_id == stepping) by {
+                if leader_id != stepping {
+                    assert(ds_.server_states[leader_id]
+                        == ds.server_states[leader_id]);
+                    assert(false);
+                }
+            };
+            assert(ds_.server_states[stepping].log[k] == entry);
+            assert(ds_.server_states[leader_id].log[k] == entry);
+        }
+    }
+
     /// LeaderCompleteness states: if an entry is committed (replicated to a
     /// majority quorum) in some term, then every leader for all higher-numbered
     /// terms has that entry in its log.
@@ -6241,50 +6388,8 @@ verus! {
             } else {
                 // Post-only committed witness. From the decomposition helper and
                 // !EntryCommittedAt(ds, k, entry), we are in the fresh-step-append branch.
-                assert(exists |stepping: int| {
-                    &&& 0 <= stepping < ds.num_servers
-                    &&& (forall |j: int| #![trigger ds_.server_states[j]]
-                        0 <= j < ds.num_servers && j != stepping ==>
-                        ds_.server_states[j] == ds.server_states[j])
-                    &&& k == ds.server_states[stepping].log.len()
-                    &&& ds_.server_states[stepping].log.len()
-                        == ds.server_states[stepping].log.len() + 1
-                    &&& ds_.server_states[stepping].log[k] == entry
-                    &&& entry.term >= ds.server_states[stepping].current_term
-                });
-                let stepping = choose |stepping: int| {
-                    &&& 0 <= stepping < ds.num_servers
-                    &&& (forall |j: int| #![trigger ds_.server_states[j]]
-                        0 <= j < ds.num_servers && j != stepping ==>
-                        ds_.server_states[j] == ds.server_states[j])
-                    &&& k == ds.server_states[stepping].log.len()
-                    &&& ds_.server_states[stepping].log.len()
-                        == ds.server_states[stepping].log.len() + 1
-                    &&& ds_.server_states[stepping].log[k] == entry
-                    &&& entry.term >= ds.server_states[stepping].current_term
-                };
-
-                if ds_.server_states[leader_id] == ds.server_states[leader_id] {
-                    // Unchanged-leader fresh path (34.7.1.e.4.b):
-                    // Delegate to helper that finds quorum overlap voter
-                    // and transfers the entry to the leader's log.
-                    lemma_leader_completeness_fresh_commit_unchanged_leader(
-                        ds, ds_, leader_id, k, entry, stepping);
-                } else {
-                    // Changed-leader + fresh-step (34.7.1.e.4.c).
-                    // leader_id changed, so leader_id == stepping (frame condition).
-                    assert(leader_id == stepping) by {
-                        if leader_id != stepping {
-                            // frame: j != stepping ==> ds_.server_states[j] == ds.server_states[j]
-                            assert(ds_.server_states[leader_id]
-                                == ds.server_states[leader_id]);
-                            assert(false);
-                        }
-                    };
-                    // stepping appended the entry at index k
-                    assert(ds_.server_states[stepping].log[k] == entry);
-                    assert(ds_.server_states[leader_id].log[k] == entry);
-                }
+                lemma_leader_completeness_fresh_commit(
+                    ds, ds_, leader_id, k, entry);
             }
         }
     }
