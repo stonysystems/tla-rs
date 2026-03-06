@@ -2115,9 +2115,29 @@ verus! {
             }
         } else {
             // d_rlt > entry.term && k >= d_rli - 1.
+            // First, rule out d_rlt == ov_vtl: that forces d_rli > ov_L > k,
+            // contradicting k >= d_rli - 1.
+            let ov_vtl2: int = if ov_L == 0 { 0int } else {
+                ds.server_states[ov].log[ov_L - 1].term
+            };
+            if ov_L > 0 && k < ov_L - 1 {
+                lemma_log_terms_monotonic_entry_bound(ds, ov, k, ov_L - 1);
+            }
+            assert(ov_vtl2 >= entry.term);
+            assert(d_rlt > entry.term);
+            // From postcondition: d_rlt > ov_vtl2 || d_rli > ov_L.
+            // If d_rlt == ov_vtl2: d_rli > ov_L > k, so d_rli - 1 > k,
+            // contradicting k >= d_rli - 1.
+            if d_rlt == ov_vtl2 {
+                assert(d_rli > ov_L);
+                assert(ov_L > k);
+                assert(d_rli > k + 1);
+                assert(d_rli - 1 > k);
+                assert(false);  // contradicts k >= d_rli - 1
+            }
+            assert(d_rlt > ov_vtl2);
+            // d_rlt > ov_vtl2 >= entry.term, k >= d_rli - 1.
             // d.log[d_rli-1].term == d_rlt > entry.term.
-            // By LogTermsMonotonic: d.log[k].term >= d_rlt > entry.term
-            // if k < d.log.len() and k >= d_rli - 1.
             if k == d_rli - 1 {
                 // d.log.len() >= d_rli = k + 1, so d.log.len() > k.
                 assert(ds.server_states[d].log.len() > k);
@@ -2131,10 +2151,12 @@ verus! {
                         ds, d, k + 1, k, entry);
                 } else {
                     // d.log.len() == k + 1: no entry past k for anchor.
+                    // d_rlt > ov_vtl2 (strict). Needs ETHVQ on d.log[k].
                     assume(ds.server_states[d].log[k] == entry);
                 }
             } else {
-                // k > d_rli - 1: d.log.len() may not exceed k.
+                // k > d_rli - 1: d_rlt > ov_vtl2, d.log.len() may not exceed k.
+                // Needs ETHVQ on d.log[d_rli-1] or direct term induction.
                 assume(
                     ds.server_states[d].log.len() > k
                         && ds.server_states[d].log[k] == entry
@@ -2644,6 +2666,25 @@ verus! {
                         }
                     } else {
                         // d2_rlt > entry.term && k >= d2_rli - 1.
+                        // Rule out d2_rlt == ov2_vtl: forces d2_rli > ov2_L > k,
+                        // contradicting k >= d2_rli - 1.
+                        let ov2_vtl2: int = if ov2_L == 0 { 0int } else {
+                            ds.server_states[ov2].log[ov2_L - 1].term
+                        };
+                        if ov2_L > 0 && k < ov2_L - 1 {
+                            lemma_log_terms_monotonic_entry_bound(
+                                ds, ov2, k, ov2_L - 1);
+                        }
+                        assert(ov2_vtl2 >= entry.term);
+                        if d2_rlt == ov2_vtl2 {
+                            assert(d2_rli > ov2_L);
+                            assert(ov2_L > k);
+                            assert(d2_rli > k + 1);
+                            assert(d2_rli - 1 > k);
+                            assert(false);
+                        }
+                        assert(d2_rlt > ov2_vtl2);
+                        // d2_rlt > ov2_vtl2, k >= d2_rli - 1: genuine gap.
                         assume(ds.server_states[server].log[k] == entry);
                     }
                 }
