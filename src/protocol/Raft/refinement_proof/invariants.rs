@@ -2450,8 +2450,6 @@ verus! {
             == ds.server_states[d].log[k]);
     }
 
-    /// Phase 34.7.1.e.4.b.2.b.2.b.4 wrapper
-    ///
     /// Given an overlap voter between the commit quorum and the leader's
     /// vote quorum, wire up the VoteResponse/RequestVote packet context,
     /// split on same-term/stale voter branches, and transfer the entry
@@ -3804,7 +3802,6 @@ verus! {
     ///
     /// Isolated from lemma_leader_log_quorum_intersection to keep ETHVQ
     /// quantifiers out of scope (only concrete witnesses d, voters are passed).
-    #[verifier::rlimit(80)]
     proof fn lemma_lllong_d_neq_sid_contradiction(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         server_id: int, s_: LState,
@@ -4195,8 +4192,6 @@ verus! {
         }
     }
 
-    // per_triple removed: case dispatch is in the orchestrator's assert-forall block,
-    // calling lightweight helpers that each have only the invariants they need.
 
     /// Establish ds_ message invariants for LeaderLogLongEnough proof.
     /// Isolated to prevent axiom pollution in the orchestrator.
@@ -4870,8 +4865,6 @@ verus! {
             &&& ds.server_states[al].log[k].value == s_.log[k].value
         }
     }
-
-    // (old_entries and transfer_any removed — inlined into main lemma)
 
     /// Inductive step for EntryTermHasVoteQuorum.
     #[verifier::rlimit(200)]
@@ -6900,7 +6893,6 @@ verus! {
         };
     }
 
-    #[verifier::rlimit(200)]
     pub proof fn lemma_vote_response_has_request_vote_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -8134,7 +8126,6 @@ verus! {
     // CandidateVoteDestinationUnique inductive proof
     // =========================================================================
 
-    #[verifier::rlimit(200)]
     pub proof fn lemma_candidate_vote_destination_unique_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
