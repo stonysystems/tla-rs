@@ -2006,9 +2006,79 @@ verus! {
                 ds, leader_id, d_rli - 1, k, entry);
         } else {
             // Edge cases: d_rlt == entry.term or k >= d_rli - 1
-            // Fall back to old path (with its assume)
-            lemma_overlap_voter_entry_transfer(
+            // Use ETHVQ path with ExistsGrantedVoteResponse already established
+            lemma_ethvq_entry_transfer_from_overlap_voter(
                 ds, leader_id, ov, k, entry);
+        }
+    }
+
+    /// Phase 34.7.4: Entry transfer via ETHVQ path given
+    /// ExistsGrantedVoteResponse.
+    ///
+    /// Like lemma_leader_has_committed_entry Steps 3-4, but takes
+    /// ExistsGrantedVoteResponse as input instead of doing quorum
+    /// overlap + VR extraction. Works for both Candidate and Leader.
+    ///
+    /// Does NOT require VotersVotedForCandidate, VoteResponseIntegrity,
+    /// or EntryTermHasVoteQuorum — only ETHVQ-safe invariants.
+    proof fn lemma_ethvq_entry_transfer_from_overlap_voter(
+        ds: RaftDistributedState,
+        d: int,
+        ov: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            TermsNonNegative(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
+            LogTermsMonotonic(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k,
+            0 <= d < ds.num_servers,
+            0 <= ov < ds.num_servers,
+            ov != d,
+            ds.server_states[ov].log.len() > k,
+            ds.server_states[ov].log[k] == entry,
+            ds.server_states[d].current_term > entry.term,
+            ExistsGrantedVoteResponse(ds, ov, d,
+                ds.server_states[d].current_term),
+        ensures
+            ds.server_states[d].log.len() > k,
+            ds.server_states[d].log[k] == entry,
+    {
+        let T = ds.server_states[d].current_term;
+
+        // Step 1: Packet extraction + equal-term attempt
+        let (d_rli, d_rlt, ov_L, handled) =
+            lemma_ethvq_committed_try_equal_term(
+                ds, ov, d, T, k, entry);
+
+        if handled {
+            return;
+        }
+
+        // Step 2: Strict-term case
+        // d_rli > 0, d_rlt < T, d.log[d_rli-1].term == d_rlt
+        if d_rlt > entry.term && k < d_rli - 1 {
+            // Main recursion: anchor at d_rli - 1
+            lemma_ethvq_committed_entry_transfer(
+                ds, d, d_rli - 1, k, entry);
+        } else {
+            // Edge cases: d_rlt == entry.term or k >= d_rli - 1.
+            // These hit the narrowed assumes inside
+            // lemma_ethvq_committed_entry_transfer (lines 2553/2592).
+            assume(
+                ds.server_states[d].log.len() > k
+                    && ds.server_states[d].log[k] == entry
+            );
         }
     }
 
@@ -5971,6 +6041,10 @@ verus! {
             VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
             VotesGrantedAreServers(ds),
+            TermsNonNegative(ds),
+            LogTermsMonotonic(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
             RaftDistributedNext(ds, ds_),
             0 <= k,
             EntryCommittedAt(ds, k, entry),
@@ -6085,7 +6159,34 @@ verus! {
                     // In pre-state votes_granted: establish VoteResponse packet
                     lemma_vote_witness_from_votes_granted(
                         ds, leader_id, overlap_voter);
-                    lemma_overlap_voter_entry_transfer(
+                    // Bridge to ExistsGrantedVoteResponse for ETHVQ path
+                    let T = ds.server_states[leader_id].current_term;
+                    assert(ExistsGrantedVoteResponse(ds, overlap_voter, leader_id, T)) by {
+                        let p = choose |p: LRaftPacket| {
+                            &&& ds.network.contains(p)
+                            &&& p.src == overlap_voter
+                            &&& p.dst == leader_id
+                            &&& p.msg matches LRaftMessage::VoteResponse {
+                                term, granted, voter: msg_voter, .. }
+                            &&& granted
+                            &&& term == T
+                            &&& msg_voter == overlap_voter
+                        };
+                        let li = p.msg->VoteResponse_voter_last_log_index;
+                        let lt = p.msg->VoteResponse_voter_last_log_term;
+                        assert(ds.network.contains(LRaftPacket {
+                            src: overlap_voter,
+                            dst: leader_id,
+                            msg: LRaftMessage::VoteResponse {
+                                term: T,
+                                granted: true,
+                                voter: overlap_voter,
+                                voter_last_log_index: li,
+                                voter_last_log_term: lt,
+                            },
+                        }));
+                    };
+                    lemma_ethvq_entry_transfer_from_overlap_voter(
                         ds, leader_id, overlap_voter, k, entry);
                     assert(ds_.server_states[leader_id].log[k]
                         == ds.server_states[leader_id].log[k]);
@@ -6178,27 +6279,27 @@ verus! {
                     assert(vote_term
                         == ds.server_states[leader_id].current_term);
 
-                    // Establish the existential precondition for lemma_overlap_voter_entry_transfer
-                    assert(exists |vote: LRaftPacket| {
-                        &&& ds.network.contains(vote)
-                        &&& vote.src == overlap_voter
-                        &&& vote.dst == leader_id
-                        &&& vote.msg matches LRaftMessage::VoteResponse {
-                            term: vt,
-                            granted: vg,
-                            voter: vv,
-                            ..
-                        }
-                        &&& vg
-                        &&& vv == overlap_voter
-                        &&& vt == ds.server_states[leader_id].current_term
-                        &&& (ds.server_states[overlap_voter].current_term > vt
-                            || (ds.server_states[overlap_voter].current_term == vt
-                                && ds.server_states[overlap_voter].has_voted
-                                && ds.server_states[overlap_voter].voted_for == leader_id))
-                    });
+                    // Establish ExistsGrantedVoteResponse for ETHVQ path
+                    let T_lci = ds.server_states[leader_id].current_term;
+                    assert(ExistsGrantedVoteResponse(ds, overlap_voter, leader_id, T_lci)) by {
+                        // step_pkt is a VoteResponse from overlap_voter to leader_id
+                        // with term == T_lci, granted == true, voter == overlap_voter
+                        let li = step_pkt.msg->VoteResponse_voter_last_log_index;
+                        let lt = step_pkt.msg->VoteResponse_voter_last_log_term;
+                        assert(ds.network.contains(LRaftPacket {
+                            src: overlap_voter,
+                            dst: leader_id,
+                            msg: LRaftMessage::VoteResponse {
+                                term: T_lci,
+                                granted: true,
+                                voter: overlap_voter,
+                                voter_last_log_index: li,
+                                voter_last_log_term: lt,
+                            },
+                        }));
+                    };
 
-                    lemma_overlap_voter_entry_transfer(
+                    lemma_ethvq_entry_transfer_from_overlap_voter(
                         ds, leader_id, overlap_voter, k, entry);
                     assert(ds_.server_states[leader_id].log[k]
                         == ds.server_states[leader_id].log[k]);
@@ -6334,6 +6435,10 @@ verus! {
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
+            TermsNonNegative(ds),
+            LogTermsMonotonic(ds),
+            RequestVoteSummaryAlwaysValid(ds),
+            RequestVoteLastLogTermBound(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             LeaderCompleteness(ds_)
