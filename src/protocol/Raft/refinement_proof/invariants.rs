@@ -2547,10 +2547,49 @@ verus! {
                 lemma_ethvq_log_matching_transfer(
                     ds, server, d, anchor_idx, k, entry);
             } else {
-                // anchor_idx == k + 1: narrowest case, lex metric can't decrease.
-                // d.log[k+1].term == T (since d.log[anchor_idx].term == T).
-                // Remaining edge case — future work.
-                assume(ds.server_states[server].log[k] == entry);
+                // anchor_idx == k + 1: can't recurse with (d, k+1, k)
+                // because lex metric (T - entry.term, 1) doesn't decrease.
+                // Inline one ETHVQ step on d at k+1 to get d2 with d2_rlt < T.
+                assert(anchor_idx == k + 1);
+                assert(ds.server_states[d].log[k + 1].term == T);
+
+                // ETHVQ overlap on d at anchor k+1
+                let (ov2, d2) = lemma_ethvq_committed_overlap(
+                    ds, d, k + 1, k, entry);
+
+                if ov2 == d2 {
+                    // d2 already has entry, transfer d2→d→server
+                    lemma_ethvq_log_matching_transfer(
+                        ds, d, d2, k + 1, k, entry);
+                    lemma_ethvq_log_matching_transfer(
+                        ds, server, d, anchor_idx, k, entry);
+                } else {
+                    let (d2_rli, d2_rlt, ov2_L, handled2) =
+                        lemma_ethvq_committed_try_equal_term(
+                            ds, ov2, d2, T, k, entry);
+
+                    if handled2 {
+                        // d2.log[k] == entry, transfer d2→d→server
+                        lemma_ethvq_log_matching_transfer(
+                            ds, d, d2, k + 1, k, entry);
+                        lemma_ethvq_log_matching_transfer(
+                            ds, server, d, anchor_idx, k, entry);
+                    } else if d2_rlt > entry.term && k < d2_rli - 1 {
+                        // d2_rlt < T (by RequestVoteLastLogTermBound).
+                        // First component: d2_rlt - entry.term < T - entry.term.
+                        // Strictly decreasing → can recurse.
+                        lemma_ethvq_committed_entry_transfer(
+                            ds, d2, d2_rli - 1, k, entry);
+                        lemma_ethvq_log_matching_transfer(
+                            ds, d, d2, k + 1, k, entry);
+                        lemma_ethvq_log_matching_transfer(
+                            ds, server, d, anchor_idx, k, entry);
+                    } else {
+                        // d2's edge cases (same as lines 2555-2593).
+                        // Residual assume.
+                        assume(ds.server_states[server].log[k] == entry);
+                    }
+                }
             }
         } else {
             // Edge case (a): d_rlt == entry.term (and d_rli > ov_L > k).
