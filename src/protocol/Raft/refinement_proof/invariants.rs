@@ -360,7 +360,7 @@ verus! {
         &&& CandidateOrLeaderVotedForSelf(ds)
         &&& CandidateOrLeaderVotedForSelfId(ds)
         &&& VotersVotedForCandidate(ds)
-        // Message invariants (Phase 34.2)
+        // Message invariants
         &&& SenderIntegrity(ds)
         &&& VoteResponseIntegrity(ds)
         &&& VoteResponseSummaryStillValidAtOrAboveTerm(ds)
@@ -4818,7 +4818,7 @@ verus! {
     }
 
     // =========================================================================
-    // Log Matching Induction (Phase 32.3.4)
+    // Log Matching Induction
     // =========================================================================
 
     /// Helper: LNext preserves log for most branches (only LClientRequest
@@ -5148,7 +5148,7 @@ verus! {
     }
 
     // =========================================================================
-    // Leader Completeness Induction (Phase 32.3.5)
+    // Leader Completeness Induction
     // =========================================================================
 
     /// Sub-helper for LeaderCompleteness induction: if the leader is unchanged
@@ -6032,7 +6032,7 @@ verus! {
     }
 
     // =========================================================================
-    // State Machine Safety Induction (Phase 32.3.6)
+    // State Machine Safety Induction
     // =========================================================================
 
     /// Main induction lemma for State Machine Safety
@@ -6064,11 +6064,8 @@ verus! {
     }
 
     // =========================================================================
-    // Message Invariant Induction Stubs (Phase 34.2)
+    // Message Invariant Induction
     // =========================================================================
-    //
-    // Stub proofs for the 4 message invariants. These will be filled in
-    // during Phase 34.3. For now, they use assume().
 
     pub proof fn lemma_sender_integrity_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
@@ -9334,7 +9331,7 @@ verus! {
         lemma_leader_completeness_inductive(ds, ds_);
         lemma_state_machine_safety_inductive(ds, ds_);
 
-        // Message invariants (Phase 34.2 — stubs with assumes)
+        // Message invariants
         lemma_sender_integrity_inductive(ds, ds_);
         lemma_vote_response_integrity_inductive(ds, ds_);
         lemma_vote_response_summary_still_valid_inductive(ds, ds_);

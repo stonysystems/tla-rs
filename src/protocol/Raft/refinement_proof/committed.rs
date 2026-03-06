@@ -174,7 +174,7 @@ verus! {
         ensures
             ds.server_states[i].log[k] == ds.server_states[j].log[k]
     {
-        // Direct from StateMachineSafety in RaftSafetyInvariant
+        assert(StateMachineSafety(ds));
     }
 
     // =========================================================================

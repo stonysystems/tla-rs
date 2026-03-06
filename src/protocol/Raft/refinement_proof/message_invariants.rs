@@ -249,12 +249,8 @@ verus! {
     // then the leader l's log is consistent with the message content.
     //
     // This relies on two properties:
-    // 1. At send time, the leader's log matches the message (requires
-    //    strengthening LSendAppendEntries — deferred to Phase 34.3).
+    // 1. At send time, the leader's log matches the message.
     // 2. After send, log entries are preserved (LogAppendOnly).
-    //
-    // For now we define the full invariant. Its inductive proof will use
-    // assume() until LSendAppendEntries is strengthened.
 
     pub open spec fn AppendEntriesIntegrity(ds: RaftDistributedState) -> bool {
         forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
