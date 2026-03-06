@@ -3034,13 +3034,43 @@ verus! {
                     );
                 }
             } else {
-                // Strict-term (rlt > vtl). Requires ETHVQ for recursive
-                // term-induction, which causes Z3 blow-up with message
-                // invariants in this function's scope.
-                assume(
-                    ds.server_states[leader_id].log.len() > k
-                        && ds.server_states[leader_id].log[k] == entry
-                );
+                // Strict-term (rlt > vtl).
+                assert(rlt > vtl);
+                if rli > L {
+                    // rli > L > 0, so rli > 0.
+                    assert(rli > 0);
+                    assert(ds.server_states[leader_id].log[rli - 1].term == rlt);
+                    // leader.log.len() >= rli > L > k.
+                    assert(ds.server_states[leader_id].log.len() >= rli);
+                    assert(ds.server_states[leader_id].log.len() > k);
+                    assert(L - 1 < rli - 1);
+                    lemma_log_terms_monotonic_entry_bound(
+                        ds, leader_id, L - 1, rli - 1);
+                    assert(ds.server_states[leader_id].log[L - 1].term <= rlt);
+                    if ds.server_states[leader_id].log[L - 1].term == vtl {
+                        // LogMatching at L-1: leader.log[L-1].term == vtl == ov.log[L-1].term
+                        assert(ds.server_states[leader_id].log[L - 1].term
+                            == ds.server_states[overlap_voter].log[L - 1].term);
+                        assert(k <= L - 1);
+                        assert(L - 1 < ds.server_states[leader_id].log.len());
+                        assert(L - 1 < ds.server_states[overlap_voter].log.len());
+                        assert(ds.server_states[leader_id].log[k]
+                            == ds.server_states[overlap_voter].log[k]);
+                        assert(ds.server_states[leader_id].log[k] == entry);
+                    } else {
+                        // leader.log[L-1].term != vtl: log divergence.
+                        assume(
+                            ds.server_states[leader_id].log.len() > k
+                                && ds.server_states[leader_id].log[k] == entry
+                        );
+                    }
+                } else {
+                    // rli <= L: leader's log may not reach index L-1.
+                    assume(
+                        ds.server_states[leader_id].log.len() > k
+                            && ds.server_states[leader_id].log[k] == entry
+                    );
+                }
             }
         }
     }
