@@ -8760,7 +8760,8 @@ verus! {
         new_req_term: int,
     )
         requires
-            RaftSafetyInvariant(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSenderState(ds),
             0 <= server_id < ds.num_servers,
             // vote_pkt is OLD granted VoteResponse at the same term
             ds.network.contains(vote_pkt),
@@ -8859,7 +8860,7 @@ verus! {
         vote_pkt: LRaftPacket,
     ) -> (processed_pkt: LRaftPacket)
         requires
-            RaftSafetyInvariant(ds),
+            SenderIntegrity(ds),
             RaftDistributedNext(ds, ds_),
             ds_.network.contains(vote_pkt), !ds.network.contains(vote_pkt),
             vote_pkt.msg is VoteResponse,
@@ -8917,16 +8918,117 @@ verus! {
     {
     }
 
+    /// Extract ghost state recording: when a new granted VoteResponse is sent,
+    /// RaftServerStepWithNetwork records vote_log_len[(voter, term)] == voter's log length.
+    /// Isolated from case2_complete to keep RaftActionProduces internal.
+    proof fn lemma_extract_ghost_vote_log_len_recording(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        vote_pkt: LRaftPacket,
+    )
+        requires
+            RaftDistributedNext(ds, ds_),
+            ds_.network.contains(vote_pkt), !ds.network.contains(vote_pkt),
+            vote_pkt.msg is VoteResponse,
+            vote_pkt.msg->VoteResponse_granted,
+            0 <= vote_pkt.src < ds.num_servers,
+        ensures
+            ds_.vote_log_len[(vote_pkt.src, vote_pkt.msg->VoteResponse_term)]
+                == ds.server_states[vote_pkt.src].log.len(),
+    {
+        let v = vote_pkt.src;
+        let t = vote_pkt.msg->VoteResponse_term;
+
+        // Extract server_id from RaftDistributedNext
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        // vote_pkt is new → routing gives vote_pkt.src == server_id
+        assert(server_id == v);
+
+        // RaftServerStepWithNetwork(ds, ds_, v) is established.
+        // Choose sent_packets with ALL clauses including ghost recording,
+        // adding the vote_pkt constraints to the choose body to help Z3
+        // connect the dots.
+        let s = ds.server_states[v];
+        let s_ = ds_.server_states[v];
+        let c = ds.server_constants[v];
+
+        let (sp, rf) =
+            choose |sp: Seq<LRaftMessage>, rf: Option<int>|
+            #![trigger RaftActionProduces(ds, v, s, s_, c, sp, rf)]
+            {
+                &&& RaftActionProduces(ds, v, s, s_, c, sp, rf)
+                &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
+                    ==> ds_.network.contains(pkt))
+                &&& (forall |pkt: LRaftPacket|
+                    ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
+                        &&& pkt.src == v
+                        &&& 0 <= pkt.dst < ds.num_servers
+                        &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
+                    })
+                &&& (forall |v2: int, t2: int| ds.vote_log_len.dom().contains((v2, t2))
+                    ==> ds_.vote_log_len.dom().contains((v2, t2))
+                        && ds_.vote_log_len[(v2, t2)] == ds.vote_log_len[(v2, t2)])
+                &&& ({
+                    ||| (exists |vt: int|
+                        #![trigger ds_.vote_log_len.dom().contains((v, vt))]
+                    {
+                        &&& (exists |i: int| #![trigger sp[i]]
+                            0 <= i < sp.len()
+                            && sp[i] is VoteResponse
+                            && sp[i]->VoteResponse_term == vt
+                            && sp[i]->VoteResponse_granted
+                            && sp[i]->VoteResponse_voter == v)
+                        &&& ds_.vote_log_len.dom().contains((v, vt))
+                        &&& ds_.vote_log_len[(v, vt)] == s.log.len()
+                    })
+                    ||| (
+                        !(exists |i: int| #![trigger sp[i]]
+                            0 <= i < sp.len()
+                            && (sp[i] is VoteResponse)
+                            && sp[i]->VoteResponse_granted)
+                    )
+                })
+            };
+
+        // vote_pkt.msg == sp[vr_idx] for some vr_idx (from routing on new packet)
+        let vr_idx = choose |i: int| 0 <= i < sp.len()
+            && vote_pkt.msg == sp[i];
+
+        // Key: the ghost disjunction's second branch says no granted VR in sp.
+        // But vote_pkt.msg == sp[vr_idx] and vote_pkt.msg is a granted VoteResponse.
+        // So the second branch is false, and the first branch must hold.
+        //
+        // The first branch gives ∃ vt with recording at (v, vt).
+        // We need vt == t. The first branch's inner ∃ says sp has a granted VR
+        // at term vt from voter v. Since LGrantVote sends exactly one VoteResponse
+        // in sent_packets (it's a singleton seq), vt == t.
+        //
+        // Rather than proving sp is singleton, use: the ghost clause's first branch
+        // gives ds_.vote_log_len[(v, vt)] == s.log.len(). The second branch is
+        // eliminated. Now assert the conclusion directly — Z3 should match
+        // sp[vr_idx] (which equals vote_pkt.msg) as the witness for the inner
+        // existential with vt == t.
+        assert(ds_.vote_log_len[(v, t)] == s.log.len());
+    }
+
     /// Self-contained Case 2: new VoteResponse + old RequestVote.
     /// Establishes full conclusion directly so the orchestrator just calls this.
     /// Internally: case2_extract + RVLPC + ghost state + transfer.
-    /// Ghost state extraction uses sound assume (vote_log_len recording).
     proof fn lemma_vote_granted_case2_complete(
         ds: RaftDistributedState, ds_: RaftDistributedState,
         vote_pkt: LRaftPacket, req: LRaftPacket,
     )
         requires
-            RaftSafetyInvariant(ds),
+            SenderIntegrity(ds),
+            RequestVoteLogParamsConsistent(ds),
             RaftDistributedNext(ds, ds_),
             // vote_pkt is new granted VoteResponse
             ds_.network.contains(vote_pkt), !ds.network.contains(vote_pkt),
@@ -8972,11 +9074,11 @@ verus! {
         assert(SenderIntegrity(ds));
         lemma_rvlpc_same_log_params(ds, processed_pkt, req);
 
-        // Step C: Ghost state — sound assume.
+        // Step C: Ghost state recording.
         // RaftServerStepWithNetwork records vote_log_len[(v, t)] == s.log.len()
         // when a granted VoteResponse at term t is sent by server v.
+        lemma_extract_ghost_vote_log_len_recording(ds, ds_, vote_pkt);
         let s_log_len: int = ds.server_states[v].log.len() as int;
-        assume(ds_.vote_log_len[(v, t)] == s_log_len);
 
         // Step D: Transfer to lightweight helper (no RaftSafetyInvariant, no RaftDistributedNext).
         lemma_vote_granted_log_utd_new_vr_old_req(
@@ -9037,7 +9139,8 @@ verus! {
         vote_pkt: LRaftPacket, req: LRaftPacket,
     )
         requires
-            RaftSafetyInvariant(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSenderState(ds),
             RaftDistributedNext(ds, ds_),
             ds.network.contains(vote_pkt), ds_.network.contains(vote_pkt),
             !ds.network.contains(req), ds_.network.contains(req),
@@ -9073,6 +9176,86 @@ verus! {
         let server_id = lemma_vote_granted_case34_extract(ds, ds_, req);
         // All new packets are RequestVote, but vote_pkt is new and VoteResponse.
         // Contradiction.
+    }
+
+    /// Per-pair case dispatch for VoteGrantedLogUpToDateAtVoteTime induction.
+    /// Isolated from the orchestrator to prevent axiom pollution from
+    /// RaftSafetyInvariant leaking into the assert-forall block.
+    proof fn lemma_vote_granted_log_utd_per_pair(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        vote_pkt: LRaftPacket, req: LRaftPacket,
+    )
+        requires
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            VoteLogLenCoversNetwork(ds),
+            SenderIntegrity(ds),
+            RequestVoteLogParamsConsistent(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSenderState(ds),
+            VoteLogLenBounded(ds),
+            LogAppendOnly(ds, ds_),
+            RaftDistributedNext(ds, ds_),
+            (forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+                ==> ds_.vote_log_len.dom().contains((v, t))
+                    && #[trigger] ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)]),
+            ds_.network.contains(vote_pkt), ds_.network.contains(req),
+            vote_pkt.msg is VoteResponse,
+            vote_pkt.msg->VoteResponse_granted,
+            req.msg is RequestVote,
+            vote_pkt.msg->VoteResponse_term == req.msg->RequestVote_term,
+            vote_pkt.src == req.dst,
+            vote_pkt.dst == req.src,
+            ds_.vote_log_len.dom().contains(
+                (vote_pkt.src, vote_pkt.msg->VoteResponse_term)),
+            0 <= vote_pkt.src < ds_.num_servers,
+        ensures ({
+            let v = vote_pkt.src;
+            let t = vote_pkt.msg->VoteResponse_term;
+            let L = ds_.vote_log_len[(v, t)];
+            let voter_vote_time_last_term: int = if L == 0 {
+                0int
+            } else {
+                ds_.server_states[v].log[L - 1].term
+            };
+            let li = req.msg->RequestVote_last_log_index;
+            let lt = req.msg->RequestVote_last_log_term;
+            lt > voter_vote_time_last_term
+                || (lt == voter_vote_time_last_term && li >= L)
+        })
+    {
+        if ds.network.contains(vote_pkt) && ds.network.contains(req) {
+            // Case 1: Both old — IH + ghost monotonicity + LogAppendOnly
+            let v = vote_pkt.src;
+            let t = vote_pkt.msg->VoteResponse_term;
+            // VoteLogLenBounded gives bounds on v and L
+            assert(VoteLogLenBounded(ds));
+            assert(VoteLogLenCoversNetwork(ds));
+            assert(ds.vote_log_len.dom().contains((v, t)));
+            let L = ds.vote_log_len[(v, t)];
+            assert(0 <= v < ds.num_servers);
+            assert(L <= ds.server_states[v].log.len());
+            // Ghost monotonicity: L is the same in ds and ds_
+            assert(ds_.vote_log_len[(v, t)] == L);
+            // IH conclusion in terms of ds
+            let li = req.msg->RequestVote_last_log_index;
+            let lt = req.msg->RequestVote_last_log_term;
+            // LogAppendOnly: ds_ log prefix matches ds
+            if L > 0 {
+                let k = L - 1;
+                // Fire LogAppendOnly trigger for (v, k)
+                assert(ds.server_states[v].log[k] == ds.server_states[v].log[k]);
+                assert(ds_.server_states[v].log[k] == ds.server_states[v].log[k]);
+            }
+        } else if !ds.network.contains(vote_pkt) && ds.network.contains(req) {
+            // Case 2: new VoteResponse + old RequestVote
+            lemma_vote_granted_case2_complete(ds, ds_, vote_pkt, req);
+        } else if ds.network.contains(vote_pkt) && !ds.network.contains(req) {
+            // Case 3: old VR + new req → contradiction
+            lemma_vote_granted_case3_complete(ds, ds_, vote_pkt, req);
+        } else {
+            // Case 4: both new → contradiction
+            lemma_vote_granted_case4_complete(ds, ds_, vote_pkt, req);
+        }
     }
 
     pub proof fn lemma_vote_granted_log_up_to_date_inductive(
@@ -9112,20 +9295,7 @@ verus! {
             lt > voter_vote_time_last_term
                 || (lt == voter_vote_time_last_term && li >= L)
         }) by {
-            if ds.network.contains(vote_pkt) && ds.network.contains(req) {
-                // Case 1: Both old — IH + ghost monotonicity + LogAppendOnly
-                assert(VoteGrantedLogUpToDateAtVoteTime(ds));
-                assert(LogAppendOnly(ds, ds_));
-            } else if !ds.network.contains(vote_pkt) && ds.network.contains(req) {
-                // Case 2: new VoteResponse + old RequestVote
-                lemma_vote_granted_case2_complete(ds, ds_, vote_pkt, req);
-            } else if ds.network.contains(vote_pkt) && !ds.network.contains(req) {
-                // Case 3: old VR + new req → contradiction
-                lemma_vote_granted_case3_complete(ds, ds_, vote_pkt, req);
-            } else {
-                // Case 4: both new → contradiction
-                lemma_vote_granted_case4_complete(ds, ds_, vote_pkt, req);
-            }
+            lemma_vote_granted_log_utd_per_pair(ds, ds_, vote_pkt, req);
         };
     }
 
