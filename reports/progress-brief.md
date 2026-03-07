@@ -1,4 +1,4 @@
-# Progress Summary (2026-02-26)
+# Progress Summary (2026-03-06)
 
 ## 1. RSL Code Generation & Proof
 - **8 RSL modules** fully transpiler-generated, all standalone (no hand-written delegates)
@@ -43,7 +43,17 @@ This includes:
 
 **Solution (Phase 27):** Enriched the Raft spec with **composite actions** that model complete message-handling flows.
 
-## 5. Transpiler Enhancement (Phase 29 — Planned)
+## 5. Raft Safety Refinement Proof (Phase 32 + 34)
+
+**Top-level theorem**: `lemma_refinement_correct` — every valid Raft distributed behavior refines to a sequential append-only committed log.
+
+- **6 files**, ~12,000 LOC in `src/protocol/Raft/refinement_proof/`
+- **30+ invariants** proved inductively (19 message invariants, 4 ghost state, 4 SMS infrastructure, 3 log structure, plus structural)
+- **669 verified, 0 errors**
+- **12 assumes remain** in `invariants.rs`: 7 LeaderCompleteness `assume(false)` (blocked on `d_rli ≤ k` wall — requires leader-term strong induction per Ongaro PhD §3.6.1), 4 sound Z3 workarounds (permanent), 1 StateMachineSafety (blocked on LC)
+- See `reports/raft_refinement_proof.md` for full architecture, invariant list, and detailed status
+
+## 6. Transpiler Enhancement (Phase 29 — Planned)
 
 **Problem identified:** The 8 composite exec functions in Phase 27 had to be hand-written (`raft_manual.rs`, 369 LOC) because the transpiler cannot translate them. Root cause analysis revealed a single missing capability:
 

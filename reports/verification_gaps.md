@@ -1,4 +1,4 @@
-# Verification Gaps Report (2026-03-01, Post-Phase 32)
+# Verification Gaps Report (2026-03-06, Post-Phase 34.15)
 
 Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping related items.
 
@@ -19,11 +19,21 @@ Excludes IO trust boundary (10 packet-identity assumes) and clone/view-mapping r
 - **Raft Safety Refinement Proof completed** (Phase 32.1–32.7) — full refinement proof from distributed Raft → abstract sequential state machine
 - 5 new files: `src/protocol/Raft/refinement_proof/{state_machine,invariants,induction,committed,refinement}.rs`
 - Top-level theorem: `lemma_refinement_correct` — every valid Raft behavior refines to a sequential committed log
-- Phase 32.3.1-32.3.2: Detailed invariant induction proofs with supporting invariants (VotesGrantedAreServers, CandidateOrLeaderVotedForSelf, VotersVotedForCandidate); 7 LNext case analysis assumes eliminated via helper lemmas + spec strengthening (LFollowerAppendEntries commit_index capped by min(ae_leader_commit, new_log_len))
-- Spec strengthened with prev_log consistency check in `LHandleAppendEntriesMsg` per Raft §5.3 — follower rejects AppendEntries when prev_log entry doesn't match; refinement proof updated with new branch
-- 6 targeted `assume()` across 2 files (see §6 below): 5 in invariants.rs, 1 in committed.rs
+- Spec strengthened with prev_log consistency check in `LHandleAppendEntriesMsg` per Raft §5.3
 - 1 `external_body` axiom (`lemma_quorum_intersection` in common/collections/sets.rs) — pigeonhole principle for quorum intersection
 - Verification: 669 verified, 0 errors (up from 632 pre-Phase 32)
+
+## Changes from Phase 34 (34.1–34.15)
+
+- **RSL-style network model** added (Phase 34.1): `sentPackets`, `LRaftPacket`, receive guards, ghost `vote_log_len` state
+- **30+ invariants proved** (Phase 34.2–34.15): 19 message invariants, 4 ghost state invariants, 4 SMS infrastructure invariants, 3 log structure invariants, plus structural invariants
+- **ElectionSafety, VotersVotedForCandidate, LogMatching fully proved** (Phase 34.4–34.6): Phase 32 assumes 1-3 eliminated
+- **LeaderCompleteness partially proved** (Phase 34.7–34.9): equal-term cases done, ETHVQ vote dest uniqueness resolved 3 of 10 `assume(false)`. 7 remain, all blocked on `d_rli ≤ k` wall
+- **StateMachineSafety spec fixed** (Phase 34.8): quorum replication guard in `LAdvanceCommitIndex`
+- **SMS infrastructure invariants** (Phase 34.12–34.14): ARLA, MILA, MIB, AELCB all fully proved
+- **Committed log prefix preservation proved** (Phase 34.15): `committed.rs` now assume-free (Phase 32 assume 6 eliminated)
+- **24 inductive lemma requires narrowed** from `RaftSafetyInvariant` to minimal sub-invariants (Phase 34.15)
+- **Current Raft assumes**: 12 total in invariants.rs (see §6): 7 LC, 4 Z3 workarounds, 1 SMS
 
 ## Changes from Phase 31
 
@@ -156,7 +166,8 @@ Root cause breakdown (remaining 27 `external_body` in impl/generated/common):
 - **Generated helpers** (3): hashset_insert, filter, unreachable_value
 - **Minus overlapping count** (-8): trusted lemma primitives counted in both categories
 
-Refinement proof assume() breakdown: **0 total** — all RSL proof assumes fully eliminated.
+RSL refinement proof assume() breakdown: **0 total** — all RSL proof assumes fully eliminated.
+Raft refinement proof assume() breakdown: **12 total** — 7 LC `assume(false)` (blocked on `d_rli ≤ k` wall), 4 sound Z3 workarounds, 1 SMS (blocked on LC). See §6.
 
 ---
 
@@ -183,65 +194,72 @@ Total `assume()` across RSL proof files: **0**.
 
 ---
 
-## 6. Raft Safety Refinement Proof — `assume()` Summary (Phase 32)
+## 6. Raft Safety Refinement Proof — `assume()` Summary (Phase 34.15)
 
-6 targeted `assume()` across the Raft refinement proof files:
+12 `assume()` in invariants.rs, 0 in all other files. See `reports/raft_refinement_proof.md` for full architecture and invariant list.
 
-### invariants.rs (5 assumes)
+### Phase evolution
 
-7 LNext case analysis assumes were eliminated (Phase 32.3.2) using helper lemmas:
-- `lemma_lnext_votes_bounded`: Verus auto-case-splits to prove votes come from {old votes} ∪ {my_id} ∪ c.servers
-- `lemma_lnext_self_vote_preserved`: Verus auto-case-splits to prove Candidate/Leader self-vote preserved
-- `lemma_lnext_leader_quorum_preserved`: Verus auto-case-splits to prove Leader quorum preserved
-- `lemma_invariant_at_step`: Clean recursive induction with `decreases k` (replaces inner assume)
-- CommitIndexBounded: spec fix in `LFollowerAppendEntries` — changed `ae_leader_commit` to `min(ae_leader_commit, new_log_len)` (Raft §5.3 semantics). Verus now auto-verifies `lemma_lnext_commit_bounded`.
+- **Phase 32**: Initial proof structure with 6 assumes (5 in invariants.rs, 1 in committed.rs). Network model not yet added.
+- **Phase 34.1-34.3**: Added RSL-style network model (`sentPackets` + receive guards), 19 message invariants proved.
+- **Phase 34.4-34.5**: ElectionSafety and VotersVotedForCandidate fully proved (Phase 32 assumes 1-2 eliminated).
+- **Phase 34.6**: LogMatching fully proved (Phase 32 assume 3 eliminated).
+- **Phase 34.7-34.9**: LeaderCompleteness partially proved. Equal-term cases done. ETHVQ vote dest uniqueness resolved 3 of 10 strict-term `assume(false)`. 7 remain.
+- **Phase 34.8**: StateMachineSafety spec fixed (quorum replication guard in `LAdvanceCommitIndex`).
+- **Phase 34.11-34.14**: SMS infrastructure: `AppendResponseLogAgreement`, `MatchIndexImpliesLogAgreement`, `MatchIndexBounded`, `AppendEntriesLeaderCommitBound` invariants added and fully proved. SMS proof restructured.
+- **Phase 34.15**: Committed log prefix preservation fully proved (`committed.rs` now assume-free, Phase 32 assume 6 eliminated). 24 inductive lemma requires narrowed from `RaftSafetyInvariant` to minimal sub-invariants.
 
-Phase 32.3.3: Quorum intersection lemma added to sets.rs (`lemma_quorum_intersection`).
-Election Safety `assume(false)` replaced with structured quorum intersection argument + `assume(stepping == other)`.
+### invariants.rs (12 assumes)
 
-Phase 32.3.4-32.3.6: Log-level invariants (LogMatching, LeaderCompleteness, StateMachineSafety)
-moved from bare assumes in composite function to structured proof functions with:
-- `lemma_lnext_log_preserved_or_extended`: Verified helper proving log is unchanged or extended by 1 entry for all LNext branches
-- `lemma_log_matching_inductive`: Structured proof documenting the two network-level gaps (leader entry uniqueness, message provenance)
-- `lemma_leader_completeness_inductive`: Structured proof documenting quorum intersection + log up-to-date argument
-- `lemma_state_machine_safety_inductive`: Documents dependency on LogMatching + LeaderCompleteness
-- Spec now includes prev_log consistency check in `LHandleAppendEntriesMsg` (Raft §5.3), but assumes remain due to existentially-quantified message parameters in single-server model
+**A. LeaderCompleteness — 7 `assume(false)` (the `d_rli ≤ k` wall)**
 
-Remaining assumes:
+All 7 represent the same fundamental gap: when ETHVQ vote dest `d` has pre-election log length ≤ k, LogMatching coverage is below index k, and there's no anchor to transfer the committed entry.
 
-| # | Line | Function | assume | Root Cause |
-|---|------|----------|--------|------------|
-| 1 | 376 | `lemma_election_safety_inductive` | `assume(stepping == other)` | Quorum intersection requires VotersVotedForCandidate(ds_) + VotesGrantedAreServers(ds_) |
-| 2 | 565 | `lemma_voters_voted_for_candidate_inductive` | `VotersVotedForCandidate(ds_)` | Network-level invariant requires message provenance tracking |
-| 3 | 775 | `lemma_log_matching_inductive` | `LogMatching(ds_)` | Network-level message provenance: ae_prev_index/ae_prev_term existentially quantified (prev_log check in spec, but can't link to leader's log) |
-| 4 | 827 | `lemma_leader_completeness_inductive` | `LeaderCompleteness(ds_)` | Requires LogMatching + quorum intersection + log up-to-date |
-| 5 | 860 | `lemma_state_machine_safety_inductive` | `StateMachineSafety(ds_)` | Depends on LeaderCompleteness + LogMatching |
+| # | Line | Function | Case |
+|---|------|----------|------|
+| 1 | 1206 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log[k].term > entry.term |
+| 2 | 1221 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or wrong term |
+| 3 | 1779 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, wrong term |
+| 4 | 2626 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, wrong term |
+| 5 | 2668 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, wrong term |
+| 6 | 2692 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, wrong term |
+| 7 | 2706 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, wrong term or too short |
 
-### induction.rs (0 assumes)
+Root cause: The Raft paper's proof uses strong induction on leader terms ("smallest failing term" per Ongaro PhD §3.6.1), which doesn't map directly to single-step state machine induction with ETHVQ vote-dest term descent.
 
-Delegates to `lemma_safety_invariant_inductive` from invariants.rs.
-`lemma_invariant_holds_throughout_behavior` uses clean recursive induction (no assumes).
+**B. Sound Z3 workaround assumes — 4 (permanent)**
 
-### committed.rs (1 assume)
+ETHVQ witness extraction via `choose` crashes Z3 (OOM/stack overflow). Using `assume` is sound because `EntryTermHasVoteQuorum` is in requires. Permanent until Z3/Verus improves Skolemization.
 
-Three assumes eliminated via seq-based helpers:
-- WellFormedness assume eliminated via `max_commit_index_seq` (avoids RaftDistributedState sub-state construction)
-- MaxCommitIndex monotonicity eliminated via `lemma_max_commit_seq_monotone` (recursive proof over server_states sequences)
-- GetCommittedLog length monotonicity eliminated via `lemma_committed_log_len` + `lemma_max_commit_seq_achieved`
+| # | Line | Function |
+|---|------|----------|
+| 8 | 2213 | `lemma_same_term_committed_entry_transfer` |
+| 9 | 2236 | `lemma_same_term_committed_entry_transfer` |
+| 10 | 2331 | `lemma_ethvq_committed_overlap` |
+| 11 | 3800 | `lemma_leader_log_quorum_intersection` |
 
-| # | Line | Function | assume | Root Cause |
-|---|------|----------|--------|------------|
-| 6 | 152 | `lemma_committed_log_monotone` | prefix entries match | Requires StateMachineSafety for log entry agreement across servers |
+**C. StateMachineSafety — 1 assume (blocked on LeaderCompleteness)**
 
-`lemma_abstract_step_valid` stutter case: proved via `=~=` extensional equality (previously assume).
+| # | Line | Function | Description |
+|---|------|----------|-------------|
+| 12 | 6218 | `lemma_state_machine_safety_inductive` | Newly committed entries: `assume(ds_.server_states[i].log[k] == ...)` |
 
-### refinement.rs (0 assumes)
+SMS proof restructured (Phase 34.14): frame cases proved via SMS(ds) + LogAppendOnly. Assume narrowed to only the case where stepping server's commit_index newly covers k. Requires LC + quorum overlap.
 
-All proofs fully mechanized. Top-level `lemma_refinement_correct` has no assumes.
+### committed.rs (0 assumes) ✓
 
-### What would eliminate these assumes
+All 4 original assumes eliminated:
+- WellFormedness: `max_commit_index_seq` (avoids sub-state construction)
+- MaxCommitIndex monotonicity: `lemma_max_commit_seq_monotone` (recursive proof)
+- GetCommittedLog length: `lemma_committed_log_len` + `lemma_max_commit_seq_achieved`
+- Prefix entries match (Phase 34.15): `lemma_committed_log_monotone` proved via SMS(ds_) + LogAppendOnly bridge
 
-- **Assume 1 (ElectionSafety quorum intersection)**: Depends on assumes 2 and 3-5 being resolved first (VotersVotedForCandidate provides the crucial link that quorum overlap implies same candidate)
-- **Assume 2 (VotersVotedForCandidate)**: Add network message provenance tracking (src/dst fields on messages, delivered-from invariant) to the distributed model, so that receiving a VoteResponse from voter `v` proves `v` actually voted for the candidate
-- **Assumes 3-5 (LogMatching, LeaderCompleteness, StateMachineSafety)**: Spec now includes prev_log consistency check in `LHandleAppendEntriesMsg` (Raft §5.3), but assumes remain because ae_prev_index/ae_prev_term are existentially quantified in the single-server model — cannot link to leader's log. Requires adding network message provenance (tracking which messages were sent by whom with what parameters) to the distributed model
-- **Assume 6 (committed.rs entry agreement)**: Follows directly from StateMachineSafety — once assumes 3-5 are resolved, this one falls out automatically
+### induction.rs, refinement.rs (0 assumes) ✓
+
+All fully mechanized. Top-level `lemma_refinement_correct` has no assumes.
+
+### What would eliminate the remaining assumes
+
+- **7 LC `assume(false)`**: Requires mechanizing leader-term strong induction (Ongaro PhD §3.6.1). When ETHVQ vote dest `d` has pre-election log length `d_rli ≤ k`, entries at indices `d_rli..k` were created via `LClientRequest` at term `d.current_term`. LogMatching at `d_rli-1` doesn't cover index k. The paper resolves via "smallest failing term T" strong induction; mechanizing this in single-step state machine induction is the open problem. Alternative: ghost provenance chain (feasible but invasive spec refactoring).
+- **1 SMS assume**: Follows directly from LeaderCompleteness — once LC is fully proved, the SMS assume falls out via quorum overlap.
+- **4 Z3 workaround assumes**: Sound and permanent. Will be removed if/when Z3/Verus improves nested existential Skolemization to avoid OOM on `choose |d: int| exists |voters: Seq<int>| { ... }`.

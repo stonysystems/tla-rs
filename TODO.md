@@ -9,9 +9,9 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 - **Verification command**: `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs`
 - **Build command**: `scons --verus-path=/home/shuai/tools/verus-x86-linux`
 
-## Current Status (2026-03-03)
+## Current Status (2026-03-06)
 
-✅ **669 verified, 0 errors**. Phase 32 Raft safety refinement COMPLETE — all sub-phases analyzed. Raft refinement proof: 5 files (state_machine.rs, invariants.rs, induction.rs, committed.rs, refinement.rs), 6 assumes across invariants.rs (5) and committed.rs (1), all documented with root cause analysis (network-level trust gaps in single-server spec model). Spec strengthened with prev_log consistency check (Raft §5.3) and commit_index cap (min of leader_commit, new_log_len). Eliminated 3 committed.rs assumes via seq-based MaxCommitIndex helpers. 10 packet-identity assumes remain in RSL (irreducible IO trust boundary).
+✅ **669 verified, 0 errors**. Raft refinement proof: 6 files (~12,000 LOC in state_machine.rs, invariants.rs, induction.rs, committed.rs, message_invariants.rs, refinement.rs), 30+ invariants proved, 12 assumes in invariants.rs (7 LC `assume(false)` blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. 24 inductive lemma requires narrowed to minimal sub-invariants. 10 packet-identity assumes remain in RSL (irreducible IO trust boundary).
 Most transpiler/proof phases are now in good shape. The largest remaining product gap is the native tla-rs model checker: the source-first engine exists and already supports bounded safety/liveness checking, but protocol coverage, evaluator completeness, and checked-in performance evidence are still incomplete. Current model-check status is tracked in `docs/model_checker_status.md` and the follow-on work is now the top-priority phase below.
 
 **What works:**
