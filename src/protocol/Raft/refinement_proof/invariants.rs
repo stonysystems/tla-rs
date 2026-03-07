@@ -3572,7 +3572,7 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            VotersVotedForCandidate(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             VotersVotedForCandidate(ds_)
