@@ -3157,7 +3157,7 @@ verus! {
     ///     use quorum intersection with VotersVotedForCandidate to show
     ///     no other server is Leader at the same term.
     ///   - If server_id stepped down or didn't change role: safe.
-    pub proof fn lemma_election_safety_inductive(ds: RaftDistributedState, ds_: RaftDistributedState)
+    proof fn lemma_election_safety_inductive(ds: RaftDistributedState, ds_: RaftDistributedState)
         requires
             RaftSafetyInvariant(ds),
             RaftDistributedNext(ds, ds_),
@@ -3377,7 +3377,7 @@ verus! {
         // The s_mid passed to sub-actions has votes_granted ⊆ s.votes_granted ∪ {}.
     }
 
-    pub proof fn lemma_votes_granted_are_servers_inductive(
+    proof fn lemma_votes_granted_are_servers_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -3454,7 +3454,7 @@ verus! {
         // Step-down/follower actions: s_ is Follower → conclusion vacuous.
     }
 
-    pub proof fn lemma_candidate_or_leader_voted_for_self_inductive(
+    proof fn lemma_candidate_or_leader_voted_for_self_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -3517,7 +3517,7 @@ verus! {
         // Step-down/follower actions: s_ is Follower → conclusion vacuous.
     }
 
-    pub proof fn lemma_candidate_or_leader_voted_for_self_id_inductive(
+    proof fn lemma_candidate_or_leader_voted_for_self_id_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -3568,7 +3568,7 @@ verus! {
     ///   VoteResponse packet is already in the network with matching term
     ///   (ensured by the term check guard: term == s.current_term)
     /// - votes_granted is reset on term change (step_down/LTimeout)
-    pub proof fn lemma_voters_voted_for_candidate_inductive(
+    proof fn lemma_voters_voted_for_candidate_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -3638,7 +3638,7 @@ verus! {
         // LTimeout: s_ is Candidate → conclusion vacuous
     }
 
-    pub proof fn lemma_leader_has_quorum_inductive(
+    proof fn lemma_leader_has_quorum_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -3698,7 +3698,7 @@ verus! {
         // Verus case-splits on LNext and verifies each branch automatically.
     }
 
-    pub proof fn lemma_commit_index_bounded_inductive(
+    proof fn lemma_commit_index_bounded_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -4462,7 +4462,7 @@ verus! {
         };
     }
 
-    pub proof fn lemma_leader_log_long_enough_inductive(
+    proof fn lemma_leader_log_long_enough_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -4491,7 +4491,7 @@ verus! {
     /// at the same index. Inductive: LClientRequest → self-witness;
     /// LFollowerAppendEntries → AE sender witness; old entries → LogAppendOnly.
     #[verifier::rlimit(450)]
-    pub proof fn lemma_entry_term_leader_witness_inductive(
+    proof fn lemma_entry_term_leader_witness_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -4896,7 +4896,7 @@ verus! {
 
     /// Inductive step for EntryTermHasVoteQuorum.
     #[verifier::rlimit(200)]
-    pub proof fn lemma_entry_term_has_vote_quorum_inductive(
+    proof fn lemma_entry_term_has_vote_quorum_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -5021,7 +5021,7 @@ verus! {
 
     /// Helper: LNext preserves log for most branches (only LClientRequest
     /// and LFollowerAppendEntries modify the log).
-    pub proof fn lemma_lnext_log_preserved_or_extended(s: LState, s_: LState, c: LConstants)
+    proof fn lemma_lnext_log_preserved_or_extended(s: LState, s_: LState, c: LConstants)
         requires LNext(s, s_, c)
         ensures
             // The log is either unchanged or extended by exactly one entry
@@ -5085,7 +5085,7 @@ verus! {
     ///
     /// Both gaps are network-level: they require reasoning about which messages
     /// are actually delivered and how their parameters relate to sender state.
-    pub proof fn lemma_log_matching_inductive(
+    proof fn lemma_log_matching_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -6055,7 +6055,7 @@ verus! {
     /// message parameters are existentially quantified with no provenance linking
     /// them to the sender's state, so we cannot formally connect the voter's log
     /// at vote time to the committed entry's presence.
-    pub proof fn lemma_leader_completeness_inductive(
+    proof fn lemma_leader_completeness_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -6164,7 +6164,7 @@ verus! {
     ///   SMS(ds) + LogAppendOnly gives result.
     /// - If exactly one stepped and k is NEWLY committed: requires
     ///   LeaderCompleteness (blocked on term induction).
-    pub proof fn lemma_state_machine_safety_inductive(
+    proof fn lemma_state_machine_safety_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -6226,7 +6226,7 @@ verus! {
     // Message Invariant Induction
     // =========================================================================
 
-    pub proof fn lemma_sender_integrity_inductive(
+    proof fn lemma_sender_integrity_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -6314,7 +6314,7 @@ verus! {
         (server_id, sent_pkts, recv_from)
     }
 
-    pub proof fn lemma_vote_response_integrity_inductive(
+    proof fn lemma_vote_response_integrity_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -6837,7 +6837,7 @@ verus! {
         }
     }
 
-    pub proof fn lemma_vote_response_summary_still_valid_inductive(
+    proof fn lemma_vote_response_summary_still_valid_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -6882,7 +6882,7 @@ verus! {
         };
     }
 
-    pub proof fn lemma_vote_response_has_request_vote_inductive(
+    proof fn lemma_vote_response_has_request_vote_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -7076,7 +7076,7 @@ verus! {
         };
     }
 
-    pub proof fn lemma_append_entries_integrity_inductive(
+    proof fn lemma_append_entries_integrity_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -7174,7 +7174,7 @@ verus! {
         }
     }
 
-    pub proof fn lemma_one_vote_per_term_inductive(
+    proof fn lemma_one_vote_per_term_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -7607,7 +7607,7 @@ verus! {
         }
     }
 
-    pub proof fn lemma_request_vote_summary_still_valid_inductive(
+    proof fn lemma_request_vote_summary_still_valid_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -7729,7 +7729,7 @@ verus! {
     /// For old packets: IH gives the facts for ds. Since logs are append-only,
     /// the candidate's log in ds_ still satisfies the summary.
     /// For new packets: delegates to helper.
-    pub proof fn lemma_request_vote_summary_always_valid_inductive(
+    proof fn lemma_request_vote_summary_always_valid_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -7809,7 +7809,7 @@ verus! {
     ///
     /// Old packets: pure IH (bound on packet fields, no server state).
     /// New packets: delegated to helper to isolate RaftActionProduces.
-    pub proof fn lemma_request_vote_last_log_term_bound_inductive(
+    proof fn lemma_request_vote_last_log_term_bound_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -7885,7 +7885,7 @@ verus! {
         let _ = ds.server_states[server_id].log[s.log.len() - 1];
     }
 
-    pub proof fn lemma_request_vote_sender_state_inductive(
+    proof fn lemma_request_vote_sender_state_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -8076,7 +8076,7 @@ verus! {
         // sent_pkts.len() == 1, so sent_pkts[i] == sent_pkts[j] == sent_pkts[0]
     }
 
-    pub proof fn lemma_request_vote_log_params_consistent_inductive(
+    proof fn lemma_request_vote_log_params_consistent_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -8120,7 +8120,7 @@ verus! {
     // CandidateVoteDestinationUnique inductive proof
     // =========================================================================
 
-    pub proof fn lemma_candidate_vote_destination_unique_inductive(
+    proof fn lemma_candidate_vote_destination_unique_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -8312,7 +8312,7 @@ verus! {
     // For new packets: the only action producing granted VoteResponse is
     // LGrantVote, and the ghost state update records (server_id, vt).
 
-    pub proof fn lemma_vote_log_len_covers_network_inductive(
+    proof fn lemma_vote_log_len_covers_network_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -8360,7 +8360,7 @@ verus! {
     // New entries: recorded length == s.log.len() == pre-state log length
     //   <= post-state log length (LogAppendOnly).
 
-    pub proof fn lemma_vote_log_len_bounded_inductive(
+    proof fn lemma_vote_log_len_bounded_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -8479,7 +8479,7 @@ verus! {
     //   so there are no indices >= s.log.len() in the pre-state log; the only
     //   new index is the pushed entry (if any), which has term >= current_term = t.
 
-    pub proof fn lemma_vote_log_len_entry_term_bound_inductive(
+    proof fn lemma_vote_log_len_entry_term_bound_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -8566,7 +8566,7 @@ verus! {
     //   For LFollowerAppendEntries: entry.term == ae_term == s_.current_term.
     //   In both cases entry.term <= s_.current_term.
 
-    pub proof fn lemma_current_term_ge_log_terms_inductive(
+    proof fn lemma_current_term_ge_log_terms_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -8643,7 +8643,7 @@ verus! {
     //     lemma_lnext_fresh_append_entry_term_ge_pre_current).
     //   - j == k: trivially 0 == 0.
 
-    pub proof fn lemma_log_terms_monotonic_inductive(
+    proof fn lemma_log_terms_monotonic_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -8722,7 +8722,7 @@ verus! {
     // - Stepping server: current_term only goes up (from >= 0 to >= 0).
     //   Old entries preserved. New entry term >= current_term >= 0.
 
-    pub proof fn lemma_terms_non_negative_inductive(
+    proof fn lemma_terms_non_negative_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -9422,7 +9422,7 @@ verus! {
         }
     }
 
-    pub proof fn lemma_vote_granted_log_up_to_date_inductive(
+    proof fn lemma_vote_granted_log_up_to_date_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -9554,7 +9554,7 @@ verus! {
     /// New packets: only LFollowerAppendEntries sends success ARs.
     ///   Prev_log check + AEI + LogMatching gives agreement.
     ///   match_index bounds from AR creation logic.
-    pub proof fn lemma_append_response_log_agreement_inductive(
+    proof fn lemma_append_response_log_agreement_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -9641,7 +9641,7 @@ verus! {
     /// the MILA antecedent's k < match_index implies k < follower.log.len()
     /// at all times. Similarly match_index <= leader.log.len() at AR send time,
     /// and LHandleAppendResponse checks new_match_index <= leader.log.len().
-    pub proof fn lemma_match_index_implies_log_agreement_inductive(
+    proof fn lemma_match_index_implies_log_agreement_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -9725,7 +9725,7 @@ verus! {
     /// - new_match_index <= follower.log.len() (from ARLA: AR.match_index <= AR.src.log.len()).
     /// match_index is cleared when becoming leader (empty map → vacuous).
     /// For preserved entries: LogAppendOnly grows logs, so bounds are preserved.
-    pub proof fn lemma_match_index_bounded_inductive(
+    proof fn lemma_match_index_bounded_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
@@ -9786,7 +9786,7 @@ verus! {
     /// (all actions preserve or increase). So bound preserved at ds_.
     /// New packets: LSendAppendEntries sets leader_commit = s.commit_index.
     /// Stepping server's commit_index at ds_ >= s.commit_index.
-    pub proof fn lemma_append_entries_leader_commit_bound_inductive(
+    proof fn lemma_append_entries_leader_commit_bound_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
