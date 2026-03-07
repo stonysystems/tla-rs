@@ -18,6 +18,7 @@ Cargo.lock
 lib.long-type-*.txt
 rustc-ice-*.txt
 liblib.so
+.verus-solver-log/
 # Phase 14 regeneration artifacts
 src/generated_fresh/
 diffs/
