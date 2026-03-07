@@ -3521,7 +3521,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            CandidateOrLeaderVotedForSelfId(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             CandidateOrLeaderVotedForSelfId(ds_)
