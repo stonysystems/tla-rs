@@ -6318,7 +6318,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            VoteResponseIntegrity(ds),
+            SenderIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             VoteResponseIntegrity(ds_)
@@ -6337,7 +6338,7 @@ verus! {
         ds_: RaftDistributedState,
     )
         requires
-            RaftSafetyInvariant(ds),
+            VoteResponseIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             forall |p: LRaftPacket|
@@ -7176,7 +7177,9 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            OneVotePerTermInNetwork(ds),
+            VoteResponseIntegrity(ds),
+            SenderIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             OneVotePerTermInNetwork(ds_)
@@ -7728,7 +7731,7 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            RequestVoteSummaryAlwaysValid(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             RequestVoteSummaryAlwaysValid(ds_)
@@ -7884,7 +7887,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            RequestVoteSenderState(ds),
+            SenderIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             RequestVoteSenderState(ds_)
