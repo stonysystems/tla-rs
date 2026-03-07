@@ -162,9 +162,9 @@ ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound 
 
 | Line | Function |
 |------|----------|
-| 6170 | `lemma_state_machine_safety_inductive` — `assume(StateMachineSafety(ds_))` |
+| 6213 | `lemma_state_machine_safety_inductive` — `assume(log[k] == log[k])` for newly committed entries |
 
-Requires LeaderCompleteness + quorum overlap argument. Spec fixed in Phase 34.8 (quorum replication guard added to `LAdvanceCommitIndex`). Heartbeat match_index spec fixed in Phase 34.11 (`LFollowerAppendEntries` heartbeat branch now returns `ae_prev_index` instead of `s.log.len()`, ensuring AR match_index reflects verified log agreement). ARLA + MILA fully proved in Phase 34.13. SMS proof deferred until LeaderCompleteness is fully proved.
+SMS proof restructured in Phase 34.14: frame cases (both servers unchanged, same server, old commit_index covered k) are fully proved via SMS(ds) + LogAppendOnly. The assume is narrowed to only the case where the stepping server's commit_index NEWLY covers k (old commit_index ≤ k < new commit_index). This requires LC + quorum overlap to prove that the stepping server's log agrees with all other servers' committed entries.
 
 ## 6. Approaches for Remaining 7 LC Assumes
 
@@ -206,7 +206,7 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 
 | File | LOC | Role |
 |------|-----|------|
-| `invariants.rs` | ~9850 | Core: all invariant definitions + 37+ inductive proof functions |
+| `invariants.rs` | ~9900 | Core: all invariant definitions + 37+ inductive proof functions |
 | `state_machine.rs` | 641 | Distributed state, network model, ghost state definitions |
 | `message_invariants.rs` | 614 | Network packet invariant definitions (19 invariants, incl. ARLA + AELCB) |
 | `committed.rs` | 232 | Committed log extraction via MaxCommitIndex + monotonicity |
@@ -229,4 +229,4 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | Phase 34.11 | Heartbeat match_index spec fix: `LFollowerAppendEntries` heartbeat AR match_index changed from `s.log.len()` to `ae_prev_index`. Unblocks `MatchIndexImpliesLogAgreement` invariant for SMS proof. |
 | Phase 34.12 | SMS infrastructure: `AppendResponseLogAgreement` + `MatchIndexImpliesLogAgreement` invariants added. ARLA old-packet case proved. 2 new assumes for new-packet and MILA case analysis. |
 | Phase 34.13 | ARLA + MILA fully proved. ARLA new-packet helper uses minimal requires (LogMatching + AEI only, avoids RaftSafetyInvariant blow-up). MILA proved via MILA(ds) + ARLA + LogAppendOnly case analysis. 14 → 12 assumes. |
-| Phase 34.14 | SMS infrastructure: `MatchIndexBounded` + `AppendEntriesLeaderCommitBound` invariants added and fully proved. MIB uses `match_index[f]` trigger to avoid Z3 destabilization. AELCB captures commit_index monotonicity for AE packets. Assumes unchanged (12). |
+| Phase 34.14 | SMS infrastructure: `MatchIndexBounded` + `AppendEntriesLeaderCommitBound` invariants added and fully proved. MIB trigger uses `match_index[follower_id as u64]` (NOT `log`) to avoid Z3 destabilization on LC inductive. SMS proof restructured with action-level case analysis: frame cases proved, assume narrowed to newly committed entries only. Assumes unchanged (12). |

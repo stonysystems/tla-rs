@@ -6152,10 +6152,13 @@ verus! {
     /// StateMachineSafety states: for any two servers i and j, entries below
     /// both commit_index[i] and commit_index[j] are identical.
     ///
-    /// Now provable in principle: LAdvanceCommitIndex has a quorum replication
-    /// guard. The proof requires LeaderCompleteness (which still has assumes
-    /// for the well-founded term-induction argument). Once LeaderCompleteness
-    /// is fully proved, SMS should follow from quorum overlap + LogMatching.
+    /// Structure:
+    /// - If neither i nor j stepped: SMS(ds) + LogAppendOnly gives result.
+    /// - If both are the stepping server: trivial (same server).
+    /// - If exactly one stepped and its old commit_index already covered k:
+    ///   SMS(ds) + LogAppendOnly gives result.
+    /// - If exactly one stepped and k is NEWLY committed: requires
+    ///   LeaderCompleteness (blocked on term induction).
     pub proof fn lemma_state_machine_safety_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -6165,9 +6168,53 @@ verus! {
         ensures
             StateMachineSafety(ds_)
     {
-        // Requires LeaderCompleteness + quorum overlap argument.
-        // Deferred until LeaderCompleteness assumes are resolved.
-        assume(StateMachineSafety(ds_));
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_log_append_only(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |i: int, j: int, k: int|
+            0 <= i < ds_.num_servers && 0 <= j < ds_.num_servers
+            && 0 <= k < ds_.server_states[i].commit_index
+            && 0 <= k < ds_.server_states[j].commit_index
+            && k < ds_.server_states[i].log.len()
+            && k < ds_.server_states[j].log.len()
+        implies ds_.server_states[i].log[k] == ds_.server_states[j].log[k]
+        by {
+            if i != server_id && j != server_id {
+                // Both unchanged: SMS(ds) + LogAppendOnly
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                assert(ds_.server_states[j] == ds.server_states[j]);
+                assert(StateMachineSafety(ds));
+            } else if i == j {
+                // Same server: trivial
+            } else {
+                // Exactly one is the stepping server.
+                // WLOG let stepping = the one that is server_id.
+                let (stepping, other) = if i == server_id { (i, j) } else { (j, i) };
+                assert(ds_.server_states[other] == ds.server_states[other]);
+
+                if k < ds.server_states[stepping].commit_index {
+                    // k was already below old commit_index.
+                    // SMS(ds): old entries agree. LogAppendOnly: entries preserved.
+                    assert(StateMachineSafety(ds));
+                    assert(k < ds.server_states[other].commit_index);
+                } else {
+                    // k is NEWLY committed by the stepping server.
+                    // Requires LeaderCompleteness + quorum overlap.
+                    // Blocked on term induction (7 LC assumes).
+                    assume(ds_.server_states[i].log[k]
+                        == ds_.server_states[j].log[k]);
+                }
+            }
+        }
     }
 
     // =========================================================================
