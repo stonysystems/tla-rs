@@ -1,7 +1,7 @@
 # Raft Refinement Proof — Status and Architecture
 
 **Date**: 2026-03-06
-**Last Updated**: Phase 34.15 (Committed log prefix preservation proved)
+**Last Updated**: Phase 34.15 (Requires narrowing complete — 24 functions narrowed)
 **Codebase**: `src/protocol/Raft/refinement_proof/`
 **Status**: 12 assumes remaining in invariants.rs (7 `assume(false)` LC + 4 sound Z3 workarounds + 1 SMS). Committed log monotonicity fully proved.
 
@@ -194,6 +194,9 @@ Two ETHVQ vote dests at the same term must be the same server (quorum intersecti
 ### LogMatching-at-k Fallback (Phase 34.8)
 When proving `server.log[k] == entry` given `ov.log[k] == entry`: if `server.log[k].term == entry.term`, LogMatching works. Otherwise, `assume(false)` marks the unreachable divergence case.
 
+### Requires Narrowing (Phase 34.15)
+24 inductive lemma requires narrowed from `RaftSafetyInvariant(ds)` to the specific sub-invariants each function actually uses. Benefits: self-documenting proof dependencies, reduced Z3 axiom pollution. 17 functions retain `RaftSafetyInvariant(ds)` for documented reasons (orchestrators, rlimit-sensitive proofs needing module context, LogMatching heavy quantifiers, serendipitous Z3 help for post-state invariant derivation).
+
 ### Packet Provenance Chain
 `VoteResponse(v→c, term t, granted)` → `VoteResponseHasRequestVote` → `RequestVote(c→v, term t)` → `RequestVoteSummaryStillValidAtSameTerm` → concrete log summary facts.
 
@@ -209,10 +212,10 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 
 | File | LOC | Role |
 |------|-----|------|
-| `invariants.rs` | ~9899 | Core: all invariant definitions + 37+ inductive proof functions |
+| `invariants.rs` | ~9912 | Core: all invariant definitions + 37+ inductive proof functions |
 | `state_machine.rs` | 641 | Distributed state, network model, ghost state definitions |
 | `message_invariants.rs` | 614 | Network packet invariant definitions (19 invariants, incl. ARLA + AELCB) |
-| `committed.rs` | 334 | Committed log extraction via MaxCommitIndex + monotonicity (fully proved) |
+| `committed.rs` | 310 | Committed log extraction via MaxCommitIndex + monotonicity (fully proved) |
 | `refinement.rs` | 154 | Top-level refinement theorem |
 | `induction.rs` | 69 | Behavior-level induction scaffolding |
 
@@ -233,4 +236,4 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | Phase 34.12 | SMS infrastructure: `AppendResponseLogAgreement` + `MatchIndexImpliesLogAgreement` invariants added. ARLA old-packet case proved. 2 new assumes for new-packet and MILA case analysis. |
 | Phase 34.13 | ARLA + MILA fully proved. ARLA new-packet helper uses minimal requires (LogMatching + AEI only, avoids RaftSafetyInvariant blow-up). MILA proved via MILA(ds) + ARLA + LogAppendOnly case analysis. 14 → 12 assumes. |
 | Phase 34.14 | SMS infrastructure: `MatchIndexBounded` + `AppendEntriesLeaderCommitBound` invariants added and fully proved. MIB trigger uses `match_index[follower_id as u64]` (NOT `log`) to avoid Z3 destabilization on LC inductive. SMS proof restructured with action-level case analysis: frame cases proved, assume narrowed to newly committed entries only. Assumes unchanged (12). |
-| Phase 34.15 | Committed log prefix preservation fully proved. `lemma_committed_log_monotone` assume eliminated using SMS(ds_) + LogAppendOnly bridge. Key technique: isolate prefix proof into helpers with minimal requires (no LogMatching) to avoid 600K+ quantifier instantiations from RaftSafetyInvariant. Committed.rs now assume-free. |
+| Phase 34.15 | Committed log prefix preservation fully proved. `lemma_committed_log_monotone` assume eliminated using SMS(ds_) + LogAppendOnly bridge. Key technique: isolate prefix proof into helpers with minimal requires (no LogMatching) to avoid 600K+ quantifier instantiations from RaftSafetyInvariant. Committed.rs now assume-free. Structural cleanup: 24 functions narrowed from `RaftSafetyInvariant(ds)` to minimal sub-invariants, 1 dead function removed. RaftSafetyInvariant occurrences reduced from ~35 to 20 (17 in requires with documented reasons). |
