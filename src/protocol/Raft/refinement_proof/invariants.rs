@@ -195,6 +195,26 @@ verus! {
         ==> ds.server_states[leader_id].log[k] == ds.server_states[follower_id].log[k]
     }
 
+    /// Match index bounded by follower log length: if a leader stores
+    /// match_index[f] = M, then f.log.len() >= M. This follows from ARLA
+    /// (AR match_index <= follower log length at send time) + LogAppendOnly
+    /// (follower log can only grow). Also bounded by leader's log length
+    /// (from LHandleAppendResponse guard: new_match_index <= s.log.len()).
+    pub open spec fn MatchIndexBounded(ds: RaftDistributedState) -> bool {
+        forall |leader_id: int, follower_id: int|
+            #![trigger ds.server_states[leader_id].match_index[follower_id as u64]]
+            0 <= leader_id < ds.num_servers
+            && 0 <= follower_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].match_index.dom().contains(follower_id as u64)
+        ==> {
+            &&& ds.server_states[leader_id].match_index[follower_id as u64] as int
+                <= ds.server_states[follower_id].log.len()
+            &&& ds.server_states[leader_id].match_index[follower_id as u64] as int
+                <= ds.server_states[leader_id].log.len()
+        }
+    }
+
     /// Leader's log is at least as long as any entry with its term.
     /// If any server has a log entry at index k with term T, and there
     /// exists a current leader at term T, then that leader's log has
@@ -398,9 +418,11 @@ verus! {
         &&& VoteLogLenBounded(ds)
         &&& VoteLogLenEntryTermBound(ds)
         &&& VoteGrantedLogUpToDateAtVoteTime(ds)
-        // Match index / append response invariants (Phase 34.12 — SMS infrastructure)
+        // Match index / append response invariants (Phase 34.12-34.14 — SMS infrastructure)
         &&& AppendResponseLogAgreement(ds)
         &&& MatchIndexImpliesLogAgreement(ds)
+        &&& MatchIndexBounded(ds)
+        &&& AppendEntriesLeaderCommitBound(ds)
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         &&& CurrentTermGeLogTerms(ds)
         &&& LogTermsMonotonic(ds)
@@ -436,9 +458,11 @@ verus! {
         // Ghost state invariants: vote_log_len empty + network empty, vacuously true
         // - VoteLogLenCoversNetwork, VoteLogLenBounded, VoteLogLenEntryTermBound,
         //   VoteGrantedLogUpToDateAtVoteTime
-        // Match index / append response invariants: network empty + no Leaders, vacuously true
+        // Match index / append response / commit invariants: network empty + no Leaders, vacuously true
         // - AppendResponseLogAgreement: no packets, vacuously true
         // - MatchIndexImpliesLogAgreement: no Leaders, vacuously true
+        // - MatchIndexBounded: no Leaders (match_index empty at init), vacuously true
+        // - AppendEntriesLeaderCommitBound: no packets, vacuously true
         // Log structure invariants: empty logs + current_term = 0, vacuously/trivially true
         // - CurrentTermGeLogTerms, LogTermsMonotonic, TermsNonNegative
     }
@@ -9627,6 +9651,133 @@ verus! {
     }
 
     // =========================================================================
+    // MatchIndexBounded Induction
+    // =========================================================================
+
+    /// MIB: match_index[follower] <= follower.log.len() and <= leader.log.len().
+    ///
+    /// match_index is only updated by LHandleAppendResponse, which sets
+    /// match_index[follower] = new_match_index from an AR packet.
+    /// - new_match_index <= leader.log.len() (from LHandleAppendResponseMsg guard).
+    /// - new_match_index <= follower.log.len() (from ARLA: AR.match_index <= AR.src.log.len()).
+    /// match_index is cleared when becoming leader (empty map → vacuous).
+    /// For preserved entries: LogAppendOnly grows logs, so bounds are preserved.
+    pub proof fn lemma_match_index_bounded_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            MatchIndexBounded(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_log_append_only(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |leader_id: int, follower_id: int|
+            #![trigger ds_.server_states[leader_id].match_index, ds_.server_states[follower_id].log]
+            0 <= leader_id < ds_.num_servers
+            && 0 <= follower_id < ds_.num_servers
+            && ds_.server_states[leader_id].role is Leader
+            && ds_.server_states[leader_id].match_index.dom().contains(follower_id as u64)
+        implies {
+            &&& ds_.server_states[leader_id].match_index[follower_id as u64] as int
+                <= ds_.server_states[follower_id].log.len()
+            &&& ds_.server_states[leader_id].match_index[follower_id as u64] as int
+                <= ds_.server_states[leader_id].log.len()
+        } by {
+            if leader_id != server_id {
+                // Leader unchanged: match_index, role unchanged.
+                // MIB(ds) gives bounds at ds. LogAppendOnly grows logs.
+                assert(ds_.server_states[leader_id] == ds.server_states[leader_id]);
+                assert(MatchIndexBounded(ds));
+            } else {
+                // leader_id == server_id: action may change match_index.
+                // LHandleAppendResponse: new_match_index <= s.log.len() (guard)
+                //   and from ARLA: AR.match_index <= follower.log.len().
+                // Other actions: match_index unchanged or cleared → MIB(ds) or vacuous.
+                assert(MatchIndexBounded(ds));
+                assert(AppendResponseLogAgreement(ds));
+            }
+        }
+    }
+
+    // =========================================================================
+    // AppendEntriesLeaderCommitBound Induction
+    // =========================================================================
+
+    /// AELCB: for AE packets in the network, ae_leader_commit <= leader's
+    /// current commit_index.
+    ///
+    /// Old packets: AELCB(ds) gives bound at ds. commit_index only grows
+    /// (all actions preserve or increase). So bound preserved at ds_.
+    /// New packets: LSendAppendEntries sets leader_commit = s.commit_index.
+    /// Stepping server's commit_index at ds_ >= s.commit_index.
+    pub proof fn lemma_append_entries_leader_commit_bound_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            AppendEntriesLeaderCommitBound(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::AppendEntries { leader_commit, leader, .. } => {
+                    &&& 0 <= leader < ds_.num_servers
+                    &&& leader_commit <= ds_.server_states[leader].commit_index
+                }
+                _ => true,
+            }
+        by {
+            if p.msg is AppendEntries {
+                let l = p.msg->AppendEntries_leader;
+                let lc = p.msg->AppendEntries_leader_commit;
+                if ds.network.contains(p) {
+                    // Old packet: AELCB(ds) gives lc <= leader.commit_index at ds.
+                    // commit_index never decreases, so holds at ds_.
+                    assert(AppendEntriesLeaderCommitBound(ds));
+                    assert(lc <= ds.server_states[l].commit_index);
+                    // leader's commit_index at ds_ >= ds (either unchanged or increased)
+                    if l != server_id {
+                        assert(ds_.server_states[l] == ds.server_states[l]);
+                    }
+                    // For l == server_id: all LNext branches preserve or increase
+                    // commit_index. Z3 handles this by unfolding LNext.
+                } else {
+                    // New packet: sent by LSendAppendEntries.
+                    // leader_commit == s.commit_index (at send time).
+                    // The sender is server_id, so l == server_id.
+                    // s_.commit_index >= s.commit_index.
+                    // From AEI, 0 <= l < num_servers.
+                    assert(AppendEntriesIntegrity(ds));
+                }
+            }
+        }
+    }
+
+    // =========================================================================
     // Composite induction step
     // =========================================================================
 
@@ -9682,9 +9833,11 @@ verus! {
         lemma_vote_log_len_entry_term_bound_inductive(ds, ds_);
         lemma_vote_granted_log_up_to_date_inductive(ds, ds_);
 
-        // Match index / append response invariants (Phase 34.12 — SMS infrastructure)
+        // Match index / append response invariants (Phase 34.12-34.14 — SMS infrastructure)
         lemma_append_response_log_agreement_inductive(ds, ds_);
         lemma_match_index_implies_log_agreement_inductive(ds, ds_);
+        lemma_match_index_bounded_inductive(ds, ds_);
+        lemma_append_entries_leader_commit_bound_inductive(ds, ds_);
 
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         lemma_current_term_ge_log_terms_inductive(ds, ds_);

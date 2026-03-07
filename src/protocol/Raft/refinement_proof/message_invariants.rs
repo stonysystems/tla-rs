@@ -529,6 +529,26 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 12: AppendEntries Leader Commit Bound
+    // =========================================================================
+    //
+    // For AE packets in the network, ae_leader_commit <= leader's current
+    // commit_index. The leader sends `leader_commit: s.commit_index` at
+    // send time (LSendAppendEntries line 167). By commit_index monotonicity
+    // (commit_index never decreases), this bound is preserved.
+
+    pub open spec fn AppendEntriesLeaderCommitBound(ds: RaftDistributedState) -> bool {
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
+            match p.msg {
+                LRaftMessage::AppendEntries { leader_commit, leader, .. } => {
+                    &&& 0 <= leader < ds.num_servers
+                    &&& leader_commit <= ds.server_states[leader].commit_index
+                }
+                _ => true,
+            }
+    }
+
+    // =========================================================================
     // Step Property: Log Append Only
     // =========================================================================
     //

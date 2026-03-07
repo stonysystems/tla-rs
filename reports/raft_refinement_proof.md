@@ -1,7 +1,7 @@
 # Raft Refinement Proof — Status and Architecture
 
 **Date**: 2026-03-06
-**Last Updated**: Phase 34.13 (ARLA + MILA proofs completed)
+**Last Updated**: Phase 34.14 (MatchIndexBounded + AppendEntriesLeaderCommitBound added)
 **Codebase**: `src/protocol/Raft/refinement_proof/`
 **Status**: 12 assumes remaining (7 `assume(false)` LC + 4 sound Z3 workarounds + 1 SMS)
 
@@ -114,11 +114,13 @@ Network Model (sentPackets + receive guards)              -- Phase 34.1 DONE
 | VoteLogLenEntryTermBound | Entries at indices >= vote-time log length have term >= vote term |
 | VoteGrantedLogUpToDateAtVoteTime | log_up_to_date holds with vote-time log length |
 
-### Match Index / Append Response Invariants (Phase 34.12-34.13 — SMS infrastructure)
+### Match Index / Append Response / Commit Invariants (Phase 34.12-34.14 — SMS infrastructure)
 | Invariant | Proved | Description |
 |-----------|--------|-------------|
 | AppendResponseLogAgreement | YES | AR match_index bounded by both logs; entries below it agree |
 | MatchIndexImpliesLogAgreement | YES | Leader's match_index[f] >= k+1 implies log agreement at k |
+| MatchIndexBounded | YES | Leader's match_index[f] <= f.log.len() and <= leader.log.len() |
+| AppendEntriesLeaderCommitBound | YES | AE leader_commit <= leader's current commit_index |
 
 ### Log Structure Invariants (all proved)
 | Invariant | Description |
@@ -135,13 +137,13 @@ All 7 represent the same fundamental gap: when ETHVQ vote dest `d` has pre-elect
 
 | # | Line | Function | Case |
 |---|------|----------|------|
-| 1 | 1182 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log[k].term > entry.term |
-| 2 | 1197 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or wrong term |
-| 3 | 1755 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, wrong term |
-| 4 | 2602 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, wrong term |
-| 5 | 2644 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, wrong term |
-| 6 | 2668 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, wrong term |
-| 7 | 2682 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, wrong term or too short |
+| 1 | 1206 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log[k].term > entry.term |
+| 2 | 1221 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or wrong term |
+| 3 | 1779 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, wrong term |
+| 4 | 2626 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, wrong term |
+| 5 | 2668 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, wrong term |
+| 6 | 2692 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, wrong term |
+| 7 | 2706 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, wrong term or too short |
 
 **Root cause**: The Raft paper's proof uses strong induction on leader terms ("smallest failing term"), which doesn't directly map to our ETHVQ vote-dest term descent. See `reports/leader_completeness_strict_term.md` for full analysis.
 
@@ -151,16 +153,16 @@ ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound 
 
 | Line | Function |
 |------|----------|
-| 2189 | `lemma_same_term_committed_entry_transfer` |
-| 2212 | `lemma_same_term_committed_entry_transfer` |
-| 2307 | `lemma_ethvq_committed_overlap` |
-| 3771 | `lemma_leader_log_quorum_intersection` |
+| 2213 | `lemma_same_term_committed_entry_transfer` |
+| 2236 | `lemma_same_term_committed_entry_transfer` |
+| 2331 | `lemma_ethvq_committed_overlap` |
+| 3795 | `lemma_leader_log_quorum_intersection` |
 
 ### C. StateMachineSafety — 1 assume (blocked on LeaderCompleteness)
 
 | Line | Function |
 |------|----------|
-| 6146 | `lemma_state_machine_safety_inductive` — `assume(StateMachineSafety(ds_))` |
+| 6170 | `lemma_state_machine_safety_inductive` — `assume(StateMachineSafety(ds_))` |
 
 Requires LeaderCompleteness + quorum overlap argument. Spec fixed in Phase 34.8 (quorum replication guard added to `LAdvanceCommitIndex`). Heartbeat match_index spec fixed in Phase 34.11 (`LFollowerAppendEntries` heartbeat branch now returns `ae_prev_index` instead of `s.log.len()`, ensuring AR match_index reflects verified log agreement). ARLA + MILA fully proved in Phase 34.13. SMS proof deferred until LeaderCompleteness is fully proved.
 
@@ -204,9 +206,9 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 
 | File | LOC | Role |
 |------|-----|------|
-| `invariants.rs` | ~9700 | Core: all invariant definitions + 35+ inductive proof functions |
+| `invariants.rs` | ~9850 | Core: all invariant definitions + 37+ inductive proof functions |
 | `state_machine.rs` | 641 | Distributed state, network model, ghost state definitions |
-| `message_invariants.rs` | 594 | Network packet invariant definitions (18 invariants, incl. ARLA) |
+| `message_invariants.rs` | 614 | Network packet invariant definitions (19 invariants, incl. ARLA + AELCB) |
 | `committed.rs` | 232 | Committed log extraction via MaxCommitIndex + monotonicity |
 | `refinement.rs` | 154 | Top-level refinement theorem |
 | `induction.rs` | 69 | Behavior-level induction scaffolding |
@@ -227,3 +229,4 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | Phase 34.11 | Heartbeat match_index spec fix: `LFollowerAppendEntries` heartbeat AR match_index changed from `s.log.len()` to `ae_prev_index`. Unblocks `MatchIndexImpliesLogAgreement` invariant for SMS proof. |
 | Phase 34.12 | SMS infrastructure: `AppendResponseLogAgreement` + `MatchIndexImpliesLogAgreement` invariants added. ARLA old-packet case proved. 2 new assumes for new-packet and MILA case analysis. |
 | Phase 34.13 | ARLA + MILA fully proved. ARLA new-packet helper uses minimal requires (LogMatching + AEI only, avoids RaftSafetyInvariant blow-up). MILA proved via MILA(ds) + ARLA + LogAppendOnly case analysis. 14 → 12 assumes. |
+| Phase 34.14 | SMS infrastructure: `MatchIndexBounded` + `AppendEntriesLeaderCommitBound` invariants added and fully proved. MIB uses `match_index[f]` trigger to avoid Z3 destabilization. AELCB captures commit_index monotonicity for AE packets. Assumes unchanged (12). |
