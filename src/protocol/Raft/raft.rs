@@ -202,7 +202,7 @@ verus! {
             success: true,
             match_index: (if ae_has_entry {
                 s.log.len() as int + 1
-            } else { s.log.len() as int }),
+            } else { ae_prev_index as int }),
             follower: c.my_id,
         }]
     }

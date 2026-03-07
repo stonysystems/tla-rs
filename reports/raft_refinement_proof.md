@@ -156,7 +156,7 @@ ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound 
 |------|----------|
 | 6120 | `lemma_state_machine_safety_inductive` — `assume(StateMachineSafety(ds_))` |
 
-Requires LeaderCompleteness + quorum overlap argument. Spec fixed in Phase 34.8 (quorum replication guard added to `LAdvanceCommitIndex`). Proof deferred until LeaderCompleteness is fully proved.
+Requires LeaderCompleteness + quorum overlap argument. Spec fixed in Phase 34.8 (quorum replication guard added to `LAdvanceCommitIndex`). Heartbeat match_index spec fixed in Phase 34.11 (`LFollowerAppendEntries` heartbeat branch now returns `ae_prev_index` instead of `s.log.len()`, ensuring AR match_index reflects verified log agreement). Proof deferred until LeaderCompleteness is fully proved.
 
 ## 6. Approaches for Remaining 7 Assumes
 
@@ -217,4 +217,5 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | Phase 34.7 | LeaderCompleteness: equal-term cases done, strict-term blocked |
 | Phase 34.8 | StateMachineSafety spec fixed (quorum guard). LogMatching-at-k fallback applied. 10 structured assume(false). |
 | Phase 34.9 | ETHVQ vote dest uniqueness. 3 assume(false) resolved → 7 remain. |
-| Phase 34.10 | Deep analysis: all 7 assumes are same `d_rli ≤ k` wall. NoConflictAtCommittedIndex and CEUA explored and found insufficient. |
+| Phase 34.10 | Deep analysis: all 7 assumes are same `d_rli ≤ k` wall. NoConflictAtCommittedIndex and CEUA explored and found insufficient. 4 dead proof functions removed (-483 LOC). |
+| Phase 34.11 | Heartbeat match_index spec fix: `LFollowerAppendEntries` heartbeat AR match_index changed from `s.log.len()` to `ae_prev_index`. Unblocks `MatchIndexImpliesLogAgreement` invariant for SMS proof. |
