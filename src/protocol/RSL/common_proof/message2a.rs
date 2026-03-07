@@ -1,4 +1,5 @@
 use crate::protocol::RSL::acceptor::*;
+use crate::protocol::RSL::broadcast::LBroadcastToEveryone;
 use crate::protocol::RSL::common_proof::actions::*;
 use crate::protocol::RSL::common_proof::assumptions::*;
 use crate::protocol::RSL::common_proof::constants::*;
@@ -11,6 +12,7 @@ use crate::protocol::RSL::constants::*;
 use crate::protocol::RSL::distributed_system::*;
 use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::environment::*;
+use crate::protocol::RSL::message::RslMessage;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;

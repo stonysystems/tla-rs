@@ -133,26 +133,24 @@ verus! {
         let quorum_of_1bs = lemma_2aMessageHas1bQuorumPermittingIt(b, c, i, packet2a);
 
         // Prove quorum_of_1bs.finite() via injective preimage into replica_ids
-        proof {
-            broadcast use vstd::seq_lib::seq_to_set_is_finite;
-            let rid_set = c.config.replica_ids.to_set();
-            let f_src = |p: RslPacket| p.src;
-            assert forall |p: RslPacket| quorum_of_1bs.contains(p)
-                implies rid_set.contains(#[trigger] f_src(p)) by
-            {
-                assert(c.config.replica_ids.contains(p.src));
-            };
-            assert forall |p1: RslPacket, p2: RslPacket|
-                #![trigger f_src(p1), f_src(p2)]
-                quorum_of_1bs.contains(p1) && quorum_of_1bs.contains(p2) && f_src(p1) == f_src(p2)
-                implies p1 == p2 by
-            {
-                if p1 != p2 {
-                    assert(p1.src != p2.src);
-                }
-            };
-            lemma_injective_preimage_finite(quorum_of_1bs, f_src, rid_set);
-        }
+        broadcast use vstd::seq_lib::seq_to_set_is_finite;
+        let rid_set = c.config.replica_ids.to_set();
+        let f_src = |p: RslPacket| p.src;
+        assert forall |p: RslPacket| quorum_of_1bs.contains(p)
+            implies rid_set.contains(#[trigger] f_src(p)) by
+        {
+            assert(c.config.replica_ids.contains(p.src));
+        };
+        assert forall |p1: RslPacket, p2: RslPacket|
+            #![trigger f_src(p1), f_src(p2)]
+            quorum_of_1bs.contains(p1) && quorum_of_1bs.contains(p2) && f_src(p1) == f_src(p2)
+            implies p1 == p2 by
+        {
+            if p1 != p2 {
+                assert(p1.src != p2.src);
+            }
+        };
+        lemma_injective_preimage_finite(quorum_of_1bs, f_src, rid_set);
 
         let quorum_of_1bs_indices = lemma_GetIndicesFromPackets(quorum_of_1bs, c.config);
 
@@ -241,6 +239,7 @@ verus! {
             q.bal == b[i].replicas[idx].replica.executor.next_op_to_execute->bal,
             q.opn == b[i].replicas[idx].replica.executor.ops_complete,
             q.v == b[i].replicas[idx].replica.executor.next_op_to_execute->v,
+        decreases i,
     {
         if i == 0 {
             return arbitrary();
@@ -277,18 +276,16 @@ verus! {
         lemma_Received2bMessageSendersAlwaysValidReplicas(b, c, i - 1, idx, opn);
 
         // Prove senders.finite(): senders ⊆ config.replica_ids.to_set() which is finite
-        proof {
-            broadcast use vstd::seq_lib::seq_to_set_is_finite;
-            let rid_set = c.config.replica_ids.to_set();
-            assert(senders.subset_of(rid_set)) by {
-                assert forall |node: AbstractEndPoint| senders.contains(node)
-                    implies rid_set.contains(node) by
-                {
-                    assert(c.config.replica_ids.contains(node));
-                };
+        broadcast use vstd::seq_lib::seq_to_set_is_finite;
+        let rid_set = c.config.replica_ids.to_set();
+        assert(senders.subset_of(rid_set)) by {
+            assert forall |node: AbstractEndPoint| senders.contains(node)
+                implies rid_set.contains(node) by
+            {
+                assert(c.config.replica_ids.contains(node));
             };
-            vstd::set_lib::lemma_len_subset(senders, rid_set);
-        }
+        };
+        vstd::set_lib::lemma_len_subset(senders, rid_set);
 
         let alt_indices = lemma_GetIndicesFromNodes(senders, c.config);
         assert forall |sidx: int| alt_indices.contains(sidx) implies indices.contains(sidx) by {

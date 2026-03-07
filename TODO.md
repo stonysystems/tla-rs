@@ -9440,11 +9440,11 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 
 **Goal**: The RSL refinement proof (`src/protocol/RSL/refinement_proof/`) contains 20 `external_body` proof functions, and the supporting `common_proof/` has 8 more (total 28). These are trusted stubs inherited from the Dafny→Verus port. Fill in real proof bodies so Verus mechanically verifies them, reducing the trusted base.
 
-**⚠️ STATUS (2026-03-04)**: Both `common_proof` and `refinement_proof` modules are **commented out** in `src/protocol/RSL/mod.rs` and are NOT in the Verus verification path. Attempting to uncomment them produces **73 compilation errors** — missing functions (`lemma_2bMessageHasCorresponding2aMessage`, `lemma_2bMessageImplicationsForCAcceptor`, `lemma_ActionThatOverwritesVoteWithSameBallotDoesntChangeValue`, `lemma_VoteWithOpnImplies2aSent`, `lemma_CurrentVoteDoesNotExceedMaxBal`), undeclared types (`RslMessage`, `LServerRole`), etc. These proof files have **never been verified by Verus** in the current codebase state. The sub-phase checkboxes below reflect proof-body authoring work that was done, but the modules must be fixed to compile and pass Verus verification before Phase 31 can be considered complete.
+**⚠️ STATUS (2026-03-07)**: Both `common_proof` and `refinement_proof` modules are now **uncommented** in `src/protocol/RSL/mod.rs` and compile cleanly (0 compilation errors). Phase 31.8 compilation fixes: (1) `implies` → `==>` syntax in message2b.rs, (2) added `RslMessage`/`LBroadcastToEveryone` imports to message2a.rs, (3) removed nested `proof { }` blocks in proof functions (chosen.rs ×2, refinement_proof/chosen.rs ×1), (4) added missing `decreases i` to `lemma_DecidedOperationWasChosen`. Verification (rlimit 40): **46 verified, 35 errors** across 21 submodules. Errors are rlimit exceeded and precondition failures from codebase changes since proofs were last verified. 10 modules pass fully (actions, assumptions, constants, environment, max_ballot, max_ballot_sent_1a, requests, execution, handle_request_batch, state_machine).
 
-- [ ] **31.8**: Fix compilation errors in `common_proof/` and `refinement_proof/` so they can be uncommented in `src/protocol/RSL/mod.rs`.
-- [ ] **31.9**: Run Verus verification with both modules enabled and confirm 0 errors.
-- [ ] **31.10**: Uncomment `pub mod common_proof;` and `pub mod refinement_proof;` in `src/protocol/RSL/mod.rs` permanently.
+- [x] **31.8**: Fix compilation errors in `common_proof/` and `refinement_proof/` so they can be uncommented in `src/protocol/RSL/mod.rs`. [2026-03-07]
+- [ ] **31.9**: Run Verus verification with both modules enabled and confirm 0 errors. Current: 46 verified, 35 errors across 21 submodules.
+- [x] **31.10**: Uncomment `pub mod common_proof;` and `pub mod refinement_proof;` in `src/protocol/RSL/mod.rs` permanently. [2026-03-07]
 
 **Scope**: 28 external_body proof fns across 8 files:
 - `refinement_proof/chosen.rs` (4): `lemma_GetSequenceOfRequestBatches`, `lemma_GetMaximalQuorumOf2bsSequenceWithinBound`, `lemma_TwoMaximalQuorumsOf2bsMatch`, `lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence`
@@ -9507,7 +9507,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 - [x] Run full Verus verification after each sub-phase, ensure no regressions — 628 verified, 0 errors (NOTE: this was with modules uncommented at the time; subsequent codebase changes broke compilation)
 - [x] Update `reports/verification_gaps.md` with new external_body counts — 28 external_body removed (20 refinement_proof + 8 common_proof), 27 remaining in impl/generated/common, 77 assume() statements in proof files
 - [x] Run transpiler test suite to confirm no collateral damage — 1491 passed, 0 failed
-- [ ] **31.7.1**: Restore compilation of `common_proof/` and `refinement_proof/` after subsequent codebase changes broke them (73 errors as of 2026-03-04)
+- [x] **31.7.1**: Restore compilation of `common_proof/` and `refinement_proof/` after subsequent codebase changes broke them (73 errors as of 2026-03-04). [2026-03-07] Fixed: `implies` → `==>` syntax (message2b.rs), missing `RslMessage`/`LBroadcastToEveryone` imports (message2a.rs), nested `proof {}` blocks in proof fns (chosen.rs ×3), missing `decreases i` (lemma_DecidedOperationWasChosen). All 21 submodules now compile cleanly.
 
 ---
 

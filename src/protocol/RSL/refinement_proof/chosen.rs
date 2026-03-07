@@ -82,18 +82,16 @@ verus! {
         let opns = p2bs.map(|p:RslPacket| p.msg->opn_2b);
 
         // Derive opns.finite(): sentPackets.finite() → p2bs ⊆ sentPackets → p2bs.finite() → opns.finite()
-        proof {
-            lemma_sentPackets_finite(b, c, i);
-            assert(p2bs.subset_of(b[i].environment.sentPackets)) by {
-                assert forall |p: RslPacket| p2bs.contains(p)
-                    implies b[i].environment.sentPackets.contains(p) by {};
-            };
-            vstd::set_lib::lemma_len_subset(p2bs, b[i].environment.sentPackets);
-            // p2bs.finite() established
-            let f = |p: RslPacket| p.msg->opn_2b;
-            p2bs.lemma_map_finite(f);
-            // opns.finite() established
-        }
+        lemma_sentPackets_finite(b, c, i);
+        assert(p2bs.subset_of(b[i].environment.sentPackets)) by {
+            assert forall |p: RslPacket| p2bs.contains(p)
+                implies b[i].environment.sentPackets.contains(p) by {};
+        };
+        vstd::set_lib::lemma_len_subset(p2bs, b[i].environment.sentPackets);
+        // p2bs.finite() established
+        let f = |p: RslPacket| p.msg->opn_2b;
+        p2bs.lemma_map_finite(f);
+        // opns.finite() established
 
         let bound = if opns.len() > 0 && intsetmax(opns) >= 0 { intsetmax(opns) + 1 } else {1};
         if opns.len() > 0 && intsetmax(opns) >= 0 {

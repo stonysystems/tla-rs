@@ -318,7 +318,7 @@ verus! {
             //     forall|opn| s_.votes.contains_key(opn) ==> s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
             // In both cases, s_.votes ⊆ s.votes, so the vote for our opn was already in s.votes.
             // Then s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn] — contradiction with line 263.
-            assert(forall |o: OperationNumber| s_.votes.contains_key(o) implies s.votes.contains_key(o)) by {
+            assert(forall |o: OperationNumber| s_.votes.contains_key(o) ==> s.votes.contains_key(o)) by {
                 assert(LReplicaNextProcess1b(
                     b[i-1].replicas[idx].replica,
                     b[i].replicas[idx].replica,
