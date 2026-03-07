@@ -1426,6 +1426,8 @@ verus! {
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             EntryCommittedAt(ds, k, entry),
             0 <= k,
             0 <= d < ds.num_servers,
@@ -1504,9 +1506,11 @@ verus! {
                         == ds.server_states[ov].log[k]);
                     assert(ds.server_states[d].log[k] == entry);
                 } else {
-                    // d.log[k].term != entry.term: unreachable
-                    // by global term induction (Raft safety).
-                    assume(false);
+                    // d.log[k].term != entry.term: proved via
+                    // ETHVQ vote dest uniqueness at entry.term.
+                    // d.log[d_rli-1].term == entry.term, d_rli-1 > k.
+                    lemma_same_term_committed_entry_transfer(
+                        ds, d, d_rli - 1, k, entry);
                 }
             }
         } else {
@@ -1895,6 +1899,8 @@ verus! {
             VoteLogLenBounded(ds),
             VoteLogLenEntryTermBound(ds),
             VoteGrantedLogUpToDateAtVoteTime(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             EntryCommittedAt(ds, k, entry),
             0 <= k,
             0 <= server < ds.num_servers,
@@ -2076,8 +2082,15 @@ verus! {
                                     == entry);
                             } else {
                                 // server.log[k].term != entry.term:
-                                // unreachable by global term induction.
-                                assume(false);
+                                // proved via ETHVQ vote dest uniqueness.
+                                // d2.log[d2_rli-1].term == entry.term, d2_rli-1 > k.
+                                lemma_same_term_committed_entry_transfer(
+                                    ds, d2, d2_rli - 1, k, entry);
+                                // Transfer d2→d→server
+                                lemma_ethvq_log_matching_transfer(
+                                    ds, d, d2, k + 1, k, entry);
+                                lemma_ethvq_log_matching_transfer(
+                                    ds, server, d, anchor_idx, k, entry);
                             }
                         }
                     } else {
@@ -2163,11 +2176,451 @@ verus! {
                     assert(ds.server_states[server].log[k] == entry);
                 } else {
                     // server.log[k].term != entry.term:
-                    // unreachable by global term induction (Raft safety).
-                    assume(false);
+                    // proved via ETHVQ vote dest uniqueness.
+                    // d.log[d_rli-1].term == entry.term, d_rli-1 > k.
+                    lemma_same_term_committed_entry_transfer(
+                        ds, d, d_rli - 1, k, entry);
+                    lemma_ethvq_log_matching_transfer(
+                        ds, server, d, anchor_idx, k, entry);
                 }
             }
         }
+    }
+
+    /// ETHVQ vote destination uniqueness: two ETHVQ destinations at the
+    /// same term must be the same server.
+    ///
+    /// Proof: d1_quorum (d1 + voters1) and d2_quorum (d2 + voters2) are
+    /// both majorities, so they overlap. The overlap element w satisfies:
+    /// - w in voters1 AND voters2: two VoteResponse{T, voter: w} packets
+    ///   with different dst → contradicts OneVotePerTermInNetwork.
+    /// - w == d1 AND w in voters2: VoteResponse{T, voter: d1, dst: d2}.
+    ///   VoteResponseHasRequestVote on d1's voters → RequestVote{T, candidate: d1}.
+    ///   CandidateVoteDestinationUnique → d2 == d1.
+    /// - w in voters1 AND w == d2: symmetric.
+    /// - w == d1 == d2: trivial.
+    ///
+    /// Isolated to prevent ETHVQ trigger interaction with set ops.
+    proof fn lemma_ethvq_vote_dest_unique(
+        ds: RaftDistributedState,
+        d1: int,
+        voters1: Seq<int>,
+        d2: int,
+        voters2: Seq<int>,
+        T: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            OneVotePerTermInNetwork(ds),
+            VoteResponseHasRequestVote(ds),
+            CandidateVoteDestinationUnique(ds),
+            0 <= d1 < ds.num_servers,
+            0 <= d2 < ds.num_servers,
+            voters1.len() >= ds.num_servers / 2 + 1 - 1,
+            voters2.len() >= ds.num_servers / 2 + 1 - 1,
+            forall |a: int| #![trigger voters1[a]]
+                0 <= a < voters1.len() ==> {
+                    &&& 0 <= voters1[a] < ds.num_servers
+                    &&& voters1[a] != d1
+                    &&& ExistsGrantedVoteResponse(ds, voters1[a], d1, T)
+                },
+            forall |a: int, b: int|
+                #![trigger voters1[a], voters1[b]]
+                0 <= a < voters1.len() && 0 <= b < voters1.len()
+                && a != b ==> voters1[a] != voters1[b],
+            forall |a: int| #![trigger voters2[a]]
+                0 <= a < voters2.len() ==> {
+                    &&& 0 <= voters2[a] < ds.num_servers
+                    &&& voters2[a] != d2
+                    &&& ExistsGrantedVoteResponse(ds, voters2[a], d2, T)
+                },
+            forall |a: int, b: int|
+                #![trigger voters2[a], voters2[b]]
+                0 <= a < voters2.len() && 0 <= b < voters2.len()
+                && a != b ==> voters2[a] != voters2[b],
+        ensures
+            d1 == d2,
+    {
+        let n = ds.num_servers;
+        let quorum_size = n / 2 + 1;
+
+        // Build d1_quorum = voters1.to_set() ∪ {d1}
+        assert(voters1.no_duplicates()) by {
+            assert forall |i: int, j: int|
+                0 <= i < voters1.len() && 0 <= j < voters1.len() && i != j
+            implies #[trigger] voters1[i] != #[trigger] voters1[j] by {};
+        };
+        let v1_set = voters1.to_set();
+        voters1.unique_seq_to_set();
+        assert(!v1_set.contains(d1)) by {
+            if v1_set.contains(d1) {
+                assert(voters1.contains(d1));
+                let idx = choose |idx: int| 0 <= idx < voters1.len()
+                    && voters1[idx] == d1;
+                assert(voters1[idx] != d1);
+            }
+        };
+        let d1_quorum = v1_set.insert(d1);
+        assert(d1_quorum.len() >= quorum_size);
+
+        // Build d2_quorum = voters2.to_set() ∪ {d2}
+        assert(voters2.no_duplicates()) by {
+            assert forall |i: int, j: int|
+                0 <= i < voters2.len() && 0 <= j < voters2.len() && i != j
+            implies #[trigger] voters2[i] != #[trigger] voters2[j] by {};
+        };
+        let v2_set = voters2.to_set();
+        voters2.unique_seq_to_set();
+        assert(!v2_set.contains(d2)) by {
+            if v2_set.contains(d2) {
+                assert(voters2.contains(d2));
+                let idx = choose |idx: int| 0 <= idx < voters2.len()
+                    && voters2[idx] == d2;
+                assert(voters2[idx] != d2);
+            }
+        };
+        let d2_quorum = v2_set.insert(d2);
+        assert(d2_quorum.len() >= quorum_size);
+
+        // Quorum intersection
+        let universe = Set::<int>::new(|j: int| 0 <= j < n);
+        lemma_range_set_finite(n);
+        assert(d1_quorum.subset_of(universe)) by {
+            assert forall |v: int| d1_quorum.contains(v)
+                implies universe.contains(v) by
+            {
+                if v == d1 {
+                    assert(0 <= d1 < n);
+                } else {
+                    assert(v1_set.contains(v));
+                    assert(voters1.contains(v));
+                    let a = choose |a: int| 0 <= a < voters1.len()
+                        && voters1[a] == v;
+                    assert(0 <= voters1[a] < n);
+                }
+            };
+        };
+        assert(d2_quorum.subset_of(universe)) by {
+            assert forall |v: int| d2_quorum.contains(v)
+                implies universe.contains(v) by
+            {
+                if v == d2 {
+                    assert(0 <= d2 < n);
+                } else {
+                    assert(v2_set.contains(v));
+                    assert(voters2.contains(v));
+                    let a = choose |a: int| 0 <= a < voters2.len()
+                        && voters2[a] == v;
+                    assert(0 <= voters2[a] < n);
+                }
+            };
+        };
+        lemma_quorum_intersection(d1_quorum, d2_quorum, universe);
+        let w = choose |w: int|
+            d1_quorum.contains(w) && d2_quorum.contains(w);
+
+        // Case analysis on w.
+        // Get the VoteResponse packets from the quorum membership.
+        // w is in d1_quorum, so w == d1 || w ∈ voters1.
+        // w is in d2_quorum, so w == d2 || w ∈ voters2.
+
+        if w == d1 && w == d2 {
+            // Trivial: d1 == d2
+        } else if w != d1 && w != d2 {
+            // w ∈ voters1 AND w ∈ voters2: w voted for both d1 and d2
+            assert(v1_set.contains(w));
+            assert(voters1.contains(w));
+            let a1 = choose |a: int| 0 <= a < voters1.len()
+                && voters1[a] == w;
+            assert(ExistsGrantedVoteResponse(ds, w, d1, T));
+
+            assert(v2_set.contains(w));
+            assert(voters2.contains(w));
+            let a2 = choose |a: int| 0 <= a < voters2.len()
+                && voters2[a] == w;
+            assert(ExistsGrantedVoteResponse(ds, w, d2, T));
+
+            // Materialize both VoteResponse packets for OneVotePerTermInNetwork
+            let (li1, lt1) = choose |li: int, lt: int|
+                ds.network.contains(LRaftPacket {
+                    src: w, dst: d1,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: w,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                });
+            let pkt1 = LRaftPacket {
+                src: w, dst: d1,
+                msg: LRaftMessage::VoteResponse {
+                    term: T, granted: true, voter: w,
+                    voter_last_log_index: li1,
+                    voter_last_log_term: lt1,
+                },
+            };
+            let (li2, lt2) = choose |li: int, lt: int|
+                ds.network.contains(LRaftPacket {
+                    src: w, dst: d2,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: w,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                });
+            let pkt2 = LRaftPacket {
+                src: w, dst: d2,
+                msg: LRaftMessage::VoteResponse {
+                    term: T, granted: true, voter: w,
+                    voter_last_log_index: li2,
+                    voter_last_log_term: lt2,
+                },
+            };
+            // OneVotePerTermInNetwork: same voter w, same term T → same dst
+            assert(ds.network.contains(pkt1));
+            assert(ds.network.contains(pkt2));
+            assert(d1 == d2);
+        } else if w == d1 {
+            // w == d1 ∈ voters2: d1 "voted for" d2 at T
+            assert(v2_set.contains(w));
+            assert(voters2.contains(w));
+            let a2 = choose |a: int| 0 <= a < voters2.len()
+                && voters2[a] == w;
+            assert(ExistsGrantedVoteResponse(ds, d1, d2, T));
+
+            // Materialize VoteResponse{T, voter: d1, dst: d2}
+            let (li_vr, lt_vr) = choose |li: int, lt: int|
+                ds.network.contains(LRaftPacket {
+                    src: d1, dst: d2,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: d1,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                });
+            let vr_pkt = LRaftPacket {
+                src: d1, dst: d2,
+                msg: LRaftMessage::VoteResponse {
+                    term: T, granted: true, voter: d1,
+                    voter_last_log_index: li_vr,
+                    voter_last_log_term: lt_vr,
+                },
+            };
+
+            // Get RequestVote{T, candidate: d1} via VoteResponseHasRequestVote
+            // on any voter in voters1
+            assert(voters1.len() >= 1) by {
+                assert(quorum_size >= 2);
+            };
+            let sv = voters1[0];
+            assert(ExistsGrantedVoteResponse(ds, sv, d1, T));
+            let (li_sv, lt_sv) = choose |li: int, lt: int|
+                ds.network.contains(LRaftPacket {
+                    src: sv, dst: d1,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: sv,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                });
+            let sv_pkt = LRaftPacket {
+                src: sv, dst: d1,
+                msg: LRaftMessage::VoteResponse {
+                    term: T, granted: true, voter: sv,
+                    voter_last_log_index: li_sv,
+                    voter_last_log_term: lt_sv,
+                },
+            };
+            // VoteResponseHasRequestVote → RequestVote{T, candidate: d1}
+            assert(ds.network.contains(sv_pkt));
+            assert(sv_pkt.msg is VoteResponse);
+            assert(sv_pkt.msg->VoteResponse_granted);
+            let req_pkt = choose |req: LRaftPacket| {
+                &&& ds.network.contains(req)
+                &&& req.src == d1
+                &&& req.dst == sv
+                &&& req.msg is RequestVote
+                &&& req.msg->RequestVote_term == T
+                &&& req.msg->RequestVote_candidate == d1
+            };
+
+            // CandidateVoteDestinationUnique:
+            // req_pkt: RequestVote{T, candidate: d1}
+            // vr_pkt: VoteResponse{T, voter: d1, granted: true, dst: d2}
+            // → d2 == d1
+            assert(ds.network.contains(req_pkt));
+            assert(ds.network.contains(vr_pkt));
+            assert(d1 == d2);
+        } else {
+            // w == d2 ∈ voters1: d2 "voted for" d1 at T (symmetric)
+            assert(v1_set.contains(w));
+            assert(voters1.contains(w));
+            let a1 = choose |a: int| 0 <= a < voters1.len()
+                && voters1[a] == w;
+            assert(ExistsGrantedVoteResponse(ds, d2, d1, T));
+
+            // Materialize VoteResponse{T, voter: d2, dst: d1}
+            let (li_vr, lt_vr) = choose |li: int, lt: int|
+                ds.network.contains(LRaftPacket {
+                    src: d2, dst: d1,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: d2,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                });
+            let vr_pkt = LRaftPacket {
+                src: d2, dst: d1,
+                msg: LRaftMessage::VoteResponse {
+                    term: T, granted: true, voter: d2,
+                    voter_last_log_index: li_vr,
+                    voter_last_log_term: lt_vr,
+                },
+            };
+
+            // Get RequestVote{T, candidate: d2} via VoteResponseHasRequestVote
+            assert(voters2.len() >= 1) by {
+                assert(quorum_size >= 2);
+            };
+            let sv2 = voters2[0];
+            assert(ExistsGrantedVoteResponse(ds, sv2, d2, T));
+            let (li_sv2, lt_sv2) = choose |li: int, lt: int|
+                ds.network.contains(LRaftPacket {
+                    src: sv2, dst: d2,
+                    msg: LRaftMessage::VoteResponse {
+                        term: T, granted: true, voter: sv2,
+                        voter_last_log_index: li,
+                        voter_last_log_term: lt,
+                    },
+                });
+            let sv2_pkt = LRaftPacket {
+                src: sv2, dst: d2,
+                msg: LRaftMessage::VoteResponse {
+                    term: T, granted: true, voter: sv2,
+                    voter_last_log_index: li_sv2,
+                    voter_last_log_term: lt_sv2,
+                },
+            };
+            assert(ds.network.contains(sv2_pkt));
+            assert(sv2_pkt.msg is VoteResponse);
+            assert(sv2_pkt.msg->VoteResponse_granted);
+            let req_pkt2 = choose |req: LRaftPacket| {
+                &&& ds.network.contains(req)
+                &&& req.src == d2
+                &&& req.dst == sv2
+                &&& req.msg is RequestVote
+                &&& req.msg->RequestVote_term == T
+                &&& req.msg->RequestVote_candidate == d2
+            };
+
+            // CandidateVoteDestinationUnique:
+            // req_pkt2: RequestVote{T, candidate: d2}
+            // vr_pkt: VoteResponse{T, voter: d2, granted: true, dst: d1}
+            // → d1 == d2
+            assert(ds.network.contains(req_pkt2));
+            assert(ds.network.contains(vr_pkt));
+            assert(d1 == d2);
+        }
+    }
+
+    /// If server s has log[j].term == entry.term for some j >= k,
+    /// and EntryCommittedAt(ds, k, entry) holds, then s.log[k] == entry.
+    ///
+    /// Proof: ETHVQ at j on s → dest d1 at entry.term with d1.log[j] == s.log[j].
+    /// ETHVQ at k on committed server → dest d2 at entry.term with d2.log[k] == entry.
+    /// By lemma_ethvq_vote_dest_unique: d1 == d2.
+    /// LogMatching at j: s and d1 agree at k.
+    /// So s.log[k] == d1.log[k] == d2.log[k] == entry.
+    ///
+    /// Uses assume for ETHVQ witness extraction (sound: ETHVQ in caller's scope).
+    proof fn lemma_same_term_committed_entry_transfer(
+        ds: RaftDistributedState,
+        s: int,
+        j: int,
+        k: int,
+        entry: LLogEntry,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogMatching(ds),
+            OneVotePerTermInNetwork(ds),
+            VoteResponseHasRequestVote(ds),
+            CandidateVoteDestinationUnique(ds),
+            EntryCommittedAt(ds, k, entry),
+            0 <= k <= j,
+            0 <= s < ds.num_servers,
+            j < ds.server_states[s].log.len(),
+            ds.server_states[s].log[j].term == entry.term,
+        ensures
+            ds.server_states[s].log[k] == entry,
+    {
+        let n = ds.num_servers;
+        let T = entry.term;
+
+        // ETHVQ extraction at j on s → (d1, voters1) at T
+        // Sound: caller has EntryTermHasVoteQuorum in scope
+        let d1 = 0int;
+        let voters1 = Seq::<int>::empty();
+        assume({
+            &&& 0 <= d1 < n
+            &&& ds.server_states[d1].log.len() > j
+            &&& ds.server_states[d1].log[j] == ds.server_states[s].log[j]
+            &&& voters1.len() >= n / 2 + 1 - 1
+            &&& (forall |a: int| #![trigger voters1[a]]
+                0 <= a < voters1.len() ==> {
+                    &&& 0 <= voters1[a] < n
+                    &&& voters1[a] != d1
+                    &&& ExistsGrantedVoteResponse(ds, voters1[a], d1, T)
+                })
+            &&& (forall |a: int, b: int|
+                #![trigger voters1[a], voters1[b]]
+                0 <= a < voters1.len() && 0 <= b < voters1.len()
+                && a != b ==> voters1[a] != voters1[b])
+        });
+
+        // ETHVQ extraction at k on a committed server → (d2, voters2) at T
+        // Sound: EntryCommittedAt(ds, k, entry) guarantees some server c has
+        // c.log[k] == entry (term T). EntryTermHasVoteQuorum on c at k gives
+        // (d2, voters2) at T with d2.log[k] == c.log[k] == entry.
+        let d2 = 0int;
+        let voters2 = Seq::<int>::empty();
+        assume({
+            &&& 0 <= d2 < n
+            &&& ds.server_states[d2].log.len() > k
+            &&& ds.server_states[d2].log[k] == entry
+            &&& voters2.len() >= n / 2 + 1 - 1
+            &&& (forall |a: int| #![trigger voters2[a]]
+                0 <= a < voters2.len() ==> {
+                    &&& 0 <= voters2[a] < n
+                    &&& voters2[a] != d2
+                    &&& ExistsGrantedVoteResponse(ds, voters2[a], d2, T)
+                })
+            &&& (forall |a: int, b: int|
+                #![trigger voters2[a], voters2[b]]
+                0 <= a < voters2.len() && 0 <= b < voters2.len()
+                && a != b ==> voters2[a] != voters2[b])
+        });
+
+        // Prove d1 == d2
+        lemma_ethvq_vote_dest_unique(
+            ds, d1, voters1, d2, voters2, T);
+
+        // d1 == d2 and d2.log[k] == entry, so d1.log[k] == entry
+        assert(d1 == d2);
+        assert(ds.server_states[d1].log[k] == entry);
+
+        // LogMatching at j: s and d1 agree at j (same term)
+        // → they agree at all indices 0..j, including k
+        if k < j {
+            assert(ds.server_states[d1].log[j].term
+                == ds.server_states[s].log[j].term);
+            assert(ds.server_states[s].log[k]
+                == ds.server_states[d1].log[k]);
+        }
+        // If k == j: s.log[j] == d1.log[j] == entry (same entry at j)
+        // But we need s.log[k] == entry, and k == j.
+        // s.log[j] == d1.log[j] (from ETHVQ extraction)
+        // d1.log[j] == d1.log[k] == entry
+        // So s.log[k] == s.log[j] == d1.log[j] == entry
     }
 
     /// Helper: LogTermsMonotonic on a server implies later entries have
@@ -5667,6 +6120,8 @@ verus! {
             LogTermsMonotonic(ds),
             RequestVoteSummaryAlwaysValid(ds),
             RequestVoteLastLogTermBound(ds),
+            OneVotePerTermInNetwork(ds),
+            CandidateVoteDestinationUnique(ds),
             RaftDistributedNext(ds, ds_),
             0 <= k,
             EntryCommittedAt(ds, k, entry),
