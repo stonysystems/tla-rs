@@ -4,10 +4,10 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Tools & Environment
 
-- **Verus**: `/home/shuai/tools/verus-x86-linux/verus` (version 0.2026.01.14.88f7396)
+- **Verus**: `/home/users/zihao/verus/verus` (version 0.2026.02.04.175a879)
 - **Rust**: 1.92.0-x86_64-unknown-linux-gnu (required by Verus)
-- **Verification command**: `/home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs`
-- **Build command**: `scons --verus-path=/home/shuai/tools/verus-x86-linux`
+- **Verification command**: `/home/users/zihao/verus/verus --crate-type=lib src/lib.rs`
+- **Build command**: `scons --verus-path=/home/users/zihao/verus`
 
 ## Current Status (2026-03-06)
 
