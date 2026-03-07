@@ -256,30 +256,6 @@ verus! {
     }
 
     // =========================================================================
-    // Committed log entries are unique across servers
-    // =========================================================================
-    //
-    // If two servers both have commit_index > k, they agree on log[k].
-    // This is a direct consequence of StateMachineSafety.
-
-    pub proof fn lemma_committed_entries_agree(
-        ds: RaftDistributedState, i: int, j: int, k: int
-    )
-        requires
-            RaftSafetyInvariant(ds),
-            0 <= i < ds.num_servers,
-            0 <= j < ds.num_servers,
-            0 <= k < ds.server_states[i].commit_index,
-            0 <= k < ds.server_states[j].commit_index,
-            k < ds.server_states[i].log.len(),
-            k < ds.server_states[j].log.len(),
-        ensures
-            ds.server_states[i].log[k] == ds.server_states[j].log[k]
-    {
-        assert(StateMachineSafety(ds));
-    }
-
-    // =========================================================================
     // Abstract step follows from committed log monotonicity
     // =========================================================================
     //

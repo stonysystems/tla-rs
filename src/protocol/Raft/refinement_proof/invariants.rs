@@ -481,7 +481,7 @@ verus! {
     /// Helper: extract voted_for == i from CandidateOrLeaderVotedForSelfId.
     proof fn lemma_voted_for_self(ds: RaftDistributedState, i: int)
         requires
-            RaftSafetyInvariant(ds),
+            CandidateOrLeaderVotedForSelfId(ds),
             0 <= i < ds.num_servers,
             ds.server_states[i].role is Candidate || ds.server_states[i].role is Leader,
         ensures

@@ -20,13 +20,13 @@ refinement.rs          Top-level refinement theorem
     |
     +-- induction.rs   Behavior-level induction scaffolding
     |
-    +-- invariants.rs  Safety invariant definitions + inductive proofs (~9600 LOC)
+    +-- invariants.rs  Safety invariant definitions + inductive proofs (~9900 LOC)
     |
-    +-- message_invariants.rs   Network packet invariant definitions (594 LOC)
+    +-- message_invariants.rs   Network packet invariant definitions (614 LOC)
     |
-    +-- committed.rs   Committed log extraction + monotonicity (232 LOC)
+    +-- committed.rs   Committed log extraction + monotonicity (310 LOC)
     |
-    +-- state_machine.rs   Distributed state, network model, ghost state (641 LOC)
+    +-- state_machine.rs   Distributed state, network model, ghost state (639 LOC)
 ```
 
 ### Refinement Mapping
