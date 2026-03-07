@@ -1,9 +1,9 @@
 # Raft Refinement Proof — Status and Architecture
 
 **Date**: 2026-03-06
-**Last Updated**: Phase 34.12 (SMS infrastructure: ARLA + MILA invariants)
+**Last Updated**: Phase 34.13 (ARLA + MILA proofs completed)
 **Codebase**: `src/protocol/Raft/refinement_proof/`
-**Status**: 14 assumes remaining (7 `assume(false)` LC + 4 sound Z3 workarounds + 1 SMS + 2 ARLA/MILA infrastructure)
+**Status**: 12 assumes remaining (7 `assume(false)` LC + 4 sound Z3 workarounds + 1 SMS)
 
 ## 1. What the Proof Shows
 
@@ -114,11 +114,11 @@ Network Model (sentPackets + receive guards)              -- Phase 34.1 DONE
 | VoteLogLenEntryTermBound | Entries at indices >= vote-time log length have term >= vote term |
 | VoteGrantedLogUpToDateAtVoteTime | log_up_to_date holds with vote-time log length |
 
-### Match Index / Append Response Invariants (Phase 34.12 — SMS infrastructure)
+### Match Index / Append Response Invariants (Phase 34.12-34.13 — SMS infrastructure)
 | Invariant | Proved | Description |
 |-----------|--------|-------------|
-| AppendResponseLogAgreement | **PARTIAL** (1 assume) | AR match_index bounded by both logs; entries below it agree |
-| MatchIndexImpliesLogAgreement | **NO** (1 assume) | Leader's match_index[f] >= k+1 implies log agreement at k |
+| AppendResponseLogAgreement | YES | AR match_index bounded by both logs; entries below it agree |
+| MatchIndexImpliesLogAgreement | YES | Leader's match_index[f] >= k+1 implies log agreement at k |
 
 ### Log Structure Invariants (all proved)
 | Invariant | Description |
@@ -127,7 +127,7 @@ Network Model (sentPackets + receive guards)              -- Phase 34.1 DONE
 | LogTermsMonotonic | Log entry terms are non-decreasing |
 | TermsNonNegative | All terms >= 0 |
 
-## 5. Remaining Assumes (14 total)
+## 5. Remaining Assumes (12 total)
 
 ### A. LeaderCompleteness — 7 `assume(false)` (the `d_rli ≤ k` wall)
 
@@ -135,13 +135,13 @@ All 7 represent the same fundamental gap: when ETHVQ vote dest `d` has pre-elect
 
 | # | Line | Function | Case |
 |---|------|----------|------|
-| 1 | 1156 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log[k].term > entry.term |
-| 2 | 1171 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or wrong term |
-| 3 | 1729 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, wrong term |
-| 4 | 2576 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, wrong term |
-| 5 | 2618 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, wrong term |
-| 6 | 2642 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, wrong term |
-| 7 | 2656 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, wrong term or too short |
+| 1 | 1182 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log[k].term > entry.term |
+| 2 | 1197 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or wrong term |
+| 3 | 1755 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, wrong term |
+| 4 | 2602 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, wrong term |
+| 5 | 2644 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, wrong term |
+| 6 | 2668 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, wrong term |
+| 7 | 2682 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, wrong term or too short |
 
 **Root cause**: The Raft paper's proof uses strong induction on leader terms ("smallest failing term"), which doesn't directly map to our ETHVQ vote-dest term descent. See `reports/leader_completeness_strict_term.md` for full analysis.
 
@@ -151,27 +151,18 @@ ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound 
 
 | Line | Function |
 |------|----------|
-| 2163 | `lemma_same_term_committed_entry_transfer` |
-| 2186 | `lemma_same_term_committed_entry_transfer` |
-| 2281 | `lemma_ethvq_committed_overlap` |
-| 3745 | `lemma_leader_log_quorum_intersection` |
+| 2189 | `lemma_same_term_committed_entry_transfer` |
+| 2212 | `lemma_same_term_committed_entry_transfer` |
+| 2307 | `lemma_ethvq_committed_overlap` |
+| 3771 | `lemma_leader_log_quorum_intersection` |
 
 ### C. StateMachineSafety — 1 assume (blocked on LeaderCompleteness)
 
 | Line | Function |
 |------|----------|
-| 6120 | `lemma_state_machine_safety_inductive` — `assume(StateMachineSafety(ds_))` |
+| 6146 | `lemma_state_machine_safety_inductive` — `assume(StateMachineSafety(ds_))` |
 
-Requires LeaderCompleteness + quorum overlap argument. Spec fixed in Phase 34.8 (quorum replication guard added to `LAdvanceCommitIndex`). Heartbeat match_index spec fixed in Phase 34.11 (`LFollowerAppendEntries` heartbeat branch now returns `ae_prev_index` instead of `s.log.len()`, ensuring AR match_index reflects verified log agreement). Proof deferred until LeaderCompleteness is fully proved.
-
-### D. ARLA/MILA Infrastructure — 2 assumes (Phase 34.12)
-
-| Line | Function | Description |
-|------|----------|-------------|
-| 9463 | `lemma_append_response_log_agreement_inductive` | New AR packets: needs AE extraction + LogMatching |
-| 9530 | `lemma_match_index_implies_log_agreement_inductive` | Full MILA proof: needs action-level case analysis |
-
-Old AR packets are handled (ARLA(ds) + LogAppendOnly + match_index bounds). New AR packets require extracting AE parameters from the action to establish agreement via LogMatching + AEI. MILA requires connecting match_index updates (from LHandleAppendResponse) to ARLA.
+Requires LeaderCompleteness + quorum overlap argument. Spec fixed in Phase 34.8 (quorum replication guard added to `LAdvanceCommitIndex`). Heartbeat match_index spec fixed in Phase 34.11 (`LFollowerAppendEntries` heartbeat branch now returns `ae_prev_index` instead of `s.log.len()`, ensuring AR match_index reflects verified log agreement). ARLA + MILA fully proved in Phase 34.13. SMS proof deferred until LeaderCompleteness is fully proved.
 
 ## 6. Approaches for Remaining 7 LC Assumes
 
@@ -213,7 +204,7 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 
 | File | LOC | Role |
 |------|-----|------|
-| `invariants.rs` | ~9600 | Core: all invariant definitions + 35+ inductive proof functions |
+| `invariants.rs` | ~9700 | Core: all invariant definitions + 35+ inductive proof functions |
 | `state_machine.rs` | 641 | Distributed state, network model, ghost state definitions |
 | `message_invariants.rs` | 594 | Network packet invariant definitions (18 invariants, incl. ARLA) |
 | `committed.rs` | 232 | Committed log extraction via MaxCommitIndex + monotonicity |
@@ -235,3 +226,4 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | Phase 34.10 | Deep analysis: all 7 assumes are same `d_rli ≤ k` wall. NoConflictAtCommittedIndex and CEUA explored and found insufficient. 4 dead proof functions removed (-483 LOC). |
 | Phase 34.11 | Heartbeat match_index spec fix: `LFollowerAppendEntries` heartbeat AR match_index changed from `s.log.len()` to `ae_prev_index`. Unblocks `MatchIndexImpliesLogAgreement` invariant for SMS proof. |
 | Phase 34.12 | SMS infrastructure: `AppendResponseLogAgreement` + `MatchIndexImpliesLogAgreement` invariants added. ARLA old-packet case proved. 2 new assumes for new-packet and MILA case analysis. |
+| Phase 34.13 | ARLA + MILA fully proved. ARLA new-packet helper uses minimal requires (LogMatching + AEI only, avoids RaftSafetyInvariant blow-up). MILA proved via MILA(ds) + ARLA + LogAppendOnly case analysis. 14 → 12 assumes. |

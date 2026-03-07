@@ -9379,6 +9379,84 @@ verus! {
     }
 
     // =========================================================================
+    // AppendResponseLogAgreement Helpers
+    // =========================================================================
+
+    /// Helper: extract AE packet from the action and establish ARLA for
+    /// a new AR packet sent by LFollowerAppendEntries.
+    ///
+    /// When server_id handles an AE message and sends a success AR:
+    /// - AR.src == server_id (follower), AR.dst == ae_leader
+    /// - match_index = if ae_has_entry { s.log.len()+1 } else { ae_prev_index }
+    /// - Prev_log check + AEI + LogMatching give log agreement
+    ///
+    /// Isolates the expensive RaftActionProduces unfolding from the main proof.
+    proof fn lemma_arla_new_packet(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        server_id: int, p: LRaftPacket,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            LogMatching(ds),
+            AppendEntriesIntegrity(ds),
+            0 <= server_id < ds.num_servers,
+            (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j]),
+            RaftServerStepWithNetwork(ds, ds_, server_id),
+            // p is a new AR packet sent by server_id
+            ds_.network.contains(p),
+            !ds.network.contains(p),
+            p.msg is AppendResponse,
+            p.msg->AppendResponse_success,
+            0 <= p.src < ds.num_servers,
+            0 <= p.dst < ds.num_servers,
+        ensures
+            p.msg->AppendResponse_match_index <= ds_.server_states[p.src].log.len(),
+            p.msg->AppendResponse_match_index <= ds_.server_states[p.dst].log.len(),
+            forall |k: int|
+                #![trigger ds_.server_states[p.src].log[k]]
+                0 <= k < p.msg->AppendResponse_match_index
+                ==> ds_.server_states[p.src].log[k] == ds_.server_states[p.dst].log[k],
+    {
+        // p is a new packet, so p.src == server_id (from network model)
+        assert(p.src == server_id);
+        let leader = p.dst;
+        let mi = p.msg->AppendResponse_match_index;
+
+        if leader == server_id {
+            // Self-AE: src == dst, everything trivial
+            assert(mi <= ds_.server_states[p.src].log.len()) by {
+                // Z3 unfolds action to establish mi bound
+            };
+            assert(mi <= ds_.server_states[p.dst].log.len());
+        } else {
+            // leader's state is unchanged (leader != server_id)
+            assert(ds_.server_states[leader] == ds.server_states[leader]);
+
+            // Z3 unfolds RaftActionProduces → LHandleMessage →
+            // LHandleAppendEntriesMsg → LFollowerAppendEntries.
+            // The success AR proves prev_log check passed.
+            // mi bounds follow from action + AEI.
+            assert(mi <= ds_.server_states[p.src].log.len());
+            assert(mi <= ds_.server_states[p.dst].log.len());
+
+            assert forall |k: int|
+                #![trigger ds_.server_states[p.src].log[k]]
+                0 <= k < mi
+            implies ds_.server_states[p.src].log[k] == ds_.server_states[p.dst].log[k]
+            by {
+                // leader's log is unchanged
+                assert(ds_.server_states[leader].log[k]
+                    == ds.server_states[leader].log[k]);
+            };
+        }
+    }
+
+    // =========================================================================
     // AppendResponseLogAgreement Induction
     // =========================================================================
 
@@ -9455,22 +9533,8 @@ verus! {
                 };
             } else {
                 // New packet: sent in this step by LFollowerAppendEntries.
-                // Needs case analysis on the action to extract AE parameters
-                // and establish agreement using LogMatching + AEI.
-                // This requires unfolding LHandleMessage → LHandleAppendEntriesMsg
-                // → LFollowerAppendEntries, which is expensive for Z3.
-                // Deferred to a helper function.
-                assume({
-                    &&& p.msg->AppendResponse_match_index
-                        <= ds_.server_states[p.src].log.len()
-                    &&& p.msg->AppendResponse_match_index
-                        <= ds_.server_states[p.dst].log.len()
-                    &&& (forall |k: int|
-                        #![trigger ds_.server_states[p.src].log[k]]
-                        0 <= k < p.msg->AppendResponse_match_index
-                        ==> ds_.server_states[p.src].log[k]
-                            == ds_.server_states[p.dst].log[k])
-                });
+                // Use helper to extract AE parameters and establish agreement.
+                lemma_arla_new_packet(ds, ds_, server_id, p);
             }
         }
     }
@@ -9522,13 +9586,43 @@ verus! {
             && k < ds_.server_states[follower_id].log.len()
         implies ds_.server_states[leader_id].log[k] == ds_.server_states[follower_id].log[k]
         by {
-            // For the unchanged-leader case (leader_id != server_id) with
-            // unchanged follower: MILA(ds) + LogAppendOnly gives the result directly.
-            // For the stepping-server-as-leader case and the case where
-            // follower grew: requires ARLA-based match_index bounds and
-            // action-level case analysis. Deferred to helper.
-            assume(ds_.server_states[leader_id].log[k]
-                == ds_.server_states[follower_id].log[k]);
+            if leader_id != server_id {
+                // Leader's state unchanged: match_index, role, log all same as ds.
+                assert(ds_.server_states[leader_id] == ds.server_states[leader_id]);
+                // MILA(ds) applies. k < match_index[follower_id] is unchanged.
+                // k < leader.log.len() is unchanged.
+                // If follower_id != server_id: follower unchanged → MILA(ds) gives result.
+                // If follower_id == server_id: follower log grew by LogAppendOnly,
+                //   but k < old match_index ≤ old follower log length (from MILA(ds) antecedent),
+                //   so k is within the preserved prefix → MILA(ds) gives result.
+                assert(MatchIndexImpliesLogAgreement(ds));
+                assert(ds.server_states[leader_id].match_index.dom().contains(follower_id as u64));
+                assert(k < ds.server_states[leader_id].match_index[follower_id as u64] as int);
+                // Trigger MILA(ds) for (leader_id, follower_id, k)
+                assert(ds.server_states[leader_id].log[k]
+                    == ds.server_states[follower_id].log[k]);
+            } else {
+                // leader_id == server_id: the stepping server is the leader.
+                // Need to determine which action was taken.
+                // match_index only changes in LHandleAppendResponse.
+                // If match_index didn't change (or domain entry is from old state),
+                // MILA(ds) applies. If match_index[follower_id] increased,
+                // ARLA gives agreement.
+                assert(MatchIndexImpliesLogAgreement(ds));
+                assert(AppendResponseLogAgreement(ds));
+                // Z3 needs to unfold the action to determine match_index change.
+                // If the action is LHandleAppendResponse with follower == follower_id,
+                // and k is in the new range, ARLA provides agreement.
+                // Otherwise MILA(ds) provides agreement.
+                //
+                // Key: LHandleAppendResponse preserves log (s_.log == s.log).
+                // So leader's log entries are unchanged.
+                // For ARLA: the AR packet has match_index = new_match_index,
+                // and ARLA(ds) says AR.src (follower) and AR.dst (leader) agree
+                // on entries below match_index. Since AR.dst == server_id == leader_id,
+                // and both states are ds-states (log unchanged for leader,
+                // follower != server_id so follower unchanged).
+            }
         }
     }
 
