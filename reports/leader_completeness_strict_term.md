@@ -1,7 +1,7 @@
 # LeaderCompleteness Strict-Term Case — Proof Blocker Analysis
 
 **Date**: 2026-03-06
-**Last Updated**: Phase 34.10 (deep analysis of remaining 7 assumes)
+**Last Updated**: Phase 34.15 (line numbers updated)
 **Context**: The hardest step in the Raft refinement proof.
 
 ## 1. The Goal
@@ -128,28 +128,28 @@ In our model, these are the same server (ETHVQ is derived from the leader's vote
 
 | # | Line | Function | Specific Case |
 |---|------|----------|---------------|
-| 1 | 1156 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log.len() == k+1, d.log[k].term > entry.term |
-| 2 | 1171 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or d.log[k].term ≠ entry.term |
-| 3 | 1729 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, server.log[k].term ≠ entry.term |
-| 4 | 2576 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, leader.log[k].term ≠ entry.term |
-| 5 | 2618 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, leader.log[k].term ≠ entry.term |
-| 6 | 2642 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, leader.log[k].term ≠ entry.term |
-| 7 | 2656 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, leader.log too short or wrong term |
+| 1 | 1206 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log.len() == k+1, d.log[k].term > entry.term |
+| 2 | 1221 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or d.log[k].term ≠ entry.term |
+| 3 | 1779 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, server.log[k].term ≠ entry.term |
+| 4 | 2626 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, leader.log[k].term ≠ entry.term |
+| 5 | 2668 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, leader.log[k].term ≠ entry.term |
+| 6 | 2692 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, leader.log[k].term ≠ entry.term |
+| 7 | 2706 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, leader.log too short or wrong term |
 
 ### 4 Sound Z3 Workaround Assumes (permanent)
 
 | Line | Purpose |
 |------|---------|
-| 2163 | ETHVQ witness extraction in `lemma_same_term_committed_entry_transfer` |
-| 2186 | ETHVQ witness extraction in `lemma_same_term_committed_entry_transfer` |
-| 2281 | ETHVQ witness extraction in `lemma_ethvq_committed_overlap` |
-| 3745 | ETHVQ witness extraction in `lemma_leader_log_quorum_intersection` |
+| 2213 | ETHVQ witness extraction in `lemma_same_term_committed_entry_transfer` |
+| 2236 | ETHVQ witness extraction in `lemma_same_term_committed_entry_transfer` |
+| 2331 | ETHVQ witness extraction in `lemma_ethvq_committed_overlap` |
+| 3799 | ETHVQ witness extraction in `lemma_leader_log_quorum_intersection` |
 
 ### 1 SMS Assume (depends on LeaderCompleteness)
 
 | Line | Purpose |
 |------|---------|
-| 6120 | `assume(StateMachineSafety(ds_))` — needs full LeaderCompleteness |
+| 6217 | `assume(ds_.server_states[i].log[k] == ds_.server_states[j].log[k])` for newly committed entries — needs full LeaderCompleteness |
 
 ## 6. Approaches Explored and Rejected
 
