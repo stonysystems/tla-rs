@@ -6841,7 +6841,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            VoteResponseSummaryStillValidAtOrAboveTerm(ds),
+            VoteResponseIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             VoteResponseSummaryStillValidAtOrAboveTerm(ds_)
@@ -7610,7 +7611,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            RequestVoteSenderState(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             RequestVoteSummaryStillValidAtSameTerm(ds_)
