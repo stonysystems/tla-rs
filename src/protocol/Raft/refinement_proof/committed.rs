@@ -115,6 +115,77 @@ verus! {
     // 1. MaxCommitIndex is non-decreasing (proved above)
     // 2. Log entries in the committed prefix are preserved (needs StateMachineSafety)
 
+    /// Prefix preservation via a common server s that qualifies in both ds and ds_.
+    /// s.commit_index(ds_) >= MaxCommitIndex(ds) and log preserved → prefix matches.
+    proof fn lemma_committed_log_prefix_via_server(
+        ds: RaftDistributedState, ds_: RaftDistributedState, s: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            CommitIndexBounded(ds),
+            StateMachineSafety(ds),
+            WellFormedRaftDistributed(ds_),
+            CommitIndexBounded(ds_),
+            StateMachineSafety(ds_),
+            ds_.num_servers == ds.num_servers,
+            MaxCommitIndex(ds) > 0,
+            MaxCommitIndex(ds_) >= MaxCommitIndex(ds),
+            0 <= s < ds.num_servers,
+            ds.server_states[s].commit_index >= MaxCommitIndex(ds),
+            ds.server_states[s].log.len() >= MaxCommitIndex(ds),
+            ds_.server_states[s].commit_index >= ds.server_states[s].commit_index,
+            ds_.server_states[s].log.len() >= ds.server_states[s].log.len(),
+            forall |k: int| #![trigger ds.server_states[s].log[k]]
+                0 <= k < ds.server_states[s].log.len() ==>
+                ds_.server_states[s].log[k] == ds.server_states[s].log[k],
+        ensures
+            forall |k: int| #![trigger GetCommittedLog(ds_)[k]]
+                0 <= k < GetCommittedLog(ds).len()
+                ==> GetCommittedLog(ds)[k] == GetCommittedLog(ds_)[k]
+    {
+        let old_log = GetCommittedLog(ds);
+        let old_max = MaxCommitIndex(ds);
+        lemma_committed_log_len(ds);
+        lemma_committed_log_len(ds_);
+
+        assert forall |k: int| #![trigger GetCommittedLog(ds_)[k]]
+            0 <= k < old_log.len()
+        implies GetCommittedLog(ds)[k] == GetCommittedLog(ds_)[k]
+        by {
+            lemma_committed_log_entry_via_server(ds, s, k);
+            // ds.server_states[s].log[k] == ds_.server_states[s].log[k] (from requires)
+            lemma_committed_log_entry_via_server(ds_, s, k);
+        };
+    }
+
+    /// GetCommittedLog(ds)[k] == server.log[k].value for any server with
+    /// commit_index > k and log.len() > k, given SMS(ds).
+    /// This allows using any qualifying server to read committed log entries.
+    proof fn lemma_committed_log_entry_via_server(
+        ds: RaftDistributedState, server_id: int, k: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            CommitIndexBounded(ds),
+            StateMachineSafety(ds),
+            MaxCommitIndex(ds) > 0,
+            0 <= server_id < ds.num_servers,
+            ds.server_states[server_id].commit_index > k,
+            ds.server_states[server_id].log.len() > k,
+            0 <= k < MaxCommitIndex(ds),
+        ensures
+            GetCommittedLog(ds)[k] == ds.server_states[server_id].log[k].value,
+    {
+        lemma_max_commit_index_witness(ds);
+        let chosen = choose |id: int| 0 <= id < ds.num_servers
+            && ds.server_states[id].commit_index >= MaxCommitIndex(ds)
+            && ds.server_states[id].log.len() >= MaxCommitIndex(ds);
+        // GetCommittedLog(ds)[k] == chosen.log[k].value
+        lemma_extract_log_values_index(ds.server_states[chosen].log, MaxCommitIndex(ds), k);
+        // SMS(ds): chosen.log[k] == server_id.log[k] (both have commit_index > k)
+        assert(StateMachineSafety(ds));
+    }
+
     pub proof fn lemma_committed_log_monotone(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
@@ -125,6 +196,7 @@ verus! {
         ensures
             IsPrefix(GetCommittedLog(ds), GetCommittedLog(ds_))
     {
+        // Extract step parameters first (in this function where RaftDistributedNext is available)
         lemma_distributed_next_implies_legacy(ds, ds_);
         let server_id = choose |sid: int| {
             &&& 0 <= sid < ds.num_servers
@@ -135,22 +207,51 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j])
         };
 
+        // Length monotonicity (needs RaftSafetyInvariant for commit_index_nondecreasing)
         lemma_max_commit_index_nondecreasing(ds, ds_, server_id);
-        let old_log = GetCommittedLog(ds);
-        let new_log = GetCommittedLog(ds_);
-
-        // Length monotonicity: GetCommittedLog length equals MaxCommitIndex (when > 0).
-        // MaxCommitIndex is non-decreasing (proved above).
         lemma_committed_log_len(ds);
         lemma_committed_log_len(ds_);
-        // old_log.len() == max(0, MaxCommitIndex(ds)) <= max(0, MaxCommitIndex(ds_)) == new_log.len()
 
-        // Prefix preservation: entries 0..old_log.len() are the same.
-        // This requires StateMachineSafety: the two servers chosen by GetCommittedLog
-        // for ds and ds_ must agree on committed entries. Since StateMachineSafety
-        // is an assumed invariant (spec model limitation), we assume this property.
-        assume(forall |k: int| #![trigger new_log[k]]
-            0 <= k < old_log.len() ==> old_log[k] == new_log[k]);
+        // Prefix preservation: delegate to core with minimal invariants
+        lemma_committed_log_monotone_core(ds, ds_, server_id);
+    }
+
+    /// Core prefix preservation: takes only WellFormed, CommitIndexBounded, SMS.
+    /// No LogMatching/LeaderCompleteness in scope to avoid quantifier blow-up.
+    proof fn lemma_committed_log_monotone_core(
+        ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            CommitIndexBounded(ds),
+            StateMachineSafety(ds),
+            WellFormedRaftDistributed(ds_),
+            CommitIndexBounded(ds_),
+            StateMachineSafety(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            0 <= server_id < ds.num_servers,
+            ServerTookStep(ds, ds_, server_id),
+            MaxCommitIndex(ds_) >= MaxCommitIndex(ds),
+        ensures
+            forall |k: int| #![trigger GetCommittedLog(ds_)[k]]
+                0 <= k < GetCommittedLog(ds).len()
+                ==> GetCommittedLog(ds)[k] == GetCommittedLog(ds_)[k]
+    {
+        let old_max = MaxCommitIndex(ds);
+        if old_max > 0 {
+            lemma_max_commit_index_witness(ds);
+            let s0 = choose |id: int| 0 <= id < ds.num_servers
+                && ds.server_states[id].commit_index >= old_max
+                && ds.server_states[id].log.len() >= old_max;
+            if s0 != server_id {
+                assert(ds_.server_states[s0] == ds.server_states[s0]);
+                lemma_committed_log_prefix_via_server(ds, ds_, s0);
+            } else {
+                lemma_commit_index_nondecreasing_for_server(ds, ds_, server_id, s0);
+                lemma_committed_log_prefix_via_server(ds, ds_, s0);
+            }
+        }
     }
 
     // =========================================================================

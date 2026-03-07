@@ -1,9 +1,9 @@
 # Raft Refinement Proof — Status and Architecture
 
 **Date**: 2026-03-06
-**Last Updated**: Phase 34.14 (MatchIndexBounded + AppendEntriesLeaderCommitBound added)
+**Last Updated**: Phase 34.15 (Committed log prefix preservation proved)
 **Codebase**: `src/protocol/Raft/refinement_proof/`
-**Status**: 12 assumes remaining (7 `assume(false)` LC + 4 sound Z3 workarounds + 1 SMS)
+**Status**: 12 assumes remaining in invariants.rs (7 `assume(false)` LC + 4 sound Z3 workarounds + 1 SMS). Committed log monotonicity fully proved.
 
 ## 1. What the Proof Shows
 
@@ -65,7 +65,8 @@ Network Model (sentPackets + receive guards)              -- Phase 34.1 DONE
     |
     +--- StateMachineSafety                               -- Phase 34.8 spec FIXED
              |                                               (proof blocked on LC)
-             +--- CommittedLogPrefix                      -- (blocked on SMS)
+             +--- CommittedLogPrefix                      -- Phase 34.15 DONE
+                                                             (proved via SMS(ds_) + LogAppendOnly)
 ```
 
 ## 4. Full Invariant List (30+ conjuncts in RaftSafetyInvariant)
@@ -209,7 +210,7 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | `invariants.rs` | ~9900 | Core: all invariant definitions + 37+ inductive proof functions |
 | `state_machine.rs` | 641 | Distributed state, network model, ghost state definitions |
 | `message_invariants.rs` | 614 | Network packet invariant definitions (19 invariants, incl. ARLA + AELCB) |
-| `committed.rs` | 232 | Committed log extraction via MaxCommitIndex + monotonicity |
+| `committed.rs` | ~300 | Committed log extraction via MaxCommitIndex + monotonicity (fully proved) |
 | `refinement.rs` | 154 | Top-level refinement theorem |
 | `induction.rs` | 69 | Behavior-level induction scaffolding |
 
@@ -230,3 +231,4 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | Phase 34.12 | SMS infrastructure: `AppendResponseLogAgreement` + `MatchIndexImpliesLogAgreement` invariants added. ARLA old-packet case proved. 2 new assumes for new-packet and MILA case analysis. |
 | Phase 34.13 | ARLA + MILA fully proved. ARLA new-packet helper uses minimal requires (LogMatching + AEI only, avoids RaftSafetyInvariant blow-up). MILA proved via MILA(ds) + ARLA + LogAppendOnly case analysis. 14 → 12 assumes. |
 | Phase 34.14 | SMS infrastructure: `MatchIndexBounded` + `AppendEntriesLeaderCommitBound` invariants added and fully proved. MIB trigger uses `match_index[follower_id as u64]` (NOT `log`) to avoid Z3 destabilization on LC inductive. SMS proof restructured with action-level case analysis: frame cases proved, assume narrowed to newly committed entries only. Assumes unchanged (12). |
+| Phase 34.15 | Committed log prefix preservation fully proved. `lemma_committed_log_monotone` assume eliminated using SMS(ds_) + LogAppendOnly bridge. Key technique: isolate prefix proof into helpers with minimal requires (no LogMatching) to avoid 600K+ quantifier instantiations from RaftSafetyInvariant. Committed.rs now assume-free. |
