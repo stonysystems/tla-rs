@@ -1,6 +1,6 @@
 # tla-rs Progress Report
 
-Date: 2026-02-26
+Date: 2026-03-06
 
 ## 1. RSL Code Generation and Proof
 
@@ -116,14 +116,47 @@ Specifically, the pattern `spec fn step_down_if_needed(s: LState, term: int) -> 
 
 **Expected impact:** If successful, all 369 LOC of `raft_manual.rs` can be auto-generated, and the pattern applies to any protocol that uses cross-cutting concerns (step-down, view-change, etc.).
 
+## 6. Raft Safety Refinement Proof (Phase 32 + 34)
+
+**Top-level theorem** (`lemma_refinement_correct`): every valid Raft distributed behavior refines to a sequential append-only committed log.
+
+**Proof architecture** (6 files, ~12,000 LOC in `src/protocol/Raft/refinement_proof/`):
+
+| File | LOC | Role |
+|------|-----|------|
+| `invariants.rs` | ~9,900 | Core: 30+ invariant definitions + 37+ inductive proof functions |
+| `state_machine.rs` | 641 | Distributed state, RSL-style network model, ghost state |
+| `message_invariants.rs` | 614 | 19 network packet invariant definitions |
+| `committed.rs` | 310 | Committed log extraction + monotonicity (fully proved) |
+| `refinement.rs` | 154 | Top-level refinement theorem |
+| `induction.rs` | 69 | Behavior-level induction scaffolding |
+
+**Key achievements:**
+- RSL-style network model with `sentPackets`, `LRaftPacket`, receive guards, ghost `vote_log_len` state (Phase 34.1)
+- 30+ invariants proved inductively: 19 message invariants, 4 ghost state, 4 SMS infrastructure (ARLA, MILA, MIB, AELCB), 3 log structure, plus structural invariants
+- ElectionSafety, VotersVotedForCandidate, LogMatching fully proved (Phase 34.4-34.6)
+- LeaderCompleteness partially proved: equal-term cases done, ETHVQ vote dest uniqueness resolved 3 of 10 `assume(false)` (Phase 34.7-34.9)
+- StateMachineSafety spec fixed with quorum replication guard (Phase 34.8)
+- Committed log prefix preservation fully proved; `committed.rs` is assume-free (Phase 34.15)
+- 24 inductive lemma requires narrowed from `RaftSafetyInvariant` to minimal sub-invariants (Phase 34.15)
+
+**Remaining assumes (12 in invariants.rs):**
+- 7 LC `assume(false)`: all blocked on the `d_rli ≤ k` wall — requires leader-term strong induction (Ongaro PhD §3.6.1)
+- 4 sound Z3 workarounds: ETHVQ witness extraction via `choose` crashes Z3 (permanent until Z3/Verus improves Skolemization)
+- 1 SMS assume: blocked on LeaderCompleteness
+
+See `reports/raft_refinement_proof.md` for full invariant list, assume analysis, and proof techniques.
+
 ## Summary Statistics
 
 | Metric | Value |
 |--------|-------|
+| Verified functions | 669 |
+| Verification errors | 0 |
 | Generated code (all protocols) | 9,479 LOC |
-| Verified exec functions | 165 |
-| Assumes (total) | 45 (43 RSL + 2 Raft) |
-| External body functions | ~40 (mostly clone helpers) |
+| Raft refinement proof | ~12,000 LOC |
+| RSL refinement proof assumes | 0 |
+| Raft refinement proof assumes | 12 (7 LC + 4 Z3 workaround + 1 SMS) |
 | Glue code (Claude-generated) | 6,165 LOC |
 | Shared framework | 510 LOC |
 | Protocols runnable | 10/10 |

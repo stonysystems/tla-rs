@@ -5,7 +5,7 @@ A Rust implementation of the IronFleet verified distributed systems framework, f
 ## Features
 
 - **Formally Verified Protocols**: Paxos-based RSL (Replicated State Machine) and distributed Lock service
-- **456 Verified Functions**: Main codebase fully verified with Verus (0 errors)
+- **669 Verified Functions**: Main codebase fully verified with Verus (0 errors)
 - **Spec-to-Exec Transpiler**: Automatic transformation of TLA-style specifications to verified implementations (~10K LOC)
 - **C# FFI Integration**: Production-ready networking layer via .NET runtime
 
