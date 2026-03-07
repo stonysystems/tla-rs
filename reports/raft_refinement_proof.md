@@ -157,13 +157,13 @@ ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound 
 | 2213 | `lemma_same_term_committed_entry_transfer` |
 | 2236 | `lemma_same_term_committed_entry_transfer` |
 | 2331 | `lemma_ethvq_committed_overlap` |
-| 3795 | `lemma_leader_log_quorum_intersection` |
+| 3799 | `lemma_leader_log_quorum_intersection` |
 
 ### C. StateMachineSafety — 1 assume (blocked on LeaderCompleteness)
 
 | Line | Function |
 |------|----------|
-| 6213 | `lemma_state_machine_safety_inductive` — `assume(log[k] == log[k])` for newly committed entries |
+| 6217 | `lemma_state_machine_safety_inductive` — `assume(log[k] == log[k])` for newly committed entries |
 
 SMS proof restructured in Phase 34.14: frame cases (both servers unchanged, same server, old commit_index covered k) are fully proved via SMS(ds) + LogAppendOnly. The assume is narrowed to only the case where the stepping server's commit_index NEWLY covers k (old commit_index ≤ k < new commit_index). This requires LC + quorum overlap to prove that the stepping server's log agrees with all other servers' committed entries.
 
@@ -209,10 +209,10 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 
 | File | LOC | Role |
 |------|-----|------|
-| `invariants.rs` | ~9900 | Core: all invariant definitions + 37+ inductive proof functions |
+| `invariants.rs` | ~9899 | Core: all invariant definitions + 37+ inductive proof functions |
 | `state_machine.rs` | 641 | Distributed state, network model, ghost state definitions |
 | `message_invariants.rs` | 614 | Network packet invariant definitions (19 invariants, incl. ARLA + AELCB) |
-| `committed.rs` | 333 | Committed log extraction via MaxCommitIndex + monotonicity (fully proved) |
+| `committed.rs` | 334 | Committed log extraction via MaxCommitIndex + monotonicity (fully proved) |
 | `refinement.rs` | 154 | Top-level refinement theorem |
 | `induction.rs` | 69 | Behavior-level induction scaffolding |
 

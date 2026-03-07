@@ -3381,7 +3381,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            VotesGrantedAreServers(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             VotesGrantedAreServers(ds_)
@@ -3457,7 +3458,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            CandidateOrLeaderVotedForSelf(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             CandidateOrLeaderVotedForSelf(ds_)
@@ -3639,7 +3641,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            LeaderHasQuorum(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             LeaderHasQuorum(ds_)
@@ -3698,7 +3701,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            CommitIndexBounded(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             CommitIndexBounded(ds_)
@@ -6225,7 +6229,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            SenderIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             SenderIntegrity(ds_)
