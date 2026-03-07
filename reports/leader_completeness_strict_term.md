@@ -143,13 +143,13 @@ In our model, these are the same server (ETHVQ is derived from the leader's vote
 | 2213 | ETHVQ witness extraction in `lemma_same_term_committed_entry_transfer` |
 | 2236 | ETHVQ witness extraction in `lemma_same_term_committed_entry_transfer` |
 | 2331 | ETHVQ witness extraction in `lemma_ethvq_committed_overlap` |
-| 3799 | ETHVQ witness extraction in `lemma_leader_log_quorum_intersection` |
+| 3800 | ETHVQ witness extraction in `lemma_leader_log_quorum_intersection` |
 
 ### 1 SMS Assume (depends on LeaderCompleteness)
 
 | Line | Purpose |
 |------|---------|
-| 6217 | `assume(ds_.server_states[i].log[k] == ds_.server_states[j].log[k])` for newly committed entries — needs full LeaderCompleteness |
+| 6218 | `assume(ds_.server_states[i].log[k] == ds_.server_states[j].log[k])` for newly committed entries — needs full LeaderCompleteness |
 
 ## 6. Approaches Explored and Rejected
 
