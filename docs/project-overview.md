@@ -130,7 +130,7 @@ The core insight: by composing specification generation, correctness verificatio
 - Composite handler auto-generation (multi-action functions)
 - Message type generation, host scaffold generation, scheduler analysis
 
-**Status**: Mature. 9 protocols transpiled (RSL + 8 non-RSL). 627 verified functions, 0 errors. See [transpiler-config-reference.md](transpiler-config-reference.md).
+**Status**: Mature. 9 protocols transpiled (RSL + 8 non-RSL). 669 verified functions, 0 errors. See [transpiler-config-reference.md](transpiler-config-reference.md).
 
 ### Stage ⑤ — Integration & Build
 
@@ -151,17 +151,18 @@ The core insight: by composing specification generation, correctness verificatio
 
 ### Verified Protocols
 
-| Protocol | Spec | Transpiler | Impl | Networking | Benchmark |
-|----------|------|-----------|------|------------|-----------|
-| RSL (Multi-Paxos) | Complete | Complete | Complete | Complete | Complete |
-| Raft | Complete | Complete | Complete | Complete | Complete |
-| TwoPhase Commit | Complete | Complete | Complete | Complete | - |
-| Primary-Backup | Complete | Complete | Complete | Complete | - |
-| Chain Replication | Complete | Complete | Complete | Complete | - |
-| PBFT | Complete | Complete | Complete | Complete | - |
-| Leader Election | Complete | Complete | Complete | Complete | - |
-| Vertical Paxos | Complete | Complete | Complete | Complete | - |
-| EPaxos | Complete | Complete | Complete | Complete | - |
+| Protocol | Spec | Transpiler | Impl | Networking | Proof | Benchmark |
+|----------|------|-----------|------|------------|-------|-----------|
+| RSL (Multi-Paxos) | Complete | Complete | Complete | Complete | Complete (0 assumes) | Complete |
+| Raft | Complete | Complete | Complete | Complete | Partial (12 assumes) | Complete |
+| TwoPhase Commit | Complete | Complete | Complete | Complete | - | - |
+| Primary-Backup | Complete | Complete | Complete | Complete | - | - |
+| Chain Replication | Complete | Complete | Complete | Complete | - | - |
+| PBFT | Complete | Complete | Complete | Complete | - | - |
+| Leader Election | Complete | Complete | Complete | Complete | - | - |
+| Vertical Paxos | Complete | Complete | Complete | Complete | - | - |
+| EPaxos | Complete | Complete | Complete | Complete | - | - |
+| Paxos | Complete | Complete | Complete | Complete | - | - |
 
 ### Tooling
 
@@ -174,8 +175,9 @@ The core insight: by composing specification generation, correctness verificatio
 
 ### Verification Numbers
 
-- **627** verified functions, **0** errors
-- **10** remaining assumes (all at IO trust boundary — irreducible)
+- **669** verified functions, **0** errors
+- **10** RSL packet-identity assumes (IO trust boundary — irreducible)
+- **12** Raft refinement proof assumes (7 LC blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC)
 - **1739** transpiler tests passing
 
 ---
@@ -188,8 +190,8 @@ The core insight: by composing specification generation, correctness verificatio
 
 | Task | Status | Notes |
 |------|--------|-------|
-| All RSL modules standalone (no delegation wrappers) | In progress | election_gen has 27 verification errors; replica_gen has 19 |
-| Auto-generate all composite handlers | Nearly done | 7/8 Raft handlers auto-generated; CHandleVoteResponseMsg needs Set::map proof injection |
+| All RSL modules standalone (no delegation wrappers) | Done | All 8 modules standalone (Phase 19) |
+| Auto-generate all composite handlers | Done | 8/8 Raft handlers auto-generated |
 | Eliminate reducible external_body assumes | Done | Tier 1-2 verified; Tier 3-5 closed as WONTFIX (HashSet/HashMap iteration) |
 | Support nested quantifier patterns in spec | Not started | Needed for more complex protocols |
 | Transpiler test coverage > 95% | In progress | 1739 tests passing, 1 pre-existing failure |
