@@ -167,6 +167,8 @@ ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound 
 
 SMS proof restructured in Phase 34.14: frame cases (both servers unchanged, same server, old commit_index covered k) are fully proved via SMS(ds) + LogAppendOnly. The assume is narrowed to only the case where the stepping server's commit_index NEWLY covers k (old commit_index ≤ k < new commit_index). This requires LC + quorum overlap to prove that the stepping server's log agrees with all other servers' committed entries.
 
+Phase 34.15 analysis confirmed this is irreducible without LC: MILA-based approach for leader sub-case (LAdvanceCommitIndex) fails because quorum intersection with servers having commit_index > k is not guaranteed. The leader's old commit_index ≤ k, so SMS(ds) can't bridge leader to other server.
+
 ## 6. Approaches for Remaining 7 LC Assumes
 
 See `reports/leader_completeness_strict_term.md` §7 for full analysis. Summary:
@@ -210,7 +212,7 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | `invariants.rs` | ~9900 | Core: all invariant definitions + 37+ inductive proof functions |
 | `state_machine.rs` | 641 | Distributed state, network model, ghost state definitions |
 | `message_invariants.rs` | 614 | Network packet invariant definitions (19 invariants, incl. ARLA + AELCB) |
-| `committed.rs` | ~300 | Committed log extraction via MaxCommitIndex + monotonicity (fully proved) |
+| `committed.rs` | 333 | Committed log extraction via MaxCommitIndex + monotonicity (fully proved) |
 | `refinement.rs` | 154 | Top-level refinement theorem |
 | `induction.rs` | 69 | Behavior-level induction scaffolding |
 
