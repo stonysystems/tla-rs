@@ -7808,7 +7808,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            RequestVoteLastLogTermBound(ds),
+            CurrentTermGeLogTerms(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             RequestVoteLastLogTermBound(ds_)
@@ -8309,7 +8310,7 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            VoteLogLenCoversNetwork(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             VoteLogLenCoversNetwork(ds_)
@@ -9779,7 +9780,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            AppendEntriesLeaderCommitBound(ds),
+            AppendEntriesIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             AppendEntriesLeaderCommitBound(ds_)
