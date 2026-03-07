@@ -83,7 +83,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState, server_id: int
     )
         requires
-            RaftSafetyInvariant(ds),
+            WellFormedRaftDistributed(ds),
+            CommitIndexBounded(ds),
             WellFormedRaftDistributed(ds_),
             ds_.num_servers == ds.num_servers,
             ds_.server_constants == ds.server_constants,
@@ -207,7 +208,7 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j])
         };
 
-        // Length monotonicity (needs RaftSafetyInvariant for commit_index_nondecreasing)
+        // Length monotonicity
         lemma_max_commit_index_nondecreasing(ds, ds_, server_id);
         lemma_committed_log_len(ds);
         lemma_committed_log_len(ds_);
