@@ -7078,7 +7078,7 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            AppendEntriesIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             AppendEntriesIntegrity(ds_)
@@ -8358,7 +8358,7 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            VoteLogLenBounded(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             VoteLogLenBounded(ds_)
@@ -8477,7 +8477,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteLogLenBounded(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             VoteLogLenEntryTermBound(ds_)
@@ -9551,7 +9552,9 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            AppendResponseLogAgreement(ds),
+            LogMatching(ds),
+            AppendEntriesIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             AppendResponseLogAgreement(ds_)
@@ -9720,7 +9723,8 @@ verus! {
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires
-            RaftSafetyInvariant(ds),
+            MatchIndexBounded(ds),
+            AppendResponseLogAgreement(ds),
             RaftDistributedNext(ds, ds_),
         ensures
             MatchIndexBounded(ds_)
