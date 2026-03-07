@@ -1,9 +1,9 @@
 # Raft Refinement Proof — Status and Architecture
 
 **Date**: 2026-03-06
-**Last Updated**: Phase 34.10 (deep analysis of remaining assumes)
+**Last Updated**: Phase 34.12 (SMS infrastructure: ARLA + MILA invariants)
 **Codebase**: `src/protocol/Raft/refinement_proof/`
-**Status**: 12 assumes remaining (7 `assume(false)` + 4 sound Z3 workarounds + 1 SMS)
+**Status**: 14 assumes remaining (7 `assume(false)` LC + 4 sound Z3 workarounds + 1 SMS + 2 ARLA/MILA infrastructure)
 
 ## 1. What the Proof Shows
 
@@ -20,9 +20,9 @@ refinement.rs          Top-level refinement theorem
     |
     +-- induction.rs   Behavior-level induction scaffolding
     |
-    +-- invariants.rs  Safety invariant definitions + inductive proofs (~9400 LOC)
+    +-- invariants.rs  Safety invariant definitions + inductive proofs (~9600 LOC)
     |
-    +-- message_invariants.rs   Network packet invariant definitions (499 LOC)
+    +-- message_invariants.rs   Network packet invariant definitions (594 LOC)
     |
     +-- committed.rs   Committed log extraction + monotonicity (232 LOC)
     |
@@ -114,6 +114,12 @@ Network Model (sentPackets + receive guards)              -- Phase 34.1 DONE
 | VoteLogLenEntryTermBound | Entries at indices >= vote-time log length have term >= vote term |
 | VoteGrantedLogUpToDateAtVoteTime | log_up_to_date holds with vote-time log length |
 
+### Match Index / Append Response Invariants (Phase 34.12 — SMS infrastructure)
+| Invariant | Proved | Description |
+|-----------|--------|-------------|
+| AppendResponseLogAgreement | **PARTIAL** (1 assume) | AR match_index bounded by both logs; entries below it agree |
+| MatchIndexImpliesLogAgreement | **NO** (1 assume) | Leader's match_index[f] >= k+1 implies log agreement at k |
+
 ### Log Structure Invariants (all proved)
 | Invariant | Description |
 |-----------|-------------|
@@ -121,7 +127,7 @@ Network Model (sentPackets + receive guards)              -- Phase 34.1 DONE
 | LogTermsMonotonic | Log entry terms are non-decreasing |
 | TermsNonNegative | All terms >= 0 |
 
-## 5. Remaining Assumes (11 total)
+## 5. Remaining Assumes (14 total)
 
 ### A. LeaderCompleteness — 7 `assume(false)` (the `d_rli ≤ k` wall)
 
@@ -158,7 +164,16 @@ ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound 
 
 Requires LeaderCompleteness + quorum overlap argument. Spec fixed in Phase 34.8 (quorum replication guard added to `LAdvanceCommitIndex`). Heartbeat match_index spec fixed in Phase 34.11 (`LFollowerAppendEntries` heartbeat branch now returns `ae_prev_index` instead of `s.log.len()`, ensuring AR match_index reflects verified log agreement). Proof deferred until LeaderCompleteness is fully proved.
 
-## 6. Approaches for Remaining 7 Assumes
+### D. ARLA/MILA Infrastructure — 2 assumes (Phase 34.12)
+
+| Line | Function | Description |
+|------|----------|-------------|
+| 9463 | `lemma_append_response_log_agreement_inductive` | New AR packets: needs AE extraction + LogMatching |
+| 9530 | `lemma_match_index_implies_log_agreement_inductive` | Full MILA proof: needs action-level case analysis |
+
+Old AR packets are handled (ARLA(ds) + LogAppendOnly + match_index bounds). New AR packets require extracting AE parameters from the action to establish agreement via LogMatching + AEI. MILA requires connecting match_index updates (from LHandleAppendResponse) to ARLA.
+
+## 6. Approaches for Remaining 7 LC Assumes
 
 See `reports/leader_completeness_strict_term.md` §7 for full analysis. Summary:
 
@@ -198,9 +213,9 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 
 | File | LOC | Role |
 |------|-----|------|
-| `invariants.rs` | ~9400 | Core: all invariant definitions + 35+ inductive proof functions |
+| `invariants.rs` | ~9600 | Core: all invariant definitions + 35+ inductive proof functions |
 | `state_machine.rs` | 641 | Distributed state, network model, ghost state definitions |
-| `message_invariants.rs` | 499 | Network packet invariant definitions (17 invariants) |
+| `message_invariants.rs` | 594 | Network packet invariant definitions (18 invariants, incl. ARLA) |
 | `committed.rs` | 232 | Committed log extraction via MaxCommitIndex + monotonicity |
 | `refinement.rs` | 154 | Top-level refinement theorem |
 | `induction.rs` | 69 | Behavior-level induction scaffolding |
@@ -219,3 +234,4 @@ Discovered during Phase 34.10 analysis, important for proof architecture:
 | Phase 34.9 | ETHVQ vote dest uniqueness. 3 assume(false) resolved → 7 remain. |
 | Phase 34.10 | Deep analysis: all 7 assumes are same `d_rli ≤ k` wall. NoConflictAtCommittedIndex and CEUA explored and found insufficient. 4 dead proof functions removed (-483 LOC). |
 | Phase 34.11 | Heartbeat match_index spec fix: `LFollowerAppendEntries` heartbeat AR match_index changed from `s.log.len()` to `ae_prev_index`. Unblocks `MatchIndexImpliesLogAgreement` invariant for SMS proof. |
+| Phase 34.12 | SMS infrastructure: `AppendResponseLogAgreement` + `MatchIndexImpliesLogAgreement` invariants added. ARLA old-packet case proved. 2 new assumes for new-packet and MILA case analysis. |

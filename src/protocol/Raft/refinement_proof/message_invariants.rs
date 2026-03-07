@@ -492,6 +492,43 @@ verus! {
     }
 
     // =========================================================================
+    // Message Invariant 9: Append Response Log Agreement
+    // =========================================================================
+    //
+    // For every successful AppendResponse packet in the network, the follower
+    // (p.src) and the AE sender (p.dst) agree on log entries below match_index.
+    //
+    // This holds because:
+    // - At send time (LFollowerAppendEntries), the prev_log check ensures
+    //   follower and leader agree up to ae_prev_index, and the appended entry
+    //   (if any) matches the leader's log.
+    // - After send, both logs are append-only, so agreement is preserved.
+    //
+    // This invariant connects AR match_index to actual log agreement,
+    // enabling MatchIndexImpliesLogAgreement for the StateMachineSafety proof.
+
+    pub open spec fn AppendResponseLogAgreement(ds: RaftDistributedState) -> bool {
+        forall |p: LRaftPacket|
+            #![trigger ds.network.contains(p)]
+            ds.network.contains(p)
+            && (p.msg is AppendResponse)
+            && p.msg->AppendResponse_success
+            && 0 <= p.src < ds.num_servers
+            && 0 <= p.dst < ds.num_servers
+        ==> {
+            // match_index is bounded by both logs' lengths (set at send time,
+            // preserved because logs are append-only)
+            &&& p.msg->AppendResponse_match_index <= ds.server_states[p.src].log.len()
+            &&& p.msg->AppendResponse_match_index <= ds.server_states[p.dst].log.len()
+            // Log entries below match_index agree
+            &&& (forall |k: int|
+                #![trigger ds.server_states[p.src].log[k]]
+                0 <= k < p.msg->AppendResponse_match_index
+                ==> ds.server_states[p.src].log[k] == ds.server_states[p.dst].log[k])
+        }
+    }
+
+    // =========================================================================
     // Step Property: Log Append Only
     // =========================================================================
     //

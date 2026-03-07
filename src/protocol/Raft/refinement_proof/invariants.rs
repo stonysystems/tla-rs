@@ -175,6 +175,26 @@ verus! {
             ==> ds.server_states[i].commit_index <= ds.server_states[i].log.len()
     }
 
+    /// Match index implies log agreement: if a leader has match_index[f] >= k+1
+    /// for some follower f, then the leader and follower agree on log[k].
+    ///
+    /// This connects the match_index bookkeeping in LHandleAppendResponse to
+    /// actual log agreement, which is needed for StateMachineSafety.
+    /// match_index is only set from AppendResponse packets, which carry
+    /// verified log agreement (AppendResponseLogAgreement).
+    pub open spec fn MatchIndexImpliesLogAgreement(ds: RaftDistributedState) -> bool {
+        forall |leader_id: int, follower_id: int, k: int|
+            #![trigger ds.server_states[leader_id].log[k], ds.server_states[follower_id].log[k], ds.server_states[leader_id].match_index]
+            0 <= leader_id < ds.num_servers
+            && 0 <= follower_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].match_index.dom().contains(follower_id as u64)
+            && 0 <= k < ds.server_states[leader_id].match_index[follower_id as u64] as int
+            && k < ds.server_states[leader_id].log.len()
+            && k < ds.server_states[follower_id].log.len()
+        ==> ds.server_states[leader_id].log[k] == ds.server_states[follower_id].log[k]
+    }
+
     /// Leader's log is at least as long as any entry with its term.
     /// If any server has a log entry at index k with term T, and there
     /// exists a current leader at term T, then that leader's log has
@@ -378,6 +398,9 @@ verus! {
         &&& VoteLogLenBounded(ds)
         &&& VoteLogLenEntryTermBound(ds)
         &&& VoteGrantedLogUpToDateAtVoteTime(ds)
+        // Match index / append response invariants (Phase 34.12 — SMS infrastructure)
+        &&& AppendResponseLogAgreement(ds)
+        &&& MatchIndexImpliesLogAgreement(ds)
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         &&& CurrentTermGeLogTerms(ds)
         &&& LogTermsMonotonic(ds)
@@ -413,6 +436,9 @@ verus! {
         // Ghost state invariants: vote_log_len empty + network empty, vacuously true
         // - VoteLogLenCoversNetwork, VoteLogLenBounded, VoteLogLenEntryTermBound,
         //   VoteGrantedLogUpToDateAtVoteTime
+        // Match index / append response invariants: network empty + no Leaders, vacuously true
+        // - AppendResponseLogAgreement: no packets, vacuously true
+        // - MatchIndexImpliesLogAgreement: no Leaders, vacuously true
         // Log structure invariants: empty logs + current_term = 0, vacuously/trivially true
         // - CurrentTermGeLogTerms, LogTermsMonotonic, TermsNonNegative
     }
@@ -9353,6 +9379,160 @@ verus! {
     }
 
     // =========================================================================
+    // AppendResponseLogAgreement Induction
+    // =========================================================================
+
+    /// ARLA: for every successful AR in the network, follower (p.src) and
+    /// AE sender (p.dst) agree on log entries below match_index, and
+    /// match_index is bounded by both logs' lengths.
+    ///
+    /// Old packets: ARLA(ds) gives match_index <= both old log lengths.
+    ///   By LogAppendOnly, old entries preserved → agreement preserved.
+    /// New packets: only LFollowerAppendEntries sends success ARs.
+    ///   Prev_log check + AEI + LogMatching gives agreement.
+    ///   match_index bounds from AR creation logic.
+    pub proof fn lemma_append_response_log_agreement_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            AppendResponseLogAgreement(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_log_append_only(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |p: LRaftPacket|
+            #![trigger ds_.network.contains(p)]
+            ds_.network.contains(p)
+            && (p.msg is AppendResponse)
+            && p.msg->AppendResponse_success
+            && 0 <= p.src < ds_.num_servers
+            && 0 <= p.dst < ds_.num_servers
+        implies {
+            &&& p.msg->AppendResponse_match_index <= ds_.server_states[p.src].log.len()
+            &&& p.msg->AppendResponse_match_index <= ds_.server_states[p.dst].log.len()
+            &&& (forall |k: int|
+                #![trigger ds_.server_states[p.src].log[k]]
+                0 <= k < p.msg->AppendResponse_match_index
+                ==> ds_.server_states[p.src].log[k] == ds_.server_states[p.dst].log[k])
+        } by {
+            if ds.network.contains(p) {
+                // Old packet: ARLA(ds) gives bounds + agreement at old state.
+                // LogAppendOnly preserves both.
+                assert(AppendResponseLogAgreement(ds));
+                let mi = p.msg->AppendResponse_match_index;
+                // From ARLA(ds): mi <= both old log lengths
+                assert(mi <= ds.server_states[p.src].log.len());
+                assert(mi <= ds.server_states[p.dst].log.len());
+                // LogAppendOnly: new log lengths >= old log lengths
+                assert(ds_.server_states[p.src].log.len()
+                    >= ds.server_states[p.src].log.len());
+                assert(ds_.server_states[p.dst].log.len()
+                    >= ds.server_states[p.dst].log.len());
+                // Agreement: for k < mi, k < both old log lengths.
+                // ARLA(ds) gives agreement at old state.
+                // LogAppendOnly preserves entries.
+                assert forall |k: int|
+                    #![trigger ds_.server_states[p.src].log[k]]
+                    0 <= k < mi
+                implies ds_.server_states[p.src].log[k]
+                    == ds_.server_states[p.dst].log[k]
+                by {
+                    assert(k < ds.server_states[p.src].log.len());
+                    assert(ds.server_states[p.src].log[k]
+                        == ds.server_states[p.dst].log[k]);
+                };
+            } else {
+                // New packet: sent in this step by LFollowerAppendEntries.
+                // Needs case analysis on the action to extract AE parameters
+                // and establish agreement using LogMatching + AEI.
+                // This requires unfolding LHandleMessage → LHandleAppendEntriesMsg
+                // → LFollowerAppendEntries, which is expensive for Z3.
+                // Deferred to a helper function.
+                assume({
+                    &&& p.msg->AppendResponse_match_index
+                        <= ds_.server_states[p.src].log.len()
+                    &&& p.msg->AppendResponse_match_index
+                        <= ds_.server_states[p.dst].log.len()
+                    &&& (forall |k: int|
+                        #![trigger ds_.server_states[p.src].log[k]]
+                        0 <= k < p.msg->AppendResponse_match_index
+                        ==> ds_.server_states[p.src].log[k]
+                            == ds_.server_states[p.dst].log[k])
+                });
+            }
+        }
+    }
+
+    // =========================================================================
+    // MatchIndexImpliesLogAgreement Induction
+    // =========================================================================
+
+    /// MILA: if leader has match_index[follower] >= k+1, then leader and follower
+    /// agree on log[k].
+    ///
+    /// match_index is only updated by LHandleAppendResponse, which takes
+    /// new_match_index from an AR packet. By ARLA, that AR implies log agreement.
+    /// match_index is cleared when becoming a new leader (match_index = empty).
+    ///
+    /// Key insight: ARLA guarantees match_index <= follower.log.len(), so
+    /// the MILA antecedent's k < match_index implies k < follower.log.len()
+    /// at all times. Similarly match_index <= leader.log.len() at AR send time,
+    /// and LHandleAppendResponse checks new_match_index <= leader.log.len().
+    pub proof fn lemma_match_index_implies_log_agreement_inductive(
+        ds: RaftDistributedState, ds_: RaftDistributedState
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            MatchIndexImpliesLogAgreement(ds_)
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        lemma_log_append_only(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |leader_id: int, follower_id: int, k: int|
+            #![trigger ds_.server_states[leader_id].log[k], ds_.server_states[follower_id].log[k], ds_.server_states[leader_id].match_index]
+            0 <= leader_id < ds_.num_servers
+            && 0 <= follower_id < ds_.num_servers
+            && ds_.server_states[leader_id].role is Leader
+            && ds_.server_states[leader_id].match_index.dom().contains(follower_id as u64)
+            && 0 <= k < ds_.server_states[leader_id].match_index[follower_id as u64] as int
+            && k < ds_.server_states[leader_id].log.len()
+            && k < ds_.server_states[follower_id].log.len()
+        implies ds_.server_states[leader_id].log[k] == ds_.server_states[follower_id].log[k]
+        by {
+            // For the unchanged-leader case (leader_id != server_id) with
+            // unchanged follower: MILA(ds) + LogAppendOnly gives the result directly.
+            // For the stepping-server-as-leader case and the case where
+            // follower grew: requires ARLA-based match_index bounds and
+            // action-level case analysis. Deferred to helper.
+            assume(ds_.server_states[leader_id].log[k]
+                == ds_.server_states[follower_id].log[k]);
+        }
+    }
+
+    // =========================================================================
     // Composite induction step
     // =========================================================================
 
@@ -9407,6 +9587,10 @@ verus! {
         lemma_vote_log_len_bounded_inductive(ds, ds_);
         lemma_vote_log_len_entry_term_bound_inductive(ds, ds_);
         lemma_vote_granted_log_up_to_date_inductive(ds, ds_);
+
+        // Match index / append response invariants (Phase 34.12 — SMS infrastructure)
+        lemma_append_response_log_agreement_inductive(ds, ds_);
+        lemma_match_index_implies_log_agreement_inductive(ds, ds_);
 
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         lemma_current_term_ge_log_terms_inductive(ds, ds_);
