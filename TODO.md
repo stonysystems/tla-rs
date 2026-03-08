@@ -9791,6 +9791,7 @@ Rules for this phase (do not cut corners):
     - Source-first run: `verus-transpile model-check` with exact-mode settings and `search.timeout_ms = 3600000` (or the explicitly checked-in per-protocol budget if a different one is justified in the benchmark notes).
     - TLC run: `timeout 3600 java ... tlc2.TLC -config ...` (or the matching checked-in budget).
     - If a protocol exhausts before the budget, record full-run results; if it does not exhaust, record the fixed-budget progress and label it as time-bounded comparison rather than exhaustive parity.
+    - **Partial**: Source-first side complete for TwoPhase (8 states, 79s, exhausted) and PrimaryBackup (60 states, 190s, exhausted). LeaderElection and Paxos BLOCKED on enumeration scalability. TLC side pending (requires Java 11+).
   - [ ] **33.4.3.e** Keep all benchmark evidence in-repo so the comparison is auditable.
     - Required source-first artifacts per protocol:
       - benchmark `model.toml`
@@ -9804,6 +9805,7 @@ Rules for this phase (do not cut corners):
       - full TLC log
       - exact command used
     - Keep one manifest/report with commit SHA, binary/tool versions, machine description, and benchmark date.
+    - **Partial**: Source-first artifacts checked in for TwoPhase and PrimaryBackup under `reports/benchmarks/source_first/`. Manifest at `reports/benchmarks/MANIFEST.md` with commands, versions, and machine info. TLC artifacts pending (requires Java 11+).
   - [ ] **33.4.3.f** Produce a checked-in side-by-side comparison report for the four protocols.
     - Compare, at minimum:
       - result (`ok`, `violation`, `timeout`, `limit`)
@@ -9817,6 +9819,7 @@ Rules for this phase (do not cut corners):
       - same config, compare total runtime if both finish
       - same config and same time budget, compare how many states each engine traversed before the cutoff
     - If state-count semantics differ because of wrapper variables or other modeling artifacts, say that explicitly instead of hiding the mismatch.
+    - **Partial**: Comparison report checked in at `reports/benchmarks/COMPARISON.md` with source-first results for TwoPhase and PrimaryBackup. TLC column pending. State-count semantics difference documented. Blocked protocols documented.
   - [x] **33.4.3.g** Add dedicated replay scripts for the long benchmarks instead of overloading the fast smoke matrix.
     - Keep the existing fast matrix (`scripts/run_model_check_matrix.sh`) fast and CI-friendly.
     - Add separate long-run replay automation (for example `scripts/run_model_check_benchmarks.sh`, `scripts/run_tlc_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`) for the 1-hour benchmark campaign.
