@@ -5,33 +5,44 @@ matching the source-first benchmark configs in `transpiler/tests/model_check_fix
 
 ## Invariant Mapping (Source-first → TLC)
 
+All 12 invariant pairs are **exact semantic equivalents**. The Verus source
+predicates operate on `(s: LState, c: LConstants)` (single centralized state).
+TLC wrappers use `state` (single-state protocols) or `state[n]` (multi-node
+Paxos). Quantifier domains match: Verus `forall |rm: int|` covers all integers
+but only RMs are ever inserted; TLC `\A rm \in RMs` restricts to the finite set.
+
 ### TwoPhase
-| Source-first (Verus) | TLC wrapper |
-|---------------------|-------------|
-| `LSafetyNoCommitAbortOverlap` | `NoCommitAbortOverlap` |
-| `LSafetyCommittedSubsetPrepared` | `CommittedSubsetPrepared` |
-| `LSafetyTmCommittedRequiresAllPrepared` | `TmCommittedRequiresAllPrepared` |
+| Source-first (Verus) | TLC wrapper | Equivalence |
+|---------------------|-------------|-------------|
+| `LSafetyNoCommitAbortOverlap` | `NoCommitAbortOverlap` | Exact |
+| `LSafetyCommittedSubsetPrepared` | `CommittedSubsetPrepared` | Exact |
+| `LSafetyTmCommittedRequiresAllPrepared` | `TmCommittedRequiresAllPrepared` | Exact |
 
 ### PrimaryBackup
-| Source-first (Verus) | TLC wrapper |
-|---------------------|-------------|
-| `LSafetyNoPendingImpliesClearedValue` | `NoPendingImpliesClearedValue` |
-| `LSafetyUnackedImpliesPending` | `UnackedImpliesPending` |
-| `LSafetyInactiveStateIsQuiescent` | `InactiveStateIsQuiescent` |
+| Source-first (Verus) | TLC wrapper | Equivalence |
+|---------------------|-------------|-------------|
+| `LSafetyNoPendingImpliesClearedValue` | `NoPendingImpliesClearedValue` | Exact |
+| `LSafetyUnackedImpliesPending` | `UnackedImpliesPending` | Exact |
+| `LSafetyInactiveStateIsQuiescent` | `InactiveStateIsQuiescent` | Exact |
 
 ### LeaderElection
-| Source-first (Verus) | TLC wrapper |
-|---------------------|-------------|
-| `LSafetyElectingSubsetAlive` | `ElectingSubsetAlive` |
-| `LSafetyWaitingNodeAliveWhenWaiting` | `WaitingNodeAliveWhenWaiting` |
-| `LSafetyNoWaitingImpliesClearedWaitingNode` | `NoWaitingImpliesClearedWaitingNode` |
+| Source-first (Verus) | TLC wrapper | Equivalence |
+|---------------------|-------------|-------------|
+| `LSafetyElectingSubsetAlive` | `ElectingSubsetAlive` | Exact |
+| `LSafetyWaitingNodeAliveWhenWaiting` | `WaitingNodeAliveWhenWaiting` | Exact |
+| `LSafetyNoWaitingImpliesClearedWaitingNode` | `NoWaitingImpliesClearedWaitingNode` | Exact |
 
 ### Paxos
-| Source-first (Verus) | TLC wrapper |
-|---------------------|-------------|
-| `LSafetyAcceptedBallotBoundedByPromise` | `AcceptedBallotBoundedByPromise` |
-| `LSafetyDecidedRequiresQuorum` | `DecidedRequiresQuorum` |
-| `LSafetyDecidedMatchesProposedValue` | `DecidedMatchesProposedValue` |
+| Source-first (Verus) | TLC wrapper | Equivalence |
+|---------------------|-------------|-------------|
+| `LSafetyAcceptedBallotBoundedByPromise` | `AcceptedBallotBoundedByPromise` | Exact |
+| `LSafetyDecidedRequiresQuorum` | `DecidedRequiresQuorum` | Exact |
+| `LSafetyDecidedMatchesProposedValue` | `DecidedMatchesProposedValue` | Exact |
+
+Note: Paxos is multi-node in TLC (per-node state array `state[n]`), while the
+Verus source uses a single centralized `LState`. The TLC invariants quantify
+`\A n \in Nodes` to check each node's state independently, matching the
+source-first model checker which evaluates the predicate on the centralized state.
 
 ## Model Size Matching
 

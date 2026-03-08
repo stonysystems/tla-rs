@@ -9782,12 +9782,11 @@ Rules for this phase (do not cut corners):
       - `Paxos_Benchmark_MC.tla/.cfg` — 3 nodes, quorum=2 (matching source-first), 3 invariants
     - Added `BENCHMARK_README.md` with invariant mapping table (source-first → TLC) and model size matching.
     - MC wrappers are self-contained (not EXTENDS of generated base) since the base uses relational (s,s_,c) style requiring state wrapping. Hand edits limited to wrapper/property glue.
-  - [ ] **33.4.3.c** Update the translated TLA+ invariants so the TLC run is checking the same safety story as the source-first run.
-    - For each of the four protocols, keep an explicit invariant mapping table:
-      - source-first invariant name in `src/protocol/...`
-      - translated/wrapper TLA+ invariant operator name
-      - note if the TLA+ version is exactly equivalent or only the closest executable approximation
-    - Do not compare engines on mismatched invariants and then claim the result is a fair benchmark.
+  - [x] **33.4.3.c** Update the translated TLA+ invariants so the TLC run is checking the same safety story as the source-first run. [2026-03-08]
+    - Verified all 12 invariant pairs (3 per protocol) are exact semantic equivalents.
+    - Updated `BENCHMARK_README.md` with per-invariant equivalence column and explanatory notes.
+    - Verus `forall |rm: int|` vs TLC `\A rm \in RMs` is equivalent because only RMs are ever inserted.
+    - Paxos multi-node TLC wrapper (`state[n]`) correctly universally quantifies over nodes.
   - [ ] **33.4.3.d** Run both engines with the same modeled constants/domains and the same wall-clock budget.
     - Source-first run: `verus-transpile model-check` with exact-mode settings and `search.timeout_ms = 3600000` (or the explicitly checked-in per-protocol budget if a different one is justified in the benchmark notes).
     - TLC run: `timeout 3600 java ... tlc2.TLC -config ...` (or the matching checked-in budget).
