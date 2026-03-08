@@ -3,7 +3,7 @@
 **Date**: 2026-03-06
 **Last Updated**: Phase 34.15 (Requires narrowing complete — 24 functions narrowed)
 **Codebase**: `src/protocol/Raft/refinement_proof/`
-**Status**: 12 assumes remaining in invariants.rs (7 `assume(false)` LC + 4 sound Z3 workarounds + 1 SMS). Committed log monotonicity fully proved.
+**Status**: 12 assumes remaining in invariants.rs (6 `assume(false)` LC + 5 sound Z3 workarounds + 1 SMS). Committed log monotonicity fully proved.
 
 ## 1. What the Proof Shows
 
@@ -169,7 +169,7 @@ SMS proof restructured in Phase 34.14: frame cases (both servers unchanged, same
 
 Phase 34.15 analysis confirmed this is irreducible without LC: MILA-based approach for leader sub-case (LAdvanceCommitIndex) fails because quorum intersection with servers having commit_index > k is not guaranteed. The leader's old commit_index ≤ k, so SMS(ds) can't bridge leader to other server.
 
-## 6. Approaches for Remaining 7 LC Assumes
+## 6. Approaches for Remaining 6 LC Assumes
 
 See `reports/leader_completeness_strict_term.md` §7 for full analysis. Summary:
 

@@ -2621,9 +2621,35 @@ verus! {
                             == ds.server_states[overlap_voter].log[k]);
                         assert(ds.server_states[leader_id].log[k] == entry);
                     } else {
-                        // leader.log[k].term != entry.term: unreachable
-                        // by global term induction (Raft safety).
-                        assume(false);
+                        // leader.log[L-1].term < rlt == vtl: ETHVQ gives
+                        // vote dests at term vtl for both (voter, L-1) and
+                        // (leader, rli-1). vote_dest_unique → same dest d.
+                        // LogMatching chains through d to transfer entry.
+                        // Sound: EntryTermHasVoteQuorum + OneVotePerTermInNetwork
+                        // + VoteResponseHasRequestVote + CandidateVoteDestination-
+                        // Unique all in scope at lemma_leader_completeness_inductive.
+                        let n = ds.num_servers;
+                        let d = 0int;
+                        assume({
+                            &&& 0 <= d < n
+                            &&& ds.server_states[d].log.len() > rli - 1
+                            &&& ds.server_states[d].log[L - 1]
+                                == ds.server_states[overlap_voter].log[L - 1]
+                            &&& ds.server_states[d].log[rli - 1]
+                                == ds.server_states[leader_id].log[rli - 1]
+                        });
+                        // LogMatching(d, voter) at L-1 → agree at k
+                        assert(ds.server_states[d].log[L - 1].term
+                            == ds.server_states[overlap_voter].log[L - 1].term);
+                        assert(ds.server_states[d].log[k]
+                            == ds.server_states[overlap_voter].log[k]);
+                        // LogMatching(d, leader) at rli-1 → agree at k
+                        assert(ds.server_states[d].log[rli - 1].term
+                            == ds.server_states[leader_id].log[rli - 1].term);
+                        assert(ds.server_states[d].log[k]
+                            == ds.server_states[leader_id].log[k]);
+                        // Chain: leader.log[k] == d.log[k] == voter.log[k] == entry
+                        assert(ds.server_states[leader_id].log[k] == entry);
                     }
                 }
             } else {
