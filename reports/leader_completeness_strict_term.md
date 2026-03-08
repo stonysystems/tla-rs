@@ -1,7 +1,7 @@
 # LeaderCompleteness Strict-Term Case — Proof Blocker Analysis
 
 **Date**: 2026-03-06
-**Last Updated**: Phase 34.15 (line numbers updated)
+**Last Updated**: Phase 34.7.1.e.4.b.2.b.3.a (analysis complete — all 6 assumes same gap)
 **Context**: The hardest step in the Raft refinement proof.
 
 ## 1. The Goal
@@ -124,26 +124,28 @@ In our model, these are the same server (ETHVQ is derived from the leader's vote
 
 ## 5. Current Status of All Assumes
 
-### 7 `assume(false)` for LeaderCompleteness (all `d_rli ≤ k` wall)
+### 6 `assume(false)` for LeaderCompleteness (all `d_rli ≤ k` wall)
+
+Former #4 (equal-term, rli > L) resolved in Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.e via ETHVQ+vote_dest_unique at same term vtl.
 
 | # | Line | Function | Specific Case |
 |---|------|----------|---------------|
 | 1 | 1206 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log.len() == k+1, d.log[k].term > entry.term |
 | 2 | 1221 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or d.log[k].term ≠ entry.term |
 | 3 | 1779 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, server.log[k].term ≠ entry.term |
-| 4 | 2626 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, leader.log[k].term ≠ entry.term |
-| 5 | 2668 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, leader.log[k].term ≠ entry.term |
-| 6 | 2692 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, leader.log[k].term ≠ entry.term |
-| 7 | 2706 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, leader.log too short or wrong term |
+| 4 | 2694 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, leader.log[k].term ≠ entry.term |
+| 5 | 2718 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, leader.log[k].term ≠ entry.term |
+| 6 | 2732 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, leader.log too short or wrong term |
 
-### 4 Sound Z3 Workaround Assumes (permanent)
+### 5 Sound Z3 Workaround Assumes (permanent)
 
 | Line | Purpose |
 |------|---------|
 | 2213 | ETHVQ witness extraction in `lemma_same_term_committed_entry_transfer` |
 | 2236 | ETHVQ witness extraction in `lemma_same_term_committed_entry_transfer` |
 | 2331 | ETHVQ witness extraction in `lemma_ethvq_committed_overlap` |
-| 3800 | ETHVQ witness extraction in `lemma_leader_log_quorum_intersection` |
+| 2633 | ETHVQ+vote_dest_unique extraction in `lemma_overlap_voter_entry_transfer` (equal-term rli>L) |
+| 3826 | ETHVQ witness extraction in `lemma_leader_log_quorum_intersection` |
 
 ### 1 SMS Assume (depends on LeaderCompleteness)
 
@@ -178,33 +180,43 @@ This confirms LeaderCompleteness is true in the model but doesn't help mechanize
 
 ## 7. Possible Forward Paths
 
-### Option A: Leader-Term Induction (matches Raft paper)
+### Option A: Leader-Term Induction (matches Raft paper) — Most Promising
 
 Instead of descending on ETHVQ vote dests, descend on **leader terms**. For each entry `leader.log[j]` with term T' < T_leader, the T'-leader must have had the committed entry (by IH on T'). LogMatching from the T'-leader to the T_leader (they share a term-T' entry at index j) transfers the committed entry.
 
-**Challenge**: Requires `EntryTermHasLeaderWitness` — the ETHVQ-based invariant that connects log entries to their creating leaders. This invariant exists but combining it with the recursive proof structure and ETHVQ set operations may exceed Z3's capabilities.
+**Challenge**: Requires a **term-indexed ghost invariant** carrying per-term LC information. In the fresh-commit path, `!EntryCommittedAt(ds, k, entry)`, so `LeaderCompleteness(ds)` from IH provides no information about the committed entry. The T'-leader (ETHVQ vote dest at term T') may not be a current Leader in ds, so LC(ds) can't be applied directly.
 
-**This is the most promising path** but requires careful implementation.
+Would need something like: `forall T, k. (quorum_size - 1 servers have log[k].term == T_e at term T_e) && leader_at_term_T.log[k].term != T_e ==> false`. This requires expressing "all leaders at terms < T have the entry" within a single behavioral step — essentially embedding strong induction on terms inside the step-induction proof.
 
-### Option B: Ghost Provenance Chain
+**Estimated effort**: ~500-1000 LOC refactoring with significant Z3 instability risk.
 
-Attach ghost data to each log entry recording which leader created it and through which AE chain it arrived. Avoids reconstructing provenance from network invariants.
+### Option B: Prove Unreachable — REJECTED
 
-**Risk**: Significant spec-level refactoring of `raft.rs`.
+Explored in Phase 34.10 (NoConflictAtCommittedIndex, CEUA) and Phase 34.7.1.e.4.b.2.b.3.a analysis. A leader at high term T CAN have `log[k].term = T > T_e` via LClientRequest before the commit quorum forms. `leader.log[k].term != entry.term` IS reachable in isolation; only the full system (quorum overlap + vote comparison + LogMatching chains across ALL terms) prevents it, which requires term induction.
 
-### Option C: Accept Assumes as Pragmatic Gaps
+### Option C: Ghost Provenance Chain — Insufficient Alone
 
-Mark the 7 `assume(false)` as documented proof gaps with soundness argument: "LeaderCompleteness holds by the Raft paper's term induction argument (Ongaro §3.6.1). Mechanization is blocked by the `d_rli ≤ k` wall where ETHVQ term descent and LogMatching coverage don't align."
+Add `creator_id: Ghost<int>` to log entries recording which leader created each entry. Analysis shows this doesn't solve the core problem: proving `creator.log[k] == committed_entry` hits the same `d_rli ≤ k` wall. The creator's quorum overlaps the commit quorum, but the overlap voter comparison requires the same term induction argument.
 
-This is the pragmatic path if the verification effort needs to move forward.
+**Could be useful IN COMBINATION with Option A** to simplify the term-indexed invariant.
 
-### Option D: Restructured Invariant (EntryUniquePerTermIndex)
+### Option D: Accept Assumes as Pragmatic Gaps — RECOMMENDED
+
+Mark the 6 `assume(false)` as documented proof gaps with soundness argument: "LeaderCompleteness holds by the Raft paper's term induction argument (Ongaro §3.6.1). Mechanization is blocked by the `d_rli ≤ k` wall where behavioral step-induction cannot express 'smallest failing term' strong induction on leader terms."
+
+This is the pragmatic path. The trusted base increases by 6 assumes, all representing the same well-understood gap.
+
+### Option E: Restructured Invariant (EntryUniquePerTermIndex) — Same Wall
 
 Define: `forall s1, s2, k. s1.log[k].term == s2.log[k].term → s1.log[k] == s2.log[k]`
 
-This is exactly LogMatching restricted to a single index. If this can be proved directly (it follows from the Raft paper's LogMatching property), it would resolve the `d_rli ≤ k` wall: once we establish `d.log[k].term == entry.term` (via monotonicity + term bounds), the entry must match.
+This is exactly LogMatching restricted to a single index. Would resolve the wall IF we could establish `d.log[k].term == entry.term`. But we can't — that's precisely the gap. The server created a new entry at index k with a different term.
 
-But the difficulty is that we can't establish `d.log[k].term == entry.term` in the `d_rli ≤ k` case — that's precisely the gap. The server created a new entry at index k with a different term.
+## 7.1. Why Fresh Commits Block Term Induction (Phase 34.7.1.e.4.b.2.b.3.a)
+
+The fundamental insight: in `lemma_leader_completeness_fresh_commit_unchanged_leader`, the entry is committed in ds' but NOT in ds. The commit quorum in ds' includes the stepping server (which just appended the entry at index k = ds.server_states[stepping].log.len()). Removing stepping leaves quorum_size - 1 servers with the entry in ds — a near-quorum, but NOT enough for `EntryCommittedAt(ds, k, entry)`.
+
+Since `!EntryCommittedAt(ds, k, entry)`, `LeaderCompleteness(ds)` (from behavioral IH) says nothing about this entry. We can't apply LC(ds) to ANY leader at ANY term for this entry. The Raft paper avoids this because it uses term induction (not behavioral step induction): "for the smallest failing term T, all terms < T satisfy LC" — this is a statement about ALL committed entries, including ones committed in the same state. Our step induction only gives us LC for the pre-state.
 
 ## 8. What's Already Been Done
 
@@ -228,4 +240,6 @@ Infrastructure built (bottom-up):
 
 ## 9. Summary
 
-The remaining 7 `assume(false)` instances all represent the same fundamental gap: the `d_rli ≤ k` case where ETHVQ term descent produces a vote dest whose pre-election log doesn't reach index k, and LogMatching coverage is below k. The Raft paper resolves this via strong induction on leader terms (smallest failing term argument). Mechanizing this in Verus requires either (A) restructuring the recursive proof to descend on leader terms instead of ETHVQ vote dests, (B) adding ghost provenance data to the spec, or (C) accepting the assumes as documented gaps.
+The remaining 6 `assume(false)` instances all represent the same fundamental gap: the `d_rli ≤ k` case where ETHVQ term descent produces a vote dest whose pre-election log doesn't reach index k, and LogMatching coverage is below k. The Raft paper resolves this via strong induction on leader terms (smallest failing term argument).
+
+**Key finding (Phase 34.7.1.e.4.b.2.b.3.a)**: The gap is irreducible within behavioral step-induction. In the fresh-commit path, `!EntryCommittedAt(ds, k, entry)`, so `LeaderCompleteness(ds)` from the behavioral IH provides no information. Term induction (Option A) requires a term-indexed ghost invariant (~500-1000 LOC, high Z3 risk). Ghost provenance (Option C) doesn't help alone. **Recommendation: accept as documented gaps (Option D)** with Option A as future work.
