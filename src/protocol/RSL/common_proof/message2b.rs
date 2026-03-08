@@ -94,7 +94,7 @@ verus! {
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));
@@ -197,7 +197,7 @@ verus! {
 
             assert(e.nextStep is LEnvStepHostIos);
             assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-            assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
             assert(ios.contains(ios[0]) && ios[0] is Receive);
             assert(match_ios_recv(ios[0], e.sentPackets));
             assert(e.sentPackets.contains(ios[0]->r));
@@ -303,7 +303,7 @@ verus! {
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));
@@ -436,17 +436,17 @@ verus! {
         // In LReplicaNextProcess2a, the else branch gives sent_packets == empty(),
         // but pkts.contains(p) (p is a 2b packet), so we must be in the if branch.
         // The if branch gives LAcceptorProcess2a(s, s_, recv, pkts).
+        // recv.msg must be RslMessage2a because the dispatch in LReplicaNextProcessPacketWithoutReadingClock
+        // matched on recv.msg to call LReplicaNextProcess2a.
+        assert(recv.msg is RslMessage2a);
         assert(LReplicaNextProcess2a(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, recv, pkts));
         // The else branch of LReplicaNextProcess2a would give pkts == empty(), contradicting pkts.contains(p).
         // So we're in the if branch, which gives LAcceptorProcess2a.
         assert(LAcceptorProcess2a(s, s_, recv, pkts));
-        // recv.msg must be RslMessage2a because the dispatch in LReplicaNextProcessPacketWithoutReadingClock
-        // matched on recv.msg to call LReplicaNextProcess2a.
-        assert(recv.msg is RslMessage2a);
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));

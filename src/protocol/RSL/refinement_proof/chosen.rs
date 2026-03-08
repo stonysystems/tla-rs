@@ -75,6 +75,7 @@ verus! {
         bound:OperationNumber
     )
         requires IsValidBehaviorPrefix(b, c, i),
+                 0 <= i,
         ensures bound >= 0,
                 !exists |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == bound
     {
@@ -194,6 +195,7 @@ verus! {
         qs:Seq<QuorumOf2bs>
         )
         requires IsValidBehaviorPrefix(b, c, i),
+                 0 <= i,
         ensures  IsMaximalQuorumOf2bsSequence(b[i], qs),
     {
         let bound = lemma_GetUpperBoundOnQuorumOf2bsOperationNumber(b, c, i);

@@ -91,10 +91,14 @@ verus! {
         // Extract witnesses from non-empty sets
         let idx1 = q1.indices.choose();
         let idx2 = q2.indices.choose();
+        assert(q1.indices.contains(idx1));
+        assert(q2.indices.contains(idx2));
+        assert(0 <= idx1 < q1.packets.len());
+        assert(0 <= idx2 < q2.packets.len());
         let p1_2b = q1.packets[idx1];
         let p2_2b = q2.packets[idx2];
-        assert(forall |idx:int| q1.indices.contains(idx) ==> b[i].environment.sentPackets.contains(q1.packets[idx]));
-        assert(forall |idx:int| q2.indices.contains(idx) ==> b[i].environment.sentPackets.contains(q2.packets[idx]));
+        assert(b[i].environment.sentPackets.contains(p1_2b));
+        assert(b[i].environment.sentPackets.contains(p2_2b));
         let p1_2a = lemma_2bMessageHasCorresponding2aMessage(b, c, i, p1_2b);
         let p2_2a = lemma_2bMessageHasCorresponding2aMessage(b, c, i, p2_2b);
 
@@ -197,6 +201,11 @@ verus! {
         } else {
             assert(BalLt(quorum_of_2bs.bal, previous_packet2a.msg->bal_2a));
             lemma_2aMessageHasValidBallot(b, c, i, packet2a);
+            // Help termination: previous_packet2a.msg->bal_2a < packet2a.msg->bal_2a lexicographically
+            assert(BalLt(previous_packet2a.msg->bal_2a, packet2a.msg->bal_2a));
+            assert(previous_packet2a.msg->bal_2a.seqno < packet2a.msg->bal_2a.seqno
+                || (previous_packet2a.msg->bal_2a.seqno == packet2a.msg->bal_2a.seqno
+                    && previous_packet2a.msg->bal_2a.proposer_id < packet2a.msg->bal_2a.proposer_id));
             lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues(b, c, i, quorum_of_2bs, previous_packet2a);
         }
     }
@@ -269,7 +278,7 @@ verus! {
         let senders = s.learner.unexecuted_learner_state[opn].received_2b_message_senders;
 
         let mut sender_idx: int = 0;
-
+        lemma_ReplicasSize(b, c, i);
         let (indices, packets) = collect_2b_messages(c, senders, opn, idx, b, i, sender_idx);
 
 
@@ -308,6 +317,9 @@ verus! {
         i: int,
         sender_idx:int,
     ) -> (rc:(Set<int>, Seq<RslPacket>))
+        requires
+            0 <= sender_idx <= c.config.replica_ids.len(),
+            c.config.replica_ids.len() > 0,
         ensures
             rc.0.finite(),
         // Original commented-out ensures preserved:

@@ -16,6 +16,7 @@ use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 
 use crate::common::collections::maps2::*;
+use crate::common::collections::seqs::*;
 use crate::common::collections::sets::*;
 use crate::common::framework::environment_s::LEnvStep;
 use crate::common::framework::environment_s::*;
@@ -62,6 +63,7 @@ verus! {
             implies exists |idx: int| indices_out.contains(idx) && node == f(idx)
         by {
             let idx = GetReplicaIndex(node, config);
+            lemma_FindIndexInSeq(config.replica_ids, node);
             assert(indices_out.contains(idx) && node == f(idx));
         };
 
@@ -104,6 +106,12 @@ verus! {
 
         // Show that the cardinalities match (|indices| == |packets|).
         lemma_MapSetCardinalityOver(packets, nodes, f);
+
+        // Help Verus connect packets.contains(p) ==> nodes.contains(p.src) ==> indices.contains(GetReplicaIndex(p.src, config))
+        assert forall |p: RslPacket| packets.contains(p) implies indices_out.contains(GetReplicaIndex(p.src, config))
+        by {
+            assert(nodes.contains(p.src));
+        };
 
         indices_out
     }

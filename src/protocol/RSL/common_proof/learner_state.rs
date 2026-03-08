@@ -1,3 +1,4 @@
+use crate::common::collections::seqs::*;
 use crate::protocol::RSL::common_proof::actions::*;
 use crate::protocol::RSL::common_proof::assumptions::*;
 use crate::protocol::RSL::common_proof::constants::*;
@@ -165,6 +166,10 @@ verus! {
         assert(next_action_index == 0);
         assert(ios[0] is Receive);
         let p = ios[0]->r;
+        // The received 2b message's src is the sender that was added to received_2b_message_senders
+        assert(p.msg is RslMessage2b);
+        assert(p.src == sender);
+        lemma_FindIndexInSeq(c.config.replica_ids, p.src);
         let sender_idx = GetReplicaIndex(p.src, c.config);
 
         if p.msg->val_2b != s_prime.unexecuted_learner_state[opn].candidate_learned_value {

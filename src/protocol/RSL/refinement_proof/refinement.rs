@@ -1,3 +1,4 @@
+use crate::common::framework::environment_s::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::common_proof::actions::*;
 use crate::protocol::RSL::common_proof::assumptions::*;
@@ -10,6 +11,7 @@ use crate::protocol::RSL::common_proof::message2b::*;
 use crate::protocol::RSL::common_proof::packet_sending::*;
 use crate::protocol::RSL::common_proof::receive1b::*;
 use crate::protocol::RSL::common_proof::requests::*;
+use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::constants::*;
 use crate::protocol::RSL::distributed_system::*;
 use crate::protocol::RSL::election::*;
@@ -200,6 +202,10 @@ verus! {
                 0 <= batch_num < batches.len() &&
                 0 <= req_num < (if batch_num == batches.len() - 1 { 0 } else { batches[batch_num].len() })
                 && req == batches[batch_num][req_num];
+            // batch_num can't be batches.len()-1 (since reqs_in_last_batch=0), so batch_num < batches.len()-1
+            assert(batch_num < batches.len() - 1);
+            // batches[batch_num] == batches.drop_last()[batch_num]
+            assert(batches.drop_last()[batch_num] == batches[batch_num]);
             assert(rs.requests.contains(req));
         };
 
@@ -246,7 +252,18 @@ verus! {
 
         assert(rs_prime.replies == rs.replies);
         assert(rs_prime.server_addresses == rs.server_addresses);
-        assert(rs_prime.app == rs.app); /* fails*/
+        // rs.app = GetAppStateFromRequestBatches(batches) = HandleRequestBatch(prev_state, batches.last()).0.last()
+        // rs_prime.app = HandleRequestBatch(prev_state', batches.last()).0[batches.last().len()]
+        // where prev_state = GetAppStateFromRequestBatches(batches.drop_last())
+        //   and prev_state' = GetAppStateFromRequestBatches(batches.subrange(0, batches.len()-1))
+        // batches.drop_last() =~= batches.subrange(0, batches.len()-1), so prev_state == prev_state'
+        assert(batches.drop_last() =~= batches.subrange(0, batches.len() as int - 1));
+        let prev_state = GetAppStateFromRequestBatches(batches.drop_last());
+        let (app_states, app_replies) = HandleRequestBatchHidden(prev_state, batches.last());
+        lemma_HandleRequestBatchHidden(prev_state, batches.last(), app_states, app_replies);
+        assert(app_states.len() == batches.last().len() + 1);
+        assert(app_states.last() == app_states[batches.last().len() as int]);
+        assert(rs_prime.app == rs.app);
     }
 
     pub open spec fn ConvertBehaviorSeqToImap<T>(s:Seq<T>) -> Map<int, T>
@@ -294,8 +311,18 @@ verus! {
 
         if exists|q: QuorumOf2bs| IsValidQuorumOf2bs(b[0], q) && q.opn == 0 {
             let q = choose|q: QuorumOf2bs| IsValidQuorumOf2bs(b[0], q) && q.opn == 0;
-            let idx = choose|idx: int| q.indices.contains(idx);
+            assert(q.indices.len() >= LMinQuorumSize(b[0].constants.config));
+            assert(q.indices.len() > 0) by {
+                assert(WellFormedLConfiguration(b[0].constants.config));
+                assert(LMinQuorumSize(b[0].constants.config) >= 1);
+            };
+            let idx = choose|idx: int| #![trigger q.packets[idx]] q.indices.contains(idx);
             let packet = q.packets[idx];
+            // Initial state has empty sentPackets, but IsValidQuorumOf2bs requires sentPackets.contains(packet)
+            assert(b[0].environment.sentPackets.contains(packet));
+            assert(LEnvironment_Init(b[0].environment));
+            assert(b[0].environment.sentPackets.len() == 0);
+            b[0].environment.sentPackets.lemma_len0_is_empty();
             assert(false);
         }
 
@@ -380,6 +407,9 @@ verus! {
         }
 
         let s_middle = ProduceAbstractState(server_addresses, batches_prime.drop_last());
+        // batches_prime.drop_last().subrange(0, batches.len()) == batches because
+        // batches_prime.subrange(0, batches.len()) == batches and batches.len() < batches_prime.len()
+        assert(batches_prime.drop_last().subrange(0, batches.len() as int) =~= batches);
         let (intermediate_states_middle, batch_middle) =
             lemma_DemonstrateRslSystemNextWhenBatchesAdded(server_addresses, s, s_middle, batches, batches_prime.drop_last());
 
@@ -442,6 +472,10 @@ verus! {
 
         lemma_ProduceAbstractStateSatisfiesRefinementRelation(b, c, i, qs, high_level_behavior.last());
         assert(RslSystemRefinement(b[i], high_level_behavior.last()));
+        assert(high_level_behavior.last() == s_prime);
+        assert(IsMaximalQuorumOf2bsSequence(b[i], qs));
+        assert(s_prime == ProduceAbstractState(GetServerAddresses(b[i]), GetSequenceOfRequestBatches(qs)));
+        assert(SystemRefinementRelation(b[i], high_level_behavior.last()));
         high_level_behavior
     }
 

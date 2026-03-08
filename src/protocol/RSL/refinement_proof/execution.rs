@@ -158,11 +158,18 @@ verus! {
             return (qs_prime, batches_prime, batch_num_prime, req_num_prime);
         }
 
+        assert(LEnvironment_Next(b[i - 1].environment, b[i].environment));
         assert(b[i - 1].environment.nextStep is LEnvStepHostIos);
-        assert(b[i - 1].environment.nextStep->ios.contains(LIoOp::Send{s:p}));
-        let idx = GetReplicaIndex(b[i - 1].environment.nextStep->actor, c.config);
         let ios = b[i - 1].environment.nextStep->ios;
-        let idx_alt = choose |idx_alt: int| RslNextOneReplica(b[i - 1], b[i], idx_alt, ios);
+        assert(LEnvironment_PerformIos(b[i - 1].environment, b[i].environment, b[i - 1].environment.nextStep->actor, ios));
+        assert(b[i].environment.sentPackets =~= b[i - 1].environment.sentPackets.union(
+            ios.filter(|io: RslIo| io is Send).map_values(|io: RslIo| io->s).to_set()));
+        assert(ios.filter(|io: RslIo| io is Send).map_values(|io: RslIo| io->s).to_set().contains(p));
+        assert(ios.contains(LIoOp::Send{s:p}));
+        let idx = GetReplicaIndex(b[i - 1].environment.nextStep->actor, c.config);
+        let idx_alt = choose |idx_alt: int|
+            #![trigger RslNextOneReplica(b[i - 1], b[i], idx_alt, ios)]
+            RslNextOneReplica(b[i - 1], b[i], idx_alt, ios);
         assert(ReplicasDistinct(c.config.replica_ids, idx, idx_alt));
 
         let next_action_index = b[i - 1].replicas[idx].nextActionIndex;

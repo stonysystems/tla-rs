@@ -123,7 +123,7 @@ verus! {
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));
@@ -218,7 +218,7 @@ verus! {
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));
@@ -309,7 +309,7 @@ verus! {
 
             assert(e.nextStep is LEnvStepHostIos);
             assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-            assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
             assert(ios.contains(ios[0]) && ios[0] is Receive);
             assert(match_ios_recv(ios[0], e.sentPackets));
             assert(e.sentPackets.contains(ios[0]->r));
@@ -351,7 +351,7 @@ verus! {
 
             assert(e.nextStep is LEnvStepHostIos);
             assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-            assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
             assert(ios.contains(ios[0]) && ios[0] is Receive);
             assert(match_ios_recv(ios[0], e.sentPackets));
             assert(e.sentPackets.contains(ios[0]->r));
@@ -388,7 +388,7 @@ verus! {
 
             assert(e.nextStep is LEnvStepHostIos);
             assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-            assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
             assert(ios.contains(ios[0]) && ios[0] is Receive);
             assert(match_ios_recv(ios[0], e.sentPackets));
             assert(e.sentPackets.contains(ios[0]->r));
@@ -484,7 +484,7 @@ verus! {
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));
@@ -568,7 +568,7 @@ verus! {
 
                 assert(e.nextStep is LEnvStepHostIos);
                 assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-                assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+                assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
                 assert(ios.contains(ios[0]) && ios[0] is Receive);
                 assert(match_ios_recv(ios[0], e.sentPackets));
                 assert(e.sentPackets.contains(ios[0]->r));
@@ -611,7 +611,7 @@ verus! {
 
                 assert(e.nextStep is LEnvStepHostIos);
                 assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-                assert(forall |io| ios.contains(io) && match_ios_recv(io, e.sentPackets));
+                assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
                 assert(ios.contains(ios[0]) && ios[0] is Receive);
                 assert(match_ios_recv(ios[0], e.sentPackets));
                 assert(e.sentPackets.contains(ios[0]->r));

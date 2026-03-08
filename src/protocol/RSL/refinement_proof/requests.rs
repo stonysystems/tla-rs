@@ -1,3 +1,4 @@
+use crate::common::framework::environment_s::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::common_proof::actions::*;
 use crate::protocol::RSL::common_proof::assumptions::*;
@@ -74,9 +75,14 @@ verus! {
         if nextActionIndex == 0
         {
             let p = ios[0]->r;
-            assert(IsValidLIoOp(ios[0], c.config.replica_ids[idx], b[i-1].environment));
             // ios[0] is Receive (from nextActionIndex==0, LReplicaNextProcessPacket).
-            // IsValidLIoOp for Receive gives match_ios_recv → sentPackets.contains(p).
+            // sentPackets.contains(p) comes from LEnvironment_PerformIos via match_ios_recv.
+            assert(LEnvironment_Next(b[i-1].environment, b[i].environment));
+            assert(b[i-1].environment.nextStep is LEnvStepHostIos);
+            assert(LEnvironment_PerformIos(b[i-1].environment, b[i].environment, b[i-1].environment.nextStep->actor, ios));
+            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, b[i-1].environment.sentPackets));
+            assert(ios.contains(ios[0]));
+            assert(match_ios_recv(ios[0], b[i-1].environment.sentPackets));
             assert(b[i-1].environment.sentPackets.contains(p));
             lemma_PacketStaysInSentPackets(b, c, i-1, i, p);
             return p;
@@ -322,6 +328,7 @@ verus! {
     {
         lemma_ConstantsAllConsistent(b, c, i);
 
+        lemma_GetSequenceOfRequestBatches(qs);
         lemma_SequenceOfRequestBatchesNthElement(qs, batch_num);
         let batch = batches[batch_num];
         let request = batch[req_num];
