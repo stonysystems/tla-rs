@@ -49,7 +49,7 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 - **Phase 16.8 is not fully complete (reopened / partial)** — workspace artifact audit found missing `tla_test_workspace` outputs/folders (`transpiler_generated_verus_exec`, `llm_to_verus_spec`, `llm_to_verus_exec`, `community_to_verus_spec`, `community_to_verus_exec`), partial property/TLC coverage (`transpiler_generated_tla_with_properties` only covers 4 protocols), no checked-in TLC run logs under the workspace snapshot, and missing runtime validation (`30s`, `3 clients / 3 replicas`) for generated D2 exec outputs. See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
 
 **Next steps (priority order):**
-1. **Phase 34: Raft Network Model and Complete Refinement Proof** — network model added, 30+ invariants proved, 12 assumes remain (7 LC blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
+1. **Phase 34: Raft Network Model and Complete Refinement Proof** — network model added, 30+ invariants proved, 12 assumes remain (6 LC blocked on `d_rli ≤ k` wall requiring leader-term strong induction, 5 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
 2. **Phase 31: RSL Refinement Proof — fix compilation and verify** — `common_proof/` and `refinement_proof/` are currently commented out in `src/protocol/RSL/mod.rs` with 73 compilation errors. Fix missing function/type references, uncomment the modules, and confirm Verus verification passes. See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
 3. **Phase 33: Model checker hardening, protocol coverage, and performance** — after Phases 34 and 31, keep `docs/model_checker_status.md` fully up to date with capability/limitation audits, pass matrix, source/config pointers, and exact reproduction commands; then close evaluator/solver gaps, replace the current depth-1 smoke evidence with checked-in long-run benchmark configs for `TwoPhase` / `LeaderElection` / `PrimaryBackup` / `Paxos`, and add matched TLC-vs-source-first comparison evidence on translated TLA+ artifacts. See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance).
 4. **Phase 16.8 (reopened): Real-Protocol Cross-Direction + Model Checking Validation artifact completion** — close the audited gaps in `transpiler/tla_test_workspace/` (missing `*_verus_exec` / `*_to_verus_{spec,exec}` folders, incomplete `transpiler_generated_tla_with_properties` protocol coverage, missing checked-in TLC run evidence, and missing generated-D2 runtime checks with `30s` / `3 clients` / `3 replicas`). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
@@ -57,7 +57,7 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 6. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code` once higher-priority model-check work stops finding language gaps that change regeneration requirements.
 7. **Phase 20 cleanup** — finish the remaining auto-inference cleanup only after the model checker and artifact gaps above stop exposing new schema/config needs.
 
-**Active work**: 669 verified, 0 errors. **Phase 34** (Raft refinement proof — 12 assumes remain, 7 blocked on `d_rli ≤ k` wall requiring leader-term strong induction) is the top priority, followed by **Phase 31** (RSL refinement proof compile/verification repair), then **Phase 33** (model checker hardening + status discipline). See `reports/raft_refinement_proof.md` for detailed status.
+**Active work**: 669 verified, 0 errors. **Phase 34** (Raft refinement proof — 12 assumes remain, 6 blocked on `d_rli ≤ k` wall requiring leader-term strong induction, analysis complete) remaining tasks blocked on fundamental gap. **Phase 31** (RSL refinement proof compile/verification repair) is next actionable priority. See `reports/raft_refinement_proof.md` for detailed status.
 
 ## Reference
 
@@ -10231,16 +10231,16 @@ This is the hardest step. Estimated ~300-500 LOC.
               - **Recommendation**: Option D for now. Option A as future work if trusted base needs reduction.
             - [ ] **34.7.1.e.4.b.2.b.3.b**: ~~Resolve assume at line 2694~~ **DEFERRED** (blocked on fundamental gap). Requires leader-term induction (Option A) or ghost provenance to resolve. See 34.7.1.e.4.b.2.b.3.a analysis.
             - [ ] **34.7.1.e.4.b.2.b.3.c**: ~~Resolve assumes at lines 2718, 2732~~ **DEFERRED** (blocked on fundamental gap). Same root cause as 34.7.1.e.4.b.2.b.3.b.
-      - [ ] **34.7.1.e.4.b.3**: Remove all temporary assumptions from the unchanged-leader + fresh-step path and keep focused check `*leader_completeness*` passing.
-    - [ ] **34.7.1.e.4.c**: Discharge changed-leader obligations using overlap/provenance bridge helpers (`lemma_overlap_request_vote_params_witness`, `lemma_vote_grant_bridge_template_for_overlap_voter`) plus log relation/log matching transfer.
+      - [ ] **34.7.1.e.4.b.3**: ~~Remove all temporary assumptions from the unchanged-leader + fresh-step path~~ **BLOCKED** — depends on resolving the 6 `assume(false)` in the `d_rli ≤ k` wall (see 34.7.1.e.4.b.2.b.3.a analysis). No temporary `assume(LeaderCompleteness(...))` remains; all remaining assumes are the fundamental gap.
+    - [x] **34.7.1.e.4.c**: Discharge changed-leader obligations using overlap/provenance bridge helpers (`lemma_overlap_request_vote_params_witness`, `lemma_vote_grant_bridge_template_for_overlap_voter`) plus log relation/log matching transfer. All 3 sub-tasks (c.1, c.2, c.3) complete.
       - [x] **34.7.1.e.4.c.1**: Post-only committed + changed-leader case proved: `leader_id == stepping` by frame condition, so `ds_.server_states[leader_id].log[k] == entry` directly from the stepping witness.
       - [x] **34.7.1.e.4.c.2**: Pre-state committed + changed-leader case: extracted `lemma_leader_completeness_prestate_commit_changed_leader`. Sub-case "was already Leader" uses `LeaderCompleteness(ds)` + log preservation. Sub-case "was Candidate → became Leader" uses post-state votes_granted quorum intersection + `lemma_overlap_voter_entry_transfer` when overlap_voter is in pre-state votes_granted.
       - [x] **34.7.1.e.4.c.3**: Eliminated new-voter assume by extracting VoteResponse packet directly from `RaftDistributedNext` step. Since `overlap_voter` is not in pre-state `votes_granted` but is in post-state (`s_.votes_granted == s.votes_granted.insert(voter)`), it must be the voter from the processed VoteResponse. The packet is in `ds.network` (from `RaftActionProduces`), and `VoteResponseIntegrity(ds)` provides the `has_voted`/`voted_for` condition. Then `lemma_overlap_voter_entry_transfer` transfers the entry.
-    - [ ] **34.7.1.e.4.d**: Remove all temporary assumptions in `lemma_leader_completeness_inductive` and make focused check `*leader_completeness*` pass with no `assume(LeaderCompleteness(ds_))`.
+    - [x] **34.7.1.e.4.d**: Remove all temporary assumptions in `lemma_leader_completeness_inductive` and make focused check `*leader_completeness*` pass with no `assume(LeaderCompleteness(ds_))`. Done — `assume(LeaderCompleteness(ds_))` removed, proof body calls decomposed helper lemmas directly. Remaining 6 `assume(false)` are deep in call chain (all `d_rli ≤ k` wall, deferred per 34.7.1.e.4.b.2.b.3.a).
 
-- [ ] **34.7.2**: May need a supporting invariant `LeaderLogContainsCommitted(ds)` to strengthen the induction. Define if needed.
+- [x] **34.7.2**: ~~May need a supporting invariant `LeaderLogContainsCommitted(ds)`.~~ Not needed — `lemma_leader_completeness_inductive` works without it, using decomposed helper lemmas + ETHVQ infrastructure.
 
-- [ ] **34.7.3**: Remove `assume(LeaderCompleteness(ds_))` at invariants.rs:827.
+- [x] **34.7.3**: Remove `assume(LeaderCompleteness(ds_))` at invariants.rs:827. Done — no `assume(LeaderCompleteness)` remains. Proof in `lemma_leader_completeness_inductive` calls decomposed helper lemmas directly. Remaining 6 `assume(false)` are the fundamental `d_rli ≤ k` gap (see 34.7.1.e.4.b.2.b.3.a).
 
 ### 34.8 StateMachineSafety spec fix
 
@@ -10279,9 +10279,9 @@ This is the hardest step. Estimated ~300-500 LOC.
 ### 34.16 Completion gate
 
 - [ ] All 12 assumes eliminated (0 assumes in Raft refinement proof)
-  - [ ] 7 LC `assume(false)` resolved (requires leader-term strong induction or ghost provenance chain)
+  - [ ] 6 LC `assume(false)` resolved (requires leader-term strong induction — see 34.7.1.e.4.b.2.b.3.a analysis). All hit same `d_rli ≤ k` wall; behavioral step-induction can't express Raft paper's "smallest failing term" argument. DEFERRED.
   - [ ] 1 SMS assume resolved (requires LC)
-  - [x] 4 Z3 workaround assumes documented as sound (permanent until Z3/Verus improves Skolemization)
+  - [x] 5 Z3 workaround assumes documented as sound (permanent until Z3/Verus improves Skolemization)
 - [ ] Verus verification passes with 0 errors
 - [ ] No new `external_body` introduced (except `lemma_quorum_intersection` which already exists)
 - [ ] Update Phase 32 status and "What doesn't work yet" section to reflect completion
