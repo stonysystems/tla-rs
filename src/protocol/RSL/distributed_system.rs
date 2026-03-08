@@ -78,4 +78,35 @@ verus! {
         ||| (exists |eid:AbstractEndPoint, ios:Seq<RslIo>| RslNextOneExternal(ps, ps_, eid, ios))
         ||| RslNextEnvironment(ps, ps_)
     }
+
+    /// Given RslNext where the actor is a known replica, extract the replica index and ios.
+    /// This bridges the gap between the existential in RslNext (over both idx and ios)
+    /// and the concrete ios from ps.environment.nextStep.
+    pub proof fn lemma_RslNextOneReplicaFromEnv(ps:RslState, ps_:RslState)
+        -> (rc:(int, Seq<RslIo>))
+        requires
+            RslNext(ps, ps_),
+            ps.environment.nextStep is LEnvStepHostIos,
+            ps.constants.config.replica_ids.contains(ps.environment.nextStep->actor),
+        ensures
+            ({
+                let idx = rc.0;
+                let ios = rc.1;
+                &&& RslNextOneReplica(ps, ps_, idx, ios)
+                &&& ios == ps.environment.nextStep->ios
+                &&& 0 <= idx < ps.constants.config.replica_ids.len()
+                &&& ps.constants.config.replica_ids[idx] == ps.environment.nextStep->actor
+            }),
+    {
+        // RslNextEnvironment requires !(nextStep is LEnvStepHostIos) — contradiction.
+        // RslNextOneExternal requires !replica_ids.contains(actor) — contradiction since actor is a replica.
+        // So exists |idx, ios| RslNextOneReplica(ps, ps_, idx, ios).
+        let pair: (int, Seq<RslIo>) = choose |idx:int, ios:Seq<RslIo>|
+            #![trigger RslNextOneReplica(ps, ps_, idx, ios)]
+            RslNextOneReplica(ps, ps_, idx, ios);
+        // From RslNextOneReplica: nextStep == LEnvStepHostIos{actor:replica_ids[pair.0], ios:pair.1}
+        // So pair.1 == ps.environment.nextStep->ios.
+        assert(RslNextOneReplica(ps, ps_, pair.0, pair.1));
+        pair
+    }
 }

@@ -166,6 +166,39 @@ verus! {
           }
       }
 
+      /// If a packet appears in the new sentPackets but not the old ones,
+      /// and LEnvironment_PerformIos holds, then the ios must contain Send{s:pkt}.
+      pub proof fn lemma_new_packet_in_ios<IdType, MessageType>(
+          e: LEnvironment<IdType, MessageType>,
+          e_: LEnvironment<IdType, MessageType>,
+          actor: IdType,
+          ios: Seq<LIoOp<IdType, MessageType>>,
+          pkt: LPacket<IdType, MessageType>,
+      )
+          requires
+              LEnvironment_PerformIos(e, e_, actor, ios),
+              e_.sentPackets.contains(pkt),
+              !e.sentPackets.contains(pkt),
+          ensures
+              ios.contains(LIoOp::Send{s:pkt}),
+      {
+          broadcast use vstd::seq_lib::group_filter_ensures;
+          let pred = |io: LIoOp<IdType, MessageType>| io is Send;
+          let ext = |io: LIoOp<IdType, MessageType>| io->s;
+          let filtered = ios.filter(pred);
+          let mapped = filtered.map_values(ext);
+          // pkt is in e_.sentPackets but not e.sentPackets, so it must be in the new sends
+          assert(mapped.to_set().contains(pkt));
+          assert(mapped.contains(pkt));
+          let j = choose |j: int| 0 <= j < mapped.len() && mapped[j] == pkt;
+          let io_elem = filtered[j];
+          // filter_pred broadcast: filtered[j] satisfies the predicate
+          assert(io_elem is Send);
+          assert(io_elem->s == pkt);
+          // filter_contains_rev: filtered element is in original sequence
+          ios.lemma_filter_contains_rev(pred, io_elem);
+      }
+
       // #[verifier(opaque)] -> can't make it opaque for the proof to work???
       pub open spec fn EnvironmentNextTemporal<IdType,MessageType>(b:Behavior<LEnvironment<IdType, MessageType>>) -> temporal
       {
