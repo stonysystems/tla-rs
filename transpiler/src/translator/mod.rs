@@ -26625,7 +26625,7 @@ mod tests {
 
     #[test]
     fn test_inline_expansion_config_serde_roundtrip() {
-        use crate::config::{ExecCallStrategy, InlineExpansionConfig, TranspilerConfig};
+        use crate::config::{ExecCallStrategy, TranspilerConfig};
 
         let toml_str = r#"
 [inline_expansions.LeqUpperBound]

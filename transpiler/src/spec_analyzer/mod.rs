@@ -1264,7 +1264,7 @@ mod tests {
     use super::*;
     use crate::annotation::AnnotationParser;
     use crate::ast::{Generics, Path as AstPath, Type};
-    use crate::types::{ParamSig, TypeParser};
+    use crate::types::TypeParser;
     use std::fs;
     use tempfile::tempdir;
 
@@ -2118,7 +2118,7 @@ verus! {
             ("EPaxos", "types.rs", "epaxos.rs"),
         ];
 
-        let mut all_ok = true;
+        let _all_ok = true;
         for (name, types_file, proto_file) in &protocols {
             let types_path =
                 std::path::PathBuf::from(format!("../src/protocol/{}/{}", name, types_file));
@@ -3185,7 +3185,7 @@ verus! {
 
     /// Validate that auto-inferred remapping covers the existing TOML's remapping.
     /// Returns (covered, missing) where missing are TOML entries not auto-derived.
-    fn check_remapping_coverage(
+    fn _check_remapping_coverage(
         inferred: &TranspilerConfig,
         toml: &TranspilerConfig,
     ) -> (usize, Vec<String>) {
@@ -3206,7 +3206,7 @@ verus! {
     }
 
     /// Validate that auto-inferred collection_fields covers the TOML's.
-    fn check_vec_coverage(inferred: &[String], toml: &[String]) -> (usize, Vec<String>) {
+    fn _check_vec_coverage(inferred: &[String], toml: &[String]) -> (usize, Vec<String>) {
         let mut covered = 0;
         let mut missing = Vec::new();
         for f in toml {

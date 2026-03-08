@@ -2332,8 +2332,6 @@ fn test_replica_process1b_is_implemented() {
 /// when they are removed from skip_functions.
 #[test]
 fn test_election_recursive_functions_generate_loop_code() {
-    use std::io::Write;
-
     // Read the election spec and automan files
     let spec_path = "../src/protocol/RSL/election.rs";
     let automan_path = "../src/protocol/RSL/election.automan";

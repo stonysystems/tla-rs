@@ -4135,7 +4135,7 @@ mod tests {
     fn test_generate_external_body_stub_non_predicate_no_spec_ensures() {
         // A spec function that returns Seq<T> (not bool) should NOT get
         // SpecFn(args...) in ensures — it's not a predicate.
-        use crate::ast::{ParameterMode, Path, Type};
+        use crate::ast::{Path, Type};
 
         let config = TranspilerConfig::default();
         let transpiler = Transpiler::new(config);
@@ -4217,7 +4217,7 @@ mod tests {
     fn test_no_stub_functions_suppresses_stub_in_proof_fallback() {
         // When a function is in both skip_functions and no_stub_functions,
         // proof_fallback mode should NOT generate a stub for it.
-        use crate::ast::{ParameterMode, Path, Type};
+        use crate::ast::{ParameterMode, Type};
 
         let config = TranspilerConfig {
             proof_fallback: true,
