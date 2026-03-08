@@ -1874,6 +1874,15 @@ impl<'a> VerusBlockParser<'a> {
                     break;
                 }
 
+                // Handle `..` rest pattern (skip remaining fields)
+                if self.peek_str(2) == Some("..") {
+                    self.pos += 2;
+                    self.skip_whitespace();
+                    // Optional trailing comma after ..
+                    self.try_consume(",");
+                    break;
+                }
+
                 let field_name = self.parse_identifier()?;
                 self.skip_whitespace();
 
@@ -2178,14 +2187,43 @@ impl<'a> VerusBlockParser<'a> {
         }
     }
 
-    /// Skip whitespace
+    /// Skip whitespace and comments (both // and /* */)
     fn skip_whitespace(&mut self) {
-        while let Some(c) = self.peek() {
-            if c.is_whitespace() {
-                self.advance();
-            } else {
-                break;
+        loop {
+            // Skip pure whitespace
+            while let Some(c) = self.peek() {
+                if c.is_whitespace() {
+                    self.advance();
+                } else {
+                    break;
+                }
             }
+
+            // Skip line comments
+            if self.peek_str(2) == Some("//") {
+                self.skip_until_pattern("\n");
+                continue;
+            }
+
+            // Skip block comments
+            if self.peek_str(2) == Some("/*") {
+                self.advance();
+                self.advance();
+                let mut depth = 1;
+                while depth > 0 && self.pos < self.content.len() {
+                    if self.peek_str(2) == Some("/*") {
+                        depth += 1;
+                        self.advance();
+                    } else if self.peek_str(2) == Some("*/") {
+                        depth -= 1;
+                        self.advance();
+                    }
+                    self.advance();
+                }
+                continue;
+            }
+
+            break;
         }
     }
 
