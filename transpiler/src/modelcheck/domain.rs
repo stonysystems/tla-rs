@@ -1015,6 +1015,7 @@ mod tests {
                 state_dedup: crate::modelcheck::config::StateDedupMode::Canonical,
                 symmetry_fields: Vec::new(),
                 por_heuristic: crate::modelcheck::config::PorHeuristic::None,
+                candidate_eval_guardrail: 10_000,
             },
             ..Default::default()
         }

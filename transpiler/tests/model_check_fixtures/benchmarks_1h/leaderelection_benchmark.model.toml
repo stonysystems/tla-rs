@@ -1,0 +1,48 @@
+# LeaderElection long-run benchmark config.
+#
+# BLOCKED: With 1 node, the state space exhausts at 5 states in <2 seconds.
+# With 2+ nodes, the candidate enumeration cannot find valid next-state
+# transitions (evaluates 880K candidates in 76s with no hits).
+# The source-first model checker needs constraint-aware successor computation
+# (not brute-force candidate enumeration) before this protocol can produce
+# a meaningful long-run benchmark.
+#
+# This config uses the target 3-node model for documentation purposes.
+# It will hit the enumeration guardrail or time out without progress.
+#
+# Historical TLC reference: 3 nodes → 100,636 states, 9,337 distinct,
+# 18 depth, 2s.
+
+[constants.assignments]
+num_nodes = 0
+
+[constants.domains.nodes]
+kind = "values"
+values = ["set:{int:0,int:1,int:2}"]
+
+[quantifiers.int]
+min = 0
+max = 2
+
+[quantifiers.types.LElectionMessage]
+kind = "enum_subset"
+variants = ["Election", "Answer", "Coordinator"]
+
+[collections]
+max_seq_len = 3
+max_set_len = 3
+
+[search]
+max_depth = 100
+max_states = 10000000
+timeout_ms = 3600000
+candidate_eval_guardrail = 100000000
+
+[properties]
+invariants = [
+  "LSafetyElectingSubsetAlive",
+  "LSafetyWaitingNodeAliveWhenWaiting",
+  "LSafetyNoWaitingImpliesClearedWaitingNode",
+]
+check_deadlock = false
+successor_semantics = "deadlock"

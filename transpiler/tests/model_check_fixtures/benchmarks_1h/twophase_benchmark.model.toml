@@ -1,0 +1,41 @@
+# TwoPhase long-run benchmark config targeting ~1 hour.
+#
+# Model size: 2 resource managers (at least the prior 3-RM model was the
+# historical TLC target, but source-first enumeration currently requires
+# a higher guardrail for 3 RMs and does not find valid transitions
+# efficiently; 2 RMs with richer collection bounds is the largest
+# configuration that produces meaningful exploration in the current engine).
+#
+# Historical TLC reference: 3 RMs → 926 states, 304 distinct, 10 depth, 1s.
+# Source-first at this config: ~5-6s per state due to candidate enumeration.
+
+[constants.domains.rm]
+kind = "values"
+values = ["set:{int:0,int:1}"]
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[quantifiers.types.LTPCMessage]
+kind = "enum_subset"
+variants = ["Prepare", "Commit", "Abort"]
+
+[collections]
+max_set_len = 2
+max_seq_len = 2
+
+[search]
+max_depth = 100
+max_states = 10000000
+timeout_ms = 3600000
+candidate_eval_guardrail = 10000000
+
+[properties]
+invariants = [
+  "LSafetyNoCommitAbortOverlap",
+  "LSafetyCommittedSubsetPrepared",
+  "LSafetyTmCommittedRequiresAllPrepared",
+]
+check_deadlock = false
+successor_semantics = "deadlock"

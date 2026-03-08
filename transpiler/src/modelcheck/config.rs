@@ -79,6 +79,15 @@ pub struct SearchLimits {
     /// Partial-order-reduction heuristic mode.
     #[serde(default)]
     pub por_heuristic: PorHeuristic,
+    /// Per-state/branch candidate evaluation guardrail.
+    ///
+    /// When the solver falls back to brute-force candidate enumeration for a
+    /// predicate-only branch, this limits how many candidates are evaluated
+    /// before aborting with a configuration error.  Increase for benchmarks
+    /// with larger domains where enumeration is expected; decrease for fast
+    /// smoke tests that should fail early on blowup.
+    #[serde(default = "default_candidate_eval_guardrail")]
+    pub candidate_eval_guardrail: usize,
 }
 
 impl Default for SearchLimits {
@@ -90,6 +99,7 @@ impl Default for SearchLimits {
             state_dedup: StateDedupMode::Canonical,
             symmetry_fields: Vec::new(),
             por_heuristic: PorHeuristic::None,
+            candidate_eval_guardrail: default_candidate_eval_guardrail(),
         }
     }
 }
@@ -214,6 +224,7 @@ pub struct ModelConfigOverrides {
     pub max_map_len: Option<usize>,
     pub int_range: Option<IntDomain>,
     pub nat_max: Option<u64>,
+    pub candidate_eval_guardrail: Option<usize>,
 }
 
 /// Parse an `int` range override from `MIN..MAX` or `MIN:MAX` syntax.
@@ -293,6 +304,9 @@ pub fn apply_model_config_overrides(
     }
     if let Some(nat_max) = overrides.nat_max {
         config.quantifiers.nat = Some(NatDomain { max: nat_max });
+    }
+    if let Some(candidate_eval_guardrail) = overrides.candidate_eval_guardrail {
+        config.search.candidate_eval_guardrail = candidate_eval_guardrail;
     }
 
     validate_model_config(config)
@@ -377,11 +391,13 @@ pub fn validate_model_config(config: &ModelConfig) -> TranspileResult<()> {
     if config.search.max_depth == 0
         || config.search.max_states == 0
         || config.search.timeout_ms == 0
+        || config.search.candidate_eval_guardrail == 0
     {
         return Err(TranspileError::Config {
             message: format!(
-                "Invalid model.toml: search limits must be > 0 (got max_depth={}, max_states={}, timeout_ms={}).",
-                config.search.max_depth, config.search.max_states, config.search.timeout_ms
+                "Invalid model.toml: search limits must be > 0 (got max_depth={}, max_states={}, timeout_ms={}, candidate_eval_guardrail={}).",
+                config.search.max_depth, config.search.max_states, config.search.timeout_ms,
+                config.search.candidate_eval_guardrail
             ),
         });
     }
@@ -605,6 +621,9 @@ const fn default_max_states() -> usize {
 }
 const fn default_timeout_ms() -> u64 {
     30_000
+}
+const fn default_candidate_eval_guardrail() -> usize {
+    10_000
 }
 
 #[cfg(test)]
@@ -980,6 +999,7 @@ max_map_len = 2
             max_map_len: Some(6),
             int_range: Some(IntDomain { min: -1, max: 7 }),
             nat_max: Some(9),
+            candidate_eval_guardrail: None,
         };
 
         apply_model_config_overrides(&mut config, &overrides).unwrap();

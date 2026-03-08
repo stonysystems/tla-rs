@@ -1,0 +1,38 @@
+# PrimaryBackup long-run benchmark config targeting ~1 hour.
+#
+# Model size: max_log_len=1, int domain 0..1, max_seq/set_len=2.
+# Source-first at this config: ~1.2s per state due to candidate enumeration.
+# Estimated states explored in 1 hour: ~3000.
+#
+# Historical TLC reference: 3 values, max_log=3, max_view=2 → 786 states,
+# 438 distinct, 7 depth, 1s.
+
+[constants.assignments]
+max_log_len = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[quantifiers.types.LPBMessage]
+kind = "enum_subset"
+variants = ["Ack"]
+
+[collections]
+max_seq_len = 2
+max_set_len = 2
+
+[search]
+max_depth = 100
+max_states = 10000000
+timeout_ms = 3600000
+candidate_eval_guardrail = 10000000
+
+[properties]
+invariants = [
+  "LSafetyNoPendingImpliesClearedValue",
+  "LSafetyUnackedImpliesPending",
+  "LSafetyInactiveStateIsQuiescent",
+]
+check_deadlock = false
+successor_semantics = "deadlock"

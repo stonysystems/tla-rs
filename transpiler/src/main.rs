@@ -179,6 +179,10 @@ enum Commands {
         /// Override [quantifiers.nat].max
         #[arg(long)]
         nat_max: Option<u64>,
+
+        /// Override [search].candidate_eval_guardrail
+        #[arg(long)]
+        candidate_eval_guardrail: Option<usize>,
     },
 
     /// Run source-first model checking for one protocol spec.
@@ -3407,7 +3411,7 @@ fn execute_model_check(
     };
     use verus_transpiler::modelcheck::value::RuntimeCollectionBounds;
 
-    const CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH: usize = 10_000;
+    let candidate_eval_guardrail = model_config.search.candidate_eval_guardrail;
 
     let started = Instant::now();
 
@@ -3445,7 +3449,7 @@ fn execute_model_check(
         enumeration_fallback_branch_solves: 0,
         enumeration_candidate_evaluations: 0,
         guard_pruned_candidate_evaluations: 0,
-        candidate_evaluation_guardrail_per_state_branch: CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
+        candidate_evaluation_guardrail_per_state_branch: candidate_eval_guardrail,
         successor_cache_hits: 0,
         successor_cache_misses: 0,
     };
@@ -3541,7 +3545,7 @@ fn execute_model_check(
             enumeration_candidate_evaluations: 0,
             guard_pruned_candidate_evaluations: 0,
             candidate_evaluation_guardrail_per_state_branch:
-                CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH,
+                candidate_eval_guardrail,
             successor_cache_hits: 0,
             successor_cache_misses: 0,
         };
@@ -3643,7 +3647,7 @@ fn execute_model_check(
                         Some(constants_value),
                         branch_assignments,
                         Some(run_state_candidates.as_ref()),
-                        Some(CANDIDATE_EVAL_GUARDRAIL_PER_STATE_BRANCH),
+                        Some(candidate_eval_guardrail),
                         bounds,
                         SolverHooks {
                             call_evaluator: Some(&call_evaluator),
@@ -4009,6 +4013,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             max_map_len,
             int_range,
             nat_max,
+            candidate_eval_guardrail,
         } => {
             use verus_transpiler::modelcheck::config::{
                 apply_model_config_overrides, parse_int_range_override, parse_model_config_file,
@@ -4036,6 +4041,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 max_map_len: *max_map_len,
                 int_range: parsed_int_range,
                 nat_max: *nat_max,
+                candidate_eval_guardrail: *candidate_eval_guardrail,
             };
             apply_model_config_overrides(&mut config, &overrides)
                 .map_err(|e| miette::miette!("{}", e))?;
@@ -5845,6 +5851,7 @@ Next(s, s_, c) ==
                 max_map_len,
                 int_range,
                 nat_max,
+                candidate_eval_guardrail,
             }) => {
                 assert_eq!(model, PathBuf::from("model.toml"));
                 assert_eq!(max_depth, Some(40));
@@ -5854,6 +5861,7 @@ Next(s, s_, c) ==
                 assert_eq!(max_set_len, Some(6));
                 assert_eq!(max_map_len, Some(10));
                 assert_eq!(int_range, Some("-2..5".to_string()));
+                assert_eq!(candidate_eval_guardrail, None);
                 assert_eq!(nat_max, Some(12));
             }
             _ => panic!("Expected ModelConfig command"),
@@ -5876,6 +5884,7 @@ Next(s, s_, c) ==
             max_map_len: None,
             int_range: Some("oops".to_string()),
             nat_max: None,
+            candidate_eval_guardrail: None,
         };
         let cli = Cli {
             command: None,

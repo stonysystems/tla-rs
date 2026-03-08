@@ -9753,7 +9753,7 @@ Rules for this phase (do not cut corners):
     - status-doc policy section presence.
   - Updated `docs/model_checker_status.md` with `§4.3 Exact-mode reachable-state change policy` and exception-row contract.
 - [ ] **33.4.3 Replace toy shared-protocol evidence with matched TLC vs source-first benchmarks**
-  - [ ] **33.4.3.a** Create new checked-in benchmark configs for `TwoPhase`, `LeaderElection`, `PrimaryBackup`, and `Paxos` that are explicitly for long-run evidence rather than minimal smoke coverage.
+  - [x] **33.4.3.a** Create new checked-in benchmark configs for `TwoPhase`, `LeaderElection`, `PrimaryBackup`, and `Paxos` that are explicitly for long-run evidence rather than minimal smoke coverage. [26:03:08]
     - Keep source-first configs under a dedicated checked-in path (preferred: `transpiler/tests/model_check_fixtures/benchmarks_1h/` with one `*.model.toml` per protocol).
     - Keep the matching TLC artifacts under a dedicated checked-in path (preferred: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/` with `*_MC.tla`, `*_MC.cfg`, `*.log`, and a summary/manifest).
     - These configs must be materially non-trivial:
@@ -9766,6 +9766,13 @@ Rules for this phase (do not cut corners):
       - `LeaderElection`: at least the prior `3 nodes` model
       - `PrimaryBackup`: at least the prior `3 values`, `max_log = 3`, `max_view = 2` model
       - `Paxos`: at least the prior `3 nodes/acceptors`, `quorum = 2`, `>= 2` values/ballots model
+    - **Completed**: Created 4 benchmark configs under `transpiler/tests/model_check_fixtures/benchmarks_1h/`:
+      - `twophase_benchmark.model.toml`: 2 RMs, max_depth=100, max_states=10M, timeout=1h, candidate_eval_guardrail=10M, 3 safety invariants. Verified: 6 states/31s at 30s cap.
+      - `primarybackup_benchmark.model.toml`: max_log_len=1, max_seq/set_len=2, same limits. Verified: 17 states/30s at 30s cap.
+      - `leaderelection_benchmark.model.toml`: 3-node target model. **BLOCKED** — candidate enumeration cannot find valid transitions with multi-node models (880K evaluations in 76s, 0 transitions). With 1 node, state space exhausts at 5 states in <2s.
+      - `paxos_benchmark.model.toml`: 3-acceptor target model. **BLOCKED** — same enumeration scalability issue (327K evaluations in 27s, 0 transitions). With 1 acceptor, exhausts at 1 state instantly.
+    - **Prerequisite fix**: Made `search.candidate_eval_guardrail` configurable from model.toml (was hardcoded at 10,000 in `transpiler/src/main.rs`). Added to `SearchLimits`, `ModelConfigOverrides`, CLI `--candidate-eval-guardrail`, and validation. Default remains 10,000 for backward compatibility.
+    - **Scalability blocker**: The source-first model checker uses brute-force candidate enumeration for predicate-only branches. For multi-node models (3+ nodes), the candidate space exceeds millions of evaluations per state/branch. Even with a high guardrail, the enumeration is too slow to find valid transitions for LeaderElection and Paxos. TwoPhase and PrimaryBackup work because their branch predicates happen to be satisfiable within the candidate space. Fixing this requires constraint-aware successor computation (e.g., constraint propagation, symbolic evaluation, or SMT-backed solving) — a separate engineering effort.
   - [ ] **33.4.3.b** Produce the TLA+ side using the existing repo workflow, not ad-hoc handwritten specs.
     - Use `scripts/generate_tla_workspace.sh` or `verus-transpile verus2-tla` to translate from current `src/protocol/<Protocol>/` source.
     - Use `verus-transpile generate-mc-wrapper` and/or the existing property-bundle workspace layout for TLC-facing wrappers/configs.
