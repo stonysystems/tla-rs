@@ -12,7 +12,7 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 ## Current Status (2026-03-06)
 
 ✅ **669 verified, 0 errors**. Raft refinement proof: 6 files (~12,000 LOC in state_machine.rs, invariants.rs, induction.rs, committed.rs, message_invariants.rs, refinement.rs), 30+ invariants proved, 12 assumes in invariants.rs (7 LC `assume(false)` blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. 24 inductive lemma requires narrowed to minimal sub-invariants. 10 packet-identity assumes remain in RSL (irreducible IO trust boundary).
-Most transpiler/proof phases are now in good shape. The largest remaining product gap is the native tla-rs model checker: the source-first engine exists and already supports bounded safety/liveness checking, but protocol coverage, evaluator completeness, and checked-in performance evidence are still incomplete. Current model-check status is tracked in `docs/model_checker_status.md` and the follow-on work is now the top-priority phase below.
+Most transpiler/proof phases are now in good shape. The largest remaining product gap is the native tla-rs model checker: the source-first engine exists and already supports bounded safety/liveness checking, but protocol coverage, evaluator completeness, and checked-in performance evidence are still incomplete. Current model-check status is tracked in `docs/model_checker_status.md` and the follow-on work remains a major phase below, but it now sits behind Phases 34 and 31 in the active priority order.
 
 **What works:**
 - TLA+ → Verus spec transpilation (Phase 9): ✅ Complete
@@ -32,7 +32,7 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 - Phase 17.5 COMPLETE: All 9 non-RSL protocols have runnable implementations (message.rs, host.rs, service entry points)
 - Phase 17.6 COMPLETE: Unified C# runtime (IronProtocolServer with protocol=<name> dispatch via protocol_main_wrapper FFI)
 - Protocol examples: RSL, TwoPhase, Single-Decree Paxos, Bully Leader Election, Raft Consensus, Chain Replication, Primary-Backup, PBFT, Vertical Paxos, EPaxos
-- Phase 22 model checker baseline: ✅ COMPLETE — source-first `verus-transpile model-check` supports BFS/DFS, invariant/deadlock checking, counterexample traces, wrapper generation, symmetry/hash/POR reductions, and bounded `leads_to`/fairness; checked-in bounded source-first runs exist for TwoPhase, LeaderElection, PrimaryBackup, and Paxos
+- Phase 22 model checker baseline: ✅ COMPLETE — source-first `verus-transpile model-check` supports BFS/DFS, invariant/deadlock checking, counterexample traces, wrapper generation, symmetry/hash/POR reductions, and bounded `leads_to`/fairness; checked-in bounded source-first smoke runs exist for TwoPhase, LeaderElection, PrimaryBackup, and Paxos
 - Documentation: transpiler config reference, proof patterns, regeneration scripts
 - Type generator: correct View impl for Set<int>/Seq<int>/Seq<NamedType> with `.map()` conversion; clone_strategy for HashSet-containing structs
 - 145 transpiler integration tests pass (including 10 verifying generated module public APIs, 1 verus2tla roundtrip for all 7 protocols, 10 D4 pipeline regression tests, 9 message generation per-protocol tests, 9 marshalling round-trip tests, 10 LNext scheduler analysis tests, 3 action classification tests, 9 scaffold structure tests, 9 host-init compilation tests, 15 scheduler generation tests [2 TOML roundtrip, 1 exact counts, 1 consistency, 1 message_variant validity, 1 heuristic coverage, 9 scaffold compilation], 2 impl file dead code stripping tests)
@@ -43,19 +43,21 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 - **Native model checker is still partial** — evaluator/solver gaps remain for general quantifiers, `match`, struct updates, bitwise/shift ops, non-identifier `let` patterns, broader casts, generic-domain expansion, and multi-valuation `LConstants`. See `docs/model_checker_status.md` for the current blocker list and evidence rules.
 - **Consensus protocol source-first coverage is incomplete** — only TwoPhase, LeaderElection, PrimaryBackup, and Paxos currently have checked-in bounded source-first runs. ChainReplication, Raft, VerticalPaxos, PBFT, EPaxos, and RSL still need checked-in source-first status, blockers, and automation.
+- **The current "green" source-first evidence for TwoPhase / LeaderElection / PrimaryBackup / Paxos is still too small to be convincing** — the checked-in fixtures are depth-1 / `max_states = 200` smoke models, which are acceptable for minimal regression coverage but unacceptable as final protocol-support or performance evidence. We still need checked-in long-run exact-mode benchmark configs (target about 1 hour on the benchmark machine) and artifacts for these four protocols.
 - **Model-check performance work is incomplete** — reductions exist, but there is no checked-in before/after benchmark discipline for exact-mode optimizations, and predicate-only helper branches still risk expensive candidate-state enumeration.
+- **There is no apples-to-apples tla-rs vs TLA+ model-check benchmark yet** — for the four shared protocols (`TwoPhase`, `LeaderElection`, `PrimaryBackup`, `Paxos`) we still need matched finite models, matched invariants, matched wall-clock budgets, checked-in translated TLA+ artifacts, TLC logs, and side-by-side state/time comparisons.
 - **Phase 16.8 is not fully complete (reopened / partial)** — workspace artifact audit found missing `tla_test_workspace` outputs/folders (`transpiler_generated_verus_exec`, `llm_to_verus_spec`, `llm_to_verus_exec`, `community_to_verus_spec`, `community_to_verus_exec`), partial property/TLC coverage (`transpiler_generated_tla_with_properties` only covers 4 protocols), no checked-in TLC run logs under the workspace snapshot, and missing runtime validation (`30s`, `3 clients / 3 replicas`) for generated D2 exec outputs. See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
 
 **Next steps (priority order):**
-1. **Phase 33: Model checker hardening, protocol coverage, and performance** — this is now the top queue. First deliverable is keeping `docs/model_checker_status.md` fully up to date with capability/limitation audits, pass matrix, source/config pointers, and exact reproduction commands; then close evaluator/solver gaps and expand protocol coverage with measured exact-mode evidence. See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority).
-2. **Phase 34: Raft Network Model and Complete Refinement Proof** — network model added, 30+ invariants proved, 12 assumes remain (7 LC blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
-3. **Phase 31: RSL Refinement Proof — fix compilation and verify** — `common_proof/` and `refinement_proof/` are currently commented out in `src/protocol/RSL/mod.rs` with 73 compilation errors. Fix missing function/type references, uncomment the modules, and confirm Verus verification passes. See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
+1. **Phase 34: Raft Network Model and Complete Refinement Proof** — network model added, 30+ invariants proved, 12 assumes remain (7 LC blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
+2. **Phase 31: RSL Refinement Proof — fix compilation and verify** — `common_proof/` and `refinement_proof/` are currently commented out in `src/protocol/RSL/mod.rs` with 73 compilation errors. Fix missing function/type references, uncomment the modules, and confirm Verus verification passes. See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
+3. **Phase 33: Model checker hardening, protocol coverage, and performance** — after Phases 34 and 31, keep `docs/model_checker_status.md` fully up to date with capability/limitation audits, pass matrix, source/config pointers, and exact reproduction commands; then close evaluator/solver gaps, replace the current depth-1 smoke evidence with checked-in long-run benchmark configs for `TwoPhase` / `LeaderElection` / `PrimaryBackup` / `Paxos`, and add matched TLC-vs-source-first comparison evidence on translated TLA+ artifacts. See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance).
 4. **Phase 16.8 (reopened): Real-Protocol Cross-Direction + Model Checking Validation artifact completion** — close the audited gaps in `transpiler/tla_test_workspace/` (missing `*_verus_exec` / `*_to_verus_{spec,exec}` folders, incomplete `transpiler_generated_tla_with_properties` protocol coverage, missing checked-in TLC run evidence, and missing generated-D2 runtime checks with `30s` / `3 clients` / `3 replicas`). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--partial-reopened).
 5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation. This remains useful, but it is now below model-checker work.
 6. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code` once higher-priority model-check work stops finding language gaps that change regeneration requirements.
 7. **Phase 20 cleanup** — finish the remaining auto-inference cleanup only after the model checker and artifact gaps above stop exposing new schema/config needs.
 
-**Active work**: 669 verified, 0 errors. **Phase 33** (model checker hardening + status discipline) is the top priority, followed by **Phase 34** (Raft refinement proof — 12 assumes remain, 7 blocked on `d_rli ≤ k` wall requiring leader-term strong induction). See `reports/raft_refinement_proof.md` for detailed status.
+**Active work**: 669 verified, 0 errors. **Phase 34** (Raft refinement proof — 12 assumes remain, 7 blocked on `d_rli ≤ k` wall requiring leader-term strong induction) is the top priority, followed by **Phase 31** (RSL refinement proof compile/verification repair), then **Phase 33** (model checker hardening + status discipline). See `reports/raft_refinement_proof.md` for detailed status.
 
 ## Reference
 
@@ -89,7 +91,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 22. [Phase 28: Text-to-TLA+ Survey (Related Work and Evaluation)](#phase-28-text-to-tla-survey-related-work-and-evaluation)
 23. [Phase 29: Transpiler Support for Spec Helper Functions and Composite Action Generation](#phase-29-transpiler-support-for-spec-helper-functions-and-composite-action-generation)
 24. [Phase 32: Raft Safety Refinement Proof](#phase-32-raft-safety-refinement-proof)
-25. [Phase 33: Model Checker Hardening, Protocol Coverage, and Performance](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority)
+25. [Phase 33: Model Checker Hardening, Protocol Coverage, and Performance](#phase-33-model-checker-hardening-protocol-coverage-and-performance)
 26. [Phase 34: Raft Network Model and Complete Refinement Proof — TOP PRIORITY](#phase-34-raft-network-model-and-complete-refinement-proof)
 
 ---
@@ -5236,6 +5238,15 @@ transpiler/tla_test_workspace/
 - ChainReplication: renamed `Head`/`Tail` → `HeadRole`/`TailRole` (conflict with Sequences module builtins)
 - VerticalPaxos: replaced 2 overly-strong invariants found by TLC counterexamples (BallotOrdering → BallotNonNeg, CommittedImpliesVoted → VotedImpliesPositiveBallot)
 
+**Important scope note (do not cut corners):**
+- The TLC evidence in `16.8.2` is historical D3-workspace validation, not the Phase 33 apples-to-apples benchmark campaign.
+- Do **not** use `16.8.2` alone to claim tla-rs vs TLA+ performance comparison is complete for `TwoPhase`, `LeaderElection`, `PrimaryBackup`, or `Paxos`.
+- The missing work is still to:
+  - translate those four protocols from current tla-rs source with the existing repo tools,
+  - update the translated TLA+ invariant bundles so they match the source-first safety checks,
+  - keep checked-in non-toy benchmark configs,
+  - and compare TLC vs source-first on the same finite model and same wall-clock budget.
+
 #### 16.8.3: D1 on real generated TLA+ (TLA+ -> Verus Spec)
 
 - [x] Input: `transpiler/tla_test_workspace/transpiler_generated_tla/`
@@ -7079,7 +7090,7 @@ The verified function count may drop from 583 to ~540-560 as hidden assumes beco
 
 ## Phase 22: Native Model Checking for TLA-rs Spec (Source-First)
 
-Status update (2026-03-03): the Phase 22 baseline shipped. Do not treat this section as the active priority queue anymore; remaining model-checker work is tracked in [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance--top-priority) so Claude focuses on capability closure, performance, and real protocol coverage rather than redoing the MVP history.
+Status update (2026-03-03): the Phase 22 baseline shipped. Do not treat this section as the active priority queue anymore; remaining model-checker work is tracked in [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance) so Claude focuses on capability closure, performance, and real protocol coverage rather than redoing the MVP history.
 
 ### 22.1 Scope and Acceptance Criteria
 
@@ -9624,9 +9635,9 @@ Analysis: All three invariants require **network-level message provenance** not 
 - [x] 6 targeted assume() across 2 files (invariants.rs: 5, committed.rs: 1). Eliminated 12 assumes via LNext helper lemmas + spec strengthening + recursive induction + extensional equality + quorum intersection refinement + seq-based MaxCommitIndex helpers + CommitIndexBounded spec fix
 - [x] Update `reports/verification_gaps.md` with Raft proof coverage
 
-## Phase 33: Model Checker Hardening, Protocol Coverage, and Performance — TOP PRIORITY
+## Phase 33: Model Checker Hardening, Protocol Coverage, and Performance
 
-Why this is now top priority: the transpiler/proof pipeline is much farther along than the native model checker. The source-first checker already exists, but it is still too partial to claim strong tla-rs model-check support across the protocol suite. The remaining work is not "add a CLI" or "write more docs"; it is closing real evaluator/solver gaps, measuring performance honestly, and making the checker pass on as many real consensus protocols as possible.
+Why this remains high priority even though it is now below Phases 34 and 31: the transpiler/proof pipeline is much farther along than the native model checker. The source-first checker already exists, but it is still too partial to claim strong tla-rs model-check support across the protocol suite. The remaining work is not "add a CLI" or "write more docs"; it is closing real evaluator/solver gaps, measuring performance honestly, and making the checker pass on as many real consensus protocols as possible.
 
 Rules for this phase (do not cut corners):
 - Do not mark a protocol as "supported" unless there is a checked-in finite model, a checked-in automated test or JSON report, and a clear pass/limit/failure classification.
@@ -9634,6 +9645,8 @@ Rules for this phase (do not cut corners):
 - Do not resolve unsupported constructs only in docs. Add a failing regression test first, then land code, then update docs.
 - Update `docs/model_checker_status.md` in every leaf that changes capability, coverage, blockers, or performance.
 - Keep exact-mode evidence separate from lossy bug-finding modes such as hash compaction.
+- Minimal blocker/smoke fixtures with `max_depth = 1` and `max_states = 200` are allowed only as reproducible tiny regressions. They do **not** count as convincing support/performance evidence for `TwoPhase`, `LeaderElection`, `PrimaryBackup`, or `Paxos`.
+- Do not compare TLC vs source-first on different finite domains, different invariant sets, or different time budgets and call it "performance comparison". The comparison must be apples-to-apples or explicitly labeled otherwise.
 
 ### 33.1 Canonical status and evidence discipline
 
@@ -9739,6 +9752,64 @@ Rules for this phase (do not cut corners):
     - matrix-script wiring,
     - status-doc policy section presence.
   - Updated `docs/model_checker_status.md` with `§4.3 Exact-mode reachable-state change policy` and exception-row contract.
+- [ ] **33.4.3 Replace toy shared-protocol evidence with matched TLC vs source-first benchmarks**
+  - [ ] **33.4.3.a** Create new checked-in benchmark configs for `TwoPhase`, `LeaderElection`, `PrimaryBackup`, and `Paxos` that are explicitly for long-run evidence rather than minimal smoke coverage.
+    - Keep source-first configs under a dedicated checked-in path (preferred: `transpiler/tests/model_check_fixtures/benchmarks_1h/` with one `*.model.toml` per protocol).
+    - Keep the matching TLC artifacts under a dedicated checked-in path (preferred: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/` with `*_MC.tla`, `*_MC.cfg`, `*.log`, and a summary/manifest).
+    - These configs must be materially non-trivial:
+      - not `max_depth = 1`
+      - not `max_states = 200`
+      - not a 1-second or 2-second toy model chosen only because it is easy to check in
+    - Tuning target: choose per-protocol finite models that land around 1 hour on the benchmark machine; acceptable band is roughly `30-90 minutes` on the slower of the two engines, with `45-75 minutes` preferred.
+    - Treat the historical TLC model sizes in `docs/conversion-testing-guide.md` / `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/tlc_results/SUMMARY.md` as a floor, not a ceiling:
+      - `TwoPhase`: at least the prior `3 RMs` model
+      - `LeaderElection`: at least the prior `3 nodes` model
+      - `PrimaryBackup`: at least the prior `3 values`, `max_log = 3`, `max_view = 2` model
+      - `Paxos`: at least the prior `3 nodes/acceptors`, `quorum = 2`, `>= 2` values/ballots model
+  - [ ] **33.4.3.b** Produce the TLA+ side using the existing repo workflow, not ad-hoc handwritten specs.
+    - Use `scripts/generate_tla_workspace.sh` or `verus-transpile verus2-tla` to translate from current `src/protocol/<Protocol>/` source.
+    - Use `verus-transpile generate-mc-wrapper` and/or the existing property-bundle workspace layout for TLC-facing wrappers/configs.
+    - Do not manually rewrite the generated core TLA modules and then call them "translated"; keep hand edits limited to wrapper/property glue and invariant bundles, with those edits checked in separately and clearly labeled.
+  - [ ] **33.4.3.c** Update the translated TLA+ invariants so the TLC run is checking the same safety story as the source-first run.
+    - For each of the four protocols, keep an explicit invariant mapping table:
+      - source-first invariant name in `src/protocol/...`
+      - translated/wrapper TLA+ invariant operator name
+      - note if the TLA+ version is exactly equivalent or only the closest executable approximation
+    - Do not compare engines on mismatched invariants and then claim the result is a fair benchmark.
+  - [ ] **33.4.3.d** Run both engines with the same modeled constants/domains and the same wall-clock budget.
+    - Source-first run: `verus-transpile model-check` with exact-mode settings and `search.timeout_ms = 3600000` (or the explicitly checked-in per-protocol budget if a different one is justified in the benchmark notes).
+    - TLC run: `timeout 3600 java ... tlc2.TLC -config ...` (or the matching checked-in budget).
+    - If a protocol exhausts before the budget, record full-run results; if it does not exhaust, record the fixed-budget progress and label it as time-bounded comparison rather than exhaustive parity.
+  - [ ] **33.4.3.e** Keep all benchmark evidence in-repo so the comparison is auditable.
+    - Required source-first artifacts per protocol:
+      - benchmark `model.toml`
+      - JSON report
+      - exact command used
+      - resolved config dump if CLI overrides were involved
+    - Required TLC artifacts per protocol:
+      - translated `.tla`
+      - checked-in wrapper/property module
+      - `.cfg`
+      - full TLC log
+      - exact command used
+    - Keep one manifest/report with commit SHA, binary/tool versions, machine description, and benchmark date.
+  - [ ] **33.4.3.f** Produce a checked-in side-by-side comparison report for the four protocols.
+    - Compare, at minimum:
+      - result (`ok`, `violation`, `timeout`, `limit`)
+      - wall-clock time
+      - search depth / TLC diameter
+      - tla-rs `summary.states`
+      - tla-rs `summary.transitions`
+      - TLC generated-state count
+      - TLC distinct-state count
+    - Include two views whenever applicable:
+      - same config, compare total runtime if both finish
+      - same config and same time budget, compare how many states each engine traversed before the cutoff
+    - If state-count semantics differ because of wrapper variables or other modeling artifacts, say that explicitly instead of hiding the mismatch.
+  - [ ] **33.4.3.g** Add dedicated replay scripts for the long benchmarks instead of overloading the fast smoke matrix.
+    - Keep the existing fast matrix (`scripts/run_model_check_matrix.sh`) fast and CI-friendly.
+    - Add separate long-run replay automation (for example `scripts/run_model_check_benchmarks.sh`, `scripts/run_tlc_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`) for the 1-hour benchmark campaign.
+    - Those scripts must read the checked-in benchmark configs and regenerate the checked-in summary tables/artifacts.
 
 ### 33.5 Consensus protocol coverage drive
 
@@ -9858,6 +9929,31 @@ Rules for this phase (do not cut corners):
   - [x] **33.5.3.c LeaderElection** Add in-source safety invariants and checked-in bounded source-first evidence. [26:03:06, 18:00]
     - Added three LeaderElection safety predicates in source spec (`LSafetyElectingSubsetAlive`, `LSafetyWaitingNodeAliveWhenWaiting`, `LSafetyNoWaitingImpliesClearedWaitingNode`) and a bounded model fixture `leaderelection_safety_invariants.model.toml`.
     - Added checked-in artifact `reports/model_check/leaderelection_safety_invariants.json` and integration guard `test_model_check_leader_election_real_safety_invariants_bounded_run` (enforces configured/resolved invariants, non-violation, exactness parity, and stable summary parity vs artifact).
+  - The `33.5.2`/`33.5.3` source-first evidence for `TwoPhase`, `LeaderElection`, `PrimaryBackup`, and `Paxos` is still baseline/smoke coverage only. It keeps the checker honest, but it does **not** satisfy the non-toy benchmark requirement below.
+- [ ] **33.5.4 Shared-protocol benchmark execution (must replace depth-1 smoke evidence with convincing runs)**
+  - [ ] **33.5.4.a TwoPhase**
+    - Translate current tla-rs source to TLA+ with the existing repo tools.
+    - Refresh the TLC property bundle so it checks the same safety story as the source-first run.
+    - Choose and check in a non-toy benchmark model that targets about 1 hour, then keep:
+      - source-first benchmark `model.toml`
+      - source-first JSON artifact
+      - translated TLA+ module
+      - TLC wrapper/config/log
+      - per-protocol comparison row in the benchmark report
+  - [ ] **33.5.4.b LeaderElection**
+    - Same requirements as `33.5.4.a`, using a shared finite-node model on both engines.
+    - Keep the checked-in benchmark config separate from the current `leaderelection_small.model.toml` smoke fixture so future work cannot silently regress back to the depth-1 case.
+  - [ ] **33.5.4.c PrimaryBackup**
+    - Same requirements as `33.5.4.a`, using a shared finite model over values/log/view bounds on both engines.
+    - The benchmark must keep the current helper-branch/invariant coverage and materially exceed the current `max_depth = 1` smoke run.
+  - [ ] **33.5.4.d Paxos**
+    - Same requirements as `33.5.4.a`, using a shared finite model over nodes/acceptors, quorum, ballots, and value domains.
+    - Because Paxos already showed large TLC state spaces in historical runs, do not take the easy path of shrinking it back to a trivial model just to make the benchmark finish quickly. Tune it to the target band instead.
+  - [ ] **33.5.4.e Benchmark result publication / status-doc update**
+    - Update `docs/model_checker_status.md` so each of the four shared protocols lists both:
+      - the minimal smoke fixture kept for fast regression, and
+      - the new long-run benchmark fixture kept for convincing evidence / TLC comparison
+    - Update `docs/conversion-testing-guide.md` (or a dedicated benchmark report under `reports/model_check/`) with the side-by-side tla-rs vs TLC numbers and exact replay commands.
 
 ### 33.6 Code-review findings converted to no-corners tasks (2026-03-04)
 
@@ -9916,6 +10012,9 @@ Rules for this phase (do not cut corners):
   - timeout behavior is implemented and tested (or explicitly removed from config surface)
   - fairness-label typo rejection is implemented and tested
   - enumeration-fallback telemetry is exposed in JSON reports
+  - the four shared protocols (`TwoPhase`, `LeaderElection`, `PrimaryBackup`, `Paxos`) each have a checked-in non-toy benchmark config and artifact set, separate from the tiny depth-1 smoke fixtures
+  - the TLA+ side of those four protocols is regenerated from current tla-rs source with checked-in translated artifacts and updated invariant bundles
+  - there is a checked-in same-config / same-time-budget tla-rs-vs-TLC comparison report for those four protocols
 
 ---
 
