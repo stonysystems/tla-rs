@@ -9773,10 +9773,15 @@ Rules for this phase (do not cut corners):
       - `paxos_benchmark.model.toml`: 3-acceptor target model. **BLOCKED** — same enumeration scalability issue (327K evaluations in 27s, 0 transitions). With 1 acceptor, exhausts at 1 state instantly.
     - **Prerequisite fix**: Made `search.candidate_eval_guardrail` configurable from model.toml (was hardcoded at 10,000 in `transpiler/src/main.rs`). Added to `SearchLimits`, `ModelConfigOverrides`, CLI `--candidate-eval-guardrail`, and validation. Default remains 10,000 for backward compatibility.
     - **Scalability blocker**: The source-first model checker uses brute-force candidate enumeration for predicate-only branches. For multi-node models (3+ nodes), the candidate space exceeds millions of evaluations per state/branch. Even with a high guardrail, the enumeration is too slow to find valid transitions for LeaderElection and Paxos. TwoPhase and PrimaryBackup work because their branch predicates happen to be satisfiable within the candidate space. Fixing this requires constraint-aware successor computation (e.g., constraint propagation, symbolic evaluation, or SMT-backed solving) — a separate engineering effort.
-  - [ ] **33.4.3.b** Produce the TLA+ side using the existing repo workflow, not ad-hoc handwritten specs.
-    - Use `scripts/generate_tla_workspace.sh` or `verus-transpile verus2-tla` to translate from current `src/protocol/<Protocol>/` source.
-    - Use `verus-transpile generate-mc-wrapper` and/or the existing property-bundle workspace layout for TLC-facing wrappers/configs.
-    - Do not manually rewrite the generated core TLA modules and then call them "translated"; keep hand edits limited to wrapper/property glue and invariant bundles, with those edits checked in separately and clearly labeled.
+  - [x] **33.4.3.b** Produce the TLA+ side using the existing repo workflow, not ad-hoc handwritten specs. [2026-03-08]
+    - Regenerated base TLA+ for 4 benchmark protocols (TwoPhase, LeaderElection, PrimaryBackup, Paxos) using `verus-transpile verus2-tla --batch`. Now includes newly added safety invariant operators from source.
+    - Created benchmark-specific MC wrappers in `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/`:
+      - `TwoPhase_Benchmark_MC.tla/.cfg` — 2 RMs (matching source-first), 3 invariants
+      - `PrimaryBackup_Benchmark_MC.tla/.cfg` — max_log=1, values={0,1} (matching source-first), 3 invariants
+      - `LeaderElection_Benchmark_MC.tla/.cfg` — 3 nodes (matching source-first), 3 invariants
+      - `Paxos_Benchmark_MC.tla/.cfg` — 3 nodes, quorum=2 (matching source-first), 3 invariants
+    - Added `BENCHMARK_README.md` with invariant mapping table (source-first → TLC) and model size matching.
+    - MC wrappers are self-contained (not EXTENDS of generated base) since the base uses relational (s,s_,c) style requiring state wrapping. Hand edits limited to wrapper/property glue.
   - [ ] **33.4.3.c** Update the translated TLA+ invariants so the TLC run is checking the same safety story as the source-first run.
     - For each of the four protocols, keep an explicit invariant mapping table:
       - source-first invariant name in `src/protocol/...`

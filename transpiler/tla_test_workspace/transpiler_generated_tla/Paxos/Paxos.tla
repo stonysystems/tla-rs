@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Constants, State
+CONSTANTS State, Constants
 
 Init(s, c) ==
     /\ s.promised_bal = 0
@@ -123,6 +123,15 @@ Learn(s, s_, c) ==
     /\ s_.promised_bal = s.promised_bal
     /\ s_.accepted_bal = s.accepted_bal
     /\ s_.accepted_val = s.accepted_val
+
+SafetyAcceptedBallotBoundedByPromise(s, c) ==
+    s.accepted_bal <= s.promised_bal
+
+SafetyDecidedRequiresQuorum(s, c) ==
+    s.phase.tag = Decided => Len(s.accepts_rcvd) >= c.quorum_size
+
+SafetyDecidedMatchesProposedValue(s, c) ==
+    s.phase.tag = Decided => s.decided_val = s.proposed_val
 
 Next(s, s_, c) ==
     \/ \E b \in Int : Send1a(s, s_, c, b)

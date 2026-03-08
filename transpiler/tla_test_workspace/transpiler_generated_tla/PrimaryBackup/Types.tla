@@ -10,10 +10,10 @@ State ==
 Constants ==
     [max_log_len |-> Int]
 
-PBMessage ==
-    {Replicate, Ack}
-
 NodeRole ==
     {Primary, Backup, Inactive}
+
+PBMessage ==
+    {Replicate, Ack}
 
 ====

@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Constants, State, PBMessage
+CONSTANTS State, PBMessage, Constants
 
 Init(s, c) ==
     /\ s.role.tag = Primary
@@ -148,5 +148,14 @@ Next(s, s_, c) ==
     \/ \E sent_packets \in Seq(PBMessage) : PrimaryCommit(s, s_, c, sent_packets)
     \/ \E sent_packets \in Seq(PBMessage) : PrimaryFail(s, s_, c, sent_packets)
     \/ \E sent_packets \in Seq(PBMessage) : BackupPromote(s, s_, c, sent_packets)
+
+SafetyNoPendingImpliesClearedValue(s, c) ==
+    ~s.has_pending => s.pending_value = 0
+
+SafetyUnackedImpliesPending(s, c) ==
+    ~s.acked => s.has_pending
+
+SafetyInactiveStateIsQuiescent(s, c) ==
+    s.role.tag = Inactive => (~s.has_pending /\ s.acked /\ ~s.backup_synced)
 
 ====

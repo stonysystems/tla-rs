@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Constants, State, TPCMessage
+CONSTANTS TPCMessage, Constants, State
 
 Init(s, c) ==
     /\ s.tm_state.tag = Init
@@ -105,5 +105,14 @@ Next(s, s_, c) ==
     \/ \E sent_packets \in Seq(TPCMessage) : TMSendAbort(s, s_, c, sent_packets)
     \/ \E rm \in Int, sent_packets \in Seq(TPCMessage) : RMReceiveCommit(s, s_, c, rm, sent_packets)
     \/ \E rm \in Int, sent_packets \in Seq(TPCMessage) : RMReceiveAbort(s, s_, c, rm, sent_packets)
+
+SafetyNoCommitAbortOverlap(s, c) ==
+    \A rm \in Int : rm \in s.rm_committed => ~rm \in s.rm_aborted
+
+SafetyCommittedSubsetPrepared(s, c) ==
+    \A rm \in Int : rm \in s.rm_committed => rm \in s.rm_prepared
+
+SafetyTmCommittedRequiresAllPrepared(s, c) ==
+    s.tm_state.tag = Committed => s.tm_prepared = c.rm
 
 ====

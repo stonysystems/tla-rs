@@ -4,7 +4,7 @@
 
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS ElectionMessage, Constants, State
+CONSTANTS State, Constants, ElectionMessage
 
 Init(s, c) ==
     /\ s.electing = {}
@@ -116,5 +116,14 @@ Next(s, s_, c) ==
     \/ \E node \in Int, sent_packets \in Seq(ElectionMessage) : SendCoordinator(s, s_, c, node, sent_packets)
     \/ \E node \in Int, leader \in Int, sent_packets \in Seq(ElectionMessage) : ReceiveCoordinator(s, s_, c, node, leader, sent_packets)
     \/ \E node \in Int, sent_packets \in Seq(ElectionMessage) : NodeFail(s, s_, c, node, sent_packets)
+
+SafetyElectingSubsetAlive(s, c) ==
+    \A node \in Int : node \in s.electing => node \in s.alive
+
+SafetyWaitingNodeAliveWhenWaiting(s, c) ==
+    s.waiting_answer => s.waiting_node \in s.alive
+
+SafetyNoWaitingImpliesClearedWaitingNode(s, c) ==
+    ~s.waiting_answer => s.waiting_node = 0
 
 ====
