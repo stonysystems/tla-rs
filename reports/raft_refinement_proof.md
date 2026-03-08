@@ -1,9 +1,9 @@
 # Raft Refinement Proof — Status and Architecture
 
 **Date**: 2026-03-06
-**Last Updated**: Phase 34.15 (Requires narrowing complete — 24 functions narrowed)
+**Last Updated**: Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.e (equal-term rli>L resolved)
 **Codebase**: `src/protocol/Raft/refinement_proof/`
-**Status**: 12 assumes remaining in invariants.rs (6 `assume(false)` LC + 5 sound Z3 workarounds + 1 SMS). Committed log monotonicity fully proved.
+**Status**: 12 assumes remaining in invariants.rs (6 `assume(false)` LC + 5 sound Z3 workarounds + 1 SMS). Equal-term rli>L case resolved via ETHVQ+vote_dest_unique. All remaining LC assumes are the `d_rli ≤ k` wall.
 
 ## 1. What the Proof Shows
 
@@ -130,34 +130,38 @@ Network Model (sentPackets + receive guards)              -- Phase 34.1 DONE
 | LogTermsMonotonic | Log entry terms are non-decreasing |
 | TermsNonNegative | All terms >= 0 |
 
-## 5. Remaining Assumes (12 total)
+## 5. Remaining Assumes (11 total)
 
-### A. LeaderCompleteness — 7 `assume(false)` (the `d_rli ≤ k` wall)
+### A. LeaderCompleteness — 6 `assume(false)` (the `d_rli ≤ k` wall)
 
-All 7 represent the same fundamental gap: when ETHVQ vote dest `d` has pre-election log length ≤ k, LogMatching coverage is below index k, and there's no anchor to transfer the committed entry from a lower-term server to `d`.
+All 6 represent the same fundamental gap: when ETHVQ vote dest `d` has pre-election log length ≤ k, LogMatching coverage is below index k, and there's no anchor to transfer the committed entry from a lower-term server to `d`.
 
 | # | Line | Function | Case |
 |---|------|----------|------|
 | 1 | 1206 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k == d_rli-1, d.log[k].term > entry.term |
 | 2 | 1221 | `lemma_ethvq_entry_transfer_from_overlap_voter` | k > d_rli-1, d.log too short or wrong term |
 | 3 | 1779 | `lemma_ethvq_committed_entry_transfer` | d2_rlt > entry.term, k ≥ d2_rli-1, wrong term |
-| 4 | 2626 | `lemma_overlap_voter_entry_transfer` | Equal-term, rli > L, wrong term |
-| 5 | 2668 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, wrong term |
-| 6 | 2692 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, wrong term |
-| 7 | 2706 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, wrong term or too short |
+| 4 | 2694 | `lemma_overlap_voter_entry_transfer` | Strict-term, rli > L, wrong term |
+| 5 | 2718 | `lemma_overlap_voter_entry_transfer` | Strict-term, k < rli, wrong term |
+| 6 | 2732 | `lemma_overlap_voter_entry_transfer` | Strict-term, k ≥ rli, wrong term or too short |
+
+Former #4 (equal-term, rli > L) resolved in Phase 34.7.1.e.4.b.2.b.2.b.4.c.d.b.e via ETHVQ+vote_dest_unique at same term vtl.
 
 **Root cause**: The Raft paper's proof uses strong induction on leader terms ("smallest failing term"), which doesn't directly map to our ETHVQ vote-dest term descent. See `reports/leader_completeness_strict_term.md` for full analysis.
 
-### B. Sound Z3 Workaround Assumes — 4 (permanent)
+**Key constraint**: In this no-truncation Raft model, logs are append-only (`s.log.push()`, no overwrites). Entries at index k are set once and never changed. A server CAN have a different entry at k than the committed entry — CEUA (CommittedEntryUniversalAgreement) cannot be proved by simple current-state reasoning because the ETHVQ vote dest at the conflicting term may not be a current Leader (so LeaderCompleteness(ds) from the induction hypothesis cannot be applied). The Raft paper's "smallest failing term" argument uses strong induction on leader terms, which requires either restructuring the proof or adding ghost provenance data.
 
-ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound because ETHVQ is in requires. Permanent until Z3/Verus improves Skolemization.
+### B. Sound Z3 Workaround Assumes — 5 (permanent)
+
+ETHVQ witness extraction via `choose` crashes Z3 (OOM). Using `assume` is sound because the required invariants (ETHVQ, OneVotePerTermInNetwork, VoteResponseHasRequestVote, CandidateVoteDestinationUnique) are in scope at the caller level. Permanent until Z3/Verus improves Skolemization.
 
 | Line | Function |
 |------|----------|
 | 2213 | `lemma_same_term_committed_entry_transfer` |
 | 2236 | `lemma_same_term_committed_entry_transfer` |
 | 2331 | `lemma_ethvq_committed_overlap` |
-| 3800 | `lemma_leader_log_quorum_intersection` |
+| 2633 | `lemma_overlap_voter_entry_transfer` (ETHVQ+vote_dest_unique for equal-term rli>L) |
+| 3826 | `lemma_leader_log_quorum_intersection` |
 
 ### C. StateMachineSafety — 1 assume (blocked on LeaderCompleteness)
 
