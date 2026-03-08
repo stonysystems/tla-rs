@@ -60,11 +60,26 @@ verus! {
         };
 
         assert forall |node: AbstractEndPoint| nodes.contains(node)
+            implies indices_out.contains(GetReplicaIndex(node, config))
+        by {
+            let idx = GetReplicaIndex(node, config);
+            lemma_FindIndexInSeq(config.replica_ids, node);
+            assert(config.replica_ids.contains(node));
+            assert(idx >= 0 && idx < config.replica_ids.len());
+            assert(config.replica_ids[idx] == node);
+            assert(nodes.contains(config.replica_ids[idx]));
+            assert(indices_out.contains(idx));
+        };
+
+        assert forall |node: AbstractEndPoint| nodes.contains(node)
             implies exists |idx: int| indices_out.contains(idx) && node == f(idx)
         by {
             let idx = GetReplicaIndex(node, config);
             lemma_FindIndexInSeq(config.replica_ids, node);
-            assert(indices_out.contains(idx) && node == f(idx));
+            assert(idx >= 0 && idx < config.replica_ids.len());
+            assert(config.replica_ids[idx] == node);
+            assert(node == f(idx));
+            assert(indices_out.contains(idx));
         };
 
         // Prove indices_out.finite(): all elements in [0, config.replica_ids.len())

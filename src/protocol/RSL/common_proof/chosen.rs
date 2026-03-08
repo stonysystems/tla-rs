@@ -201,11 +201,21 @@ verus! {
         } else {
             assert(BalLt(quorum_of_2bs.bal, previous_packet2a.msg->bal_2a));
             lemma_2aMessageHasValidBallot(b, c, i, packet2a);
+            lemma_2aMessageHasValidBallot(b, c, i, previous_packet2a);
             // Help termination: previous_packet2a.msg->bal_2a < packet2a.msg->bal_2a lexicographically
             assert(BalLt(previous_packet2a.msg->bal_2a, packet2a.msg->bal_2a));
-            assert(previous_packet2a.msg->bal_2a.seqno < packet2a.msg->bal_2a.seqno
-                || (previous_packet2a.msg->bal_2a.seqno == packet2a.msg->bal_2a.seqno
-                    && previous_packet2a.msg->bal_2a.proposer_id < packet2a.msg->bal_2a.proposer_id));
+            // Verus decreases clause is (seqno, proposer_id), lexicographic ordering:
+            assert(previous_packet2a.msg->bal_2a.seqno <= packet2a.msg->bal_2a.seqno);
+            if previous_packet2a.msg->bal_2a.seqno < packet2a.msg->bal_2a.seqno {
+                // First component strictly decreases
+            } else {
+                // First component equal, second must strictly decrease
+                assert(previous_packet2a.msg->bal_2a.seqno == packet2a.msg->bal_2a.seqno);
+                assert(previous_packet2a.msg->bal_2a.proposer_id < packet2a.msg->bal_2a.proposer_id);
+            }
+            // Ensure non-negativity for nat decreases
+            assert(previous_packet2a.msg->bal_2a.seqno >= 0);
+            assert(previous_packet2a.msg->bal_2a.proposer_id >= 0);
             lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues(b, c, i, quorum_of_2bs, previous_packet2a);
         }
     }

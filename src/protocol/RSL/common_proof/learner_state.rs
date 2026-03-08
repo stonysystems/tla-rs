@@ -182,7 +182,13 @@ verus! {
             let p_2a = lemma_2bMessageHasCorresponding2aMessage(b, c, i, p);
             let p2_2a = lemma_2bMessageHasCorresponding2aMessage(b, c, i, p2);
             lemma_2aMessagesFromSameBallotAndOperationMatch(b, c, i, p_2a, p2_2a);
+            // The 2a messages match values, so p.msg->val_2b == p2.msg->val_2b == candidate_learned_value
+            // This contradicts p.msg->val_2b != candidate_learned_value, so this branch is unreachable.
+            assert(p.msg->val_2b == p2.msg->val_2b);
+            assert(false);
         }
+        // In the else branch: p.msg->val_2b == candidate_learned_value, satisfying postcondition.
+        assert(p.msg->val_2b == s_prime.unexecuted_learner_state[opn].candidate_learned_value);
         return (sender_idx, p);
     }
 
