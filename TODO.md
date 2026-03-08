@@ -9817,10 +9817,15 @@ Rules for this phase (do not cut corners):
       - same config, compare total runtime if both finish
       - same config and same time budget, compare how many states each engine traversed before the cutoff
     - If state-count semantics differ because of wrapper variables or other modeling artifacts, say that explicitly instead of hiding the mismatch.
-  - [ ] **33.4.3.g** Add dedicated replay scripts for the long benchmarks instead of overloading the fast smoke matrix.
+  - [x] **33.4.3.g** Add dedicated replay scripts for the long benchmarks instead of overloading the fast smoke matrix.
     - Keep the existing fast matrix (`scripts/run_model_check_matrix.sh`) fast and CI-friendly.
     - Add separate long-run replay automation (for example `scripts/run_model_check_benchmarks.sh`, `scripts/run_tlc_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`) for the 1-hour benchmark campaign.
     - Those scripts must read the checked-in benchmark configs and regenerate the checked-in summary tables/artifacts.
+    - **Done**: Created all 3 scripts. `run_model_check_benchmarks.sh` reads source-first
+      benchmark configs and produces JSON artifacts + SUMMARY.md. `run_tlc_benchmarks.sh`
+      runs TLC with configurable Java/workers/timeout. `compare_tlc_vs_source_first.sh`
+      merges both summaries into a side-by-side COMPARISON.md. All scripts support
+      PROTOCOLS env var for subset runs, tested with twophase smoke test.
 
 ### 33.5 Consensus protocol coverage drive
 
