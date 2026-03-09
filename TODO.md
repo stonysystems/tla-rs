@@ -9466,7 +9466,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 
 **Goal**: The RSL refinement proof (`src/protocol/RSL/refinement_proof/`) contains 20 `external_body` proof functions, and the supporting `common_proof/` has 8 more (total 28). These are trusted stubs inherited from the Dafny→Verus port. Fill in real proof bodies so Verus mechanically verifies them, reducing the trusted base.
 
-**⚠️ STATUS (2026-03-08)**: Both `common_proof` and `refinement_proof` modules are now **uncommented** in `src/protocol/RSL/mod.rs` and compile cleanly (0 compilation errors). **Phase 31.9.4 step 2 COMPLETE**: Removed `external_body` from 46 passing proof functions. **47 verified, 0 errors** at rlimit 80 across all 12 proof files. **23 `external_body` annotations remain** on functions that still fail (rlimit exceeded, precondition/postcondition/assertion failures). Next: fix the 23 remaining failures one at a time.
+**⚠️ STATUS (2026-03-08)**: Both `common_proof` and `refinement_proof` modules are now **uncommented** in `src/protocol/RSL/mod.rs` and compile cleanly (0 compilation errors). **Phase 31.9.4 step 3 IN PROGRESS**: Fixed `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState` (added bridge assertions via `lemma_GetReplyFromRequestBatchesMatchesInSubsequence` + extensional equality). **48 verified, 0 errors** at rlimit 80. **22 `external_body` annotations remain** on functions that still fail. Next: continue fixing remaining 22 failures.
 
 - [x] **31.8**: Fix compilation errors in `common_proof/` and `refinement_proof/` so they can be uncommented in `src/protocol/RSL/mod.rs`. [2026-03-07]
 - [ ] **31.9**: Run Verus verification with both modules enabled and confirm 0 errors. After 31.9.1 + import fix: 30 errors at rlimit 40 (down from 36 at rlimit 30). Breakdown: 11 assertion, 9 rlimit, 5 postcondition, 3 precondition, 1 termination. 39 verified. Decomposed below.
@@ -9479,10 +9479,10 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
       2. ✅ Remove `external_body` from all passing functions. **DONE (2026-03-08)**: 46 annotations removed, 47 functions now verified. 23 remain.
       3. Use fine-grained verification to iterate quickly: `--verify-only-module protocol::RSL::common_proof::message1b` or `--verify-function '*lemma_name*'`.
     - **Reference**: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet codebase at https://github.com/microsoft/Ironclad/tree/main/ironfleet under `protocol/RSL/` proof files. Use these as reference for proof structure and intermediate assertions.
-    - **Remaining 23 external_body** (down from 69 after step 2):
+    - **Remaining 22 external_body** (down from 23 after step 3 fix of `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState`):
       - `refinement_proof/execution.rs` (6): `lemma_AppStateAlwaysValid`, `lemma_TransferredStateAlwaysValid`, `lemma_ReplySentIsAllowed`, `lemma_ReplyInReplyCacheIsAllowed`, `lemma_ReplyInAppStateSupplyIsAllowed`, `lemma_ReplySentViaExecutionIsAllowed`
       - `refinement_proof/requests.rs` (4): `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`, `lemma_RequestInRequestQueueHasCorrespondingRequestMessage`, `lemma_RequestIn2aMessageHasCorrespondingRequestMessage`, `lemma_DecidedRequestWasSentByClient`
-      - `refinement_proof/refinement.rs` (3): `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState`, `lemma_GetBehaviorRefinementForBehaviorOfOneStep`, `lemma_GetBehaviorRefinement`
+      - `refinement_proof/refinement.rs` (2): `lemma_GetBehaviorRefinementForBehaviorOfOneStep`, `lemma_GetBehaviorRefinement`
       - `common_proof/chosen.rs` (2): `lemma_DecidedOperationWasChosen`, `collect_2b_messages`
       - `common_proof/learner_state.rs` (2): `lemma_Received2bMessageSendersAlwaysNonempty`, `lemma_GetSent2bMessageFromLearnerState`
       - `common_proof/message1b.rs` (2): `lemma_1bMessageWithoutOpnImplicationsFor2b`, `lemma_1bMessageWithOpnImplicationsFor2b`

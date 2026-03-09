@@ -171,7 +171,6 @@ verus! {
         request
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_FirstProduceIntermediateAbstractStateProducesAbstractState(
         server_addresses: Set<AbstractEndPoint>,
         batches: Seq<RequestBatch>
@@ -183,51 +182,64 @@ verus! {
         let rs = ProduceAbstractState(server_addresses, batches.drop_last());
         let rs_prime = ProduceIntermediateAbstractState(server_addresses, batches, 0);
 
-        let requests = Set::new(|req:Request| exists |batch_num:int, req_num:int|
-            0 <= batch_num < batches.len() as int &&
-            0 <= req_num < (if batch_num == batches.len() - 1 { 0 } else { batches[batch_num].len() })
-            && batches[batch_num][req_num] == req);
-
-        let replies = Set::new(|rep:Reply| exists |batch_num:int, req_num:int|
-            0 <= batch_num < batches.len() &&
-            0 <= req_num < (if batch_num == batches.len() - 1 { 0 } else { batches[batch_num].len() })
-            && GetReplyFromRequestBatches(batches, batch_num, req_num) == rep);
-
         let state_before_prev_batch = GetAppStateFromRequestBatches(batches.drop_last());
         let app_states_during_batch = HandleRequestBatch(state_before_prev_batch, batches.last()).0;
         let replies_prime = HandleRequestBatch(state_before_prev_batch, batches.last()).1;
         lemma_HandleRequestBatchTriggerHappy(state_before_prev_batch, batches.last(), app_states_during_batch, replies_prime);
 
+        // requests: rs_prime → rs
         assert forall |req: Request| rs_prime.requests.contains(req) implies rs.requests.contains(req) by {
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.len() &&
                 0 <= req_num < (if batch_num == batches.len() - 1 { 0 } else { batches[batch_num].len() })
                 && req == batches[batch_num][req_num];
-            // batch_num can't be batches.len()-1 (since reqs_in_last_batch=0), so batch_num < batches.len()-1
             assert(batch_num < batches.len() - 1);
-            // batches[batch_num] == batches.drop_last()[batch_num]
             assert(batches.drop_last()[batch_num] == batches[batch_num]);
-            assert(rs.requests.contains(req));
         };
 
+        // requests: rs → rs_prime
+        assert forall |req: Request| rs.requests.contains(req) implies rs_prime.requests.contains(req) by {
+            let (batch_num, req_num) = choose |batch_num: int, req_num: int|
+                0 <= batch_num < batches.drop_last().len() &&
+                0 <= req_num < batches.drop_last()[batch_num].len() &&
+                req == batches.drop_last()[batch_num][req_num];
+            assert(batch_num < batches.len() - 1);
+            assert(batches[batch_num] == batches.drop_last()[batch_num]);
+            assert(0 <= req_num < batches[batch_num].len());
+        };
+
+        // replies: rs_prime → rs (batch_num < batches.len()-1, so bridge via subsequence lemma)
         assert forall |reply: Reply| rs_prime.replies.contains(reply) implies rs.replies.contains(reply) by {
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.len() &&
                 0 <= req_num < (if batch_num == batches.len() - 1 { 0 } else { batches[batch_num].len() })
                 && reply == GetReplyFromRequestBatches(batches, batch_num, req_num);
-            assert(rs.replies.contains(reply));
+            assert(batch_num < batches.len() - 1);
+            assert(batch_num < batches.drop_last().len());
+            assert(batches.drop_last()[batch_num] == batches[batch_num]);
+            // Bridge: GetReplyFromRequestBatches(batches, bn, rn) == GetReplyFromRequestBatches(batches.drop_last(), bn, rn)
+            // because batches.drop_last() == batches.subrange(0, batches.len()-1)
+            assert(batches.drop_last() =~= batches.subrange(0, batches.drop_last().len() as int));
+            lemma_GetReplyFromRequestBatchesMatchesInSubsequence(batches.drop_last(), batches, batch_num, req_num);
         };
 
+        // replies: rs → rs_prime (bridge via subsequence lemma in reverse)
         assert forall |reply: Reply| rs.replies.contains(reply) implies rs_prime.replies.contains(reply) by {
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
-                0 <= batch_num < batches.len() - 1 &&
-                0 <= req_num < batches[batch_num].len() &&
+                0 <= batch_num < batches.drop_last().len() &&
+                0 <= req_num < batches.drop_last()[batch_num].len() &&
                 reply == GetReplyFromRequestBatches(batches.drop_last(), batch_num, req_num);
-            assert(rs_prime.replies.contains(reply));
+            assert(batch_num < batches.len() - 1);
+            assert(batches[batch_num] == batches.drop_last()[batch_num]);
+            // Bridge: same reply value via subsequence lemma
+            assert(batches.drop_last() =~= batches.subrange(0, batches.drop_last().len() as int));
+            lemma_GetReplyFromRequestBatchesMatchesInSubsequence(batches.drop_last(), batches, batch_num, req_num);
+            assert(reply == GetReplyFromRequestBatches(batches, batch_num, req_num));
+            assert(0 <= req_num < (if batch_num == batches.len() - 1 { 0int } else { batches[batch_num].len() as int }));
         };
 
-        assert(rs_prime.requests == rs.requests);
-        assert(rs_prime.replies == rs.replies);
+        assert(rs_prime.requests =~= rs.requests);
+        assert(rs_prime.replies =~= rs.replies);
     }
 
     pub proof fn lemma_LastProduceIntermediateAbstractStateProducesAbstractState(
@@ -318,7 +330,20 @@ verus! {
                 assert(WellFormedLConfiguration(b[0].constants.config));
                 assert(LMinQuorumSize(b[0].constants.config) >= 1);
             };
-            let idx = choose|idx: int| #![trigger q.packets[idx]] q.indices.contains(idx);
+            // q.indices is a subset of {0..replica_ids.len()}, hence finite
+            let n = b[0].constants.config.replica_ids.len() as int;
+            let range_set = vstd::set_lib::set_int_range(0, n);
+            vstd::set_lib::lemma_int_range(0, n);
+            assert(range_set.finite());
+            assert forall |idx: int| q.indices.contains(idx) implies range_set.contains(idx) by {};
+            assert(q.indices.subset_of(range_set));
+            vstd::set_lib::lemma_len_subset(q.indices, range_set);
+            // Now Verus knows q.indices is finite with len > 0
+            assert(q.indices.finite());
+            assert(q.indices.len() != 0);
+            vstd::set::axiom_set_choose_len(q.indices);
+            let idx = q.indices.choose();
+            assert(q.indices.contains(idx));
             let packet = q.packets[idx];
             // Initial state has empty sentPackets, but IsValidQuorumOf2bs requires sentPackets.contains(packet)
             assert(b[0].environment.sentPackets.contains(packet));
