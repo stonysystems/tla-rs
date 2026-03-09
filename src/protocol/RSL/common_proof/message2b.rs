@@ -411,50 +411,18 @@ verus! {
         let s = b[i - 1].replicas[acceptor_idx].replica.acceptor;
         let s_ = b[i].replicas[acceptor_idx].replica.acceptor;
 
-        let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
-
-        let e = b[i-1].environment;
-        let e_ = b[i].environment;
-
-        // assert(nextActionIndex!=4);
-        assert(nextActionIndex == 0); // why?
-
         let recv = ios[0]->r;
-        assert(LEnvironment_Next(e, e_));
-        assert(IsValidLEnvStep(e, e.nextStep));
-        assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-        assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
-        assert(ios[0] is Receive);
-        // assert(ios[0]->r.dst == e.nextStep->actor);
-        assert(recv.dst == e.nextStep->actor);
-        assert(e.nextStep->actor == c.config.replica_ids[acceptor_idx]);
-
-
         let pkts = ExtractSentPacketsFromIos(ios);
         lemma_ExtractSentPacketsFromIos(ios);
 
-        // From lemma_ActionThatSends2bIsProcess2a we know:
-        //   LReplicaNextProcess2a(rep, rep_, recv, pkts)
-        // In LReplicaNextProcess2a, the else branch gives sent_packets == empty(),
-        // but pkts.contains(p) (p is a 2b packet), so we must be in the if branch.
-        // The if branch gives LAcceptorProcess2a(s, s_, recv, pkts).
-        // recv.msg must be RslMessage2a because the dispatch in LReplicaNextProcessPacketWithoutReadingClock
-        // matched on recv.msg to call LReplicaNextProcess2a.
+        // From lemma_ActionThatSends2bIsProcess2a: recv.msg is RslMessage2a, LReplicaNextProcess2a holds
         assert(recv.msg is RslMessage2a);
         assert(LReplicaNextProcess2a(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, recv, pkts));
-        // The else branch of LReplicaNextProcess2a would give pkts == empty(), contradicting pkts.contains(p).
-        // So we're in the if branch, which gives LAcceptorProcess2a.
+        assert(pkts.contains(p));
+        // pkts non-empty means we're in the if-branch of LReplicaNextProcess2a → LAcceptorProcess2a
         assert(LAcceptorProcess2a(s, s_, recv, pkts));
 
-        assert(e.nextStep is LEnvStepHostIos);
-        assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
-        assert(ios.contains(ios[0]) && ios[0] is Receive);
-        assert(match_ios_recv(ios[0], e.sentPackets));
-        assert(e.sentPackets.contains(ios[0]->r));
-        assert(pkts.contains(p));
-
-
+        // LAcceptorProcess2a establishes: s_.max_bal == recv.bal_2a, p.bal_2b == recv.bal_2a
         assert(p.msg->bal_2b == recv.msg->bal_2a);
         assert(s_.max_bal == recv.msg->bal_2a);
         assert(BalLeq(p.msg->bal_2b, b[i].replicas[acceptor_idx].replica.acceptor.max_bal));

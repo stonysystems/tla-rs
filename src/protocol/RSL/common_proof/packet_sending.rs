@@ -175,6 +175,7 @@ pub proof fn lemma_ActionThatSends2bIsProcess2a(
                 RslNextOneReplica(ps, ps_, rc.0, rc.1),
                 rc.1.len() > 0,
                 rc.1[0] is Receive,
+                rc.1[0]->r.msg is RslMessage2a,
                 rc.1.contains(LIoOp::Send{s:p}),
                 LReplicaNextProcess2a(ps.replicas[rc.0].replica, ps_.replicas[rc.0].replica, rc.1[0]->r, ExtractSentPacketsFromIos(rc.1)),
     {
@@ -188,6 +189,11 @@ pub proof fn lemma_ActionThatSends2bIsProcess2a(
         if nextActionIndex!= 0 {
             assert(false);
         }
+        // The dispatch in LReplicaNextProcessPacketWithoutReadingClock matches on ios[0]->r.msg.
+        // Only the RslMessage2a branch calls LReplicaNextProcess2a, so ios[0]->r.msg must be RslMessage2a.
+        // Other message types (1a, 1b, etc.) call different handlers that don't produce 2b packets.
+        assert(LReplicaNextProcessPacketWithoutReadingClock(ps.replicas[idx].replica, ps_.replicas[idx].replica, ios));
+        assert(ios[0]->r.msg is RslMessage2a);
         (idx, ios)
     }
 

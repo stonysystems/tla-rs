@@ -281,86 +281,68 @@ verus! {
         if b[i - 1].environment.sentPackets.contains(p_2b) {
             lemma_1bMessageWithoutOpnImplicationsFor2b(b, c, i - 1, opn, p_1b, p_2b);
         } else {
+            // p_1b existed before, p_2b is new in step i-1→i
             let acceptor_idx = lemma_1bMessageImplicationsForCAcceptor(b, c, i - 1, opn, p_1b);
             let (acceptor_idx_alt, ios) = lemma_ActionThatSends2bIsProcess2a(b[i - 1], b[i], p_2b);
 
+            // p_1b.src == p_2b.src (from requires), so acceptor_idx == acceptor_idx_alt
+            assert(ReplicasDistinct(c.config.replica_ids, acceptor_idx, acceptor_idx_alt));
+            assert(acceptor_idx == acceptor_idx_alt);
+
             let s = b[i-1].replicas[acceptor_idx].replica.acceptor;
             let s_ = b[i].replicas[acceptor_idx].replica.acceptor;
-            let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
-
-            let e = b[i-1].environment;
-            let e_ = b[i].environment;
-
-            assert(nextActionIndex!=4);
-            assert(nextActionIndex == 0);
 
             let recv = ios[0]->r;
-            assert(LEnvironment_Next(e, e_));
-            assert(IsValidLEnvStep(e, e.nextStep));
-            assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-            assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
-            assert(ios[0] is Receive);
-            // assert(ios[0]->r.dst == e.nextStep->actor);
-            assert(recv.dst == e.nextStep->actor);
-            assert(e.nextStep->actor == c.config.replica_ids[acceptor_idx]);
-
-
             let pkts = ExtractSentPacketsFromIos(ios);
             lemma_ExtractSentPacketsFromIos(ios);
+            assert(recv.msg is RslMessage2a);
 
-            assert(e.nextStep is LEnvStepHostIos);
-            assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
-            assert(ios.contains(ios[0]) && ios[0] is Receive);
-            assert(match_ios_recv(ios[0], e.sentPackets));
-            assert(e.sentPackets.contains(ios[0]->r));
-            assert(b[i].environment.sentPackets.contains(p_2b));
+            // From lemma_ActionThatSends2bIsProcess2a: LReplicaNextProcess2a holds
+            assert(LReplicaNextProcess2a(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, recv, pkts));
             assert(pkts.contains(p_2b));
-
-
-            assert(ReplicasDistinct(c.config.replica_ids, acceptor_idx, acceptor_idx_alt));
-            assert(p_2b.msg->bal_2b == b[i].replicas[acceptor_idx].replica.acceptor.max_bal);
+            // pkts non-empty → if-branch of LReplicaNextProcess2a → LAcceptorProcess2a
+            // (else branch gives pkts == empty(), contradicting pkts.contains(p_2b))
+            assert(LAcceptorProcess2a(s, s_, recv, pkts));
+            // p_2b.bal_2b == recv.bal_2a (from LAcceptorProcess2a: the 2b echoes the 2a ballot)
+            assert(p_2b.msg->bal_2b == recv.msg->bal_2a);
+            // From LAcceptorProcess2a: BalLeq(s.max_bal, recv.bal_2a)
+            assert(BalLeq(s.max_bal, recv.msg->bal_2a));
+            // From lemma_1bMessageImplicationsForCAcceptor at i-1: BalLeq(bal_1b, s.max_bal)
+            assert(BalLeq(p_1b.msg->bal_1b, s.max_bal));
+            // Transitivity: BalLeq(bal_1b, s.max_bal) && BalLeq(s.max_bal, bal_2b) → BalLeq(bal_1b, bal_2b)
+            // (BalLeq is seqno then proposer_id comparison, transitive)
         }
     } else {
         if b[i - 1].environment.sentPackets.contains(p_2b) {
+            // p_2b existed before, p_1b is new in step i-1→i
             let acceptor_idx = lemma_2bMessageImplicationsForCAcceptor(b, c, i - 1, p_2b);
             let (acceptor_idx_alt, ios) = lemma_ActionThatSends1bIsProcess1a(b[i - 1], b[i], p_1b);
 
+            // p_1b.src == p_2b.src, so acceptor_idx == acceptor_idx_alt
+            assert(ReplicasDistinct(c.config.replica_ids, acceptor_idx, acceptor_idx_alt));
+            assert(acceptor_idx == acceptor_idx_alt);
+
             let s = b[i-1].replicas[acceptor_idx].replica.acceptor;
             let s_ = b[i].replicas[acceptor_idx].replica.acceptor;
-            let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
-
-            let e = b[i-1].environment;
-            let e_ = b[i].environment;
-
-            assert(nextActionIndex!=4);
-            assert(nextActionIndex == 0);
-
             let recv = ios[0]->r;
-            assert(LEnvironment_Next(e, e_));
-            assert(IsValidLEnvStep(e, e.nextStep));
-            assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-            assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
-            assert(ios[0] is Receive);
-            // assert(ios[0]->r.dst == e.nextStep->actor);
-            assert(recv.dst == e.nextStep->actor);
-            assert(e.nextStep->actor == c.config.replica_ids[acceptor_idx]);
-
-
             let pkts = ExtractSentPacketsFromIos(ios);
             lemma_ExtractSentPacketsFromIos(ios);
 
-            assert(e.nextStep is LEnvStepHostIos);
-            assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
-            assert(ios.contains(ios[0]) && ios[0] is Receive);
-            assert(match_ios_recv(ios[0], e.sentPackets));
-            assert(e.sentPackets.contains(ios[0]->r));
-            assert(b[i].environment.sentPackets.contains(p_2b));
-            assert(pkts.contains(p_2b));
-
-            assert(ReplicasDistinct(c.config.replica_ids, acceptor_idx, acceptor_idx_alt));
-            assert(p_2b.msg->bal_2b == b[i].replicas[acceptor_idx].replica.acceptor.max_bal);
+            // From lemma_ActionThatSends1bIsProcess1a: recv.msg is RslMessage1a
+            assert(recv.msg is RslMessage1a);
+            assert(LAcceptorProcess1a(s, s_, recv, pkts));
+            // LAcceptorProcess1a copies s.votes to p_1b.msg->votes.
+            // Since !p_1b.msg->votes.contains_key(opn) (from requires), !s.votes.contains_key(opn).
+            assert(!s.votes.contains_key(opn));
+            // From lemma_2bMessageImplicationsForCAcceptor at i-1:
+            // p_2b.msg->opn_2b == opn, and if opn >= s.log_truncation_point then s.votes.contains_key(opn)
+            // Since !s.votes.contains_key(opn), opn < s.log_truncation_point.
+            // But opn >= p_1b.msg->log_truncation_point (from requires), and
+            // LAcceptorProcess1a gives p_1b.msg->log_truncation_point == s.log_truncation_point
+            // → opn >= s.log_truncation_point, contradiction.
+            assert(p_1b.msg->log_truncation_point == s.log_truncation_point);
+            assert(opn >= s.log_truncation_point);
+            assert(false);
         } else {
             let (acceptor_idx, ios) = lemma_ActionThatSends1bIsProcess1a(b[i-1], b[i], p_1b);
             let s = b[i-1].replicas[acceptor_idx].replica.acceptor;
@@ -541,89 +523,55 @@ verus! {
                 BalLt(p_2b.msg->bal_2b, p_1b.msg->votes[opn].max_value_bal));
 
             } else {
+                // Old p_1b (votes contains opn), new p_2b
                 let acceptor_idx = lemma_1bMessageImplicationsForCAcceptor(b, c, i - 1, opn, p_1b);
                 let (acceptor_idx_alt, ios) = lemma_ActionThatSends2bIsProcess2a(b[i - 1], b[i], p_2b);
 
+                assert(ReplicasDistinct(c.config.replica_ids, acceptor_idx, acceptor_idx_alt));
+                assert(acceptor_idx == acceptor_idx_alt);
+
                 let s = b[i-1].replicas[acceptor_idx].replica.acceptor;
                 let s_ = b[i].replicas[acceptor_idx].replica.acceptor;
-                let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
-
-                let e = b[i-1].environment;
-                let e_ = b[i].environment;
-
-                assert(nextActionIndex!=4);
-                assert(nextActionIndex == 0);
 
                 let recv = ios[0]->r;
-                assert(LEnvironment_Next(e, e_));
-                assert(IsValidLEnvStep(e, e.nextStep));
-                assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-                assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
-                assert(ios[0] is Receive);
-                // assert(ios[0]->r.dst == e.nextStep->actor);
-                assert(recv.dst == e.nextStep->actor);
-                assert(e.nextStep->actor == c.config.replica_ids[acceptor_idx]);
-
-
                 let pkts = ExtractSentPacketsFromIos(ios);
                 lemma_ExtractSentPacketsFromIos(ios);
-
-                assert(e.nextStep is LEnvStepHostIos);
-                assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-                assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
-                assert(ios.contains(ios[0]) && ios[0] is Receive);
-                assert(match_ios_recv(ios[0], e.sentPackets));
-                assert(e.sentPackets.contains(ios[0]->r));
-                assert(b[i].environment.sentPackets.contains(p_2b));
+                assert(recv.msg is RslMessage2a);
+                assert(LReplicaNextProcess2a(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, recv, pkts));
                 assert(pkts.contains(p_2b));
-
-                assert(ReplicasDistinct(c.config.replica_ids, acceptor_idx, acceptor_idx_alt));
-                assert(BalLeq(p_1b.msg->bal_1b, p_2b.msg->bal_2b) ||
-                (p_2b.msg->bal_2b == p_1b.msg->votes[opn].max_value_bal && p_2b.msg->val_2b == p_1b.msg->votes[opn].max_val) ||
-                BalLt(p_2b.msg->bal_2b, p_1b.msg->votes[opn].max_value_bal));
+                // pkts non-empty → if-branch of LReplicaNextProcess2a → LAcceptorProcess2a
+                assert(LAcceptorProcess2a(s, s_, recv, pkts));
+                assert(p_2b.msg->bal_2b == recv.msg->bal_2a);
+                assert(BalLeq(s.max_bal, recv.msg->bal_2a));
             }
         } else {
             if b[i - 1].environment.sentPackets.contains(p_2b) {
+                // Old p_2b (votes contains opn), new p_1b
                 let acceptor_idx = lemma_2bMessageImplicationsForCAcceptor(b, c, i - 1, p_2b);
                 let (acceptor_idx_alt, ios) = lemma_ActionThatSends1bIsProcess1a(b[i - 1], b[i], p_1b);
 
+                assert(ReplicasDistinct(c.config.replica_ids, acceptor_idx, acceptor_idx_alt));
+                assert(acceptor_idx == acceptor_idx_alt);
+
                 let s = b[i-1].replicas[acceptor_idx].replica.acceptor;
                 let s_ = b[i].replicas[acceptor_idx].replica.acceptor;
-                let nextActionIndex = b[i-1].replicas[acceptor_idx].nextActionIndex;
-
-                let e = b[i-1].environment;
-                let e_ = b[i].environment;
-
-                assert(nextActionIndex!=4);
-                assert(nextActionIndex == 0);
-
                 let recv = ios[0]->r;
-                assert(LEnvironment_Next(e, e_));
-                assert(IsValidLEnvStep(e, e.nextStep));
-                assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-                assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
-                assert(ios[0] is Receive);
-                // assert(ios[0]->r.dst == e.nextStep->actor);
-                assert(recv.dst == e.nextStep->actor);
-                assert(e.nextStep->actor == c.config.replica_ids[acceptor_idx]);
-
-
                 let pkts = ExtractSentPacketsFromIos(ios);
                 lemma_ExtractSentPacketsFromIos(ios);
-
-                assert(e.nextStep is LEnvStepHostIos);
-                assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-                assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
-                assert(ios.contains(ios[0]) && ios[0] is Receive);
-                assert(match_ios_recv(ios[0], e.sentPackets));
-                assert(e.sentPackets.contains(ios[0]->r));
-                assert(b[i].environment.sentPackets.contains(p_2b));
-                assert(pkts.contains(p_2b));
-
-                assert(ReplicasDistinct(c.config.replica_ids, acceptor_idx, acceptor_idx_alt));
-                assert(BalLeq(p_1b.msg->bal_1b, p_2b.msg->bal_2b) ||
-                (p_2b.msg->bal_2b == p_1b.msg->votes[opn].max_value_bal && p_2b.msg->val_2b == p_1b.msg->votes[opn].max_val) ||
-                BalLt(p_2b.msg->bal_2b, p_1b.msg->votes[opn].max_value_bal));
+                assert(recv.msg is RslMessage1a);
+                assert(LAcceptorProcess1a(s, s_, recv, pkts));
+                // p_1b is new, so p_1b.votes == s.votes (from LAcceptorProcess1a)
+                // p_1b.bal_1b == recv.bal_1a == s_.max_bal
+                // Since p_1b.votes.contains_key(opn), s.votes.contains_key(opn)
+                // and p_1b.votes[opn] == s.votes[opn]
+                // From lemma_2bMessageImplicationsForCAcceptor at i-1:
+                //   BalLeq(bal_2b, s.max_bal) and if opn >= s.log_truncation_point:
+                //     s.votes.contains_key(opn) and BalLeq(bal_2b, s.votes[opn].max_value_bal)
+                //     and (if max_value_bal == bal_2b then values match)
+                // s.votes[opn] == p_1b.votes[opn], so:
+                //   BalLeq(bal_2b, p_1b.votes[opn].max_value_bal)
+                //   and (if bal_2b == p_1b.votes[opn].max_value_bal then values match)
+                // This gives either second or third disjunct of ensures.
             } else {
                 let (acceptor_idx, ios) = lemma_ActionThatSends1bIsProcess1a(b[i - 1], b[i], p_1b);
                 assert(ios.contains(LIoOp::Send{s:p_1b}));
@@ -633,11 +581,15 @@ verus! {
                 let pkts = ExtractSentPacketsFromIos(ios);
                 lemma_ExtractSentPacketsFromIos(ios);
                 assert(!b[i-1].environment.sentPackets.contains(p_2b));
-                assert(LReplicaNextProcessPacketWithoutReadingClock(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, ios));
-                assert(LReplicaNextProcess1a(b[i-1].replicas[acceptor_idx].replica, b[i].replicas[acceptor_idx].replica, ios[0]->r, pkts));
+                // p_2b is in b[i].sentPackets but not b[i-1].sentPackets,
+                // so it must have been sent in ios. But ios comes from Process1a,
+                // which only sends 1b packets.
                 assert(LAcceptorProcess1a(b[i-1].replicas[acceptor_idx].replica.acceptor, b[i].replicas[acceptor_idx].replica.acceptor, ios[0]->r, pkts));
-                // LAcceptorProcess1a: pkts == seq![1b_packet] or pkts == empty()
-                // Either way, p_2b (a 2b message) is not in pkts
+                // pkts from LAcceptorProcess1a contains only 1b or is empty
+                // p_2b.msg is RslMessage2b, not RslMessage1b
+                assert(p_2b.msg is RslMessage2b);
+                // For p_2b to be in b[i].sentPackets, ios must contain Send{s:p_2b}
+                // But all sends in ios are in pkts, and pkts only has 1b packets
                 assert(!pkts.contains(p_2b));
                 assert(false);
             }
