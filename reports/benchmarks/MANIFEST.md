@@ -1,14 +1,14 @@
 # Benchmark Evidence Manifest
 
 Generated: 2026-03-08
-Git rev: a7f5ea5
+Git rev: fd8967f
 
 ## Machine & Tool Versions
 
-- Platform: Linux 5.15.0-133-generic (x86_64)
+- Platform: Linux 6.2.16-3-pve (x86_64), 64 cores
 - Transpiler: `transpiler/target/debug/verus-transpile` (debug build)
-- TLC: **not yet available** (requires Java 11+; system has Java 1.8)
-- Python: 3.x (for result extraction)
+- TLC: 2026.03.05.210854 (rev: ec1a488), Java 17.0.18 (OpenJDK Debian 17.0.18+8)
+- tla2tools.jar: downloaded from GitHub tlaplus/tlaplus releases v1.8.0
 
 ## Source-first Benchmark Artifacts
 
@@ -38,16 +38,36 @@ Git rev: a7f5ea5
 
 ## TLC Benchmark Artifacts
 
-**Pending**: Requires Java 11+ to run TLC. System currently has Java 1.8.
+### TwoPhase
+- TLA+ wrapper: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.tla`
+- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.cfg`
+- TLC log: `reports/benchmarks/tlc/twophase_benchmark.log`
+- Command: `timeout 3600 java -XX:+UseParallelGC -Xmx4g -cp ~/tla2tools.jar tlc2.TLC -workers 1 -config TwoPhase_Benchmark_MC.cfg TwoPhase_Benchmark_MC.tla`
+- Result: **pass** (exhausted) — 150 generated, 64 distinct, depth 9, 1s
 
-### Expected artifacts (per protocol):
-- TLA+ module: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/*_Benchmark_MC.tla`
-- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/*_Benchmark_MC.cfg`
-- TLC log: `reports/benchmarks/tlc/*_benchmark.log`
-- Command: `timeout 3600 java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -workers auto -config *_Benchmark_MC.cfg *_Benchmark_MC.tla`
+### PrimaryBackup
+- TLA+ wrapper: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/PrimaryBackup_Benchmark_MC.tla`
+- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/PrimaryBackup_Benchmark_MC.cfg`
+- TLC log: `reports/benchmarks/tlc/primarybackup_benchmark.log`
+- Command: `timeout 3600 java -XX:+UseParallelGC -Xmx4g -cp ~/tla2tools.jar tlc2.TLC -workers 1 -config PrimaryBackup_Benchmark_MC.cfg PrimaryBackup_Benchmark_MC.tla`
+- Result: **pass** (exhausted) — 86 generated, 54 distinct, depth 10, 1s
+
+### LeaderElection
+- TLA+ wrapper: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/LeaderElection_Benchmark_MC.tla`
+- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/LeaderElection_Benchmark_MC.cfg`
+- TLC log: `reports/benchmarks/tlc/leaderelection_benchmark.log`
+- Command: `timeout 3600 java -XX:+UseParallelGC -Xmx4g -cp ~/tla2tools.jar tlc2.TLC -workers 1 -config LeaderElection_Benchmark_MC.cfg LeaderElection_Benchmark_MC.tla`
+- Result: **pass** (exhausted) — 100,636 generated, 9,337 distinct, depth 13, 2s
+
+### Paxos
+- TLA+ wrapper: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/Paxos_Benchmark_MC.tla`
+- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/Paxos_Benchmark_MC.cfg`
+- TLC log: `reports/benchmarks/tlc/paxos_benchmark.log`
+- Command: `timeout 600 java -XX:+UseParallelGC -Xmx4g -cp ~/tla2tools.jar tlc2.TLC -workers 1 -config Paxos_Benchmark_MC.cfg Paxos_Benchmark_MC.tla`
+- Result: **pass** (exhausted) — 25,288,515 generated, 3,005,604 distinct, depth 37, 375s
 
 ## Replay Scripts
 
 - Source-first: `scripts/run_model_check_benchmarks.sh`
-- TLC: `scripts/run_tlc_benchmarks.sh`
+- TLC: `TLA2TOOLS=~/tla2tools.jar scripts/run_tlc_benchmarks.sh`
 - Comparison: `scripts/compare_tlc_vs_source_first.sh`
