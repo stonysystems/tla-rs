@@ -34,7 +34,6 @@ use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
 
 verus! {
-    #[verifier(external_body)]
     pub proof fn lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -75,17 +74,30 @@ verus! {
 
         if nextActionIndex == 0
         {
+            let e = b[i-1].environment;
+            assert(LEnvironment_Next(e, b[i].environment));
+            assert(e.nextStep is LEnvStepHostIos);
+            assert(IsValidLEnvStep(e, e.nextStep));
+            let actor = e.nextStep->actor;
+            assert(actor == c.config.replica_ids[idx]);
+            assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, actor, e));
+            assert(LEnvironment_PerformIos(e, b[i].environment, actor, ios));
+
             let p = ios[0]->r;
-            // ios[0] is Receive (from nextActionIndex==0, LReplicaNextProcessPacket).
-            // sentPackets.contains(p) comes from LEnvironment_PerformIos via match_ios_recv.
-            assert(LEnvironment_Next(b[i-1].environment, b[i].environment));
-            assert(b[i-1].environment.nextStep is LEnvStepHostIos);
-            assert(LEnvironment_PerformIos(b[i-1].environment, b[i].environment, b[i-1].environment.nextStep->actor, ios));
-            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, b[i-1].environment.sentPackets));
+            assert(ios[0] is Receive);
             assert(ios.contains(ios[0]));
-            assert(match_ios_recv(ios[0], b[i-1].environment.sentPackets));
-            assert(b[i-1].environment.sentPackets.contains(p));
+            assert(IsValidLIoOp(ios[0], actor, e));
+            // IsValidLIoOp for Receive: r.dst == actor
+            assert(p.dst == actor);
+            assert(p.dst == c.config.replica_ids[idx]);
+
+            // p was in sentPackets at i-1 (match_ios_recv)
+            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+            assert(match_ios_recv(ios[0], e.sentPackets));
+            assert(e.sentPackets.contains(p));
             lemma_PacketStaysInSentPackets(b, c, i-1, i, p);
+
+            assert(c.config.replica_ids.contains(p.dst));
             return p;
         }
 
