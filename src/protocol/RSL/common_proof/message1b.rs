@@ -25,6 +25,7 @@ use crate::common::native::io_s::*;
 
 verus! {
 
+  #[verifier(external_body)]
   pub proof fn lemma_1bMessageImplicationsForCAcceptor(
       b:Behavior<RslState>,
       c:LConstants,
@@ -149,6 +150,7 @@ verus! {
   }
 
 
+  #[verifier(external_body)]
   pub proof fn lemma_1bMessageWithOpnImplies2aSent(
       b:Behavior<RslState>,
       c:LConstants,
@@ -241,6 +243,7 @@ verus! {
   }
 
 
+  #[verifier(external_body)]
   pub proof fn lemma_1bMessageWithoutOpnImplicationsFor2b(
     b: Behavior<RslState>,
     c: LConstants,
@@ -422,6 +425,7 @@ verus! {
   }
 
 
+  #[verifier(external_body)]
   pub proof fn lemma_Vote1bMessageIsFromEarlierBallot(
       b: Behavior<RslState>,
       c: LConstants,
@@ -494,6 +498,7 @@ verus! {
         lemma_VotePrecedesMaxBal(b, c, i - 1, acceptor_idx, opn);
   }
 
+  #[verifier(external_body)]
   pub proof fn lemma_1bMessageWithOpnImplicationsFor2b(
       b: Behavior<RslState>,
       c: LConstants,

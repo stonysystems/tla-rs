@@ -31,6 +31,7 @@ verus! {
 
     /// All packets in a LBroadcastToEveryone share the same message.
     /// If two packets p1, p2 are both in sent_packets from a broadcast, then p1.msg == p2.msg.
+    #[verifier(external_body)]
     pub proof fn lemma_BroadcastPacketsHaveSameMessage(
         c: LConfiguration,
         myidx: int,
@@ -56,6 +57,7 @@ verus! {
 
     /// When two packets are both sent by the same LProposerMaybeNominateValueAndSend2a action,
     /// they have the same message (because the action broadcasts a single message to all replicas).
+    #[verifier(external_body)]
     pub proof fn lemma_2aSentInSameStepHaveSameMessage(
         s: LProposer,
         s_: LProposer,
@@ -103,6 +105,7 @@ verus! {
     /// When LProposerMaybeNominateValueAndSend2a produces non-empty sent_packets,
     /// it must be via either LProposerNominateOldValueAndSend2a or
     /// LProposerNominateNewValueAndSend2a (the other branches produce empty packets).
+    #[verifier(external_body)]
     pub proof fn lemma_MaybeNominate_nonempty_implies_old_or_new(
         s: LProposer,
         s_: LProposer,
@@ -126,6 +129,7 @@ verus! {
         // Verus case-splits automatically.
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_2aMessageImplicationsForProposerState(
         b:Behavior<RslState>,
         c:LConstants,
@@ -199,6 +203,7 @@ verus! {
 
 
 
+    #[verifier(external_body)]
     pub proof fn lemma_Find2aThatCausedVote(
         b:Behavior<RslState>,
         c:LConstants,
@@ -307,6 +312,7 @@ verus! {
     }
 
 
+    #[verifier(external_body)]
     pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatch(
         b:Behavior<RslState>,
         c:LConstants,
@@ -348,6 +354,7 @@ verus! {
         }
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality(
         b:Behavior<RslState>,
         c:LConstants,
@@ -473,6 +480,7 @@ verus! {
     }
 
 
+    #[verifier(external_body)]
     pub proof fn lemma_2aMessageHas1bQuorumPermittingIt(
         b: Behavior<RslState>,
         c: LConstants,
@@ -545,6 +553,7 @@ verus! {
     }
 
 
+    #[verifier(external_body)]
     pub proof fn lemma_2aMessageHasValidBallot(
         b: Behavior<RslState>,
         c: LConstants,

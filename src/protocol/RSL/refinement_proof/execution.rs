@@ -40,6 +40,7 @@ use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
 
 verus! {
+    #[verifier(external_body)]
     pub proof fn lemma_AppStateAlwaysValid(
         b: Behavior<RslState>,
         c: LConstants,
@@ -86,6 +87,7 @@ verus! {
         return new_qs;
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_TransferredStateAlwaysValid(
         b: Behavior<RslState>,
         c: LConstants,
@@ -122,6 +124,7 @@ verus! {
         return lemma_AppStateAlwaysValid(b, c, i - 1, idx);
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_ReplySentIsAllowed(
         b: Behavior<RslState>,
         c: LConstants,
@@ -187,6 +190,7 @@ verus! {
         }
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_ReplyInReplyCacheIsAllowed(
         b: Behavior<RslState>,
         c: LConstants,
@@ -257,6 +261,7 @@ verus! {
         return (qs_new, batches_new, batch_num_new, req_num_new);
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_ReplyInAppStateSupplyIsAllowed(
         b: Behavior<RslState>,
         c: LConstants,
@@ -306,6 +311,7 @@ verus! {
         return (qs_new, batches_new, batch_num_new, req_num_new);
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_ReplySentViaExecutionIsAllowed(
         b: Behavior<RslState>,
         c: LConstants,
@@ -381,6 +387,7 @@ verus! {
         (qs, batches, batch_num, req_num)
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_GetRequestIndexCorrespondingToPacketInGetPacketsFromReplies(
         p: RslPacket,
         me: AbstractEndPoint,

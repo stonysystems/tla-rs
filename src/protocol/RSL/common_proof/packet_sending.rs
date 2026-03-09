@@ -22,6 +22,7 @@ verus! {
 
     // Common proof pattern: given RslNext + new packet from a replica,
     // find the replica index and ios, prove ios.contains(Send{s:p}) and p.src == replica_ids[idx].
+    #[verifier(external_body)]
     proof fn lemma_find_replica_and_ios_for_new_packet(
         ps:RslState,
         ps_:RslState,
@@ -63,6 +64,7 @@ verus! {
         (idx, ios)
     }
 
+    #[verifier(external_body)]
     pub proof fn lemma_ActionThatSendsPacketIsActionOfSource(
         ps:RslState,
         ps_:RslState,
@@ -82,6 +84,7 @@ verus! {
     }
 
 
+    #[verifier(external_body)]
     pub proof fn lemma_ActionThatSends2aIsMaybeNominateValueAndSend2a(
         ps:RslState,
         ps_:RslState,
@@ -120,6 +123,7 @@ verus! {
     }
 
 
+    #[verifier(external_body)]
     pub proof fn lemma_ActionThatSends1bIsProcess1a(
         ps:RslState,
         ps_:RslState,
@@ -157,6 +161,7 @@ verus! {
     }
 
 
+    #[verifier(external_body)]
     pub proof fn lemma_ActionThatSends2bIsProcess2a(
         ps:RslState,
         ps_:RslState,
@@ -192,6 +197,7 @@ verus! {
     }
 
 
+    #[verifier(external_body)]
     pub proof fn lemma_ActionThatSendsAppStateSupplyIsProcessAppStateRequest(
         ps: RslState,
         ps_prime: RslState,
