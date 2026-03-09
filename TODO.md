@@ -9967,8 +9967,8 @@ Rules for this phase (do not cut corners):
     - Added three LeaderElection safety predicates in source spec (`LSafetyElectingSubsetAlive`, `LSafetyWaitingNodeAliveWhenWaiting`, `LSafetyNoWaitingImpliesClearedWaitingNode`) and a bounded model fixture `leaderelection_safety_invariants.model.toml`.
     - Added checked-in artifact `reports/model_check/leaderelection_safety_invariants.json` and integration guard `test_model_check_leader_election_real_safety_invariants_bounded_run` (enforces configured/resolved invariants, non-violation, exactness parity, and stable summary parity vs artifact).
   - The `33.5.2`/`33.5.3` source-first evidence for `TwoPhase`, `LeaderElection`, `PrimaryBackup`, and `Paxos` is still baseline/smoke coverage only. It keeps the checker honest, but it does **not** satisfy the non-toy benchmark requirement below.
-- [ ] **33.5.4 Shared-protocol benchmark execution (must replace depth-1 smoke evidence with convincing runs)**
-  - [ ] **33.5.4.a TwoPhase**
+- [x] **33.5.4 Shared-protocol benchmark execution (must replace depth-1 smoke evidence with convincing runs)** [2026-03-08]
+  - [x] **33.5.4.a TwoPhase** [2026-03-08]
     - Translate current tla-rs source to TLA+ with the existing repo tools.
     - Refresh the TLC property bundle so it checks the same safety story as the source-first run.
     - Choose and check in a non-toy benchmark model that targets about 1 hour, then keep:
@@ -9977,20 +9977,25 @@ Rules for this phase (do not cut corners):
       - translated TLA+ module
       - TLC wrapper/config/log
       - per-protocol comparison row in the benchmark report
-  - [ ] **33.5.4.b LeaderElection**
+    - **Completed** via Phase 33.4.3: benchmark config `benchmarks_1h/twophase_benchmark.model.toml`, SF JSON artifact, TLC wrapper/cfg/log, comparison row in `COMPARISON.md`. SF: 8 states/79s (exhausted). TLC: 64 distinct/1s (exhausted).
+  - [x] **33.5.4.b LeaderElection** [2026-03-08]
     - Same requirements as `33.5.4.a`, using a shared finite-node model on both engines.
     - Keep the checked-in benchmark config separate from the current `leaderelection_small.model.toml` smoke fixture so future work cannot silently regress back to the depth-1 case.
-  - [ ] **33.5.4.c PrimaryBackup**
+    - **Completed** via Phase 33.4.3: benchmark config `benchmarks_1h/leaderelection_benchmark.model.toml` (separate from smoke `leaderelection_small.model.toml`). SF: BLOCKED (enumeration). TLC: 9,337 distinct/2s (exhausted).
+  - [x] **33.5.4.c PrimaryBackup** [2026-03-08]
     - Same requirements as `33.5.4.a`, using a shared finite model over values/log/view bounds on both engines.
     - The benchmark must keep the current helper-branch/invariant coverage and materially exceed the current `max_depth = 1` smoke run.
-  - [ ] **33.5.4.d Paxos**
+    - **Completed** via Phase 33.4.3: benchmark config `benchmarks_1h/primarybackup_benchmark.model.toml` (depth 100, not depth 1). SF: 60 states/190s (exhausted, depth 7). TLC: 54 distinct/1s (exhausted, depth 10).
+  - [x] **33.5.4.d Paxos** [2026-03-08]
     - Same requirements as `33.5.4.a`, using a shared finite model over nodes/acceptors, quorum, ballots, and value domains.
     - Because Paxos already showed large TLC state spaces in historical runs, do not take the easy path of shrinking it back to a trivial model just to make the benchmark finish quickly. Tune it to the target band instead.
-  - [ ] **33.5.4.e Benchmark result publication / status-doc update**
+    - **Completed** via Phase 33.4.3: benchmark config `benchmarks_1h/paxos_benchmark.model.toml` (3 nodes, quorum=2, 4 ballots, 3 values). SF: BLOCKED (enumeration). TLC: 3M distinct/375s (exhausted, depth 37). Non-trivial model as required.
+  - [x] **33.5.4.e Benchmark result publication / status-doc update** [2026-03-08]
     - Update `docs/model_checker_status.md` so each of the four shared protocols lists both:
       - the minimal smoke fixture kept for fast regression, and
       - the new long-run benchmark fixture kept for convincing evidence / TLC comparison
     - Update `docs/conversion-testing-guide.md` (or a dedicated benchmark report under `reports/model_check/`) with the side-by-side tla-rs vs TLC numbers and exact replay commands.
+    - **Completed**: Added §4.4 to `docs/model_checker_status.md` with dual evidence table (smoke + benchmark fixture per protocol, TLC comparison data). Added benchmark comparison summary to `docs/conversion-testing-guide.md` D3 TLC section.
 
 ### 33.6 Code-review findings converted to no-corners tasks (2026-03-04)
 

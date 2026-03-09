@@ -318,6 +318,27 @@ Exception rows (approved exactness-changing fixes):
 | --- | --- | --- |
 | _None_ | _N/A_ | _No approved exactness-changing correctness bug fixes currently._ |
 
+### 4.4 TLC vs source-first benchmark comparison (Phase 33.4.3 / 33.5.4)
+
+For each of the four shared protocols, the table below lists both the minimal **smoke fixture** (fast regression, `max_depth=1`, `max_states=200`) and the **long-run benchmark fixture** (convincing evidence, matched TLC comparison). Full side-by-side report: `reports/benchmarks/COMPARISON.md`.
+
+| Protocol | Smoke fixture | Benchmark fixture | Source-first result | TLC result | TLC distinct states | TLC wall (s) |
+| --- | --- | --- | --- | --- | --- | --- |
+| `TwoPhase` | `twophase_small.model.toml` | `benchmarks_1h/twophase_benchmark.model.toml` | ok, 8 states, 79s (exhausted) | pass, 64 distinct, 1s (exhausted) | 64 | 1 |
+| `PrimaryBackup` | `primarybackup_small.model.toml` | `benchmarks_1h/primarybackup_benchmark.model.toml` | ok, 60 states, 190s (exhausted) | pass, 54 distinct, 1s (exhausted) | 54 | 1 |
+| `LeaderElection` | `leaderelection_small.model.toml` | `benchmarks_1h/leaderelection_benchmark.model.toml` | BLOCKED (enumeration) | pass, 9,337 distinct, 2s (exhausted) | 9,337 | 2 |
+| `Paxos` | `paxos_small.model.toml` | `benchmarks_1h/paxos_benchmark.model.toml` | BLOCKED (enumeration) | pass, 3M distinct, 375s (exhausted) | 3,005,604 | 375 |
+
+Evidence artifacts:
+- Source-first benchmark configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/*.model.toml`
+- Source-first JSON artifacts: `reports/benchmarks/source_first/*.json`
+- TLC wrappers + configs: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/`
+- TLC logs: `reports/benchmarks/tlc/*.log`
+- Manifest: `reports/benchmarks/MANIFEST.md`
+- Replay: `scripts/run_model_check_benchmarks.sh`, `TLA2TOOLS=~/tla2tools.jar scripts/run_tlc_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`
+
+Key findings: Both engines agree on safety (no violations) for the 2 protocols where both complete. TLC is 79-190x faster and handles all 4 protocols. Source-first is blocked on LeaderElection and Paxos by enumeration scalability. The gap is algorithmic (brute-force candidate enumeration vs symbolic evaluation).
+
 ## 5. Exact reproduction commands
 
 Run from repo root.

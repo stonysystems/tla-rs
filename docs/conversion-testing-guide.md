@@ -643,6 +643,19 @@ MC wrappers add finite domains, explicit message channels, and safety invariants
 - Protocols with sequence-based state (Raft, ChainReplication) have state spaces too large for exhaustive model checking even with minimal finite domains
 - 3 protocols (TwoPhase, LeaderElection, PrimaryBackup) exhaustively checked with all invariants verified; Paxos partially checked (1.37B states, 0 violations found)
 
+**Phase 33.4.3 TLC vs source-first benchmark comparison (2026-03-08)**:
+
+Matched TLC and source-first model checking on the same finite models with the same safety invariants. Full comparison: `reports/benchmarks/COMPARISON.md`. Replay: `scripts/run_tlc_benchmarks.sh`, `scripts/run_model_check_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`.
+
+| Protocol | Source-first | TLC (distinct states / wall) | Model |
+|----------|-------------|------------------------------|-------|
+| TwoPhase | 8 states, 79s (exhausted) | 64 / 1s (exhausted) | 2 RMs |
+| PrimaryBackup | 60 states, 190s (exhausted) | 54 / 1s (exhausted) | max_log=1, values={0,1} |
+| LeaderElection | BLOCKED (enumeration) | 9,337 / 2s (exhausted) | 3 nodes |
+| Paxos | BLOCKED (enumeration) | 3,005,604 / 375s (exhausted) | 3 nodes, quorum=2 |
+
+Benchmark configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/`. TLC wrappers: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/`.
+
 #### D1 on External TLA+ Corpora (Phase 16.8.5)
 
 Tests D1 parser robustness against TLA+ specs NOT produced by our D3 emitter.
