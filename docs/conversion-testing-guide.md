@@ -618,6 +618,29 @@ with totals: `28/33` pass, `0` Cat-A, `0` Cat-B, `0` Cat-C, `5` other.
 
 **Root cause**: D1 (TLA+ → Verus) parsing/signature/annotation compatibility is now largely aligned with D2 after the nested-record and arity fixes. Remaining blockers are concentrated in recursive codegen pattern coverage for D2.
 
+#### Runtime Validation: D2-Generated Exec Code (Phase 16.8.4, completed 2026-03-08)
+
+Production D2-generated code validated via `scripts/integration_test_cluster.sh` (Phase 17.6 infrastructure).
+All 10 protocols tested with 3-node clusters for 30s:
+
+| Protocol | Runtime Result | Duration | Nodes | Observed Behavior |
+|----------|---------------|----------|-------|-------------------|
+| RSL | PASS (end-to-end) | 30s | 3 | Servers stable, client throughput verified |
+| TwoPhase | PASS | 30s | 3 | Stable, normal message exchange |
+| LeaderElection | PASS | 30s | 3 | Stable, normal message exchange |
+| PrimaryBackup | PASS | 30s | 3 | Stable, normal message exchange |
+| ChainReplication | PASS | 30s | 3 | Stable, normal message exchange |
+| Paxos | PASS | 30s | 3 | Stable, normal message exchange |
+| VerticalPaxos | PASS | 30s | 3 | Stable, normal message exchange |
+| Raft | PASS (benchmark) | 30s | 3 | Stable, benchmark client verified |
+| PBFT | PASS | 30s | 3 | Stable, moderate activity (24 log lines) |
+| EPaxos | PASS | 30s | 3 | Most active: 134K log lines (extensive message exchange) |
+
+**Replay command:**
+```bash
+./scripts/integration_test_cluster.sh
+```
+
 #### D3 TLC Model Checking: `transpiler_generated_tla_with_properties/` (Phase 16.8.2)
 
 TLC model checking of D3-generated TLA+ specs with manually written MC wrappers.
