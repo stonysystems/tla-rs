@@ -24,7 +24,6 @@ use crate::common::native::io_s::*;
 
 verus! {
 
-    #[verifier(external_body)]
     pub proof fn lemma_2bMessageHasCorresponding2aMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -106,7 +105,6 @@ verus! {
         p_2a
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_CurrentVoteDoesNotExceedMaxBal(
         b:Behavior<RslState>,
         c:LConstants,
@@ -145,7 +143,6 @@ verus! {
     }
 
 
-    #[verifier(external_body)]
     pub proof fn lemma_ActionThatOverwritesVoteWithSameBallotDoesntChangeValue(
         b:Behavior<RslState>,
         c:LConstants,

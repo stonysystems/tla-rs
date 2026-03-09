@@ -57,7 +57,6 @@ verus! {
     }
 
 
-    #[verifier(external_body)]
     pub proof fn lemma_ChosenQuorumsMatchValue(
         b: Behavior<RslState>,
         c: LConstants,
@@ -112,7 +111,6 @@ verus! {
         }
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_ChosenQuorumAnd2aFromLaterBallotMatchValues(
         b: Behavior<RslState>,
         c: LConstants,
@@ -222,7 +220,6 @@ verus! {
         }
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_QuorumOf2bsStaysValid(
         b: Behavior<RslState>,
         c: LConstants,

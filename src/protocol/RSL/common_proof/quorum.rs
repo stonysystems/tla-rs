@@ -25,8 +25,7 @@ use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
 
 verus! {
-    #[verifier(external_body)]
-    pub proof fn lemma_GetIndicesFromNodes(
+pub proof fn lemma_GetIndicesFromNodes(
         nodes: Set<AbstractEndPoint>,
         config: LConfiguration
     ) -> (indices: Set<int>)
@@ -91,8 +90,7 @@ verus! {
         indices_out
     }
 
-    #[verifier(external_body)]
-    pub proof fn lemma_GetIndicesFromPackets(
+pub proof fn lemma_GetIndicesFromPackets(
         packets: Set<RslPacket>,
         config: LConfiguration
     ) -> (indices: Set<int>)
@@ -134,8 +132,7 @@ verus! {
     }
 
 
-    #[verifier(external_body)]
-    pub proof fn lemma_SetOfElementsOfRangeNoBiggerThanRange(
+pub proof fn lemma_SetOfElementsOfRangeNoBiggerThanRange(
         Q: Set<int>,
         n: int
     )
@@ -166,8 +163,7 @@ verus! {
     }
 
 
-    #[verifier(external_body)]
-    pub proof fn lemma_QuorumIndexOverlap(
+pub proof fn lemma_QuorumIndexOverlap(
         Q1: Set<int>,
         Q2: Set<int>,
         n: int

@@ -9466,7 +9466,7 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 
 **Goal**: The RSL refinement proof (`src/protocol/RSL/refinement_proof/`) contains 20 `external_body` proof functions, and the supporting `common_proof/` has 8 more (total 28). These are trusted stubs inherited from the Dafny→Verus port. Fill in real proof bodies so Verus mechanically verifies them, reducing the trusted base.
 
-**⚠️ STATUS (2026-03-08)**: Both `common_proof` and `refinement_proof` modules are now **uncommented** in `src/protocol/RSL/mod.rs` and compile cleanly (0 compilation errors). **Phase 31.9.4 step 1 COMPLETE**: All 69 currently-failing proof functions marked with `#[verifier(external_body)]` across 12 files. All 21 submodules now verify with **0 errors** at rlimit 40. This establishes the 0-error baseline for bottom-up proof repair. Next: remove `external_body` one function at a time starting from leaf lemmas.
+**⚠️ STATUS (2026-03-08)**: Both `common_proof` and `refinement_proof` modules are now **uncommented** in `src/protocol/RSL/mod.rs` and compile cleanly (0 compilation errors). **Phase 31.9.4 step 2 COMPLETE**: Removed `external_body` from 46 passing proof functions. **47 verified, 0 errors** at rlimit 80 across all 12 proof files. **23 `external_body` annotations remain** on functions that still fail (rlimit exceeded, precondition/postcondition/assertion failures). Next: fix the 23 remaining failures one at a time.
 
 - [x] **31.8**: Fix compilation errors in `common_proof/` and `refinement_proof/` so they can be uncommented in `src/protocol/RSL/mod.rs`. [2026-03-07]
 - [ ] **31.9**: Run Verus verification with both modules enabled and confirm 0 errors. After 31.9.1 + import fix: 30 errors at rlimit 40 (down from 36 at rlimit 30). Breakdown: 11 assertion, 9 rlimit, 5 postcondition, 3 precondition, 1 termination. 39 verified. Decomposed below.
@@ -9476,22 +9476,22 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
   - [ ] **31.9.4**: Fix remaining 23 errors (14 rlimit, 9 assertion+postcondition+precondition). Key blockers: (a) message2b.rs `recv.msg is RslMessage2a`; (b) message1b.rs proof branches; (c) learner_state.rs; (d) refinement_proof modules.
     - **Strategy**: Do NOT verify all files at once (too slow). Instead:
       1. ✅ Mark all currently-failing proof fns with `#[verifier(external_body)]` so the full build passes with 0 errors. **DONE (2026-03-08)**: 69 annotations across 12 files. All 21 submodules verify with 0 errors.
-      2. Work bottom-up: start from leaf lemmas (no dependencies on other external_body fns), remove `external_body` one at a time, and fix until verified.
+      2. ✅ Remove `external_body` from all passing functions. **DONE (2026-03-08)**: 46 annotations removed, 47 functions now verified. 23 remain.
       3. Use fine-grained verification to iterate quickly: `--verify-only-module protocol::RSL::common_proof::message1b` or `--verify-function '*lemma_name*'`.
     - **Reference**: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet codebase at https://github.com/microsoft/Ironclad/tree/main/ironfleet under `protocol/RSL/` proof files. Use these as reference for proof structure and intermediate assertions.
-    - **Breakdown by file** (69 external_body annotations):
-      - `common_proof/message2a.rs`: 9 fns
-      - `common_proof/packet_sending.rs`: 6 fns
-      - `common_proof/chosen.rs`: 5 fns
-      - `common_proof/message1b.rs`: 5 fns
-      - `common_proof/message2b.rs`: 5 fns
-      - `common_proof/quorum.rs`: 4 fns
-      - `common_proof/learner_state.rs`: 3 fns
-      - `common_proof/receive1b.rs`: 1 fn
-      - `refinement_proof/refinement.rs`: 10 fns
-      - `refinement_proof/chosen.rs`: 8 fns
-      - `refinement_proof/execution.rs`: 7 fns
-      - `refinement_proof/requests.rs`: 6 fns
+    - **Remaining 23 external_body** (down from 69 after step 2):
+      - `refinement_proof/execution.rs` (6): `lemma_AppStateAlwaysValid`, `lemma_TransferredStateAlwaysValid`, `lemma_ReplySentIsAllowed`, `lemma_ReplyInReplyCacheIsAllowed`, `lemma_ReplyInAppStateSupplyIsAllowed`, `lemma_ReplySentViaExecutionIsAllowed`
+      - `refinement_proof/requests.rs` (4): `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`, `lemma_RequestInRequestQueueHasCorrespondingRequestMessage`, `lemma_RequestIn2aMessageHasCorrespondingRequestMessage`, `lemma_DecidedRequestWasSentByClient`
+      - `refinement_proof/refinement.rs` (3): `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState`, `lemma_GetBehaviorRefinementForBehaviorOfOneStep`, `lemma_GetBehaviorRefinement`
+      - `common_proof/chosen.rs` (2): `lemma_DecidedOperationWasChosen`, `collect_2b_messages`
+      - `common_proof/learner_state.rs` (2): `lemma_Received2bMessageSendersAlwaysNonempty`, `lemma_GetSent2bMessageFromLearnerState`
+      - `common_proof/message1b.rs` (2): `lemma_1bMessageWithoutOpnImplicationsFor2b`, `lemma_1bMessageWithOpnImplicationsFor2b`
+      - `common_proof/message2a.rs` (2): `lemma_Find2aThatCausedVote`, `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`
+      - `common_proof/message2b.rs` (2): `lemma_VoteWithOpnImplies2aSent`, `lemma_2bMessageImplicationsForCAcceptor`
+      - ~~`common_proof/packet_sending.rs`~~: 0 (all 6 pass)
+      - ~~`common_proof/quorum.rs`~~: 0 (all 4 pass)
+      - ~~`common_proof/receive1b.rs`~~: 0 (1 passes)
+      - ~~`refinement_proof/chosen.rs`~~: 0 (all 8 pass)
 - [x] **31.10**: Uncomment `pub mod common_proof;` and `pub mod refinement_proof;` in `src/protocol/RSL/mod.rs` permanently. [2026-03-07]
 
 **Scope**: 28 external_body proof fns across 8 files:

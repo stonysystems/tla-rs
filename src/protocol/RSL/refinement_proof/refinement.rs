@@ -97,7 +97,6 @@ verus! {
             rs == ProduceAbstractState(GetServerAddresses(ps), GetSequenceOfRequestBatches(qs))
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_ProduceAbstractStateSatisfiesRefinementRelation(
         b: Behavior<RslState>,
         c: LConstants,
@@ -135,7 +134,6 @@ verus! {
         }
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_ProduceIntermediateAbstractStatesSatisfiesNext(
         server_addresses: Set<AbstractEndPoint>,
         batches: Seq<RequestBatch>,
@@ -232,7 +230,6 @@ verus! {
         assert(rs_prime.replies == rs.replies);
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_LastProduceIntermediateAbstractStateProducesAbstractState(
         server_addresses: Set<AbstractEndPoint>,
         batches: Seq<RequestBatch>
@@ -279,7 +276,6 @@ verus! {
         Map::new(|i:int| i == i, |i:int| if i < 0 { s[0] } else if 0 <= i < s.len() { s[i] } else { s.last() })
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_ConvertBehaviorSeqToImap_ensures<T>(s:Seq<T>)
         requires s.len() > 0
         ensures imaptotal(ConvertBehaviorSeqToImap(s)),
@@ -338,7 +334,6 @@ verus! {
         high_level_behavior
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_DemonstrateRslSystemNextWhenBatchExtended(
         server_addresses: Set<AbstractEndPoint>,
         s: RSLSystemState,
@@ -382,7 +377,6 @@ verus! {
     }
 
 
-    #[verifier(external_body)]
     proof fn lemma_DemonstrateRslSystemNextWhenBatchesAdded(
         server_addresses: Set<AbstractEndPoint>,
         s: RSLSystemState,
@@ -434,7 +428,6 @@ verus! {
         (intermediate_states, batch)
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_GetBehaviorRefinementForPrefix(
         b: Behavior<RslState>,
         c: LConstants,

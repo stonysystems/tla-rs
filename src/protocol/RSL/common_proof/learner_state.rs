@@ -29,7 +29,6 @@ use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
 
 verus! {
-    #[verifier(external_body)]
     pub proof fn lemma_Received2bMessageSendersAlwaysValidReplicas(
         b: Behavior<RslState>,
         c: LConstants,

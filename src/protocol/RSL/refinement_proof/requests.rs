@@ -97,7 +97,6 @@ verus! {
         arbitrary()
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_RequestInRequestsReceivedPrevEpochsHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -207,7 +206,6 @@ verus! {
         p
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_RequestIn1bMessageHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,

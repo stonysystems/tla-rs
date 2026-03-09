@@ -23,8 +23,7 @@ use crate::common::native::io_s::*;
 
 verus! {
 
-    #[verifier(external_body)]
-    pub proof fn lemma_PacketInReceived1bWasSent(
+pub proof fn lemma_PacketInReceived1bWasSent(
         b:Behavior<RslState>,
         c:LConstants,
         i:int,

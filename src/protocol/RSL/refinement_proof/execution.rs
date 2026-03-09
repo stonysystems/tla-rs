@@ -387,7 +387,6 @@ verus! {
         (qs, batches, batch_num, req_num)
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_GetRequestIndexCorrespondingToPacketInGetPacketsFromReplies(
         p: RslPacket,
         me: AbstractEndPoint,
