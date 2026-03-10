@@ -10700,7 +10700,7 @@ docs/model-checker-architecture/
   - how one successor step is computed,
   - where invariant checking happens,
   - what output/report the user gets.
-- [ ] **35.5.3** The walkthrough must have two parallel tracks:
+- [x] **35.5.3** The walkthrough must have two parallel tracks: [26-03-10, 16:01] (expanded `docs/model-checker-architecture/walkthrough.md` to provide concrete mirrored Track A/Track B flows with the required labels `How this looks in traditional TLA+/TLC terms` and `How this looks in current tla-rs source-first terms`, each covering input, init, successor, invariant, and output stages with local anchors; added integration guard `test_model_checker_architecture_walkthrough_has_parallel_tlc_and_source_first_tracks`)
   - "How this looks in traditional TLA+/TLC terms"
   - "How this looks in current tla-rs source-first terms"
 - [ ] **35.5.4** Include at least one small state-transition example, not just CLI commands.

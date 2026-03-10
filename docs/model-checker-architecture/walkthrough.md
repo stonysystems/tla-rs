@@ -76,10 +76,60 @@ This walkthrough uses one shared small protocol/model for both engines: `TwoPhas
 The successor in step 3 (`TMSendPrepare` / `LTMSendPrepare`) is the concrete transition example used throughout this walkthrough.
 
 ## Parallel Track A: Traditional TLC Terms
-This section will describe the chosen run in TLC-style terminology using the checked-in TLC wrapper/log artifacts above.
+### How this looks in traditional TLA+/TLC terms
+1. **Input/model layer**
+   - TLC consumes the wrapper module and config:
+     - `TwoPhase_Benchmark_MC.tla`
+     - `TwoPhase_Benchmark_MC.cfg`
+   - The wrapper defines `VARIABLE state, constants, msgs` and a `Spec == StateInit /\ [][StateNext]_vars`.
+   - Anchor: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.tla`
+   - Anchor: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.cfg`
+
+2. **Initial-state construction**
+   - TLC evaluates `StateInit` in the wrapper and logs one distinct initial state for this benchmark run.
+   - Anchor: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.tla` (`StateInit`)
+   - Anchor: `reports/benchmarks/tlc/twophase_benchmark.log` (`Finished computing initial states: 1 distinct state`)
+
+3. **One successor step**
+   - A concrete successor is `TMSendPrepare`: keep `state' = state`, add `PrepareMsg` to `msgs'`, keep constants unchanged.
+   - Anchor: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.tla` (`TMSendPrepare`, `StateNext`)
+
+4. **Invariant checking**
+   - TLC checks the invariants listed in `.cfg` across explored states; this checked-in run reports no error.
+   - Anchor: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.cfg` (`INVARIANTS`)
+   - Anchor: `reports/benchmarks/tlc/twophase_benchmark.log` (`Model checking completed. No error has been found.`)
+
+5. **Output/report surface**
+   - TLC result is log-oriented text: generated states, distinct states, depth, and elapsed time.
+   - Anchor: `reports/benchmarks/tlc/twophase_benchmark.log`
+   - Anchor: `reports/benchmarks/tlc/SUMMARY.md`
 
 ## Parallel Track B: tla-rs Source-First Terms
-This section will describe the same chosen run in tla-rs source-first terminology using the checked-in source-first JSON artifacts above.
+### How this looks in current tla-rs source-first terms
+1. **Input/model layer**
+   - Source-first consumes the Rust/Verus spec plus type file and the same shared model fixture.
+   - Anchor: `src/protocol/TwoPhase/twophase.rs`
+   - Anchor: `src/protocol/TwoPhase/types.rs`
+   - Anchor: `transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml`
+
+2. **Initial-state construction**
+   - Source-first evaluates `LInit` under finite domains and records constants valuation counts in the JSON summary.
+   - Anchor: `src/protocol/TwoPhase/twophase.rs` (`LInit`)
+   - Anchor: `reports/benchmarks/source_first/twophase_benchmark.json` (`summary.constants_valuations_total`)
+
+3. **One successor step**
+   - The corresponding concrete branch is `LTMSendPrepare` under `LNext`: `tm_state is Init`, unchanged state fields, emitted `Prepare`.
+   - Anchor: `src/protocol/TwoPhase/twophase.rs` (`LTMSendPrepare`, `LNext`)
+
+4. **Invariant checking**
+   - Source-first resolves and checks the 3 configured invariants during exploration; the checked-in run has no invariant violation.
+   - Anchor: `reports/benchmarks/source_first/twophase_benchmark.json` (`invariants.configured_count`, `invariants.resolved_count`, `invariant_violation`)
+
+5. **Output/report surface**
+   - Source-first result is machine-readable JSON: result, stop reason, states/transitions/depth, elapsed time, evidence mode.
+   - Anchor: `reports/benchmarks/source_first/twophase_benchmark.json`
+   - Anchor: `reports/benchmarks/source_first/SUMMARY.md`
+   - Anchor: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`
 
 ## Output Interpretation
 This section will explain how to read the two checked-in outputs for the same shared model.

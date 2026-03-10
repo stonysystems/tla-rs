@@ -10196,6 +10196,139 @@ fn test_model_checker_architecture_walkthrough_traces_ordered_input_init_success
 }
 
 #[test]
+fn test_model_checker_architecture_walkthrough_has_parallel_tlc_and_source_first_tracks() {
+    let repo_root = resolve_repo_root_for_integration();
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture walkthrough {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+    let walkthrough_lower = walkthrough_src.to_ascii_lowercase();
+
+    assert!(
+        walkthrough_src.contains("## Parallel Track A: Traditional TLC Terms"),
+        "walkthrough {} must include a dedicated traditional parallel track section",
+        walkthrough_path.display()
+    );
+    assert!(
+        walkthrough_src.contains("## Parallel Track B: tla-rs Source-First Terms"),
+        "walkthrough {} must include a dedicated source-first parallel track section",
+        walkthrough_path.display()
+    );
+    assert!(
+        walkthrough_src.contains("### How this looks in traditional TLA+/TLC terms"),
+        "walkthrough {} must include required traditional-track label text",
+        walkthrough_path.display()
+    );
+    assert!(
+        walkthrough_src.contains("### How this looks in current tla-rs source-first terms"),
+        "walkthrough {} must include required source-first-track label text",
+        walkthrough_path.display()
+    );
+
+    let track_a = walkthrough_src
+        .split("## Parallel Track A: Traditional TLC Terms")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## Parallel Track B: tla-rs Source-First Terms").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate traditional parallel track section in {}",
+                walkthrough_path.display()
+            )
+        });
+    let track_b = walkthrough_src
+        .split("## Parallel Track B: tla-rs Source-First Terms")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate source-first parallel track section in {}",
+                walkthrough_path.display()
+            )
+        });
+    let track_a_lower = track_a.to_ascii_lowercase();
+    let track_b_lower = track_b.to_ascii_lowercase();
+
+    for step_number in 1..=5 {
+        assert!(
+            track_a.contains(&format!("{}. **", step_number)),
+            "traditional parallel track in {} must include numbered step {}",
+            walkthrough_path.display(),
+            step_number
+        );
+        assert!(
+            track_b.contains(&format!("{}. **", step_number)),
+            "source-first parallel track in {} must include numbered step {}",
+            walkthrough_path.display(),
+            step_number
+        );
+    }
+
+    for shared_concern in [
+        "input/model layer",
+        "initial-state construction",
+        "one successor step",
+        "invariant checking",
+        "output/report surface",
+    ] {
+        assert!(
+            track_a_lower.contains(shared_concern),
+            "traditional parallel track in {} must include concern `{}`",
+            walkthrough_path.display(),
+            shared_concern
+        );
+        assert!(
+            track_b_lower.contains(shared_concern),
+            "source-first parallel track in {} must include concern `{}`",
+            walkthrough_path.display(),
+            shared_concern
+        );
+    }
+
+    for tlc_anchor in [
+        "twophase_benchmark_mc.tla",
+        "twophase_benchmark_mc.cfg",
+        "stateinit",
+        "tmsendprepare",
+        "invariants",
+        "reports/benchmarks/tlc/twophase_benchmark.log",
+    ] {
+        assert!(
+            track_a_lower.contains(tlc_anchor),
+            "traditional parallel track in {} must include TLC anchor/detail `{}`",
+            walkthrough_path.display(),
+            tlc_anchor
+        );
+    }
+
+    for source_first_anchor in [
+        "src/protocol/twophase/twophase.rs",
+        "src/protocol/twophase/types.rs",
+        "twophase_benchmark.model.toml",
+        "linit",
+        "ltmsendprepare",
+        "reports/benchmarks/source_first/twophase_benchmark.json",
+    ] {
+        assert!(
+            track_b_lower.contains(source_first_anchor),
+            "source-first parallel track in {} must include source-first anchor/detail `{}`",
+            walkthrough_path.display(),
+            source_first_anchor
+        );
+    }
+
+    assert!(
+        walkthrough_lower.contains("how this looks in traditional tla+/tlc terms")
+            && walkthrough_lower.contains("how this looks in current tla-rs source-first terms"),
+        "walkthrough {} must present both required parallel-track labels",
+        walkthrough_path.display()
+    );
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
