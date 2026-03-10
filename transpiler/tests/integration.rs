@@ -10177,6 +10177,169 @@ fn test_model_checker_architecture_phase_35_10_1_beginner_can_follow_readme_path
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_10_2_traditional_tutorial_is_tlc_primary_reference_point(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional tutorial chapter {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.starts_with("# Traditional TLA+ Model Checking (TLC-Centered)"),
+        "traditional tutorial {} must explicitly keep TLC-centered framing in the chapter title",
+        tutorial_path.display()
+    );
+    assert!(
+        tutorial_src.contains("## Beginner Toolchain Primer")
+            && tutorial_src.contains("- **SANY** is the front-end analyzer")
+            && tutorial_src.contains("- **TLC** is the explicit-state model checker."),
+        "traditional tutorial {} must explain traditional flow concretely with SANY/TLC roles",
+        tutorial_path.display()
+    );
+    assert!(
+        tutorial_src.contains("## End-to-End TLC Path (Ordered)")
+            && tutorial_src.contains("## Traditional TLC Pipeline Diagram")
+            && tutorial_src.contains("TLC successor generation from Next"),
+        "traditional tutorial {} must keep explicit ordered TLC path and TLC-focused pipeline diagram",
+        tutorial_path.display()
+    );
+    assert!(
+        tutorial_src.contains("## Repo-Concrete Examples")
+            && tutorial_src.contains("twophase_small.model.toml")
+            && tutorial_src.contains("reports/model_check/twophase_small.json"),
+        "traditional tutorial {} must keep repo-concrete TLC-style examples for acceptance criterion coverage",
+        tutorial_path.display()
+    );
+
+    let tlc_mentions = tutorial_src.matches("TLC").count();
+    assert!(
+        tlc_mentions >= 8,
+        "traditional tutorial {} should keep TLC as the primary reference point; found only {} `TLC` mentions",
+        tutorial_path.display(),
+        tlc_mentions
+    );
+}
+
+#[test]
+fn test_model_checker_architecture_phase_35_10_3_source_first_tutorial_uses_actual_local_repo_anchors(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read source-first tutorial chapter {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## End-to-End Source-First Path (Ordered)"),
+        "source-first tutorial {} must keep an ordered end-to-end section for Phase 35.10.3",
+        tutorial_path.display()
+    );
+
+    let ordered_path_section = tutorial_src
+        .split("## End-to-End Source-First Path (Ordered)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate ordered source-first section in {}",
+                tutorial_path.display()
+            )
+        });
+    let ordered_anchor_count = ordered_path_section.matches("Anchor:").count();
+    assert!(
+        ordered_anchor_count >= 10,
+        "ordered source-first section in {} must anchor each major stage; found {} `Anchor:` markers",
+        tutorial_path.display(),
+        ordered_anchor_count
+    );
+
+    let anchor_lines: Vec<&str> = tutorial_src
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.contains("Anchor:"))
+        .collect();
+    assert!(
+        anchor_lines.len() >= 20,
+        "source-first tutorial {} must keep dense local anchors; found only {} `Anchor:` lines",
+        tutorial_path.display(),
+        anchor_lines.len()
+    );
+    for anchor_line in &anchor_lines {
+        assert!(
+            !anchor_line.contains("http://") && !anchor_line.contains("https://"),
+            "source-first tutorial {} must use local repo anchors, not remote URLs: `{}`",
+            tutorial_path.display(),
+            anchor_line
+        );
+    }
+
+    let required_local_anchor_paths = [
+        "transpiler/src/main.rs",
+        "transpiler/src/spec_analyzer/mod.rs",
+        "transpiler/src/modelcheck/config.rs",
+        "transpiler/src/modelcheck/ir.rs",
+        "transpiler/src/modelcheck/init.rs",
+        "transpiler/src/modelcheck/domain.rs",
+        "transpiler/src/modelcheck/evaluator.rs",
+        "transpiler/src/modelcheck/solver.rs",
+        "transpiler/src/modelcheck/explorer.rs",
+        "transpiler/src/modelcheck/por.rs",
+        "transpiler/src/modelcheck/invariant.rs",
+        "transpiler/src/modelcheck/graph.rs",
+        "transpiler/src/modelcheck/liveness.rs",
+        "docs/model-checking-source-first.md",
+        "docs/model_checker_status.md",
+        "reports/model_check/twophase_small.json",
+    ];
+    for required_path in required_local_anchor_paths {
+        assert!(
+            tutorial_src.contains(required_path),
+            "source-first tutorial {} must cite local anchor path `{}`",
+            tutorial_path.display(),
+            required_path
+        );
+        let full_path = repo_root.join(required_path);
+        assert!(
+            full_path.exists(),
+            "source-first tutorial {} cites `{}` but the path does not exist on disk at {}",
+            tutorial_path.display(),
+            required_path,
+            full_path.display()
+        );
+    }
+
+    for required_function_anchor in [
+        "`run_model_check_command`",
+        "`execute_model_check`",
+        "`build_transition_ir`",
+        "`construct_initial_states`",
+        "`eval_expr`",
+        "`solve_branch_successors_with_candidates_and_telemetry`",
+        "`explore_state_space_with_traces_and_dedup`",
+        "`first_invariant_violation`",
+        "`check_leads_to_violations`",
+        "`classify_search_evidence_mode`",
+    ] {
+        assert!(
+            tutorial_src.contains(required_function_anchor),
+            "source-first tutorial {} must include concrete function anchor {}",
+            tutorial_path.display(),
+            required_function_anchor
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

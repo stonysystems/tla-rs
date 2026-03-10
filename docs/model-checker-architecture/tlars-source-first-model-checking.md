@@ -3,13 +3,13 @@
 ## Beginner Context
 This chapter explains the model checker that is currently implemented in this repository. The key idea is "source-first": the engine evaluates the Rust/Verus spec sources (`LInit`, `LNext`, invariants, helpers) directly, instead of translating to a TLC wrapper as an intermediate execution path.
 - Anchor: `transpiler/src/main.rs` (`run_model_check_command`, `execute_model_check`)
-- Anchor: `transpiler/src/spec_analyzer.rs` (`ingest_protocol_sources_with_types_and_entrypoints`)
+- Anchor: `transpiler/src/spec_analyzer/mod.rs` (`ingest_protocol_sources_with_types_and_entrypoints`)
 - Anchor: `docs/model-checking-source-first.md` (`2. Source-First Model Checking (MVP)`)
 
 ## End-to-End Source-First Path (Ordered)
 1. **Rust/Verus input sources and type sources**: `verus-transpile model-check` ingests the protocol spec (`--input`) and type source (`--types`, defaulting to sibling `types.rs`) with `ingest_protocol_sources_with_types_and_entrypoints`.
    - Anchor: `transpiler/src/main.rs` (`Commands::ModelCheck`, `run_model_check_command`)
-   - Anchor: `transpiler/src/spec_analyzer.rs` (`ingest_protocol_sources_with_types_and_entrypoints`)
+   - Anchor: `transpiler/src/spec_analyzer/mod.rs` (`ingest_protocol_sources_with_types_and_entrypoints`)
 
 2. **Entrypoint resolution (`LInit`, `LNext`, invariants, fairness)**: init/next names are resolved from parsed spec functions, invariant names are resolved to concrete functions, and fairness labels are validated against normalized branch labels.
    - Anchor: `transpiler/src/main.rs` (`run_model_check_command`, `validate_fairness_labels_against_lnext_branches`)
@@ -54,7 +54,7 @@ This chapter explains the model checker that is currently implemented in this re
 ## Current tla-rs Source-First Architecture Diagram
 ```mermaid
 flowchart TD
-    A["1) Input + types ingestion\ntranspiler/src/main.rs (Commands::ModelCheck)\ntranspiler/src/spec_analyzer.rs (ingest_protocol_sources_with_types_and_entrypoints)"]
+    A["1) Input + types ingestion\ntranspiler/src/main.rs (Commands::ModelCheck)\ntranspiler/src/spec_analyzer/mod.rs (ingest_protocol_sources_with_types_and_entrypoints)"]
     B["2-3) Entrypoint + model resolution\ntranspiler/src/main.rs (run_model_check_command)\ntranspiler/src/modelcheck/config.rs (parse/validate/overrides)\ntranspiler/src/modelcheck/invariant.rs (resolve_selected_invariants)"]
     C["4) LNext IR normalization\ntranspiler/src/modelcheck/ir.rs (build_transition_ir)"]
     D["5) LInit initial states\ntranspiler/src/modelcheck/init.rs (construct_initial_states)\ntranspiler/src/main.rs (expand_type_domain_candidates, resolve_constants_values)"]
@@ -74,7 +74,7 @@ flowchart TD
 ## Current Technique Path (Plain Language)
 1. **Source-first execution over Rust/Verus spec source**: the checker reads local protocol `.rs` sources, resolves `LInit`/`LNext`/invariants, and executes the parsed spec expressions directly in the model-check engine instead of first translating to a TLC execution artifact.
    - Anchor: `transpiler/src/main.rs` (`run_model_check_command`, `execute_model_check`)
-   - Anchor: `transpiler/src/spec_analyzer.rs` (`ingest_protocol_sources_with_types_and_entrypoints`)
+   - Anchor: `transpiler/src/spec_analyzer/mod.rs` (`ingest_protocol_sources_with_types_and_entrypoints`)
 
 2. **Finite-domain evaluation**: every run is a bounded finite model. Domains from `model.toml` (`quantifiers`, typed domains, constants domains, collection bounds) are expanded into concrete runtime candidates, and evaluator execution only ranges over that finite set.
    - Anchor: `transpiler/src/modelcheck/config.rs` (`ModelConfig`, `validate_model_config`)
