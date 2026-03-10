@@ -89,3 +89,12 @@ Cross-engine claims are labeled as:
 | X4 | Cross-engine state-count comparisons require provenance-aware interpretation because wrapper/modeling artifacts can affect state semantics. | directly evidenced | `C1`, `R7` | Comparison artifact and claim-anchor map both call out provenance requirements. |
 | X5 | Source-first optimization deltas in this repo are grounded in checked-in artifacts/scripts rather than narrative-only claims. | directly evidenced | `C2`, `C3`, `C4`, `C5` | Reproducible via checked-in telemetry delta artifacts and test guards. |
 | X6 | Any broad statement about feature parity between TLC and tla-rs remains provisional unless backed by direct TLC-source inspection for that specific mechanism. | inference from sources | `T4`, `T5`, `R7` | Methodology inference from source-discipline and anchor requirements. |
+
+## TLC Absence-Claim Wording Rule
+For claims about TLC not having an equivalent mechanism:
+- do not use strong wording like `TLC does not use X` unless reviewed TLC sources directly support that negative claim;
+- if evidence is incomplete, use the weaker form `No equivalent mechanism was found in the reviewed TLC sources`;
+- always include the exact reviewed source IDs alongside that weaker claim (for this phase, typically `T3`, `T4`, `T5`).
+
+Current status:
+- this document uses the weaker form in `X3` and records explicit reviewed source IDs (`T3`, `T4`, `T5`, with comparison context sources).

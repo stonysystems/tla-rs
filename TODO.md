@@ -10628,7 +10628,7 @@ docs/model-checker-architecture/
   - `directly evidenced`
   - `inference from sources`
   - `uncertain / not confirmed`
-- [ ] **35.2.7** Do **not** write "TLC does not use X" unless the reviewed TLC sources actually support that claim. If evidence is incomplete, write the weaker and honest form:
+- [x] **35.2.7** Do **not** write "TLC does not use X" unless the reviewed TLC sources actually support that claim. If evidence is incomplete, write the weaker and honest form: [26-03-10, 16:01] (`docs/model-checker-architecture/sources-and-evidence.md` now includes `TLC Absence-Claim Wording Rule` banning unsupported strong negative wording and requiring the weaker `No equivalent mechanism was found in the reviewed TLC sources` form with explicit reviewed source IDs; integration guard `test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger` now rejects `TLC does not use ...`, requires at least one weaker-form absence claim row, and enforces explicit `T*` reviewed-source IDs for that row)
   - `No equivalent mechanism was found in the reviewed TLC sources`
   - and include the exact sources reviewed.
 

@@ -9168,6 +9168,20 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         sources_src.contains("## Cross-Engine Claim Confidence Register"),
         "sources-and-evidence doc must include cross-engine claim confidence register section"
     );
+    assert!(
+        sources_src.contains("## TLC Absence-Claim Wording Rule"),
+        "sources-and-evidence doc must include TLC absence-claim wording policy section"
+    );
+    let sources_without_absence_rule = sources_src
+        .split("## TLC Absence-Claim Wording Rule")
+        .next()
+        .unwrap_or(sources_src.as_str());
+    assert!(
+        !sources_without_absence_rule
+            .to_ascii_lowercase()
+            .contains("tlc does not use"),
+        "sources-and-evidence doc must avoid unsupported strong phrasing `TLC does not use ...`"
+    );
     let cross_engine_section = sources_src
         .split("## Cross-Engine Claim Confidence Register")
         .nth(1)
@@ -9222,6 +9236,7 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         "uncertain / not confirmed",
     ];
     let mut seen_confidence_labels = std::collections::BTreeSet::new();
+    let mut found_weaker_absence_claim = false;
     let extract_any_source_ids = |cell: &str| -> Vec<String> {
         cell.split(|ch: char| !ch.is_ascii_alphanumeric())
             .filter(|token| {
@@ -9264,6 +9279,7 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         );
         seen_confidence_labels.insert(confidence_label.to_string());
 
+        let claim_statement_lower = row[1].to_ascii_lowercase();
         let evidence_ids = extract_any_source_ids(&row[3]);
         assert!(
             !evidence_ids.is_empty(),
@@ -9271,6 +9287,18 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
             sources_path.display(),
             row
         );
+        if claim_statement_lower.contains("no equivalent mechanism was found in the reviewed tlc sources")
+        {
+            found_weaker_absence_claim = true;
+            let has_traditional_tlc_source = evidence_ids
+                .iter()
+                .any(|id| id.starts_with('T') && id[1..].chars().all(|ch| ch.is_ascii_digit()));
+            assert!(
+                has_traditional_tlc_source,
+                "weaker TLC absence-claim row in {} must include explicit reviewed TLC source IDs (T*)",
+                sources_path.display()
+            );
+        }
         for evidence_id in evidence_ids {
             assert!(
                 source_kind_by_id.contains_key(&evidence_id),
@@ -9280,6 +9308,11 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
             );
         }
     }
+    assert!(
+        found_weaker_absence_claim,
+        "Cross-Engine Claim Confidence Register in {} must include at least one weaker-form TLC absence claim (`No equivalent mechanism was found in the reviewed TLC sources`)",
+        sources_path.display()
+    );
     for required_label in allowed_confidence_labels {
         assert!(
             seen_confidence_labels.contains(required_label),
