@@ -10641,7 +10641,7 @@ docs/model-checker-architecture/
   - what `SANY` does,
   - what `TLC` does,
   - and what a finite model/config contributes.
-- [ ] **35.3.2** Explain the end-to-end TLC-style path, in order:
+- [x] **35.3.2** Explain the end-to-end TLC-style path, in order: [26-03-10, 15:21] (rewrote the ordered flow in `docs/model-checker-architecture/traditional-tla-model-checking.md` as an explicit 8-step TLC pipeline from source/config through counterexample reporting; added integration guard `test_model_checker_architecture_traditional_tla_tutorial_has_ordered_tlc_execution_path` to enforce required stages and ordering)
   - source module + config/constants,
   - parsing / front-end validation,
   - initial-state generation,

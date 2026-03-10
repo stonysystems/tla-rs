@@ -25,12 +25,15 @@ Because of this, two different model/config choices for the same TLA+ module can
 - Front-end parsing/validation.
 - Explicit-state exploration and property checks.
 
-## End-to-End Execution Path
-1. Parse module and model configuration.
-2. Construct initial states.
-3. Generate successors from `Next`.
-4. Deduplicate visited states and continue exploration.
-5. Check invariants/deadlocks/liveness and emit counterexamples.
+## End-to-End TLC Path (Ordered)
+1. **Source module + config/constants**: You provide a TLA+ module (`VARIABLES`, `Init`, `Next`, properties) plus a model/config that binds constants and finite domains.
+2. **Parsing / front-end validation**: SANY parses the module and checks structural correctness (names, imports, operator references, and basic consistency) before TLC runs.
+3. **Initial-state generation**: TLC evaluates `Init` under the configured constants/domains to enumerate the concrete starting states.
+4. **Successor generation from `Next`**: For each frontier state, TLC evaluates `Next` to compute enabled transitions and concrete successor states.
+5. **State storage / deduplication**: TLC records visited states and suppresses already-seen states so exploration does not loop forever on repeats.
+6. **Invariant/deadlock checking**: During exploration, TLC checks configured invariants on reachable states and reports deadlock states when no step is enabled.
+7. **Liveness/fairness handling**: If liveness properties and fairness assumptions are configured, TLC analyzes cycles/behaviors under those fairness constraints instead of only single-state safety checks.
+8. **Counterexample reporting**: On violations (invariant, deadlock, or liveness), TLC emits a concrete error trace/counterexample so you can replay the failing behavior step by step.
 
 ## Explicit-State vs Theorem Proving
 This section will contrast state exploration with proof-based methods in beginner terms.

@@ -9413,6 +9413,67 @@ fn test_model_checker_architecture_traditional_tla_tutorial_starts_with_toolchai
 }
 
 #[test]
+fn test_model_checker_architecture_traditional_tla_tutorial_has_ordered_tlc_execution_path() {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional TLC tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## End-to-End TLC Path (Ordered)"),
+        "traditional TLC tutorial {} must include an ordered end-to-end TLC path section",
+        tutorial_path.display()
+    );
+
+    let ordered_path_section = tutorial_src
+        .split("## End-to-End TLC Path (Ordered)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `End-to-End TLC Path (Ordered)` section in {}",
+                tutorial_path.display()
+            )
+        });
+    for step_number in 1..=8 {
+        assert!(
+            ordered_path_section.contains(&format!("{}. **", step_number)),
+            "ordered TLC path section in {} must include numbered step {}",
+            tutorial_path.display(),
+            step_number
+        );
+    }
+
+    let ordered_path_lower = ordered_path_section.to_ascii_lowercase();
+    let required_steps = [
+        "source module + config/constants",
+        "parsing / front-end validation",
+        "initial-state generation",
+        "successor generation from `next`",
+        "state storage / deduplication",
+        "invariant/deadlock checking",
+        "liveness/fairness handling",
+        "counterexample reporting",
+    ];
+    let mut search_from = 0usize;
+    for step in required_steps {
+        let relative_idx = ordered_path_lower[search_from..].find(step).unwrap_or_else(|| {
+            panic!(
+                "ordered TLC path section in {} must include required step `{}`",
+                tutorial_path.display(),
+                step
+            )
+        });
+        search_from += relative_idx + step.len();
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
