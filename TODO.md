@@ -10748,7 +10748,7 @@ docs/model-checker-architecture/
 
 **Goal**: Produce a disciplined answer to "what optimizations does tla-rs choose that TLC/traditional TLA+ model checking does not use?"
 
-- [ ] **35.7.1** `tlars-only-optimizations.md` must separate:
+- [x] **35.7.1** `tlars-only-optimizations.md` must separate: [26-03-10, 16:22] (`docs/model-checker-architecture/tlars-only-optimizations.md` now uses the exact required category headings with explicit non-overlap rules and starter tables; added integration guard `test_model_checker_architecture_tlars_only_optimizations_doc_separates_required_categories` to enforce heading presence/order and non-placeholder content)
   - `Confirmed tla-rs-only in reviewed comparison`
   - `Possibly different but not yet confirmed`
   - `Not an optimization; only a feature/reporting difference`

@@ -9074,6 +9074,71 @@ fn test_model_checker_architecture_comparison_major_differences_explain_required
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_only_optimizations_doc_separates_required_categories() {
+    let repo_root = resolve_repo_root_for_integration();
+    let audit_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let audit_src = std::fs::read_to_string(&audit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs optimizations audit doc {}: {}",
+            audit_path.display(),
+            err
+        )
+    });
+
+    let required_headings = [
+        "## Confirmed tla-rs-only in reviewed comparison",
+        "## Possibly different but not yet confirmed",
+        "## Not an optimization; only a feature/reporting difference",
+    ];
+    let mut heading_indices = Vec::new();
+    for heading in required_headings {
+        let index = audit_src.find(heading).unwrap_or_else(|| {
+            panic!(
+                "optimizations audit doc {} must include required heading `{}`",
+                audit_path.display(),
+                heading
+            )
+        });
+        heading_indices.push((heading, index));
+    }
+    for pair in heading_indices.windows(2) {
+        assert!(
+            pair[0].1 < pair[1].1,
+            "required headings in {} must stay in documented order: `{}` before `{}`",
+            audit_path.display(),
+            pair[0].0,
+            pair[1].0
+        );
+    }
+
+    for (index, (heading, start)) in heading_indices.iter().enumerate() {
+        let end = if index + 1 < heading_indices.len() {
+            heading_indices[index + 1].1
+        } else {
+            audit_src.len()
+        };
+        let section = &audit_src[*start..end];
+        let has_nonempty_content_line = section
+            .lines()
+            .skip(1)
+            .map(str::trim)
+            .any(|line| !line.is_empty() && !line.starts_with('#'));
+        assert!(
+            has_nonempty_content_line,
+            "section `{}` in {} must include concrete content",
+            heading,
+            audit_path.display()
+        );
+    }
+
+    assert!(
+        !audit_src.contains("Rows will include"),
+        "optimizations audit doc {} should not keep placeholder row text",
+        audit_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
