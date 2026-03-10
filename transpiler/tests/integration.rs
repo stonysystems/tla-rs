@@ -9040,6 +9040,85 @@ fn test_model_checker_architecture_phase_35_8_6_compares_against_reviewed_tlc_pa
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_7_requires_source_citation_or_inference_label_for_non_local_claims(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    assert!(
+        readme_src.contains("## Citation or Inference Rule (Phase 35.8.7)"),
+        "README {} must include explicit Phase 35.8.7 citation/inference rule section",
+        readme_path.display()
+    );
+    for required_fragment in [
+        "Every substantive non-local claim in this folder needs either a source citation or an explicit `[Inference]` label",
+        "source-ID citation from `sources-and-evidence.md`",
+        "Do not leave substantive non-local claims unlabeled",
+    ] {
+        assert!(
+            readme_src.contains(required_fragment),
+            "Phase 35.8.7 section in {} must include required rule fragment `{}`",
+            readme_path.display(),
+            required_fragment
+        );
+    }
+
+    let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
+    let sources_src = std::fs::read_to_string(&sources_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read sources/evidence doc {}: {}",
+            sources_path.display(),
+            err
+        )
+    });
+    assert!(
+        sources_src.contains("## Non-Local Claim Labeling Rule (Phase 35.8.7)"),
+        "sources/evidence doc {} must include explicit Phase 35.8.7 non-local claim labeling section",
+        sources_path.display()
+    );
+    for required_fragment in [
+        "Evidence source IDs: T* / R* / C*",
+        "explicit `[Inference]` label plus source IDs",
+        "do not present non-local claims as bare prose",
+    ] {
+        assert!(
+            sources_src.contains(required_fragment),
+            "Phase 35.8.7 section in {} must include required labeling fragment `{}`",
+            sources_path.display(),
+            required_fragment
+        );
+    }
+    assert!(
+        sources_src.contains("| X2 |")
+            && sources_src.contains("inference from sources")
+            && sources_src.contains("| X6 |"),
+        "sources/evidence register {} must preserve explicit inference-labeled claim rows with source IDs",
+        sources_path.display()
+    );
+
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read walkthrough doc {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+    assert!(
+        walkthrough_src.contains("[Inference]"),
+        "walkthrough doc {} must include explicit `[Inference]` marker support language for non-local claim labeling discipline",
+        walkthrough_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

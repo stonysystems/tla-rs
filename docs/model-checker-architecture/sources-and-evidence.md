@@ -80,6 +80,16 @@ Cross-engine claims are labeled as:
 - `inference from sources`
 - `uncertain / not confirmed`
 
+## Non-Local Claim Labeling Rule (Phase 35.8.7)
+Every substantive non-local claim in `docs/model-checker-architecture/` must use at least one of these evidence forms:
+- concrete citation anchor (`Anchor: <local path/function/doc section>`),
+- explicit source-ID citation (`Evidence source IDs: T* / R* / C*`),
+- explicit `[Inference]` label plus source IDs when the claim is inferred rather than directly evidenced.
+
+Writing discipline:
+- do not present non-local claims as bare prose without an anchor, source ID, or `[Inference]` label;
+- when evidence is indirect, prefer explicit `[Inference]` wording over stronger factual wording.
+
 ## Cross-Engine Claim Confidence Register
 | Claim ID | Claim statement | Confidence label | Evidence source IDs | Notes |
 | --- | --- | --- | --- | --- |

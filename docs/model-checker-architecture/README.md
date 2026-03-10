@@ -111,3 +111,14 @@ Comparison baseline for this phase:
 When other tools are mentioned:
 - label them explicitly as side context, not as the main comparison baseline;
 - do not merge side-context tool claims into the TLC-baseline rows in `comparison.md`.
+
+## Citation or Inference Rule (Phase 35.8.7)
+Every substantive non-local claim in this folder needs either a source citation or an explicit `[Inference]` label.
+
+Allowed evidence forms:
+- local citation via concrete anchor path/function (for example `Anchor: transpiler/src/main.rs`),
+- source-ID citation from `sources-and-evidence.md` (for example `T*`, `R*`, `C*`),
+- explicit `[Inference]` wording plus the source IDs it is inferred from.
+
+Guardrail:
+- Do not leave substantive non-local claims unlabeled; if a claim is not directly evidenced, mark it as `[Inference]` instead of writing it as a fact.
