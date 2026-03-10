@@ -9486,6 +9486,65 @@ fn test_model_checker_architecture_phase_35_9_source_first_tutorial_is_locally_a
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_walkthrough_keeps_small_dual_path_example() {
+    let repo_root = resolve_repo_root_for_integration();
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read walkthrough {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        walkthrough_src.contains("## Chosen Shared Example"),
+        "walkthrough {} must include a chosen shared example section",
+        walkthrough_path.display()
+    );
+    for required_shared_example_anchor in [
+        "`TwoPhase`",
+        "twophase_benchmark.model.toml",
+        "reports/benchmarks/source_first/twophase_benchmark.json",
+        "reports/benchmarks/tlc/twophase_benchmark.log",
+    ] {
+        assert!(
+            walkthrough_src.contains(required_shared_example_anchor),
+            "walkthrough {} must include required shared-example anchor `{}`",
+            walkthrough_path.display(),
+            required_shared_example_anchor
+        );
+    }
+
+    assert!(
+        walkthrough_src.contains("## Step-by-Step Trace (Ordered)"),
+        "walkthrough {} must include ordered trace section",
+        walkthrough_path.display()
+    );
+    for required_trace_stage in [
+        "Input spec/model selection",
+        "How initial states are obtained",
+        "How one successor step is computed",
+        "Where invariant checking happens",
+        "What output/report the user gets",
+    ] {
+        assert!(
+            walkthrough_src.contains(required_trace_stage),
+            "walkthrough {} must include trace stage `{}`",
+            walkthrough_path.display(),
+            required_trace_stage
+        );
+    }
+
+    assert!(
+        walkthrough_src.contains("## Parallel Track A: Traditional TLC Terms")
+            && walkthrough_src.contains("## Parallel Track B: tla-rs Source-First Terms"),
+        "walkthrough {} must keep both conceptual tracks",
+        walkthrough_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
