@@ -48,3 +48,7 @@ Current result after candidate-by-candidate review:
 - `0/6` candidates are in the confirmed section.
 - `5/6` remain plausible optimization differences but not yet confirmed.
 - `1/6` (`hash_compaction64` exactness/lossiness labeling) is explicitly split so the labeling surface is treated as reporting/UX rather than an optimization claim.
+
+## Plain zero-confirmed outcome (Phase 35.7.5)
+Current comparison outcome: **zero fully confirmed tla-rs-only optimizations**.
+This report keeps that result explicit instead of stretching uncertain evidence into confirmed claims.

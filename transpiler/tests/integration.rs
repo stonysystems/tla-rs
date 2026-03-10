@@ -9549,6 +9549,36 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_no
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_5_states_zero_confirmed_outcome_plainly(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+    let audit_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let audit_src = std::fs::read_to_string(&audit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs optimizations audit doc {}: {}",
+            audit_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        audit_src.contains("## Plain zero-confirmed outcome (Phase 35.7.5)"),
+        "optimizations audit doc {} must include explicit Phase 35.7.5 outcome section",
+        audit_path.display()
+    );
+    assert!(
+        audit_src.contains("zero fully confirmed tla-rs-only optimizations"),
+        "Phase 35.7.5 section in {} must state plainly that the current outcome has zero fully confirmed tla-rs-only optimizations",
+        audit_path.display()
+    );
+    assert!(
+        audit_src.contains("instead of stretching uncertain evidence into confirmed claims"),
+        "Phase 35.7.5 section in {} must explicitly reject stretching uncertain evidence into confirmed claims",
+        audit_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");

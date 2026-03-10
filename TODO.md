@@ -10768,7 +10768,7 @@ docs/model-checker-architecture/
   - `symmetry_fields` normalization,
   - `hash_compaction64` exactness/lossiness labeling.
 - [x] **35.7.4** Do **not** automatically classify every item above as tla-rs-only. The task is to audit them, not to force the answer. [26-03-10, 16:33] (`docs/model-checker-architecture/tlars-only-optimizations.md` now has explicit `Anti-force classification rule (Phase 35.7.4)` language and a concrete 0/6 confirmed outcome summary so the audit stays evidence-driven rather than forced; added integration guard `test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_not_force_all_candidates_into_confirmed_bucket` to ensure none of the six required candidates is auto-promoted into the confirmed section)
-- [ ] **35.7.5** If the comparison produces zero fully confirmed tla-rs-only optimizations, state that plainly rather than stretching evidence.
+- [x] **35.7.5** If the comparison produces zero fully confirmed tla-rs-only optimizations, state that plainly rather than stretching evidence. [26-03-10, 16:35] (`docs/model-checker-architecture/tlars-only-optimizations.md` now includes explicit `Plain zero-confirmed outcome (Phase 35.7.5)` language that states the current result is zero fully confirmed tla-rs-only optimizations and explicitly rejects stretching uncertain evidence into confirmed claims; added integration guard `test_model_checker_architecture_tlars_only_optimizations_phase_35_7_5_states_zero_confirmed_outcome_plainly`)
 
 ### 35.8 Anti-Corner-Cutting Rules (Important)
 
