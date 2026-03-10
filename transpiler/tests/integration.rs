@@ -8793,6 +8793,7 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
     let mut source_kind_by_id = std::collections::BTreeMap::new();
     let mut traditional_kinds = std::collections::BTreeSet::new();
     let mut traditional_rows_for_policy: Vec<(String, String, String)> = Vec::new();
+    let mut tlars_rows_for_policy: Vec<(String, String, String)> = Vec::new();
     let allowed_source_kinds = [
         "official docs",
         "book",
@@ -8903,6 +8904,12 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
                     row
                 );
             }
+        } else if track == "tlars_source_first" {
+            tlars_rows_for_policy.push((
+                row[2].to_string(),
+                source_kind.to_string(),
+                supports_claims.to_string(),
+            ));
         }
     }
 
@@ -8929,6 +8936,63 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
             source_kind
         );
     }
+
+    assert!(
+        !tlars_rows_for_policy.is_empty(),
+        "tlars_source_first track in {} must include at least one row",
+        sources_path.display()
+    );
+    assert!(
+        sources_src.contains("## tla-rs Local Artifact Anchor Rule"),
+        "sources-and-evidence doc must include tla-rs local artifact anchor policy section"
+    );
+    let tlars_allowed_source_kinds = ["repo doc", "source code", "test", "benchmark artifact"];
+    let has_local_repo_path = |value: &str| {
+        let lower = value.to_ascii_lowercase();
+        lower.contains("docs/")
+            || lower.contains("transpiler/")
+            || lower.contains("scripts/")
+            || lower.contains("reports/")
+            || lower.contains("src/")
+    };
+    let mut has_transpiler_impl_anchor = false;
+    for (source, source_kind, supports_claims) in &tlars_rows_for_policy {
+        let source_lower = source.to_ascii_lowercase();
+        let supports_lower = supports_claims.to_ascii_lowercase();
+        assert!(
+            tlars_allowed_source_kinds.contains(&source_kind.as_str()),
+            "tlars_source_first row in {} uses non-local source kind `{}` for source `{}`",
+            sources_path.display(),
+            source_kind,
+            source
+        );
+        assert!(
+            !source_lower.contains("http://") && !source_lower.contains("https://"),
+            "tlars_source_first source `{}` in {} must be a local artifact path, not a web URL",
+            source,
+            sources_path.display()
+        );
+        assert!(
+            has_local_repo_path(source),
+            "tlars_source_first source `{}` in {} must include a concrete local repo path anchor",
+            source,
+            sources_path.display()
+        );
+        assert!(
+            !supports_lower.contains("memory") && !supports_lower.contains("recollection"),
+            "tlars_source_first row for source `{}` in {} must not rely on memory-only wording",
+            source,
+            sources_path.display()
+        );
+        if source_lower.contains("transpiler/src/") {
+            has_transpiler_impl_anchor = true;
+        }
+    }
+    assert!(
+        has_transpiler_impl_anchor,
+        "tlars_source_first in {} must include at least one local transpiler implementation anchor (`transpiler/src/...`)",
+        sources_path.display()
+    );
 
     assert!(
         sources_src.contains("## TLC Internals Evidence Exclusions"),

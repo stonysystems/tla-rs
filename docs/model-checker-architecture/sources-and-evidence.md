@@ -63,6 +63,17 @@ Current ledger status:
 - no `traditional_tla_tlc` entry uses blog/discussion-thread sources as primary internals evidence;
 - internals wording is anchored to `T4`/`T5` and backed by canonical sources in the primary-source table above.
 
+## tla-rs Local Artifact Anchor Rule
+For substantive `tla-rs` architecture/mechanism claims:
+- each claim must point to a local repo artifact (`docs/`, `transpiler/`, `scripts/`, `reports/`, or another checked-in path), not memory;
+- acceptable anchor forms are concrete doc paths, source files, tests, scripts, reports, and function/module anchors inside those files;
+- web links are not sufficient for `tla-rs` mechanism claims because this phase requires repo-grounded evidence.
+
+Current `tlars_source_first` compliance:
+- `R1`-`R3`: local docs (`docs/...`) for status/workflow claims.
+- `R4`-`R6`: local model-checker implementation files (`transpiler/src/...`) with function/module anchors.
+- `R7`: local claim-to-anchor map (`docs/model-checker-architecture/artifacts/code-anchor-map.md`).
+
 ## Claim Confidence Labels
 Cross-engine claims are labeled as:
 - `directly evidenced`
