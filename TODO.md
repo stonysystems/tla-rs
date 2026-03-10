@@ -12,7 +12,7 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 ## Current Status (2026-03-06)
 
 ✅ **669 verified, 0 errors**. Raft refinement proof: 6 files (~12,000 LOC in state_machine.rs, invariants.rs, induction.rs, committed.rs, message_invariants.rs, refinement.rs), 30+ invariants proved, 12 assumes in invariants.rs (7 LC `assume(false)` blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. 24 inductive lemma requires narrowed to minimal sub-invariants. 10 packet-identity assumes remain in RSL (irreducible IO trust boundary).
-Most transpiler/proof phases are now in good shape. The largest remaining product gap is the native tla-rs model checker: the source-first engine exists and already supports bounded safety/liveness checking, but protocol coverage, evaluator completeness, and checked-in performance evidence are still incomplete. Current model-check status is tracked in `docs/model_checker_status.md` and the follow-on work remains a major phase below, but it now sits behind Phases 34 and 31 in the active priority order.
+Most transpiler/proof phases are now in good shape. The largest remaining product gap is still the native tla-rs model checker: the source-first engine exists, bounded safety/liveness checking works, and shared TLC comparison artifacts now exist, but the repo still lacks a beginner-friendly architecture/tutorial document explaining how traditional TLA+ model checking works, how the current tla-rs source-first checker works, how the two relate, and which optimizations are genuinely unique to tla-rs. Current model-check status is tracked in `docs/model_checker_status.md`; the new documentation phase below is now the immediate top priority ahead of Phases 31 and 34.
 
 **What works:**
 - TLA+ → Verus spec transpilation (Phase 9): ✅ Complete
@@ -43,21 +43,23 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
 - **Native model checker is still partial** — evaluator/solver gaps remain for general quantifiers, `match`, struct updates, bitwise/shift ops, non-identifier `let` patterns, broader casts, generic-domain expansion, and multi-valuation `LConstants`. See `docs/model_checker_status.md` for the current blocker list and evidence rules.
 - **Consensus protocol source-first coverage is incomplete** — only TwoPhase, LeaderElection, PrimaryBackup, and Paxos currently have checked-in bounded source-first runs. ChainReplication, Raft, VerticalPaxos, PBFT, EPaxos, and RSL still need checked-in source-first status, blockers, and automation.
-- **The current "green" source-first evidence for TwoPhase / LeaderElection / PrimaryBackup / Paxos is still too small to be convincing** — the checked-in fixtures are depth-1 / `max_states = 200` smoke models, which are acceptable for minimal regression coverage but unacceptable as final protocol-support or performance evidence. We still need checked-in long-run exact-mode benchmark configs (target about 1 hour on the benchmark machine) and artifacts for these four protocols.
+- **The current depth-1 "green" source-first smoke evidence for TwoPhase / LeaderElection / PrimaryBackup / Paxos is still too small to be convincing on its own** — the checked-in fixtures are useful for fast regression coverage, but they are not the whole story. We now also have checked-in longer benchmark/TLC-comparison artifacts for the 4 shared protocols, but the repo still lacks a zero-background architecture/tutorial document explaining how to interpret those numbers and what algorithmic differences drive them.
 - **Model-check performance work is incomplete** — reductions exist, but there is no checked-in before/after benchmark discipline for exact-mode optimizations, and predicate-only helper branches still risk expensive candidate-state enumeration.
 - **tla-rs vs TLA+ model-check benchmark completed for 4 protocols** — matched TLC vs source-first comparison checked in at `reports/benchmarks/COMPARISON.md`. TLC fully exhausts all 4 protocols (TwoPhase 64 states/1s, PrimaryBackup 54 states/1s, LeaderElection 9,337 states/2s, Paxos 3M states/375s). Source-first exhausts TwoPhase (8 states/79s) and PrimaryBackup (60 states/190s) but is BLOCKED on LeaderElection and Paxos due to enumeration scalability. Both engines agree on safety (no violations). Performance gap is algorithmic (brute-force enumeration vs symbolic evaluation).
+- **We do not yet have a zero-knowledge survey/tutorial for model-checker architecture** — the repo needs a grounded explanation of traditional TLA+ model checking (TLC), the current tla-rs source-first checker, their similarities/differences, and which tla-rs optimizations are actually absent from the reviewed TLC path. This is now tracked as Phase 35 and is the top-priority documentation task.
 - **Phase 16.8 is complete** — all workspace artifacts materialized (10/10 dirs), all 9 non-RSL protocols have MC wrappers + TLC evidence, D2 compile gate at 28/33, and runtime validation completed (10/10 protocols pass 30s 3-node cluster runs). Only remaining item is external corpus D2 exec (blocked on `.automan` annotation generation — documented, not actionable). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--complete).
 
 **Next steps (priority order):**
-1. **Phase 31: RSL Refinement Proof — fix remaining 23 verification errors** — compilation fixed, modules uncommented, 48 verified / 23 errors remaining. Strategy: mark failing fns with `external_body`, then remove bottom-up one at a time using fine-grained verification (`--verify-only-module` / `--verify-function`). **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
-2. **Phase 34: Raft Network Model and Complete Refinement Proof** — network model added, 30+ invariants proved, 12 assumes remain (6 LC blocked on `d_rli ≤ k` wall requiring leader-term strong induction, 5 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
-3. **Phase 33: Model checker hardening, protocol coverage, and performance** — COMPLETED (33.1–33.5 all done). See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance).
-4. **Phase 16.8: ✅ COMPLETE** — all workspace artifacts materialized, TLC evidence for 9/9 non-RSL protocols, D2 compile gate at 28/33, runtime validation 10/10 protocols pass 30s 3-node clusters. Only residual: external corpus D2 exec blocked on `.automan` annotation generation (documented). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--complete).
-5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
-6. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
-7. **Phase 20 cleanup** — finish the remaining auto-inference cleanup.
+1. **Phase 35: Beginner model checker architecture survey and tutorial** — create `docs/model-checker-architecture/` for readers with zero background, covering: traditional TLA+ model checking (focus on TLC), the current tla-rs source-first model checker architecture/mechanism, a side-by-side relation/similarity/difference analysis, and a strictly evidenced section on tla-rs optimizations/reductions that TLC does not appear to use in the reviewed path. This is documentation-only, but it is now the top priority because future model-check implementation work is too easy to mis-scope without it. See [Phase 35](#phase-35-beginner-model-checker-architecture-survey-and-tutorial--top-priority).
+2. **Phase 31: RSL Refinement Proof — fix remaining 23 verification errors** — compilation fixed, modules uncommented, 48 verified / 23 errors remaining. Strategy: mark failing fns with `external_body`, then remove bottom-up one at a time using fine-grained verification (`--verify-only-module` / `--verify-function`). **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
+3. **Phase 34: Raft Network Model and Complete Refinement Proof** — network model added, 30+ invariants proved, 12 assumes remain (6 LC blocked on `d_rli ≤ k` wall requiring leader-term strong induction, 5 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
+4. **Phase 33: Model checker hardening, protocol coverage, and performance** — COMPLETED (33.1–33.5 all done). See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance).
+5. **Phase 16.8: ✅ COMPLETE** — all workspace artifacts materialized, TLC evidence for 9/9 non-RSL protocols, D2 compile gate at 28/33, runtime validation 10/10 protocols pass 30s 3-node clusters. Only residual: external corpus D2 exec blocked on `.automan` annotation generation (documented). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--complete).
+6. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
+7. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
+8. **Phase 20 cleanup** — finish the remaining auto-inference cleanup.
 
-**Active work**: **Phase 31** (RSL refinement proof — 23 verification errors remaining) is the top priority. **Phase 34** (Raft refinement proof — 12 assumes, 6 blocked on `d_rli ≤ k` wall) follows. See `reports/raft_refinement_proof.md` for detailed Raft status.
+**Active work**: **Phase 35** (beginner model checker architecture survey/tutorial under `docs/model-checker-architecture/`) is now the top priority. After that, **Phase 31** (RSL refinement proof — 23 verification errors remaining) and **Phase 34** (Raft refinement proof — 12 assumes, 6 blocked on `d_rli ≤ k` wall) remain the highest-priority implementation phases. See `reports/raft_refinement_proof.md` for detailed Raft status.
 
 ## Reference
 
@@ -92,7 +94,8 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 23. [Phase 29: Transpiler Support for Spec Helper Functions and Composite Action Generation](#phase-29-transpiler-support-for-spec-helper-functions-and-composite-action-generation)
 24. [Phase 32: Raft Safety Refinement Proof](#phase-32-raft-safety-refinement-proof)
 25. [Phase 33: Model Checker Hardening, Protocol Coverage, and Performance](#phase-33-model-checker-hardening-protocol-coverage-and-performance)
-26. [Phase 34: Raft Network Model and Complete Refinement Proof — TOP PRIORITY](#phase-34-raft-network-model-and-complete-refinement-proof)
+26. [Phase 34: Raft Network Model and Complete Refinement Proof](#phase-34-raft-network-model-and-complete-refinement-proof)
+27. [Phase 35: Beginner Model Checker Architecture Survey and Tutorial — TOP PRIORITY](#phase-35-beginner-model-checker-architecture-survey-and-tutorial--top-priority)
 
 ---
 
@@ -10374,3 +10377,319 @@ This is the hardest step. Estimated ~300-500 LOC.
 - LogMatching (34.6) is the hardest step — log truncation/overwrite semantics may require additional supporting invariants
 - Verus SMT timeouts on deep quantifier nesting (message invariants + quorum intersection + log index reasoning). May need trigger engineering and lemma decomposition similar to RSL Phase 31
 - `AppendEntriesIntegrity` formulation depends on whether the spec models log truncation — need to verify in 34.2.3
+
+---
+
+## Phase 35: Beginner Model Checker Architecture Survey and Tutorial — TOP PRIORITY
+
+**Goal**: Produce documentation only (no implementation changes in this phase) that teaches a reader with zero prior model-checking knowledge:
+- what the traditional TLA+ model-checking architecture is in practice (focus on `TLC`; introduce `SANY` / the broader TLA+ toolchain only as needed for context),
+- what architecture, mechanism, and technique path the current tla-rs source-first model checker uses,
+- how the two engines are related (same core ideas, different representations/algorithms/tradeoffs),
+- and which optimizations/reductions/engineering choices the current tla-rs checker uses that the reviewed TLC/traditional TLA+ path does not.
+
+**Why this phase exists**:
+- We now have both source-first evidence and shared TLC comparison artifacts, but the repo still lacks a document that explains what the engines are actually doing.
+- Without this tutorial, it is too easy to make shallow claims like "tla-rs is slower/faster" or "TLC does/does not optimize X" without understanding the architectural causes.
+- Future model-check work should be guided by a grounded comparison, not folklore.
+
+**Scope (this phase)**:
+- ✅ Documentation/tutorial only.
+- ✅ Beginner-first explanation of model checking concepts needed to understand the repo's current model-check work.
+- ✅ Traditional TLA+ model checking explained concretely, with TLC as the primary target.
+- ✅ Current tla-rs source-first model checker explained from real local code and checked-in artifacts.
+- ✅ Side-by-side comparison of architecture, mechanism, technique path, and optimizations.
+- ❌ Implementing or changing the model checker.
+- ❌ Re-running the full benchmark matrix unless needed to confirm a specific documented claim.
+- ❌ Comparing against every TLA+ ecosystem tool. Keep the main line on TLC/traditional TLA+ model checking; mention other tools only if explicitly marked as side context.
+
+### 35.1 Deliverables and File Layout (Required)
+
+Create and populate `docs/model-checker-architecture/` with the following files:
+
+```
+docs/model-checker-architecture/
+  README.md                            # Entry point, scope, reading order, audience promise
+  glossary.md                          # Zero-background terminology
+  traditional-tla-model-checking.md    # How traditional TLA+ model checking works (TLC-centered)
+  tlars-source-first-model-checking.md # How the current tla-rs checker works
+  walkthrough.md                       # One small worked example traced through both engines
+  comparison.md                        # Similarities, differences, and consequences
+  tlars-only-optimizations.md          # Strictly evidenced tla-rs-specific optimization/reduction audit
+  sources-and-evidence.md              # Source list, evidence rules, inspection depth, confidence notes
+  artifacts/
+    engine-crosswalk.csv              # Machine-readable comparison matrix
+    code-anchor-map.md                # Local file/function anchors for tla-rs claims
+    review-checklist.md               # Completion checklist with links to required sections
+```
+
+- [ ] **35.1.1** Create the directory structure and file skeletons above with real section headers; no empty placeholder files.
+- [ ] **35.1.2** `README.md` must include:
+  - target audience = reader with `0` prior knowledge,
+  - scope,
+  - what "traditional TLA+ model checker" means in this phase (`TLC`, unless another engine is explicitly labeled as side context),
+  - recommended reading order,
+  - and a short "what you will understand after reading this" section.
+- [ ] **35.1.3** `glossary.md` must define at minimum:
+  - `state`, `transition`, `state space`, `invariant`, `safety`, `liveness`, `deadlock`, `fairness`, `counterexample`,
+  - `TLA+`, `SANY`, `TLC`, `explicit-state model checking`,
+  - `source-first`, `finite-domain expansion`, `successor generation`, `state deduplication`,
+  - `symmetry reduction`, `partial-order reduction`, `hash compaction`, `telemetry`.
+- [ ] **35.1.4** `artifacts/code-anchor-map.md` must map every major tla-rs architecture claim to concrete local repo anchors, at minimum:
+  - `docs/model_checker_status.md`
+  - `docs/model-checking-source-first.md`
+  - `docs/conversion-testing-guide.md`
+  - `reports/benchmarks/COMPARISON.md`
+  - `transpiler/src/main.rs`
+  - `transpiler/src/modelcheck/config.rs`
+  - `transpiler/src/modelcheck/init.rs`
+  - `transpiler/src/modelcheck/ir.rs`
+  - `transpiler/src/modelcheck/evaluator.rs`
+  - `transpiler/src/modelcheck/domain.rs`
+  - `transpiler/src/modelcheck/solver.rs`
+  - `transpiler/src/modelcheck/explorer.rs`
+  - `transpiler/src/modelcheck/graph.rs`
+  - `transpiler/src/modelcheck/liveness.rs`
+  - `transpiler/src/modelcheck/invariant.rs`
+  - `transpiler/src/modelcheck/por.rs`
+  - `scripts/run_model_check_matrix.sh`
+  - `scripts/compare_model_check_telemetry.sh`
+- [ ] **35.1.5** `comparison.md` and `artifacts/engine-crosswalk.csv` must cover the same comparison rows/columns.
+
+### 35.2 Source Discipline and Evidence Rules (No Hand-Wavy Architecture Claims)
+
+**Goal**: Prevent a shallow tutorial that merely paraphrases existing repo docs or repeats generic folklore about TLC.
+
+- [ ] **35.2.1** `sources-and-evidence.md` must list the primary sources used for:
+  - traditional TLA+ / TLC architecture,
+  - tla-rs source-first architecture,
+  - and any comparison/optimization claim.
+- [ ] **35.2.2** For every source, record:
+  - `source kind` (`official docs`, `book`, `source code`, `repo doc`, `benchmark artifact`, `test`, `secondary background`),
+  - `date checked`,
+  - `inspected depth` (`doc skim`, `doc deep read`, `source read`, `artifact inspection`, etc.),
+  - `what claim(s) it supports`.
+- [ ] **35.2.3** Traditional TLA+/TLC claims should prefer primary sources:
+  - official TLA+/TLC docs,
+  - `Specifying Systems` / canonical Lamport material where relevant,
+  - TLC source code or official implementation references when architectural detail depends on implementation.
+- [ ] **35.2.4** Do **not** use blogs or random discussion threads as the main evidence for TLC internals if an official/canonical source exists.
+- [ ] **35.2.5** Every substantive tla-rs claim must point to a local file/function/doc artifact in this repo, not just to memory.
+- [ ] **35.2.6** Every cross-engine comparison claim must be marked as one of:
+  - `directly evidenced`
+  - `inference from sources`
+  - `uncertain / not confirmed`
+- [ ] **35.2.7** Do **not** write "TLC does not use X" unless the reviewed TLC sources actually support that claim. If evidence is incomplete, write the weaker and honest form:
+  - `No equivalent mechanism was found in the reviewed TLC sources`
+  - and include the exact sources reviewed.
+
+### 35.3 Traditional TLA+ Model Checking Tutorial (TLC-Centered)
+
+**Goal**: Explain the "traditional" architecture clearly enough that a newcomer understands what TLC is doing before reading about tla-rs.
+
+- [ ] **35.3.1** `traditional-tla-model-checking.md` must start with a beginner-friendly explanation of the TLA+ toolchain:
+  - what TLA+ is,
+  - what `SANY` does,
+  - what `TLC` does,
+  - and what a finite model/config contributes.
+- [ ] **35.3.2** Explain the end-to-end TLC-style path, in order:
+  - source module + config/constants,
+  - parsing / front-end validation,
+  - initial-state generation,
+  - successor generation from `Next`,
+  - state storage / deduplication,
+  - invariant/deadlock checking,
+  - liveness/fairness handling,
+  - counterexample reporting.
+- [ ] **35.3.3** Include at least one diagram (Mermaid or ASCII is fine) showing the traditional TLA+/TLC pipeline.
+- [ ] **35.3.4** Explicitly explain what "explicit-state model checking" means and how it differs from theorem proving.
+- [ ] **35.3.5** Explain the main limits a beginner must understand:
+  - finite models,
+  - state explosion,
+  - model/config sensitivity,
+  - the difference between "the spec language" and "the checker implementation".
+- [ ] **35.3.6** Keep the tutorial concrete. Avoid generic textbook-only prose; connect the explanation to the kinds of models/properties used in this repo.
+
+### 35.4 Current tla-rs Source-First Model Checker Tutorial
+
+**Goal**: Explain the actual engine in this repo, not an idealized or speculative one.
+
+- [ ] **35.4.1** `tlars-source-first-model-checking.md` must explain the end-to-end source-first path, in order:
+  - Rust/Verus input sources and type sources,
+  - entrypoint resolution (`LInit`, `LNext`, invariants, fairness),
+  - `model.toml` parsing/override resolution,
+  - branch IR normalization from `LNext`,
+  - initial-state construction,
+  - domain expansion and evaluator execution,
+  - branch solving / successor generation,
+  - BFS/DFS exploration and state dedup,
+  - invariant/deadlock/liveness checking,
+  - report generation / telemetry / evidence-mode labeling.
+- [ ] **35.4.2** Include at least one diagram showing the current tla-rs architecture and name the concrete local modules responsible for each stage.
+- [ ] **35.4.3** Explain the current technique path in plain language:
+  - source-first execution over Rust/Verus spec source,
+  - finite-domain evaluation,
+  - direct-solver path vs candidate-enumeration fallback,
+  - exact vs lossy search modes,
+  - branch-label fairness/liveness checks,
+  - checked-in JSON/report evidence.
+- [ ] **35.4.4** Explain the main currently known limits using the repo's actual status:
+  - unsupported evaluator constructs,
+  - domain/solver limitations,
+  - fallback enumeration cost,
+  - incomplete protocol coverage / performance gaps where still relevant.
+- [ ] **35.4.5** Every major subsection must cite the local file/function/doc anchor that supports it.
+
+### 35.5 Worked Example for a Reader with Zero Background
+
+**Goal**: Show one small model-checking run end-to-end so the architecture is not just abstract prose.
+
+- [ ] **35.5.1** `walkthrough.md` must use one shared small protocol/model with checked-in evidence on both sides if possible. Prefer `TwoPhase` or `PrimaryBackup` because they are smaller than `LeaderElection`/`Paxos`.
+- [ ] **35.5.2** The walkthrough must trace, step by step:
+  - what the input spec/model is,
+  - how initial states are obtained,
+  - how one successor step is computed,
+  - where invariant checking happens,
+  - what output/report the user gets.
+- [ ] **35.5.3** The walkthrough must have two parallel tracks:
+  - "How this looks in traditional TLA+/TLC terms"
+  - "How this looks in current tla-rs source-first terms"
+- [ ] **35.5.4** Include at least one small state-transition example, not just CLI commands.
+- [ ] **35.5.5** If the example uses inferred/approximate TLC details rather than checked-in local artifacts, mark that clearly and cite the source used.
+
+### 35.6 Comparison: Relation, Similarities, Differences, and Consequences
+
+**Goal**: Answer the user's actual question, not just present two separate tutorials.
+
+- [ ] **35.6.1** `comparison.md` must include a side-by-side table with at least these columns:
+  - `Concern`
+  - `Traditional TLA+ / TLC`
+  - `tla-rs source-first`
+  - `Same / Similar / Different`
+  - `Why this difference matters`
+- [ ] **35.6.2** Required comparison rows (minimum):
+  - input language / source representation
+  - front-end validation
+  - model/config role
+  - initial-state generation
+  - successor generation
+  - helper/operator evaluation
+  - state representation
+  - state deduplication
+  - invariant checking
+  - deadlock semantics
+  - liveness/fairness handling
+  - counterexample/report output
+  - performance bottlenecks
+  - exactness vs lossy acceleration modes
+  - extension points / where future optimizations would land
+- [ ] **35.6.3** Add a synthesis section that explicitly answers:
+  - what is fundamentally the same idea,
+  - what is an implementation detail difference,
+  - what is a semantics/algorithm difference,
+  - what is a tooling UX/reporting difference.
+- [ ] **35.6.4** For every major difference, explain the consequence:
+  - performance,
+  - feature coverage,
+  - trust/exactness,
+  - usability,
+  - or implementation complexity.
+
+### 35.7 tla-rs-Only Optimization / Reduction Audit
+
+**Goal**: Produce a disciplined answer to "what optimizations does tla-rs choose that TLC/traditional TLA+ model checking does not use?"
+
+- [ ] **35.7.1** `tlars-only-optimizations.md` must separate:
+  - `Confirmed tla-rs-only in reviewed comparison`
+  - `Possibly different but not yet confirmed`
+  - `Not an optimization; only a feature/reporting difference`
+- [ ] **35.7.2** For each confirmed item, record:
+  - optimization/reduction name,
+  - what cost it reduces,
+  - whether it preserves exactness,
+  - tla-rs code/doc anchor,
+  - TLC evidence used for the "not found / not used" comparison,
+  - confidence level,
+  - and a short example of its effect (from checked-in telemetry/artifacts if available).
+- [ ] **35.7.3** Candidate items that must be explicitly audited before inclusion or rejection:
+  - run-scoped successor memoization used during liveness graph indexing,
+  - direct helper-branch solving vs enumeration fallback split,
+  - static-guard pruning before candidate enumeration,
+  - `por_heuristic = "invisible_branch"`,
+  - `symmetry_fields` normalization,
+  - `hash_compaction64` exactness/lossiness labeling.
+- [ ] **35.7.4** Do **not** automatically classify every item above as tla-rs-only. The task is to audit them, not to force the answer.
+- [ ] **35.7.5** If the comparison produces zero fully confirmed tla-rs-only optimizations, state that plainly rather than stretching evidence.
+
+### 35.8 Anti-Corner-Cutting Rules (Important)
+
+- [ ] **35.8.1** Do not submit a single shallow markdown file. The required folder/file structure above exists to force separation of tutorial, comparison, optimization audit, and evidence.
+- [ ] **35.8.2** Do not merely paraphrase `docs/model_checker_status.md` or `docs/model-checking-source-first.md`. Those are source inputs, not the finished tutorial.
+- [ ] **35.8.3** Define jargon on first use and keep the prose readable for a newcomer.
+- [ ] **35.8.4** Include at least:
+  - `2` architecture diagrams,
+  - `1` worked example,
+  - `1` side-by-side comparison table,
+  - `1` optimization audit table.
+- [ ] **35.8.5** Do not blur "optimization", "feature", "limitation", and "reporting surface" into one category.
+- [ ] **35.8.6** Do not compare tla-rs to some idealized notion of "TLA+"; compare it to the actual traditional model-checking path you inspected (primarily TLC), and label other tools separately if mentioned.
+- [ ] **35.8.7** Every substantive non-local claim needs a source citation or an explicit "inference" label.
+- [ ] **35.8.8** If a claim is uncertain, say so. Accuracy is more important than sounding comprehensive.
+- [ ] **35.8.9** No code changes are required in this phase; the deliverable is documentation under `docs/` only.
+
+### 35.9 Review Checklist (Before Marking This Phase Complete)
+
+- [ ] `docs/model-checker-architecture/` exists with all required files.
+- [ ] `README.md` clearly targets readers with zero background and gives a reading order.
+- [ ] `traditional-tla-model-checking.md` explains TLC/traditional TLA+ model checking concretely, not just in slogans.
+- [ ] `tlars-source-first-model-checking.md` is anchored to actual repo files/functions/artifacts.
+- [ ] `walkthrough.md` includes one small example traced through both conceptual paths.
+- [ ] `comparison.md` explicitly covers similarities, differences, and why they matter.
+- [ ] `tlars-only-optimizations.md` distinguishes confirmed items from uncertain ones and avoids unsupported claims about TLC.
+- [ ] `sources-and-evidence.md` records source type, date checked, inspection depth, and supported claims.
+- [ ] `artifacts/engine-crosswalk.csv` matches the comparison doc.
+- [ ] The tutorial is readable for a newcomer and not just for model-checker implementers.
+
+### 35.10 Acceptance Criteria
+
+1. [ ] A beginner can read `docs/model-checker-architecture/README.md` and follow a clear path through the tutorial.
+2. [ ] The deliverable explains traditional TLA+ model checking concretely, with TLC as the primary reference point.
+3. [ ] The deliverable explains the current tla-rs source-first checker using actual local repo anchors.
+4. [ ] The deliverable explicitly compares the two engines and answers "same vs different vs why it matters."
+5. [ ] The deliverable contains a disciplined audit of tla-rs-specific optimizations/reductions and does not overclaim what TLC does or does not do.
+6. [ ] Every substantive claim is either sourced or explicitly marked as inference/uncertainty.
+7. [ ] The deliverable lives entirely under `docs/` and requires no code changes.
+
+### 35.11 Suggested Execution Order
+
+```
+35.1 Create file skeletons and reader contract
+  ↓
+35.2 Gather/record sources and evidence rules
+  ↓
+35.3 Write the TLC/traditional TLA+ tutorial first
+  ↓
+35.4 Write the tla-rs source-first tutorial from local code/doc anchors
+  ↓
+35.5 Build one worked example / dual-path walkthrough
+  ↓
+35.6 Write the side-by-side relation/difference analysis
+  ↓
+35.7 Audit tla-rs-only optimizations with strict evidence rules
+  ↓
+35.8 / 35.9 Final anti-corner-cutting review pass
+```
+
+### 35.12 Estimated Effort (Documentation Only)
+
+| Step | Effort |
+|------|--------|
+| 35.1 Deliverable scaffolding | ~1 hour |
+| 35.2 Source gathering + evidence log | ~2-4 hours |
+| 35.3 Traditional TLC/tutorial write-up | ~3-5 hours |
+| 35.4 tla-rs architecture write-up from local code | ~3-5 hours |
+| 35.5 Worked example / walkthrough | ~2-3 hours |
+| 35.6 Comparison synthesis | ~2-4 hours |
+| 35.7 Optimization audit | ~2-4 hours |
+| 35.8/35.9 QC pass | ~1-2 hours |
+| **Total** | **~16-28 hours** |
