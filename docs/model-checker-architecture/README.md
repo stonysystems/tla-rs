@@ -68,3 +68,17 @@ Readability guardrails:
 - Prefer short sentences and one main idea per bullet.
 - Use concrete "input -> processing -> output" wording before introducing implementation details.
 - Avoid unexplained shorthand such as `IR`, `POR`, `SCC`, `AST`, `BFS`, or `DFS`.
+
+## Minimum Artifact Counts (Phase 35.8.4)
+This deliverable must include at least:
+- `2` architecture diagrams,
+- `1` worked example,
+- `1` side-by-side comparison table,
+- `1` optimization audit table.
+
+Current artifact mapping for this phase:
+- architecture diagram A: `traditional-tla-model-checking.md` (`Traditional TLC Pipeline Diagram` mermaid block),
+- architecture diagram B: `tlars-source-first-model-checking.md` (`Current tla-rs Source-First Architecture Diagram` mermaid block),
+- worked example: `walkthrough.md` (`Step-by-Step State Transition` with pre-state/transition/post-state),
+- side-by-side comparison table: `comparison.md` (`Side-by-Side Matrix`),
+- optimization audit table: `tlars-only-optimizations.md` (optimization/reduction audit tables).

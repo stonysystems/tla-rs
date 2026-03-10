@@ -8777,6 +8777,129 @@ fn test_model_checker_architecture_phase_35_8_3_defines_jargon_on_first_use_and_
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_4_includes_minimum_required_artifacts() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    assert!(
+        readme_src.contains("## Minimum Artifact Counts (Phase 35.8.4)"),
+        "README {} must include explicit Phase 35.8.4 artifact-minimum section",
+        readme_path.display()
+    );
+    for required_reference in [
+        "`2` architecture diagrams",
+        "`1` worked example",
+        "`1` side-by-side comparison table",
+        "`1` optimization audit table",
+        "`traditional-tla-model-checking.md`",
+        "`tlars-source-first-model-checking.md`",
+        "`walkthrough.md`",
+        "`comparison.md`",
+        "`tlars-only-optimizations.md`",
+    ] {
+        assert!(
+            readme_src.contains(required_reference),
+            "Phase 35.8.4 section in {} must include required artifact mapping/reference {}",
+            readme_path.display(),
+            required_reference
+        );
+    }
+
+    let traditional_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let source_first_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let optimization_path =
+        repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+
+    let traditional_src = std::fs::read_to_string(&traditional_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional tutorial {}: {}",
+            traditional_path.display(),
+            err
+        )
+    });
+    let source_first_src = std::fs::read_to_string(&source_first_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read source-first tutorial {}: {}",
+            source_first_path.display(),
+            err
+        )
+    });
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read walkthrough {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+    let optimization_src = std::fs::read_to_string(&optimization_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read optimization audit doc {}: {}",
+            optimization_path.display(),
+            err
+        )
+    });
+
+    let traditional_mermaid_count = traditional_src.matches("```mermaid").count();
+    let source_first_mermaid_count = source_first_src.matches("```mermaid").count();
+    assert!(
+        traditional_mermaid_count >= 1,
+        "traditional tutorial {} must include at least one architecture diagram mermaid block for Phase 35.8.4",
+        traditional_path.display()
+    );
+    assert!(
+        source_first_mermaid_count >= 1,
+        "source-first tutorial {} must include at least one architecture diagram mermaid block for Phase 35.8.4",
+        source_first_path.display()
+    );
+    assert!(
+        traditional_mermaid_count + source_first_mermaid_count >= 2,
+        "Phase 35.8.4 requires at least two architecture diagrams across traditional/source-first tutorials"
+    );
+
+    assert!(
+        walkthrough_src.contains("## Step-by-Step State Transition")
+            && walkthrough_src.contains("Pre-state snapshot")
+            && walkthrough_src.contains("Transition applied")
+            && walkthrough_src.contains("Post-state snapshot"),
+        "walkthrough {} must include at least one worked state-transition example with pre-state/transition/post-state",
+        walkthrough_path.display()
+    );
+
+    assert!(
+        comparison_src.contains("## Side-by-Side Matrix")
+            && comparison_src
+                .contains("| Concern | Traditional TLA+ / TLC | tla-rs source-first |"),
+        "comparison doc {} must include at least one side-by-side comparison table",
+        comparison_path.display()
+    );
+
+    assert!(
+        optimization_src.contains("| Optimization / Reduction Name |")
+            || optimization_src.contains("| Candidate | Audit Decision (35.7.3) |"),
+        "optimization audit doc {} must include at least one optimization-audit table",
+        optimization_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
