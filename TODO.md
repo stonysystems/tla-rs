@@ -10693,7 +10693,7 @@ docs/model-checker-architecture/
 
 **Goal**: Show one small model-checking run end-to-end so the architecture is not just abstract prose.
 
-- [ ] **35.5.1** `walkthrough.md` must use one shared small protocol/model with checked-in evidence on both sides if possible. Prefer `TwoPhase` or `PrimaryBackup` because they are smaller than `LeaderElection`/`Paxos`.
+- [x] **35.5.1** `walkthrough.md` must use one shared small protocol/model with checked-in evidence on both sides if possible. Prefer `TwoPhase` or `PrimaryBackup` because they are smaller than `LeaderElection`/`Paxos`. [26-03-10, 15:54] (rewrote `docs/model-checker-architecture/walkthrough.md` to select one shared model: `TwoPhase` + `transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml`, and anchored both source-first and TLC checked-in artifacts/wrapper inputs; added integration guard `test_model_checker_architecture_walkthrough_uses_shared_small_model_with_checked_in_evidence_on_both_engines`)
 - [ ] **35.5.2** The walkthrough must trace, step by step:
   - what the input spec/model is,
   - how initial states are obtained,

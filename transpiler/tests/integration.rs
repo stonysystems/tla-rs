@@ -10057,6 +10057,67 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_major_subsections
 }
 
 #[test]
+fn test_model_checker_architecture_walkthrough_uses_shared_small_model_with_checked_in_evidence_on_both_engines()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture walkthrough {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+    let walkthrough_lower = walkthrough_src.to_ascii_lowercase();
+
+    assert!(
+        walkthrough_src.contains("## Chosen Shared Example"),
+        "walkthrough {} must include a dedicated chosen-example section",
+        walkthrough_path.display()
+    );
+    assert!(
+        walkthrough_lower.contains("one shared small protocol/model for both engines: `twophase`"),
+        "walkthrough {} must pick one shared small protocol/model (TwoPhase) for both engines",
+        walkthrough_path.display()
+    );
+    assert!(
+        walkthrough_lower.contains(
+            "transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml"
+        ),
+        "walkthrough {} must cite the shared checked-in model fixture",
+        walkthrough_path.display()
+    );
+
+    for required_evidence in [
+        "reports/benchmarks/source_first/twophase_benchmark.json",
+        "reports/benchmarks/source_first/summary.md",
+        "reports/benchmarks/tlc/twophase_benchmark.log",
+        "reports/benchmarks/tlc/summary.md",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/twophase_benchmark_mc.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/twophase_benchmark_mc.cfg",
+        "reports/benchmarks/tlc_vs_source_first_benchmark_comparison.md",
+    ] {
+        assert!(
+            walkthrough_lower.contains(required_evidence),
+            "walkthrough {} must include checked-in evidence anchor `{}`",
+            walkthrough_path.display(),
+            required_evidence
+        );
+    }
+
+    assert!(
+        walkthrough_lower.contains("source-first evidence"),
+        "walkthrough {} must explicitly label source-first evidence",
+        walkthrough_path.display()
+    );
+    assert!(
+        walkthrough_lower.contains("traditional tlc evidence"),
+        "walkthrough {} must explicitly label traditional TLC evidence",
+        walkthrough_path.display()
+    );
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
