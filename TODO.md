@@ -10040,7 +10040,7 @@ Rules for this phase (do not cut corners):
   10. `LeaderElection` (secondary control protocol; keep it green)
   - Added regression `test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status_matrix` to enforce the exact canonical order across both `TODO.md` and `docs/model_checker_status.md` protocol matrix rows.
   - Extended `docs/model_checker_status.md` section `2.5` to record both enforcement guards (`unsupported`-row priority and full canonical order alignment).
-- [x] For each protocol in that list: [26:03:04, 23:45]
+- [ ] For each protocol in that list:
   - [x] **33.5.2.a RSL (priority #1)** [26:03:06, 05:10]
     - [x] **33.5.2.a.1** Relaxed source-first entrypoint validation/binding so protocol-local signatures are accepted (`RslInit(con, ps)` order and `RslNext(ps, ps_)` without explicit constants param).
       - Updated `resolve_required_entrypoints_named`/signature checks to validate by type-role compatibility (state/state' agreement + `LConstants` presence), not hard-coded parameter names/order.
@@ -10572,8 +10572,8 @@ docs/model-checker-architecture/
     review-checklist.md               # Completion checklist with links to required sections
 ```
 
-- [ ] **35.1.1** Create the directory structure and file skeletons above with real section headers; no empty placeholder files.
-- [ ] **35.1.2** `README.md` must include:
+- [x] **35.1.1** Create the directory structure and file skeletons above with real section headers; no empty placeholder files. [26-03-10, 14:22] (scope check: documentation-only scaffolding, ~200 LOC, no decomposition required)
+- [x] **35.1.2** `README.md` must include: [26-03-10, 14:17] (`docs/model-checker-architecture/README.md` now explicitly states zero-background audience, scope, TLC-as-traditional rule for this phase, reading order, and reader outcomes)
   - target audience = reader with `0` prior knowledge,
   - scope,
   - what "traditional TLA+ model checker" means in this phase (`TLC`, unless another engine is explicitly labeled as side context),

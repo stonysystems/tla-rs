@@ -328,8 +328,7 @@ impl<'a> VerusBlockParser<'a> {
         let start = self.pos;
 
         // Handle raw identifier prefix: r#keyword
-        let has_raw_prefix =
-            self.pos + 2 <= self.content.len() && &self.content[self.pos..self.pos + 2] == "r#";
+        let has_raw_prefix = self.peek_str(2) == Some("r#");
         if has_raw_prefix {
             self.pos += 2; // skip "r#"
         }
@@ -650,18 +649,17 @@ impl<'a> VerusBlockParser<'a> {
                 "via",
             ];
             let is_keyword = keywords.iter().any(|kw| {
-                if self.pos + kw.len() <= self.content.len()
-                    && &self.content[self.pos..self.pos + kw.len()] == *kw
-                {
-                    // Make sure it's not part of a longer identifier
-                    self.content[self.pos + kw.len()..]
-                        .chars()
-                        .next()
-                        .map(|c| !c.is_alphanumeric() && c != '_')
-                        .unwrap_or(true)
-                } else {
-                    false
+                let Some(rest) = self.content.get(self.pos..) else {
+                    return false;
+                };
+                if !rest.starts_with(kw) {
+                    return false;
                 }
+                // Make sure it's not part of a longer identifier.
+                rest.get(kw.len()..)
+                    .and_then(|tail| tail.chars().next())
+                    .map(|c| !c.is_alphanumeric() && c != '_')
+                    .unwrap_or(true)
             });
 
             if is_keyword {
@@ -2229,8 +2227,12 @@ impl<'a> VerusBlockParser<'a> {
 
     /// Skip until a pattern is found
     fn skip_until_pattern(&mut self, pattern: &str) {
-        while self.pos + pattern.len() <= self.content.len() {
-            if &self.content[self.pos..self.pos + pattern.len()] == pattern {
+        while self.pos < self.content.len() {
+            if self
+                .content
+                .get(self.pos..)
+                .is_some_and(|rest| rest.starts_with(pattern))
+            {
                 return;
             }
             self.advance();
@@ -2295,11 +2297,7 @@ impl<'a> VerusBlockParser<'a> {
 
     /// Peek n characters as string
     fn peek_str(&self, n: usize) -> Option<&str> {
-        if self.pos + n <= self.content.len() {
-            Some(&self.content[self.pos..self.pos + n])
-        } else {
-            None
-        }
+        self.content.get(self.pos..).and_then(|rest| rest.get(..n))
     }
 
     /// Advance one character
@@ -2311,15 +2309,20 @@ impl<'a> VerusBlockParser<'a> {
 
     /// Try to consume a string, returning true if successful
     fn try_consume(&mut self, s: &str) -> bool {
-        if self.pos + s.len() <= self.content.len()
-            && &self.content[self.pos..self.pos + s.len()] == s
+        if self
+            .content
+            .get(self.pos..)
+            .is_some_and(|rest| rest.starts_with(s))
         {
             // Make sure it's not part of a longer identifier
             if s.chars()
                 .last()
                 .is_some_and(|c| c.is_alphanumeric() || c == '_')
             {
-                let next_char = self.content[self.pos + s.len()..].chars().next();
+                let next_char = self
+                    .content
+                    .get(self.pos + s.len()..)
+                    .and_then(|tail| tail.chars().next());
                 if next_char.is_some_and(|c| c.is_alphanumeric() || c == '_') {
                     return false;
                 }
@@ -2384,6 +2387,29 @@ mod tests {
         assert_eq!(funcs[0].name, "test_fn");
         assert_eq!(funcs[0].params.len(), 1);
         assert_eq!(funcs[0].params[0].name, "x");
+    }
+
+    #[test]
+    fn test_parse_spec_fn_with_unicode_line_comment() {
+        let source = r#"
+        verus! {
+            // UTF-8 punctuation in comments should not break parser cursor math (safe scan only).
+            pub open spec fn test_unicode_comment(x: int) -> bool {
+                x == x
+            }
+        }
+        "#;
+
+        let parser = VerusParser::new(source.to_string());
+        let result = parser.parse_spec_functions();
+        assert!(
+            result.is_ok(),
+            "Parse failed for unicode comment source: {:?}",
+            result.err()
+        );
+        let funcs = result.unwrap();
+        assert_eq!(funcs.len(), 1);
+        assert_eq!(funcs[0].name, "test_unicode_comment");
     }
 
     #[test]

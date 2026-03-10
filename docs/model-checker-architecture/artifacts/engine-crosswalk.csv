@@ -1,0 +1,7 @@
+concern,traditional_tla_tlc,tlars_source_first,same_similar_different,why_it_matters,evidence_status,notes
+input_representation,TODO,TODO,TODO,TODO,TODO,Fill with reviewed evidence
+front_end_validation,TODO,TODO,TODO,TODO,TODO,Keep row set synced with comparison.md
+initial_state_generation,TODO,TODO,TODO,TODO,TODO,Add concrete source anchors later
+successor_generation,TODO,TODO,TODO,TODO,TODO,Include exact vs fallback paths
+invariant_checking,TODO,TODO,TODO,TODO,TODO,Link to doc/code anchors
+liveness_fairness,TODO,TODO,TODO,TODO,TODO,Label inference vs direct evidence
