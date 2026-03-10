@@ -44,8 +44,8 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 - **Native model checker is still partial** — evaluator/solver gaps remain for general quantifiers, `match`, struct updates, bitwise/shift ops, non-identifier `let` patterns, broader casts, generic-domain expansion, and multi-valuation `LConstants`. See `docs/model_checker_status.md` for the current blocker list and evidence rules.
 - **Consensus protocol source-first coverage is incomplete** — only TwoPhase, LeaderElection, PrimaryBackup, and Paxos currently have checked-in bounded source-first runs. ChainReplication, Raft, VerticalPaxos, PBFT, EPaxos, and RSL still need checked-in source-first status, blockers, and automation.
 - **The current depth-1 "green" source-first smoke evidence for TwoPhase / LeaderElection / PrimaryBackup / Paxos is still too small to be convincing on its own** — the checked-in fixtures are useful for fast regression coverage, but they are not the whole story. We now also have checked-in longer benchmark/TLC-comparison artifacts for the 4 shared protocols, but the repo still lacks a zero-background architecture/tutorial document explaining how to interpret those numbers and what algorithmic differences drive them.
-- **Model-check performance work is incomplete** — reductions exist, but there is no checked-in before/after benchmark discipline for exact-mode optimizations, and predicate-only helper branches still risk expensive candidate-state enumeration.
-- **tla-rs vs TLA+ model-check benchmark completed for 4 protocols** — matched TLC vs source-first comparison checked in at `reports/benchmarks/COMPARISON.md`. TLC fully exhausts all 4 protocols (TwoPhase 64 states/1s, PrimaryBackup 54 states/1s, LeaderElection 9,337 states/2s, Paxos 3M states/375s). Source-first exhausts TwoPhase (8 states/79s) and PrimaryBackup (60 states/190s) but is BLOCKED on LeaderElection and Paxos due to enumeration scalability. Both engines agree on safety (no violations). Performance gap is algorithmic (brute-force enumeration vs symbolic evaluation).
+- **Model-check performance work is incomplete** — reductions exist, but there is no checked-in before/after benchmark discipline for exact-mode optimizations, predicate-only helper branches still risk expensive candidate-state enumeration, the TLC-vs-source-first benchmark evidence is still missing a checked-in same-time-budget progress comparison, and we do not yet have a measured wall-time breakdown showing exactly why source-first is slower on the current benchmark models.
+- **tla-rs vs TLA+ model-check benchmark campaign is only partially complete** — matched same-model full-run comparisons are checked in at `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`, using TLA+ regenerated from current tla-rs source plus TLC wrapper/property glue. TLC fully exhausts all 4 protocols (TwoPhase 64 states/1s, PrimaryBackup 54 states/1s, LeaderElection 9,337 states/2s, Paxos 3M states/375s). Source-first exhausts TwoPhase (8 states/79s) and PrimaryBackup (60 states/190s) but is BLOCKED on LeaderElection and Paxos due to candidate-enumeration scalability. Current evidence strongly suggests successor-solving overhead is the dominant problem, but the checked-in numbers still come from a source-first debug build and do **not** yet include release-build parity, matched-cutoff progress tables, or phase-attributed timing, so Phase 33 cannot honestly be treated as finished.
 - **We do not yet have a zero-knowledge survey/tutorial for model-checker architecture** — the repo needs a grounded explanation of traditional TLA+ model checking (TLC), the current tla-rs source-first checker, their similarities/differences, and which tla-rs optimizations are actually absent from the reviewed TLC path. This is now tracked as Phase 35 and is the top-priority documentation task.
 - **Phase 16.8 is complete** — all workspace artifacts materialized (10/10 dirs), all 9 non-RSL protocols have MC wrappers + TLC evidence, D2 compile gate at 28/33, and runtime validation completed (10/10 protocols pass 30s 3-node cluster runs). Only remaining item is external corpus D2 exec (blocked on `.automan` annotation generation — documented, not actionable). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--complete).
 
@@ -53,7 +53,7 @@ Most transpiler/proof phases are now in good shape. The largest remaining produc
 1. **Phase 35: Beginner model checker architecture survey and tutorial** — create `docs/model-checker-architecture/` for readers with zero background, covering: traditional TLA+ model checking (focus on TLC), the current tla-rs source-first model checker architecture/mechanism, a side-by-side relation/similarity/difference analysis, and a strictly evidenced section on tla-rs optimizations/reductions that TLC does not appear to use in the reviewed path. This is documentation-only, but it is now the top priority because future model-check implementation work is too easy to mis-scope without it. See [Phase 35](#phase-35-beginner-model-checker-architecture-survey-and-tutorial--top-priority).
 2. **Phase 31: RSL Refinement Proof — fix remaining 23 verification errors** — compilation fixed, modules uncommented, 48 verified / 23 errors remaining. Strategy: mark failing fns with `external_body`, then remove bottom-up one at a time using fine-grained verification (`--verify-only-module` / `--verify-function`). **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
 3. **Phase 34: Raft Network Model and Complete Refinement Proof** — network model added, 30+ invariants proved, 12 assumes remain (6 LC blocked on `d_rli ≤ k` wall requiring leader-term strong induction, 5 sound Z3 workarounds, 1 SMS blocked on LC). Committed.rs fully proved. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
-4. **Phase 33: Model checker hardening, protocol coverage, and performance** — COMPLETED (33.1–33.5 all done). See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance).
+4. **Phase 33: Model checker hardening, protocol coverage, and performance** — REOPEN the benchmark-comparison and root-cause-diagnosis gaps. Same-model translated-TLA+ full-run comparisons exist, but the required same-time-budget progress view, release-build fairness checks, wall-time attribution, and `LeaderElection`/`Paxos` unblock work are still missing from the checked-in evidence. See [Phase 33](#phase-33-model-checker-hardening-protocol-coverage-and-performance).
 5. **Phase 16.8: ✅ COMPLETE** — all workspace artifacts materialized, TLC evidence for 9/9 non-RSL protocols, D2 compile gate at 28/33, runtime validation 10/10 protocols pass 30s 3-node clusters. Only residual: external corpus D2 exec blocked on `.automan` annotation generation (documented). See [Phase 16.8](#phase-168-real-protocol-cross-direction--model-checking-validation--complete).
 6. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
 7. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
@@ -9679,6 +9679,8 @@ Analysis: All three invariants require **network-level message provenance** not 
 
 Why this remains high priority even though it is now below Phases 34 and 31: the transpiler/proof pipeline is much farther along than the native model checker. The source-first checker already exists, but it is still too partial to claim strong tla-rs model-check support across the protocol suite. The remaining work is not "add a CLI" or "write more docs"; it is closing real evaluator/solver gaps, measuring performance honestly, and making the checker pass on as many real consensus protocols as possible.
 
+**Status update (2026-03-10)**: Reopened for benchmark-evidence incompleteness. The repo **does** have a real same-model TLC-vs-source-first benchmark campaign using TLA+ regenerated from current tla-rs specs plus wrapper/property glue, but the checked-in evidence still stops short of the full requirement: there is no checked-in same-time-budget progress comparison showing how many states/transitions each engine had traversed by the same cutoff. Do not mark Phase 33 complete again until that specific gap is closed with reproducible artifacts.
+
 Rules for this phase (do not cut corners):
 - Do not mark a protocol as "supported" unless there is a checked-in finite model, a checked-in automated test or JSON report, and a clear pass/limit/failure classification.
 - Do not claim an optimization helps without before/after numbers on the same model and in the same search mode.
@@ -9855,7 +9857,7 @@ Rules for this phase (do not cut corners):
       - TLC: `reports/benchmarks/tlc/` (4 TLC logs + SUMMARY.md)
       - TLC wrappers: `transpiler/tla_test_workspace/.../benchmarks_1h/` (4 .tla + 4 .cfg)
       - Manifest: `reports/benchmarks/MANIFEST.md` with exact commands, tool versions, machine info.
-  - [x] **33.4.3.f** Produce a checked-in side-by-side comparison report for the four protocols. [2026-03-08]
+  - [ ] **33.4.3.f** Produce a checked-in side-by-side comparison report for the four protocols. [REOPENED 2026-03-10]
     - Compare, at minimum:
       - result (`ok`, `violation`, `timeout`, `limit`)
       - wall-clock time
@@ -9865,15 +9867,37 @@ Rules for this phase (do not cut corners):
       - TLC generated-state count
       - TLC distinct-state count
     - Include two views whenever applicable:
-      - same config, compare total runtime if both finish
-      - same config and same time budget, compare how many states each engine traversed before the cutoff
-    - If state-count semantics differ because of wrapper variables or other modeling artifacts, say that explicitly instead of hiding the mismatch.
-    - **Completed**: Full comparison report at `reports/benchmarks/COMPARISON.md`. Key findings:
-      - Both engines agree on safety (no violations) for the 2 protocols where both run.
-      - TLC is 79-190x faster on small models (TwoPhase/PrimaryBackup).
-      - TLC handles LeaderElection (9K states/2s) and Paxos (3M states/375s) which source-first cannot.
-      - State-count semantics difference documented (centralized LState vs wrapper with msgs variable).
-      - Gap is algorithmic (brute-force enumeration vs symbolic evaluation), not engineering.
+      - [x] same config, compare total runtime if both finish
+      - [ ] same config and same time budget, compare how many states each engine traversed before the cutoff
+    - [x] Partial completion already exists: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` gives the same-model full-run view for all 4 protocols and documents state-count semantics differences (centralized `LState` vs TLC wrapper variables).
+    - [ ] Add a second checked-in report section/table for matched-cutoff progress:
+      - pick a fixed shared cutoff per protocol (preferred: the already-declared benchmark wall-clock budget, unless a smaller checked-in analysis cutoff is explicitly justified),
+      - record what each engine had actually traversed by that cutoff,
+      - keep this as a separate view from the full-run/exhausted summary instead of silently mixing the two.
+    - [ ] The matched-cutoff progress view must record, at minimum:
+      - source-first `summary.states`
+      - source-first `summary.transitions`
+      - source-first `summary.depth`
+      - source-first `summary.elapsed_ms`
+      - TLC generated-state count at cutoff
+      - TLC distinct-state count at cutoff
+      - TLC depth/diameter/progress metric at cutoff if available
+    - [ ] For protocols where source-first is currently BLOCKED before reaching a meaningful frontier (`LeaderElection`, `Paxos` on the current benchmark models), do **not** leave blank cells:
+      - record the measured matched-cutoff progress/failure counters that actually existed,
+      - label the row as `time-bounded blocked progress` or equivalent,
+      - and include the blocking reason/counter context (for example candidate-evaluation blow-up) rather than pretending there was no data.
+    - [ ] Do **not** infer same-time-budget progress from final totals. The numbers must come from reproducible raw artifacts:
+      - source-first timeout-bounded JSON runs, periodic progress snapshots, or another checked-in mechanical progress report,
+      - TLC progress/coverage logs or another checked-in mechanical progress report.
+    - [ ] Keep the "same model" provenance explicit in the comparison report:
+      - link the generated base `.tla` emitted by `verus2-tla`,
+      - link the TLC wrapper/property glue used for model checking,
+      - state what was generated vs what was hand-written wrapper glue,
+      - do **not** compare against a scratch-written standalone TLA+ spec.
+    - [ ] If state-count semantics differ because of wrapper variables or other modeling artifacts, say that explicitly instead of hiding the mismatch.
+    - [ ] Extend replay automation so the same-time comparison is regenerated mechanically rather than copied by hand.
+      - Preferred: extend `scripts/run_model_check_benchmarks.sh`, `scripts/run_tlc_benchmarks.sh`, and `scripts/compare_tlc_vs_source_first.sh`.
+      - Acceptable alternative: add a dedicated checked-in script for same-budget progress collection/report generation.
   - [x] **33.4.3.g** Add dedicated replay scripts for the long benchmarks instead of overloading the fast smoke matrix.
     - Keep the existing fast matrix (`scripts/run_model_check_matrix.sh`) fast and CI-friendly.
     - Add separate long-run replay automation (for example `scripts/run_model_check_benchmarks.sh`, `scripts/run_tlc_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`) for the 1-hour benchmark campaign.
@@ -9881,8 +9905,125 @@ Rules for this phase (do not cut corners):
     - **Done**: Created all 3 scripts. `run_model_check_benchmarks.sh` reads source-first
       benchmark configs and produces JSON artifacts + SUMMARY.md. `run_tlc_benchmarks.sh`
       runs TLC with configurable Java/workers/timeout. `compare_tlc_vs_source_first.sh`
-      merges both summaries into a side-by-side COMPARISON.md. All scripts support
+      merges both summaries into a side-by-side `TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` report. All scripts support
       PROTOCOLS env var for subset runs, tested with twophase smoke test.
+
+### 33.4.4 Root-cause diagnosis and benchmark-gap elimination (REOPENED; do not cut corners)
+
+**Goal**: Stop hand-waving about the benchmark gap. We need measured evidence for two separate questions:
+1. Why is source-first slower than TLC even on the small matched models that it does finish (`TwoPhase`, `PrimaryBackup`)?
+2. Why do `LeaderElection` and `Paxos` fail to make useful source-first progress on the current matched benchmark models?
+
+**Current evidence anchor (checked in now)**:
+- `TwoPhase`: source-first 8 distinct states / 79s vs TLC 64 distinct / 1s.
+- `PrimaryBackup`: source-first 60 distinct states / 190s vs TLC 54 distinct / 1s.
+- `LeaderElection`: source-first candidate enumeration hits ~880K candidates in 76s with 0 valid transitions found.
+- `Paxos`: same blocker class, worse per-node state size / candidate space.
+- Current source-first benchmark numbers were taken with `verus-transpile` **debug build**; TLC was run with checked-in Java/TLC settings. Do **not** treat the current wall-time ratios as the final fairness story until build-profile and hot-path attribution are measured.
+
+- [ ] **33.4.4.a Benchmark fairness hardening: release-vs-debug and environment parity**
+  - Re-run the four shared benchmark protocols with source-first in both:
+    - current debug build (for continuity with the checked-in baseline), and
+    - release build (this must become the primary performance number unless there is a documented reason not to).
+  - Keep the compared finite model, invariants, and search mode unchanged.
+  - Record, per run:
+    - build profile,
+    - exact command,
+    - worker count / threading mode,
+    - timeout,
+    - machine info,
+    - wall time,
+    - states / transitions / depth,
+    - stop reason.
+  - Update the benchmark report and manifest so reviewers can see immediately whether a wall-time number came from debug or release.
+  - Do **not** quietly replace the existing debug numbers; keep both until the report explicitly says which one is the canonical performance view.
+
+- [ ] **33.4.4.b Add phase-attributed source-first timing telemetry**
+  - Extend source-first benchmark reporting so wall time is split into at least:
+    - source ingestion / parsing,
+    - model/config resolution,
+    - initial-state construction,
+    - successor solving,
+    - candidate generation / candidate evaluation,
+    - dedup / hashing / normalization,
+    - invariant evaluation,
+    - report serialization / output.
+  - Emit these counters/timers in JSON so they are scriptable, not just human prose.
+  - Add regression coverage so the telemetry fields cannot silently disappear.
+  - Update `scripts/run_model_check_benchmarks.sh` and the comparison/report pipeline so this timing breakdown is preserved in checked-in artifacts.
+
+- [ ] **33.4.4.c Diagnose the small-model wall-time gap on `TwoPhase` and `PrimaryBackup`**
+  - Use the new telemetry to answer, with numbers, whether the current source-first wall time is dominated by:
+    - brute-force candidate enumeration,
+    - fixed startup/parsing overhead,
+    - dedup/hash/normalization cost,
+    - invariant checking cost,
+    - debug-build overhead,
+    - or some combination.
+  - Add a checked-in section to the benchmark report that explicitly answers:
+    - whether the current benchmark models are "too small" such that fixed overhead dominates,
+    - whether deduplication is actually a meaningful cost on these models,
+    - and whether release build materially changes the story.
+  - Do **not** accept a vague answer like "TLC is symbolic" or "the models are small" without measured attribution from the source-first side.
+  - If the answer differs between `TwoPhase` and `PrimaryBackup`, document them separately instead of collapsing them into one narrative.
+
+- [ ] **33.4.4.d Add branch-level blocker telemetry for source-first benchmark failures**
+  - For exact-mode source-first benchmark runs, emit per-branch or per-branch-family telemetry sufficient to explain where search effort is going:
+    - branch label,
+    - existential-assignment count,
+    - candidate-state count,
+    - direct-solver hits,
+    - enumeration fallback hits,
+    - guard-pruned counts,
+    - number of successful successors produced,
+    - cumulative time spent in that branch family.
+  - Keep the telemetry compact enough for checked-in artifacts, but precise enough that `LeaderElection` and `Paxos` blocker claims are mechanically auditable.
+  - Add at least one regression test covering the new branch-level telemetry/report surface.
+
+- [ ] **33.4.4.e `LeaderElection` blocker reduction on the matched benchmark model**
+  - Reduce the current blocker to the smallest still-honest benchmark-preserving cause. Do **not** retreat to a 1-node toy and claim the benchmark issue is solved.
+  - Record:
+    - the first branch family that explodes,
+    - the candidate domain sizes involved,
+    - whether failure comes from existential assignment blow-up, next-state candidate blow-up, or inability to solve guard constraints early enough,
+    - and how many transitions (if any) are produced before the run stalls.
+  - Land one solver improvement targeted at the measured blocker. Candidate directions are:
+    - equality/guard-driven partial assignment propagation,
+    - earlier domain narrowing from branch guards,
+    - direct solving for predicate-only/helper branches that currently fall back to enumeration,
+    - branch-local symbolic filtering before full candidate construction.
+  - Success bar:
+    - preferred: the 3-node matched benchmark model produces non-zero transitions and meaningful progress in exact mode,
+    - acceptable fallback: if it still blocks, the repo contains exact blocker telemetry and a very concrete next code task instead of the current generic "enumeration scalability" statement.
+  - Do **not** count "raise the candidate-eval guardrail" as a real fix unless measured evidence shows it changes progress qualitatively rather than just burning more time.
+
+- [ ] **33.4.4.f `Paxos` blocker reduction on the matched benchmark model**
+  - Same discipline as `33.4.4.e`, but do not assume the same fix automatically transfers just because both currently say "enumeration scalability".
+  - Record the per-branch/per-candidate evidence separately because Paxos has a materially larger per-node state and different guard structure.
+  - If the same underlying solver weakness is confirmed, say so with evidence; otherwise keep the blocker narratives separate.
+  - Success bar:
+    - preferred: the matched 3-node benchmark model produces non-zero transitions / meaningful exact-mode progress,
+    - acceptable fallback: checked-in raw telemetry + exact blocker narrative + next code task.
+
+- [ ] **33.4.4.g Benchmark report must explain "why slower?" and "why blocked?" explicitly**
+  - Update `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` so it includes:
+    - full-run comparison,
+    - same-time-budget progress comparison,
+    - release-vs-debug source-first comparison,
+    - phase-attributed wall-time breakdown for the protocols that complete,
+    - branch-level blocker summary for `LeaderElection` and `Paxos`.
+  - The report must explicitly answer:
+    - why `Wall (s)` is currently larger for source-first on the protocols that finish,
+    - whether that is mostly fixed overhead, debug build, solver overhead, dedup cost, or something else,
+    - and why `LeaderElection` / `Paxos` do not currently progress.
+  - If state-count semantics differ, keep that explanation, but do **not** let it substitute for actual wall-time root-cause analysis.
+
+- [ ] **33.4.4.h Anti-corner-cutting rules for this subsection**
+  - Do not shrink the benchmark models or weaken invariants just to make source-first look faster.
+  - Do not switch the primary comparison to lossy modes (`hash_compaction64`, symmetry merging, etc.).
+  - Do not compare release TLC against debug source-first and call the result final without also checking release source-first.
+  - Do not claim a speedup fix based only on wall time if reachable-state counts or exact-mode semantics changed.
+  - Do not stop at aggregate "states/sec"; keep the phase and branch attribution so the next fix is obvious.
 
 ### 33.5 Consensus protocol coverage drive
 
@@ -10013,7 +10154,7 @@ Rules for this phase (do not cut corners):
       - translated TLA+ module
       - TLC wrapper/config/log
       - per-protocol comparison row in the benchmark report
-    - **Completed** via Phase 33.4.3: benchmark config `benchmarks_1h/twophase_benchmark.model.toml`, SF JSON artifact, TLC wrapper/cfg/log, comparison row in `COMPARISON.md`. SF: 8 states/79s (exhausted). TLC: 64 distinct/1s (exhausted).
+    - **Completed** via Phase 33.4.3: benchmark config `benchmarks_1h/twophase_benchmark.model.toml`, SF JSON artifact, TLC wrapper/cfg/log, comparison row in `TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`. SF: 8 states/79s (exhausted). TLC: 64 distinct/1s (exhausted).
   - [x] **33.5.4.b LeaderElection** [2026-03-08]
     - Same requirements as `33.5.4.a`, using a shared finite-node model on both engines.
     - Keep the checked-in benchmark config separate from the current `leaderelection_small.model.toml` smoke fixture so future work cannot silently regress back to the depth-1 case.
@@ -10081,7 +10222,7 @@ Rules for this phase (do not cut corners):
 
 ### 33.7 Completion gate
 
-- [x] Do not mark Phase 33 complete until all of the following are true: [26:03:04, 23:48]
+- [ ] Do not mark Phase 33 complete until all of the following are true: [REOPENED 2026-03-10]
   - `docs/model_checker_status.md` is current and specific
   - the unsupported-feature list is shorter and backed by tests
   - at least one previously-uncovered consensus protocol has a checked-in automated source-first run
@@ -10092,7 +10233,15 @@ Rules for this phase (do not cut corners):
   - enumeration-fallback telemetry is exposed in JSON reports
   - the four shared protocols (`TwoPhase`, `LeaderElection`, `PrimaryBackup`, `Paxos`) each have a checked-in non-toy benchmark config and artifact set, separate from the tiny depth-1 smoke fixtures
   - the TLA+ side of those four protocols is regenerated from current tla-rs source with checked-in translated artifacts and updated invariant bundles
-  - there is a checked-in same-config / same-time-budget tla-rs-vs-TLC comparison report for those four protocols
+  - the comparison artifacts explicitly show the generated-base-TLA+ path (`verus2-tla` output) plus the TLC wrapper/property glue, so reviewers can verify the TLA+ side was not written from scratch
+  - there is a checked-in same-config full-run tla-rs-vs-TLC comparison report for those four protocols
+  - there is a checked-in same-config / same-time-budget progress comparison report for those four protocols that records what each engine had traversed by the cutoff, rather than inferring those numbers from final totals
+  - source-first performance numbers are available in release build for the shared benchmark protocols, and the report clearly distinguishes release vs debug data
+  - the benchmark report contains phase-attributed wall-time breakdown for at least `TwoPhase` and `PrimaryBackup`, backed by checked-in raw telemetry
+  - the benchmark report explicitly answers why source-first wall time is larger than TLC on the protocols that complete, using measured attribution rather than speculation
+  - `LeaderElection` and `Paxos` no longer have only the generic blocker label "enumeration scalability"; each has checked-in branch-level/raw blocker evidence and either:
+    - non-zero exact-mode progress on the matched benchmark model, or
+    - an exact remaining blocker description with a concrete next implementation task
 
 ---
 
@@ -10439,7 +10588,7 @@ docs/model-checker-architecture/
   - `docs/model_checker_status.md`
   - `docs/model-checking-source-first.md`
   - `docs/conversion-testing-guide.md`
-  - `reports/benchmarks/COMPARISON.md`
+  - `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`
   - `transpiler/src/main.rs`
   - `transpiler/src/modelcheck/config.rs`
   - `transpiler/src/modelcheck/init.rs`
