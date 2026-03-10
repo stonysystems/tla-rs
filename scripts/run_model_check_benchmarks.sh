@@ -18,6 +18,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-$PROJECT_ROOT/reports/benchmarks/source_first}"
 TRANSPILER_BIN="${TRANSPILER_BIN:-$PROJECT_ROOT/transpiler/target/debug/verus-transpile}"
 PROTOCOLS="${PROTOCOLS:-twophase primarybackup leaderelection paxos}"
+TIMEOUT_MS="${TIMEOUT_MS:-}"
 
 FIXTURE_DIR="$PROJECT_ROOT/transpiler/tests/model_check_fixtures/benchmarks_1h"
 
@@ -51,6 +52,9 @@ fi
 echo "=== Source-first 1-hour benchmark campaign ==="
 echo "Output: ${OUTPUT_DIR#$PROJECT_ROOT/}"
 echo "Protocols: $PROTOCOLS"
+if [[ -n "$TIMEOUT_MS" ]]; then
+    echo "Timeout override: ${TIMEOUT_MS}ms"
+fi
 echo ""
 
 SUMMARY_FILE="$OUTPUT_DIR/SUMMARY.md"
@@ -80,12 +84,18 @@ for proto in $PROTOCOLS; do
 
     (
         cd "$PROJECT_ROOT"
-        "$TRANSPILER_BIN" model-check \
+        run_cmd=(
+            "$TRANSPILER_BIN" model-check
             --input "$input" \
             --types "$types" \
             --model "$model" \
             --search bfs \
             --json-report
+        )
+        if [[ -n "$TIMEOUT_MS" ]]; then
+            run_cmd+=(--timeout "$TIMEOUT_MS")
+        fi
+        "${run_cmd[@]}"
     ) > "$artifact" 2>&1 || true
 
     end_time=$(date +%s)

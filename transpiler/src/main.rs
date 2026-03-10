@@ -3370,6 +3370,7 @@ fn try_solve_predicate_only_helper_branch(
                 }),
                 predicate_only_branch_solver: None,
             },
+            None,
         ) {
             Ok(solved) => solved,
             Err(TranspileError::UnsupportedPattern { .. }) => return Ok(None),
@@ -3544,8 +3545,7 @@ fn execute_model_check(
             enumeration_fallback_branch_solves: 0,
             enumeration_candidate_evaluations: 0,
             guard_pruned_candidate_evaluations: 0,
-            candidate_evaluation_guardrail_per_state_branch:
-                candidate_eval_guardrail,
+            candidate_evaluation_guardrail_per_state_branch: candidate_eval_guardrail,
             successor_cache_hits: 0,
             successor_cache_misses: 0,
         };
@@ -3584,6 +3584,7 @@ fn execute_model_check(
         .map_err(|e| miette::miette!("{}", e))?;
 
         let mut successor_cache = BTreeMap::<String, Vec<TracedSuccessor>>::new();
+        let cooperative_timeout_hit = std::cell::Cell::new(false);
         let mut solve_traced_successors_for_state =
             |state: &verus_transpiler::modelcheck::value::RuntimeValue,
              update_enumeration_telemetry: bool|
@@ -3600,7 +3601,17 @@ fn execute_model_check(
                     .successor_cache_misses
                     .saturating_add(1);
                 let mut traced_successors = Vec::new();
+                let solve_timeout_reached = || {
+                    let hit = run_started.elapsed().as_millis() >= u128::from(limits.timeout_ms);
+                    if hit {
+                        cooperative_timeout_hit.set(true);
+                    }
+                    hit
+                };
                 for branch in &transition.branches {
+                    if solve_timeout_reached() {
+                        break;
+                    }
                     if por_pruned_branch_labels.contains(&branch.label) {
                         continue;
                     }
@@ -3655,6 +3666,7 @@ fn execute_model_check(
                             quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                             predicate_only_branch_solver: Some(&predicate_only_branch_solver),
                         },
+                        Some(&solve_timeout_reached),
                     )?;
 
                     if update_enumeration_telemetry {
@@ -3692,7 +3704,7 @@ fn execute_model_check(
                 Ok(traced_successors)
             };
 
-        let exploration = explore_state_space_with_traces_and_dedup(
+        let mut exploration = explore_state_space_with_traces_and_dedup(
             &initial_states,
             search_mode,
             limits,
@@ -3725,6 +3737,14 @@ fn execute_model_check(
             },
         )
         .map_err(|e| miette::miette!("{}", e))?;
+        if cooperative_timeout_hit.get()
+            && matches!(
+                exploration.stop_reason,
+                ExplorationStopReason::FrontierExhausted
+            )
+        {
+            exploration.stop_reason = ExplorationStopReason::TimeoutReached;
+        }
 
         let mut leads_to_violation = None;
         if !model_config.properties.leads_to.is_empty()
@@ -9473,7 +9493,6 @@ validity_predicate_name = "valid"
             .transpile_file(input, annotations)
             .unwrap_or_else(|e| panic!("transpilation failed: {}", e))
     }
-
 
     #[test]
     fn test_infer_function_paths_from_generated_symbols_prefers_generated_module() {

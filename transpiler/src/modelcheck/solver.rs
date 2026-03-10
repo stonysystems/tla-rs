@@ -84,6 +84,7 @@ pub fn solve_branch_successors(
         None,
         bounds,
         hooks,
+        None,
     )?
     .successors)
 }
@@ -113,6 +114,7 @@ pub fn solve_branch_successors_with_candidates(
         None,
         bounds,
         hooks,
+        None,
     )?
     .successors)
 }
@@ -129,6 +131,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     max_candidate_evaluations_per_state_branch: Option<usize>,
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
+    should_stop: Option<&dyn Fn() -> bool>,
 ) -> TranspileResult<BranchSolveResult> {
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
@@ -179,6 +182,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                     max_candidate_evaluations_per_state_branch,
                     bounds,
                     hooks,
+                    should_stop,
                 )?;
             return Ok(BranchSolveResult {
                 successors,
@@ -205,6 +209,17 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
 
     let mut successors = Vec::new();
     for assignment in assignments {
+        if should_stop.map(|check| check()).unwrap_or(false) {
+            return Ok(BranchSolveResult {
+                successors: deduplicate_successors(successors),
+                telemetry: BranchSolveTelemetry {
+                    direct_assignment_branch_solves: 1,
+                    enumeration_fallback_branch_solves: 0,
+                    enumeration_candidate_evaluations: 0,
+                    guard_pruned_candidate_evaluations: 0,
+                },
+            });
+        }
         if let Some(next_state) = solve_one_assignment(
             transition,
             branch,
@@ -239,6 +254,7 @@ fn solve_branch_by_candidate_enumeration(
     max_candidate_evaluations_per_state_branch: Option<usize>,
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
+    should_stop: Option<&dyn Fn() -> bool>,
 ) -> TranspileResult<(Vec<RuntimeValue>, usize, usize)> {
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
@@ -257,6 +273,13 @@ fn solve_branch_by_candidate_enumeration(
     let mut candidate_evaluations = 0usize;
     let mut guard_pruned_candidate_evaluations = 0usize;
     for assignment in assignments {
+        if should_stop.map(|check| check()).unwrap_or(false) {
+            return Ok((
+                deduplicate_successors(successors),
+                candidate_evaluations,
+                guard_pruned_candidate_evaluations,
+            ));
+        }
         if !assignment_compatible_with_branch(branch, &assignment)? {
             return Err(TranspileError::Config {
                 message: format!(
@@ -302,6 +325,13 @@ fn solve_branch_by_candidate_enumeration(
         }
 
         for candidate_next_state in next_state_candidates {
+            if should_stop.map(|check| check()).unwrap_or(false) {
+                return Ok((
+                    deduplicate_successors(successors),
+                    candidate_evaluations,
+                    guard_pruned_candidate_evaluations,
+                ));
+            }
             candidate_evaluations += 1;
             if let Some(limit) = max_candidate_evaluations_per_state_branch {
                 if candidate_evaluations > limit {
@@ -1239,6 +1269,7 @@ mod tests {
             None,
             bounds(),
             hooks,
+            None,
         )
         .unwrap();
 
@@ -1270,6 +1301,7 @@ mod tests {
             Some(1),
             bounds(),
             SolverHooks::default(),
+            None,
         )
         .unwrap_err();
 
@@ -1334,6 +1366,7 @@ mod tests {
             None,
             bounds(),
             hooks,
+            None,
         )
         .unwrap();
 
@@ -1343,6 +1376,60 @@ mod tests {
         assert_eq!(result.telemetry.enumeration_candidate_evaluations, 0);
         assert_eq!(result.telemetry.guard_pruned_candidate_evaluations, 2);
         assert_eq!(helper_call_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn test_solve_branch_successors_with_candidates_honors_stop_callback_mid_enumeration() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![BranchConstraintIr::Predicate {
+                expr: Expr::Call {
+                    func: Path::single("LHelper".to_string()),
+                    args: vec![Expr::Ident("s".to_string()), Expr::Ident("s_".to_string())],
+                },
+            }],
+        };
+        let candidate_next_states = vec![state(0, 0), state(1, 0), state(2, 0)];
+        let call_hook = |func: &Path, _args: &[RuntimeValue]| -> TranspileResult<RuntimeValue> {
+            if func.last() == Some("LHelper") {
+                return Ok(RuntimeValue::Bool(true));
+            }
+            Err(unsupported_solver(
+                "Unexpected helper call in solver test",
+                None,
+            ))
+        };
+        let hooks = SolverHooks {
+            call_evaluator: Some(&call_hook),
+            method_evaluator: None,
+            quantifier_domain_evaluator: None,
+            predicate_only_branch_solver: None,
+        };
+        let stop_checks = AtomicUsize::new(0);
+        let stop_after_first_candidate = || stop_checks.fetch_add(1, Ordering::Relaxed) >= 2;
+
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidate_next_states),
+            None,
+            bounds(),
+            hooks,
+            Some(&stop_after_first_candidate),
+        )
+        .unwrap();
+
+        assert_eq!(result.successors, vec![state(0, 0)]);
+        assert_eq!(result.telemetry.direct_assignment_branch_solves, 0);
+        assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 1);
+        assert_eq!(result.telemetry.enumeration_candidate_evaluations, 1);
+        assert_eq!(result.telemetry.guard_pruned_candidate_evaluations, 0);
     }
 
     #[test]
@@ -1384,6 +1471,7 @@ mod tests {
             None,
             bounds(),
             hooks,
+            None,
         )
         .unwrap();
 

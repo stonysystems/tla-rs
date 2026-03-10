@@ -17497,3 +17497,89 @@ fn test_property_bundles_complete_for_all_non_rsl_protocols() {
         "RSL scope decision document (RSL_SCOPE.md) should exist"
     );
 }
+
+#[test]
+fn test_benchmark_comparison_report_includes_matched_cutoff_progress_and_blocked_rows() {
+    let repo_root = resolve_repo_root_for_integration();
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+
+    for required_fragment in [
+        "## matched-cutoff progress (shared 120s budget)",
+        "reports/benchmarks/source_first_cutoff_120s",
+        "reports/benchmarks/tlc_cutoff_120s",
+        "| leaderelection | source-first | timeout_reached(timeoutreached) |",
+        "| paxos | source-first | timeout_reached(timeoutreached) |",
+        "time-bounded blocked progress",
+        "enum_eval=",
+        "transitions | elapsed (ms)",
+        "## same-model provenance",
+        "does not compare against scratch-written standalone tla+ specs",
+    ] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_33_4_3_f_same_time_budget_leaf_is_marked_done_and_scripts_support_cutoff_replay() {
+    let repo_root = resolve_repo_root_for_integration();
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+
+    assert!(
+        todo_lower.contains(
+            "- [x] same config and same time budget, compare how many states each engine traversed before the cutoff"
+        ),
+        "TODO {} must mark the Phase 33.4.3.f same-time-budget leaf complete",
+        todo_path.display()
+    );
+
+    let sf_script_path = repo_root.join("scripts/run_model_check_benchmarks.sh");
+    let sf_script_src = std::fs::read_to_string(&sf_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read source-first benchmark script {}: {}",
+            sf_script_path.display(),
+            err
+        )
+    });
+    assert!(
+        sf_script_src.contains("TIMEOUT_MS"),
+        "source-first benchmark script {} must expose TIMEOUT_MS override for cutoff replay",
+        sf_script_path.display()
+    );
+    assert!(
+        sf_script_src.contains("--timeout"),
+        "source-first benchmark script {} must forward timeout override to model-check command",
+        sf_script_path.display()
+    );
+
+    let compare_script_path = repo_root.join("scripts/compare_tlc_vs_source_first.sh");
+    let compare_script_src = std::fs::read_to_string(&compare_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison script {}: {}",
+            compare_script_path.display(),
+            err
+        )
+    });
+    assert!(
+        compare_script_src.contains("SF_CUTOFF_DIR")
+            && compare_script_src.contains("TLC_CUTOFF_DIR")
+            && compare_script_src.contains("Matched-Cutoff Progress"),
+        "comparison script {} must support cutoff artifact directories and matched-cutoff report generation",
+        compare_script_path.display()
+    );
+}

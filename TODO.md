@@ -9857,7 +9857,7 @@ Rules for this phase (do not cut corners):
       - TLC: `reports/benchmarks/tlc/` (4 TLC logs + SUMMARY.md)
       - TLC wrappers: `transpiler/tla_test_workspace/.../benchmarks_1h/` (4 .tla + 4 .cfg)
       - Manifest: `reports/benchmarks/MANIFEST.md` with exact commands, tool versions, machine info.
-  - [ ] **33.4.3.f** Produce a checked-in side-by-side comparison report for the four protocols. [REOPENED 2026-03-10]
+  - [x] **33.4.3.f** Produce a checked-in side-by-side comparison report for the four protocols. [REOPENED 2026-03-10, CLOSED 2026-03-10 22:30]
     - Compare, at minimum:
       - result (`ok`, `violation`, `timeout`, `limit`)
       - wall-clock time
@@ -9868,13 +9868,13 @@ Rules for this phase (do not cut corners):
       - TLC distinct-state count
     - Include two views whenever applicable:
       - [x] same config, compare total runtime if both finish
-      - [ ] same config and same time budget, compare how many states each engine traversed before the cutoff
+      - [x] same config and same time budget, compare how many states each engine traversed before the cutoff. [26-03-10, 22:30] Added a dedicated `Matched-Cutoff Progress (Shared 120s Budget)` view generated from bounded raw artifacts under `reports/benchmarks/source_first_cutoff_120s/` and `reports/benchmarks/tlc_cutoff_120s/` (not inferred from full-run totals).
     - [x] Partial completion already exists: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` gives the same-model full-run view for all 4 protocols and documents state-count semantics differences (centralized `LState` vs TLC wrapper variables).
-    - [ ] Add a second checked-in report section/table for matched-cutoff progress:
+    - [x] Add a second checked-in report section/table for matched-cutoff progress:
       - pick a fixed shared cutoff per protocol (preferred: the already-declared benchmark wall-clock budget, unless a smaller checked-in analysis cutoff is explicitly justified),
       - record what each engine had actually traversed by that cutoff,
       - keep this as a separate view from the full-run/exhausted summary instead of silently mixing the two.
-    - [ ] The matched-cutoff progress view must record, at minimum:
+    - [x] The matched-cutoff progress view must record, at minimum:
       - source-first `summary.states`
       - source-first `summary.transitions`
       - source-first `summary.depth`
@@ -9882,20 +9882,20 @@ Rules for this phase (do not cut corners):
       - TLC generated-state count at cutoff
       - TLC distinct-state count at cutoff
       - TLC depth/diameter/progress metric at cutoff if available
-    - [ ] For protocols where source-first is currently BLOCKED before reaching a meaningful frontier (`LeaderElection`, `Paxos` on the current benchmark models), do **not** leave blank cells:
+    - [x] For protocols where source-first is currently BLOCKED before reaching a meaningful frontier (`LeaderElection`, `Paxos` on the current benchmark models), do **not** leave blank cells:
       - record the measured matched-cutoff progress/failure counters that actually existed,
       - label the row as `time-bounded blocked progress` or equivalent,
       - and include the blocking reason/counter context (for example candidate-evaluation blow-up) rather than pretending there was no data.
-    - [ ] Do **not** infer same-time-budget progress from final totals. The numbers must come from reproducible raw artifacts:
+    - [x] Do **not** infer same-time-budget progress from final totals. The numbers must come from reproducible raw artifacts:
       - source-first timeout-bounded JSON runs, periodic progress snapshots, or another checked-in mechanical progress report,
       - TLC progress/coverage logs or another checked-in mechanical progress report.
-    - [ ] Keep the "same model" provenance explicit in the comparison report:
+    - [x] Keep the "same model" provenance explicit in the comparison report:
       - link the generated base `.tla` emitted by `verus2-tla`,
       - link the TLC wrapper/property glue used for model checking,
       - state what was generated vs what was hand-written wrapper glue,
       - do **not** compare against a scratch-written standalone TLA+ spec.
-    - [ ] If state-count semantics differ because of wrapper variables or other modeling artifacts, say that explicitly instead of hiding the mismatch.
-    - [ ] Extend replay automation so the same-time comparison is regenerated mechanically rather than copied by hand.
+    - [x] If state-count semantics differ because of wrapper variables or other modeling artifacts, say that explicitly instead of hiding the mismatch.
+    - [x] Extend replay automation so the same-time comparison is regenerated mechanically rather than copied by hand.
       - Preferred: extend `scripts/run_model_check_benchmarks.sh`, `scripts/run_tlc_benchmarks.sh`, and `scripts/compare_tlc_vs_source_first.sh`.
       - Acceptable alternative: add a dedicated checked-in script for same-budget progress collection/report generation.
   - [x] **33.4.3.g** Add dedicated replay scripts for the long benchmarks instead of overloading the fast smoke matrix.

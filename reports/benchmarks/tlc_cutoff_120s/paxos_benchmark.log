@@ -1,0 +1,26 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: db727a7)
+Running breadth-first search Model-Checking with fp 50 and seed -6864844314341808898 with 1 worker on 64 cores with 3641MB heap and 64MB offheap memory [pid: 320620] (Linux 6.17.4-2-pve amd64, Debian 21.0.9 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/shuai/workspace/tla-rs/transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/Paxos_Benchmark_MC.tla
+Parsing file /tmp/tlc-6805660928458022396/Integers.tla (jar:file:/home/shuai/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-6805660928458022396/Sequences.tla (jar:file:/home/shuai/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-6805660928458022396/FiniteSets.tla (jar:file:/home/shuai/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-6805660928458022396/_TLCTrace.tla (jar:file:/home/shuai/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-6805660928458022396/Naturals.tla (jar:file:/home/shuai/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-6805660928458022396/TLC.tla (jar:file:/home/shuai/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-6805660928458022396/TLCExt.tla (jar:file:/home/shuai/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module Paxos_Benchmark_MC
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module Paxos_Benchmark_MC
+Starting... (2026-03-10 18:26:01)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-03-10 18:26:02.
+Progress(16) at 2026-03-10 18:26:05: 210,687 states generated (210,687 s/min), 41,600 distinct states found (41,600 ds/min), 16,559 states left on queue.
+Progress(23) at 2026-03-10 18:27:05: 5,312,208 states generated (5,101,521 s/min), 876,750 distinct states found (835,150 ds/min), 263,160 states left on queue.

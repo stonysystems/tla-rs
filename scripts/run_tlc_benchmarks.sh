@@ -117,9 +117,25 @@ for proto in $PROTOCOLS; do
         result="timeout"
     fi
 
-    states=$(grep -oP '\d+ states generated' "$log_file" 2>/dev/null | tail -1 | grep -oP '^\d+' || echo "?")
-    distinct=$(grep -oP '\d+ distinct states found' "$log_file" 2>/dev/null | tail -1 | grep -oP '^\d+' || echo "?")
-    depth=$(grep -oP 'The depth of the complete state graph search is \d+' "$log_file" 2>/dev/null | grep -oP '\d+$' || echo "?")
+    parsed_stats=$(python3 - "$log_file" <<'PY' 2>/dev/null || echo "?|?|?"
+import re, sys
+path = sys.argv[1]
+states = "?"
+distinct = "?"
+depth = "?"
+with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+    for line in fh:
+        pair = re.search(r'([0-9][0-9,]*) states generated.*?([0-9][0-9,]*) distinct states found', line)
+        if pair:
+            states = pair.group(1).replace(",", "")
+            distinct = pair.group(2).replace(",", "")
+        depth_match = re.search(r'The depth of the complete state graph search is ([0-9][0-9,]*)', line)
+        if depth_match:
+            depth = depth_match.group(1).replace(",", "")
+print(f"{states}|{distinct}|{depth}")
+PY
+)
+    IFS='|' read -r states distinct depth <<< "$parsed_stats"
 
     echo "  Done: $result ($states states, ${wall_secs}s)"
     echo "| $proto | $result | $states | $distinct | $depth | $wall_secs |" >> "$SUMMARY_FILE"
