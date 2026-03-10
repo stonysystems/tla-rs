@@ -9849,6 +9849,119 @@ fn test_model_checker_architecture_phase_35_9_sources_and_evidence_records_requi
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_engine_crosswalk_matches_comparison_doc() {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().trim_matches('`').to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let crosswalk_path = repo_root.join("docs/model-checker-architecture/artifacts/engine-crosswalk.csv");
+
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+    let crosswalk_src = std::fs::read_to_string(&crosswalk_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read engine crosswalk csv {}: {}",
+            crosswalk_path.display(),
+            err
+        )
+    });
+
+    let side_by_side_section = comparison_src
+        .split("## Side-by-Side Matrix")
+        .nth(1)
+        .and_then(|tail| tail.split("## Similarities").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate side-by-side matrix section in {}",
+                comparison_path.display()
+            )
+        });
+    let markdown_rows: Vec<Vec<String>> = side_by_side_section
+        .lines()
+        .filter(|line| line.trim_start().starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        markdown_rows.len() >= 3,
+        "comparison matrix in {} must include header, separator, and data rows",
+        comparison_path.display()
+    );
+
+    let comparison_concerns: Vec<String> = markdown_rows
+        .iter()
+        .skip(1)
+        .filter(|row| !is_markdown_separator_row(row))
+        .map(|row| row[0].to_string())
+        .collect();
+    assert!(
+        !comparison_concerns.is_empty(),
+        "comparison matrix in {} has no concern rows",
+        comparison_path.display()
+    );
+
+    let mut crosswalk_lines = crosswalk_src.lines();
+    let csv_header = crosswalk_lines.next().unwrap_or_else(|| {
+        panic!(
+            "engine crosswalk csv {} must include a header row",
+            crosswalk_path.display()
+        )
+    });
+    let expected_csv_header = "concern,traditional_tla_tlc,tlars_source_first,same_similar_different,why_it_matters,evidence_status,notes";
+    assert_eq!(
+        csv_header, expected_csv_header,
+        "engine crosswalk csv {} header drifted from required comparison-aligned schema",
+        crosswalk_path.display()
+    );
+
+    let mut crosswalk_concerns = Vec::new();
+    for line in crosswalk_lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let columns: Vec<&str> = trimmed.split(',').collect();
+        assert_eq!(
+            columns.len(),
+            7,
+            "engine crosswalk csv {} row must have 7 columns: {}",
+            crosswalk_path.display(),
+            line
+        );
+        crosswalk_concerns.push(columns[0].to_string());
+    }
+    assert!(
+        !crosswalk_concerns.is_empty(),
+        "engine crosswalk csv {} must include at least one concern row",
+        crosswalk_path.display()
+    );
+
+    assert_eq!(
+        crosswalk_concerns, comparison_concerns,
+        "engine crosswalk csv {} concerns must exactly match comparison matrix concern order in {}",
+        crosswalk_path.display(),
+        comparison_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
