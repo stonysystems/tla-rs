@@ -9612,6 +9612,70 @@ fn test_model_checker_architecture_phase_35_9_comparison_covers_similarities_dif
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_optimization_audit_distinguishes_confirmed_and_uncertain(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+    let audit_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let audit_src = std::fs::read_to_string(&audit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read optimization audit doc {}: {}",
+            audit_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        audit_src.contains("## Confirmed tla-rs-only in reviewed comparison")
+            && audit_src.contains("## Possibly different but not yet confirmed")
+            && audit_src.contains("## Not an optimization; only a feature/reporting difference"),
+        "optimization audit doc {} must keep explicit section split for confirmed vs uncertain vs non-optimization differences",
+        audit_path.display()
+    );
+    assert!(
+        audit_src.to_ascii_lowercase().contains("no item is fully confirmed yet"),
+        "optimization audit doc {} must state plainly when confirmed bucket is currently empty",
+        audit_path.display()
+    );
+    assert!(
+        audit_src.contains("uncertain / not confirmed"),
+        "optimization audit doc {} must keep explicit uncertainty labeling",
+        audit_path.display()
+    );
+
+    let uncertain_section = audit_src
+        .split("## Possibly different but not yet confirmed")
+        .nth(1)
+        .and_then(|tail| tail.split("## Not an optimization; only a feature/reporting difference").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate uncertain-candidate section in {}",
+                audit_path.display()
+            )
+        });
+    for required_candidate in [
+        "Run-scoped successor memoization used during liveness graph indexing",
+        "Direct helper-branch solving vs enumeration fallback split",
+        "Static-guard pruning before candidate enumeration",
+        "`por_heuristic = \"invisible_branch\"`",
+        "`symmetry_fields` normalization",
+        "`hash_compaction64` exactness/lossiness labeling",
+    ] {
+        assert!(
+            uncertain_section.contains(required_candidate),
+            "uncertain-candidate section in {} must include required audited candidate `{}`",
+            audit_path.display(),
+            required_candidate
+        );
+    }
+
+    assert!(
+        !audit_src.contains("TLC does not use"),
+        "optimization audit doc {} must avoid unsupported strong absence wording `TLC does not use ...`",
+        audit_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
