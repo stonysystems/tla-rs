@@ -10118,6 +10118,84 @@ fn test_model_checker_architecture_walkthrough_uses_shared_small_model_with_chec
 }
 
 #[test]
+fn test_model_checker_architecture_walkthrough_traces_ordered_input_init_successor_invariant_and_output()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture walkthrough {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        walkthrough_src.contains("## Step-by-Step Trace (Ordered)"),
+        "walkthrough {} must include an ordered step-by-step trace section",
+        walkthrough_path.display()
+    );
+
+    let trace_section = walkthrough_src
+        .split("## Step-by-Step Trace (Ordered)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Step-by-Step Trace (Ordered)` section in {}",
+                walkthrough_path.display()
+            )
+        });
+    let trace_lower = trace_section.to_ascii_lowercase();
+
+    for step_number in 1..=5 {
+        assert!(
+            trace_section.contains(&format!("{}. **", step_number)),
+            "ordered walkthrough trace section in {} must include numbered step {}",
+            walkthrough_path.display(),
+            step_number
+        );
+    }
+
+    for required_step in [
+        "input spec/model selection",
+        "how initial states are obtained",
+        "how one successor step is computed",
+        "where invariant checking happens",
+        "what output/report the user gets",
+    ] {
+        assert!(
+            trace_lower.contains(required_step),
+            "ordered walkthrough trace section in {} must include required step `{}`",
+            walkthrough_path.display(),
+            required_step
+        );
+    }
+
+    for required_anchor in [
+        "src/protocol/twophase/twophase.rs",
+        "transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml",
+        "twophase_benchmark_mc.tla",
+        "twophase_benchmark_mc.cfg",
+        "reports/benchmarks/source_first/twophase_benchmark.json",
+        "reports/benchmarks/tlc/twophase_benchmark.log",
+        "reports/benchmarks/tlc_vs_source_first_benchmark_comparison.md",
+        "linit",
+        "lnext",
+        "ltmsendprepare",
+        "stateinit",
+        "invariants",
+    ] {
+        assert!(
+            trace_lower.contains(required_anchor),
+            "ordered walkthrough trace section in {} must include anchor/detail `{}`",
+            walkthrough_path.display(),
+            required_anchor
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
