@@ -9139,6 +9139,104 @@ fn test_model_checker_architecture_tlars_only_optimizations_doc_separates_requir
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_only_optimizations_confirmed_section_records_required_fields()
+{
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let audit_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let audit_src = std::fs::read_to_string(&audit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs optimizations audit doc {}: {}",
+            audit_path.display(),
+            err
+        )
+    });
+
+    let confirmed_section = audit_src
+        .split("## Confirmed tla-rs-only in reviewed comparison")
+        .nth(1)
+        .and_then(|tail| tail.split("## Possibly different but not yet confirmed").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate confirmed-optimizations section in {}",
+                audit_path.display()
+            )
+        });
+
+    let markdown_rows: Vec<Vec<String>> = confirmed_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        markdown_rows.len() >= 3,
+        "confirmed-optimizations section in {} must include header, separator, and at least one data row",
+        audit_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&markdown_rows[1]),
+        "confirmed-optimizations matrix in {} must include markdown separator row after header",
+        audit_path.display()
+    );
+
+    let header = &markdown_rows[0];
+    let required_columns = [
+        "Optimization / Reduction Name",
+        "Cost Reduced",
+        "Preserves Exactness?",
+        "tla-rs Code/Doc Anchor",
+        "TLC \"not found / not used\" Evidence",
+        "Confidence Level",
+        "Short Effect Example (artifact-backed when available)",
+    ];
+    for required in required_columns {
+        assert!(
+            header.iter().any(|cell| cell == required),
+            "confirmed-optimizations matrix header in {} must include required column `{}`",
+            audit_path.display(),
+            required
+        );
+    }
+
+    let header_len = header.len();
+    let data_rows: Vec<&Vec<String>> = markdown_rows
+        .iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .collect();
+    for row in data_rows {
+        assert_eq!(
+            row.len(),
+            header_len,
+            "confirmed-optimizations row in {} has unexpected column count: {:?}",
+            audit_path.display(),
+            row
+        );
+    }
+
+    assert!(
+        confirmed_section.to_ascii_lowercase().contains("no item is fully confirmed yet"),
+        "confirmed-optimizations section in {} must state plainly when zero items are confirmed",
+        audit_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");

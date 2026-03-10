@@ -10752,7 +10752,7 @@ docs/model-checker-architecture/
   - `Confirmed tla-rs-only in reviewed comparison`
   - `Possibly different but not yet confirmed`
   - `Not an optimization; only a feature/reporting difference`
-- [ ] **35.7.2** For each confirmed item, record:
+- [x] **35.7.2** For each confirmed item, record: [26-03-10, 16:24] (`docs/model-checker-architecture/tlars-only-optimizations.md` confirmed section now uses required per-item fields (`name`, reduced cost, exactness preservation, tla-rs anchor, TLC comparison evidence, confidence level, effect example) and explicitly states when zero items are confirmed; added integration guard `test_model_checker_architecture_tlars_only_optimizations_confirmed_section_records_required_fields`)
   - optimization/reduction name,
   - what cost it reduces,
   - whether it preserves exactness,

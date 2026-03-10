@@ -13,10 +13,11 @@ Classification rules:
 ## Confirmed tla-rs-only in reviewed comparison
 Only fully confirmed items belong in this section.
 As of 2026-03-10, no item is fully confirmed yet under the current evidence bar.
+Per-item required fields for this section are fixed by Phase 35.7.2.
 
-| Status | Optimization / Reduction | Cost Reduced | Exactness Impact | tla-rs Anchor | TLC Comparison Evidence | Notes |
+| Optimization / Reduction Name | Cost Reduced | Preserves Exactness? | tla-rs Code/Doc Anchor | TLC "not found / not used" Evidence | Confidence Level | Short Effect Example (artifact-backed when available) |
 | --- | --- | --- | --- | --- | --- | --- |
-| none yet | - | - | - | - | - | Keep empty until an item is directly evidenced as confirmed tla-rs-only. |
+| none confirmed yet (2026-03-10) | - | - | - | - | `uncertain / not confirmed` | No confirmed item to illustrate yet; keep field for future artifact-backed examples. |
 
 ## Possibly different but not yet confirmed
 Use this section when there is a plausible difference but the TLC-side comparison is not fully confirmed.
