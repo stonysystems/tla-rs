@@ -1,16 +1,16 @@
 concern,traditional_tla_tlc,tlars_source_first,same_similar_different,why_it_matters,evidence_status,notes
-input_representation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-front_end_validation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-model_config_role,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-initial_state_generation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-successor_generation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-helper_operator_evaluation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-state_representation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-state_deduplication,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-invariant_checking,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-deadlock_semantics,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-liveness_fairness_handling,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-counterexample_report_output,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-performance_bottlenecks,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-exactness_vs_lossy_acceleration,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
-extension_points,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+input_representation,TLA modules plus TLC model files,Rust Verus source plus model.toml,Different,Different input surfaces change debugging and maintenance flow,directly_evidenced,Anchors in comparison.md row input_representation
+front_end_validation,SANY validates before exploration,CLI path validates entrypoints config and fairness labels,Different,Validation behavior lives in different implementation components,directly_evidenced,Anchors in comparison.md row front_end_validation
+model_config_role,Model config fixes constants scope and checks,model.toml fixes constants domains checks and limits,Similar,Aligned configs are required for honest cross-engine comparisons,directly_evidenced,Anchors in comparison.md row model_config_role
+initial_state_generation,Candidate states filtered by Init,Candidate states filtered by LInit,Same,Shared start condition governs coverage in both engines,directly_evidenced,Anchors in comparison.md row initial_state_generation
+successor_generation,Next relation computes successors,IR solver computes successors with fallback enumeration,Similar,Shared concept but fallback cost explains current source-first blockers,directly_evidenced,Anchors in comparison.md row successor_generation
+helper_operator_evaluation,TLC expression engine evaluates helpers,Source-first evaluator executes Rust Verus helpers,Different,Supported helper surface depends on evaluator implementation,directly_evidenced,Anchors in comparison.md row helper_operator_evaluation
+state_representation,Checker runtime values from TLA expressions,Checker Value runtime from Rust Verus evaluation,Different,Representation details affect dedup telemetry and extension work,inference_from_sources,Inference label documented in comparison.md row state_representation
+state_deduplication,Avoid revisiting reached states,Canonical or hash compaction dedup with optional symmetry,Similar,Dedup policy controls frontier growth memory and runtime,directly_evidenced,Anchors in comparison.md row state_deduplication
+invariant_checking,Check invariants on reached states,Check invariants on reached states,Same,Invariant checks are the safety backbone in both paths,directly_evidenced,Anchors in comparison.md row invariant_checking
+deadlock_semantics,Deadlock when no enabled transitions,Deadlock check is explicit and configurable,Similar,Deadlock conclusions are model scoped and config scoped,directly_evidenced,Anchors in comparison.md row deadlock_semantics
+liveness_fairness_handling,Fairness constrained liveness reasoning,Fairness labels validated then SCC leads-to checking,Similar,Engine machinery differs even with shared liveness intent,directly_evidenced,Anchors in comparison.md row liveness_fairness_handling
+counterexample_report_output,Repo TLC path is log and wrapper oriented,Source-first emits CLI JSON and telemetry,Different,Output format affects automation and analysis ergonomics,directly_evidenced,Anchors in comparison.md row counterexample_report_output
+performance_bottlenecks,State explosion dominates hard models,State explosion plus fallback enumeration overhead,Similar,Performance diagnosis must include shared and engine-specific costs,directly_evidenced,Anchors in comparison.md row performance_bottlenecks
+exactness_vs_lossy_acceleration,Reviewed TLC baseline treated as exact evidence,Source-first labels exact mode and lossy mode,Different,Users can separate proof-strength results from bug-finding acceleration,inference_from_sources,Inference label documented in comparison.md row exactness_vs_lossy_acceleration
+extension_points,Extension mostly at spec model and toolchain layer,Extension lands in evaluator solver explorer and POR modules,Different,Knowing extension location prevents mis-scoped optimization work,directly_evidenced,Anchors in comparison.md row extension_points

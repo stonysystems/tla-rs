@@ -10340,6 +10340,139 @@ fn test_model_checker_architecture_phase_35_10_3_source_first_tutorial_uses_actu
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_10_4_comparison_explicitly_answers_same_vs_different_and_why_it_matters(
+) {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        comparison_src.contains("## Side-by-Side Matrix"),
+        "comparison doc {} must include a side-by-side matrix section",
+        comparison_path.display()
+    );
+    assert!(
+        comparison_src.contains("## Synthesis")
+            && comparison_src.contains("What is fundamentally the same idea?")
+            && comparison_src.contains("What is an implementation detail difference?")
+            && comparison_src.contains("Why this difference matters"),
+        "comparison doc {} must explicitly answer same vs different and why-it-matters questions",
+        comparison_path.display()
+    );
+
+    let matrix_section = comparison_src
+        .split("## Side-by-Side Matrix")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate side-by-side matrix section in {}",
+                comparison_path.display()
+            )
+        });
+
+    let matrix_rows: Vec<Vec<String>> = matrix_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        matrix_rows.len() >= 3,
+        "comparison matrix in {} must include header separator and data rows",
+        comparison_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&matrix_rows[1]),
+        "comparison matrix in {} must keep markdown separator row after header",
+        comparison_path.display()
+    );
+
+    let data_rows: Vec<Vec<String>> = matrix_rows
+        .into_iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .collect();
+    assert!(
+        data_rows.len() >= 15,
+        "comparison matrix in {} should include all required concern rows; found only {}",
+        comparison_path.display(),
+        data_rows.len()
+    );
+
+    let mut saw_same = false;
+    let mut saw_similar = false;
+    let mut saw_different = false;
+    for row in &data_rows {
+        assert_eq!(
+            row.len(),
+            7,
+            "comparison matrix row in {} has unexpected column count: {:?}",
+            comparison_path.display(),
+            row
+        );
+
+        let row_joined = row.join(" ").to_ascii_lowercase();
+        for placeholder in ["tbd", "scaffold_only", "fill in phase 35.6"] {
+            assert!(
+                !row_joined.contains(placeholder),
+                "comparison matrix row in {} still contains placeholder `{}`: {:?}",
+                comparison_path.display(),
+                placeholder,
+                row
+            );
+        }
+
+        let relation = row[3].trim();
+        match relation {
+            "Same" => saw_same = true,
+            "Similar" => saw_similar = true,
+            "Different" => saw_different = true,
+            _ => panic!(
+                "comparison matrix row in {} has invalid relation `{}`; expected Same/Similar/Different",
+                comparison_path.display(),
+                relation
+            ),
+        }
+
+        let why = row[4].trim();
+        assert!(
+            !why.is_empty() && why.len() >= 20,
+            "comparison matrix row in {} must keep concrete why-it-matters reasoning: {:?}",
+            comparison_path.display(),
+            row
+        );
+    }
+
+    assert!(
+        saw_same && saw_similar && saw_different,
+        "comparison matrix in {} must include explicit Same Similar and Different rows",
+        comparison_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
