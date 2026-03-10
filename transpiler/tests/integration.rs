@@ -9994,6 +9994,69 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_explains_main_kno
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_source_first_tutorial_major_subsections_include_local_anchors()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs source-first tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    let required_sections = [
+        "Beginner Context",
+        "End-to-End Source-First Path (Ordered)",
+        "Current tla-rs Source-First Architecture Diagram",
+        "Current Technique Path (Plain Language)",
+        "Main Known Limits (Current Repo Status)",
+        "What \"Source-First\" Means In Practice",
+        "Scope Notes",
+    ];
+
+    for section_title in required_sections {
+        let section_header = format!("## {}", section_title);
+        assert!(
+            tutorial_src.contains(&section_header),
+            "tla-rs source-first tutorial {} must include section `{}`",
+            tutorial_path.display(),
+            section_title
+        );
+
+        let section = tutorial_src
+            .split(&section_header)
+            .nth(1)
+            .and_then(|tail| tail.split("\n## ").next())
+            .unwrap_or_else(|| {
+                panic!(
+                    "failed to isolate `{}` section in {}",
+                    section_title,
+                    tutorial_path.display()
+                )
+            });
+        let section_lower = section.to_ascii_lowercase();
+
+        assert!(
+            section_lower.contains("anchor:"),
+            "section `{}` in {} must include explicit `Anchor:` citations",
+            section_title,
+            tutorial_path.display()
+        );
+        assert!(
+            section_lower.contains("transpiler/src/")
+                || section_lower.contains("docs/")
+                || section_lower.contains("reports/"),
+            "section `{}` in {} must include local file/doc path anchors",
+            section_title,
+            tutorial_path.display()
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,

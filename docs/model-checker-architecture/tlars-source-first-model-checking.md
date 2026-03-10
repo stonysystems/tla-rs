@@ -2,6 +2,9 @@
 
 ## Beginner Context
 This chapter explains the model checker that is currently implemented in this repository. The key idea is "source-first": the engine evaluates the Rust/Verus spec sources (`LInit`, `LNext`, invariants, helpers) directly, instead of translating to a TLC wrapper as an intermediate execution path.
+- Anchor: `transpiler/src/main.rs` (`run_model_check_command`, `execute_model_check`)
+- Anchor: `transpiler/src/spec_analyzer.rs` (`ingest_protocol_sources_with_types_and_entrypoints`)
+- Anchor: `docs/model-checking-source-first.md` (`2. Source-First Model Checking (MVP)`)
 
 ## End-to-End Source-First Path (Ordered)
 1. **Rust/Verus input sources and type sources**: `verus-transpile model-check` ingests the protocol spec (`--input`) and type source (`--types`, defaulting to sibling `types.rs`) with `ingest_protocol_sources_with_types_and_entrypoints`.
@@ -63,6 +66,10 @@ flowchart TD
 
     A --> B --> C --> D --> E --> F --> G --> H --> I
 ```
+- Anchor: `transpiler/src/main.rs` (`Commands::ModelCheck`, `run_model_check_command`, `execute_model_check`, `classify_search_evidence_mode`)
+- Anchor: `transpiler/src/modelcheck/{config,ir,init,domain,evaluator,solver,explorer,por,invariant,graph,liveness}.rs`
+- Anchor: `docs/model-checking-source-first.md` (`Inspect Results`)
+- Anchor: `docs/model_checker_status.md` (`Model-Checker Status`)
 
 ## Current Technique Path (Plain Language)
 1. **Source-first execution over Rust/Verus spec source**: the checker reads local protocol `.rs` sources, resolves `LInit`/`LNext`/invariants, and executes the parsed spec expressions directly in the model-check engine instead of first translating to a TLC execution artifact.
@@ -117,8 +124,11 @@ flowchart TD
 - The execution path starts from Rust/Verus source (`.rs`) and finite model config (`model.toml`), not from a generated TLC wrapper.
 - Helper predicates/functions are evaluated via the same model-check evaluator path, using parsed local spec AST plus finite domains.
 - The checked-in JSON artifacts under `reports/model_check/` are direct outputs of this source-first command path.
+- Anchor: `transpiler/src/main.rs` (`run_model_check_command`, `execute_model_check`, `handle_command`)
+- Anchor: `transpiler/src/modelcheck/evaluator.rs` (`eval_expr`)
+- Anchor: `reports/model_check/twophase_small.json`, `reports/model_check/primarybackup_small.json`
 
 ## Scope Notes
 This chapter describes what exists in the current repo implementation. For supported subset details and active limitations, use:
-- `docs/model-checking-source-first.md` (supported constructs and CLI/report surface)
-- `docs/model_checker_status.md` (checked-in coverage, blockers, and benchmark evidence)
+- Anchor: `docs/model-checking-source-first.md` (supported constructs and CLI/report surface)
+- Anchor: `docs/model_checker_status.md` (checked-in coverage, blockers, and benchmark evidence)

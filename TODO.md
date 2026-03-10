@@ -10687,7 +10687,7 @@ docs/model-checker-architecture/
   - domain/solver limitations,
   - fallback enumeration cost,
   - incomplete protocol coverage / performance gaps where still relevant.
-- [ ] **35.4.5** Every major subsection must cite the local file/function/doc anchor that supports it.
+- [x] **35.4.5** Every major subsection must cite the local file/function/doc anchor that supports it. [26-03-10, 15:50] (added explicit `Anchor:` citations to all remaining top-level sections in `docs/model-checker-architecture/tlars-source-first-model-checking.md`, including `Beginner Context`, architecture diagram support notes, `What "Source-First" Means In Practice`, and `Scope Notes`; added integration guard `test_model_checker_architecture_tlars_source_first_tutorial_major_subsections_include_local_anchors`)
 
 ### 35.5 Worked Example for a Reader with Zero Background
 
