@@ -10636,7 +10636,7 @@ docs/model-checker-architecture/
 
 **Goal**: Explain the "traditional" architecture clearly enough that a newcomer understands what TLC is doing before reading about tla-rs.
 
-- [ ] **35.3.1** `traditional-tla-model-checking.md` must start with a beginner-friendly explanation of the TLA+ toolchain:
+- [x] **35.3.1** `traditional-tla-model-checking.md` must start with a beginner-friendly explanation of the TLA+ toolchain: [26-03-10, 15:18] (expanded opening sections in `docs/model-checker-architecture/traditional-tla-model-checking.md` with explicit newcomer definitions for TLA+, `SANY`, `TLC`, and finite model/config contribution; added integration guard `test_model_checker_architecture_traditional_tla_tutorial_starts_with_toolchain_primer` so required opening concepts/ordering stay enforced)
   - what TLA+ is,
   - what `SANY` does,
   - what `TLC` does,

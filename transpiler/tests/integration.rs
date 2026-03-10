@@ -9324,6 +9324,95 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
 }
 
 #[test]
+fn test_model_checker_architecture_traditional_tla_tutorial_starts_with_toolchain_primer() {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional TLC tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## Beginner Toolchain Primer"),
+        "traditional TLC tutorial {} must include a `Beginner Toolchain Primer` section",
+        tutorial_path.display()
+    );
+
+    let first_h2 = tutorial_src
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("## "));
+    assert_eq!(
+        first_h2,
+        Some("## Beginner Toolchain Primer"),
+        "traditional TLC tutorial {} must start with the beginner toolchain primer before other second-level sections",
+        tutorial_path.display()
+    );
+
+    let primer_section = tutorial_src
+        .split("## Beginner Toolchain Primer")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Beginner Toolchain Primer` section in {}",
+                tutorial_path.display()
+            )
+        });
+    let primer_lower = primer_section.to_ascii_lowercase();
+
+    assert!(
+        primer_lower.contains("tla+") && primer_lower.contains("specification language"),
+        "beginner toolchain primer in {} must explain what TLA+ is",
+        tutorial_path.display()
+    );
+    assert!(
+        primer_lower.contains("sany")
+            && (primer_lower.contains("parser")
+                || primer_lower.contains("parse")
+                || primer_lower.contains("front-end")),
+        "beginner toolchain primer in {} must explain what SANY does",
+        tutorial_path.display()
+    );
+    assert!(
+        primer_lower.contains("tlc")
+            && primer_lower.contains("explicit-state")
+            && (primer_lower.contains("explore") || primer_lower.contains("successor")),
+        "beginner toolchain primer in {} must explain what TLC does",
+        tutorial_path.display()
+    );
+    assert!(
+        primer_lower.contains("finite model/config")
+            || (primer_lower.contains("finite model") && primer_lower.contains("config")),
+        "beginner toolchain primer in {} must mention finite model/config",
+        tutorial_path.display()
+    );
+
+    let model_section = tutorial_src
+        .split("## What The Model/Config Contributes")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "traditional TLC tutorial {} must include a `What The Model/Config Contributes` section",
+                tutorial_path.display()
+            )
+        });
+    let model_lower = model_section.to_ascii_lowercase();
+    assert!(
+        model_lower.contains("finite")
+            && (model_lower.contains("domain")
+                || model_lower.contains("constants")
+                || model_lower.contains("concrete")),
+        "model/config section in {} must explain what a finite model/config contributes",
+        tutorial_path.display()
+    );
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
