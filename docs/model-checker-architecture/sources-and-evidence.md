@@ -78,4 +78,14 @@ Current `tlars_source_first` compliance:
 Cross-engine claims are labeled as:
 - `directly evidenced`
 - `inference from sources`
-- `uncertain`
+- `uncertain / not confirmed`
+
+## Cross-Engine Claim Confidence Register
+| Claim ID | Claim statement | Confidence label | Evidence source IDs | Notes |
+| --- | --- | --- | --- | --- |
+| X1 | On current checked-in benchmark models, TLC fully exhausts all 4 compared protocols while source-first fully exhausts TwoPhase and PrimaryBackup and is currently blocked on LeaderElection and Paxos. | directly evidenced | `C1` | Directly reported in the benchmark comparison artifact. |
+| X2 | Current evidence suggests successor-solving/candidate-enumeration overhead is the dominant source-first bottleneck on the blocked shared models. | inference from sources | `C1`, `R6` | Inference from benchmark blocker text plus model-checker implementation structure. |
+| X3 | No equivalent mechanism was found in the reviewed TLC sources for every tla-rs reduction/telemetry surface currently discussed in this phase. | uncertain / not confirmed | `T3`, `T4`, `T5`, `C2`, `C4` | Absence-style comparison; treated as uncertain until exhaustively confirmed. |
+| X4 | Cross-engine state-count comparisons require provenance-aware interpretation because wrapper/modeling artifacts can affect state semantics. | directly evidenced | `C1`, `R7` | Comparison artifact and claim-anchor map both call out provenance requirements. |
+| X5 | Source-first optimization deltas in this repo are grounded in checked-in artifacts/scripts rather than narrative-only claims. | directly evidenced | `C2`, `C3`, `C4`, `C5` | Reproducible via checked-in telemetry delta artifacts and test guards. |
+| X6 | Any broad statement about feature parity between TLC and tla-rs remains provisional unless backed by direct TLC-source inspection for that specific mechanism. | inference from sources | `T4`, `T5`, `R7` | Methodology inference from source-discipline and anchor requirements. |

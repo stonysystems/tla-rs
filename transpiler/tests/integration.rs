@@ -8733,6 +8733,17 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         sources_src.contains("## Claim Confidence Labels"),
         "sources-and-evidence doc must include claim confidence labels section"
     );
+    for required_label in [
+        "`directly evidenced`",
+        "`inference from sources`",
+        "`uncertain / not confirmed`",
+    ] {
+        assert!(
+            sources_src.contains(required_label),
+            "sources-and-evidence doc must include required confidence label {}",
+            required_label
+        );
+    }
 
     let ledger_section = sources_src
         .split("## Source Ledger")
@@ -9151,6 +9162,131 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
                 source_kind
             );
         }
+    }
+
+    assert!(
+        sources_src.contains("## Cross-Engine Claim Confidence Register"),
+        "sources-and-evidence doc must include cross-engine claim confidence register section"
+    );
+    let cross_engine_section = sources_src
+        .split("## Cross-Engine Claim Confidence Register")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate Cross-Engine Claim Confidence Register section in {}",
+                sources_path.display()
+            )
+        });
+    let cross_engine_rows: Vec<Vec<String>> = cross_engine_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(|line| {
+            line.trim_matches('|')
+                .split('|')
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<String>>()
+        })
+        .collect();
+    assert!(
+        cross_engine_rows.len() >= 3,
+        "Cross-Engine Claim Confidence Register in {} must include header, separator, and data rows",
+        sources_path.display()
+    );
+    let expected_cross_engine_header = vec![
+        "Claim ID".to_string(),
+        "Claim statement".to_string(),
+        "Confidence label".to_string(),
+        "Evidence source IDs".to_string(),
+        "Notes".to_string(),
+    ];
+    assert_eq!(
+        cross_engine_rows[0], expected_cross_engine_header,
+        "Cross-Engine Claim Confidence Register header in {} drifted from required schema",
+        sources_path.display()
+    );
+    let cross_engine_data_rows: Vec<&Vec<String>> = cross_engine_rows
+        .iter()
+        .skip(2)
+        .filter(|row| !row.iter().all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' ')))
+        .collect();
+    assert!(
+        !cross_engine_data_rows.is_empty(),
+        "Cross-Engine Claim Confidence Register in {} has no data rows",
+        sources_path.display()
+    );
+    let allowed_confidence_labels = [
+        "directly evidenced",
+        "inference from sources",
+        "uncertain / not confirmed",
+    ];
+    let mut seen_confidence_labels = std::collections::BTreeSet::new();
+    let extract_any_source_ids = |cell: &str| -> Vec<String> {
+        cell.split(|ch: char| !ch.is_ascii_alphanumeric())
+            .filter(|token| {
+                token.len() >= 2
+                    && token
+                        .chars()
+                        .next()
+                        .map(|ch| ch.is_ascii_uppercase())
+                        .unwrap_or(false)
+                    && token[1..].chars().all(|ch| ch.is_ascii_digit())
+            })
+            .map(str::to_string)
+            .collect()
+    };
+    for row in cross_engine_data_rows {
+        assert_eq!(
+            row.len(),
+            expected_cross_engine_header.len(),
+            "Cross-Engine Claim Confidence Register row in {} has unexpected column count: {:?}",
+            sources_path.display(),
+            row
+        );
+
+        let claim_id = row[0].as_str();
+        assert!(
+            claim_id.starts_with('X')
+                && claim_id.len() >= 2
+                && claim_id[1..].chars().all(|ch| ch.is_ascii_digit()),
+            "Cross-Engine Claim Confidence Register row in {} has invalid claim ID `{}`",
+            sources_path.display(),
+            claim_id
+        );
+
+        let confidence_label = row[2].as_str();
+        assert!(
+            allowed_confidence_labels.contains(&confidence_label),
+            "Cross-Engine Claim Confidence Register row in {} has invalid confidence label `{}`",
+            sources_path.display(),
+            confidence_label
+        );
+        seen_confidence_labels.insert(confidence_label.to_string());
+
+        let evidence_ids = extract_any_source_ids(&row[3]);
+        assert!(
+            !evidence_ids.is_empty(),
+            "Cross-Engine Claim Confidence Register row in {} must list at least one evidence source ID: {:?}",
+            sources_path.display(),
+            row
+        );
+        for evidence_id in evidence_ids {
+            assert!(
+                source_kind_by_id.contains_key(&evidence_id),
+                "Cross-Engine Claim Confidence Register in {} references unknown evidence source ID `{}`",
+                sources_path.display(),
+                evidence_id
+            );
+        }
+    }
+    for required_label in allowed_confidence_labels {
+        assert!(
+            seen_confidence_labels.contains(required_label),
+            "Cross-Engine Claim Confidence Register in {} must include at least one row labeled `{}`",
+            sources_path.display(),
+            required_label
+        );
     }
 }
 
