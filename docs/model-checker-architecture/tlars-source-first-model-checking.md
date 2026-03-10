@@ -48,6 +48,22 @@ This chapter explains the model checker that is currently implemented in this re
     - Anchor: `docs/model-checking-source-first.md` (`Inspect Results`)
     - Anchor: `docs/model_checker_status.md` (checked-in report/evidence discipline sections)
 
+## Current tla-rs Source-First Architecture Diagram
+```mermaid
+flowchart TD
+    A["1) Input + types ingestion\ntranspiler/src/main.rs (Commands::ModelCheck)\ntranspiler/src/spec_analyzer.rs (ingest_protocol_sources_with_types_and_entrypoints)"]
+    B["2-3) Entrypoint + model resolution\ntranspiler/src/main.rs (run_model_check_command)\ntranspiler/src/modelcheck/config.rs (parse/validate/overrides)\ntranspiler/src/modelcheck/invariant.rs (resolve_selected_invariants)"]
+    C["4) LNext IR normalization\ntranspiler/src/modelcheck/ir.rs (build_transition_ir)"]
+    D["5) LInit initial states\ntranspiler/src/modelcheck/init.rs (construct_initial_states)\ntranspiler/src/main.rs (expand_type_domain_candidates, resolve_constants_values)"]
+    E["6) Domain expansion + evaluator execution\ntranspiler/src/modelcheck/domain.rs (expand_branch_existentials)\ntranspiler/src/modelcheck/evaluator.rs (eval_expr)"]
+    F["7) Branch solve + successor generation\ntranspiler/src/modelcheck/solver.rs (solve_branch_successors_with_candidates_and_telemetry)"]
+    G["8) Exploration + dedup + reductions\ntranspiler/src/modelcheck/explorer.rs (explore_state_space_with_traces_and_dedup)\ntranspiler/src/modelcheck/por.rs (infer_invisible_branch_pruning)"]
+    H["9) Invariant/deadlock/liveness checks\ntranspiler/src/modelcheck/invariant.rs (first_invariant_violation)\ntranspiler/src/modelcheck/graph.rs (build_explored_graph_index)\ntranspiler/src/modelcheck/liveness.rs (check_leads_to_violations)"]
+    I["10) Report + telemetry/evidence mode\ntranspiler/src/main.rs (handle_command JSON output, classify_search_evidence_mode)\ndocs/model-checking-source-first.md\ndocs/model_checker_status.md"]
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I
+```
+
 ## What "Source-First" Means In Practice
 - The execution path starts from Rust/Verus source (`.rs`) and finite model config (`model.toml`), not from a generated TLC wrapper.
 - Helper predicates/functions are evaluated via the same model-check evaluator path, using parsed local spec AST plus finite domains.

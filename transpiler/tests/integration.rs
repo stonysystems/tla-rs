@@ -9755,6 +9755,83 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_has_ordered_execu
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_source_first_tutorial_includes_architecture_diagram_with_modules()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs source-first tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## Current tla-rs Source-First Architecture Diagram"),
+        "tla-rs source-first tutorial {} must include a dedicated architecture-diagram section",
+        tutorial_path.display()
+    );
+
+    let diagram_section = tutorial_src
+        .split("## Current tla-rs Source-First Architecture Diagram")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Current tla-rs Source-First Architecture Diagram` section in {}",
+                tutorial_path.display()
+            )
+        });
+    let diagram_lower = diagram_section.to_ascii_lowercase();
+
+    assert!(
+        diagram_section.contains("```mermaid"),
+        "architecture-diagram section in {} must include a Mermaid diagram block",
+        tutorial_path.display()
+    );
+    assert!(
+        diagram_section.contains("-->"),
+        "architecture-diagram section in {} must include directional flow edges",
+        tutorial_path.display()
+    );
+
+    for required_fragment in [
+        "input + types ingestion",
+        "entrypoint + model resolution",
+        "lnext ir normalization",
+        "linit initial states",
+        "domain expansion + evaluator execution",
+        "branch solve + successor generation",
+        "exploration + dedup + reductions",
+        "invariant/deadlock/liveness checks",
+        "report + telemetry/evidence mode",
+        "commands::modelcheck",
+        "run_model_check_command",
+        "transpiler/src/modelcheck/config.rs",
+        "transpiler/src/modelcheck/ir.rs",
+        "transpiler/src/modelcheck/init.rs",
+        "transpiler/src/modelcheck/domain.rs",
+        "transpiler/src/modelcheck/evaluator.rs",
+        "transpiler/src/modelcheck/solver.rs",
+        "transpiler/src/modelcheck/explorer.rs",
+        "transpiler/src/modelcheck/por.rs",
+        "transpiler/src/modelcheck/invariant.rs",
+        "transpiler/src/modelcheck/graph.rs",
+        "transpiler/src/modelcheck/liveness.rs",
+        "classify_search_evidence_mode",
+    ] {
+        assert!(
+            diagram_lower.contains(required_fragment),
+            "architecture-diagram section in {} must include `{}`",
+            tutorial_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
