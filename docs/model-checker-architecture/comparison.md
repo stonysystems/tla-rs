@@ -7,6 +7,7 @@ For Phase 35.1.5, this file intentionally uses the same table schema and concern
 
 ## Side-by-Side Matrix
 Minimum required columns for Phase 35.6.1 are present (`Concern`, `Traditional TLA+ / TLC`, `tla-rs source-first`, `Same / Similar / Different`, `Why this difference matters`). This matrix also keeps `Evidence status` and `Notes` so it stays synchronized with `artifacts/engine-crosswalk.csv`.
+Phase 35.6.2 required comparison concerns are present as explicit row keys (`input_representation` through `extension_points`) so required coverage does not depend on prose interpretation.
 
 | Concern | Traditional TLA+ / TLC | tla-rs source-first | Same / Similar / Different | Why this difference matters | Evidence status | Notes |
 | --- | --- | --- | --- | --- | --- | --- |

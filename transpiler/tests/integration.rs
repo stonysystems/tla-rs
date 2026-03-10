@@ -8786,6 +8786,121 @@ fn test_model_checker_architecture_comparison_includes_required_side_by_side_min
 }
 
 #[test]
+fn test_model_checker_architecture_comparison_includes_required_minimum_concern_rows() {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let required_concerns = [
+        "input_representation",
+        "front_end_validation",
+        "model_config_role",
+        "initial_state_generation",
+        "successor_generation",
+        "helper_operator_evaluation",
+        "state_representation",
+        "state_deduplication",
+        "invariant_checking",
+        "deadlock_semantics",
+        "liveness_fairness_handling",
+        "counterexample_report_output",
+        "performance_bottlenecks",
+        "exactness_vs_lossy_acceleration",
+        "extension_points",
+    ];
+
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+
+    let matrix_section = comparison_src
+        .split("## Side-by-Side Matrix")
+        .nth(1)
+        .and_then(|tail| tail.split("## Similarities").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate side-by-side matrix section in {}",
+                comparison_path.display()
+            )
+        });
+    let markdown_rows: Vec<Vec<String>> = matrix_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        markdown_rows.len() >= 3,
+        "comparison matrix in {} must include header, separator, and concern rows",
+        comparison_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&markdown_rows[1]),
+        "comparison matrix in {} must include markdown separator row after header",
+        comparison_path.display()
+    );
+
+    let concerns: Vec<String> = markdown_rows
+        .iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .map(|row| row[0].trim_matches('`').to_string())
+        .collect();
+    assert!(
+        concerns.len() >= required_concerns.len(),
+        "comparison matrix in {} must include at least {} concern rows for Phase 35.6.2",
+        comparison_path.display(),
+        required_concerns.len()
+    );
+    let unique_concerns: std::collections::HashSet<String> = concerns.iter().cloned().collect();
+    assert_eq!(
+        unique_concerns.len(),
+        concerns.len(),
+        "comparison matrix in {} must not contain duplicate concern keys",
+        comparison_path.display()
+    );
+
+    let mut previous_index: Option<usize> = None;
+    for required in required_concerns {
+        let index = concerns
+            .iter()
+            .position(|concern| concern == required)
+            .unwrap_or_else(|| {
+                panic!(
+                    "comparison matrix in {} must include required concern row `{}`",
+                    comparison_path.display(),
+                    required
+                )
+            });
+        if let Some(prev) = previous_index {
+            assert!(
+                index > prev,
+                "comparison matrix in {} must keep required concern rows in the documented order",
+                comparison_path.display()
+            );
+        }
+        previous_index = Some(index);
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");

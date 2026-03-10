@@ -10716,7 +10716,7 @@ docs/model-checker-architecture/
   - `tla-rs source-first`
   - `Same / Similar / Different`
   - `Why this difference matters`
-- [ ] **35.6.2** Required comparison rows (minimum):
+- [x] **35.6.2** Required comparison rows (minimum): [26-03-10, 16:13] (`docs/model-checker-architecture/comparison.md` now explicitly records that all required Phase 35.6.2 concern keys are present as row keys, and integration guard `test_model_checker_architecture_comparison_includes_required_minimum_concern_rows` enforces required-row presence and order)
   - input language / source representation
   - front-end validation
   - model/config role
