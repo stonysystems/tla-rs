@@ -8563,6 +8563,157 @@ fn test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status
 }
 
 #[test]
+fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().trim_matches('`').to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    fn normalize_markdown_header(cell: &str) -> String {
+        match cell.trim() {
+            "Concern" => "concern".to_string(),
+            "Traditional TLA+ / TLC" => "traditional_tla_tlc".to_string(),
+            "tla-rs source-first" => "tlars_source_first".to_string(),
+            "Same / Similar / Different" => "same_similar_different".to_string(),
+            "Why this difference matters" => "why_it_matters".to_string(),
+            "Evidence status" => "evidence_status".to_string(),
+            "Notes" => "notes".to_string(),
+            other => other.to_ascii_lowercase().replace(' ', "_"),
+        }
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let crosswalk_path = repo_root.join("docs/model-checker-architecture/artifacts/engine-crosswalk.csv");
+
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+    let crosswalk_src = std::fs::read_to_string(&crosswalk_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read engine crosswalk CSV {}: {}",
+            crosswalk_path.display(),
+            err
+        )
+    });
+
+    let matrix_section = comparison_src
+        .split("## Side-by-Side Matrix")
+        .nth(1)
+        .and_then(|tail| tail.split("## Similarities").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate side-by-side matrix section in {}",
+                comparison_path.display()
+            )
+        });
+    let markdown_rows: Vec<Vec<String>> = matrix_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        markdown_rows.len() >= 3,
+        "comparison matrix in {} must include header, separator, and at least one data row",
+        comparison_path.display()
+    );
+
+    let expected_header = vec![
+        "concern".to_string(),
+        "traditional_tla_tlc".to_string(),
+        "tlars_source_first".to_string(),
+        "same_similar_different".to_string(),
+        "why_it_matters".to_string(),
+        "evidence_status".to_string(),
+        "notes".to_string(),
+    ];
+
+    let markdown_header: Vec<String> = markdown_rows[0]
+        .iter()
+        .map(|cell| normalize_markdown_header(cell))
+        .collect();
+    assert_eq!(
+        markdown_header, expected_header,
+        "comparison matrix header in {} drifted from the engine-crosswalk schema",
+        comparison_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&markdown_rows[1]),
+        "comparison matrix in {} is missing a markdown separator row after the header",
+        comparison_path.display()
+    );
+    let markdown_data_rows: Vec<Vec<String>> = markdown_rows
+        .into_iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .collect();
+    for row in &markdown_data_rows {
+        assert_eq!(
+            row.len(),
+            expected_header.len(),
+            "comparison matrix row has unexpected column count in {}: {:?}",
+            comparison_path.display(),
+            row
+        );
+    }
+    let markdown_concerns: Vec<String> = markdown_data_rows
+        .iter()
+        .map(|row| row[0].trim_matches('`').to_string())
+        .collect();
+
+    let mut csv_lines = crosswalk_src
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty());
+    let csv_header_line = csv_lines.next().unwrap_or_else(|| {
+        panic!("engine crosswalk CSV {} is empty", crosswalk_path.display())
+    });
+    let csv_header: Vec<String> = csv_header_line
+        .split(',')
+        .map(|cell| cell.trim().to_string())
+        .collect();
+    assert_eq!(
+        csv_header, expected_header,
+        "CSV header in {} drifted from the comparison matrix schema",
+        crosswalk_path.display()
+    );
+
+    let csv_rows: Vec<Vec<String>> = csv_lines
+        .map(|line| line.split(',').map(|cell| cell.trim().to_string()).collect())
+        .collect();
+    for row in &csv_rows {
+        assert_eq!(
+            row.len(),
+            expected_header.len(),
+            "CSV row has unexpected column count in {}: {:?}",
+            crosswalk_path.display(),
+            row
+        );
+    }
+    let csv_concerns: Vec<String> = csv_rows.iter().map(|row| row[0].to_string()).collect();
+
+    assert_eq!(
+        markdown_concerns, csv_concerns,
+        "comparison matrix concern row order must exactly match engine-crosswalk.csv"
+    );
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,

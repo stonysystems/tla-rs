@@ -10603,7 +10603,7 @@ docs/model-checker-architecture/
   - `transpiler/src/modelcheck/por.rs`
   - `scripts/run_model_check_matrix.sh`
   - `scripts/compare_model_check_telemetry.sh`
-- [ ] **35.1.5** `comparison.md` and `artifacts/engine-crosswalk.csv` must cover the same comparison rows/columns.
+- [x] **35.1.5** `comparison.md` and `artifacts/engine-crosswalk.csv` must cover the same comparison rows/columns. [26-03-10, 14:47] (aligned both artifacts on the same 7-column schema and 15 concern rows; added integration guard `test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync` to enforce row/column lockstep)
 
 ### 35.2 Source Discipline and Evidence Rules (No Hand-Wavy Architecture Claims)
 

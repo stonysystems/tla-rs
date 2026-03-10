@@ -1,7 +1,16 @@
 concern,traditional_tla_tlc,tlars_source_first,same_similar_different,why_it_matters,evidence_status,notes
-input_representation,TODO,TODO,TODO,TODO,TODO,Fill with reviewed evidence
-front_end_validation,TODO,TODO,TODO,TODO,TODO,Keep row set synced with comparison.md
-initial_state_generation,TODO,TODO,TODO,TODO,TODO,Add concrete source anchors later
-successor_generation,TODO,TODO,TODO,TODO,TODO,Include exact vs fallback paths
-invariant_checking,TODO,TODO,TODO,TODO,TODO,Link to doc/code anchors
-liveness_fairness,TODO,TODO,TODO,TODO,TODO,Label inference vs direct evidence
+input_representation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+front_end_validation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+model_config_role,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+initial_state_generation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+successor_generation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+helper_operator_evaluation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+state_representation,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+state_deduplication,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+invariant_checking,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+deadlock_semantics,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+liveness_fairness_handling,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+counterexample_report_output,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+performance_bottlenecks,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+exactness_vs_lossy_acceleration,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
+extension_points,TBD,TBD,TBD,TBD,scaffold_only,Keep row and column schema in sync with comparison.md
