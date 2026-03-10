@@ -66,6 +66,7 @@ flowchart TD
 In practice, explicit-state model checking is often used for fast bug finding on finite instances, while theorem proving is used when you need stronger all-execution guarantees.
 
 ## Practical Limits
-- Finite-model assumptions.
-- State explosion.
-- Sensitivity to model/config choices.
+- **Finite models only**: TLC checks the configured finite instance, not every possible parameter size or unbounded domain. A passing run means "no bug was found in this bounded model."
+- **State explosion**: reachable states can grow combinatorially as you add nodes, message choices, or variable ranges. Even correct specs can become too expensive to explore exhaustively at larger bounds.
+- **Model/config sensitivity**: changing constant bindings, symmetry assumptions, fairness settings, or explored depth can materially change what behaviors are reachable and which bugs are exposed.
+- **Spec language vs checker implementation**: TLA+ is the language used to describe behavior, while TLC is one implementation of a checker for that language. Language-level semantics and tool-level behavior/performance are related but not identical, so beginners should avoid assuming every language construct maps to identical checker internals or costs.

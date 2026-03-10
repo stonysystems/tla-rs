@@ -9590,6 +9590,54 @@ fn test_model_checker_architecture_traditional_tla_tutorial_explains_explicit_st
 }
 
 #[test]
+fn test_model_checker_architecture_traditional_tla_tutorial_explains_practical_limits() {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional TLC tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## Practical Limits"),
+        "traditional TLC tutorial {} must include a `Practical Limits` section",
+        tutorial_path.display()
+    );
+
+    let limits_section = tutorial_src
+        .split("## Practical Limits")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Practical Limits` section in {}",
+                tutorial_path.display()
+            )
+        });
+    let limits_lower = limits_section.to_ascii_lowercase();
+
+    for required_fragment in [
+        "finite model",
+        "state explosion",
+        "model/config sensitivity",
+        "spec language",
+        "checker implementation",
+        "tla+",
+        "tlc",
+    ] {
+        assert!(
+            limits_lower.contains(required_fragment),
+            "practical-limits section in {} must include `{}`",
+            tutorial_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
