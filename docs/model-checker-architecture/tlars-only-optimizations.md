@@ -38,6 +38,12 @@ Use this section for differences that are not cost-reduction mechanisms.
 | --- | --- | --- |
 | Exactness/lossiness evidence-mode labeling (including `hash_compaction64` run labeling) | Labels explain result trust level; they do not themselves reduce search/runtime/memory cost. | `transpiler/src/main.rs` (`classify_search_evidence_mode`), `docs/model-checker-architecture/comparison.md`, `docs/model-checking-source-first.md` |
 
+## Category boundary note (Phase 35.8.5)
+This file separates category scopes on purpose:
+- optimization/reduction mechanisms are audited in the optimization tables above;
+- feature/reporting differences that are not optimizations stay in the dedicated non-optimization section;
+- limitation/blocker tracking is maintained in `docs/model-checker-architecture/tlars-source-first-model-checking.md` (`Main Known Limits`) and `docs/model_checker_status.md`, not in the optimization bucket.
+
 ## Candidate audit closure (Phase 35.7.3)
 All six required candidate items were explicitly audited in the table above.
 None is promoted to "confirmed tla-rs-only" yet; each remains confidence-labeled until mechanism-level TLC-side evidence is stronger.

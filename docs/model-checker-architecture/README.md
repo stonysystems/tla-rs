@@ -82,3 +82,21 @@ Current artifact mapping for this phase:
 - worked example: `walkthrough.md` (`Step-by-Step State Transition` with pre-state/transition/post-state),
 - side-by-side comparison table: `comparison.md` (`Side-by-Side Matrix`),
 - optimization audit table: `tlars-only-optimizations.md` (optimization/reduction audit tables).
+
+## Category Separation Rule (Phase 35.8.5)
+Do not blur `optimization`, `feature`, `limitation`, and `reporting surface` into one category.
+
+Category definitions:
+- `optimization`: a mechanism that primarily reduces exploration/runtime/memory cost.
+- `feature`: a capability difference that changes what workflows or checks are available.
+- `limitation`: a known blocker or unsupported surface where behavior is currently constrained.
+- `reporting surface`: how results/evidence are exposed (logs, JSON fields, telemetry labels), which is not itself a runtime optimization.
+
+Per-file ownership in this tutorial set:
+- optimization audit claims belong in `tlars-only-optimizations.md`,
+- feature differences and consequence analysis belong in `comparison.md`,
+- limitation/blocker tracking belongs in `tlars-source-first-model-checking.md` (`Main Known Limits`) and `docs/model_checker_status.md`,
+- reporting-surface differences belong in `walkthrough.md` and `comparison.md` output/reporting sections.
+
+Guardrail:
+- If one statement mixes more than one category, split it into separate statements with separate evidence anchors.

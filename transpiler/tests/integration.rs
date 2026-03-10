@@ -8900,6 +8900,93 @@ fn test_model_checker_architecture_phase_35_8_4_includes_minimum_required_artifa
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_5_separates_optimization_feature_limitation_reporting_surface_categories(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    assert!(
+        readme_src.contains("## Category Separation Rule (Phase 35.8.5)"),
+        "README {} must include explicit Phase 35.8.5 category-separation section",
+        readme_path.display()
+    );
+    for required_category in [
+        "`optimization`",
+        "`feature`",
+        "`limitation`",
+        "`reporting surface`",
+    ] {
+        assert!(
+            readme_src.contains(required_category),
+            "Phase 35.8.5 section in {} must explicitly define category {}",
+            readme_path.display(),
+            required_category
+        );
+    }
+    for required_mapping in [
+        "`tlars-only-optimizations.md`",
+        "`comparison.md`",
+        "`tlars-source-first-model-checking.md`",
+        "`docs/model_checker_status.md`",
+        "`walkthrough.md`",
+    ] {
+        assert!(
+            readme_src.contains(required_mapping),
+            "Phase 35.8.5 section in {} must map category ownership to required artifact {}",
+            readme_path.display(),
+            required_mapping
+        );
+    }
+    assert!(
+        readme_src.contains("If one statement mixes more than one category, split it into separate statements"),
+        "Phase 35.8.5 section in {} must explicitly forbid category blurring in one statement",
+        readme_path.display()
+    );
+
+    let source_first_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let source_first_src = std::fs::read_to_string(&source_first_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read source-first tutorial {}: {}",
+            source_first_path.display(),
+            err
+        )
+    });
+    assert!(
+        source_first_src.contains("## Main Known Limits"),
+        "source-first tutorial {} must keep limitations in a dedicated limits section for Phase 35.8.5",
+        source_first_path.display()
+    );
+
+    let optimization_path =
+        repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let optimization_src = std::fs::read_to_string(&optimization_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read optimization audit doc {}: {}",
+            optimization_path.display(),
+            err
+        )
+    });
+    assert!(
+        optimization_src.contains("## Category boundary note (Phase 35.8.5)"),
+        "optimization audit doc {} must include explicit Phase 35.8.5 boundary section",
+        optimization_path.display()
+    );
+    assert!(
+        optimization_src.contains("limitation/blocker tracking is maintained in"),
+        "optimization audit doc {} must explicitly keep limitations out of the optimization bucket",
+        optimization_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
