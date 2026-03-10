@@ -44,3 +44,14 @@ Required separation of concerns:
 - `tlars-only-optimizations.md`: optimization/reduction audit with confirmed vs uncertain classification.
 - `sources-and-evidence.md`: source ledger and confidence policy for substantive claims.
 - `artifacts/engine-crosswalk.csv`: machine-checkable row schema for the comparison matrix.
+
+## Source Inputs vs Finished Tutorial (Phase 35.8.2)
+`docs/model_checker_status.md` and `docs/model-checking-source-first.md` are source inputs, not the finished tutorial deliverable for this phase.
+This folder must not merely paraphrase those inputs.
+
+What this folder adds beyond source-input restatement:
+- beginner-first structure and terminology path (`glossary` + ordered chapters),
+- a dual-track worked example (`walkthrough.md`),
+- an explicit side-by-side comparison with consequence analysis (`comparison.md`),
+- a disciplined optimization audit with confidence labels (`tlars-only-optimizations.md`),
+- and an explicit source/claim-evidence ledger (`sources-and-evidence.md`).

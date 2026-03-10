@@ -10773,7 +10773,7 @@ docs/model-checker-architecture/
 ### 35.8 Anti-Corner-Cutting Rules (Important)
 
 - [x] **35.8.1** Do not submit a single shallow markdown file. The required folder/file structure above exists to force separation of tutorial, comparison, optimization audit, and evidence. [26-03-10, 16:38] (`docs/model-checker-architecture/README.md` now includes an explicit `Anti-Corner-Cutting Structure (Phase 35.8.1)` section that states the deliverable must not collapse into a single shallow markdown file and maps required files to distinct responsibilities; added integration guard `test_model_checker_architecture_phase_35_8_1_enforces_multi_file_structure_not_single_shallow_doc` to enforce required split files/artifact presence plus anti-single-file wording)
-- [ ] **35.8.2** Do not merely paraphrase `docs/model_checker_status.md` or `docs/model-checking-source-first.md`. Those are source inputs, not the finished tutorial.
+- [x] **35.8.2** Do not merely paraphrase `docs/model_checker_status.md` or `docs/model-checking-source-first.md`. Those are source inputs, not the finished tutorial. [26-03-10, 16:41] (`docs/model-checker-architecture/README.md` now includes explicit `Source Inputs vs Finished Tutorial (Phase 35.8.2)` policy text that names both source-input docs and states they are not the finished deliverable; it also lists required added-value outputs beyond paraphrase. Added integration guard `test_model_checker_architecture_phase_35_8_2_treats_status_docs_as_inputs_not_finished_tutorial`.)
 - [ ] **35.8.3** Define jargon on first use and keep the prose readable for a newcomer.
 - [ ] **35.8.4** Include at least:
   - `2` architecture diagrams,

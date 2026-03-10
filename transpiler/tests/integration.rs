@@ -8655,6 +8655,61 @@ fn test_model_checker_architecture_phase_35_8_1_enforces_multi_file_structure_no
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_2_treats_status_docs_as_inputs_not_finished_tutorial()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        readme_src.contains("## Source Inputs vs Finished Tutorial (Phase 35.8.2)"),
+        "README {} must include explicit Phase 35.8.2 source-input policy section",
+        readme_path.display()
+    );
+    for required_input in [
+        "`docs/model_checker_status.md`",
+        "`docs/model-checking-source-first.md`",
+    ] {
+        assert!(
+            readme_src.contains(required_input),
+            "Phase 35.8.2 section in {} must explicitly name source input {}",
+            readme_path.display(),
+            required_input
+        );
+    }
+    assert!(
+        readme_src.contains("source inputs, not the finished tutorial deliverable"),
+        "Phase 35.8.2 section in {} must explicitly state the source-input vs finished-tutorial distinction",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("must not merely paraphrase"),
+        "Phase 35.8.2 section in {} must explicitly forbid mere paraphrase of source inputs",
+        readme_path.display()
+    );
+
+    for required_added_value in [
+        "dual-track worked example (`walkthrough.md`)",
+        "side-by-side comparison",
+        "optimization audit with confidence labels",
+        "source/claim-evidence ledger",
+    ] {
+        assert!(
+            readme_src.contains(required_added_value),
+            "Phase 35.8.2 section in {} must describe added-value deliverable element `{}`",
+            readme_path.display(),
+            required_added_value
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
