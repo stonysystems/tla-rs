@@ -10650,7 +10650,7 @@ docs/model-checker-architecture/
   - invariant/deadlock checking,
   - liveness/fairness handling,
   - counterexample reporting.
-- [ ] **35.3.3** Include at least one diagram (Mermaid or ASCII is fine) showing the traditional TLA+/TLC pipeline.
+- [x] **35.3.3** Include at least one diagram (Mermaid or ASCII is fine) showing the traditional TLA+/TLC pipeline. [26-03-10, 15:23] (added `Traditional TLC Pipeline Diagram` Mermaid flowchart in `docs/model-checker-architecture/traditional-tla-model-checking.md` covering module/config input through SANY, TLC exploration, dedup, checks, and counterexample/success output; added integration guard `test_model_checker_architecture_traditional_tla_tutorial_includes_pipeline_diagram` to enforce diagram presence and core pipeline nodes)
 - [ ] **35.3.4** Explicitly explain what "explicit-state model checking" means and how it differs from theorem proving.
 - [ ] **35.3.5** Explain the main limits a beginner must understand:
   - finite models,

@@ -9474,6 +9474,64 @@ fn test_model_checker_architecture_traditional_tla_tutorial_has_ordered_tlc_exec
 }
 
 #[test]
+fn test_model_checker_architecture_traditional_tla_tutorial_includes_pipeline_diagram() {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional TLC tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## Traditional TLC Pipeline Diagram"),
+        "traditional TLC tutorial {} must include a dedicated pipeline diagram section",
+        tutorial_path.display()
+    );
+
+    let diagram_section = tutorial_src
+        .split("## Traditional TLC Pipeline Diagram")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Traditional TLC Pipeline Diagram` section in {}",
+                tutorial_path.display()
+            )
+        });
+    let diagram_lower = diagram_section.to_ascii_lowercase();
+
+    assert!(
+        diagram_section.contains("```mermaid"),
+        "pipeline diagram section in {} must include a Mermaid diagram block",
+        tutorial_path.display()
+    );
+    assert!(
+        diagram_section.contains("-->"),
+        "pipeline diagram section in {} must include directional flow edges",
+        tutorial_path.display()
+    );
+    for required_fragment in [
+        "tla+ module",
+        "sany",
+        "tlc",
+        "init",
+        "next",
+        "dedup",
+        "counterexample",
+    ] {
+        assert!(
+            diagram_lower.contains(required_fragment),
+            "pipeline diagram section in {} must include `{}`",
+            tutorial_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,

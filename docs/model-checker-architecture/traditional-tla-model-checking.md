@@ -35,6 +35,20 @@ Because of this, two different model/config choices for the same TLA+ module can
 7. **Liveness/fairness handling**: If liveness properties and fairness assumptions are configured, TLC analyzes cycles/behaviors under those fairness constraints instead of only single-state safety checks.
 8. **Counterexample reporting**: On violations (invariant, deadlock, or liveness), TLC emits a concrete error trace/counterexample so you can replay the failing behavior step by step.
 
+## Traditional TLC Pipeline Diagram
+```mermaid
+flowchart TD
+    A["TLA+ module + model/config/constants"] --> B["SANY parse and front-end validation"]
+    B --> C["TLC initial-state generation from Init"]
+    C --> D["TLC successor generation from Next"]
+    D --> E["Visited-state storage and deduplication"]
+    E --> D
+    E --> F["Invariant and deadlock checking"]
+    E --> G["Liveness/fairness cycle analysis"]
+    F --> H["Counterexample trace or success summary"]
+    G --> H
+```
+
 ## Explicit-State vs Theorem Proving
 This section will contrast state exploration with proof-based methods in beginner terms.
 
