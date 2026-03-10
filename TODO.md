@@ -10609,7 +10609,7 @@ docs/model-checker-architecture/
 
 **Goal**: Prevent a shallow tutorial that merely paraphrases existing repo docs or repeats generic folklore about TLC.
 
-- [ ] **35.2.1** `sources-and-evidence.md` must list the primary sources used for:
+- [x] **35.2.1** `sources-and-evidence.md` must list the primary sources used for: [26-03-10, 14:54] (`docs/model-checker-architecture/sources-and-evidence.md` now has a concrete source ledger with dated primary-source entries across `traditional_tla_tlc`, `tlars_source_first`, and `comparison_optimization`; integration guard `test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger` enforces required schema/track coverage)
   - traditional TLA+ / TLC architecture,
   - tla-rs source-first architecture,
   - and any comparison/optimization claim.

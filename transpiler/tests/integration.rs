@@ -8714,6 +8714,117 @@ fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
 }
 
 #[test]
+fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
+    let repo_root = resolve_repo_root_for_integration();
+    let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
+    let sources_src = std::fs::read_to_string(&sources_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read sources-and-evidence doc {}: {}",
+            sources_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        sources_src.contains("## Source Ledger"),
+        "sources-and-evidence doc must include a Source Ledger section"
+    );
+    assert!(
+        sources_src.contains("## Claim Confidence Labels"),
+        "sources-and-evidence doc must include claim confidence labels section"
+    );
+
+    let ledger_section = sources_src
+        .split("## Source Ledger")
+        .nth(1)
+        .and_then(|tail| tail.split("## Coverage by Track").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate Source Ledger section in {}",
+                sources_path.display()
+            )
+        });
+
+    let rows: Vec<Vec<String>> = ledger_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(|line| {
+            line.trim_matches('|')
+                .split('|')
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<String>>()
+        })
+        .collect();
+    assert!(
+        rows.len() >= 3,
+        "Source Ledger in {} must include header, separator, and data rows",
+        sources_path.display()
+    );
+
+    let header = &rows[0];
+    let expected_header = vec![
+        "ID".to_string(),
+        "Track".to_string(),
+        "Source".to_string(),
+        "Source kind".to_string(),
+        "Date checked".to_string(),
+        "Inspection depth".to_string(),
+        "Supports claims".to_string(),
+    ];
+    assert_eq!(
+        *header, expected_header,
+        "Source Ledger header in {} drifted from required schema",
+        sources_path.display()
+    );
+
+    let data_rows: Vec<&Vec<String>> = rows
+        .iter()
+        .skip(2)
+        .filter(|row| !row.iter().all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' ')))
+        .collect();
+    assert!(
+        !data_rows.is_empty(),
+        "Source Ledger in {} has no data rows",
+        sources_path.display()
+    );
+
+    let mut tracks = std::collections::BTreeSet::new();
+    for row in data_rows {
+        assert_eq!(
+            row.len(),
+            expected_header.len(),
+            "Source Ledger row in {} has unexpected column count: {:?}",
+            sources_path.display(),
+            row
+        );
+        for cell in row {
+            assert!(
+                !cell.is_empty(),
+                "Source Ledger row in {} contains an empty required cell: {:?}",
+                sources_path.display(),
+                row
+            );
+        }
+        tracks.insert(row[1].trim_matches('`').to_string());
+    }
+
+    let required_tracks = [
+        "traditional_tla_tlc",
+        "tlars_source_first",
+        "comparison_optimization",
+    ];
+    for track in required_tracks {
+        assert!(
+            tracks.contains(track),
+            "Source Ledger in {} is missing required track `{}`",
+            sources_path.display(),
+            track
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
