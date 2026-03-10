@@ -19,7 +19,7 @@ This chapter explains the model checker that is currently implemented in this re
    - Anchor: `transpiler/src/modelcheck/config.rs` (`parse_model_config_file`, `apply_model_config_overrides`, `validate_model_config`)
    - Anchor: `transpiler/src/main.rs` (`run_model_check_command`)
 
-4. **Branch IR normalization from `LNext`**: the tool normalizes `LNext` into disjunctive branch IR (`branch_0`, `branch_1`, ...), collects branch-scoped existentials, and classifies each branch constraint as assignment-style equality or general predicate.
+4. **Branch IR normalization from `LNext`**: the tool normalizes `LNext` into disjunctive branch IR (`branch_0`, `branch_1`, ...), collects branch-scoped existentials, and classifies each branch constraint as assignment-style equality or general predicate. Here, intermediate representation (IR) means the normalized internal branch form used by the solver.
    - Anchor: `transpiler/src/modelcheck/ir.rs` (`build_transition_ir`, `discover_lnext_branches`)
    - Anchor: `transpiler/src/main.rs` (`execute_model_check`)
 
@@ -35,12 +35,12 @@ This chapter explains the model checker that is currently implemented in this re
    - Anchor: `transpiler/src/modelcheck/solver.rs` (`solve_branch_successors_with_candidates_and_telemetry`, `deduplicate_successors`)
    - Anchor: `transpiler/src/main.rs` (`execute_model_check`, `try_solve_predicate_only_helper_branch`)
 
-8. **BFS/DFS exploration and state dedup**: the explorer runs bounded BFS/DFS with dedup (canonical or hash-compaction), optional symmetry merging, and optional POR branch pruning selected before exploration.
+8. **BFS/DFS exploration and state dedup**: the explorer runs bounded BFS/DFS with dedup (canonical or hash-compaction), optional symmetry merging, and optional partial-order reduction (POR) branch pruning selected before exploration. Breadth-first search (BFS) / depth-first search (DFS) are the two traversal strategies used here.
    - Anchor: `transpiler/src/modelcheck/explorer.rs` (`explore_state_space_with_traces_and_dedup`)
    - Anchor: `transpiler/src/modelcheck/por.rs` (`infer_invisible_branch_pruning`)
    - Anchor: `transpiler/src/main.rs` (`execute_model_check`)
 
-9. **Invariant/deadlock/liveness checking**: invariants are checked on reached states during exploration; deadlock is detected when enabled. If leads-to obligations are configured and exploration exhausts the frontier, the engine builds a graph index and runs SCC/fairness-based liveness checks.
+9. **Invariant/deadlock/liveness checking**: invariants are checked on reached states during exploration; deadlock is detected when enabled. If leads-to obligations are configured and exploration exhausts the frontier, the engine builds a graph index and runs strongly connected component (SCC)/fairness-based liveness checks.
    - Anchor: `transpiler/src/modelcheck/invariant.rs` (`first_invariant_violation`)
    - Anchor: `transpiler/src/modelcheck/graph.rs` (`build_explored_graph_index`)
    - Anchor: `transpiler/src/modelcheck/liveness.rs` (`resolve_leads_to_obligations`, `check_leads_to_violations`)
@@ -122,7 +122,7 @@ flowchart TD
 
 ## What "Source-First" Means In Practice
 - The execution path starts from Rust/Verus source (`.rs`) and finite model config (`model.toml`), not from a generated TLC wrapper.
-- Helper predicates/functions are evaluated via the same model-check evaluator path, using parsed local spec AST plus finite domains.
+- Helper predicates/functions are evaluated via the same model-check evaluator path, using parsed local specification abstract syntax tree (AST) plus finite domains.
 - The checked-in JSON artifacts under `reports/model_check/` are direct outputs of this source-first command path.
 - Anchor: `transpiler/src/main.rs` (`run_model_check_command`, `execute_model_check`, `handle_command`)
 - Anchor: `transpiler/src/modelcheck/evaluator.rs` (`eval_expr`)

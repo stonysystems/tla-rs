@@ -55,3 +55,16 @@ What this folder adds beyond source-input restatement:
 - an explicit side-by-side comparison with consequence analysis (`comparison.md`),
 - a disciplined optimization audit with confidence labels (`tlars-only-optimizations.md`),
 - and an explicit source/claim-evidence ledger (`sources-and-evidence.md`).
+
+## Jargon First-Use + Readability Rule (Phase 35.8.3)
+Every chapter in this folder must define jargon on first use and stay readable for a newcomer.
+
+Required writing discipline:
+- Expand acronyms the first time they appear in each chapter (for example, "intermediate representation (IR)").
+- Add a short plain-language gloss the first time a technical term appears in a section; do not assume prior model-checking knowledge.
+- Keep `glossary.md` as the canonical fallback for terms that need a longer definition, and point readers to it early.
+
+Readability guardrails:
+- Prefer short sentences and one main idea per bullet.
+- Use concrete "input -> processing -> output" wording before introducing implementation details.
+- Avoid unexplained shorthand such as `IR`, `POR`, `SCC`, `AST`, `BFS`, or `DFS`.

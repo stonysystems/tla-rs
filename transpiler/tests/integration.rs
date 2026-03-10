@@ -8710,6 +8710,73 @@ fn test_model_checker_architecture_phase_35_8_2_treats_status_docs_as_inputs_not
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_3_defines_jargon_on_first_use_and_readability_rules()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        readme_src.contains("## Jargon First-Use + Readability Rule (Phase 35.8.3)"),
+        "README {} must include explicit Phase 35.8.3 jargon/readability section",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("define jargon on first use"),
+        "Phase 35.8.3 section in {} must explicitly require first-use jargon definitions",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("Expand acronyms the first time they appear in each chapter"),
+        "Phase 35.8.3 section in {} must explicitly require first-use acronym expansion",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("point readers to it early"),
+        "Phase 35.8.3 section in {} must require glossary-forward newcomer guidance",
+        readme_path.display()
+    );
+    for required_shorthand in ["`IR`", "`POR`", "`SCC`", "`AST`", "`BFS`", "`DFS`"] {
+        assert!(
+            readme_src.contains(required_shorthand),
+            "Phase 35.8.3 section in {} must explicitly list shorthand {} to prevent unexplained jargon",
+            readme_path.display(),
+            required_shorthand
+        );
+    }
+
+    let source_first_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let source_first_src = std::fs::read_to_string(&source_first_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read source-first tutorial chapter {}: {}",
+            source_first_path.display(),
+            err
+        )
+    });
+    for required_first_use_expansion in [
+        "intermediate representation (IR)",
+        "Breadth-first search (BFS) / depth-first search (DFS)",
+        "partial-order reduction (POR)",
+        "strongly connected component (SCC)",
+        "abstract syntax tree (AST)",
+    ] {
+        assert!(
+            source_first_src.contains(required_first_use_expansion),
+            "source-first chapter {} must include first-use jargon expansion `{}` for Phase 35.8.3 newcomer readability",
+            source_first_path.display(),
+            required_first_use_expansion
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
