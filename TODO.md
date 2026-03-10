@@ -10710,7 +10710,7 @@ docs/model-checker-architecture/
 
 **Goal**: Answer the user's actual question, not just present two separate tutorials.
 
-- [ ] **35.6.1** `comparison.md` must include a side-by-side table with at least these columns:
+- [x] **35.6.1** `comparison.md` must include a side-by-side table with at least these columns: [26-03-10, 16:18] (`docs/model-checker-architecture/comparison.md` now explicitly states and includes the required minimum side-by-side columns; added integration guard `test_model_checker_architecture_comparison_includes_required_side_by_side_minimum_columns` to enforce header presence)
   - `Concern`
   - `Traditional TLA+ / TLC`
   - `tla-rs source-first`

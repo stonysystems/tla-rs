@@ -6,6 +6,8 @@ For Phase 35.1.5, this file intentionally uses the same table schema and concern
 `artifacts/engine-crosswalk.csv` so the two artifacts can be kept in lockstep.
 
 ## Side-by-Side Matrix
+Minimum required columns for Phase 35.6.1 are present (`Concern`, `Traditional TLA+ / TLC`, `tla-rs source-first`, `Same / Similar / Different`, `Why this difference matters`). This matrix also keeps `Evidence status` and `Notes` so it stays synchronized with `artifacts/engine-crosswalk.csv`.
+
 | Concern | Traditional TLA+ / TLC | tla-rs source-first | Same / Similar / Different | Why this difference matters | Evidence status | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `input_representation` | TBD | TBD | TBD | TBD | scaffold_only | Row/schema aligned with `engine-crosswalk.csv`; fill in Phase 35.6. |

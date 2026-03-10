@@ -8714,6 +8714,78 @@ fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
 }
 
 #[test]
+fn test_model_checker_architecture_comparison_includes_required_side_by_side_minimum_columns() {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+
+    let matrix_section = comparison_src
+        .split("## Side-by-Side Matrix")
+        .nth(1)
+        .and_then(|tail| tail.split("## Similarities").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate side-by-side matrix section in {}",
+                comparison_path.display()
+            )
+        });
+    let markdown_rows: Vec<Vec<String>> = matrix_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        markdown_rows.len() >= 3,
+        "comparison matrix in {} must include header, separator, and at least one concern row",
+        comparison_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&markdown_rows[1]),
+        "comparison matrix in {} must include markdown separator row after header",
+        comparison_path.display()
+    );
+
+    let header = &markdown_rows[0];
+    let required_columns = [
+        "Concern",
+        "Traditional TLA+ / TLC",
+        "tla-rs source-first",
+        "Same / Similar / Different",
+        "Why this difference matters",
+    ];
+    for required in required_columns {
+        assert!(
+            header.iter().any(|cell| cell == required),
+            "comparison matrix header in {} must include required column `{}`",
+            comparison_path.display(),
+            required
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
