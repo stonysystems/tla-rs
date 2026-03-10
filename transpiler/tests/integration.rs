@@ -9343,6 +9343,73 @@ fn test_model_checker_architecture_phase_35_9_readme_targets_zero_background_and
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_traditional_tutorial_is_concrete_not_slogan_only() {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional tutorial chapter {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## End-to-End TLC Path (Ordered)"),
+        "traditional tutorial {} must include an ordered TLC execution path, not only high-level slogans",
+        tutorial_path.display()
+    );
+    for required_stage in [
+        "Initial-state generation",
+        "Successor generation from `Next`",
+        "State storage / deduplication",
+        "Invariant/deadlock checking",
+        "Counterexample reporting",
+    ] {
+        assert!(
+            tutorial_src.contains(required_stage),
+            "traditional tutorial {} must include concrete TLC stage `{}` for Phase 35.9 checklist",
+            tutorial_path.display(),
+            required_stage
+        );
+    }
+
+    assert!(
+        tutorial_src.contains("## Traditional TLC Pipeline Diagram")
+            && tutorial_src.contains("```mermaid")
+            && tutorial_src.contains("SANY parse and front-end validation")
+            && tutorial_src.contains("TLC successor generation from Next"),
+        "traditional tutorial {} must include a concrete pipeline diagram with TLC/SANY stages",
+        tutorial_path.display()
+    );
+
+    assert!(
+        tutorial_src.contains("## Repo-Concrete Examples"),
+        "traditional tutorial {} must include repo-concrete examples section",
+        tutorial_path.display()
+    );
+    for required_anchor in [
+        "transpiler/tests/model_check_fixtures/twophase_small.model.toml",
+        "reports/model_check/twophase_small.json",
+        "liveness_avoidable_cycle_violated.model.toml",
+    ] {
+        assert!(
+            tutorial_src.contains(required_anchor),
+            "traditional tutorial {} must cite concrete local fixture/report anchor `{}`",
+            tutorial_path.display(),
+            required_anchor
+        );
+    }
+
+    assert!(
+        tutorial_src.contains("## Explicit-State vs Theorem Proving")
+            && tutorial_src.contains("## Practical Limits"),
+        "traditional tutorial {} must include explicit-state comparison and practical-limit sections for newcomer concreteness",
+        tutorial_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
