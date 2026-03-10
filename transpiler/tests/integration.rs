@@ -9676,6 +9676,179 @@ fn test_model_checker_architecture_phase_35_9_optimization_audit_distinguishes_c
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_sources_and_evidence_records_required_metadata_fields(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+    let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
+    let sources_src = std::fs::read_to_string(&sources_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read sources-and-evidence doc {}: {}",
+            sources_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        sources_src.contains("## Source Recording Schema"),
+        "sources-and-evidence doc {} must include Source Recording Schema section",
+        sources_path.display()
+    );
+    for required_schema_field in [
+        "`source kind`",
+        "`date checked`",
+        "`inspected depth`",
+        "`supports claims`",
+    ] {
+        assert!(
+            sources_src.contains(required_schema_field),
+            "Source Recording Schema in {} must explicitly list required field {}",
+            sources_path.display(),
+            required_schema_field
+        );
+    }
+
+    let ledger_section = sources_src
+        .split("## Source Ledger")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate Source Ledger section in {}",
+                sources_path.display()
+            )
+        });
+
+    let rows: Vec<Vec<String>> = ledger_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(|line| {
+            line.trim_matches('|')
+                .split('|')
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<String>>()
+        })
+        .collect();
+    assert!(
+        rows.len() >= 3,
+        "Source Ledger in {} must include header, separator, and at least one data row",
+        sources_path.display()
+    );
+
+    let header = &rows[0];
+    let source_kind_idx = header
+        .iter()
+        .position(|cell| cell == "Source kind")
+        .unwrap_or_else(|| {
+            panic!(
+                "Source Ledger header in {} must include `Source kind` column",
+                sources_path.display()
+            )
+        });
+    let date_checked_idx = header
+        .iter()
+        .position(|cell| cell == "Date checked")
+        .unwrap_or_else(|| {
+            panic!(
+                "Source Ledger header in {} must include `Date checked` column",
+                sources_path.display()
+            )
+        });
+    let inspected_depth_idx = header
+        .iter()
+        .position(|cell| cell == "Inspected depth")
+        .unwrap_or_else(|| {
+            panic!(
+                "Source Ledger header in {} must include `Inspected depth` column",
+                sources_path.display()
+            )
+        });
+    let supports_claims_idx = header
+        .iter()
+        .position(|cell| cell == "Supports claims")
+        .unwrap_or_else(|| {
+            panic!(
+                "Source Ledger header in {} must include `Supports claims` column",
+                sources_path.display()
+            )
+        });
+
+    let is_placeholder = |value: &str| {
+        let normalized = value.trim().to_ascii_lowercase();
+        matches!(
+            normalized.as_str(),
+            "tbd" | "todo" | "na" | "n/a" | "none" | "unknown"
+        )
+    };
+    let is_iso_date = |value: &str| -> bool {
+        let mut parts = value.split('-');
+        let (year, month, day) = match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(y), Some(m), Some(d), None) => (y, m, d),
+            _ => return false,
+        };
+        year.len() == 4
+            && month.len() == 2
+            && day.len() == 2
+            && year.chars().all(|ch| ch.is_ascii_digit())
+            && month.chars().all(|ch| ch.is_ascii_digit())
+            && day.chars().all(|ch| ch.is_ascii_digit())
+    };
+
+    let data_rows: Vec<&Vec<String>> = rows
+        .iter()
+        .skip(2)
+        .filter(|row| {
+            !row.iter()
+                .all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+        })
+        .collect();
+    assert!(
+        !data_rows.is_empty(),
+        "Source Ledger in {} must include at least one non-separator data row",
+        sources_path.display()
+    );
+
+    for row in data_rows {
+        assert_eq!(
+            row.len(),
+            header.len(),
+            "Source Ledger row in {} has unexpected column count: {:?}",
+            sources_path.display(),
+            row
+        );
+        let source_kind = row[source_kind_idx].as_str();
+        let date_checked = row[date_checked_idx].as_str();
+        let inspected_depth = row[inspected_depth_idx].as_str();
+        let supports_claims = row[supports_claims_idx].as_str();
+
+        assert!(
+            !source_kind.is_empty() && !is_placeholder(source_kind),
+            "Source Ledger row in {} must provide concrete source kind value: {:?}",
+            sources_path.display(),
+            row
+        );
+        assert!(
+            is_iso_date(date_checked),
+            "Source Ledger row in {} must use ISO date for `Date checked`: {:?}",
+            sources_path.display(),
+            row
+        );
+        assert!(
+            inspected_depth.len() >= 4 && !is_placeholder(inspected_depth),
+            "Source Ledger row in {} must provide concrete inspection depth: {:?}",
+            sources_path.display(),
+            row
+        );
+        assert!(
+            supports_claims.len() >= 8 && !is_placeholder(supports_claims),
+            "Source Ledger row in {} must provide concrete supported-claims summary: {:?}",
+            sources_path.display(),
+            row
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
