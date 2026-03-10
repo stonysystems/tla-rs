@@ -9273,6 +9273,76 @@ fn test_model_checker_architecture_phase_35_8_9_keeps_phase_deliverable_document
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_readme_targets_zero_background_and_lists_reading_order(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        readme_src.contains("## Audience"),
+        "README {} must include an explicit audience section for Phase 35.9 checklist review",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("zero prior model-checking background"),
+        "README {} must explicitly target readers with zero background for Phase 35.9 checklist",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("## Reading Order"),
+        "README {} must include a dedicated reading order section for Phase 35.9 checklist",
+        readme_path.display()
+    );
+
+    let reading_order_section = readme_src
+        .split("## Reading Order")
+        .nth(1)
+        .and_then(|tail| tail.split("## What You Will Understand After Reading").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate reading-order section in README {}",
+                readme_path.display()
+            )
+        });
+
+    let required_ordered_entries = [
+        "1. `glossary.md`",
+        "2. `traditional-tla-model-checking.md`",
+        "3. `tlars-source-first-model-checking.md`",
+        "4. `walkthrough.md`",
+        "5. `comparison.md`",
+        "6. `tlars-only-optimizations.md`",
+        "7. `sources-and-evidence.md`",
+    ];
+
+    let mut previous_position = None;
+    for entry in required_ordered_entries {
+        let position = reading_order_section.find(entry).unwrap_or_else(|| {
+            panic!(
+                "reading-order section in README {} must include required entry `{}`",
+                readme_path.display(),
+                entry
+            )
+        });
+        if let Some(prev) = previous_position {
+            assert!(
+                prev < position,
+                "reading-order section in README {} must keep entries in ascending order",
+                readme_path.display()
+            );
+        }
+        previous_position = Some(position);
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

@@ -10788,8 +10788,8 @@ docs/model-checker-architecture/
 
 ### 35.9 Review Checklist (Before Marking This Phase Complete)
 
-- [ ] `docs/model-checker-architecture/` exists with all required files.
-- [ ] `README.md` clearly targets readers with zero background and gives a reading order.
+- [x] `docs/model-checker-architecture/` exists with all required files. [26-03-10, 17:09] (verified directory/file set present on disk; structure also remains guarded by `test_model_checker_architecture_phase_35_8_1_enforces_multi_file_structure_not_single_shallow_doc`)
+- [x] `README.md` clearly targets readers with zero background and gives a reading order. [26-03-10, 17:12] (scope check: doc+test leaf task, <500 LOC, no decomposition required; validated via README `Audience` + `Reading Order` sections and integration guard `test_model_checker_architecture_phase_35_9_readme_targets_zero_background_and_lists_reading_order`)
 - [ ] `traditional-tla-model-checking.md` explains TLC/traditional TLA+ model checking concretely, not just in slogans.
 - [ ] `tlars-source-first-model-checking.md` is anchored to actual repo files/functions/artifacts.
 - [ ] `walkthrough.md` includes one small example traced through both conceptual paths.
