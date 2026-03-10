@@ -9545,6 +9545,73 @@ fn test_model_checker_architecture_phase_35_9_walkthrough_keeps_small_dual_path_
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_comparison_covers_similarities_differences_and_why_it_matters(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        comparison_src.contains("## Side-by-Side Matrix")
+            && comparison_src.contains("| Concern | Traditional TLA+ / TLC | tla-rs source-first |")
+            && comparison_src.contains("Why this difference matters"),
+        "comparison doc {} must include side-by-side matrix with explicit why-it-matters column",
+        comparison_path.display()
+    );
+
+    assert!(
+        comparison_src.contains("## Similarities"),
+        "comparison doc {} must include explicit similarities section for Phase 35.9 checklist",
+        comparison_path.display()
+    );
+    let similarities_section = comparison_src
+        .split("## Similarities")
+        .nth(1)
+        .and_then(|tail| tail.split("## Differences and Consequences").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate similarities section in {}",
+                comparison_path.display()
+            )
+        });
+    assert!(
+        !similarities_section.to_ascii_lowercase().contains("will capture"),
+        "similarities section in {} must not remain placeholder text",
+        comparison_path.display()
+    );
+    let similarity_bullet_count = similarities_section
+        .lines()
+        .filter(|line| line.trim_start().starts_with("- "))
+        .count();
+    assert!(
+        similarity_bullet_count >= 3,
+        "similarities section in {} must include at least 3 concrete similarity bullets; found {}",
+        comparison_path.display(),
+        similarity_bullet_count
+    );
+    let similarity_anchor_count = similarities_section.matches("Anchor:").count();
+    assert!(
+        similarity_anchor_count >= 3,
+        "similarities section in {} must include local supporting anchors; found {}",
+        comparison_path.display(),
+        similarity_anchor_count
+    );
+
+    assert!(
+        comparison_src.contains("## Differences and Consequences")
+            && comparison_src.contains("| Major Difference | Consequence Type(s) | Why This Consequence Matters |"),
+        "comparison doc {} must include explicit differences/consequences table with why-it-matters reasoning",
+        comparison_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

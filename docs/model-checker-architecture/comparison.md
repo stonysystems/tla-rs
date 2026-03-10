@@ -30,7 +30,18 @@ Phase 35.6.2 required comparison concerns are present as explicit row keys (`inp
 | `extension_points` | TBD | TBD | TBD | TBD | scaffold_only | Row/schema aligned with `engine-crosswalk.csv`; fill in Phase 35.6. |
 
 ## Similarities
-This section will capture shared explicit-state model-checking fundamentals in Phase 35.6.
+- Both paths perform explicit-state exploration over a finite model instance: construct initial states, step successors, and check properties on explored states.
+  - Anchor: `docs/model-checker-architecture/traditional-tla-model-checking.md` (`End-to-End TLC Path (Ordered)`)
+  - Anchor: `docs/model-checker-architecture/tlars-source-first-model-checking.md` (`End-to-End Source-First Path (Ordered)`)
+- Both paths rely on model/config choices to define practical check scope (constants/domain bounds/property selection), so evidence is always configuration-scoped.
+  - Anchor: `docs/model-checker-architecture/traditional-tla-model-checking.md` (`What The Model/Config Contributes`)
+  - Anchor: `transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml`
+- Both paths include invariant/deadlock safety checking in normal exploration and can report concrete failing behaviors when a check fails.
+  - Anchor: `docs/model-checker-architecture/traditional-tla-model-checking.md` (steps `6` and `8`)
+  - Anchor: `docs/model-checker-architecture/tlars-source-first-model-checking.md` (steps `9` and `10`)
+- Both paths expose fairness/liveness analysis as an additional layer beyond basic safety checks, with practical behavior tied to configured fairness assumptions.
+  - Anchor: `docs/model-checker-architecture/traditional-tla-model-checking.md` (step `7`)
+  - Anchor: `docs/model-checker-architecture/tlars-source-first-model-checking.md` (step `9`)
 
 ## Differences and Consequences
 Major differences and their consequences are explicit below. Consequence tags are restricted to
