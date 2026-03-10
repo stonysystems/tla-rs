@@ -40,6 +40,19 @@ Each source entry records:
 - `tlars_source_first`: R1-R7
 - `comparison_optimization`: C1-C5
 
+## Traditional TLC Primary-Source Preference
+Traditional TLA+/TLC claims follow this precedence:
+1. official docs and canonical book material;
+2. TLC/SANY source code when a claim depends on implementation details;
+3. secondary background only as supplemental context, never as sole evidence.
+
+| Traditional claim area | Primary source IDs | Secondary/supporting IDs | Notes |
+| --- | --- | --- | --- |
+| TLA+ semantics, spec meaning, and model/config interpretation | `T1`, `T3` | `T2` | `T1`/`T3` are the primary basis; `T2` is only cross-check context. |
+| Toolchain role split (`SANY` front-end vs `TLC` model checker) | `T3`, `T5`, `T6` | `T2` | Prefer official docs and implementation anchors; keep paper framing supplemental. |
+| TLC implementation-dependent behavior and architecture wording | `T4`, `T5` | `T2` | Claims that depend on internals must anchor to TLC/SANY source tree. |
+| Explicit-state/finiteness framing in this tutorial | `T1`, `T3`, `T4` | `T2` | Use canonical/official text first, with `T2` as background only. |
+
 ## Claim Confidence Labels
 Cross-engine claims are labeled as:
 - `directly evidenced`

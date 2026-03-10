@@ -10618,7 +10618,7 @@ docs/model-checker-architecture/
   - `date checked`,
   - `inspected depth` (`doc skim`, `doc deep read`, `source read`, `artifact inspection`, etc.),
   - `what claim(s) it supports`.
-- [ ] **35.2.3** Traditional TLA+/TLC claims should prefer primary sources:
+- [x] **35.2.3** Traditional TLA+/TLC claims should prefer primary sources: [26-03-10, 15:14] (`docs/model-checker-architecture/sources-and-evidence.md` now has a dedicated `Traditional TLC Primary-Source Preference` section mapping claim areas to primary source IDs, explicitly demoting secondary sources to supplemental context; integration guard `test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger` now enforces presence of `book` + `official docs` + `source code` in `traditional_tla_tlc` and rejects non-primary IDs in primary-claim mappings)
   - official TLA+/TLC docs,
   - `Specifying Systems` / canonical Lamport material where relevant,
   - TLC source code or official implementation references when architectural detail depends on implementation.

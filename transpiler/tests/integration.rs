@@ -8790,6 +8790,8 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
     );
 
     let mut tracks = std::collections::BTreeSet::new();
+    let mut source_kind_by_id = std::collections::BTreeMap::new();
+    let mut traditional_kinds = std::collections::BTreeSet::new();
     let allowed_source_kinds = [
         "official docs",
         "book",
@@ -8880,7 +8882,22 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
             sources_path.display(),
             supports_claims
         );
-        tracks.insert(row[1].trim_matches('`').to_string());
+        let track = row[1].trim_matches('`').to_string();
+        tracks.insert(track.to_string());
+        source_kind_by_id.insert(row[0].to_string(), source_kind.to_string());
+        if track == "traditional_tla_tlc" {
+            traditional_kinds.insert(source_kind.to_string());
+            if source_kind == "secondary background" {
+                let supports_lower = supports_claims.to_ascii_lowercase();
+                assert!(
+                    supports_lower.contains("supplemental")
+                        || supports_lower.contains("background"),
+                    "traditional_tla_tlc secondary source row in {} must be explicitly supplemental/background: {:?}",
+                    sources_path.display(),
+                    row
+                );
+            }
+        }
     }
 
     let required_tracks = [
@@ -8895,6 +8912,111 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
             sources_path.display(),
             track
         );
+    }
+
+    let required_primary_kinds = ["official docs", "book", "source code"];
+    for source_kind in required_primary_kinds {
+        assert!(
+            traditional_kinds.contains(source_kind),
+            "traditional_tla_tlc in {} must include primary source kind `{}`",
+            sources_path.display(),
+            source_kind
+        );
+    }
+
+    assert!(
+        sources_src.contains("## Traditional TLC Primary-Source Preference"),
+        "sources-and-evidence doc must include Traditional TLC primary-source preference section"
+    );
+    let preference_section = sources_src
+        .split("## Traditional TLC Primary-Source Preference")
+        .nth(1)
+        .and_then(|tail| tail.split("## Claim Confidence Labels").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate Traditional TLC Primary-Source Preference section in {}",
+                sources_path.display()
+            )
+        });
+    let preference_rows: Vec<Vec<String>> = preference_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(|line| {
+            line.trim_matches('|')
+                .split('|')
+                .map(|cell| cell.trim().to_string())
+                .collect::<Vec<String>>()
+        })
+        .collect();
+    assert!(
+        preference_rows.len() >= 3,
+        "Traditional TLC Primary-Source Preference table in {} must include header, separator, and data rows",
+        sources_path.display()
+    );
+    let expected_preference_header = vec![
+        "Traditional claim area".to_string(),
+        "Primary source IDs".to_string(),
+        "Secondary/supporting IDs".to_string(),
+        "Notes".to_string(),
+    ];
+    assert_eq!(
+        preference_rows[0], expected_preference_header,
+        "Traditional TLC Primary-Source Preference header in {} drifted from required schema",
+        sources_path.display()
+    );
+
+    let extract_source_ids = |cell: &str| -> Vec<String> {
+        cell.split(|ch: char| !ch.is_ascii_alphanumeric())
+            .filter(|token| {
+                token.starts_with('T')
+                    && token.len() >= 2
+                    && token[1..].chars().all(|ch| ch.is_ascii_digit())
+            })
+            .map(str::to_string)
+            .collect()
+    };
+    let preference_data_rows: Vec<&Vec<String>> = preference_rows
+        .iter()
+        .skip(2)
+        .filter(|row| !row.iter().all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' ')))
+        .collect();
+    assert!(
+        !preference_data_rows.is_empty(),
+        "Traditional TLC Primary-Source Preference table in {} has no data rows",
+        sources_path.display()
+    );
+    for row in preference_data_rows {
+        assert_eq!(
+            row.len(),
+            expected_preference_header.len(),
+            "Traditional TLC Primary-Source Preference row in {} has unexpected column count: {:?}",
+            sources_path.display(),
+            row
+        );
+        let primary_ids = extract_source_ids(&row[1]);
+        assert!(
+            !primary_ids.is_empty(),
+            "Traditional TLC Primary-Source Preference row in {} must list at least one primary source ID: {:?}",
+            sources_path.display(),
+            row
+        );
+        for source_id in primary_ids {
+            let source_kind = source_kind_by_id.get(&source_id).unwrap_or_else(|| {
+                panic!(
+                    "Traditional TLC Primary-Source Preference in {} references unknown source ID `{}`",
+                    sources_path.display(),
+                    source_id
+                )
+            });
+            assert!(
+                *source_kind == "official docs" || *source_kind == "book" || *source_kind == "source code",
+                "Traditional TLC Primary-Source Preference row in {} uses non-primary source `{}` (kind: `{}`) in primary column",
+                sources_path.display(),
+                source_id,
+                source_kind
+            );
+        }
     }
 }
 
