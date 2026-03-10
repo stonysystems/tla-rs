@@ -9962,6 +9962,126 @@ fn test_model_checker_architecture_phase_35_9_engine_crosswalk_matches_compariso
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_tutorial_is_readable_for_newcomers() {
+    let repo_root = resolve_repo_root_for_integration();
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let glossary_path = repo_root.join("docs/model-checker-architecture/glossary.md");
+    let traditional_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let source_first_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    let glossary_src = std::fs::read_to_string(&glossary_path).unwrap_or_else(|err| {
+        panic!("failed to read glossary {}: {}", glossary_path.display(), err)
+    });
+    let traditional_src = std::fs::read_to_string(&traditional_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional tutorial {}: {}",
+            traditional_path.display(),
+            err
+        )
+    });
+    let source_first_src = std::fs::read_to_string(&source_first_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read source-first tutorial {}: {}",
+            source_first_path.display(),
+            err
+        )
+    });
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read walkthrough {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        readme_src.contains("## Audience")
+            && readme_src.contains("zero prior model-checking background")
+            && readme_src.contains("## Reading Order")
+            && readme_src.contains("1. `glossary.md`"),
+        "README {} must keep explicit newcomer audience and reading-order guidance",
+        readme_path.display()
+    );
+
+    for required_glossary_section in [
+        "## Core State-Space Terms",
+        "## Property Terms",
+        "## TLA+ Ecosystem Terms",
+        "## tla-rs Source-First Terms",
+    ] {
+        assert!(
+            glossary_src.contains(required_glossary_section),
+            "glossary {} must include required section `{}` for newcomer readability",
+            glossary_path.display(),
+            required_glossary_section
+        );
+    }
+    let glossary_term_count = glossary_src
+        .lines()
+        .filter(|line| line.trim_start().starts_with("- **"))
+        .count();
+    assert!(
+        glossary_term_count >= 18,
+        "glossary {} must contain broad beginner terminology coverage; found only {} term entries",
+        glossary_path.display(),
+        glossary_term_count
+    );
+
+    assert!(
+        traditional_src.contains("## Beginner Toolchain Primer")
+            && traditional_src.contains("A useful beginner mental model is")
+            && traditional_src.contains("## End-to-End TLC Path (Ordered)"),
+        "traditional tutorial {} must keep beginner primer + ordered concrete path",
+        traditional_path.display()
+    );
+
+    assert!(
+        source_first_src.contains("## Beginner Context")
+            && source_first_src.contains("## Current Technique Path (Plain Language)")
+            && source_first_src.contains("## End-to-End Source-First Path (Ordered)"),
+        "source-first tutorial {} must keep beginner context + plain-language path + ordered flow",
+        source_first_path.display()
+    );
+
+    assert!(
+        walkthrough_src.contains("## Step-by-Step Trace (Ordered)")
+            && walkthrough_src.contains("## Parallel Track A: Traditional TLC Terms")
+            && walkthrough_src.contains("## Parallel Track B: tla-rs Source-First Terms"),
+        "walkthrough {} must keep newcomer-oriented ordered trace and side-by-side conceptual tracks",
+        walkthrough_path.display()
+    );
+
+    assert!(
+        comparison_src.contains("## Synthesis")
+            && comparison_src.contains("| Synthesis Question | Answer | Supporting Anchors |")
+            && comparison_src.contains("What is fundamentally the same idea?")
+            && comparison_src.contains("What is an implementation detail difference?")
+            && comparison_src.contains("What is a semantics/algorithm difference?")
+            && comparison_src.contains("What is a tooling UX/reporting difference?"),
+        "comparison doc {} must keep explicit newcomer-friendly synthesis Q&A framing",
+        comparison_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

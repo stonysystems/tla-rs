@@ -10797,7 +10797,7 @@ docs/model-checker-architecture/
 - [x] `tlars-only-optimizations.md` distinguishes confirmed items from uncertain ones and avoids unsupported claims about TLC. [26-03-10, 17:22] (scope check: doc+test leaf task, <500 LOC, no decomposition required; enforced via `test_model_checker_architecture_phase_35_9_optimization_audit_distinguishes_confirmed_and_uncertain` plus existing 35.7/35.8 anti-overclaim tests)
 - [x] `sources-and-evidence.md` records source type, date checked, inspection depth, and supported claims. [26-03-10, 17:25] (scope check: doc+test leaf task, <500 LOC, no decomposition required; enforced via `test_model_checker_architecture_phase_35_9_sources_and_evidence_records_required_metadata_fields` plus existing source-ledger coverage in `test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger`)
 - [x] `artifacts/engine-crosswalk.csv` matches the comparison doc. [26-03-10, 17:27] (scope check: doc+test leaf task, <500 LOC, no decomposition required; enforced via `test_model_checker_architecture_phase_35_9_engine_crosswalk_matches_comparison_doc` plus existing sync guard `test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync`)
-- [ ] The tutorial is readable for a newcomer and not just for model-checker implementers.
+- [x] The tutorial is readable for a newcomer and not just for model-checker implementers. [26-03-10, 17:30] (scope check: doc+test leaf task, <500 LOC, no decomposition required; enforced via `test_model_checker_architecture_phase_35_9_tutorial_is_readable_for_newcomers` with chapter-level beginner/readability structure checks across README + glossary + tutorial chapters)
 
 ### 35.10 Acceptance Criteria
 
