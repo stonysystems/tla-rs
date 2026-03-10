@@ -1,0 +1,21 @@
+{
+  "build_profile": "debug",
+  "output_dir": "reports/benchmarks/source_first",
+  "transpiler_bin": "/home/shuai/workspace/tla-rs/transpiler/target/debug/verus-transpile",
+  "threading_mode": "single-thread",
+  "worker_count": 1,
+  "timeout_override_ms": 240000,
+  "hard_timeout_secs": 360,
+  "machine": {
+    "platform": "Linux 6.17.4-2-pve x86_64 GNU/Linux",
+    "hostname": "zoo-005",
+    "cpu_count": 64,
+    "cpu_model": "AMD Ryzen Threadripper 2990WX 32-Core Processor"
+  },
+  "protocols": [
+    "twophase",
+    "primarybackup",
+    "leaderelection",
+    "paxos"
+  ]
+}

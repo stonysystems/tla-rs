@@ -1,10 +1,35 @@
 # TLC vs Source-first Benchmark Comparison
 
-Generated: 2026-03-10 22:29:18 UTC
-Git rev: c202e3b
+Generated: 2026-03-10 23:35:55 UTC
+Git rev: ed986eb
 
-Source-first run: Generated: 2026-03-08 12:58:40 UTC
+Source-first run: Generated: 2026-03-10 23:26:12 UTC
 TLC run: Generated: 2026-03-08 16:25:00 UTC
+
+## Source-first Build/Environment Parity (Phase 33.4.4.a)
+
+- Canonical source-first performance view: **release build** (`reports/benchmarks/source_first_release`).
+- Continuity baseline retained: **debug build** (`reports/benchmarks/source_first`).
+
+- Release run context:
+  - Build profile: release
+  - Threading mode: single-thread (workers=1)
+  - Timeout override (ms): 240000
+  - Machine: Linux 6.17.4-2-pve x86_64 GNU/Linux
+  - Host: zoo-005
+- Debug run context:
+  - Build profile: debug
+  - Threading mode: single-thread (workers=1)
+  - Timeout override (ms): 240000
+  - Machine: Linux 6.17.4-2-pve x86_64 GNU/Linux
+  - Host: zoo-005
+
+| Protocol | Release result | Release wall (s) | Release stop reason | Debug result | Debug wall (s) | Debug stop reason | Debug/Release wall ratio |
+|----------|----------------|------------------|---------------------|--------------|----------------|-------------------|--------------------------|
+| TwoPhase | ok(FrontierExhausted) | 17 | FrontierExhausted | ok(FrontierExhausted) | 73 | FrontierExhausted | 4.29x |
+| PrimaryBackup | ok(FrontierExhausted) | 50 | FrontierExhausted | ok(FrontierExhausted) | 174 | FrontierExhausted | 3.48x |
+| LeaderElection | timeout_reached(TimeoutReached) | 241 | TimeoutReached | timeout_reached(TimeoutReached) | 241 | TimeoutReached | 1.00x |
+| Paxos | timeout_reached(TimeoutReached) | 269 | TimeoutReached | timeout_reached(TimeoutReached) | 302 | TimeoutReached | 1.12x |
 
 ## Column Meanings
 
@@ -18,13 +43,13 @@ TLC run: Generated: 2026-03-08 16:25:00 UTC
 
 | Protocol | Engine | Result | States (gen) | Distinct | Depth | Wall (s) |
 |----------|--------|--------|--------------|----------|-------|----------|
-| twophase | source-first | ok(FrontierExhausted) | — | 8 | 3 | 79 |
+| twophase | source-first | ok(FrontierExhausted) | — | 8 | 3 | 17 |
 | | TLC | pass | 150 | 64 | 9 | 1 |
-| primarybackup | source-first | ok(FrontierExhausted) | — | 60 | 7 | 190 |
+| primarybackup | source-first | ok(FrontierExhausted) | — | 60 | 7 | 50 |
 | | TLC | pass | 86 | 54 | 10 | 1 |
-| leaderelection | source-first | n/a | — | n/a | n/a | n/a |
+| leaderelection | source-first | timeout_reached(TimeoutReached) | — | 1 | 0 | 241 |
 | | TLC | pass | 100636 | 9337 | 13 | 2 |
-| paxos | source-first | n/a | — | n/a | n/a | n/a |
+| paxos | source-first | timeout_reached(TimeoutReached) | — | 4 | 1 | 269 |
 | | TLC | pass | 25288515 | 3005604 | 37 | 375 |
 
 ## Notes

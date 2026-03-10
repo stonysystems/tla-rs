@@ -12,7 +12,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SF_DIR="${SF_DIR:-$PROJECT_ROOT/reports/benchmarks/source_first}"
+SF_RELEASE_DIR="${SF_RELEASE_DIR:-$PROJECT_ROOT/reports/benchmarks/source_first_release}"
+SF_DEBUG_DIR="${SF_DEBUG_DIR:-$PROJECT_ROOT/reports/benchmarks/source_first}"
+SF_DIR="${SF_DIR:-$SF_RELEASE_DIR}"
 TLC_DIR="${TLC_DIR:-$PROJECT_ROOT/reports/benchmarks/tlc}"
 OUTPUT="${OUTPUT:-$PROJECT_ROOT/reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md}"
 PROTOCOLS="${PROTOCOLS:-twophase primarybackup leaderelection paxos}"
@@ -22,14 +24,24 @@ CUTOFF_SECONDS="${CUTOFF_SECONDS:-120}"
 
 mkdir -p "$(dirname "$OUTPUT")"
 
+if [[ ! -f "$SF_DIR/SUMMARY.md" && -f "$SF_DEBUG_DIR/SUMMARY.md" ]]; then
+    SF_DIR="$SF_DEBUG_DIR"
+fi
+
 # Check that at least one summary exists
 sf_summary="$SF_DIR/SUMMARY.md"
 tlc_summary="$TLC_DIR/SUMMARY.md"
+sf_release_summary="$SF_RELEASE_DIR/SUMMARY.md"
+sf_debug_summary="$SF_DEBUG_DIR/SUMMARY.md"
 
 has_sf=false
 has_tlc=false
 [[ -f "$sf_summary" ]] && has_sf=true
 [[ -f "$tlc_summary" ]] && has_tlc=true
+has_sf_release=false
+has_sf_debug=false
+[[ -f "$sf_release_summary" ]] && has_sf_release=true
+[[ -f "$sf_debug_summary" ]] && has_sf_debug=true
 
 if ! $has_sf && ! $has_tlc; then
     echo "Error: No benchmark results found." >&2
@@ -103,6 +115,35 @@ print(f"{transitions}|{elapsed_ms}|{enum_evals}|{stop_reason}")
 PY
 }
 
+summary_field() {
+    local file="$1" prefix="$2"
+    if [[ ! -f "$file" ]]; then
+        echo "n/a"
+        return
+    fi
+    local line
+    line=$(grep "^$prefix" "$file" 2>/dev/null | head -1 || true)
+    if [[ -z "$line" ]]; then
+        echo "n/a"
+        return
+    fi
+    echo "${line#$prefix}"
+}
+
+format_ratio_debug_over_release() {
+    local debug_wall="$1" release_wall="$2"
+    if [[ ! "$debug_wall" =~ ^[0-9]+$ ]] || [[ ! "$release_wall" =~ ^[0-9]+$ ]] || [[ "$release_wall" -eq 0 ]]; then
+        echo "n/a"
+        return
+    fi
+    python3 - "$debug_wall" "$release_wall" <<'PY'
+import sys
+debug_wall = int(sys.argv[1])
+release_wall = int(sys.argv[2])
+print(f"{debug_wall / release_wall:.2f}x")
+PY
+}
+
 {
     echo "# TLC vs Source-first Benchmark Comparison"
     echo ""
@@ -119,6 +160,48 @@ PY
         echo "TLC run: $tlc_date"
     fi
     echo ""
+
+    if $has_sf_release || $has_sf_debug; then
+        echo "## Source-first Build/Environment Parity (Phase 33.4.4.a)"
+        echo ""
+        if $has_sf_release; then
+            echo "- Canonical source-first performance view: **release build** (\`${SF_RELEASE_DIR#$PROJECT_ROOT/}\`)."
+        else
+            echo "- Canonical source-first performance view: release summary missing; temporarily using debug/fallback results."
+        fi
+        if $has_sf_debug; then
+            echo "- Continuity baseline retained: **debug build** (\`${SF_DEBUG_DIR#$PROJECT_ROOT/}\`)."
+        fi
+        echo ""
+        if $has_sf_release; then
+            echo "- Release run context:"
+            echo "  - Build profile: $(summary_field "$sf_release_summary" "Build profile: ")"
+            echo "  - Threading mode: $(summary_field "$sf_release_summary" "Threading mode: ") (workers=$(summary_field "$sf_release_summary" "Workers: "))"
+            echo "  - Timeout override (ms): $(summary_field "$sf_release_summary" "Timeout override (ms): ")"
+            echo "  - Machine: $(summary_field "$sf_release_summary" "Machine: ")"
+            echo "  - Host: $(summary_field "$sf_release_summary" "Host: ")"
+        fi
+        if $has_sf_debug; then
+            echo "- Debug run context:"
+            echo "  - Build profile: $(summary_field "$sf_debug_summary" "Build profile: ")"
+            echo "  - Threading mode: $(summary_field "$sf_debug_summary" "Threading mode: ") (workers=$(summary_field "$sf_debug_summary" "Workers: "))"
+            echo "  - Timeout override (ms): $(summary_field "$sf_debug_summary" "Timeout override (ms): ")"
+            echo "  - Machine: $(summary_field "$sf_debug_summary" "Machine: ")"
+            echo "  - Host: $(summary_field "$sf_debug_summary" "Host: ")"
+        fi
+        echo ""
+        echo "| Protocol | Release result | Release wall (s) | Release stop reason | Debug result | Debug wall (s) | Debug stop reason | Debug/Release wall ratio |"
+        echo "|----------|----------------|------------------|---------------------|--------------|----------------|-------------------|--------------------------|"
+        for proto in $PROTOCOLS; do
+            IFS='|' read -r sf_rel_result _ _ _ sf_rel_wall <<< "$(parse_row "$sf_release_summary" "$proto")"
+            IFS='|' read -r sf_dbg_result _ _ _ sf_dbg_wall <<< "$(parse_row "$sf_debug_summary" "$proto")"
+            IFS='|' read -r _ _ _ sf_rel_stop_reason <<< "$(parse_source_first_artifact_details "$SF_RELEASE_DIR/${proto}_benchmark.json")"
+            IFS='|' read -r _ _ _ sf_dbg_stop_reason <<< "$(parse_source_first_artifact_details "$SF_DEBUG_DIR/${proto}_benchmark.json")"
+            wall_ratio="$(format_ratio_debug_over_release "$sf_dbg_wall" "$sf_rel_wall")"
+            echo "| $(protocol_display "$proto") | $sf_rel_result | $sf_rel_wall | $sf_rel_stop_reason | $sf_dbg_result | $sf_dbg_wall | $sf_dbg_stop_reason | $wall_ratio |"
+        done
+        echo ""
+    fi
 
     echo "## Column Meanings"
     echo ""

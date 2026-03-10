@@ -17583,3 +17583,241 @@ fn test_phase_33_4_3_f_same_time_budget_leaf_is_marked_done_and_scripts_support_
         compare_script_path.display()
     );
 }
+
+#[test]
+fn test_phase_33_4_4_a_release_debug_parity_artifacts_and_metadata_are_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower.contains(
+            "- [x] **33.4.4.a benchmark fairness hardening: release-vs-debug and environment parity**",
+        ),
+        "TODO {} must mark Phase 33.4.4.a complete",
+        todo_path.display()
+    );
+
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+    for required_fragment in [
+        "## source-first build/environment parity (phase 33.4.4.a)",
+        "canonical source-first performance view: **release build**",
+        "reports/benchmarks/source_first_release",
+        "reports/benchmarks/source_first",
+        "debug/release wall ratio",
+    ] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+
+    for (profile_dir, expected_profile) in [
+        ("reports/benchmarks/source_first", "debug"),
+        ("reports/benchmarks/source_first_release", "release"),
+    ] {
+        let summary_path = repo_root.join(profile_dir).join("SUMMARY.md");
+        let summary_src = std::fs::read_to_string(&summary_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read source-first summary {}: {}",
+                summary_path.display(),
+                err
+            )
+        });
+        let summary_lower = summary_src.to_ascii_lowercase();
+        assert!(
+            summary_lower.contains(&format!("build profile: {}", expected_profile)),
+            "summary {} must identify build profile `{}`",
+            summary_path.display(),
+            expected_profile
+        );
+        for required_fragment in [
+            "threading mode:",
+            "workers:",
+            "timeout override (ms):",
+            "run context metadata:",
+            "per-run metadata:",
+        ] {
+            assert!(
+                summary_lower.contains(required_fragment),
+                "summary {} must include `{}`",
+                summary_path.display(),
+                required_fragment
+            );
+        }
+
+        let run_context_path = repo_root.join(profile_dir).join("metadata/run_context.json");
+        let run_context_src = std::fs::read_to_string(&run_context_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read run-context metadata {}: {}",
+                run_context_path.display(),
+                err
+            )
+        });
+        let run_context: serde_json::Value = serde_json::from_str(&run_context_src).unwrap_or_else(
+            |err| {
+                panic!(
+                    "run-context metadata {} must be valid JSON: {}",
+                    run_context_path.display(),
+                    err
+                )
+            },
+        );
+        assert_eq!(
+            run_context
+                .get("build_profile")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            expected_profile,
+            "run-context metadata {} must match build profile `{}`",
+            run_context_path.display(),
+            expected_profile
+        );
+        assert_eq!(
+            run_context
+                .get("threading_mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+            "single-thread",
+            "run-context metadata {} must record single-thread mode",
+            run_context_path.display()
+        );
+        assert!(
+            run_context
+                .get("worker_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                >= 1,
+            "run-context metadata {} must record worker count >= 1",
+            run_context_path.display()
+        );
+        assert!(
+            run_context
+                .get("timeout_override_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                > 0,
+            "run-context metadata {} must record timeout override",
+            run_context_path.display()
+        );
+        assert!(
+            run_context
+                .get("machine")
+                .and_then(|m| m.get("platform"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .len()
+                > 0,
+            "run-context metadata {} must record machine platform",
+            run_context_path.display()
+        );
+
+        for protocol in ["twophase", "primarybackup", "leaderelection", "paxos"] {
+            let per_run_meta_path = repo_root
+                .join(profile_dir)
+                .join("metadata")
+                .join(format!("{protocol}_benchmark.meta.json"));
+            let per_run_meta_src =
+                std::fs::read_to_string(&per_run_meta_path).unwrap_or_else(|err| {
+                    panic!(
+                        "failed to read per-run metadata {}: {}",
+                        per_run_meta_path.display(),
+                        err
+                    )
+                });
+            let per_run_meta: serde_json::Value = serde_json::from_str(&per_run_meta_src)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "per-run metadata {} must be valid JSON: {}",
+                        per_run_meta_path.display(),
+                        err
+                    )
+                });
+            assert_eq!(
+                per_run_meta
+                    .get("build_profile")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(""),
+                expected_profile,
+                "per-run metadata {} must match expected build profile `{}`",
+                per_run_meta_path.display(),
+                expected_profile
+            );
+            let command = per_run_meta
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            assert!(
+                command.contains("model-check")
+                    && command.contains("--search bfs")
+                    && command.contains("--timeout"),
+                "per-run metadata {} must preserve exact model-check command details",
+                per_run_meta_path.display()
+            );
+            for summary_field in ["states", "transitions", "depth", "wall_secs"] {
+                assert!(
+                    per_run_meta
+                        .get("summary")
+                        .and_then(|s| s.get(summary_field))
+                        .map_or(false, |v| v.is_number()),
+                    "per-run metadata {} must include numeric summary field `{}`",
+                    per_run_meta_path.display(),
+                    summary_field
+                );
+            }
+            assert!(
+                !per_run_meta
+                    .get("result")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .is_empty(),
+                "per-run metadata {} must include non-empty result",
+                per_run_meta_path.display()
+            );
+            assert!(
+                !per_run_meta
+                    .get("stop_reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .is_empty(),
+                "per-run metadata {} must include non-empty stop reason",
+                per_run_meta_path.display()
+            );
+        }
+    }
+
+    let manifest_path = repo_root.join("reports/benchmarks/MANIFEST.md");
+    let manifest_src = std::fs::read_to_string(&manifest_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark manifest {}: {}",
+            manifest_path.display(),
+            err
+        )
+    });
+    let manifest_lower = manifest_src.to_ascii_lowercase();
+    for required_fragment in [
+        "source-first per-run records",
+        "release (canonical)",
+        "debug (continuity)",
+        "per-run metadata (exact command)",
+    ] {
+        assert!(
+            manifest_lower.contains(required_fragment),
+            "benchmark manifest {} must include `{}`",
+            manifest_path.display(),
+            required_fragment
+        );
+    }
+}

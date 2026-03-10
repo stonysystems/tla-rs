@@ -7,22 +7,22 @@
   "invariant_violation": null,
   "invariants": {
     "configured": [
-      "LSafetyNoCommitAbortOverlap",
-      "LSafetyCommittedSubsetPrepared",
-      "LSafetyTmCommittedRequiresAllPrepared"
+      "LSafetyAcceptedBallotBoundedByPromise",
+      "LSafetyDecidedRequiresQuorum",
+      "LSafetyDecidedMatchesProposedValue"
     ],
     "configured_count": 3,
     "resolved": [
-      "LSafetyNoCommitAbortOverlap",
-      "LSafetyCommittedSubsetPrepared",
-      "LSafetyTmCommittedRequiresAllPrepared"
+      "LSafetyAcceptedBallotBoundedByPromise",
+      "LSafetyDecidedRequiresQuorum",
+      "LSafetyDecidedMatchesProposedValue"
     ],
     "resolved_count": 3
   },
   "leads_to_violation": null,
   "liveness": null,
-  "protocol": "src/protocol/TwoPhase/twophase.rs",
-  "result": "ok",
+  "protocol": "src/protocol/Paxos/paxos.rs",
+  "result": "timeout_reached",
   "search": {
     "evidence_mode": {
       "class": "exact_proof_strength",
@@ -40,24 +40,24 @@
     "symmetry_fields": [],
     "timeout_ms": 240000
   },
-  "stop_reason": "FrontierExhausted",
+  "stop_reason": "TimeoutReached",
   "summary": {
-    "candidate_evaluation_guardrail_per_state_branch": 10000000,
+    "candidate_evaluation_guardrail_per_state_branch": 100000000,
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
-    "depth": 3,
+    "depth": 1,
     "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 72184,
-    "enumeration_candidate_evaluations": 1038336,
-    "enumeration_fallback_branch_solves": 64,
+    "elapsed_ms": 265218,
+    "enumeration_candidate_evaluations": 9128541,
+    "enumeration_fallback_branch_solves": 2,
     "guard_pruned_candidate_evaluations": 0,
     "hash_compaction_collisions": 0,
     "pruned_by_por": 0,
-    "states": 8,
+    "states": 4,
     "successor_cache_hits": 0,
-    "successor_cache_misses": 8,
+    "successor_cache_misses": 4,
     "symmetry_collapses": 0,
-    "transitions": 24
+    "transitions": 4
   },
-  "types": "src/protocol/TwoPhase/types.rs"
+  "types": "src/protocol/Paxos/types.rs"
 }

@@ -47,7 +47,7 @@
     "constants_valuations_total": 1,
     "depth": 3,
     "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 72184,
+    "elapsed_ms": 17315,
     "enumeration_candidate_evaluations": 1038336,
     "enumeration_fallback_branch_solves": 64,
     "guard_pruned_candidate_evaluations": 0,

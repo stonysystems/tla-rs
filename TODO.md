@@ -9915,13 +9915,16 @@ Rules for this phase (do not cut corners):
 2. Why do `LeaderElection` and `Paxos` fail to make useful source-first progress on the current matched benchmark models?
 
 **Current evidence anchor (checked in now)**:
-- `TwoPhase`: source-first 8 distinct states / 79s vs TLC 64 distinct / 1s.
-- `PrimaryBackup`: source-first 60 distinct states / 190s vs TLC 54 distinct / 1s.
-- `LeaderElection`: source-first candidate enumeration hits ~880K candidates in 76s with 0 valid transitions found.
-- `Paxos`: same blocker class, worse per-node state size / candidate space.
-- Current source-first benchmark numbers were taken with `verus-transpile` **debug build**; TLC was run with checked-in Java/TLC settings. Do **not** treat the current wall-time ratios as the final fairness story until build-profile and hot-path attribution are measured.
+- Source-first release-vs-debug fairness artifacts now exist with identical model/search/time settings (`TIMEOUT_MS=240000`, worker=1, single-thread) and are checked in under:
+  - release canonical: `reports/benchmarks/source_first_release/`
+  - debug continuity: `reports/benchmarks/source_first/`
+- `TwoPhase`: release 17s vs debug 73s vs TLC 1s (TLC distinct states: 64).
+- `PrimaryBackup`: release 50s vs debug 174s vs TLC 1s (TLC distinct states: 54).
+- `LeaderElection`: release/debug both timeout at 241s with 1 distinct state reached; TLC exhausts in 2s.
+- `Paxos`: release timeout at 269s (4 states) vs debug timeout at 302s (2 states); TLC exhausts in 375s on full run and reaches substantial progress on matched cutoff.
+- Fairness hardening is done (`33.4.4.a`), but phase-attributed source-first timing (`33.4.4.b`) and branch-level blocker diagnosis (`33.4.4.d/e/f`) remain required before claiming true root cause.
 
-- [ ] **33.4.4.a Benchmark fairness hardening: release-vs-debug and environment parity**
+- [x] **33.4.4.a Benchmark fairness hardening: release-vs-debug and environment parity** [26-03-10, 23:40] (scope check: benchmark script/report/test/docs updates + artifact regeneration, <500 LOC hand edits; no decomposition required)
   - Re-run the four shared benchmark protocols with source-first in both:
     - current debug build (for continuity with the checked-in baseline), and
     - release build (this must become the primary performance number unless there is a documented reason not to).
@@ -9937,6 +9940,13 @@ Rules for this phase (do not cut corners):
     - stop reason.
   - Update the benchmark report and manifest so reviewers can see immediately whether a wall-time number came from debug or release.
   - Do **not** quietly replace the existing debug numbers; keep both until the report explicitly says which one is the canonical performance view.
+  - **Done**:
+    - Extended `scripts/run_model_check_benchmarks.sh` with explicit profile control (`BUILD_PROFILE`), always-profile rebuild behavior, run-context + per-run metadata JSON emission (exact command / timeout / threading / machine / states+transitions+depth / stop reason), and bounded hard-timeout wrapper metadata.
+    - Replayed all 4 shared protocols on the same benchmark models and same `bfs` search/invariant setup for both profiles with parity settings (`TIMEOUT_MS=240000`, single-thread worker=1):
+      - debug continuity artifacts: `reports/benchmarks/source_first/*.json` + `reports/benchmarks/source_first/SUMMARY.md`
+      - release canonical artifacts: `reports/benchmarks/source_first_release/*.json` + `reports/benchmarks/source_first_release/SUMMARY.md`
+    - Updated `scripts/compare_tlc_vs_source_first.sh` and regenerated `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` with an explicit **Source-first Build/Environment Parity** section that preserves debug continuity while marking release as canonical.
+    - Updated `reports/benchmarks/MANIFEST.md` so every run has a linked per-run metadata record containing the exact command and required parity fields.
 
 - [ ] **33.4.4.b Add phase-attributed source-first timing telemetry**
   - Extend source-first benchmark reporting so wall time is split into at least:

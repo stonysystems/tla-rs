@@ -38,7 +38,7 @@
     "strategy": "bfs",
     "successor_semantics": "deadlock",
     "symmetry_fields": [],
-    "timeout_ms": 3600000
+    "timeout_ms": 240000
   },
   "stop_reason": "FrontierExhausted",
   "summary": {
@@ -47,7 +47,7 @@
     "constants_valuations_total": 1,
     "depth": 7,
     "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 190165,
+    "elapsed_ms": 174593,
     "enumeration_candidate_evaluations": 2764800,
     "enumeration_fallback_branch_solves": 480,
     "guard_pruned_candidate_evaluations": 0,

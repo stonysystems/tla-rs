@@ -1,70 +1,54 @@
 # Benchmark Evidence Manifest
 
-Generated: 2026-03-08
-Git rev: fd8967f
+Generated: 2026-03-10
+Git rev: ed986eb
 
-## Machine & Tool Versions
+## Scope
 
-- Platform: Linux 6.2.16-3-pve (x86_64), 64 cores
-- Transpiler: `transpiler/target/debug/verus-transpile` (debug build)
-- TLC: 2026.03.05.210854 (rev: ec1a488), Java 17.0.18 (OpenJDK Debian 17.0.18+8)
-- tla2tools.jar: downloaded from GitHub tlaplus/tlaplus releases v1.8.0
+This manifest records the Phase `33.4.4.a` fairness hardening replay for the 4 shared benchmark protocols (`TwoPhase`, `PrimaryBackup`, `LeaderElection`, `Paxos`).
 
-## Source-first Benchmark Artifacts
+- Same finite benchmark models/invariants/search mode were used for debug and release source-first runs.
+- Source-first canonical performance view is now **release** (`reports/benchmarks/source_first_release`).
+- Debug results are retained for continuity (`reports/benchmarks/source_first`).
 
-### TwoPhase
-- Config: `transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml`
-- JSON report: `reports/benchmarks/source_first/twophase_benchmark.json`
-- Command: `verus-transpile model-check --input src/protocol/TwoPhase/twophase.rs --types src/protocol/TwoPhase/types.rs --model transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml --search bfs --json-report`
-- Result: **ok** (FrontierExhausted) — 8 states, 3 depth, 24 transitions, 79s
-- Invariants checked (3/3 pass): `LSafetyNoCommitAbortOverlap`, `LSafetyCommittedSubsetPrepared`, `LSafetyTmCommittedRequiresAllPrepared`
+## Source-first Run Context (Parity)
 
-### PrimaryBackup
-- Config: `transpiler/tests/model_check_fixtures/benchmarks_1h/primarybackup_benchmark.model.toml`
-- JSON report: `reports/benchmarks/source_first/primarybackup_benchmark.json`
-- Command: `verus-transpile model-check --input src/protocol/PrimaryBackup/primarybackup.rs --types src/protocol/PrimaryBackup/types.rs --model transpiler/tests/model_check_fixtures/benchmarks_1h/primarybackup_benchmark.model.toml --search bfs --json-report`
-- Result: **ok** (FrontierExhausted) — 60 states, 7 depth, 169 transitions, 190s
-- Invariants checked (3/3 pass): `LSafetyNoPendingImpliesClearedValue`, `LSafetyUnackedImpliesPending`, `LSafetyInactiveStateIsQuiescent`
+Common parity settings for both profiles:
+- Search: `bfs`
+- Timeout override: `240000 ms`
+- Hard timeout wrapper: `360 s`
+- Threading mode: `single-thread`
+- Worker count: `1`
+- Machine: `Linux 6.17.4-2-pve x86_64 GNU/Linux` on host `zoo-005`
+- CPU: `AMD Ryzen Threadripper 2990WX 32-Core Processor` (`64` logical cores)
 
-### LeaderElection
-- Config: `transpiler/tests/model_check_fixtures/benchmarks_1h/leaderelection_benchmark.model.toml`
-- JSON report: **not generated** (BLOCKED — candidate enumeration cannot find valid transitions with 3-node model)
-- Status: Source-first engine needs constraint-aware successor computation before this protocol can produce meaningful long-run benchmarks.
+Run-level context files:
+- Debug: `reports/benchmarks/source_first/metadata/run_context.json`
+- Release: `reports/benchmarks/source_first_release/metadata/run_context.json`
 
-### Paxos
-- Config: `transpiler/tests/model_check_fixtures/benchmarks_1h/paxos_benchmark.model.toml`
-- JSON report: **not generated** (BLOCKED — same enumeration scalability issue as LeaderElection)
-- Status: Same as LeaderElection.
+## Source-first Per-Run Records
 
-## TLC Benchmark Artifacts
+Each per-run metadata file below records the exact command line (`command` field), build profile, timeout/threading settings, machine info, and outcome summary.
 
-### TwoPhase
-- TLA+ wrapper: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.tla`
-- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.cfg`
-- TLC log: `reports/benchmarks/tlc/twophase_benchmark.log`
-- Command: `timeout 3600 java -XX:+UseParallelGC -Xmx4g -cp ~/tla2tools.jar tlc2.TLC -workers 1 -config TwoPhase_Benchmark_MC.cfg TwoPhase_Benchmark_MC.tla`
-- Result: **pass** (exhausted) — 150 generated, 64 distinct, depth 9, 1s
+| Protocol | Profile | Result | Stop reason | States | Transitions | Depth | Wall (s) | JSON report | Per-run metadata (exact command) |
+|----------|---------|--------|-------------|--------|-------------|-------|----------|-------------|----------------------------------|
+| TwoPhase | release (canonical) | `ok(FrontierExhausted)` | `FrontierExhausted` | 8 | 24 | 3 | 17 | `reports/benchmarks/source_first_release/twophase_benchmark.json` | `reports/benchmarks/source_first_release/metadata/twophase_benchmark.meta.json` |
+| PrimaryBackup | release (canonical) | `ok(FrontierExhausted)` | `FrontierExhausted` | 60 | 169 | 7 | 50 | `reports/benchmarks/source_first_release/primarybackup_benchmark.json` | `reports/benchmarks/source_first_release/metadata/primarybackup_benchmark.meta.json` |
+| LeaderElection | release (canonical) | `timeout_reached(TimeoutReached)` | `TimeoutReached` | 1 | 0 | 0 | 241 | `reports/benchmarks/source_first_release/leaderelection_benchmark.json` | `reports/benchmarks/source_first_release/metadata/leaderelection_benchmark.meta.json` |
+| Paxos | release (canonical) | `timeout_reached(TimeoutReached)` | `TimeoutReached` | 4 | 4 | 1 | 269 | `reports/benchmarks/source_first_release/paxos_benchmark.json` | `reports/benchmarks/source_first_release/metadata/paxos_benchmark.meta.json` |
+| TwoPhase | debug (continuity) | `ok(FrontierExhausted)` | `FrontierExhausted` | 8 | 24 | 3 | 73 | `reports/benchmarks/source_first/twophase_benchmark.json` | `reports/benchmarks/source_first/metadata/twophase_benchmark.meta.json` |
+| PrimaryBackup | debug (continuity) | `ok(FrontierExhausted)` | `FrontierExhausted` | 60 | 169 | 7 | 174 | `reports/benchmarks/source_first/primarybackup_benchmark.json` | `reports/benchmarks/source_first/metadata/primarybackup_benchmark.meta.json` |
+| LeaderElection | debug (continuity) | `timeout_reached(TimeoutReached)` | `TimeoutReached` | 1 | 0 | 0 | 241 | `reports/benchmarks/source_first/leaderelection_benchmark.json` | `reports/benchmarks/source_first/metadata/leaderelection_benchmark.meta.json` |
+| Paxos | debug (continuity) | `timeout_reached(TimeoutReached)` | `TimeoutReached` | 2 | 1 | 1 | 302 | `reports/benchmarks/source_first/paxos_benchmark.json` | `reports/benchmarks/source_first/metadata/paxos_benchmark.meta.json` |
 
-### PrimaryBackup
-- TLA+ wrapper: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/PrimaryBackup_Benchmark_MC.tla`
-- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/PrimaryBackup_Benchmark_MC.cfg`
-- TLC log: `reports/benchmarks/tlc/primarybackup_benchmark.log`
-- Command: `timeout 3600 java -XX:+UseParallelGC -Xmx4g -cp ~/tla2tools.jar tlc2.TLC -workers 1 -config PrimaryBackup_Benchmark_MC.cfg PrimaryBackup_Benchmark_MC.tla`
-- Result: **pass** (exhausted) — 86 generated, 54 distinct, depth 10, 1s
+## TLC Benchmark Artifacts (Comparison Side)
 
-### LeaderElection
-- TLA+ wrapper: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/LeaderElection_Benchmark_MC.tla`
-- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/LeaderElection_Benchmark_MC.cfg`
-- TLC log: `reports/benchmarks/tlc/leaderelection_benchmark.log`
-- Command: `timeout 3600 java -XX:+UseParallelGC -Xmx4g -cp ~/tla2tools.jar tlc2.TLC -workers 1 -config LeaderElection_Benchmark_MC.cfg LeaderElection_Benchmark_MC.tla`
-- Result: **pass** (exhausted) — 100,636 generated, 9,337 distinct, depth 13, 2s
+TLC artifacts remain in:
+- Logs + summary: `reports/benchmarks/tlc/`
+- Wrapper/config inputs: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/`
 
-### Paxos
-- TLA+ wrapper: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/Paxos_Benchmark_MC.tla`
-- Config: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/Paxos_Benchmark_MC.cfg`
-- TLC log: `reports/benchmarks/tlc/paxos_benchmark.log`
-- Command: `timeout 600 java -XX:+UseParallelGC -Xmx4g -cp ~/tla2tools.jar tlc2.TLC -workers 1 -config Paxos_Benchmark_MC.cfg Paxos_Benchmark_MC.tla`
-- Result: **pass** (exhausted) — 25,288,515 generated, 3,005,604 distinct, depth 37, 375s
+Most recent checked-in comparison report:
+- `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`
 
 ## Replay Scripts
 

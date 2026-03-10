@@ -1,0 +1,25 @@
+{
+  "protocol": "twophase",
+  "build_profile": "release",
+  "artifact": "reports/benchmarks/source_first_release/twophase_benchmark.json",
+  "command": "/home/shuai/workspace/tla-rs/transpiler/target/release/verus-transpile model-check --input src/protocol/TwoPhase/twophase.rs --types src/protocol/TwoPhase/types.rs --model /home/shuai/workspace/tla-rs/transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml --search bfs --json-report --timeout 240000",
+  "threading_mode": "single-thread",
+  "worker_count": 1,
+  "timeout_override_ms": 240000,
+  "hard_timeout_secs": 360,
+  "machine": {
+    "platform": "Linux 6.17.4-2-pve x86_64 GNU/Linux",
+    "hostname": "zoo-005",
+    "cpu_count": 64,
+    "cpu_model": "AMD Ryzen Threadripper 2990WX 32-Core Processor"
+  },
+  "result": "ok(FrontierExhausted)",
+  "stop_reason": "FrontierExhausted",
+  "summary": {
+    "states": 8,
+    "transitions": 24,
+    "depth": 3,
+    "wall_secs": 17,
+    "elapsed_ms": 17315
+  }
+}
