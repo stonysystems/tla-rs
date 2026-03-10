@@ -119,3 +119,8 @@ For claims about TLC not having an equivalent mechanism:
 
 Current status:
 - this document uses the weaker form in `X3` and records explicit reviewed source IDs (`T3`, `T4`, `T5`, with comparison context sources).
+
+## Acceptance mapping (Phase 35.10.6)
+- Side-by-side comparison rows are claim-scoped and carry an explicit `Evidence status` label plus anchored notes.
+- Rows labeled `inference_from_sources` must keep visible `[Inference]` wording in their note text.
+- Uncertain mechanism-level cross-engine claims stay in confidence-labeled buckets (`uncertain / not confirmed`) instead of being promoted to confirmed wording without direct evidence.

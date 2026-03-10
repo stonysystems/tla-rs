@@ -10633,6 +10633,210 @@ fn test_model_checker_architecture_phase_35_10_5_optimization_audit_is_disciplin
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_10_6_every_substantive_claim_is_sourced_or_confidence_labeled(
+) {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
+    let optimization_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+    let sources_src = std::fs::read_to_string(&sources_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read sources-and-evidence doc {}: {}",
+            sources_path.display(),
+            err
+        )
+    });
+    let optimization_src = std::fs::read_to_string(&optimization_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read optimization doc {}: {}",
+            optimization_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        sources_src.contains("## Acceptance mapping (Phase 35.10.6)")
+            && sources_src.contains("`Evidence status`")
+            && sources_src.contains("inference_from_sources")
+            && sources_src.contains("uncertain / not confirmed"),
+        "sources-and-evidence doc {} must include explicit Phase 35.10.6 claim-label mapping",
+        sources_path.display()
+    );
+    assert!(
+        sources_src.contains("## Cross-Engine Claim Confidence Register")
+            && sources_src.contains("| directly evidenced |")
+            && sources_src.contains("| inference from sources |")
+            && sources_src.contains("| uncertain / not confirmed |"),
+        "sources-and-evidence doc {} must keep confidence-labeled cross-engine claim register entries",
+        sources_path.display()
+    );
+
+    let matrix_section = comparison_src
+        .split("## Side-by-Side Matrix")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate side-by-side matrix section in {}",
+                comparison_path.display()
+            )
+        });
+    let matrix_rows: Vec<Vec<String>> = matrix_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        matrix_rows.len() >= 3,
+        "comparison matrix in {} must include header separator and data rows",
+        comparison_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&matrix_rows[1]),
+        "comparison matrix in {} must keep markdown separator row after header",
+        comparison_path.display()
+    );
+
+    let header = &matrix_rows[0];
+    let evidence_idx = header
+        .iter()
+        .position(|cell| cell == "Evidence status")
+        .unwrap_or_else(|| {
+            panic!(
+                "comparison matrix in {} must include `Evidence status` column",
+                comparison_path.display()
+            )
+        });
+    let notes_idx = header
+        .iter()
+        .position(|cell| cell == "Notes")
+        .unwrap_or_else(|| panic!("comparison matrix in {} must include `Notes` column", comparison_path.display()));
+
+    let data_rows: Vec<&Vec<String>> = matrix_rows
+        .iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .collect();
+    assert!(
+        data_rows.len() >= 15,
+        "comparison matrix in {} must include all required concern rows",
+        comparison_path.display()
+    );
+
+    let mut inference_rows = 0usize;
+    for row in data_rows {
+        let evidence_status = row[evidence_idx].trim();
+        assert!(
+            matches!(evidence_status, "directly_evidenced" | "inference_from_sources" | "uncertain_not_confirmed"),
+            "comparison row in {} has invalid evidence status `{}`: {:?}",
+            comparison_path.display(),
+            evidence_status,
+            row
+        );
+
+        let notes = row[notes_idx].trim();
+        assert!(
+            !notes.is_empty(),
+            "comparison row in {} must include notes/anchors for substantive claims: {:?}",
+            comparison_path.display(),
+            row
+        );
+
+        if evidence_status == "inference_from_sources" {
+            inference_rows += 1;
+            assert!(
+                notes.contains("[Inference]"),
+                "inference-labeled row in {} must explicitly include `[Inference]` marker: {:?}",
+                comparison_path.display(),
+                row
+            );
+        }
+    }
+    assert!(
+        inference_rows >= 1,
+        "comparison matrix in {} must include at least one explicitly inference-labeled row",
+        comparison_path.display()
+    );
+
+    let uncertain_section = optimization_src
+        .split("## Possibly different but not yet confirmed")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("## Not an optimization; only a feature/reporting difference")
+                .next()
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate uncertain-candidate section in {}",
+                optimization_path.display()
+            )
+        });
+    let uncertain_rows: Vec<Vec<String>> = uncertain_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        uncertain_rows.len() >= 8,
+        "uncertain candidate table in {} must include header separator and candidate rows",
+        optimization_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&uncertain_rows[1]),
+        "uncertain candidate table in {} must keep markdown separator row",
+        optimization_path.display()
+    );
+
+    let uncertain_header = &uncertain_rows[0];
+    let confidence_idx = uncertain_header
+        .iter()
+        .position(|cell| cell == "Current Confidence")
+        .unwrap_or_else(|| {
+            panic!(
+                "uncertain table in {} must include `Current Confidence` column",
+                optimization_path.display()
+            )
+        });
+    for row in uncertain_rows
+        .iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+    {
+        assert!(
+            row[confidence_idx].contains("uncertain / not confirmed"),
+            "uncertain candidate row in {} must explicitly carry uncertainty label: {:?}",
+            optimization_path.display(),
+            row
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
