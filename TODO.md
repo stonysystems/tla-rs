@@ -10663,7 +10663,7 @@ docs/model-checker-architecture/
 
 **Goal**: Explain the actual engine in this repo, not an idealized or speculative one.
 
-- [ ] **35.4.1** `tlars-source-first-model-checking.md` must explain the end-to-end source-first path, in order:
+- [x] **35.4.1** `tlars-source-first-model-checking.md` must explain the end-to-end source-first path, in order: [26-03-10, 15:36] (expanded `docs/model-checker-architecture/tlars-source-first-model-checking.md` with a concrete 10-step ordered source-first pipeline from source ingestion through evidence-mode-labeled reporting, each step anchored to local code/doc functions; added integration guard `test_model_checker_architecture_tlars_source_first_tutorial_has_ordered_execution_path` to enforce required stage coverage and ordering)
   - Rust/Verus input sources and type sources,
   - entrypoint resolution (`LInit`, `LNext`, invariants, fairness),
   - `model.toml` parsing/override resolution,

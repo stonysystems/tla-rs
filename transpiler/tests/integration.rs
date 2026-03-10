@@ -9691,6 +9691,70 @@ fn test_model_checker_architecture_traditional_tla_tutorial_is_repo_concrete() {
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_source_first_tutorial_has_ordered_execution_path() {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs source-first tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## End-to-End Source-First Path (Ordered)"),
+        "tla-rs source-first tutorial {} must include an ordered end-to-end section",
+        tutorial_path.display()
+    );
+
+    let ordered_path_section = tutorial_src
+        .split("## End-to-End Source-First Path (Ordered)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `End-to-End Source-First Path (Ordered)` section in {}",
+                tutorial_path.display()
+            )
+        });
+    for step_number in 1..=10 {
+        assert!(
+            ordered_path_section.contains(&format!("{}. **", step_number)),
+            "ordered source-first path section in {} must include numbered step {}",
+            tutorial_path.display(),
+            step_number
+        );
+    }
+
+    let ordered_path_lower = ordered_path_section.to_ascii_lowercase();
+    let required_steps = [
+        "rust/verus input sources and type sources",
+        "entrypoint resolution (`linit`, `lnext`, invariants, fairness)",
+        "`model.toml` parsing/override resolution",
+        "branch ir normalization from `lnext`",
+        "initial-state construction",
+        "domain expansion and evaluator execution",
+        "branch solving / successor generation",
+        "bfs/dfs exploration and state dedup",
+        "invariant/deadlock/liveness checking",
+        "report generation / telemetry / evidence-mode labeling",
+    ];
+    let mut search_from = 0usize;
+    for step in required_steps {
+        let relative_idx = ordered_path_lower[search_from..].find(step).unwrap_or_else(|| {
+            panic!(
+                "ordered source-first path section in {} must include required step `{}`",
+                tutorial_path.display(),
+                step
+            )
+        });
+        search_from += relative_idx + step.len();
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
