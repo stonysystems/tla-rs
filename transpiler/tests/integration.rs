@@ -8901,6 +8901,60 @@ fn test_model_checker_architecture_comparison_includes_required_minimum_concern_
 }
 
 #[test]
+fn test_model_checker_architecture_comparison_synthesis_explicitly_answers_required_questions() {
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+
+    let synthesis_section = comparison_src
+        .split("## Synthesis")
+        .nth(1)
+        .unwrap_or_else(|| panic!("comparison doc {} must include a Synthesis section", comparison_path.display()));
+    let synthesis_lower = synthesis_section.to_ascii_lowercase();
+
+    let required_questions = [
+        "what is fundamentally the same idea?",
+        "what is an implementation detail difference?",
+        "what is a semantics/algorithm difference?",
+        "what is a tooling ux/reporting difference?",
+    ];
+    for question in required_questions {
+        assert!(
+            synthesis_lower.contains(question),
+            "synthesis section in {} must explicitly answer required question `{}`",
+            comparison_path.display(),
+            question
+        );
+    }
+
+    for required_anchor in [
+        "docs/model-checker-architecture/traditional-tla-model-checking.md",
+        "docs/model-checker-architecture/tlars-source-first-model-checking.md",
+        "docs/model-checker-architecture/walkthrough.md",
+        "docs/model-checker-architecture/sources-and-evidence.md",
+    ] {
+        assert!(
+            synthesis_section.contains(required_anchor),
+            "synthesis section in {} must cite local supporting anchor {}",
+            comparison_path.display(),
+            required_anchor
+        );
+    }
+
+    assert!(
+        !synthesis_lower.contains("this section will answer"),
+        "synthesis section in {} must contain concrete answers, not placeholder text",
+        comparison_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");

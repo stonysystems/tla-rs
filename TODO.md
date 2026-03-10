@@ -10732,7 +10732,7 @@ docs/model-checker-architecture/
   - performance bottlenecks
   - exactness vs lossy acceleration modes
   - extension points / where future optimizations would land
-- [ ] **35.6.3** Add a synthesis section that explicitly answers:
+- [x] **35.6.3** Add a synthesis section that explicitly answers: [26-03-10, 16:16] (replaced `comparison.md` synthesis placeholder with explicit four-question synthesis matrix and local anchor citations; added integration guard `test_model_checker_architecture_comparison_synthesis_explicitly_answers_required_questions` to enforce required question coverage and non-placeholder content)
   - what is fundamentally the same idea,
   - what is an implementation detail difference,
   - what is a semantics/algorithm difference,
