@@ -9832,6 +9832,87 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_includes_architec
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_source_first_tutorial_explains_plain_language_technique_path()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs source-first tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## Current Technique Path (Plain Language)"),
+        "tla-rs source-first tutorial {} must include a plain-language technique-path section",
+        tutorial_path.display()
+    );
+
+    let technique_section = tutorial_src
+        .split("## Current Technique Path (Plain Language)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Current Technique Path (Plain Language)` section in {}",
+                tutorial_path.display()
+            )
+        });
+    let technique_lower = technique_section.to_ascii_lowercase();
+
+    for step_number in 1..=6 {
+        assert!(
+            technique_section.contains(&format!("{}. **", step_number)),
+            "plain-language technique-path section in {} must include numbered step {}",
+            tutorial_path.display(),
+            step_number
+        );
+    }
+
+    let required_steps = [
+        "source-first execution over rust/verus spec source",
+        "finite-domain evaluation",
+        "direct-solver path vs candidate-enumeration fallback",
+        "exact vs lossy search modes",
+        "branch-label fairness/liveness checks",
+        "checked-in json/report evidence",
+    ];
+    let mut search_from = 0usize;
+    for step in required_steps {
+        let relative_idx = technique_lower[search_from..]
+            .find(step)
+            .unwrap_or_else(|| {
+                panic!(
+                    "plain-language technique-path section in {} must include required concept `{}`",
+                    tutorial_path.display(),
+                    step
+                )
+            });
+        search_from += relative_idx + step.len();
+    }
+
+    for required_anchor in [
+        "run_model_check_command",
+        "eval_expr",
+        "solve_branch_successors_with_candidates_and_telemetry",
+        "classify_search_evidence_mode",
+        "check_leads_to_violations",
+        "reports/model_check/twophase_small.json",
+        "reports/benchmarks/tlc_vs_source_first_benchmark_comparison.md",
+    ] {
+        assert!(
+            technique_lower.contains(required_anchor),
+            "plain-language technique-path section in {} must include anchor `{}`",
+            tutorial_path.display(),
+            required_anchor
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,

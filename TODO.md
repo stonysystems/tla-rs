@@ -10675,7 +10675,7 @@ docs/model-checker-architecture/
   - invariant/deadlock/liveness checking,
   - report generation / telemetry / evidence-mode labeling.
 - [x] **35.4.2** Include at least one diagram showing the current tla-rs architecture and name the concrete local modules responsible for each stage. [26-03-10, 15:40] (added `Current tla-rs Source-First Architecture Diagram` Mermaid pipeline in `docs/model-checker-architecture/tlars-source-first-model-checking.md` with stage-by-stage module/function ownership from ingest through report emission; added integration guard `test_model_checker_architecture_tlars_source_first_tutorial_includes_architecture_diagram_with_modules` to enforce diagram presence, flow edges, stage labels, and concrete module anchors)
-- [ ] **35.4.3** Explain the current technique path in plain language:
+- [x] **35.4.3** Explain the current technique path in plain language: [26-03-10, 15:43] (added `Current Technique Path (Plain Language)` section in `docs/model-checker-architecture/tlars-source-first-model-checking.md` covering source-first execution, finite-domain evaluation, direct-solver vs candidate-enumeration fallback, exact vs lossy search, branch-label fairness/liveness checks, and checked-in JSON/report evidence with local anchors; added integration guard `test_model_checker_architecture_tlars_source_first_tutorial_explains_plain_language_technique_path`)
   - source-first execution over Rust/Verus spec source,
   - finite-domain evaluation,
   - direct-solver path vs candidate-enumeration fallback,
