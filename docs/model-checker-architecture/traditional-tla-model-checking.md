@@ -49,6 +49,15 @@ flowchart TD
     G --> H
 ```
 
+## Repo-Concrete Examples
+To keep this tutorial concrete, map the TLC-style concepts above to the small checked-in model-check workloads used in this repository.
+
+- **Small bounded safety runs**: `transpiler/tests/model_check_fixtures/twophase_small.model.toml`, `primarybackup_small.model.toml`, `leaderelection_small.model.toml`, and `paxos_small.model.toml` correspond to checked-in reports `reports/model_check/twophase_small.json`, `reports/model_check/primarybackup_small.json`, `reports/model_check/leaderelection_small.json`, and `reports/model_check/paxos_small.json`.
+- **Property kinds used here**: these runs focus on safety-style checks (invariants and deadlock checking), with additional checked-in safety-invariant artifacts such as `reports/model_check/twophase_safety_invariants.json` and `reports/model_check/primarybackup_safety_invariants.json`.
+- **Liveness/fairness examples**: `transpiler/tests/model_check_fixtures/liveness_avoidable_cycle_violated.model.toml` vs `liveness_avoidable_cycle_strong_fairness.model.toml` show how liveness outcomes can change once fairness assumptions are enabled; corresponding outputs are in `reports/model_check/liveness_avoidable_cycle_violated.json` and `liveness_avoidable_cycle_strong_fairness.json`.
+
+The same core TLC pipeline applies in all of these cases; what changes is the model/config and the property bundle selected for the run.
+
 ## Explicit-State vs Theorem Proving
 **Explicit-state model checking** means TLC enumerates concrete reachable states in a finite model and checks whether any explored behavior violates the configured properties.
 

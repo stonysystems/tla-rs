@@ -10657,7 +10657,7 @@ docs/model-checker-architecture/
   - state explosion,
   - model/config sensitivity,
   - the difference between "the spec language" and "the checker implementation".
-- [ ] **35.3.6** Keep the tutorial concrete. Avoid generic textbook-only prose; connect the explanation to the kinds of models/properties used in this repo.
+- [x] **35.3.6** Keep the tutorial concrete. Avoid generic textbook-only prose; connect the explanation to the kinds of models/properties used in this repo. [26-03-10, 15:31] (added `Repo-Concrete Examples` section in `docs/model-checker-architecture/traditional-tla-model-checking.md` that ties TLC concepts to checked-in local fixtures/reports for `TwoPhase`, `PrimaryBackup`, `LeaderElection`, `Paxos`, and liveness/fairness cases; added integration guard `test_model_checker_architecture_traditional_tla_tutorial_is_repo_concrete` to enforce protocol/model/report/property anchors)
 
 ### 35.4 Current tla-rs Source-First Model Checker Tutorial
 

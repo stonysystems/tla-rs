@@ -9638,6 +9638,59 @@ fn test_model_checker_architecture_traditional_tla_tutorial_explains_practical_l
 }
 
 #[test]
+fn test_model_checker_architecture_traditional_tla_tutorial_is_repo_concrete() {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional TLC tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## Repo-Concrete Examples"),
+        "traditional TLC tutorial {} must include a repo-concrete examples section",
+        tutorial_path.display()
+    );
+
+    let concrete_section = tutorial_src
+        .split("## Repo-Concrete Examples")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Repo-Concrete Examples` section in {}",
+                tutorial_path.display()
+            )
+        });
+    let concrete_lower = concrete_section.to_ascii_lowercase();
+
+    for required_fragment in [
+        "twophase_small.model.toml",
+        "primarybackup_small.model.toml",
+        "leaderelection_small.model.toml",
+        "paxos_small.model.toml",
+        "reports/model_check/twophase_small.json",
+        "reports/model_check/primarybackup_small.json",
+        "liveness_avoidable_cycle_violated.model.toml",
+        "liveness_avoidable_cycle_strong_fairness.model.toml",
+        "invariant",
+        "deadlock",
+        "liveness",
+        "fairness",
+    ] {
+        assert!(
+            concrete_lower.contains(required_fragment),
+            "repo-concrete section in {} must include `{}`",
+            tutorial_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
