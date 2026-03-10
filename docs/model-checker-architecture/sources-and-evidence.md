@@ -53,6 +53,16 @@ Traditional TLA+/TLC claims follow this precedence:
 | TLC implementation-dependent behavior and architecture wording | `T4`, `T5` | `T2` | Claims that depend on internals must anchor to TLC/SANY source tree. |
 | Explicit-state/finiteness framing in this tutorial | `T1`, `T3`, `T4` | `T2` | Use canonical/official text first, with `T2` as background only. |
 
+## TLC Internals Evidence Exclusions
+For TLC internals/implementation claims:
+- blogs and random discussion threads are not accepted as primary evidence when official/canonical sources exist;
+- any non-canonical source can only be supplemental background and must not be the main support for internals wording;
+- primary support must remain anchored to official docs, canonical book material, or TLC/SANY source code.
+
+Current ledger status:
+- no `traditional_tla_tlc` entry uses blog/discussion-thread sources as primary internals evidence;
+- internals wording is anchored to `T4`/`T5` and backed by canonical sources in the primary-source table above.
+
 ## Claim Confidence Labels
 Cross-engine claims are labeled as:
 - `directly evidenced`

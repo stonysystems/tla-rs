@@ -10622,7 +10622,7 @@ docs/model-checker-architecture/
   - official TLA+/TLC docs,
   - `Specifying Systems` / canonical Lamport material where relevant,
   - TLC source code or official implementation references when architectural detail depends on implementation.
-- [ ] **35.2.4** Do **not** use blogs or random discussion threads as the main evidence for TLC internals if an official/canonical source exists.
+- [x] **35.2.4** Do **not** use blogs or random discussion threads as the main evidence for TLC internals if an official/canonical source exists. [26-03-10, 15:26] (`docs/model-checker-architecture/sources-and-evidence.md` now includes `TLC Internals Evidence Exclusions` policy text that disallows blogs/discussion threads as primary internals evidence; integration guard `test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger` now enforces that any traditional internals/implementation claim is anchored to primary source kinds and that discussion/blog sources (if present) are secondary supplemental only)
 - [ ] **35.2.5** Every substantive tla-rs claim must point to a local file/function/doc artifact in this repo, not just to memory.
 - [ ] **35.2.6** Every cross-engine comparison claim must be marked as one of:
   - `directly evidenced`

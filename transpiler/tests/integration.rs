@@ -8792,6 +8792,7 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
     let mut tracks = std::collections::BTreeSet::new();
     let mut source_kind_by_id = std::collections::BTreeMap::new();
     let mut traditional_kinds = std::collections::BTreeSet::new();
+    let mut traditional_rows_for_policy: Vec<(String, String, String)> = Vec::new();
     let allowed_source_kinds = [
         "official docs",
         "book",
@@ -8887,6 +8888,11 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         source_kind_by_id.insert(row[0].to_string(), source_kind.to_string());
         if track == "traditional_tla_tlc" {
             traditional_kinds.insert(source_kind.to_string());
+            traditional_rows_for_policy.push((
+                row[2].to_string(),
+                source_kind.to_string(),
+                supports_claims.to_string(),
+            ));
             if source_kind == "secondary background" {
                 let supports_lower = supports_claims.to_ascii_lowercase();
                 assert!(
@@ -8923,6 +8929,70 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
             source_kind
         );
     }
+
+    assert!(
+        sources_src.contains("## TLC Internals Evidence Exclusions"),
+        "sources-and-evidence doc must include TLC internals evidence exclusion policy section"
+    );
+    let is_primary_kind = |kind: &str| kind == "official docs" || kind == "book" || kind == "source code";
+    let banned_discussion_or_blog_patterns = [
+        "reddit.com",
+        "stackoverflow.com",
+        "news.ycombinator.com",
+        "groups.google.com",
+        "google groups",
+        "discussion thread",
+        "forum",
+        "medium.com",
+        "substack.com",
+        "blogspot.com",
+    ];
+    let mut found_primary_internals_anchor = false;
+    for (source, source_kind, supports_claims) in &traditional_rows_for_policy {
+        let source_lower = source.to_ascii_lowercase();
+        let supports_lower = supports_claims.to_ascii_lowercase();
+
+        if supports_lower.contains("internal") || supports_lower.contains("implementation") {
+            assert!(
+                is_primary_kind(source_kind),
+                "traditional_tla_tlc internals/implementation claim in {} must be anchored to primary source kind, got source `{}` with kind `{}`",
+                sources_path.display(),
+                source,
+                source_kind
+            );
+            found_primary_internals_anchor = true;
+        }
+
+        if banned_discussion_or_blog_patterns
+            .iter()
+            .any(|pattern| source_lower.contains(pattern))
+        {
+            assert_eq!(
+                source_kind.as_str(),
+                "secondary background",
+                "discussion/blog source `{}` in {} must be marked secondary background, not primary evidence",
+                source,
+                sources_path.display()
+            );
+            assert!(
+                supports_lower.contains("supplemental") || supports_lower.contains("background"),
+                "discussion/blog source `{}` in {} must be explicitly marked supplemental/background in supports claims",
+                source,
+                sources_path.display()
+            );
+            assert!(
+                !supports_lower.contains("internal") && !supports_lower.contains("implementation"),
+                "discussion/blog source `{}` in {} must not be used as main evidence for TLC internals/implementation claims",
+                source,
+                sources_path.display()
+            );
+        }
+    }
+    assert!(
+        found_primary_internals_anchor,
+        "traditional_tla_tlc in {} must include at least one internals/implementation claim anchored to a primary source kind",
+        sources_path.display()
+    );
 
     assert!(
         sources_src.contains("## Traditional TLC Primary-Source Preference"),
