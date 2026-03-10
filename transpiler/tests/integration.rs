@@ -8563,6 +8563,98 @@ fn test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_1_enforces_multi_file_structure_not_single_shallow_doc()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_dir = repo_root.join("docs/model-checker-architecture");
+
+    let required_markdown_files = [
+        "README.md",
+        "traditional-tla-model-checking.md",
+        "tlars-source-first-model-checking.md",
+        "walkthrough.md",
+        "comparison.md",
+        "tlars-only-optimizations.md",
+        "sources-and-evidence.md",
+    ];
+    for rel_path in required_markdown_files {
+        let path = tutorial_dir.join(rel_path);
+        assert!(
+            path.is_file(),
+            "Phase 35.8.1 requires separate tutorial files; missing {}",
+            path.display()
+        );
+    }
+
+    let crosswalk_path = tutorial_dir.join("artifacts/engine-crosswalk.csv");
+    assert!(
+        crosswalk_path.is_file(),
+        "Phase 35.8.1 requires comparison artifact crosswalk {}; missing file",
+        crosswalk_path.display()
+    );
+
+    let markdown_file_count = std::fs::read_dir(&tutorial_dir)
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to list model-checker architecture tutorial dir {}: {}",
+                tutorial_dir.display(),
+                err
+            )
+        })
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .map(|ext| ext == "md")
+                .unwrap_or(false)
+        })
+        .count();
+    assert!(
+        markdown_file_count >= 7,
+        "Phase 35.8.1 requires multi-file structure; found only {} markdown file(s) in {}",
+        markdown_file_count,
+        tutorial_dir.display()
+    );
+
+    let readme_path = tutorial_dir.join("README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    assert!(
+        readme_src.contains("## Anti-Corner-Cutting Structure (Phase 35.8.1)"),
+        "README {} must include explicit Phase 35.8.1 anti-corner-cutting section",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("must not be collapsed into one shallow markdown summary"),
+        "README {} must explicitly prohibit collapsing the deliverable into one shallow markdown file",
+        readme_path.display()
+    );
+
+    for required_reference in [
+        "`traditional-tla-model-checking.md`",
+        "`tlars-source-first-model-checking.md`",
+        "`walkthrough.md`",
+        "`comparison.md`",
+        "`tlars-only-optimizations.md`",
+        "`sources-and-evidence.md`",
+        "`artifacts/engine-crosswalk.csv`",
+    ] {
+        assert!(
+            readme_src.contains(required_reference),
+            "README {} must reference required split deliverable {}",
+            readme_path.display(),
+            required_reference
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
