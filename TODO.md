@@ -10579,7 +10579,7 @@ docs/model-checker-architecture/
   - what "traditional TLA+ model checker" means in this phase (`TLC`, unless another engine is explicitly labeled as side context),
   - recommended reading order,
   - and a short "what you will understand after reading this" section.
-- [ ] **35.1.3** `glossary.md` must define at minimum:
+- [x] **35.1.3** `glossary.md` must define at minimum: [26-03-10, 14:40] (`docs/model-checker-architecture/glossary.md` now has explicit beginner definitions for all required terms: state/transition/state space/property terms, TLA+/SANY/TLC/explicit-state, and source-first/reduction/telemetry vocabulary)
   - `state`, `transition`, `state space`, `invariant`, `safety`, `liveness`, `deadlock`, `fairness`, `counterexample`,
   - `TLA+`, `SANY`, `TLC`, `explicit-state model checking`,
   - `source-first`, `finite-domain expansion`, `successor generation`, `state deduplication`,
