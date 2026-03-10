@@ -668,7 +668,7 @@ MC wrappers add finite domains, explicit message channels, and safety invariants
 
 **Phase 33.4.3 TLC vs source-first benchmark comparison (2026-03-08)**:
 
-Matched TLC and source-first model checking on the same finite models with the same safety invariants. Full comparison: `reports/benchmarks/COMPARISON.md`. Replay: `scripts/run_tlc_benchmarks.sh`, `scripts/run_model_check_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`.
+Matched TLC and source-first model checking on the same finite models with the same safety invariants. Full comparison: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`. Replay: `scripts/run_tlc_benchmarks.sh`, `scripts/run_model_check_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`.
 
 | Protocol | Source-first | TLC (distinct states / wall) | Model |
 |----------|-------------|------------------------------|-------|

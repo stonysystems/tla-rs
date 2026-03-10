@@ -320,7 +320,7 @@ Exception rows (approved exactness-changing fixes):
 
 ### 4.4 TLC vs source-first benchmark comparison (Phase 33.4.3 / 33.5.4)
 
-For each of the four shared protocols, the table below lists both the minimal **smoke fixture** (fast regression, `max_depth=1`, `max_states=200`) and the **long-run benchmark fixture** (convincing evidence, matched TLC comparison). Full side-by-side report: `reports/benchmarks/COMPARISON.md`.
+For each of the four shared protocols, the table below lists both the minimal **smoke fixture** (fast regression, `max_depth=1`, `max_states=200`) and the **long-run benchmark fixture** (convincing evidence, matched TLC comparison). Full side-by-side report: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`.
 
 | Protocol | Smoke fixture | Benchmark fixture | Source-first result | TLC result | TLC distinct states | TLC wall (s) |
 | --- | --- | --- | --- | --- | --- | --- |

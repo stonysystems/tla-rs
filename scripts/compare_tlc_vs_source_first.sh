@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SF_DIR="${SF_DIR:-$PROJECT_ROOT/reports/benchmarks/source_first}"
 TLC_DIR="${TLC_DIR:-$PROJECT_ROOT/reports/benchmarks/tlc}"
-OUTPUT="${OUTPUT:-$PROJECT_ROOT/reports/benchmarks/COMPARISON.md}"
+OUTPUT="${OUTPUT:-$PROJECT_ROOT/reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md}"
 PROTOCOLS="${PROTOCOLS:-twophase primarybackup leaderelection paxos}"
 
 mkdir -p "$(dirname "$OUTPUT")"
@@ -77,16 +77,24 @@ parse_row() {
     fi
     echo ""
 
+    echo "## Column Meanings"
+    echo ""
+    echo "- \`States (gen)\`: total states generated before deduplication. For TLC this includes revisits."
+    echo "- \`Distinct\`: unique states after the engine's deduplication/fingerprinting step."
+    echo "- \`Depth\`: maximum search depth reached in the run."
+    echo "- \`Wall (s)\`: wall-clock elapsed time in seconds."
+    echo "- For source-first, \`States (gen)\` is currently reported as \`—\` because the checked-in benchmark summaries expose deduplicated explored states, not a separate generated-state counter."
+    echo ""
     echo "## Side-by-side Results"
     echo ""
-    echo "| Protocol | Engine | Result | States | Distinct | Depth | Wall (s) |"
-    echo "|----------|--------|--------|--------|----------|-------|----------|"
+    echo "| Protocol | Engine | Result | States (gen) | Distinct | Depth | Wall (s) |"
+    echo "|----------|--------|--------|--------------|----------|-------|----------|"
 
     for proto in $PROTOCOLS; do
         IFS='|' read -r sf_result sf_states sf_distinct sf_depth sf_wall <<< "$(parse_row "$sf_summary" "$proto")"
         IFS='|' read -r tlc_result tlc_states tlc_distinct tlc_depth tlc_wall <<< "$(parse_row "$tlc_summary" "$proto")"
 
-        echo "| $proto | source-first | $sf_result | $sf_states | $sf_distinct | $sf_depth | $sf_wall |"
+        echo "| $proto | source-first | $sf_result | — | $sf_distinct | $sf_depth | $sf_wall |"
         echo "| | TLC | $tlc_result | $tlc_states | $tlc_distinct | $tlc_depth | $tlc_wall |"
     done
 

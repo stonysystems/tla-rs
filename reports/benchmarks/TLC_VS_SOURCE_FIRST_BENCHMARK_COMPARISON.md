@@ -6,6 +6,14 @@ Git rev: fd8967f
 Source-first run: 2026-03-08 (from checked-in artifacts)
 TLC run: 2026-03-08 16:15-16:25 UTC
 
+## Column Meanings
+
+- `States (gen)`: total states generated before deduplication. For TLC this includes revisited states.
+- `Distinct`: unique states after deduplication/fingerprinting.
+- `Depth`: maximum search depth reached in the run.
+- `Wall (s)`: wall-clock elapsed time in seconds.
+- For source-first, `States (gen)` is shown as `—` because the checked-in source-first benchmark artifacts currently expose deduplicated explored states (`summary.states`), not a separate generated-state counter.
+
 ## Side-by-side Results
 
 Both engines use the same modeled constants/domains per protocol. TLC uses 1 worker on 64-core machine. Source-first uses single-threaded BFS with exact canonical dedup.
