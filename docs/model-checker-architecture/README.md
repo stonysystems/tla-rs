@@ -133,3 +133,11 @@ Required uncertainty wording discipline:
 
 Guardrail:
 - do not upgrade uncertain claims to confirmed claims for narrative completeness.
+
+## Documentation-Only Deliverable Rule (Phase 35.8.9)
+No implementation code changes are required to satisfy this phase.
+
+Deliverable boundary:
+- the phase output is the documentation set under `docs/model-checker-architecture/` (including `artifacts/`);
+- phase completion is judged on tutorial/comparison/evidence quality in those docs, not on model-checker implementation edits;
+- implementation work belongs to later model-checker phases (for example Phase 33), not this documentation phase.

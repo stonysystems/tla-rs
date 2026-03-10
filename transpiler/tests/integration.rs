@@ -9201,6 +9201,78 @@ fn test_model_checker_architecture_phase_35_8_8_requires_explicit_uncertainty_wo
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_9_keeps_phase_deliverable_documentation_only() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    assert!(
+        readme_src.contains("## Documentation-Only Deliverable Rule (Phase 35.8.9)"),
+        "README {} must include explicit Phase 35.8.9 docs-only deliverable section",
+        readme_path.display()
+    );
+    for required_fragment in [
+        "No implementation code changes are required to satisfy this phase",
+        "the phase output is the documentation set under `docs/model-checker-architecture/`",
+        "implementation work belongs to later model-checker phases",
+    ] {
+        assert!(
+            readme_src.contains(required_fragment),
+            "Phase 35.8.9 section in {} must include required docs-only boundary fragment `{}`",
+            readme_path.display(),
+            required_fragment
+        );
+    }
+
+    let checklist_path =
+        repo_root.join("docs/model-checker-architecture/artifacts/review-checklist.md");
+    let checklist_src = std::fs::read_to_string(&checklist_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read review checklist {}: {}",
+            checklist_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "Deliverable footprint remains under `docs/model-checker-architecture/`",
+        "No code changes required for this phase deliverable.",
+    ] {
+        assert!(
+            checklist_src.contains(required_fragment),
+            "review checklist {} must include Phase 35.8.9 final-gate fragment `{}`",
+            checklist_path.display(),
+            required_fragment
+        );
+    }
+
+    for required_doc in [
+        "README.md",
+        "glossary.md",
+        "traditional-tla-model-checking.md",
+        "tlars-source-first-model-checking.md",
+        "walkthrough.md",
+        "comparison.md",
+        "tlars-only-optimizations.md",
+        "sources-and-evidence.md",
+    ] {
+        let path = repo_root
+            .join("docs/model-checker-architecture")
+            .join(required_doc);
+        assert!(
+            path.exists(),
+            "Phase 35.8.9 docs-only deliverable boundary requires {} to exist under docs/model-checker-architecture/",
+            path.display()
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

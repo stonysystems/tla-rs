@@ -17,4 +17,5 @@
 
 ## Final Gate
 - No unsupported "TLC does not use X" statements.
+- Deliverable footprint remains under `docs/model-checker-architecture/` (tutorial docs + artifacts).
 - No code changes required for this phase deliverable.
