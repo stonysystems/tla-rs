@@ -9237,6 +9237,167 @@ fn test_model_checker_architecture_tlars_only_optimizations_confirmed_section_re
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_3_audits_all_required_candidates(
+) {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let audit_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let audit_src = std::fs::read_to_string(&audit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs optimizations audit doc {}: {}",
+            audit_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        !audit_src.contains("| pending audit |"),
+        "Phase 35.7.3 audit in {} must replace placeholder pending-audit rows",
+        audit_path.display()
+    );
+
+    let possible_section = audit_src
+        .split("## Possibly different but not yet confirmed")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("## Not an optimization; only a feature/reporting difference")
+                .next()
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate uncertain-candidates section in {}",
+                audit_path.display()
+            )
+        });
+    let markdown_rows: Vec<Vec<String>> = possible_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        markdown_rows.len() >= 8,
+        "Phase 35.7.3 uncertain-candidates matrix in {} must include header, separator, and six audited candidates",
+        audit_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&markdown_rows[1]),
+        "Phase 35.7.3 matrix in {} must include markdown separator row after header",
+        audit_path.display()
+    );
+
+    let header = &markdown_rows[0];
+    let required_columns = [
+        "Candidate",
+        "Audit Decision (35.7.3)",
+        "Current Classification",
+        "tla-rs Evidence Anchor",
+        "Reviewed TLC Evidence",
+        "Why This Decision / Remaining Gap",
+        "Current Confidence",
+    ];
+    for required in required_columns {
+        assert!(
+            header.iter().any(|cell| cell == required),
+            "Phase 35.7.3 matrix header in {} must include required column `{}`",
+            audit_path.display(),
+            required
+        );
+    }
+    let candidate_idx = header
+        .iter()
+        .position(|cell| cell == "Candidate")
+        .expect("candidate column required by previous assertion");
+    let decision_idx = header
+        .iter()
+        .position(|cell| cell == "Audit Decision (35.7.3)")
+        .expect("decision column required by previous assertion");
+    let confidence_idx = header
+        .iter()
+        .position(|cell| cell == "Current Confidence")
+        .expect("confidence column required by previous assertion");
+    let header_len = header.len();
+
+    let data_rows: Vec<&Vec<String>> = markdown_rows
+        .iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .collect();
+    assert!(
+        data_rows.len() >= 6,
+        "Phase 35.7.3 matrix in {} must include at least six data rows",
+        audit_path.display()
+    );
+
+    let required_candidates = [
+        "Run-scoped successor memoization used during liveness graph indexing",
+        "Direct helper-branch solving vs enumeration fallback split",
+        "Static-guard pruning before candidate enumeration",
+        "`por_heuristic = \"invisible_branch\"`",
+        "`symmetry_fields` normalization",
+        "`hash_compaction64` exactness/lossiness labeling",
+    ];
+    for required_candidate in required_candidates {
+        let row = data_rows.iter().find(|row| row[candidate_idx] == required_candidate);
+        assert!(
+            row.is_some(),
+            "Phase 35.7.3 matrix in {} must explicitly audit candidate `{}`",
+            audit_path.display(),
+            required_candidate
+        );
+    }
+
+    for row in data_rows {
+        assert_eq!(
+            row.len(),
+            header_len,
+            "Phase 35.7.3 row in {} has unexpected column count: {:?}",
+            audit_path.display(),
+            row
+        );
+        assert!(
+            row[decision_idx].contains("Reject")
+                || row[decision_idx].contains("Include")
+                || row[decision_idx].contains("split classification"),
+            "Phase 35.7.3 candidate row in {} must record an explicit include/reject decision: {:?}",
+            audit_path.display(),
+            row
+        );
+        assert!(
+            !row[confidence_idx].trim().is_empty(),
+            "Phase 35.7.3 candidate row in {} must include current confidence: {:?}",
+            audit_path.display(),
+            row
+        );
+    }
+
+    assert!(
+        audit_src.contains("## Candidate audit closure (Phase 35.7.3)"),
+        "optimizations audit doc {} must include explicit Phase 35.7.3 closure note",
+        audit_path.display()
+    );
+    assert!(
+        audit_src.contains("All six required candidate items were explicitly audited"),
+        "optimizations audit doc {} must state that all required Phase 35.7.3 candidates were audited",
+        audit_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");

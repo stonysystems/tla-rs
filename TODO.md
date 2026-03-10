@@ -10760,7 +10760,7 @@ docs/model-checker-architecture/
   - TLC evidence used for the "not found / not used" comparison,
   - confidence level,
   - and a short example of its effect (from checked-in telemetry/artifacts if available).
-- [ ] **35.7.3** Candidate items that must be explicitly audited before inclusion or rejection:
+- [x] **35.7.3** Candidate items that must be explicitly audited before inclusion or rejection: [26-03-10, 16:30] (`docs/model-checker-architecture/tlars-only-optimizations.md` now replaces placeholder candidate rows with an explicit six-item audit matrix, recording include/reject decisions, local tla-rs anchors, reviewed TLC evidence IDs, decision rationale/gaps, and confidence labels; added integration guard `test_model_checker_architecture_tlars_only_optimizations_phase_35_7_3_audits_all_required_candidates` to enforce full candidate coverage and explicit decision fields)
   - run-scoped successor memoization used during liveness graph indexing,
   - direct helper-branch solving vs enumeration fallback split,
   - static-guard pruning before candidate enumeration,

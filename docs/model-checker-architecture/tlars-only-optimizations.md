@@ -22,21 +22,22 @@ Per-item required fields for this section are fixed by Phase 35.7.2.
 ## Possibly different but not yet confirmed
 Use this section when there is a plausible difference but the TLC-side comparison is not fully confirmed.
 
-| Candidate | Why Not Yet Confirmed | Evidence Needed To Promote | Current Confidence |
-| --- | --- | --- | --- |
-| pending audit | Cross-engine evidence is still being collected. | Direct reviewed TLC source/docs evidence for the exact mechanism and behavior match/mismatch. | `uncertain / not confirmed` |
+| Candidate | Audit Decision (35.7.3) | Current Classification | tla-rs Evidence Anchor | Reviewed TLC Evidence | Why This Decision / Remaining Gap | Current Confidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| Run-scoped successor memoization used during liveness graph indexing | Reject for confirmed-now; include in this uncertain bucket | plausible optimization difference; not confirmed tla-rs-only | `transpiler/src/main.rs` (`successor_cache` in `execute_model_check`), `docs/model_checker_status.md` (3.15 + telemetry keys) | `docs/model-checker-architecture/sources-and-evidence.md` IDs `T3`, `T4`, `T5` | Local mechanism is clear and artifact-backed, but reviewed TLC-side evidence has not yet established mechanism-level equivalence or absence for this exact cache pattern. | `uncertain / not confirmed` |
+| Direct helper-branch solving vs enumeration fallback split | Reject for confirmed-now; include in this uncertain bucket | plausible optimization difference; not confirmed tla-rs-only | `transpiler/src/modelcheck/solver.rs` (`solve_branch_successors_with_candidates_and_telemetry`), `docs/model_checker_status.md` (3.13/3.14) | `docs/model-checker-architecture/sources-and-evidence.md` IDs `T3`, `T4`, `T5` | Source-first direct-solver/fallback split is explicit and tested, but TLC-side implementation mapping for this exact split is not yet pinned to a reviewed anchor. | `uncertain / not confirmed` |
+| Static-guard pruning before candidate enumeration | Reject for confirmed-now; include in this uncertain bucket | plausible optimization difference; not confirmed tla-rs-only | `transpiler/src/modelcheck/solver.rs` (`guard_pruned_candidate_evaluations`), `docs/model_checker_status.md` (3.14 telemetry guard test) | `docs/model-checker-architecture/sources-and-evidence.md` IDs `T3`, `T4`, `T5` | We can show local pruning and telemetry, but we have not yet established whether reviewed TLC internals do or do not apply an equivalent pruning stage in comparable paths. | `uncertain / not confirmed` |
+| `por_heuristic = "invisible_branch"` | Reject for confirmed-now; include in this uncertain bucket | plausible optimization difference; not confirmed tla-rs-only | `transpiler/src/modelcheck/por.rs` (`infer_invisible_branch_pruning`), `docs/model-checking-source-first.md` (POR option + safety caveat) | `docs/model-checker-architecture/sources-and-evidence.md` IDs `T3`, `T4`, `T5` | The local heuristic is explicit and conservative, but this audit has not yet produced reviewed TLC-source evidence strong enough to claim unique absence/presence at mechanism level. | `uncertain / not confirmed` |
+| `symmetry_fields` normalization | Reject for confirmed-now; include in this uncertain bucket | plausible optimization difference; not confirmed tla-rs-only | `transpiler/src/modelcheck/explorer.rs` (`canonical_dedup_key` with symmetry-field normalization), `transpiler/src/modelcheck/config.rs` (`symmetry_fields`) | `docs/model-checker-architecture/sources-and-evidence.md` IDs `T3`, `T4`, `T5` | Local normalization is clear, but cross-engine comparison depth is still insufficient to classify this mechanism as definitely unique or definitely shared. | `uncertain / not confirmed` |
+| `hash_compaction64` exactness/lossiness labeling | Reject from optimization-confirmed set; split classification | split: optimization candidate (`hash_compaction64` dedup) + reporting-surface difference (exactness/lossiness labeling) | `transpiler/src/modelcheck/config.rs` (`StateDedupMode::HashCompaction64`), `transpiler/src/main.rs` (`classify_search_evidence_mode`) | `docs/model-checker-architecture/sources-and-evidence.md` IDs `T3`, `T4`, `T5` | The dedup mode is a reduction candidate, but the labeling surface itself is reporting UX and belongs in the non-optimization table until cross-engine equivalence claims are directly evidenced. | `uncertain / not confirmed` |
 
 ## Not an optimization; only a feature/reporting difference
 Use this section for differences that are not cost-reduction mechanisms.
 
 | Difference | Why It Is Not an Optimization | Anchor |
 | --- | --- | --- |
-| pending classification | Reserve this section for UX/reporting/feature differences that should not be counted as optimizations. | `docs/model-checker-architecture/comparison.md` |
+| Exactness/lossiness evidence-mode labeling (including `hash_compaction64` run labeling) | Labels explain result trust level; they do not themselves reduce search/runtime/memory cost. | `transpiler/src/main.rs` (`classify_search_evidence_mode`), `docs/model-checker-architecture/comparison.md`, `docs/model-checking-source-first.md` |
 
-## Candidate items to audit
-- Run-scoped successor memoization.
-- Direct solving vs enumeration fallback split.
-- Static guard pruning before enumeration.
-- Invisible-branch POR heuristic.
-- Symmetry-field normalization.
-- Hash compaction exactness labeling.
+## Candidate audit closure (Phase 35.7.3)
+All six required candidate items were explicitly audited in the table above.
+None is promoted to "confirmed tla-rs-only" yet; each remains confidence-labeled until mechanism-level TLC-side evidence is stronger.
