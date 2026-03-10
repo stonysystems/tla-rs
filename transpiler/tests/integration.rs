@@ -10473,6 +10473,166 @@ fn test_model_checker_architecture_phase_35_10_4_comparison_explicitly_answers_s
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_10_5_optimization_audit_is_disciplined_and_avoids_tlc_overclaiming(
+) {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let audit_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
+
+    let audit_src = std::fs::read_to_string(&audit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read optimization audit doc {}: {}",
+            audit_path.display(),
+            err
+        )
+    });
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+    let sources_src = std::fs::read_to_string(&sources_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read sources-and-evidence doc {}: {}",
+            sources_path.display(),
+            err
+        )
+    });
+
+    for required_heading in [
+        "## Confirmed tla-rs-only in reviewed comparison",
+        "## Possibly different but not yet confirmed",
+        "## Not an optimization; only a feature/reporting difference",
+        "## Anti-force classification rule (Phase 35.7.4)",
+        "## Plain zero-confirmed outcome (Phase 35.7.5)",
+        "## Disciplined audit + anti-overclaim note (Phase 35.10.5)",
+    ] {
+        assert!(
+            audit_src.contains(required_heading),
+            "optimization audit doc {} must include `{}` for disciplined Phase 35.10.5 coverage",
+            audit_path.display(),
+            required_heading
+        );
+    }
+
+    let forbidden_overclaim_snippets = ["TLC does not use", "TLC never uses", "TLC always uses"];
+    for forbidden in forbidden_overclaim_snippets {
+        assert!(
+            !audit_src.contains(forbidden),
+            "optimization audit doc {} must avoid unsupported strong TLC claim `{}`",
+            audit_path.display(),
+            forbidden
+        );
+        assert!(
+            !comparison_src.contains(forbidden),
+            "comparison doc {} must avoid unsupported strong TLC claim `{}`",
+            comparison_path.display(),
+            forbidden
+        );
+    }
+
+    assert!(
+        sources_src.contains("## TLC Absence-Claim Wording Rule")
+            && sources_src.contains("No equivalent mechanism was found in the reviewed TLC sources"),
+        "sources-and-evidence doc {} must keep explicit weaker-form TLC absence wording rule",
+        sources_path.display()
+    );
+
+    let possible_section = audit_src
+        .split("## Possibly different but not yet confirmed")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("## Not an optimization; only a feature/reporting difference")
+                .next()
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate uncertain candidate section in {}",
+                audit_path.display()
+            )
+        });
+    let rows: Vec<Vec<String>> = possible_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        rows.len() >= 8,
+        "uncertain candidate table in {} must include header separator and six audited rows",
+        audit_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&rows[1]),
+        "uncertain candidate table in {} must include markdown separator row after header",
+        audit_path.display()
+    );
+
+    let header = &rows[0];
+    let reviewed_tlc_idx = header
+        .iter()
+        .position(|cell| cell == "Reviewed TLC Evidence")
+        .unwrap_or_else(|| {
+            panic!(
+                "uncertain candidate table in {} must include `Reviewed TLC Evidence` column",
+                audit_path.display()
+            )
+        });
+    let confidence_idx = header
+        .iter()
+        .position(|cell| cell == "Current Confidence")
+        .unwrap_or_else(|| {
+            panic!(
+                "uncertain candidate table in {} must include `Current Confidence` column",
+                audit_path.display()
+            )
+        });
+
+    let data_rows: Vec<&Vec<String>> = rows
+        .iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .collect();
+    assert!(
+        data_rows.len() >= 6,
+        "uncertain candidate table in {} must keep all six required candidate rows",
+        audit_path.display()
+    );
+    for row in data_rows {
+        assert!(
+            row[reviewed_tlc_idx].contains("T"),
+            "uncertain candidate row in {} must cite reviewed TLC evidence IDs: {:?}",
+            audit_path.display(),
+            row
+        );
+        assert!(
+            row[confidence_idx].contains("uncertain / not confirmed"),
+            "uncertain candidate row in {} must stay explicitly uncertainty-labeled: {:?}",
+            audit_path.display(),
+            row
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

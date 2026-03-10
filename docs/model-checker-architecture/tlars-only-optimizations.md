@@ -58,3 +58,8 @@ Current result after candidate-by-candidate review:
 ## Plain zero-confirmed outcome (Phase 35.7.5)
 Current comparison outcome: **zero fully confirmed tla-rs-only optimizations**.
 This report keeps that result explicit instead of stretching uncertain evidence into confirmed claims.
+
+## Disciplined audit + anti-overclaim note (Phase 35.10.5)
+- This audit keeps optimization claims in explicit confidence buckets and does not collapse uncertain candidates into confirmed results.
+- TLC-side comparison cells stay tied to reviewed TLC source IDs (`T*` in `sources-and-evidence.md`) instead of unsupported mechanism-level assertions.
+- Strong unsupported TLC-absence wording is intentionally avoided; if evidence is incomplete, claims stay confidence-labeled as `uncertain / not confirmed`.
