@@ -100,3 +100,14 @@ Per-file ownership in this tutorial set:
 
 Guardrail:
 - If one statement mixes more than one category, split it into separate statements with separate evidence anchors.
+
+## Comparison Baseline Rule (Phase 35.8.6)
+Do not compare tla-rs to an idealized notion of "TLA+".
+
+Comparison baseline for this phase:
+- compare against the reviewed traditional model-checking path inspected in this tutorial, primarily the TLC path (`TLA+` module + model/config + `SANY`/`TLC` execution flow);
+- keep language-level TLA+ semantics separate from checker-implementation claims.
+
+When other tools are mentioned:
+- label them explicitly as side context, not as the main comparison baseline;
+- do not merge side-context tool claims into the TLC-baseline rows in `comparison.md`.

@@ -2,6 +2,8 @@
 
 ## Comparison Method
 This document compares the reviewed traditional TLC path and the current tla-rs source-first implementation.
+Baseline discipline for Phase 35.8.6: this is a comparison against the inspected traditional model-checking path (primarily TLC), not against an idealized notion of the TLA+ language.
+If another tool is mentioned, it is labeled as side context and kept separate from the TLC-baseline comparison rows.
 For Phase 35.1.5, this file intentionally uses the same table schema and concern-row order as
 `artifacts/engine-crosswalk.csv` so the two artifacts can be kept in lockstep.
 

@@ -8987,6 +8987,59 @@ fn test_model_checker_architecture_phase_35_8_5_separates_optimization_feature_l
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_6_compares_against_reviewed_tlc_path_not_idealized_tla_plus(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    assert!(
+        readme_src.contains("## Comparison Baseline Rule (Phase 35.8.6)"),
+        "README {} must include explicit Phase 35.8.6 baseline-discipline section",
+        readme_path.display()
+    );
+    for required_fragment in [
+        "Do not compare tla-rs to an idealized notion of \"TLA+\"",
+        "primarily the TLC path",
+        "label them explicitly as side context",
+    ] {
+        assert!(
+            readme_src.contains(required_fragment),
+            "Phase 35.8.6 section in {} must include required rule fragment `{}`",
+            readme_path.display(),
+            required_fragment
+        );
+    }
+
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "comparison against the inspected traditional model-checking path (primarily TLC)",
+        "not against an idealized notion of the TLA+ language",
+        "labeled as side context",
+    ] {
+        assert!(
+            comparison_src.contains(required_fragment),
+            "comparison doc {} must include Phase 35.8.6 baseline fragment `{}`",
+            comparison_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
