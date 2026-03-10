@@ -9398,6 +9398,157 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_3_audits_
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_not_force_all_candidates_into_confirmed_bucket(
+) {
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let audit_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let audit_src = std::fs::read_to_string(&audit_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs optimizations audit doc {}: {}",
+            audit_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        audit_src.contains("## Anti-force classification rule (Phase 35.7.4)"),
+        "optimizations audit doc {} must include explicit Phase 35.7.4 anti-force section",
+        audit_path.display()
+    );
+    assert!(
+        audit_src.contains("does not force every candidate into `confirmed tla-rs-only`"),
+        "Phase 35.7.4 section in {} must explicitly state that the audit does not force all candidates into confirmed tla-rs-only",
+        audit_path.display()
+    );
+
+    let required_candidates = [
+        "Run-scoped successor memoization used during liveness graph indexing",
+        "Direct helper-branch solving vs enumeration fallback split",
+        "Static-guard pruning before candidate enumeration",
+        "`por_heuristic = \"invisible_branch\"`",
+        "`symmetry_fields` normalization",
+        "`hash_compaction64` exactness/lossiness labeling",
+    ];
+
+    let confirmed_section = audit_src
+        .split("## Confirmed tla-rs-only in reviewed comparison")
+        .nth(1)
+        .and_then(|tail| tail.split("## Possibly different but not yet confirmed").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate confirmed-optimizations section in {}",
+                audit_path.display()
+            )
+        });
+    assert!(
+        confirmed_section.to_ascii_lowercase().contains("no item is fully confirmed yet"),
+        "confirmed section in {} must still state plainly when no item is confirmed",
+        audit_path.display()
+    );
+    for candidate in required_candidates {
+        assert!(
+            !confirmed_section.contains(candidate),
+            "Phase 35.7.4 audit in {} must not auto-promote candidate `{}` into confirmed section",
+            audit_path.display(),
+            candidate
+        );
+    }
+
+    let possible_section = audit_src
+        .split("## Possibly different but not yet confirmed")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("## Not an optimization; only a feature/reporting difference")
+                .next()
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate uncertain-candidates section in {}",
+                audit_path.display()
+            )
+        });
+
+    let markdown_rows: Vec<Vec<String>> = possible_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        markdown_rows.len() >= 8,
+        "uncertain-candidates matrix in {} must include six candidate rows",
+        audit_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&markdown_rows[1]),
+        "uncertain-candidates matrix in {} must include markdown separator row after header",
+        audit_path.display()
+    );
+
+    let header = &markdown_rows[0];
+    let candidate_idx = header
+        .iter()
+        .position(|cell| cell == "Candidate")
+        .unwrap_or_else(|| panic!("matrix in {} must include `Candidate` column", audit_path.display()));
+    let classification_idx = header
+        .iter()
+        .position(|cell| cell == "Current Classification")
+        .unwrap_or_else(|| {
+            panic!(
+                "matrix in {} must include `Current Classification` column",
+                audit_path.display()
+            )
+        });
+
+    let data_rows: Vec<&Vec<String>> = markdown_rows
+        .iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .collect();
+    for candidate in [
+        "Run-scoped successor memoization used during liveness graph indexing",
+        "Direct helper-branch solving vs enumeration fallback split",
+        "Static-guard pruning before candidate enumeration",
+        "`por_heuristic = \"invisible_branch\"`",
+        "`symmetry_fields` normalization",
+        "`hash_compaction64` exactness/lossiness labeling",
+    ] {
+        let row = data_rows
+            .iter()
+            .find(|row| row[candidate_idx] == candidate)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Phase 35.7.4 audit in {} must include candidate row `{}`",
+                    audit_path.display(),
+                    candidate
+                )
+            });
+        let classification = row[classification_idx].to_ascii_lowercase();
+        assert!(
+            !classification.trim_start().starts_with("confirmed tla-rs-only"),
+            "Phase 35.7.4 audit in {} must not force `{}` into confirmed classification",
+            audit_path.display(),
+            candidate
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");

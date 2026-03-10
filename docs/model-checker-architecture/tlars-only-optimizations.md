@@ -41,3 +41,10 @@ Use this section for differences that are not cost-reduction mechanisms.
 ## Candidate audit closure (Phase 35.7.3)
 All six required candidate items were explicitly audited in the table above.
 None is promoted to "confirmed tla-rs-only" yet; each remains confidence-labeled until mechanism-level TLC-side evidence is stronger.
+
+## Anti-force classification rule (Phase 35.7.4)
+This audit does not force every candidate into `confirmed tla-rs-only`.
+Current result after candidate-by-candidate review:
+- `0/6` candidates are in the confirmed section.
+- `5/6` remain plausible optimization differences but not yet confirmed.
+- `1/6` (`hash_compaction64` exactness/lossiness labeling) is explicitly split so the labeling surface is treated as reporting/UX rather than an optimization claim.

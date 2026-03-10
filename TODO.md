@@ -10767,7 +10767,7 @@ docs/model-checker-architecture/
   - `por_heuristic = "invisible_branch"`,
   - `symmetry_fields` normalization,
   - `hash_compaction64` exactness/lossiness labeling.
-- [ ] **35.7.4** Do **not** automatically classify every item above as tla-rs-only. The task is to audit them, not to force the answer.
+- [x] **35.7.4** Do **not** automatically classify every item above as tla-rs-only. The task is to audit them, not to force the answer. [26-03-10, 16:33] (`docs/model-checker-architecture/tlars-only-optimizations.md` now has explicit `Anti-force classification rule (Phase 35.7.4)` language and a concrete 0/6 confirmed outcome summary so the audit stays evidence-driven rather than forced; added integration guard `test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_not_force_all_candidates_into_confirmed_bucket` to ensure none of the six required candidates is auto-promoted into the confirmed section)
 - [ ] **35.7.5** If the comparison produces zero fully confirmed tla-rs-only optimizations, state that plainly rather than stretching evidence.
 
 ### 35.8 Anti-Corner-Cutting Rules (Important)
