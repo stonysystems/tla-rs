@@ -73,7 +73,30 @@ This walkthrough uses one shared small protocol/model for both engines: `TwoPhas
    - Anchor: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`
 
 ## Step-by-Step State Transition
-The successor in step 3 (`TMSendPrepare` / `LTMSendPrepare`) is the concrete transition example used throughout this walkthrough.
+### Concrete Example: `TMSendPrepare` / `LTMSendPrepare`
+This walkthrough uses one explicit transition instance so the explanation is not only command-level or pipeline-level prose.
+
+**Pre-state snapshot (before successor step)**
+- `tm_state = Init`
+- `tm_prepared = {}`
+- `rm_prepared = {}`
+- `rm_committed = {}`
+- `rm_aborted = {}`
+- message set / emitted packets are empty at this point (`msgs = {}` on TLC side)
+- model constants use two RMs in this benchmark (`RMs == {0, 1}`)
+
+**Transition applied**
+- Source-first branch: `LTMSendPrepare` under `LNext`
+- TLC wrapper action: `TMSendPrepare` under `StateNext`
+
+**Post-state snapshot (after successor step)**
+- Core protocol state remains unchanged (`tm_state`, `tm_prepared`, `rm_*` sets are the same as pre-state)
+- Source-first emitted packets: `sent_packets == [Prepare]`
+- TLC message channel update: `msgs' = msgs \\cup {PrepareMsg}`
+
+This is intentionally small, but it is a real state transition example with explicit pre-state, transition, and post-state.
+- Anchor: `src/protocol/TwoPhase/twophase.rs` (`LTMSendPrepare`, `LNext`)
+- Anchor: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.tla` (`TMSendPrepare`, `StateNext`, `RMs`)
 
 ## Parallel Track A: Traditional TLC Terms
 ### How this looks in traditional TLA+/TLC terms

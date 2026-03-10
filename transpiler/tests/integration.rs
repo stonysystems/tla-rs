@@ -10329,6 +10329,73 @@ fn test_model_checker_architecture_walkthrough_has_parallel_tlc_and_source_first
 }
 
 #[test]
+fn test_model_checker_architecture_walkthrough_includes_concrete_state_transition_example() {
+    let repo_root = resolve_repo_root_for_integration();
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture walkthrough {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        walkthrough_src.contains("## Step-by-Step State Transition"),
+        "walkthrough {} must include a dedicated state-transition section",
+        walkthrough_path.display()
+    );
+
+    let transition_section = walkthrough_src
+        .split("## Step-by-Step State Transition")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Step-by-Step State Transition` section in {}",
+                walkthrough_path.display()
+            )
+        });
+    let transition_lower = transition_section.to_ascii_lowercase();
+
+    for required_fragment in [
+        "concrete example: `tmsendprepare` / `ltmsendprepare`",
+        "pre-state snapshot (before successor step)",
+        "post-state snapshot (after successor step)",
+        "transition applied",
+        "tm_state = init",
+        "tm_prepared = {}",
+        "rm_prepared = {}",
+        "rm_committed = {}",
+        "rm_aborted = {}",
+        "rms == {0, 1}",
+        "source-first emitted packets: `sent_packets == [prepare]`",
+        "tlc message channel update: `msgs' = msgs \\\\cup {preparemsg}`",
+    ] {
+        assert!(
+            transition_lower.contains(required_fragment),
+            "state-transition section in {} must include `{}`",
+            walkthrough_path.display(),
+            required_fragment
+        );
+    }
+
+    for required_anchor in [
+        "src/protocol/twophase/twophase.rs",
+        "twophase_benchmark_mc.tla",
+        "statenext",
+        "lnext",
+    ] {
+        assert!(
+            transition_lower.contains(required_anchor),
+            "state-transition section in {} must include anchor/detail `{}`",
+            walkthrough_path.display(),
+            required_anchor
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
