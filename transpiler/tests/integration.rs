@@ -10082,6 +10082,101 @@ fn test_model_checker_architecture_phase_35_9_tutorial_is_readable_for_newcomers
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_10_1_beginner_can_follow_readme_path() {
+    let repo_root = resolve_repo_root_for_integration();
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        readme_src.contains("## Audience")
+            && readme_src.contains("zero prior model-checking background"),
+        "README {} must explicitly target beginners for Phase 35.10.1",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("## Reading Order"),
+        "README {} must include an explicit reading-order path for Phase 35.10.1",
+        readme_path.display()
+    );
+    assert!(
+        readme_src.contains("## What You Will Understand After Reading"),
+        "README {} must include expected outcomes so beginners know what they will learn",
+        readme_path.display()
+    );
+    let takeaway_count = readme_src
+        .split("## What You Will Understand After Reading")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or("")
+        .lines()
+        .filter(|line| line.trim_start().starts_with("- "))
+        .count();
+    assert!(
+        takeaway_count >= 4,
+        "README {} should provide at least 4 concrete newcomer takeaways; found {}",
+        readme_path.display(),
+        takeaway_count
+    );
+
+    let reading_order_section = readme_src
+        .split("## Reading Order")
+        .nth(1)
+        .and_then(|tail| tail.split("## What You Will Understand After Reading").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate reading-order section in {}",
+                readme_path.display()
+            )
+        });
+
+    let ordered_entries = [
+        (1, "glossary.md"),
+        (2, "traditional-tla-model-checking.md"),
+        (3, "tlars-source-first-model-checking.md"),
+        (4, "walkthrough.md"),
+        (5, "comparison.md"),
+        (6, "tlars-only-optimizations.md"),
+        (7, "sources-and-evidence.md"),
+    ];
+
+    let mut prev_pos = None;
+    for (index, file_name) in ordered_entries {
+        let expected_entry = format!("{index}. `{file_name}`");
+        let pos = reading_order_section.find(&expected_entry).unwrap_or_else(|| {
+            panic!(
+                "reading-order section in {} must include ordered entry `{}`",
+                readme_path.display(),
+                expected_entry
+            )
+        });
+        if let Some(prev) = prev_pos {
+            assert!(
+                prev < pos,
+                "reading-order entries in {} must remain in ascending order",
+                readme_path.display()
+            );
+        }
+        prev_pos = Some(pos);
+
+        let chapter_path = repo_root
+            .join("docs/model-checker-architecture")
+            .join(file_name);
+        assert!(
+            chapter_path.exists(),
+            "README reading-order chapter {} referenced in {} must exist on disk",
+            chapter_path.display(),
+            readme_path.display()
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

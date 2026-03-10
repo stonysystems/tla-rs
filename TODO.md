@@ -10801,7 +10801,7 @@ docs/model-checker-architecture/
 
 ### 35.10 Acceptance Criteria
 
-1. [ ] A beginner can read `docs/model-checker-architecture/README.md` and follow a clear path through the tutorial.
+1. [x] A beginner can read `docs/model-checker-architecture/README.md` and follow a clear path through the tutorial. [26-03-10, 17:31] (scope check: doc+test leaf task, <500 LOC, no decomposition required; enforced via `test_model_checker_architecture_phase_35_10_1_beginner_can_follow_readme_path` plus existing Phase 35.9 README/readability guards)
 2. [ ] The deliverable explains traditional TLA+ model checking concretely, with TLC as the primary reference point.
 3. [ ] The deliverable explains the current tla-rs source-first checker using actual local repo anchors.
 4. [ ] The deliverable explicitly compares the two engines and answers "same vs different vs why it matters."
