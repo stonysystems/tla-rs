@@ -10837,6 +10837,86 @@ fn test_model_checker_architecture_phase_35_10_6_every_substantive_claim_is_sour
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_10_7_deliverable_lives_under_docs_and_requires_no_code_changes(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let checklist_path =
+        repo_root.join("docs/model-checker-architecture/artifacts/review-checklist.md");
+    let todo_path = repo_root.join("TODO.md");
+
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    let checklist_src = std::fs::read_to_string(&checklist_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read review checklist {}: {}",
+            checklist_path.display(),
+            err
+        )
+    });
+    let todo_src = std::fs::read_to_string(&todo_path).unwrap_or_else(|err| {
+        panic!("failed to read TODO {}: {}", todo_path.display(), err)
+    });
+
+    assert!(
+        readme_src.contains("## Documentation-Only Deliverable Rule (Phase 35.8.9)")
+            && readme_src.contains("No implementation code changes are required to satisfy this phase")
+            && readme_src.contains("the phase output is the documentation set under `docs/model-checker-architecture/`"),
+        "README {} must keep explicit docs-only deliverable boundary for Phase 35.10.7 acceptance",
+        readme_path.display()
+    );
+
+    for required_checklist_fragment in [
+        "Deliverable footprint remains under `docs/model-checker-architecture/`",
+        "No code changes required for this phase deliverable.",
+    ] {
+        assert!(
+            checklist_src.contains(required_checklist_fragment),
+            "review checklist {} must keep docs-footprint gate fragment `{}`",
+            checklist_path.display(),
+            required_checklist_fragment
+        );
+    }
+
+    for required_doc in [
+        "README.md",
+        "glossary.md",
+        "traditional-tla-model-checking.md",
+        "tlars-source-first-model-checking.md",
+        "walkthrough.md",
+        "comparison.md",
+        "tlars-only-optimizations.md",
+        "sources-and-evidence.md",
+        "artifacts/engine-crosswalk.csv",
+        "artifacts/code-anchor-map.md",
+        "artifacts/review-checklist.md",
+    ] {
+        let full_path = repo_root
+            .join("docs/model-checker-architecture")
+            .join(required_doc);
+        assert!(
+            full_path.exists(),
+            "Phase 35.10.7 requires docs deliverable artifact {} to exist",
+            full_path.display()
+        );
+    }
+
+    assert!(
+        todo_src.contains(
+            "7. [x] The deliverable lives entirely under `docs/` and requires no code changes."
+        ),
+        "TODO {} must mark Phase 35.10.7 as complete once docs-only acceptance is satisfied",
+        todo_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
