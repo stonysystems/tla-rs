@@ -10396,6 +10396,71 @@ fn test_model_checker_architecture_walkthrough_includes_concrete_state_transitio
 }
 
 #[test]
+fn test_model_checker_architecture_walkthrough_marks_tlc_inference_status_and_sources() {
+    let repo_root = resolve_repo_root_for_integration();
+    let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
+    let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture walkthrough {}: {}",
+            walkthrough_path.display(),
+            err
+        )
+    });
+    let walkthrough_lower = walkthrough_src.to_ascii_lowercase();
+
+    assert!(
+        walkthrough_src.contains("## TLC Detail Confidence and Inference Marking"),
+        "walkthrough {} must include a TLC inference-marking section",
+        walkthrough_path.display()
+    );
+
+    let inference_section = walkthrough_src
+        .split("## TLC Detail Confidence and Inference Marking")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `TLC Detail Confidence and Inference Marking` section in {}",
+                walkthrough_path.display()
+            )
+        });
+    let inference_lower = inference_section.to_ascii_lowercase();
+
+    assert!(
+        inference_lower.contains("no inferred/approximate tlc details are used in this walkthrough"),
+        "inference-marking section in {} must explicitly state whether inferred/approximate TLC details are used",
+        walkthrough_path.display()
+    );
+
+    for required_source in [
+        "reports/benchmarks/tlc/twophase_benchmark.log",
+        "reports/benchmarks/tlc/summary.md",
+        "twophase_benchmark_mc.tla",
+        "twophase_benchmark_mc.cfg",
+    ] {
+        assert!(
+            inference_lower.contains(required_source),
+            "inference-marking section in {} must cite TLC source `{}`",
+            walkthrough_path.display(),
+            required_source
+        );
+    }
+
+    assert!(
+        inference_lower.contains("[inference]"),
+        "inference-marking section in {} must define explicit `[Inference]` labeling for future inferred claims",
+        walkthrough_path.display()
+    );
+
+    assert!(
+        walkthrough_lower.contains("inferred/approximate")
+            || walkthrough_lower.contains("[inference]"),
+        "walkthrough {} must include explicit wording for inferred/approximate TLC claim handling",
+        walkthrough_path.display()
+    );
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,

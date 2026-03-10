@@ -156,3 +156,12 @@ This is intentionally small, but it is a real state transition example with expl
 
 ## Output Interpretation
 This section will explain how to read the two checked-in outputs for the same shared model.
+
+## TLC Detail Confidence and Inference Marking
+- **Inference status for this walkthrough**: No inferred/approximate TLC details are used in this walkthrough.
+- Every TLC statement above is grounded in checked-in local artifacts:
+  - `reports/benchmarks/tlc/twophase_benchmark.log`
+  - `reports/benchmarks/tlc/SUMMARY.md`
+  - `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.tla`
+  - `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.cfg`
+- If a future revision introduces TLC details that are inferred/approximate rather than directly evidenced, it must mark each such claim with `[Inference]` and cite the specific source used.

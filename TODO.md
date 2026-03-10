@@ -10704,7 +10704,7 @@ docs/model-checker-architecture/
   - "How this looks in traditional TLA+/TLC terms"
   - "How this looks in current tla-rs source-first terms"
 - [x] **35.5.4** Include at least one small state-transition example, not just CLI commands. [26-03-10, 16:03] (expanded `docs/model-checker-architecture/walkthrough.md` with a concrete `TMSendPrepare`/`LTMSendPrepare` transition example including explicit pre-state, applied transition, and post-state snapshots plus local anchors; added integration guard `test_model_checker_architecture_walkthrough_includes_concrete_state_transition_example`)
-- [ ] **35.5.5** If the example uses inferred/approximate TLC details rather than checked-in local artifacts, mark that clearly and cite the source used.
+- [x] **35.5.5** If the example uses inferred/approximate TLC details rather than checked-in local artifacts, mark that clearly and cite the source used. [26-03-10, 16:06] (added `TLC Detail Confidence and Inference Marking` section in `docs/model-checker-architecture/walkthrough.md` that explicitly states no inferred/approximate TLC details are used in the current walkthrough, cites the checked-in TLC artifact sources, and defines `[Inference]` labeling + source-citation rule for future inferred claims; added integration guard `test_model_checker_architecture_walkthrough_marks_tlc_inference_status_and_sources`)
 
 ### 35.6 Comparison: Relation, Similarities, Differences, and Consequences
 
