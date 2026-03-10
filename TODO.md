@@ -10584,7 +10584,7 @@ docs/model-checker-architecture/
   - `TLA+`, `SANY`, `TLC`, `explicit-state model checking`,
   - `source-first`, `finite-domain expansion`, `successor generation`, `state deduplication`,
   - `symmetry reduction`, `partial-order reduction`, `hash compaction`, `telemetry`.
-- [ ] **35.1.4** `artifacts/code-anchor-map.md` must map every major tla-rs architecture claim to concrete local repo anchors, at minimum:
+- [x] **35.1.4** `artifacts/code-anchor-map.md` must map every major tla-rs architecture claim to concrete local repo anchors, at minimum: [26-03-10, 14:43] (`docs/model-checker-architecture/artifacts/code-anchor-map.md` now contains concrete claim IDs C1-C19 with file/function anchors and an explicit required-anchor coverage matrix for all mandated docs/code/scripts)
   - `docs/model_checker_status.md`
   - `docs/model-checking-source-first.md`
   - `docs/conversion-testing-guide.md`
