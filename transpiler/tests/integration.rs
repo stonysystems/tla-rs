@@ -9410,6 +9410,82 @@ fn test_model_checker_architecture_phase_35_9_traditional_tutorial_is_concrete_n
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_9_source_first_tutorial_is_locally_anchored() {
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read source-first tutorial chapter {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## End-to-End Source-First Path (Ordered)"),
+        "source-first tutorial {} must include an ordered source-first path section",
+        tutorial_path.display()
+    );
+    assert!(
+        tutorial_src.contains("## Current tla-rs Source-First Architecture Diagram"),
+        "source-first tutorial {} must include architecture diagram section",
+        tutorial_path.display()
+    );
+    assert!(
+        tutorial_src.contains("## Current Technique Path (Plain Language)"),
+        "source-first tutorial {} must include plain-language technique path section",
+        tutorial_path.display()
+    );
+    assert!(
+        tutorial_src.contains("## Main Known Limits (Current Repo Status)"),
+        "source-first tutorial {} must include known-limits section anchored to repo status",
+        tutorial_path.display()
+    );
+
+    let anchor_count = tutorial_src.matches("Anchor:").count();
+    assert!(
+        anchor_count >= 20,
+        "source-first tutorial {} must include dense local anchor citations; found only {} `Anchor:` markers",
+        tutorial_path.display(),
+        anchor_count
+    );
+
+    for required_anchor in [
+        "transpiler/src/main.rs",
+        "transpiler/src/modelcheck/solver.rs",
+        "transpiler/src/modelcheck/evaluator.rs",
+        "transpiler/src/modelcheck/explorer.rs",
+        "docs/model_checker_status.md",
+        "docs/model-checking-source-first.md",
+        "reports/model_check/twophase_small.json",
+    ] {
+        assert!(
+            tutorial_src.contains(required_anchor),
+            "source-first tutorial {} must include required local anchor `{}` for Phase 35.9 checklist",
+            tutorial_path.display(),
+            required_anchor
+        );
+    }
+
+    for required_function in [
+        "`run_model_check_command`",
+        "`execute_model_check`",
+        "`build_transition_ir`",
+        "`solve_branch_successors_with_candidates_and_telemetry`",
+        "`first_invariant_violation`",
+        "`check_leads_to_violations`",
+    ] {
+        assert!(
+            tutorial_src.contains(required_function),
+            "source-first tutorial {} must reference concrete function anchor {}",
+            tutorial_path.display(),
+            required_function
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
