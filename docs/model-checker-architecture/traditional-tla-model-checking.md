@@ -50,7 +50,20 @@ flowchart TD
 ```
 
 ## Explicit-State vs Theorem Proving
-This section will contrast state exploration with proof-based methods in beginner terms.
+**Explicit-state model checking** means TLC enumerates concrete reachable states in a finite model and checks whether any explored behavior violates the configured properties.
+
+- It executes the `Init`/`Next` transition system over bounded constants/domains.
+- It explores reachable states and transitions directly, rather than proving formulas symbolically.
+- If a property fails, the typical output is a concrete counterexample trace.
+- If no violation is found, the result is "no bug found in this explored finite state space," not a universal proof for all possible model sizes.
+
+**Theorem proving** is different: you prove symbolic claims (lemmas/invariants/refinement obligations) about all executions that satisfy the assumptions.
+
+- The prover reasons over formulas and proof obligations instead of enumerating every concrete state.
+- A successful proof can justify unbounded or parameterized guarantees, but usually requires more manual proof structure.
+- The output is a checked proof artifact (or failed proof obligation), not primarily a runtime-generated bug trace.
+
+In practice, explicit-state model checking is often used for fast bug finding on finite instances, while theorem proving is used when you need stronger all-execution guarantees.
 
 ## Practical Limits
 - Finite-model assumptions.

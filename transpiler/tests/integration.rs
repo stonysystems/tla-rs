@@ -9532,6 +9532,64 @@ fn test_model_checker_architecture_traditional_tla_tutorial_includes_pipeline_di
 }
 
 #[test]
+fn test_model_checker_architecture_traditional_tla_tutorial_explains_explicit_state_vs_theorem_proving()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read traditional TLC tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## Explicit-State vs Theorem Proving"),
+        "traditional TLC tutorial {} must include an `Explicit-State vs Theorem Proving` section",
+        tutorial_path.display()
+    );
+
+    let comparison_section = tutorial_src
+        .split("## Explicit-State vs Theorem Proving")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Explicit-State vs Theorem Proving` section in {}",
+                tutorial_path.display()
+            )
+        });
+    let comparison_lower = comparison_section.to_ascii_lowercase();
+
+    assert!(
+        comparison_lower.contains("explicit-state model checking"),
+        "comparison section in {} must explicitly define `explicit-state model checking`",
+        tutorial_path.display()
+    );
+    assert!(
+        comparison_lower.contains("theorem proving"),
+        "comparison section in {} must explicitly discuss theorem proving",
+        tutorial_path.display()
+    );
+    for required_fragment in [
+        "finite",
+        "reachable state",
+        "counterexample",
+        "symbolic",
+        "proof obligation",
+        "all executions",
+    ] {
+        assert!(
+            comparison_lower.contains(required_fragment),
+            "comparison section in {} must include contrast concept `{}`",
+            tutorial_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,
