@@ -8769,7 +8769,7 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         "Source".to_string(),
         "Source kind".to_string(),
         "Date checked".to_string(),
-        "Inspection depth".to_string(),
+        "Inspected depth".to_string(),
         "Supports claims".to_string(),
     ];
     assert_eq!(
@@ -8790,6 +8790,47 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
     );
 
     let mut tracks = std::collections::BTreeSet::new();
+    let allowed_source_kinds = [
+        "official docs",
+        "book",
+        "source code",
+        "repo doc",
+        "benchmark artifact",
+        "test",
+        "secondary background",
+    ];
+    let is_iso_date = |value: &str| -> bool {
+        let mut parts = value.split('-');
+        let (year, month, day) = match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(y), Some(m), Some(d), None) => (y, m, d),
+            _ => return false,
+        };
+        if year.len() != 4
+            || month.len() != 2
+            || day.len() != 2
+            || !year.chars().all(|ch| ch.is_ascii_digit())
+            || !month.chars().all(|ch| ch.is_ascii_digit())
+            || !day.chars().all(|ch| ch.is_ascii_digit())
+        {
+            return false;
+        }
+        let month: u32 = match month.parse() {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+        let day: u32 = match day.parse() {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+        (1..=12).contains(&month) && (1..=31).contains(&day)
+    };
+    let is_placeholder = |value: &str| -> bool {
+        let normalized = value.trim().to_ascii_lowercase();
+        matches!(
+            normalized.as_str(),
+            "tbd" | "todo" | "na" | "n/a" | "none" | "unknown"
+        )
+    };
     for row in data_rows {
         assert_eq!(
             row.len(),
@@ -8806,6 +8847,39 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
                 row
             );
         }
+
+        let source_kind = row[3].as_str();
+        assert!(
+            allowed_source_kinds.contains(&source_kind),
+            "Source Ledger row in {} uses source kind `{}` outside required taxonomy {:?}",
+            sources_path.display(),
+            source_kind,
+            allowed_source_kinds
+        );
+
+        let date_checked = row[4].as_str();
+        assert!(
+            is_iso_date(date_checked),
+            "Source Ledger row in {} has non-ISO date `{}` (expected YYYY-MM-DD)",
+            sources_path.display(),
+            date_checked
+        );
+
+        let inspected_depth = row[5].as_str();
+        assert!(
+            inspected_depth.len() >= 4 && !is_placeholder(inspected_depth),
+            "Source Ledger row in {} has weak inspected-depth value `{}`",
+            sources_path.display(),
+            inspected_depth
+        );
+
+        let supports_claims = row[6].as_str();
+        assert!(
+            supports_claims.len() >= 12 && !is_placeholder(supports_claims),
+            "Source Ledger row in {} has weak claim-support value `{}`",
+            sources_path.display(),
+            supports_claims
+        );
         tracks.insert(row[1].trim_matches('`').to_string());
     }
 

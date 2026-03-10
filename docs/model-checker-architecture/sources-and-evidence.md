@@ -8,16 +8,16 @@ Track the exact sources reviewed for:
 
 ## Source Recording Schema
 Each source entry records:
-- `source kind`,
+- `source kind` (`official docs`, `book`, `source code`, `repo doc`, `benchmark artifact`, `test`, `secondary background`),
 - `date checked`,
-- `inspection depth`,
+- `inspected depth`,
 - and `supports claims`.
 
 ## Source Ledger
-| ID | Track | Source | Source kind | Date checked | Inspection depth | Supports claims |
+| ID | Track | Source | Source kind | Date checked | Inspected depth | Supports claims |
 | --- | --- | --- | --- | --- | --- | --- |
 | T1 | `traditional_tla_tlc` | Leslie Lamport, *Specifying Systems* (`book-01-11-10.pdf`, Lamport site) | book | 2026-03-10 | doc deep read (selected model-checking chapters/sections) | Baseline TLA+ semantics and what a model/config means in TLC-style workflows. |
-| T2 | `traditional_tla_tlc` | Yu, Manolios, Lamport, *Model Checking TLA+ Specifications* (`yuanyu-model-checking.pdf`) | paper | 2026-03-10 | doc deep read | TLC architecture framing: explicit-state approach, finite-state model assumptions, and "How TLC Works". |
+| T2 | `traditional_tla_tlc` | Yu, Manolios, Lamport, *Model Checking TLA+ Specifications* (`yuanyu-model-checking.pdf`) | secondary background | 2026-03-10 | doc deep read | Supplemental TLC architecture framing: explicit-state approach, finite-state model assumptions, and "How TLC Works". |
 | T3 | `traditional_tla_tlc` | `https://github.com/tlaplus/tlaplus` README (`java -cp ... tla2sany.SANY`, `tlc2.TLC`) | official docs | 2026-03-10 | doc deep read | Toolchain role split (SANY parser/analyzer vs TLC model checker CLI entrypoints). |
 | T4 | `traditional_tla_tlc` | `https://github.com/tlaplus/tlaplus/tree/master/tlatools/org.lamport.tlatools/src/tlc2` | source code | 2026-03-10 | source read (directory-level + entry files) | Implementation anchor for TLC-side architecture claims and terminology checks. |
 | T5 | `traditional_tla_tlc` | `https://github.com/tlaplus/tlaplus/tree/master/tlatools/org.lamport.tlatools/src/tla2sany` | source code | 2026-03-10 | source skim | Implementation anchor for SANY-side front-end parsing/analyzer claims. |
@@ -31,8 +31,8 @@ Each source entry records:
 | R7 | `tlars_source_first` | `docs/model-checker-architecture/artifacts/code-anchor-map.md` | repo doc | 2026-03-10 | doc deep read | Claim-to-anchor index used by Phase 35 architecture/tutorial docs. |
 | C1 | `comparison_optimization` | `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` | benchmark artifact | 2026-03-10 | artifact inspection | Checked-in TLC vs source-first benchmark outcomes and stated blockers. |
 | C2 | `comparison_optimization` | `reports/model_check/OPTIMIZATION_DELTAS.md` | benchmark artifact | 2026-03-10 | artifact inspection | Before/after optimization deltas for source-first telemetry metrics. |
-| C3 | `comparison_optimization` | `scripts/run_model_check_matrix.sh` | script | 2026-03-10 | source read | Artifact regeneration workflow for supported source-first matrix evidence. |
-| C4 | `comparison_optimization` | `scripts/compare_model_check_telemetry.sh` | script | 2026-03-10 | source read | Automated delta computation and exact-mode guard checks for telemetry claims. |
+| C3 | `comparison_optimization` | `scripts/run_model_check_matrix.sh` | source code | 2026-03-10 | source read | Artifact regeneration workflow for supported source-first matrix evidence. |
+| C4 | `comparison_optimization` | `scripts/compare_model_check_telemetry.sh` | source code | 2026-03-10 | source read | Automated delta computation and exact-mode guard checks for telemetry claims. |
 | C5 | `comparison_optimization` | `transpiler/tests/integration.rs` (model-check evidence guards) | test | 2026-03-10 | source read | Test-enforced evidence discipline for status docs/artifacts/row-order contracts. |
 
 ## Coverage by Track

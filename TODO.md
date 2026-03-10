@@ -10613,7 +10613,7 @@ docs/model-checker-architecture/
   - traditional TLA+ / TLC architecture,
   - tla-rs source-first architecture,
   - and any comparison/optimization claim.
-- [ ] **35.2.2** For every source, record:
+- [x] **35.2.2** For every source, record: [26-03-10, 15:04] (`docs/model-checker-architecture/sources-and-evidence.md` now uses the required source-kind taxonomy on every ledger row, keeps explicit `YYYY-MM-DD` checked dates, captures inspected depth + supported claims per source, and integration guard `test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger` now enforces taxonomy/date/depth/claim discipline)
   - `source kind` (`official docs`, `book`, `source code`, `repo doc`, `benchmark artifact`, `test`, `secondary background`),
   - `date checked`,
   - `inspected depth` (`doc skim`, `doc deep read`, `source read`, `artifact inspection`, etc.),
