@@ -9913,6 +9913,87 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_explains_plain_la
 }
 
 #[test]
+fn test_model_checker_architecture_tlars_source_first_tutorial_explains_main_known_limits_from_repo_status()
+{
+    let repo_root = resolve_repo_root_for_integration();
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
+    let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read tla-rs source-first tutorial {}: {}",
+            tutorial_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        tutorial_src.contains("## Main Known Limits (Current Repo Status)"),
+        "tla-rs source-first tutorial {} must include a known-limits section grounded in current repo status",
+        tutorial_path.display()
+    );
+
+    let limits_section = tutorial_src
+        .split("## Main Known Limits (Current Repo Status)")
+        .nth(1)
+        .and_then(|tail| tail.split("\n## ").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate `Main Known Limits (Current Repo Status)` section in {}",
+                tutorial_path.display()
+            )
+        });
+    let limits_lower = limits_section.to_ascii_lowercase();
+
+    for step_number in 1..=4 {
+        assert!(
+            limits_section.contains(&format!("{}. **", step_number)),
+            "known-limits section in {} must include numbered limit {}",
+            tutorial_path.display(),
+            step_number
+        );
+    }
+
+    for required_fragment in [
+        "unsupported evaluator constructs remain real limits",
+        "domain/solver limitations are still active blockers",
+        "fallback enumeration cost is a major practical constraint",
+        "coverage and performance are still incomplete in checked-in status",
+        "bitwise/shift operators",
+        "non-identifier `let` patterns",
+        "casts beyond `int`/`nat`/`bool`",
+        "rsl",
+        "raft",
+        "verticalpaxos",
+        "epaxos",
+        "chainreplication",
+        "4.4 tlc vs source-first benchmark comparison",
+    ] {
+        assert!(
+            limits_lower.contains(required_fragment),
+            "known-limits section in {} must include `{}`",
+            tutorial_path.display(),
+            required_fragment
+        );
+    }
+
+    for required_anchor in [
+        "docs/model_checker_status.md",
+        "docs/model-checking-source-first.md",
+        "transpiler/src/modelcheck/evaluator.rs",
+        "transpiler/src/modelcheck/domain.rs",
+        "transpiler/src/modelcheck/solver.rs",
+        "reports/benchmarks/tlc_vs_source_first_benchmark_comparison.md",
+    ] {
+        assert!(
+            limits_lower.contains(required_anchor),
+            "known-limits section in {} must include concrete anchor `{}`",
+            tutorial_path.display(),
+            required_anchor
+        );
+    }
+}
+
+#[test]
 fn test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers() {
     struct ExpectedUnsupportedRow<'a> {
         protocol: &'a str,

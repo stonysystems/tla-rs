@@ -93,6 +93,26 @@ flowchart TD
    - Anchor: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`
    - Anchor: `docs/model_checker_status.md`
 
+## Main Known Limits (Current Repo Status)
+1. **Unsupported evaluator constructs remain real limits**: the current evaluator still rejects some language forms, including bitwise/shift operators, non-identifier quantifier bindings, non-identifier `let` patterns, and casts beyond `int`/`nat`/`bool`.
+   - Anchor: `docs/model_checker_status.md` (`2.1 Unsupported evaluator constructs`)
+   - Anchor: `docs/model-checking-source-first.md` (`9.3 Current Limitations (MVP)`)
+   - Anchor: `transpiler/src/modelcheck/evaluator.rs`
+
+2. **Domain/solver limitations are still active blockers**: the engine depends on explicit finite domains for unresolved named types, restricts broader generic-domain expansion outside built-in container forms, and can fail early when bounded expansion limits are exceeded.
+   - Anchor: `docs/model_checker_status.md` (`2.2 Domain/solver/constants limitations`, `4. Protocol coverage matrix`)
+   - Anchor: `transpiler/src/modelcheck/domain.rs`
+   - Anchor: `transpiler/src/modelcheck/solver.rs`
+
+3. **Fallback enumeration cost is a major practical constraint**: unresolved predicate-only/helper branches can fall back to candidate enumeration. Guardrails and telemetry reduce blind blowups, but the underlying cost can still dominate and block larger runs.
+   - Anchor: `docs/model_checker_status.md` (`2.2 Domain/solver/constants limitations`, `3.16 Guard-pruned enumeration optimization guard`)
+   - Anchor: `transpiler/src/modelcheck/solver.rs` (`solve_branch_successors_with_candidates_and_telemetry`)
+   - Anchor: `transpiler/src/main.rs` (enumeration telemetry reporting in JSON summary)
+
+4. **Coverage and performance are still incomplete in checked-in status**: the coverage matrix still includes unsupported protocols (for example `RSL`, `Raft`, `VerticalPaxos`, `EPaxos`, `ChainReplication`), and the benchmark comparison records enumeration-driven blocking and large wall-time gaps on harder cases.
+   - Anchor: `docs/model_checker_status.md` (`4. Protocol coverage matrix`, `4.4 TLC vs source-first benchmark comparison`)
+   - Anchor: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`
+
 ## What "Source-First" Means In Practice
 - The execution path starts from Rust/Verus source (`.rs`) and finite model config (`model.toml`), not from a generated TLC wrapper.
 - Helper predicates/functions are evaluated via the same model-check evaluator path, using parsed local spec AST plus finite domains.

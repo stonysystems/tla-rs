@@ -10682,7 +10682,7 @@ docs/model-checker-architecture/
   - exact vs lossy search modes,
   - branch-label fairness/liveness checks,
   - checked-in JSON/report evidence.
-- [ ] **35.4.4** Explain the main currently known limits using the repo's actual status:
+- [x] **35.4.4** Explain the main currently known limits using the repo's actual status: [26-03-10, 15:46] (added `Main Known Limits (Current Repo Status)` section in `docs/model-checker-architecture/tlars-source-first-model-checking.md` covering unsupported evaluator constructs, domain/solver constraints, fallback-enumeration cost, and checked-in coverage/performance gaps with explicit local anchors; added integration guard `test_model_checker_architecture_tlars_source_first_tutorial_explains_main_known_limits_from_repo_status`)
   - unsupported evaluator constructs,
   - domain/solver limitations,
   - fallback enumeration cost,
