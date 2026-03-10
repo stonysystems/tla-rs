@@ -9119,6 +9119,88 @@ fn test_model_checker_architecture_phase_35_8_7_requires_source_citation_or_infe
 }
 
 #[test]
+fn test_model_checker_architecture_phase_35_8_8_requires_explicit_uncertainty_wording_for_uncertain_claims(
+) {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let readme_path = repo_root.join("docs/model-checker-architecture/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model-checker architecture README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    assert!(
+        readme_src.contains("## Uncertainty Honesty Rule (Phase 35.8.8)"),
+        "README {} must include explicit Phase 35.8.8 uncertainty-honesty section",
+        readme_path.display()
+    );
+    for required_fragment in [
+        "If a claim is uncertain, say so explicitly",
+        "uncertain / not confirmed",
+        "No equivalent mechanism was found in the reviewed sources",
+        "do not upgrade uncertain claims to confirmed claims",
+    ] {
+        assert!(
+            readme_src.contains(required_fragment),
+            "Phase 35.8.8 section in {} must include required uncertainty fragment `{}`",
+            readme_path.display(),
+            required_fragment
+        );
+    }
+
+    let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
+    let sources_src = std::fs::read_to_string(&sources_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read sources/evidence doc {}: {}",
+            sources_path.display(),
+            err
+        )
+    });
+    assert!(
+        sources_src.contains("## Uncertainty-First Wording Rule (Phase 35.8.8)"),
+        "sources/evidence doc {} must include explicit Phase 35.8.8 uncertainty wording section",
+        sources_path.display()
+    );
+    for required_fragment in [
+        "use `uncertain / not confirmed`",
+        "keep `inference from sources`",
+        "state the remaining evidence gap",
+        "do not rewrite uncertain or inferred claims as confirmed facts",
+    ] {
+        assert!(
+            sources_src.contains(required_fragment),
+            "Phase 35.8.8 section in {} must include required uncertainty-discipline fragment `{}`",
+            sources_path.display(),
+            required_fragment
+        );
+    }
+    assert!(
+        sources_src.contains("| X3 |")
+            && sources_src.contains("| uncertain / not confirmed |"),
+        "sources/evidence register {} must keep at least one explicitly uncertainty-labeled claim row",
+        sources_path.display()
+    );
+
+    let optimization_path =
+        repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let optimization_src = std::fs::read_to_string(&optimization_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read optimization audit doc {}: {}",
+            optimization_path.display(),
+            err
+        )
+    });
+    assert!(
+        optimization_src.contains("## Possibly different but not yet confirmed")
+            && optimization_src.contains("uncertain / not confirmed"),
+        "optimization audit doc {} must preserve explicit uncertain-claim bucket/label wording for Phase 35.8.8",
+        optimization_path.display()
+    );
+}
+
+#[test]
 fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()

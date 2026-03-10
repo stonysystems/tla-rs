@@ -122,3 +122,14 @@ Allowed evidence forms:
 
 Guardrail:
 - Do not leave substantive non-local claims unlabeled; if a claim is not directly evidenced, mark it as `[Inference]` instead of writing it as a fact.
+
+## Uncertainty Honesty Rule (Phase 35.8.8)
+If a claim is uncertain, say so explicitly. Accuracy is more important than sounding comprehensive.
+
+Required uncertainty wording discipline:
+- use explicit labels such as `uncertain / not confirmed` when evidence is incomplete;
+- keep weaker wording for unproven absence claims (for example, `No equivalent mechanism was found in the reviewed sources`);
+- include what is missing (scope gap, source gap, or unresolved audit step) instead of hiding uncertainty behind confident prose.
+
+Guardrail:
+- do not upgrade uncertain claims to confirmed claims for narrative completeness.

@@ -90,6 +90,17 @@ Writing discipline:
 - do not present non-local claims as bare prose without an anchor, source ID, or `[Inference]` label;
 - when evidence is indirect, prefer explicit `[Inference]` wording over stronger factual wording.
 
+## Uncertainty-First Wording Rule (Phase 35.8.8)
+When comparison evidence is incomplete, uncertainty must stay visible in the claim text and label.
+
+Required handling:
+- use `uncertain / not confirmed` for unresolved mechanism-level comparison claims;
+- keep `inference from sources` for reasoned-but-indirect conclusions and list source IDs;
+- state the remaining evidence gap in notes instead of collapsing uncertainty into definitive wording.
+
+Anti-overclaim guardrail:
+- do not rewrite uncertain or inferred claims as confirmed facts just to make the tutorial sound complete.
+
 ## Cross-Engine Claim Confidence Register
 | Claim ID | Claim statement | Confidence label | Evidence source IDs | Notes |
 | --- | --- | --- | --- | --- |
