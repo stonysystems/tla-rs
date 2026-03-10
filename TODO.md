@@ -10737,7 +10737,7 @@ docs/model-checker-architecture/
   - what is an implementation detail difference,
   - what is a semantics/algorithm difference,
   - what is a tooling UX/reporting difference.
-- [ ] **35.6.4** For every major difference, explain the consequence:
+- [x] **35.6.4** For every major difference, explain the consequence: [26-03-10, 16:18] (replaced the `comparison.md` placeholder with a major-differences consequence matrix that explicitly tags each row with required consequence types and local anchors; added integration guard `test_model_checker_architecture_comparison_major_differences_explain_required_consequence_types` to enforce non-placeholder matrix coverage and required consequence-type presence)
   - performance,
   - feature coverage,
   - trust/exactness,

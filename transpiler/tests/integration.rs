@@ -8955,6 +8955,125 @@ fn test_model_checker_architecture_comparison_synthesis_explicitly_answers_requi
 }
 
 #[test]
+fn test_model_checker_architecture_comparison_major_differences_explain_required_consequence_types()
+{
+    fn parse_markdown_row(line: &str) -> Vec<String> {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(|cell| cell.trim().to_string())
+            .collect()
+    }
+
+    fn is_markdown_separator_row(cells: &[String]) -> bool {
+        !cells.is_empty()
+            && cells
+                .iter()
+                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+    }
+
+    let repo_root = resolve_repo_root_for_integration();
+    let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
+    let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison doc {}: {}",
+            comparison_path.display(),
+            err
+        )
+    });
+
+    let differences_section = comparison_src
+        .split("## Differences and Consequences")
+        .nth(1)
+        .and_then(|tail| tail.split("## Synthesis").next())
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to isolate Differences and Consequences section in {}",
+                comparison_path.display()
+            )
+        });
+    let differences_lower = differences_section.to_ascii_lowercase();
+
+    assert!(
+        !differences_lower.contains("this section will classify differences"),
+        "Differences and Consequences section in {} must contain concrete content, not placeholders",
+        comparison_path.display()
+    );
+
+    let required_consequence_types = [
+        "performance",
+        "feature coverage",
+        "trust/exactness",
+        "usability",
+        "implementation complexity",
+    ];
+    for required in required_consequence_types {
+        assert!(
+            differences_lower.contains(required),
+            "Differences and Consequences section in {} must cover consequence type `{}`",
+            comparison_path.display(),
+            required
+        );
+    }
+
+    let markdown_rows: Vec<Vec<String>> = differences_section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .map(parse_markdown_row)
+        .collect();
+    assert!(
+        markdown_rows.len() >= 3,
+        "Differences and Consequences section in {} must include a markdown matrix with header, separator, and data rows",
+        comparison_path.display()
+    );
+    assert!(
+        is_markdown_separator_row(&markdown_rows[1]),
+        "Differences and Consequences matrix in {} must include a markdown separator row after header",
+        comparison_path.display()
+    );
+
+    let data_rows: Vec<Vec<String>> = markdown_rows
+        .into_iter()
+        .skip(2)
+        .filter(|row| !is_markdown_separator_row(row))
+        .collect();
+    assert!(
+        data_rows.len() >= 5,
+        "Differences and Consequences matrix in {} must include multiple major differences (expected at least 5 rows)",
+        comparison_path.display()
+    );
+    for row in data_rows {
+        assert!(
+            row.len() >= 4,
+            "Differences and Consequences matrix row in {} must include at least 4 columns: {:?}",
+            comparison_path.display(),
+            row
+        );
+        assert!(
+            !row[0].trim().is_empty(),
+            "Differences and Consequences row in {} must name a major difference",
+            comparison_path.display()
+        );
+        assert!(
+            !row[1].trim().is_empty(),
+            "Differences and Consequences row in {} must declare consequence type(s)",
+            comparison_path.display()
+        );
+        assert!(
+            !row[2].trim().is_empty(),
+            "Differences and Consequences row in {} must explain why the consequence matters",
+            comparison_path.display()
+        );
+        assert!(
+            !row[3].trim().is_empty(),
+            "Differences and Consequences row in {} must cite supporting anchors",
+            comparison_path.display()
+        );
+    }
+}
+
+#[test]
 fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_ledger() {
     let repo_root = resolve_repo_root_for_integration();
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
