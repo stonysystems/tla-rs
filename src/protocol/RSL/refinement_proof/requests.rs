@@ -190,32 +190,56 @@ verus! {
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_AssumptionsMakeValidTransition(b, c, i-1);
 
-        let s = b[i-1].replicas[idx].replica.proposer;
-        let s = b[i].replicas[idx].replica.proposer;
+        let s_prev = b[i-1].replicas[idx].replica.proposer;
+        let s_cur = b[i].replicas[idx].replica.proposer;
+        let nextActionIndex = b[i-1].replicas[idx].nextActionIndex;
 
-        if s.request_queue.contains(req)
+        if s_prev.request_queue.contains(req)
         {
           let p = lemma_RequestInRequestQueueHasCorrespondingRequestMessage(b, c, i-1, idx, req);
           lemma_PacketStaysInSentPackets(b, c, i-1, i, p);
           return p;
         }
-        if s.election_state.requests_received_prev_epochs.contains(req)
+        if s_cur.election_state.requests_received_prev_epochs.contains(req)
         {
-          let p = lemma_RequestInRequestsReceivedPrevEpochsHasCorrespondingRequestMessage(b, c, i-1, idx, req);
-          lemma_PacketStaysInSentPackets(b, c, i-1, i, p);
+          let p = lemma_RequestInRequestsReceivedPrevEpochsHasCorrespondingRequestMessage(b, c, i, idx, req);
           return p;
         }
-        if s.election_state.requests_received_this_epoch.contains(req)
+        if s_cur.election_state.requests_received_this_epoch.contains(req)
         {
-          let p = lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage(b, c, i-1, idx, req);
-          lemma_PacketStaysInSentPackets(b, c, i-1, i, p);
+          let p = lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage(b, c, i, idx, req);
           return p;
         }
 
         let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
-        let p = ios[0]->r;
-        assert(IsValidLIoOp(ios[0], c.config.replica_ids[idx], b[i-1].environment));
-        p
+        if nextActionIndex == 1
+        {
+            // Isolate the "enter new view" queue-reset branch: any newly introduced queue
+            // request must come from election-state request sets.
+            let sent_packets = ExtractSentPacketsFromIos(ios);
+            lemma_RequestInQueueAfterMaybeEnterNewViewComesFromElectionState(s_prev, s_cur, sent_packets, req);
+            assert(false);
+            return arbitrary();
+        }
+
+        if nextActionIndex != 0
+        {
+            // Remaining no-receive branches do not append a fresh request packet directly;
+            // keep these isolated from the process-request append obligation.
+            assert(false);
+            return arbitrary();
+        }
+
+        // Remaining path is the packet-processing action. Keep the append obligation localized.
+        if ios[0] is Receive && ios[0]->r.msg is RslMessageRequest
+        {
+            let p = ios[0]->r;
+            assert(IsValidLIoOp(ios[0], c.config.replica_ids[idx], b[i-1].environment));
+            return p;
+        }
+
+        assert(false);
+        arbitrary()
     }
 
     pub proof fn lemma_RequestInQueueAfterMaybeEnterNewViewComesFromElectionState(
