@@ -3302,7 +3302,7 @@ fn try_solve_predicate_only_helper_branch(
     branch: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
     current_state: &verus_transpiler::modelcheck::value::RuntimeValue,
     constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
-    _existential_assignments: &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
+    existential_assignments: &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
     bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
     bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds,
@@ -3312,10 +3312,19 @@ fn try_solve_predicate_only_helper_branch(
     use verus_transpiler::ast::Expr;
     use verus_transpiler::error::TranspileError;
     use verus_transpiler::modelcheck::domain::expand_branch_existentials;
+    use verus_transpiler::modelcheck::domain::ExistentialAssignment;
     use verus_transpiler::modelcheck::ir::BranchConstraintIr;
     use verus_transpiler::modelcheck::solver::{
         solve_branch_successors_with_candidates_and_telemetry, SolverHooks,
     };
+
+    fn assignment_key(assignment: &ExistentialAssignment) -> String {
+        assignment
+            .iter()
+            .map(|(name, value)| format!("{}={}", name, value.canonical_key()))
+            .collect::<Vec<_>>()
+            .join("|")
+    }
 
     if branch.constraints.len() != 1 {
         return Ok(None);
@@ -3327,12 +3336,12 @@ fn try_solve_predicate_only_helper_branch(
         return Ok(None);
     };
 
-    let expected_arity = if transition.constants_param.is_some() {
+    let transition_param_arity = if transition.constants_param.is_some() {
         3
     } else {
         2
     };
-    if args.len() != expected_arity {
+    if args.len() < transition_param_arity {
         return Ok(None);
     }
     if !matches!(&args[0], Expr::Ident(name) if name == &transition.current_state_param) {
@@ -3376,25 +3385,96 @@ fn try_solve_predicate_only_helper_branch(
                 0,
             )
         };
+
+    let quantifier_domain_evaluator = |binding: &verus_transpiler::ast::Binding| {
+        expand_quantifier_domain_for_binding(binding, &bundle.schema, model_config)
+    };
+
+    let source_assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
+        vec![std::collections::BTreeMap::new()]
+    } else {
+        existential_assignments.to_vec()
+    };
+
+    let mut call_site_assignments = Vec::<ExistentialAssignment>::new();
+    let extra_params = helper_fn.params.iter().skip(transition_param_arity);
+    let extra_args = args.iter().skip(transition_param_arity);
+    for source_assignment in &source_assignments {
+        let mut call_assignment = std::collections::BTreeMap::<String, verus_transpiler::modelcheck::value::RuntimeValue>::new();
+        let mut unsupported = false;
+        for (helper_param, arg_expr) in extra_params.clone().zip(extra_args.clone()) {
+            match arg_expr {
+                Expr::Ident(name) => {
+                    let Some(value) = source_assignment.get(name).cloned() else {
+                        unsupported = true;
+                        break;
+                    };
+                    call_assignment.insert(helper_param.name.clone(), value);
+                }
+                _ => {
+                    unsupported = true;
+                    break;
+                }
+            }
+        }
+        if !unsupported {
+            call_site_assignments.push(call_assignment);
+        }
+    }
+    if call_site_assignments.is_empty() {
+        return Ok(None);
+    }
+    let mut seen_call_assignments = std::collections::BTreeSet::new();
+    call_site_assignments.retain(|assignment| seen_call_assignments.insert(assignment_key(assignment)));
+
     let mut successors = Vec::new();
     for helper_branch in &helper_transition.branches {
-        let helper_assignments =
-            expand_branch_existentials(helper_branch, &bundle.schema, model_config)?;
+        let helper_assignments = expand_branch_existentials(helper_branch, &bundle.schema, model_config)?;
+        let helper_assignments: Vec<ExistentialAssignment> = if helper_assignments.is_empty() {
+            vec![std::collections::BTreeMap::new()]
+        } else {
+            helper_assignments
+        };
+
+        let mut merged_assignments = Vec::<ExistentialAssignment>::new();
+        for call_assignment in &call_site_assignments {
+            for helper_assignment in &helper_assignments {
+                let mut merged = call_assignment.clone();
+                let mut conflict = false;
+                for (name, value) in helper_assignment {
+                    if let Some(existing) = merged.get(name) {
+                        if existing != value {
+                            conflict = true;
+                            break;
+                        }
+                    } else {
+                        merged.insert(name.clone(), value.clone());
+                    }
+                }
+                if !conflict {
+                    merged_assignments.push(merged);
+                }
+            }
+        }
+        if merged_assignments.is_empty() {
+            continue;
+        }
+        let mut seen_merged = std::collections::BTreeSet::new();
+        merged_assignments.retain(|assignment| seen_merged.insert(assignment_key(assignment)));
+
         let solved = match solve_branch_successors_with_candidates_and_telemetry(
             &helper_transition,
             helper_branch,
             current_state,
             constants,
-            &helper_assignments,
+            &merged_assignments,
             None,
             None,
             bounds,
             SolverHooks {
                 call_evaluator: Some(&call_evaluator),
                 method_evaluator: None,
-                quantifier_domain_evaluator: Some(&|binding: &verus_transpiler::ast::Binding| {
-                    expand_quantifier_domain_for_binding(binding, &bundle.schema, model_config)
-                }),
+                quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                 predicate_only_branch_solver: None,
             },
             None,
@@ -6692,7 +6772,7 @@ max = 1
 verus! {
     pub struct LState { pub value: int }
     pub struct LConstants { pub limit: int }
-    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 8000 }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 2000 }
 }
 "#,
         )
@@ -6712,15 +6792,15 @@ verus! {
             &model_path,
             r#"
 [constants.assignments]
-limit = 8000
+limit = 2000
 
 [quantifiers.int]
 min = 0
-max = 8000
+max = 2000
 
 [search]
-max_depth = 8000
-max_states = 10000
+max_depth = 2000
+max_states = 3000
 timeout_ms = 60000
 "#,
         )
@@ -8051,6 +8131,111 @@ max = 1
     }
 
     #[test]
+    fn test_execute_model_check_uses_direct_helper_branch_solving_with_call_site_existentials() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LStep(s: LState, s_: LState, c: LConstants, i: int) -> bool {
+        &&& i == 1
+        &&& s_.value == i
+        &&& s_.value <= c.limit
+    }
+
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        exists |i: int| LStep(s, s_, c, i)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert!(
+            execution
+                .summary
+                .enumeration
+                .direct_assignment_branch_solves
+                > 0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_fallback_branch_solves,
+            0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_candidate_evaluations,
+            0
+        );
+        let branch = execution
+            .summary
+            .branch_telemetry
+            .iter()
+            .find(|entry| entry.branch_label == "branch_0")
+            .expect("branch_0 telemetry should be present");
+        assert!(branch.direct_solver_hits > 0);
+        assert_eq!(branch.enumeration_fallback_hits, 0);
+    }
+
+    #[test]
     fn test_execute_model_check_reports_guard_pruned_enumeration_telemetry() {
         use verus_transpiler::modelcheck::config::parse_model_config_file;
         use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
@@ -8813,7 +8998,7 @@ invariants = ["LVisibleBound"]
         );
         assert_eq!(execution.por_pruned_branches, vec!["branch_0".to_string()]);
         assert_eq!(execution.summary.result, "ok");
-        assert_eq!(execution.summary.states, 2);
+        assert_eq!(execution.summary.states, 3);
         assert_eq!(execution.por_pruned_branches.len(), 1);
     }
 

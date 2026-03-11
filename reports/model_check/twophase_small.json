@@ -16,6 +16,12 @@
   "protocol": "src/protocol/TwoPhase/twophase.rs",
   "result": "ok",
   "search": {
+    "evidence_mode": {
+      "class": "exact_proof_strength",
+      "guidance": "Exact search settings preserve explored-state distinctions for proof-strength bounded evidence.",
+      "lossy_reasons": [],
+      "proof_strength": true
+    },
     "max_depth": 1,
     "max_states": 200,
     "por_heuristic": "none",
@@ -28,22 +34,122 @@
   },
   "stop_reason": "FrontierExhausted",
   "summary": {
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 48,
+        "cumulative_solve_elapsed_ms": 25,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 121,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 1
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 48,
+        "cumulative_solve_elapsed_ms": 34,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 121,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 48,
+        "cumulative_solve_elapsed_ms": 36,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 121,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 1
+      },
+      {
+        "branch_label": "branch_3",
+        "candidate_state_count": 48,
+        "cumulative_solve_elapsed_ms": 23,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 121,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_4",
+        "candidate_state_count": 48,
+        "cumulative_solve_elapsed_ms": 19,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 121,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_5",
+        "candidate_state_count": 48,
+        "cumulative_solve_elapsed_ms": 20,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 121,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_6",
+        "candidate_state_count": 48,
+        "cumulative_solve_elapsed_ms": 26,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 121,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_7",
+        "candidate_state_count": 48,
+        "cumulative_solve_elapsed_ms": 33,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 121,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 1
+      }
+    ],
     "candidate_evaluation_guardrail_per_state_branch": 10000,
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
     "depth": 1,
-    "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 3268,
-    "enumeration_candidate_evaluations": 46464,
-    "enumeration_fallback_branch_solves": 8,
+    "direct_assignment_branch_solves": 8,
+    "elapsed_ms": 226,
+    "enumeration_candidate_evaluations": 0,
+    "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
     "hash_compaction_collisions": 0,
     "pruned_by_por": 0,
-    "states": 3,
+    "states": 2,
     "successor_cache_hits": 0,
     "successor_cache_misses": 1,
     "symmetry_collapses": 0,
-    "transitions": 4
+    "timing": {
+      "candidate_generation_evaluation_ms": 1,
+      "dedup_hashing_normalization_ms": 8,
+      "initial_state_construction_ms": 1,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 0,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 5,
+      "successor_solving_ms": 216
+    },
+    "transitions": 3
   },
   "types": "src/protocol/TwoPhase/types.rs"
 }

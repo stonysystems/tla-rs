@@ -136,6 +136,13 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     hooks: SolverHooks<'_>,
     should_stop: Option<&dyn Fn() -> bool>,
 ) -> TranspileResult<BranchSolveResult> {
+    let candidate_state_keys: Option<BTreeSet<String>> = next_state_candidates.map(|candidates| {
+        candidates
+            .iter()
+            .map(RuntimeValue::canonical_key)
+            .collect::<BTreeSet<_>>()
+    });
+
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
     } else {
@@ -152,7 +159,16 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
         }
     }
 
-    if !branch_has_next_state_assignment(branch) {
+    let has_next_state_assignments = branch_has_next_state_assignment(branch);
+    let can_use_direct_assignments = if next_state_candidates.is_some() {
+        has_next_state_assignments && branch_assigns_all_next_state_root_fields(branch, current_state)
+    } else {
+        // Keep standalone solver behavior (used by unit tests and non-candidate paths):
+        // partial next-state assignments overlay onto the current state.
+        has_next_state_assignments
+    };
+
+    if !can_use_direct_assignments {
         if let Some(predicate_only_solver) = hooks.predicate_only_branch_solver {
             if let Some(successors) = predicate_only_solver(
                 transition,
@@ -162,8 +178,12 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 &assignments,
                 bounds,
             )? {
+                let successors = filter_successors_to_candidate_keys(
+                    deduplicate_successors(successors),
+                    candidate_state_keys.as_ref(),
+                );
                 return Ok(BranchSolveResult {
-                    successors: deduplicate_successors(successors),
+                    successors,
                     telemetry: BranchSolveTelemetry {
                         direct_assignment_branch_solves: 1,
                         enumeration_fallback_branch_solves: 0,
@@ -219,8 +239,12 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     let mut successors = Vec::new();
     for assignment in assignments {
         if should_stop.map(|check| check()).unwrap_or(false) {
+            let successors = filter_successors_to_candidate_keys(
+                deduplicate_successors(successors),
+                candidate_state_keys.as_ref(),
+            );
             return Ok(BranchSolveResult {
-                successors: deduplicate_successors(successors),
+                successors,
                 telemetry: BranchSolveTelemetry {
                     direct_assignment_branch_solves: 1,
                     enumeration_fallback_branch_solves: 0,
@@ -243,8 +267,13 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
         }
     }
 
+    let successors = filter_successors_to_candidate_keys(
+        deduplicate_successors(successors),
+        candidate_state_keys.as_ref(),
+    );
+
     Ok(BranchSolveResult {
-        successors: deduplicate_successors(successors),
+        successors,
         telemetry: BranchSolveTelemetry {
             direct_assignment_branch_solves: 1,
             enumeration_fallback_branch_solves: 0,
@@ -463,6 +492,19 @@ pub fn deduplicate_successors(successors: Vec<RuntimeValue>) -> Vec<RuntimeValue
         }
     }
     unique
+}
+
+fn filter_successors_to_candidate_keys(
+    successors: Vec<RuntimeValue>,
+    candidate_state_keys: Option<&BTreeSet<String>>,
+) -> Vec<RuntimeValue> {
+    let Some(candidate_state_keys) = candidate_state_keys else {
+        return successors;
+    };
+    successors
+        .into_iter()
+        .filter(|state| candidate_state_keys.contains(&state.canonical_key()))
+        .collect()
 }
 
 fn solve_one_assignment(
@@ -717,6 +759,43 @@ fn branch_has_next_state_assignment(branch: &TransitionBranchIr) -> bool {
             }
         )
     })
+}
+
+fn branch_assigns_all_next_state_root_fields(
+    branch: &TransitionBranchIr,
+    current_state: &RuntimeValue,
+) -> bool {
+    let required_fields = match current_state {
+        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => fields
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<String>>(),
+        _ => return true,
+    };
+    if required_fields.is_empty() {
+        return true;
+    }
+
+    let mut assigned_fields = BTreeSet::<String>::new();
+    for constraint in &branch.constraints {
+        let BranchConstraintIr::Eq {
+            target:
+                ConstraintTarget {
+                    root: ConstraintRoot::NextState,
+                    path,
+                },
+            ..
+        } = constraint
+        else {
+            continue;
+        };
+        if path.is_empty() {
+            return true;
+        }
+        assigned_fields.insert(path[0].clone());
+    }
+
+    required_fields.is_subset(&assigned_fields)
 }
 
 fn constraint_depends_on_next_state(
@@ -1495,6 +1574,129 @@ mod tests {
         assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 0);
         assert_eq!(result.telemetry.enumeration_candidate_evaluations, 0);
         assert_eq!(result.telemetry.guard_pruned_candidate_evaluations, 0);
+    }
+
+    #[test]
+    fn test_direct_assignment_solver_respects_candidate_state_filter() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["x".to_string()],
+                    },
+                    value: Expr::Literal(crate::ast::Literal::Int(9)),
+                },
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["y".to_string()],
+                    },
+                    value: Expr::Literal(crate::ast::Literal::Int(9)),
+                },
+            ],
+        };
+        let candidates = vec![state(0, 0), state(1, 0)];
+
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidates),
+            None,
+            bounds(),
+            SolverHooks::default(),
+            None,
+        )
+        .unwrap();
+
+        assert!(result.successors.is_empty());
+        assert_eq!(result.telemetry.direct_assignment_branch_solves, 1);
+    }
+
+    #[test]
+    fn test_predicate_only_solver_hook_respects_candidate_state_filter() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![BranchConstraintIr::Predicate {
+                expr: Expr::Call {
+                    func: Path::single("LHelper".to_string()),
+                    args: vec![Expr::Ident("s".to_string()), Expr::Ident("s_".to_string())],
+                },
+            }],
+        };
+        let candidates = vec![state(1, 0)];
+        let predicate_only_solver = |_transition: &TransitionIr,
+                                     _branch: &TransitionBranchIr,
+                                     _current_state: &RuntimeValue,
+                                     _constants: Option<&RuntimeValue>,
+                                     _existentials: &[ExistentialAssignment],
+                                     _bounds: RuntimeCollectionBounds|
+         -> TranspileResult<Option<Vec<RuntimeValue>>> {
+            Ok(Some(vec![state(9, 9), state(1, 0)]))
+        };
+        let hooks = SolverHooks {
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain_evaluator: None,
+            predicate_only_branch_solver: Some(&predicate_only_solver),
+        };
+
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidates),
+            None,
+            bounds(),
+            hooks,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.successors, vec![state(1, 0)]);
+        assert_eq!(result.telemetry.direct_assignment_branch_solves, 1);
+    }
+
+    #[test]
+    fn test_partial_next_state_assignments_fall_back_to_candidate_enumeration() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![BranchConstraintIr::Eq {
+                target: ConstraintTarget {
+                    root: ConstraintRoot::NextState,
+                    path: vec!["x".to_string()],
+                },
+                value: Expr::Literal(crate::ast::Literal::Int(1)),
+            }],
+        };
+        let candidates = vec![state(1, 0), state(1, 1), state(0, 0)];
+
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &state(0, 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidates),
+            None,
+            bounds(),
+            SolverHooks::default(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.successors, vec![state(1, 0), state(1, 1)]);
+        assert_eq!(result.telemetry.direct_assignment_branch_solves, 0);
+        assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 1);
     }
 
     #[test]

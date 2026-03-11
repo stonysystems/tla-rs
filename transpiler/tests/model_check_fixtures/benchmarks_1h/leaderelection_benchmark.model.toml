@@ -1,14 +1,14 @@
 # LeaderElection long-run benchmark config.
 #
-# BLOCKED: With 1 node, the state space exhausts at 5 states in <2 seconds.
-# With 2+ nodes, the candidate enumeration cannot find valid next-state
-# transitions (evaluates 880K candidates in 76s with no hits).
-# The source-first model checker needs constraint-aware successor computation
-# (not brute-force candidate enumeration) before this protocol can produce
-# a meaningful long-run benchmark.
+# Current status (after Phase 33.4.4.e helper-solver improvements):
+# - The 3-node matched benchmark now makes non-zero exact-mode progress
+#   (hundreds of states and transitions before timeout).
+# - Remaining timeout pressure is branch-family existential blow-up
+#   (not next-state candidate enumeration fallback).
 #
 # This config uses the target 3-node model for documentation purposes.
-# It will hit the enumeration guardrail or time out without progress.
+# It still times out under the 4-minute benchmark budget, but now with
+# measurable progress and branch-level blocker telemetry.
 #
 # Historical TLC reference: 3 nodes → 100,636 states, 9,337 distinct,
 # 18 depth, 2s.

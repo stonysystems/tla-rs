@@ -18185,3 +18185,157 @@ fn test_phase_33_4_4_d_branch_blocker_telemetry_is_preserved_and_reported() {
         }
     }
 }
+
+#[test]
+fn test_phase_33_4_4_e_leader_election_blocker_reduction_has_measured_progress() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower
+            .contains("- [x] **33.4.4.e `leaderelection` blocker reduction on the matched benchmark model**"),
+        "TODO {} must mark Phase 33.4.4.e complete",
+        todo_path.display()
+    );
+
+    let artifact_path = repo_root.join("reports/benchmarks/source_first_release/leaderelection_benchmark.json");
+    let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark artifact {}: {}",
+            artifact_path.display(),
+            err
+        )
+    });
+    let artifact: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(|err| {
+        panic!(
+            "benchmark artifact {} must be valid JSON: {}",
+            artifact_path.display(),
+            err
+        )
+    });
+    let summary = artifact
+        .get("summary")
+        .and_then(|value| value.as_object())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} must include summary object",
+                artifact_path.display()
+            )
+        });
+    let states = summary
+        .get("states")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.states must be unsigned integer",
+                artifact_path.display()
+            )
+        });
+    let transitions = summary
+        .get("transitions")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.transitions must be unsigned integer",
+                artifact_path.display()
+            )
+        });
+    let enum_evals = summary
+        .get("enumeration_candidate_evaluations")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.enumeration_candidate_evaluations must be unsigned integer",
+                artifact_path.display()
+            )
+        });
+    let direct_solves = summary
+        .get("direct_assignment_branch_solves")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.direct_assignment_branch_solves must be unsigned integer",
+                artifact_path.display()
+            )
+        });
+    assert!(
+        states > 1 && transitions > 0,
+        "LeaderElection release benchmark must make non-trivial exact-mode progress (states={}, transitions={})",
+        states,
+        transitions
+    );
+    assert_eq!(
+        enum_evals, 0,
+        "LeaderElection blocker reduction should avoid enumeration candidate blow-up in release benchmark"
+    );
+    assert!(
+        direct_solves > 0,
+        "LeaderElection blocker reduction should show direct-solver branch progress in release benchmark"
+    );
+
+    let branch_entries = summary
+        .get("branch_telemetry")
+        .and_then(|value| value.as_array())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.branch_telemetry must be an array",
+                artifact_path.display()
+            )
+        });
+    assert!(
+        !branch_entries.is_empty(),
+        "LeaderElection benchmark must include branch telemetry rows"
+    );
+    let mut max_existential_assignments = 0u64;
+    let mut max_candidate_states = 0u64;
+    for entry in branch_entries {
+        let obj = entry.as_object().unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} branch telemetry entry must be object",
+                artifact_path.display()
+            )
+        });
+        max_existential_assignments = max_existential_assignments.max(
+            obj.get("existential_assignment_count")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0),
+        );
+        max_candidate_states = max_candidate_states.max(
+            obj.get("candidate_state_count")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(0),
+        );
+    }
+    assert!(
+        max_existential_assignments >= 1_000 && max_candidate_states >= 1_000,
+        "LeaderElection branch telemetry should expose large existential/candidate domains (max existentials={}, max candidates={})",
+        max_existential_assignments,
+        max_candidate_states
+    );
+
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+    for required_fragment in [
+        "### leaderelection",
+        "leaderelection source-first status: `timeout_reached(timeoutreached)`",
+        "enumeration_eval=0",
+        "branch-level blocker telemetry (phase 33.4.4.d)",
+    ] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+}

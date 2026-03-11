@@ -1,7 +1,7 @@
 # Source-first Benchmark Results
 
-Generated: 2026-03-11 00:29:16 UTC
-Git rev: fd77b1c
+Generated: 2026-03-11 01:42:57 UTC
+Git rev: 875a221
 Build profile: debug
 Transpiler binary: /home/shuai/workspace/tla-rs/transpiler/target/debug/verus-transpile
 Threading mode: single-thread
@@ -15,10 +15,10 @@ CPU model: AMD Ryzen Threadripper 2990WX 32-Core Processor
 
 | Protocol | Result | States | Distinct | Depth | Wall time (s) |
 |----------|--------|--------|----------|-------|---------------|
-| twophase | ok(FrontierExhausted) | 8 | 8 | 3 | 74 |
-| primarybackup | ok(FrontierExhausted) | 60 | 60 | 7 | 176 |
-| leaderelection | timeout_reached(TimeoutReached) | 1 | 1 | 0 | 240 |
-| paxos | timeout_reached(TimeoutReached) | 2 | 2 | 1 | 303 |
+| twophase | ok(FrontierExhausted) | 8 | 8 | 3 | 21 |
+| primarybackup | ok(FrontierExhausted) | 60 | 60 | 7 | 40 |
+| leaderelection | timeout_reached(TimeoutReached) | 116 | 116 | 2 | 242 |
+| paxos | timeout_reached(TimeoutReached) | 2 | 2 | 1 | 308 |
 
 Benchmark configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/`
 Run context metadata: `reports/benchmarks/source_first/metadata/run_context.json`

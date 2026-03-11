@@ -1,6 +1,6 @@
 # tla-rs Model Checker Status (Source-First)
 
-Last reviewed: 2026-03-05 (UTC)
+Last reviewed: 2026-03-11 (UTC)
 
 This is the canonical status page for `verus-transpile model-check`. Keep this synchronized with `TODO.md` Phase 33 whenever capabilities, blockers, coverage, or performance claims change.
 
@@ -265,14 +265,14 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `RSL` | `src/protocol/RSL/distributed_system.rs` | `transpiler/tests/model_check_fixtures/rsl_missing_constants_domain.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Configuration error: missing domain for named type `LConstants` (`quantifiers.types.LConstants`). | `test_model_check_rsl_blocker_missing_constants_domain_is_reproducible` |
 | `Raft` | `src/protocol/Raft/raft.rs`, `src/protocol/Raft/types.rs` | `transpiler/tests/model_check_fixtures/raft_existential_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; pre-exploration branch-assignment expansion fails) | `unsupported` | N/A | Configuration error: existential domain expansion exceeded limit (200 assignments) during bounded branch existential enumeration. | `test_model_check_raft_blocker_existential_expansion_limit_is_reproducible` |
-| `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 12` | N/A | `test_model_check_paxos_bounded_run`, `test_model_check_paxos_real_safety_invariants_bounded_run`, `reports/model_check/paxos_small.json`, `reports/model_check/paxos_safety_invariants.json` |
+| `Paxos` | `src/protocol/Paxos/paxos.rs`, `src/protocol/Paxos/types.rs` | `transpiler/tests/model_check_fixtures/paxos_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 2 / 0 / 6` | N/A | `test_model_check_paxos_bounded_run`, `test_model_check_paxos_real_safety_invariants_bounded_run`, `reports/model_check/paxos_small.json`, `reports/model_check/paxos_safety_invariants.json` |
 | `VerticalPaxos` | `src/protocol/VerticalPaxos/vpaxos.rs`, `src/protocol/VerticalPaxos/types.rs` | `transpiler/tests/model_check_fixtures/verticalpaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; pre-exploration branch-assignment expansion fails) | `unsupported` | N/A | Configuration error: existential domain expansion exceeded limit (200 assignments) during bounded branch existential enumeration. | `test_model_check_verticalpaxos_blocker_existential_expansion_limit_is_reproducible` |
 | `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LConstants` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` |
 | `PBFT` | `src/protocol/PBFT/pbft.rs`, `src/protocol/PBFT/types.rs` | `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 0 / 0 / 20` | N/A | `test_model_check_pbft_bounded_run`, `reports/model_check/pbft_small.json` |
 | `ChainReplication` | `src/protocol/ChainReplication/chain.rs`, `src/protocol/ChainReplication/types.rs` | `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; pre-exploration branch-assignment expansion fails) | `unsupported` | N/A | Configuration error: existential domain expansion exceeded limit (200 assignments) during bounded branch existential enumeration. | `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` |
-| `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 2 / 1 / 67` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `test_model_check_primarybackup_real_safety_invariants_bounded_run`, `reports/model_check/primarybackup_small.json`, `reports/model_check/primarybackup_safety_invariants.json` |
-| `TwoPhase` | `src/protocol/TwoPhase/twophase.rs`, `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `3 / 4 / 1 / 3268` | N/A | `test_model_check_twophase_bounded_run`, `test_model_check_twophase_real_safety_invariants_bounded_run`, `reports/model_check/twophase_small.json`, `reports/model_check/twophase_safety_invariants.json` |
-| `LeaderElection` | `src/protocol/LeaderElection/election.rs`, `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `4 / 3 / 1 / 77` | N/A | `test_model_check_leader_election_bounded_run`, `test_model_check_leader_election_real_safety_invariants_bounded_run`, `reports/model_check/leaderelection_small.json`, `reports/model_check/leaderelection_safety_invariants.json` |
+| `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 1 / 0 / 18` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `test_model_check_primarybackup_real_safety_invariants_bounded_run`, `reports/model_check/primarybackup_small.json`, `reports/model_check/primarybackup_safety_invariants.json` |
+| `TwoPhase` | `src/protocol/TwoPhase/twophase.rs`, `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 3 / 1 / 226` | N/A | `test_model_check_twophase_bounded_run`, `test_model_check_twophase_real_safety_invariants_bounded_run`, `reports/model_check/twophase_small.json`, `reports/model_check/twophase_safety_invariants.json` |
+| `LeaderElection` | `src/protocol/LeaderElection/election.rs`, `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `4 / 3 / 1 / 15` | N/A | `test_model_check_leader_election_bounded_run`, `test_model_check_leader_election_real_safety_invariants_bounded_run`, `reports/model_check/leaderelection_small.json`, `reports/model_check/leaderelection_safety_invariants.json` |
 
 ### 4.1 Exact-mode performance baseline snapshot (Phase 33.4)
 
@@ -281,10 +281,10 @@ This table is the pre-optimization reference point for exact-mode performance wo
 
 | Protocol | Artifact | `states` | `transitions` | `depth` | `elapsed_ms` | `pruned_by_por` | `symmetry_collapses` | `hash_compaction_collisions` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `Paxos` | `reports/model_check/paxos_small.json` | `1` | `2` | `0` | `12` | `0` | `0` | `0` |
-| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `2` | `2` | `1` | `67` | `0` | `0` | `0` |
-| `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `3268` | `0` | `0` | `0` |
-| `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `77` | `0` | `0` | `0` |
+| `Paxos` | `reports/model_check/paxos_small.json` | `1` | `2` | `0` | `6` | `0` | `0` | `0` |
+| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `1` | `1` | `0` | `18` | `0` | `0` | `0` |
+| `TwoPhase` | `reports/model_check/twophase_small.json` | `2` | `3` | `1` | `226` | `0` | `0` | `0` |
+| `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `15` | `0` | `0` | `0` |
 
 ### 4.2 Exact-mode optimization delta snapshot (Phase 33.4.2)
 
@@ -316,7 +316,8 @@ Exception rows (approved exactness-changing fixes):
 
 | Artifact | Guard change | Rationale |
 | --- | --- | --- |
-| _None_ | _N/A_ | _No approved exactness-changing correctness bug fixes currently._ |
+| `reports/model_check/primarybackup_small.json` | `2/2 -> 1/1` | Exact-mode correctness bug fix: partial next-state assignment branches no longer treat unconstrained fields as implicit stuttered equalities when candidate-state solving is active. |
+| `reports/model_check/twophase_small.json` | `3/4 -> 2/3` | Exact-mode correctness bug fix: branch solving now preserves unconstrained next-state-field semantics under candidate-based evaluation instead of over-committing to direct-assignment overlays. |
 
 ### 4.4 TLC vs source-first benchmark comparison (Phase 33.4.3 / 33.5.4)
 

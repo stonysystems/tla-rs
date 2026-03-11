@@ -1,14 +1,13 @@
 # Paxos long-run benchmark config.
 #
-# BLOCKED: With 1 acceptor, the state space exhausts at 1 state instantly.
-# With 2+ acceptors and quorum_size >= 1, the candidate enumeration cannot
-# find valid next-state transitions (evaluates 327K candidates in 27s
-# with no hits). The source-first model checker needs constraint-aware
-# successor computation before this protocol can produce a meaningful
-# long-run benchmark.
+# BLOCKED (remaining work tracked under Phase 33.4.4.f):
+# - With 1 acceptor, the state space exhausts at 1 state instantly.
+# - With 3 acceptors/quorum=2, source-first now makes limited progress
+#   (non-zero states/transitions), but still times out under the benchmark
+#   budget because branch-level existential/candidate combinations remain large.
 #
 # This config uses the target 3-node model for documentation purposes.
-# It will hit the enumeration guardrail or time out without progress.
+# It is expected to time out with branch-level blocker telemetry.
 #
 # Historical TLC reference: 3 nodes, quorum=2, 3 values → TIMEOUT
 # (~109M states, ~18M distinct in 5 minutes).

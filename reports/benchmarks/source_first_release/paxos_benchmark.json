@@ -46,7 +46,7 @@
       {
         "branch_label": "branch_0",
         "candidate_state_count": 1679616,
-        "cumulative_solve_elapsed_ms": 120964,
+        "cumulative_solve_elapsed_ms": 138882,
         "direct_solver_hits": 0,
         "enumeration_fallback_hits": 1,
         "existential_assignment_count": 3,
@@ -57,41 +57,52 @@
       {
         "branch_label": "branch_1",
         "candidate_state_count": 1679616,
-        "cumulative_solve_elapsed_ms": 97455,
-        "direct_solver_hits": 0,
-        "enumeration_fallback_hits": 1,
+        "cumulative_solve_elapsed_ms": 11269,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
         "existential_assignment_count": 3,
         "guard_pruned_candidate_evaluations": 0,
         "invocations": 1,
-        "successful_successors": 2
+        "successful_successors": 3
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 68521,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 1,
+        "existential_assignment_count": 27,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
       }
     ],
     "candidate_evaluation_guardrail_per_state_branch": 100000000,
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
     "depth": 1,
-    "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 265578,
-    "enumeration_candidate_evaluations": 9212916,
+    "direct_assignment_branch_solves": 1,
+    "elapsed_ms": 266384,
+    "enumeration_candidate_evaluations": 7397877,
     "enumeration_fallback_branch_solves": 2,
     "guard_pruned_candidate_evaluations": 0,
     "hash_compaction_collisions": 0,
     "pruned_by_por": 0,
-    "states": 4,
+    "states": 5,
     "successor_cache_hits": 0,
-    "successor_cache_misses": 4,
+    "successor_cache_misses": 5,
     "symmetry_collapses": 0,
     "timing": {
-      "candidate_generation_evaluation_ms": 243996,
-      "dedup_hashing_normalization_ms": 5,
-      "initial_state_construction_ms": 21577,
+      "candidate_generation_evaluation_ms": 211375,
+      "dedup_hashing_normalization_ms": 10,
+      "initial_state_construction_ms": 21855,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 0,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 0,
-      "successor_solving_ms": 0
+      "successor_solving_ms": 33144
     },
-    "transitions": 4
+    "transitions": 5
   },
   "types": "src/protocol/Paxos/types.rs"
 }

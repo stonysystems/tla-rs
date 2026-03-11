@@ -9922,7 +9922,7 @@ Rules for this phase (do not cut corners):
 - `PrimaryBackup`: release 50s vs debug 174s vs TLC 1s (TLC distinct states: 54).
 - `LeaderElection`: release/debug both timeout at 241s with 1 distinct state reached; TLC exhausts in 2s.
 - `Paxos`: release timeout at 269s (4 states) vs debug timeout at 302s (2 states); TLC exhausts in 375s on full run and reaches substantial progress on matched cutoff.
-- Fairness hardening (`33.4.4.a`), phase-attributed timing (`33.4.4.b`), and branch-level blocker telemetry surface (`33.4.4.d`) are done; protocol-specific blocker reduction (`33.4.4.e/f`) remains required before claiming true root cause.
+- Fairness hardening (`33.4.4.a`), phase-attributed timing (`33.4.4.b`), branch-level blocker telemetry (`33.4.4.d`), and `LeaderElection` blocker reduction (`33.4.4.e`) are done; `Paxos` blocker reduction (`33.4.4.f`) remains required before claiming true root cause.
 
 - [x] **33.4.4.a Benchmark fairness hardening: release-vs-debug and environment parity** [26-03-10, 23:40] (scope check: benchmark script/report/test/docs updates + artifact regeneration, <500 LOC hand edits; no decomposition required)
   - Re-run the four shared benchmark protocols with source-first in both:
@@ -10032,7 +10032,7 @@ Rules for this phase (do not cut corners):
     - Updated `scripts/compare_tlc_vs_source_first.sh` and regenerated benchmark report to include **Branch-Level Blocker Telemetry (Phase 33.4.4.d)** for `LeaderElection` and `Paxos`, sorted by cumulative solve time.
     - Added regression coverage in `transpiler/tests/integration.rs` to fail if TODO completion, script/report section, or benchmark artifact branch telemetry keys disappear.
 
-- [ ] **33.4.4.e `LeaderElection` blocker reduction on the matched benchmark model**
+- [x] **33.4.4.e `LeaderElection` blocker reduction on the matched benchmark model** [26-03-11, 22:03] (scope check: helper-call direct-solver extension + candidate-domain safety filter + benchmark/report/test refresh, <500 LOC hand edits; no decomposition required)
   - Reduce the current blocker to the smallest still-honest benchmark-preserving cause. Do **not** retreat to a 1-node toy and claim the benchmark issue is solved.
   - Record:
     - the first branch family that explodes,
@@ -10048,6 +10048,20 @@ Rules for this phase (do not cut corners):
     - preferred: the 3-node matched benchmark model produces non-zero transitions and meaningful progress in exact mode,
     - acceptable fallback: if it still blocks, the repo contains exact blocker telemetry and a very concrete next code task instead of the current generic "enumeration scalability" statement.
   - Do **not** count "raise the candidate-eval guardrail" as a real fix unless measured evidence shows it changes progress qualitatively rather than just burning more time.
+  - **Done**:
+    - Landed solver improvement targeted at measured blocker: extended predicate-only/helper direct solving to support helper calls with extra call-site existentials (the `LeaderElection` shape), and added candidate-domain filtering + partial-assignment fallback guards so direct solving remains bounded/semantically safe.
+    - Measured blocker evidence (release canonical run, matched 3-node benchmark):
+      - run now reaches `states=276`, `transitions=789`, `depth=2`, `stop_reason=TimeoutReached` with non-zero exact-mode progress (preferred success bar satisfied),
+      - `direct_assignment_branch_solves=391`,
+      - `enumeration_candidate_evaluations=0` (previous `LeaderElection` blocker was enumeration-dominated; now removed).
+    - First branch families currently dominating wall time are telemetry-backed:
+      - `branch_3`: existential assignments `7380`, candidate states `13824`, successful successors `39`, cumulative solve `59363ms`,
+      - `branch_2`: existential assignments `7380`, candidate states `13824`, successful successors `104`, cumulative solve `54845ms`,
+      - `branch_5`: existential assignments `7380`, candidate states `13824`, successful successors `312`, cumulative solve `52795ms`.
+    - Root-cause update for `LeaderElection`: blocker is no longer next-state candidate enumeration blow-up; remaining timeout pressure comes from high existential-assignment cardinality per branch family under matched benchmark bounds.
+    - Added regression coverage so this progress cannot silently regress:
+      - unit tests in `transpiler/src/main.rs` and `transpiler/src/modelcheck/solver.rs`,
+      - integration gate in `transpiler/tests/integration.rs` requiring TODO completion + release artifact non-trivial progress + zero `LeaderElection` enumeration eval + report evidence.
 
 - [ ] **33.4.4.f `Paxos` blocker reduction on the matched benchmark model**
   - Same discipline as `33.4.4.e`, but do not assume the same fix automatically transfers just because both currently say "enumeration scalability".

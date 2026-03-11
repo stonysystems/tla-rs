@@ -30,6 +30,12 @@
   "protocol": "transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.protocol.rs",
   "result": "ok",
   "search": {
+    "evidence_mode": {
+      "class": "exact_proof_strength",
+      "guidance": "Exact search settings preserve explored-state distinctions for proof-strength bounded evidence.",
+      "lossy_reasons": [],
+      "proof_strength": true
+    },
     "max_depth": 4,
     "max_states": 100,
     "por_heuristic": "none",
@@ -42,6 +48,63 @@
   },
   "stop_reason": "FrontierExhausted",
   "summary": {
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 3,
+        "cumulative_solve_elapsed_ms": 0,
+        "direct_solver_hits": 3,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 1,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 3,
+        "successful_successors": 1
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 3,
+        "cumulative_solve_elapsed_ms": 0,
+        "direct_solver_hits": 3,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 1,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 3,
+        "successful_successors": 1
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 3,
+        "cumulative_solve_elapsed_ms": 0,
+        "direct_solver_hits": 3,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 1,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 3,
+        "successful_successors": 1
+      },
+      {
+        "branch_label": "branch_3",
+        "candidate_state_count": 3,
+        "cumulative_solve_elapsed_ms": 0,
+        "direct_solver_hits": 3,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 1,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 3,
+        "successful_successors": 1
+      },
+      {
+        "branch_label": "branch_4",
+        "candidate_state_count": 3,
+        "cumulative_solve_elapsed_ms": 0,
+        "direct_solver_hits": 3,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 1,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 3,
+        "successful_successors": 1
+      }
+    ],
     "candidate_evaluation_guardrail_per_state_branch": 10000,
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
@@ -57,6 +120,16 @@
     "successor_cache_hits": 3,
     "successor_cache_misses": 3,
     "symmetry_collapses": 0,
+    "timing": {
+      "candidate_generation_evaluation_ms": 0,
+      "dedup_hashing_normalization_ms": 1,
+      "initial_state_construction_ms": 0,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 0,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 1,
+      "successor_solving_ms": 0
+    },
     "transitions": 5
   },
   "types": "transpiler/tests/model_check_fixtures/liveness_avoidable_cycle.types.rs"

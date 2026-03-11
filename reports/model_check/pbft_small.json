@@ -34,14 +34,115 @@
   },
   "stop_reason": "FrontierExhausted",
   "summary": {
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 10,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 18,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 35,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 72,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 7,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 18,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_3",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 3,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 9,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_4",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 7,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 18,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_5",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 3,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 9,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_6",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 7,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 18,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_7",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 4,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 9,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_8",
+        "candidate_state_count": 1,
+        "cumulative_solve_elapsed_ms": 3,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 9,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      }
+    ],
     "candidate_evaluation_guardrail_per_state_branch": 10000,
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
     "depth": 0,
-    "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 20,
-    "enumeration_candidate_evaluations": 180,
-    "enumeration_fallback_branch_solves": 9,
+    "direct_assignment_branch_solves": 9,
+    "elapsed_ms": 86,
+    "enumeration_candidate_evaluations": 0,
+    "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
     "hash_compaction_collisions": 0,
     "pruned_by_por": 0,
@@ -49,6 +150,16 @@
     "successor_cache_hits": 0,
     "successor_cache_misses": 1,
     "symmetry_collapses": 0,
+    "timing": {
+      "candidate_generation_evaluation_ms": 1,
+      "dedup_hashing_normalization_ms": 6,
+      "initial_state_construction_ms": 0,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 1,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 7,
+      "successor_solving_ms": 79
+    },
     "transitions": 0
   },
   "types": "src/protocol/PBFT/types.rs"

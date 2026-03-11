@@ -16,26 +16,26 @@
   "result": "timeout_reached(TimeoutReached)",
   "stop_reason": "TimeoutReached",
   "summary": {
-    "states": 4,
-    "transitions": 4,
+    "states": 5,
+    "transitions": 5,
     "depth": 1,
     "wall_secs": 270,
-    "elapsed_ms": 265578,
+    "elapsed_ms": 266384,
     "timing": {
-      "candidate_generation_evaluation_ms": 243996,
-      "dedup_hashing_normalization_ms": 5,
-      "initial_state_construction_ms": 21577,
+      "candidate_generation_evaluation_ms": 211375,
+      "dedup_hashing_normalization_ms": 10,
+      "initial_state_construction_ms": 21855,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 0,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 0,
-      "successor_solving_ms": 0
+      "successor_solving_ms": 33144
     },
     "branch_telemetry": [
       {
         "branch_label": "branch_0",
         "candidate_state_count": 1679616,
-        "cumulative_solve_elapsed_ms": 120964,
+        "cumulative_solve_elapsed_ms": 138882,
         "direct_solver_hits": 0,
         "enumeration_fallback_hits": 1,
         "existential_assignment_count": 3,
@@ -46,13 +46,24 @@
       {
         "branch_label": "branch_1",
         "candidate_state_count": 1679616,
-        "cumulative_solve_elapsed_ms": 97455,
-        "direct_solver_hits": 0,
-        "enumeration_fallback_hits": 1,
+        "cumulative_solve_elapsed_ms": 11269,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
         "existential_assignment_count": 3,
         "guard_pruned_candidate_evaluations": 0,
         "invocations": 1,
-        "successful_successors": 2
+        "successful_successors": 3
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 68521,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 1,
+        "existential_assignment_count": 27,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
       }
     ]
   }

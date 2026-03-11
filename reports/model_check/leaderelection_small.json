@@ -16,6 +16,12 @@
   "protocol": "src/protocol/LeaderElection/election.rs",
   "result": "ok",
   "search": {
+    "evidence_mode": {
+      "class": "exact_proof_strength",
+      "guidance": "Exact search settings preserve explored-state distinctions for proof-strength bounded evidence.",
+      "lossy_reasons": [],
+      "proof_strength": true
+    },
     "max_depth": 1,
     "max_states": 200,
     "por_heuristic": "none",
@@ -28,14 +34,93 @@
   },
   "stop_reason": "FrontierExhausted",
   "summary": {
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 32,
+        "cumulative_solve_elapsed_ms": 1,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 4,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 32,
+        "cumulative_solve_elapsed_ms": 1,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 4,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 1
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 32,
+        "cumulative_solve_elapsed_ms": 1,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 4,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_3",
+        "candidate_state_count": 32,
+        "cumulative_solve_elapsed_ms": 1,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 4,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_4",
+        "candidate_state_count": 32,
+        "cumulative_solve_elapsed_ms": 1,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 4,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_5",
+        "candidate_state_count": 32,
+        "cumulative_solve_elapsed_ms": 1,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 4,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 1
+      },
+      {
+        "branch_label": "branch_6",
+        "candidate_state_count": 32,
+        "cumulative_solve_elapsed_ms": 1,
+        "direct_solver_hits": 1,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 4,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 1
+      }
+    ],
     "candidate_evaluation_guardrail_per_state_branch": 10000,
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
     "depth": 1,
-    "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 77,
-    "enumeration_candidate_evaluations": 896,
-    "enumeration_fallback_branch_solves": 7,
+    "direct_assignment_branch_solves": 7,
+    "elapsed_ms": 15,
+    "enumeration_candidate_evaluations": 0,
+    "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
     "hash_compaction_collisions": 0,
     "pruned_by_por": 0,
@@ -43,6 +128,16 @@
     "successor_cache_hits": 0,
     "successor_cache_misses": 1,
     "symmetry_collapses": 0,
+    "timing": {
+      "candidate_generation_evaluation_ms": 0,
+      "dedup_hashing_normalization_ms": 7,
+      "initial_state_construction_ms": 1,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 1,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 6,
+      "successor_solving_ms": 7
+    },
     "transitions": 3
   },
   "types": "src/protocol/LeaderElection/types.rs"
