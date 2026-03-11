@@ -13,6 +13,20 @@ use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
 
 verus! {
+    proof fn lemma_set_contains_implies_len_positive<A>(s: Set<A>, x: A)
+        requires
+            s.contains(x),
+        ensures
+            s.len() > 0,
+    {
+        vstd::set_lib::lemma_set_empty_equivalency_len(s);
+        if s.len() == 0 {
+            assert(s == Set::<A>::empty());
+            assert(!s.contains(x));
+            assert(false);
+        }
+    }
+
     pub struct LLearner {
         pub constants:LReplicaConstants,
         pub max_ballot_seen:Ballot,
@@ -61,6 +75,111 @@ verus! {
                 constants:s.constants,
                 max_ballot_seen:s.max_ballot_seen,
                 unexecuted_learner_state:s.unexecuted_learner_state.insert(opn, tup_)
+            }
+        }
+    }
+
+    pub proof fn lemma_LLearnerProcess2b_preserves_nonempty_sender_sets(
+        s: LLearner,
+        s_: LLearner,
+        packet: RslPacket,
+    )
+        requires
+            packet.msg is RslMessage2b,
+            LLearnerProcess2b(s, s_, packet),
+            forall |k: OperationNumber|
+                s.unexecuted_learner_state.contains_key(k) ==> s.unexecuted_learner_state[k].received_2b_message_senders.len() > 0,
+        ensures
+            forall |k: OperationNumber|
+                s_.unexecuted_learner_state.contains_key(k) ==> s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0,
+    {
+        let m = packet.msg;
+        let opn = m->opn_2b;
+        if !s.constants.all.config.replica_ids.contains(packet.src) || BalLt(m->bal_2b, s.max_ballot_seen) {
+            assert(s_ == s);
+            assert forall |k: OperationNumber|
+                s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
+                assert(s.unexecuted_learner_state.contains_key(k));
+            }
+        } else if BalLt(s.max_ballot_seen, m->bal_2b) {
+            let tup_ = LearnerTuple{
+                received_2b_message_senders: set![packet.src],
+                candidate_learned_value: m->val_2b,
+            };
+            assert(s_ == LLearner{
+                constants: s.constants,
+                max_ballot_seen: m->bal_2b,
+                unexecuted_learner_state: map![opn => tup_],
+            });
+            assert forall |k: OperationNumber|
+                s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
+                if k != opn {
+                    assert(!s_.unexecuted_learner_state.contains_key(k));
+                } else {
+                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
+                    lemma_set_contains_implies_len_positive(
+                        s_.unexecuted_learner_state[k].received_2b_message_senders,
+                        packet.src,
+                    );
+                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0);
+                }
+            }
+        } else if !s.unexecuted_learner_state.contains_key(opn) {
+            let tup_ = LearnerTuple{
+                received_2b_message_senders: set![packet.src],
+                candidate_learned_value: m->val_2b,
+            };
+            assert(s_ == LLearner{
+                constants: s.constants,
+                max_ballot_seen: m->bal_2b,
+                unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_),
+            });
+            assert forall |k: OperationNumber|
+                s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
+                if k == opn {
+                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
+                    lemma_set_contains_implies_len_positive(
+                        s_.unexecuted_learner_state[k].received_2b_message_senders,
+                        packet.src,
+                    );
+                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0);
+                } else {
+                    assert(s.unexecuted_learner_state.contains_key(k));
+                    assert(s_.unexecuted_learner_state[k] == s.unexecuted_learner_state[k]);
+                    assert(s.unexecuted_learner_state[k].received_2b_message_senders.len() > 0);
+                }
+            }
+        } else if s.unexecuted_learner_state[opn].received_2b_message_senders.contains(packet.src) {
+            assert(s_ == s);
+            assert forall |k: OperationNumber|
+                s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
+                assert(s.unexecuted_learner_state.contains_key(k));
+            }
+        } else {
+            let tup = s.unexecuted_learner_state[opn];
+            let tup_ = LearnerTuple{
+                received_2b_message_senders: tup.received_2b_message_senders + set![packet.src],
+                candidate_learned_value: tup.candidate_learned_value,
+            };
+            assert(s_ == LLearner{
+                constants: s.constants,
+                max_ballot_seen: s.max_ballot_seen,
+                unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_),
+            });
+            assert forall |k: OperationNumber|
+                s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
+                if k == opn {
+                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
+                    lemma_set_contains_implies_len_positive(
+                        s_.unexecuted_learner_state[k].received_2b_message_senders,
+                        packet.src,
+                    );
+                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0);
+                } else {
+                    assert(s.unexecuted_learner_state.contains_key(k));
+                    assert(s_.unexecuted_learner_state[k] == s.unexecuted_learner_state[k]);
+                    assert(s.unexecuted_learner_state[k].received_2b_message_senders.len() > 0);
+                }
             }
         }
     }

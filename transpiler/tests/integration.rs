@@ -19138,3 +19138,48 @@ fn test_phase_31_9_4_leaf_breakdown_is_explicit_and_blockers_logged() {
         );
     }
 }
+
+#[test]
+fn test_phase_31_9_4_1_helper_subleaf_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.1.a**",
+        "[x] **31.9.4.1.a**",
+        "lemma_LLearnerProcess2b_preserves_nonempty_sender_sets",
+        "1 verified, 0 errors",
+        "**31.9.4.1.b**",
+        "**31.9.4.1.c**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.1 helper-subleaf tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let learner_spec_path = repo_root.join("src/protocol/RSL/learner.rs");
+    let learner_spec_src = std::fs::read_to_string(&learner_spec_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read learner spec file {}: {}",
+            learner_spec_path.display(),
+            err
+        )
+    });
+    for required_symbol in [
+        "proof fn lemma_set_contains_implies_len_positive",
+        "pub proof fn lemma_LLearnerProcess2b_preserves_nonempty_sender_sets",
+        "lemma_set_contains_implies_len_positive(",
+    ] {
+        assert!(
+            learner_spec_src.contains(required_symbol),
+            "learner spec file {} must contain helper symbol `{}`",
+            learner_spec_path.display(),
+            required_symbol
+        );
+    }
+}

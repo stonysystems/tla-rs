@@ -9483,6 +9483,11 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
       3. Use fine-grained verification to iterate quickly: `--verify-only-module protocol::RSL::common_proof::message1b` or `--verify-function '*lemma_name*'`.
     - **31.9.4 leaf breakdown** (all leaves scoped to one lemma or one tightly-coupled pair, each expected <500 LOC touched):
       - [ ] **31.9.4.1**: `common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`.
+        - [x] **31.9.4.1.a**: Add a local helper lemma in `src/protocol/RSL/learner.rs` proving `LLearnerProcess2b` preserves nonempty `received_2b_message_senders` for all keys when the pre-state map already satisfies that property. [2026-03-11] Added `lemma_LLearnerProcess2b_preserves_nonempty_sender_sets` plus helper `lemma_set_contains_implies_len_positive`; focused verification passes:
+          `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::learner --verify-function '*lemma_LLearnerProcess2b_preserves_nonempty_sender_sets*' --rlimit 40`
+          ⇒ `1 verified, 0 errors`.
+        - [ ] **31.9.4.1.b**: Refactor `common_proof/learner_state.rs::lemma_Received2bMessageSendersAlwaysNonempty` to use the new helper lemma for the Process2b branch and remove `#[verifier(external_body)]`.
+        - [ ] **31.9.4.1.c**: Re-run focused verification for `lemma_Received2bMessageSendersAlwaysNonempty` at rlimit 40 under bounded timeout; if still blocked, record exact failing obligations and split again.
         - [2026-03-11] Attempted focused verification after temporarily removing `external_body`.
           Result: `--verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_Received2bMessageSendersAlwaysNonempty*' --rlimit 40`
           fails with rlimit at the lemma body; raising local rlimit to 100 caused solver timeout (>600s) without completion.
