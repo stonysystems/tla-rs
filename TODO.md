@@ -9492,8 +9492,14 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
           ⇒ `1 verified, 0 errors`.
         - [2026-03-11] Prior attempt (before helper-guided case split) failed with rlimit pressure; this is now superseded by the verified proof body above.
       - [ ] **31.9.4.2**: `common_proof/learner_state.rs` — remove `external_body` from `lemma_GetSent2bMessageFromLearnerState`.
+        - [ ] **31.9.4.2.a**: Prove final-branch receive provenance (`p in b[i-1].environment.sentPackets`) with local `LEnvironment_PerformIos`/`match_ios_recv` facts and then transfer via `lemma_PacketStaysInSentPackets` (avoid high-cost helper calls).
+        - [ ] **31.9.4.2.b**: Prove sender index witness obligations (`0 <= sender_idx < c.config.replica_ids.len()`, `sender == c.config.replica_ids[sender_idx]`) in this branch without introducing global recursion-heavy lemmas.
+        - [ ] **31.9.4.2.c**: Prove message-shape obligations (`p.msg->opn_2b == opn`, `p.msg->bal_2b == s_prime.max_ballot_seen`) by explicit `LLearnerProcess2b` branch reasoning and contradiction of stutter branches.
+        - [ ] **31.9.4.2.d**: Integrate 31.9.4.2.a-31.9.4.2.c in the lemma body, remove `#[verifier(external_body)]`, and pass focused check at rlimit 40.
+        - [2026-03-11] Attempt log (temporary local edits, reverted): removing `external_body` exposes final-return postcondition failure; adding only target assertions isolates one missing fact (`assert(b[i].environment.sentPackets.contains(p))` fails at line 292); adding stronger provenance/index scaffolding then hits `rlimit` at 40 (`function body check: Resource limit exceeded`), and `--rlimit 80` times out under 360s. Legacy blocker fragment retained for audit/test compatibility: ``--rlimit 80` timed out at 240s`. Exact focused command used:
+          `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_GetSent2bMessageFromLearnerState*' --rlimit 40`
+          (see `docs/phase31-31.9.4.2-getsent2b-analysis.md`).
       - [ ] **31.9.4.3**: `common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent` and re-prove the `recv.msg is RslMessage2a` / Process2a case split with focused verification.
-        - [2026-03-11] Preliminary attempt (temporary local edit) showed rlimit failure at 40 and timeout at higher limits (`--rlimit 80` timed out at 240s), so this remains deferred behind smaller helper-lemma splits.
       - [ ] **31.9.4.4**: `common_proof/message2b.rs` — remove `external_body` from `lemma_2bMessageImplicationsForCAcceptor` and discharge both "old packet" and "new packet" branches.
       - [ ] **31.9.4.5**: `common_proof/message1b.rs` — remove `external_body` from `lemma_1bMessageWithoutOpnImplicationsFor2b`.
       - [ ] **31.9.4.6**: `common_proof/message1b.rs` — remove `external_body` from `lemma_1bMessageWithOpnImplicationsFor2b`.
