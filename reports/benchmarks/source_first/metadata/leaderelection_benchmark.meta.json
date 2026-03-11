@@ -20,6 +20,16 @@
     "transitions": 0,
     "depth": 0,
     "wall_secs": 241,
-    "elapsed_ms": 240589
+    "elapsed_ms": 240521,
+    "timing": {
+      "candidate_generation_evaluation_ms": 240068,
+      "dedup_hashing_normalization_ms": 4,
+      "initial_state_construction_ms": 418,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 1,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 5,
+      "successor_solving_ms": 31
+    }
   }
 }

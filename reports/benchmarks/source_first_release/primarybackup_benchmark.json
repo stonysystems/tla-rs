@@ -47,7 +47,7 @@
     "constants_valuations_total": 1,
     "depth": 7,
     "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 50222,
+    "elapsed_ms": 49228,
     "enumeration_candidate_evaluations": 2764800,
     "enumeration_fallback_branch_solves": 480,
     "guard_pruned_candidate_evaluations": 0,
@@ -57,6 +57,16 @@
     "successor_cache_hits": 0,
     "successor_cache_misses": 60,
     "symmetry_collapses": 0,
+    "timing": {
+      "candidate_generation_evaluation_ms": 48972,
+      "dedup_hashing_normalization_ms": 242,
+      "initial_state_construction_ms": 10,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 0,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 0,
+      "successor_solving_ms": 4
+    },
     "transitions": 169
   },
   "types": "src/protocol/PrimaryBackup/types.rs"

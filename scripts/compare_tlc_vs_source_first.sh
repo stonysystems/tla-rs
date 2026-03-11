@@ -115,6 +115,37 @@ print(f"{transitions}|{elapsed_ms}|{enum_evals}|{stop_reason}")
 PY
 }
 
+parse_source_first_timing_breakdown() {
+    local artifact="$1"
+    if [[ ! -f "$artifact" ]]; then
+        echo "n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a"
+        return
+    fi
+    python3 - "$artifact" <<'PY' 2>/dev/null || echo "n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a"
+import json
+import sys
+
+artifact = sys.argv[1]
+try:
+    data = json.load(open(artifact))
+except Exception:
+    print("n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a")
+    raise SystemExit(0)
+timing = ((data.get("summary") or {}).get("timing") or {})
+fields = [
+    "source_ingestion_parsing_ms",
+    "model_config_resolution_ms",
+    "initial_state_construction_ms",
+    "successor_solving_ms",
+    "candidate_generation_evaluation_ms",
+    "dedup_hashing_normalization_ms",
+    "invariant_evaluation_ms",
+    "report_serialization_output_ms",
+]
+print("|".join(str(timing.get(field, "n/a")) for field in fields))
+PY
+}
+
 summary_field() {
     local file="$1" prefix="$2"
     if [[ ! -f "$file" ]]; then
@@ -199,6 +230,20 @@ PY
             IFS='|' read -r _ _ _ sf_dbg_stop_reason <<< "$(parse_source_first_artifact_details "$SF_DEBUG_DIR/${proto}_benchmark.json")"
             wall_ratio="$(format_ratio_debug_over_release "$sf_dbg_wall" "$sf_rel_wall")"
             echo "| $(protocol_display "$proto") | $sf_rel_result | $sf_rel_wall | $sf_rel_stop_reason | $sf_dbg_result | $sf_dbg_wall | $sf_dbg_stop_reason | $wall_ratio |"
+        done
+        echo ""
+    fi
+
+    if $has_sf; then
+        echo "## Phase-Attributed Source-First Timing Breakdown (ms)"
+        echo ""
+        echo "Canonical source-first timing values come from \`${SF_DIR#$PROJECT_ROOT/}\` JSON artifacts."
+        echo ""
+        echo "| Protocol | Source ingest | Model/config | Init construction | Successor solving | Candidate gen/eval | Dedup/hash/normalize | Invariant eval | Report serialize/output |"
+        echo "|----------|---------------|--------------|-------------------|-------------------|--------------------|----------------------|----------------|--------------------------|"
+        for proto in $PROTOCOLS; do
+            IFS='|' read -r t_ingest t_model t_init t_solve t_candidate t_dedup t_invariant t_report <<< "$(parse_source_first_timing_breakdown "$SF_DIR/${proto}_benchmark.json")"
+            echo "| $(protocol_display "$proto") | $t_ingest | $t_model | $t_init | $t_solve | $t_candidate | $t_dedup | $t_invariant | $t_report |"
         done
         echo ""
     fi

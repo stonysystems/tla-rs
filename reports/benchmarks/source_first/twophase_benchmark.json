@@ -47,7 +47,7 @@
     "constants_valuations_total": 1,
     "depth": 3,
     "direct_assignment_branch_solves": 0,
-    "elapsed_ms": 72184,
+    "elapsed_ms": 69903,
     "enumeration_candidate_evaluations": 1038336,
     "enumeration_fallback_branch_solves": 64,
     "guard_pruned_candidate_evaluations": 0,
@@ -57,6 +57,16 @@
     "successor_cache_hits": 0,
     "successor_cache_misses": 8,
     "symmetry_collapses": 0,
+    "timing": {
+      "candidate_generation_evaluation_ms": 69840,
+      "dedup_hashing_normalization_ms": 40,
+      "initial_state_construction_ms": 18,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 1,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 4,
+      "successor_solving_ms": 5
+    },
     "transitions": 24
   },
   "types": "src/protocol/TwoPhase/types.rs"

@@ -17821,3 +17821,141 @@ fn test_phase_33_4_4_a_release_debug_parity_artifacts_and_metadata_are_checked_i
         );
     }
 }
+
+#[test]
+fn test_phase_33_4_4_b_phase_timing_telemetry_is_reported_and_preserved() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower.contains("- [x] **33.4.4.b add phase-attributed source-first timing telemetry**"),
+        "TODO {} must mark Phase 33.4.4.b complete",
+        todo_path.display()
+    );
+
+    let sf_script_path = repo_root.join("scripts/run_model_check_benchmarks.sh");
+    let sf_script_src = std::fs::read_to_string(&sf_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read source-first benchmark script {}: {}",
+            sf_script_path.display(),
+            err
+        )
+    });
+    assert!(
+        sf_script_src.contains("payload[\"summary\"][\"timing\"]"),
+        "source-first benchmark script {} must preserve timing telemetry in per-run metadata JSON",
+        sf_script_path.display()
+    );
+
+    let compare_script_path = repo_root.join("scripts/compare_tlc_vs_source_first.sh");
+    let compare_script_src = std::fs::read_to_string(&compare_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison script {}: {}",
+            compare_script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "Phase-Attributed Source-First Timing Breakdown",
+        "parse_source_first_timing_breakdown",
+        "source_ingestion_parsing_ms",
+        "model_config_resolution_ms",
+        "initial_state_construction_ms",
+        "successor_solving_ms",
+        "candidate_generation_evaluation_ms",
+        "dedup_hashing_normalization_ms",
+        "invariant_evaluation_ms",
+        "report_serialization_output_ms",
+    ] {
+        assert!(
+            compare_script_src.contains(required_fragment),
+            "comparison script {} must include `{}`",
+            compare_script_path.display(),
+            required_fragment
+        );
+    }
+
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+    for required_fragment in [
+        "## phase-attributed source-first timing breakdown (ms)",
+        "source ingest",
+        "model/config",
+        "init construction",
+        "successor solving",
+        "candidate gen/eval",
+        "dedup/hash/normalize",
+        "invariant eval",
+        "report serialize/output",
+    ] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+
+    for profile_dir in [
+        "reports/benchmarks/source_first",
+        "reports/benchmarks/source_first_release",
+    ] {
+        for protocol in ["twophase", "primarybackup", "leaderelection", "paxos"] {
+            let artifact_path = repo_root
+                .join(profile_dir)
+                .join(format!("{protocol}_benchmark.json"));
+            let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+                panic!(
+                    "failed to read benchmark artifact {}: {}",
+                    artifact_path.display(),
+                    err
+                )
+            });
+            let artifact: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(
+                |err| {
+                    panic!(
+                        "benchmark artifact {} must be valid JSON: {}",
+                        artifact_path.display(),
+                        err
+                    )
+                },
+            );
+            let timing = artifact
+                .pointer("/summary/timing")
+                .and_then(|v| v.as_object())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "benchmark artifact {} must include `/summary/timing` object",
+                        artifact_path.display()
+                    )
+                });
+            for key in [
+                "source_ingestion_parsing_ms",
+                "model_config_resolution_ms",
+                "initial_state_construction_ms",
+                "successor_solving_ms",
+                "candidate_generation_evaluation_ms",
+                "dedup_hashing_normalization_ms",
+                "invariant_evaluation_ms",
+                "report_serialization_output_ms",
+            ] {
+                assert!(
+                    timing.get(key).map_or(false, |v| v.is_number()),
+                    "benchmark artifact {} must include numeric timing field `{}`",
+                    artifact_path.display(),
+                    key
+                );
+            }
+        }
+    }
+}

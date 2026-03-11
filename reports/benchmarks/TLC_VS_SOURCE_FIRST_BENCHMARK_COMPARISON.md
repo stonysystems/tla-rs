@@ -1,9 +1,9 @@
 # TLC vs Source-first Benchmark Comparison
 
-Generated: 2026-03-10 23:35:55 UTC
-Git rev: ed986eb
+Generated: 2026-03-11 00:14:06 UTC
+Git rev: b2500fb
 
-Source-first run: Generated: 2026-03-10 23:26:12 UTC
+Source-first run: Generated: 2026-03-11 00:04:19 UTC
 TLC run: Generated: 2026-03-08 16:25:00 UTC
 
 ## Source-first Build/Environment Parity (Phase 33.4.4.a)
@@ -26,10 +26,21 @@ TLC run: Generated: 2026-03-08 16:25:00 UTC
 
 | Protocol | Release result | Release wall (s) | Release stop reason | Debug result | Debug wall (s) | Debug stop reason | Debug/Release wall ratio |
 |----------|----------------|------------------|---------------------|--------------|----------------|-------------------|--------------------------|
-| TwoPhase | ok(FrontierExhausted) | 17 | FrontierExhausted | ok(FrontierExhausted) | 73 | FrontierExhausted | 4.29x |
-| PrimaryBackup | ok(FrontierExhausted) | 50 | FrontierExhausted | ok(FrontierExhausted) | 174 | FrontierExhausted | 3.48x |
-| LeaderElection | timeout_reached(TimeoutReached) | 241 | TimeoutReached | timeout_reached(TimeoutReached) | 241 | TimeoutReached | 1.00x |
-| Paxos | timeout_reached(TimeoutReached) | 269 | TimeoutReached | timeout_reached(TimeoutReached) | 302 | TimeoutReached | 1.12x |
+| TwoPhase | ok(FrontierExhausted) | 16 | FrontierExhausted | ok(FrontierExhausted) | 70 | FrontierExhausted | 4.38x |
+| PrimaryBackup | ok(FrontierExhausted) | 50 | FrontierExhausted | ok(FrontierExhausted) | 167 | FrontierExhausted | 3.34x |
+| LeaderElection | timeout_reached(TimeoutReached) | 240 | TimeoutReached | timeout_reached(TimeoutReached) | 241 | TimeoutReached | 1.00x |
+| Paxos | timeout_reached(TimeoutReached) | 270 | TimeoutReached | timeout_reached(TimeoutReached) | 300 | TimeoutReached | 1.11x |
+
+## Phase-Attributed Source-First Timing Breakdown (ms)
+
+Canonical source-first timing values come from `reports/benchmarks/source_first_release` JSON artifacts.
+
+| Protocol | Source ingest | Model/config | Init construction | Successor solving | Candidate gen/eval | Dedup/hash/normalize | Invariant eval | Report serialize/output |
+|----------|---------------|--------------|-------------------|-------------------|--------------------|----------------------|----------------|--------------------------|
+| TwoPhase | 0 | 0 | 5 | 2 | 16294 | 34 | 0 | 0 |
+| PrimaryBackup | 0 | 0 | 10 | 4 | 48972 | 242 | 0 | 0 |
+| LeaderElection | 0 | 0 | 94 | 19 | 240148 | 4 | 0 | 0 |
+| Paxos | 0 | 0 | 20351 | 0 | 244872 | 4 | 0 | 0 |
 
 ## Column Meanings
 
@@ -43,13 +54,13 @@ TLC run: Generated: 2026-03-08 16:25:00 UTC
 
 | Protocol | Engine | Result | States (gen) | Distinct | Depth | Wall (s) |
 |----------|--------|--------|--------------|----------|-------|----------|
-| twophase | source-first | ok(FrontierExhausted) | — | 8 | 3 | 17 |
+| twophase | source-first | ok(FrontierExhausted) | — | 8 | 3 | 16 |
 | | TLC | pass | 150 | 64 | 9 | 1 |
 | primarybackup | source-first | ok(FrontierExhausted) | — | 60 | 7 | 50 |
 | | TLC | pass | 86 | 54 | 10 | 1 |
-| leaderelection | source-first | timeout_reached(TimeoutReached) | — | 1 | 0 | 241 |
+| leaderelection | source-first | timeout_reached(TimeoutReached) | — | 1 | 0 | 240 |
 | | TLC | pass | 100636 | 9337 | 13 | 2 |
-| paxos | source-first | timeout_reached(TimeoutReached) | — | 4 | 1 | 269 |
+| paxos | source-first | timeout_reached(TimeoutReached) | — | 4 | 1 | 270 |
 | | TLC | pass | 25288515 | 3005604 | 37 | 375 |
 
 ## Notes

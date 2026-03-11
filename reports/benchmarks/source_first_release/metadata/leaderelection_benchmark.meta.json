@@ -19,7 +19,17 @@
     "states": 1,
     "transitions": 0,
     "depth": 0,
-    "wall_secs": 241,
-    "elapsed_ms": 240293
+    "wall_secs": 240,
+    "elapsed_ms": 240265,
+    "timing": {
+      "candidate_generation_evaluation_ms": 240148,
+      "dedup_hashing_normalization_ms": 4,
+      "initial_state_construction_ms": 94,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 0,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 0,
+      "successor_solving_ms": 19
+    }
   }
 }

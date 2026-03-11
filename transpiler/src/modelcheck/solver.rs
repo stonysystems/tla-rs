@@ -9,6 +9,7 @@ use crate::modelcheck::ir::{
 };
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Instant;
 
 pub type PredicateOnlyBranchSolver<'a> = dyn Fn(
         &TransitionIr,
@@ -50,6 +51,8 @@ pub struct BranchSolveTelemetry {
     pub enumeration_candidate_evaluations: usize,
     /// Number of candidate next-state evaluations skipped by static guard pruning.
     pub guard_pruned_candidate_evaluations: usize,
+    /// Wall-clock time spent in candidate-evaluation fallback for this branch solve.
+    pub enumeration_candidate_evaluation_elapsed_ms: u128,
 }
 
 /// Result payload for one branch-solve attempt.
@@ -166,24 +169,29 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                         enumeration_fallback_branch_solves: 0,
                         enumeration_candidate_evaluations: 0,
                         guard_pruned_candidate_evaluations: 0,
+                        enumeration_candidate_evaluation_elapsed_ms: 0,
                     },
                 });
             }
         }
         if let Some(candidates) = next_state_candidates {
-            let (successors, candidate_evaluations, guard_pruned_candidate_evaluations) =
-                solve_branch_by_candidate_enumeration(
-                    transition,
-                    branch,
-                    current_state,
-                    constants,
-                    &assignments,
-                    candidates,
-                    max_candidate_evaluations_per_state_branch,
-                    bounds,
-                    hooks,
-                    should_stop,
-                )?;
+            let (
+                successors,
+                candidate_evaluations,
+                guard_pruned_candidate_evaluations,
+                enumeration_candidate_evaluation_elapsed_ms,
+            ) = solve_branch_by_candidate_enumeration(
+                transition,
+                branch,
+                current_state,
+                constants,
+                &assignments,
+                candidates,
+                max_candidate_evaluations_per_state_branch,
+                bounds,
+                hooks,
+                should_stop,
+            )?;
             return Ok(BranchSolveResult {
                 successors,
                 telemetry: BranchSolveTelemetry {
@@ -191,6 +199,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                     enumeration_fallback_branch_solves: 1,
                     enumeration_candidate_evaluations: candidate_evaluations,
                     guard_pruned_candidate_evaluations,
+                    enumeration_candidate_evaluation_elapsed_ms,
                 },
             });
         }
@@ -217,6 +226,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                     enumeration_fallback_branch_solves: 0,
                     enumeration_candidate_evaluations: 0,
                     guard_pruned_candidate_evaluations: 0,
+                    enumeration_candidate_evaluation_elapsed_ms: 0,
                 },
             });
         }
@@ -240,6 +250,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
             enumeration_fallback_branch_solves: 0,
             enumeration_candidate_evaluations: 0,
             guard_pruned_candidate_evaluations: 0,
+            enumeration_candidate_evaluation_elapsed_ms: 0,
         },
     })
 }
@@ -255,7 +266,8 @@ fn solve_branch_by_candidate_enumeration(
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
     should_stop: Option<&dyn Fn() -> bool>,
-) -> TranspileResult<(Vec<RuntimeValue>, usize, usize)> {
+) -> TranspileResult<(Vec<RuntimeValue>, usize, usize, u128)> {
+    let started = Instant::now();
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
     } else {
@@ -278,6 +290,7 @@ fn solve_branch_by_candidate_enumeration(
                 deduplicate_successors(successors),
                 candidate_evaluations,
                 guard_pruned_candidate_evaluations,
+                started.elapsed().as_millis(),
             ));
         }
         if !assignment_compatible_with_branch(branch, &assignment)? {
@@ -330,6 +343,7 @@ fn solve_branch_by_candidate_enumeration(
                     deduplicate_successors(successors),
                     candidate_evaluations,
                     guard_pruned_candidate_evaluations,
+                    started.elapsed().as_millis(),
                 ));
             }
             candidate_evaluations += 1;
@@ -371,6 +385,7 @@ fn solve_branch_by_candidate_enumeration(
         deduplicate_successors(successors),
         candidate_evaluations,
         guard_pruned_candidate_evaluations,
+        started.elapsed().as_millis(),
     ))
 }
 

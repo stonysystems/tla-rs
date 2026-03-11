@@ -9948,7 +9948,7 @@ Rules for this phase (do not cut corners):
     - Updated `scripts/compare_tlc_vs_source_first.sh` and regenerated `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` with an explicit **Source-first Build/Environment Parity** section that preserves debug continuity while marking release as canonical.
     - Updated `reports/benchmarks/MANIFEST.md` so every run has a linked per-run metadata record containing the exact command and required parity fields.
 
-- [ ] **33.4.4.b Add phase-attributed source-first timing telemetry**
+- [x] **33.4.4.b Add phase-attributed source-first timing telemetry** [26-03-11, 20:15] (scope check: source-first phase timing instrumentation + branch candidate-evaluation timing + benchmark/report/test propagation, <500 LOC hand edits; no decomposition required)
   - Extend source-first benchmark reporting so wall time is split into at least:
     - source ingestion / parsing,
     - model/config resolution,
@@ -9961,6 +9961,22 @@ Rules for this phase (do not cut corners):
   - Emit these counters/timers in JSON so they are scriptable, not just human prose.
   - Add regression coverage so the telemetry fields cannot silently disappear.
   - Update `scripts/run_model_check_benchmarks.sh` and the comparison/report pipeline so this timing breakdown is preserved in checked-in artifacts.
+  - **Done**:
+    - Extended model-check telemetry (`transpiler/src/main.rs`) so `summary.timing` now records the required phase-attributed source-first timings:
+      - `source_ingestion_parsing_ms`,
+      - `model_config_resolution_ms`,
+      - `initial_state_construction_ms`,
+      - `successor_solving_ms`,
+      - `candidate_generation_evaluation_ms`,
+      - `dedup_hashing_normalization_ms`,
+      - `invariant_evaluation_ms`,
+      - `report_serialization_output_ms`.
+    - Added branch-level candidate-evaluation timing capture in solver telemetry (`transpiler/src/modelcheck/solver.rs`) and aggregated it into `summary.timing.candidate_generation_evaluation_ms`.
+    - Updated benchmark and reporting pipeline so timing survives end-to-end:
+      - `scripts/run_model_check_benchmarks.sh` now preserves `summary.timing` in per-run metadata JSON.
+      - `scripts/compare_tlc_vs_source_first.sh` now emits **Phase-Attributed Source-First Timing Breakdown (ms)** in the checked-in comparison report.
+      - Replayed benchmark artifacts in both debug continuity and release canonical dirs and regenerated `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`.
+    - Added regression coverage (`test_phase_33_4_4_b_phase_timing_telemetry_is_reported_and_preserved`) that fails if TODO completion marker, scripts/report section, or required artifact timing keys disappear.
 
 - [ ] **33.4.4.c Diagnose the small-model wall-time gap on `TwoPhase` and `PrimaryBackup`**
   - Use the new telemetry to answer, with numbers, whether the current source-first wall time is dominated by:

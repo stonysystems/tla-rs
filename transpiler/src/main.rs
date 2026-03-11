@@ -1926,8 +1926,21 @@ struct ModelCheckExecutionSummary {
     elapsed_ms: u128,
     constants_valuations_total: usize,
     constants_valuations_explored: usize,
+    timing: ModelCheckPhaseTimingSummary,
     enumeration: ModelCheckEnumerationSummary,
     liveness: Option<ModelCheckLivenessSummary>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct ModelCheckPhaseTimingSummary {
+    source_ingestion_parsing_ms: u128,
+    model_config_resolution_ms: u128,
+    initial_state_construction_ms: u128,
+    successor_solving_ms: u128,
+    candidate_generation_evaluation_ms: u128,
+    dedup_hashing_normalization_ms: u128,
+    invariant_evaluation_ms: u128,
+    report_serialization_output_ms: u128,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3415,6 +3428,7 @@ fn execute_model_check(
     let candidate_eval_guardrail = model_config.search.candidate_eval_guardrail;
 
     let started = Instant::now();
+    let mut timing_summary = ModelCheckPhaseTimingSummary::default();
 
     let transition =
         build_transition_ir(&bundle.entrypoints.lnext).map_err(|e| miette::miette!("{}", e))?;
@@ -3488,6 +3502,7 @@ fn execute_model_check(
         PinnedTemplate(PinnedStateTemplate),
     }
 
+    let state_candidates_started = Instant::now();
     let state_candidates_source = match expand_type_domain_candidates(
         "candidate_states",
         "candidate_state",
@@ -3513,6 +3528,11 @@ fn execute_model_check(
         }
         Err(err) => return Err(err),
     };
+    timing_summary.candidate_generation_evaluation_ms = timing_summary
+        .candidate_generation_evaluation_ms
+        .saturating_add(state_candidates_started.elapsed().as_millis());
+
+    let constants_candidates_started = Instant::now();
     let constants_candidates = expand_type_domain_candidates(
         "candidate_constants",
         "candidate_constants",
@@ -3520,13 +3540,20 @@ fn execute_model_check(
         &bundle.schema,
         model_config,
     )?;
+    timing_summary.candidate_generation_evaluation_ms = timing_summary
+        .candidate_generation_evaluation_ms
+        .saturating_add(constants_candidates_started.elapsed().as_millis());
     let constants_values = resolve_constants_values(constants_candidates, model_config)?;
     let constants_valuations_total = constants_values.len();
 
     let mut assignments_by_branch = BTreeMap::new();
     for branch in &transition.branches {
+        let assignments_started = Instant::now();
         let assignments = expand_branch_existentials(branch, &bundle.schema, model_config)
             .map_err(|e| miette::miette!("{}", e))?;
+        timing_summary.candidate_generation_evaluation_ms = timing_summary
+            .candidate_generation_evaluation_ms
+            .saturating_add(assignments_started.elapsed().as_millis());
         assignments_by_branch.insert(branch.label.clone(), assignments);
     }
     let por_pruned_branches: Vec<String> = por_pruned_branch_labels.iter().cloned().collect();
@@ -3550,16 +3577,28 @@ fn execute_model_check(
             successor_cache_misses: 0,
         };
         let run_started = Instant::now();
+        let mut run_initial_state_construction_ms = 0u128;
+        let mut run_successor_solving_total_ms = 0u128;
+        let mut run_candidate_generation_ms = 0u128;
+        let mut run_candidate_evaluation_ms = 0u128;
+        let mut run_invariant_evaluation_ms = 0u128;
 
         let run_state_candidates = match &state_candidates_source {
             StateCandidatesSource::Expanded(candidates) => Cow::Borrowed(candidates.as_slice()),
-            StateCandidatesSource::PinnedTemplate(template) => Cow::Owned(
-                instantiate_pinned_state_candidate(template, Some(constants_value), bounds)?
-                    .into_iter()
-                    .collect(),
-            ),
+            StateCandidatesSource::PinnedTemplate(template) => {
+                let instantiate_started = Instant::now();
+                let instantiated = instantiate_pinned_state_candidate(
+                    template,
+                    Some(constants_value),
+                    bounds,
+                )?;
+                run_candidate_generation_ms = run_candidate_generation_ms
+                    .saturating_add(instantiate_started.elapsed().as_millis());
+                Cow::Owned(instantiated.into_iter().collect())
+            }
         };
 
+        let initial_states_started = Instant::now();
         let initial_states = construct_initial_states(
             &bundle.entrypoints.linit,
             run_state_candidates.as_ref(),
@@ -3582,6 +3621,8 @@ fn execute_model_check(
             },
         )
         .map_err(|e| miette::miette!("{}", e))?;
+        run_initial_state_construction_ms = run_initial_state_construction_ms
+            .saturating_add(initial_states_started.elapsed().as_millis());
 
         let mut successor_cache = BTreeMap::<String, Vec<TracedSuccessor>>::new();
         let cooperative_timeout_hit = std::cell::Cell::new(false);
@@ -3651,6 +3692,7 @@ fn execute_model_check(
                                 bounds,
                             )
                         };
+                    let branch_solve_started = Instant::now();
                     let solved = solve_branch_successors_with_candidates_and_telemetry(
                         &transition,
                         branch,
@@ -3668,6 +3710,16 @@ fn execute_model_check(
                         },
                         Some(&solve_timeout_reached),
                     )?;
+                    let branch_solve_elapsed_ms = branch_solve_started.elapsed().as_millis();
+                    if update_enumeration_telemetry {
+                        run_successor_solving_total_ms = run_successor_solving_total_ms
+                            .saturating_add(branch_solve_elapsed_ms);
+                        run_candidate_evaluation_ms = run_candidate_evaluation_ms.saturating_add(
+                            solved
+                                .telemetry
+                                .enumeration_candidate_evaluation_elapsed_ms,
+                        );
+                    }
 
                     if update_enumeration_telemetry {
                         run_enumeration_summary.direct_assignment_branch_solves +=
@@ -3704,6 +3756,7 @@ fn execute_model_check(
                 Ok(traced_successors)
             };
 
+        let exploration_started = Instant::now();
         let mut exploration = explore_state_space_with_traces_and_dedup(
             &initial_states,
             search_mode,
@@ -3713,7 +3766,8 @@ fn execute_model_check(
             model_config.properties.check_deadlock,
             |state| solve_traced_successors_for_state(state, true),
             |state, _depth| {
-                first_invariant_violation(
+                let invariant_started = Instant::now();
+                let result = first_invariant_violation(
                     &owned_invariants,
                     state,
                     Some(constants_value),
@@ -3733,10 +3787,14 @@ fn execute_model_check(
                         method_evaluator: None,
                         quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                     },
-                )
+                );
+                run_invariant_evaluation_ms = run_invariant_evaluation_ms
+                    .saturating_add(invariant_started.elapsed().as_millis());
+                result
             },
         )
         .map_err(|e| miette::miette!("{}", e))?;
+        let exploration_elapsed_ms = exploration_started.elapsed().as_millis();
         if cooperative_timeout_hit.get()
             && matches!(
                 exploration.stop_reason,
@@ -3823,6 +3881,24 @@ fn execute_model_check(
             None
         };
 
+        let run_successor_solving_ms = run_successor_solving_total_ms
+            .saturating_sub(run_candidate_evaluation_ms);
+        let run_dedup_hashing_normalization_ms = exploration_elapsed_ms
+            .saturating_sub(run_initial_state_construction_ms)
+            .saturating_sub(run_successor_solving_total_ms)
+            .saturating_sub(run_invariant_evaluation_ms);
+        let run_timing = ModelCheckPhaseTimingSummary {
+            source_ingestion_parsing_ms: 0,
+            model_config_resolution_ms: 0,
+            initial_state_construction_ms: run_initial_state_construction_ms,
+            successor_solving_ms: run_successor_solving_ms,
+            candidate_generation_evaluation_ms: run_candidate_generation_ms
+                .saturating_add(run_candidate_evaluation_ms),
+            dedup_hashing_normalization_ms: run_dedup_hashing_normalization_ms,
+            invariant_evaluation_ms: run_invariant_evaluation_ms,
+            report_serialization_output_ms: 0,
+        };
+
         let run_summary = ModelCheckExecutionSummary {
             result,
             states: exploration.stats.visited_states,
@@ -3836,9 +3912,26 @@ fn execute_model_check(
             elapsed_ms: run_started.elapsed().as_millis(),
             constants_valuations_total,
             constants_valuations_explored,
+            timing: run_timing,
             enumeration: run_enumeration_summary,
             liveness: liveness_summary,
         };
+
+        timing_summary.initial_state_construction_ms = timing_summary
+            .initial_state_construction_ms
+            .saturating_add(run_timing.initial_state_construction_ms);
+        timing_summary.successor_solving_ms = timing_summary
+            .successor_solving_ms
+            .saturating_add(run_timing.successor_solving_ms);
+        timing_summary.candidate_generation_evaluation_ms = timing_summary
+            .candidate_generation_evaluation_ms
+            .saturating_add(run_timing.candidate_generation_evaluation_ms);
+        timing_summary.invariant_evaluation_ms = timing_summary
+            .invariant_evaluation_ms
+            .saturating_add(run_timing.invariant_evaluation_ms);
+        timing_summary.dedup_hashing_normalization_ms = timing_summary
+            .dedup_hashing_normalization_ms
+            .saturating_add(run_timing.dedup_hashing_normalization_ms);
 
         aggregated_states = aggregated_states.saturating_add(run_summary.states);
         aggregated_transitions = aggregated_transitions.saturating_add(run_summary.transitions);
@@ -3907,6 +4000,13 @@ fn execute_model_check(
     execution.summary.constants_valuations_total = constants_valuations_total;
     execution.summary.constants_valuations_explored = constants_valuations_explored;
     execution.summary.enumeration = enumeration_summary;
+    let total_core_ms = execution.summary.elapsed_ms;
+    timing_summary.dedup_hashing_normalization_ms = total_core_ms
+        .saturating_sub(timing_summary.initial_state_construction_ms)
+        .saturating_sub(timing_summary.successor_solving_ms)
+        .saturating_sub(timing_summary.candidate_generation_evaluation_ms)
+        .saturating_sub(timing_summary.invariant_evaluation_ms);
+    execution.summary.timing = timing_summary;
 
     Ok(execution)
 }
@@ -3923,14 +4023,19 @@ fn run_model_check_command(
     timeout_ms: Option<u64>,
     model: &Path,
 ) -> Result<ModelCheckCommandExecution> {
+    use std::time::Instant;
     use verus_transpiler::modelcheck::config::{
         apply_model_config_overrides, parse_model_config_file, ModelConfigOverrides,
     };
     use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
     use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
 
+    let source_ingestion_started = Instant::now();
     let bundle = ingest_protocol_sources_with_types_and_entrypoints(input, types, init, next)
         .map_err(|e| miette::miette!("{}", e))?;
+    let source_ingestion_parsing_ms = source_ingestion_started.elapsed().as_millis();
+
+    let model_resolution_started = Instant::now();
     let mut model_config = parse_model_config_file(model).map_err(|e| miette::miette!("{}", e))?;
     let overrides = ModelConfigOverrides {
         max_depth,
@@ -3967,16 +4072,19 @@ fn run_model_check_command(
     let selected_invariants =
         resolve_selected_invariants(&bundle.spec_functions, &model_config.properties.invariants)
             .map_err(|e| miette::miette!("{}", e))?;
+    let model_config_resolution_ms = model_resolution_started.elapsed().as_millis();
     let resolved_invariant_names = selected_invariants
         .iter()
         .map(|invariant_fn| invariant_fn.name.clone())
         .collect::<Vec<_>>();
-    let execution = execute_model_check(
+    let mut execution = execute_model_check(
         &bundle,
         &model_config,
         selected_search,
         &selected_invariants,
     )?;
+    execution.summary.timing.source_ingestion_parsing_ms = source_ingestion_parsing_ms;
+    execution.summary.timing.model_config_resolution_ms = model_config_resolution_ms;
 
     Ok(ModelCheckCommandExecution {
         bundle,
@@ -4098,7 +4206,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 model_config,
                 selected_search,
                 resolved_invariant_names,
-                execution,
+                mut execution,
             } = run_model_check_command(
                 input.as_path(),
                 types.as_deref(),
@@ -4114,7 +4222,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             let search_evidence_mode = classify_search_evidence_mode(&model_config.search);
 
             if *json_report {
-                let report = serde_json::json!({
+                let mut report = serde_json::json!({
                     "result": execution.summary.result,
                     "protocol": bundle.protocol_file.display().to_string(),
                     "types": bundle.types_file.display().to_string(),
@@ -4162,6 +4270,16 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "candidate_evaluation_guardrail_per_state_branch": execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
                         "successor_cache_hits": execution.summary.enumeration.successor_cache_hits,
                         "successor_cache_misses": execution.summary.enumeration.successor_cache_misses,
+                        "timing": {
+                            "source_ingestion_parsing_ms": execution.summary.timing.source_ingestion_parsing_ms,
+                            "model_config_resolution_ms": execution.summary.timing.model_config_resolution_ms,
+                            "initial_state_construction_ms": execution.summary.timing.initial_state_construction_ms,
+                            "successor_solving_ms": execution.summary.timing.successor_solving_ms,
+                            "candidate_generation_evaluation_ms": execution.summary.timing.candidate_generation_evaluation_ms,
+                            "dedup_hashing_normalization_ms": execution.summary.timing.dedup_hashing_normalization_ms,
+                            "invariant_evaluation_ms": execution.summary.timing.invariant_evaluation_ms,
+                            "report_serialization_output_ms": execution.summary.timing.report_serialization_output_ms,
+                        },
                     },
                     "liveness": execution.summary.liveness.as_ref().map(|liveness| serde_json::json!({
                         "obligations": liveness.obligations,
@@ -4208,6 +4326,23 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         },
                     })),
                 });
+                let report_serialization_started = std::time::Instant::now();
+                let _ = serde_json::to_string_pretty(&report).map_err(|e| {
+                    miette::miette!("Failed to serialize model-check JSON report: {}", e)
+                })?;
+                let report_serialization_output_ms =
+                    report_serialization_started.elapsed().as_millis();
+                execution.summary.timing.report_serialization_output_ms =
+                    report_serialization_output_ms;
+                if let Some(summary) = report.get_mut("summary").and_then(|v| v.as_object_mut()) {
+                    if let Some(timing) = summary.get_mut("timing").and_then(|v| v.as_object_mut())
+                    {
+                        timing.insert(
+                            "report_serialization_output_ms".to_string(),
+                            serde_json::json!(report_serialization_output_ms),
+                        );
+                    }
+                }
                 let rendered = serde_json::to_string_pretty(&report).map_err(|e| {
                     miette::miette!("Failed to serialize model-check JSON report: {}", e)
                 })?;
@@ -4273,6 +4408,17 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
                 execution.summary.enumeration.successor_cache_hits,
                 execution.summary.enumeration.successor_cache_misses,
+            );
+            println!(
+                "  timing_ms: source_ingestion_parsing={}, model_config_resolution={}, initial_state_construction={}, successor_solving={}, candidate_generation_evaluation={}, dedup_hashing_normalization={}, invariant_evaluation={}, report_serialization_output={}",
+                execution.summary.timing.source_ingestion_parsing_ms,
+                execution.summary.timing.model_config_resolution_ms,
+                execution.summary.timing.initial_state_construction_ms,
+                execution.summary.timing.successor_solving_ms,
+                execution.summary.timing.candidate_generation_evaluation_ms,
+                execution.summary.timing.dedup_hashing_normalization_ms,
+                execution.summary.timing.invariant_evaluation_ms,
+                execution.summary.timing.report_serialization_output_ms,
             );
             if let Some(liveness) = &execution.summary.liveness {
                 println!(

@@ -245,6 +245,7 @@ except: print('error|error|?|?|?|?|?')
     BUILD_PROFILE="$BUILD_PROFILE" \
     PROTOCOL="$proto" \
     OUTPUT_ARTIFACT="${artifact#$PROJECT_ROOT/}" \
+    ARTIFACT_FILE="$artifact" \
     COMMAND="$cmd_escaped" \
     THREADING_MODE="$THREADING_MODE" \
     WORKER_COUNT="$WORKER_COUNT" \
@@ -297,6 +298,16 @@ payload = {
         "elapsed_ms": maybe_int(os.environ.get("ELAPSED_MS", "")),
     },
 }
+
+artifact_file = os.environ.get("ARTIFACT_FILE", "")
+if artifact_file and os.path.exists(artifact_file):
+    try:
+        artifact = json.load(open(artifact_file))
+        timing = (artifact.get("summary") or {}).get("timing")
+        if isinstance(timing, dict):
+            payload["summary"]["timing"] = timing
+    except Exception:
+        pass
 print(json.dumps(payload, indent=2))
 PY
 done
