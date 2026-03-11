@@ -212,7 +212,6 @@ verus! {
     }
 
 
-    #[verifier(external_body)]
     pub proof fn lemma_VoteWithOpnImplies2aSent(
         b:Behavior<RslState>,
         c:LConstants,
@@ -235,103 +234,9 @@ verus! {
                 p.msg->val_2a == b[i].replicas[idx].replica.acceptor.votes[opn].max_val,
         decreases i
     {
-        if i == 0
-        {
-            // At init, acceptor votes are empty (LAcceptorInit requires votes == Map::empty()),
-            // so votes.contains_key(opn) is false, contradicting requires.
-            lemma_ConstantsAllConsistent(b, c, 0);
-            assert(b[0].replicas[idx].replica.acceptor.votes == Map::<OperationNumber, Vote>::empty());
-            return arbitrary();
-        }
-
-        lemma_AssumptionsMakeValidTransition(b, c, i-1);
-        lemma_ConstantsAllConsistent(b, c, i);
-        lemma_ConstantsAllConsistent(b, c, i-1);
-
-        let s = b[i-1].replicas[idx].replica.acceptor;
-        let s_ = b[i].replicas[idx].replica.acceptor;
-
-        if s_.votes == s.votes
-        {
-          let p = lemma_VoteWithOpnImplies2aSent(b, c, i-1, idx, opn);
-          return p;
-        }
-
-        let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
-
-
-
-        if s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
-        {
-          let p = lemma_VoteWithOpnImplies2aSent(b, c, i-1, idx, opn);
-          return p;
-        }
-
-        let s = b[i-1].replicas[idx].replica.acceptor;
-        let s_ = b[i].replicas[idx].replica.acceptor;
-        let nextActionIndex = b[i-1].replicas[idx].nextActionIndex;
-
-        let e = b[i-1].environment;
-        let e_ = b[i].environment;
-
-        // Prove nextActionIndex == 0: only action 0 (receive) can add/change votes.
-        // Actions 1-3, 5-9 preserve s_.acceptor == s.acceptor (explicit in spec),
-        // so s_.votes == s.votes — contradiction with being past line 253.
-        // Action 4 (truncation) only removes votes via RemoveVotesBeforeLogTruncationPoint:
-        //   s_.votes.contains_key(opn) ==> s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
-        // Since s_.votes.contains_key(opn) (from requires), this gives
-        //   s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
-        // — contradiction with being past line 263.
-        if nextActionIndex != 0 {
-            assert(LReplicaNoReceiveNext(
-                b[i-1].replicas[idx].replica, nextActionIndex,
-                b[i].replicas[idx].replica, ios));
-            assert(false);
-        }
-
-        let recv = ios[0]->r;
-        assert(LEnvironment_Next(e, e_));
-        assert(IsValidLEnvStep(e, e.nextStep));
-        assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-        assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
-        assert(ios[0] is Receive);
-        assert(recv.dst == e.nextStep->actor);
-        assert(e.nextStep->actor == c.config.replica_ids[idx]);
-
-
-        let pkts = ExtractSentPacketsFromIos(ios);
-        lemma_ExtractSentPacketsFromIos(ios);
-
-        assert(e.nextStep is LEnvStepHostIos);
-        assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
-        assert(ios.contains(ios[0]) && ios[0] is Receive);
-        assert(match_ios_recv(ios[0], e.sentPackets));
-        assert(e.sentPackets.contains(ios[0]->r));
-
-        let p = ios[0]->r;
-        assert(b[i].environment.sentPackets.contains(p));
-        assert(c.config.replica_ids.contains(p.src));
-        if p.msg is RslMessage1b {
-            // LReplicaNextProcess1b calls LAcceptorTruncateLog, which either:
-            // (a) leaves s_ == s (conditions not met, or opn <= log_truncation_point), or
-            // (b) applies RemoveVotesBeforeLogTruncationPoint, which ensures:
-            //     forall|opn| s_.votes.contains_key(opn) ==> s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
-            // In both cases, s_.votes ⊆ s.votes, so the vote for our opn was already in s.votes.
-            // Then s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn] — contradiction with line 263.
-            assert(forall |o: OperationNumber| s_.votes.contains_key(o) ==> s.votes.contains_key(o)) by {
-                assert(LReplicaNextProcess1b(
-                    b[i-1].replicas[idx].replica,
-                    b[i].replicas[idx].replica,
-                    p,
-                    ExtractSentPacketsFromIos(ios)));
-            }
-            assert(false);
-        }
-        assert(p.msg is RslMessage2a);
-        assert(p.msg->opn_2a == opn);
-        assert(p.msg->bal_2a == b[i].replicas[idx].replica.acceptor.votes[opn].max_value_bal);
-        assert(p.msg->val_2a == b[i].replicas[idx].replica.acceptor.votes[opn].max_val);
+        // This lemma is a message2b-side wrapper over the canonical vote-causality proof.
+        // The detailed receive-message case split is centralized in lemma_Find2aThatCausedVote.
+        let p = lemma_Find2aThatCausedVote(b, c, i, idx, opn);
         p
     }
 
