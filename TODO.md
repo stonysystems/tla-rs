@@ -9520,6 +9520,11 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
         `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message1b --verify-function '*lemma_1bMessageWithOpnImplicationsFor2b*' --rlimit 40`
         ⇒ `1 verified, 0 errors`.
       - [ ] **31.9.4.7**: `common_proof/message2a.rs` — remove `external_body` from `lemma_Find2aThatCausedVote` and `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`.
+        - [x] **31.9.4.7.a**: Refactor `lemma_Find2aThatCausedVote` to reduce solver coupling by extracting receive-provenance obligations into a local helper and by making packet-monotonicity explicit in the recursive branch. [2026-03-12] Added helper `lemma_find2a_receive_packet_was_sent` and replaced the in-lemma `LEnvironment_PerformIos`/`match_ios_recv` proof block with a helper call; also switched the recursive branch to explicit `lemma_PacketStaysInSentPackets`. Focused helper verification passes:
+          `timeout 180s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_find2a_receive_packet_was_sent*' --rlimit 40`
+          ⇒ `1 verified, 0 errors`.
+        - [ ] **31.9.4.7.b**: Remove `external_body` from `lemma_Find2aThatCausedVote` and finish proving at focused rlimit; keep the helper-based structure and close remaining branch obligations instead of increasing trust.
+        - [ ] **31.9.4.7.c**: Remove `external_body` from `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality` and re-run focused checks for both message2a lemmas.
       - [ ] **31.9.4.8**: `common_proof/chosen.rs` — remove `external_body` from `lemma_DecidedOperationWasChosen` and `collect_2b_messages`.
       - [ ] **31.9.4.9**: `refinement_proof/requests.rs` — remove `external_body` from the remaining 3 request provenance lemmas.
       - [ ] **31.9.4.10**: `refinement_proof/refinement.rs` — remove `external_body` from `lemma_GetBehaviorRefinementForBehaviorOfOneStep` and `lemma_GetBehaviorRefinement`.

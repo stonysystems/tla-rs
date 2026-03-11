@@ -241,6 +241,7 @@ verus! {
         if s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]
         {
           let p = lemma_Find2aThatCausedVote(b, c, i-1, idx, opn);
+          lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);
           assert(b[i].environment.sentPackets.contains(p));
           return p;
         }
@@ -275,20 +276,11 @@ verus! {
 
         assert(nextActionIndex == 0);
 
-        let e = b[i-1].environment;
-        let e_ = b[i].environment;
-
         let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
 
         let p = ios[0]->r;
-        assert(LEnvironment_Next(e, e_));
-        assert(IsValidLEnvStep(e, e.nextStep));
-        assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
-        assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
         assert(ios[0] is Receive);
-        // assert(ios[0]->r.dst == e.nextStep->actor);
-        assert(p.dst == e.nextStep->actor);
-        assert(e.nextStep->actor == c.config.replica_ids[idx]);
+        assert(ios.contains(LIoOp::Receive { r: p }));
 
         let pkts = ExtractSentPacketsFromIos(ios);
         lemma_ExtractSentPacketsFromIos(ios);
@@ -297,14 +289,40 @@ verus! {
 
         assert(LAcceptorProcess2a(s, s_, p, pkts));
 
-        assert(e.nextStep is LEnvStepHostIos);
-        assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
-        assert(ios.contains(ios[0]) && ios[0] is Receive);
-        assert(match_ios_recv(ios[0], e.sentPackets));
-        assert(e.sentPackets.contains(ios[0]->r));
+        lemma_find2a_receive_packet_was_sent(b, c, i, idx, ios, p);
         assert(b[i].environment.sentPackets.contains(p));
         return p;
+    }
+
+    pub proof fn lemma_find2a_receive_packet_was_sent(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        idx: int,
+        ios: Seq<RslIo>,
+        p: RslPacket,
+    )
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            0 <= idx < b[i].replicas.len(),
+            RslNextOneReplica(b[i - 1], b[i], idx, ios),
+            b[i - 1].environment.nextStep is LEnvStepHostIos,
+            b[i - 1].environment.nextStep->ios == ios,
+            ios.contains(LIoOp::Receive { r: p }),
+        ensures
+            b[i].environment.sentPackets.contains(p),
+    {
+        let e = b[i - 1].environment;
+        let e_ = b[i].environment;
+        let actor = e.nextStep->actor;
+        assert(LEnvironment_Next(e, e_));
+        assert(e.nextStep == LEnvStep::LEnvStepHostIos { actor, ios });
+        assert(LEnvironment_PerformIos(e, e_, actor, ios));
+        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+        assert(match_ios_recv(LIoOp::Receive { r: p }, e.sentPackets));
+        assert(e.sentPackets.contains(p));
+        lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);
     }
 
 

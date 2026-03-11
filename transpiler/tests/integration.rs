@@ -19644,3 +19644,61 @@ fn test_phase_31_9_4_6_message1b_with_opn_leaf_is_tracked_and_checked_in() {
         );
     }
 }
+
+#[test]
+fn test_phase_31_9_4_7_a_find2a_refactor_leaf_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7**",
+        "**31.9.4.7.a**",
+        "[x] **31.9.4.7.a**",
+        "lemma_find2a_receive_packet_was_sent",
+        "--verify-function '*lemma_find2a_receive_packet_was_sent*' --rlimit 40",
+        "1 verified, 0 errors",
+        "**31.9.4.7.b**",
+        "**31.9.4.7.c**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.a tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        message2a_src.contains("pub proof fn lemma_find2a_receive_packet_was_sent"),
+        "message2a proof file {} must contain lemma_find2a_receive_packet_was_sent",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains("lemma_find2a_receive_packet_was_sent(b, c, i, idx, ios, p);"),
+        "message2a proof file {} must call lemma_find2a_receive_packet_was_sent in lemma_Find2aThatCausedVote",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains("lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);"),
+        "message2a proof file {} must use explicit packet-stays reasoning in 31.9.4.7.a",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_Find2aThatCausedVote"
+        ),
+        "message2a proof file {} must keep lemma_Find2aThatCausedVote external until 31.9.4.7.b",
+        message2a_path.display()
+    );
+}
