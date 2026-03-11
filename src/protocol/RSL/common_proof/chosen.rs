@@ -287,6 +287,7 @@ verus! {
         assert(s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= LMinQuorumSize(c.config));
         assert(s_prime.executor.next_op_to_execute == OutstandingOperation::OutstandingOpKnown{v:v, bal:bal});
         let senders = s.learner.unexecuted_learner_state[opn].received_2b_message_senders;
+        assert(senders.subset_of(s.learner.unexecuted_learner_state[opn].received_2b_message_senders));
 
         let mut sender_idx: int = 0;
         lemma_ReplicasSize(b, c, i);
@@ -319,7 +320,6 @@ verus! {
         return QuorumOf2bs{c:c, indices:indices, packets:packets, bal:bal, opn:opn, v:v};
     }
 
-    #[verifier(external_body)]
     pub proof fn collect_2b_messages(
         c: LConstants,
         senders: Set<AbstractEndPoint>,
@@ -330,6 +330,13 @@ verus! {
         sender_idx:int,
     ) -> (rc:(Set<int>, Seq<RslPacket>))
         requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 <= i,
+            0 <= idx < b[i].replicas.len(),
+            b[i].replicas[idx].replica.learner.unexecuted_learner_state.contains_key(opn),
+            senders.subset_of(
+                b[i].replicas[idx].replica.learner.unexecuted_learner_state[opn].received_2b_message_senders
+            ),
             0 <= sender_idx <= c.config.replica_ids.len(),
             c.config.replica_ids.len() > 0,
         ensures
@@ -354,6 +361,15 @@ verus! {
             // IH: rest_indices.finite()
 
             if senders.contains(sender) {
+                assert(
+                    b[i].replicas[idx].replica.learner.unexecuted_learner_state[opn]
+                        .received_2b_message_senders.contains(sender)
+                ) by {
+                    assert(senders.subset_of(
+                        b[i].replicas[idx].replica.learner.unexecuted_learner_state[opn]
+                            .received_2b_message_senders
+                    ));
+                }
                 let (sender_idx_unused, p) = lemma_GetSent2bMessageFromLearnerState(b, c, i, idx, opn, sender);
                 let new_indices = set![sender_idx_unused] + rest_indices;
                 // set![sender_idx_unused] = Set::empty().insert(sender_idx_unused) is finite

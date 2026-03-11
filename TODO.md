@@ -9582,17 +9582,23 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
                 ⇒ `1 verified, 0 errors`.
                 `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_Find2aThatCausedVote*' --rlimit 40 --triggers-mode silent`
                 ⇒ `1 verified, 0 errors`.
-      - [ ] **31.9.4.8**: `common_proof/chosen.rs` — remove `external_body` from `lemma_DecidedOperationWasChosen` and `collect_2b_messages`.
+      - [ ] **31.9.4.8**: `common_proof/chosen.rs` — remove `external_body` from `lemma_DecidedOperationWasChosen` and `collect_2b_messages`. [2026-03-12] Scope check: doing both in one step is likely >500 LOC due recursive quorum-construction + decided/quorum linkage obligations, so decompose into focused leaves below.
+        - [x] **31.9.4.8.a**: Remove `#[verifier(external_body)]` from `collect_2b_messages` and pass focused check at `--rlimit 40`. [2026-03-12] Completed in <500 LOC by removing `external_body` from `collect_2b_messages` and threading the exact `lemma_GetSent2bMessageFromLearnerState` obligations as explicit preconditions (`IsValidBehaviorPrefix`, learner index/key facts, sender-set subset). Added local subset->membership assertion in the sender branch and explicit subset fact at the call site. Focused checks:
+          `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::chosen --verify-function '*collect_2b_messages*' --rlimit 40 --triggers-mode silent`
+          ⇒ `1 verified, 0 errors`.
+          `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::chosen --rlimit 40 --triggers-mode silent`
+          ⇒ `4 verified, 0 errors`.
+        - [ ] **31.9.4.8.b**: Remove `#[verifier(external_body)]` from `lemma_DecidedOperationWasChosen`, use `31.9.4.8.a` helperized body, and pass focused checks for both chosen lemmas at `--rlimit 40`.
       - [ ] **31.9.4.9**: `refinement_proof/requests.rs` — remove `external_body` from the remaining 3 request provenance lemmas.
       - [ ] **31.9.4.10**: `refinement_proof/refinement.rs` — remove `external_body` from `lemma_GetBehaviorRefinementForBehaviorOfOneStep` and `lemma_GetBehaviorRefinement`.
       - [ ] **31.9.4.11**: `refinement_proof/execution.rs` — remove `external_body` from all remaining 6 execution/refinement lemmas.
       - [ ] **31.9.4.12**: Full RSL proof sweep with both modules enabled; confirm all 31.9.4 leaves are complete and update the remaining-count summary.
     - **Reference**: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet codebase at https://github.com/microsoft/Ironclad/tree/main/ironfleet under `protocol/RSL/` proof files. Use these as reference for proof structure and intermediate assertions.
-    - **Remaining 13 external_body** (down from 22 after fixing `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`, `lemma_Received2bMessageSendersAlwaysNonempty`, `lemma_GetSent2bMessageFromLearnerState`, `lemma_VoteWithOpnImplies2aSent`, `lemma_2bMessageImplicationsForCAcceptor`, `lemma_1bMessageWithoutOpnImplicationsFor2b`, `lemma_1bMessageWithOpnImplicationsFor2b`, `lemma_Find2aThatCausedVote`, and `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`):
+    - **Remaining 12 external_body** (down from 22 after fixing `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`, `lemma_Received2bMessageSendersAlwaysNonempty`, `lemma_GetSent2bMessageFromLearnerState`, `lemma_VoteWithOpnImplies2aSent`, `lemma_2bMessageImplicationsForCAcceptor`, `lemma_1bMessageWithoutOpnImplicationsFor2b`, `lemma_1bMessageWithOpnImplicationsFor2b`, `lemma_Find2aThatCausedVote`, `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`, and `collect_2b_messages`):
       - `refinement_proof/execution.rs` (6): `lemma_AppStateAlwaysValid`, `lemma_TransferredStateAlwaysValid`, `lemma_ReplySentIsAllowed`, `lemma_ReplyInReplyCacheIsAllowed`, `lemma_ReplyInAppStateSupplyIsAllowed`, `lemma_ReplySentViaExecutionIsAllowed`
       - `refinement_proof/requests.rs` (3): `lemma_RequestInRequestQueueHasCorrespondingRequestMessage`, `lemma_RequestIn2aMessageHasCorrespondingRequestMessage`, `lemma_DecidedRequestWasSentByClient`
       - `refinement_proof/refinement.rs` (2): `lemma_GetBehaviorRefinementForBehaviorOfOneStep`, `lemma_GetBehaviorRefinement`
-      - `common_proof/chosen.rs` (2): `lemma_DecidedOperationWasChosen`, `collect_2b_messages`
+      - `common_proof/chosen.rs` (1): `lemma_DecidedOperationWasChosen`
       - ~~`common_proof/message1b.rs`~~: 0 (both lemmas pass)
       - ~~`common_proof/message2a.rs`~~: 0 (both lemmas pass)
       - ~~`common_proof/message2b.rs`~~: 0 (both lemmas pass)
