@@ -250,21 +250,79 @@ verus! {
         if !s.votes.contains_key(opn) {
             assert(nextActionIndex == 0 || nextActionIndex == 4);
             if nextActionIndex == 4 {
-                // Action 4 = LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints
-                // → LAcceptorTruncateLog → either s_ == s or RemoveVotesBeforeLogTruncationPoint
-                // RemoveVotesBeforeLogTruncationPoint ensures: votes_.contains_key(opn) ==> votes.contains_key(opn)
-                // So no new keys are added, contradicting !s.votes.contains_key(opn) && s_.votes.contains_key(opn).
                 let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
-                assert(false);
+                let sent_packets = ExtractSentPacketsFromIos(ios);
+                lemma_ExtractSentPacketsFromIos(ios);
+                assert(RslNextOneReplica(b[i - 1], b[i], idx, ios));
+                assert(LSchedulerNext(b[i - 1].replicas[idx], b[i].replicas[idx], ios));
+                assert(LReplicaNoReceiveNext(
+                    b[i - 1].replicas[idx].replica,
+                    nextActionIndex,
+                    b[i].replicas[idx].replica,
+                    ios,
+                ));
+                assert(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(
+                    b[i - 1].replicas[idx].replica,
+                    b[i].replicas[idx].replica,
+                    sent_packets,
+                ));
+                assert(exists |truncate_opn: OperationNumber|
+                    s.last_checkpointed_operation.contains(truncate_opn)
+                    && IsLogTruncationPointValid(
+                        truncate_opn,
+                        s.last_checkpointed_operation,
+                        s.constants.all.config,
+                    )
+                    && (truncate_opn > s.log_truncation_point ==> LAcceptorTruncateLog(s, s_, truncate_opn))
+                    && (truncate_opn <= s.log_truncation_point ==> s_ == s)
+                );
+                let truncate_opn = choose |truncate_opn: OperationNumber|
+                    s.last_checkpointed_operation.contains(truncate_opn)
+                    && IsLogTruncationPointValid(
+                        truncate_opn,
+                        s.last_checkpointed_operation,
+                        s.constants.all.config,
+                    )
+                    && (truncate_opn > s.log_truncation_point ==> LAcceptorTruncateLog(s, s_, truncate_opn))
+                    && (truncate_opn <= s.log_truncation_point ==> s_ == s);
+                if truncate_opn > s.log_truncation_point {
+                    assert(LAcceptorTruncateLog(s, s_, truncate_opn));
+                    lemma_find2a_truncate_log_preserves_vote_if_retained(s, s_, truncate_opn, opn);
+                } else {
+                    assert(s_ == s);
+                    assert(s.votes.contains_key(opn));
+                }
+                assert(s.votes.contains_key(opn));
+                assert(nextActionIndex == 0);
             }
             assert(nextActionIndex == 0);
             let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
             let p = ios[0]->r;
             if p.msg is RslMessage1b {
-                // Processing 1b calls LReplicaNextProcess1b → LAcceptorTruncateLog
-                // → either s_ == s or RemoveVotesBeforeLogTruncationPoint
-                // No new vote keys are added, contradicting !s.votes.contains_key(opn) && s_.votes.contains_key(opn).
-                assert(false);
+                assert(RslNextOneReplica(b[i - 1], b[i], idx, ios));
+                assert(LSchedulerNext(b[i - 1].replicas[idx], b[i].replicas[idx], ios));
+                assert(LReplicaNextProcessPacket(
+                    b[i - 1].replicas[idx].replica,
+                    b[i].replicas[idx].replica,
+                    ios,
+                ));
+                assert(LReplicaNextProcessPacketWithoutReadingClock(
+                    b[i - 1].replicas[idx].replica,
+                    b[i].replicas[idx].replica,
+                    ios,
+                ));
+                let sent_packets = ExtractSentPacketsFromIos(ios);
+                lemma_ExtractSentPacketsFromIos(ios);
+                assert(LReplicaNextProcess1b(
+                    b[i - 1].replicas[idx].replica,
+                    b[i].replicas[idx].replica,
+                    p,
+                    sent_packets,
+                ));
+                assert(LAcceptorTruncateLog(s, s_, p.msg->log_truncation_point));
+                lemma_find2a_truncate_log_preserves_vote_if_retained(s, s_, p.msg->log_truncation_point, opn);
+                assert(s.votes.contains_key(opn));
+                assert(p.msg is RslMessage2a);
             }
             assert(p.msg is RslMessage2a);
         } else if s_.votes[opn] != s.votes[opn] {

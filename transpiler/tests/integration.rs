@@ -19760,3 +19760,83 @@ fn test_phase_31_9_4_7_b_1_truncate_helper_leaf_is_tracked_and_checked_in() {
         message2a_path.display()
     );
 }
+
+#[test]
+fn test_phase_31_9_4_7_b_2_find2a_branch_placeholders_removed() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.b.2**",
+        "[x] **31.9.4.7.b.2**",
+        "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
+        "LReplicaNextProcess1b",
+        "--verify-function '*lemma_Find2aThatCausedVote*' --rlimit 40",
+        "0 verified, 0 errors",
+        "**31.9.4.7.b.3**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.b.2 tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    for required_fragment in [
+        "assert(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(",
+        "lemma_find2a_truncate_log_preserves_vote_if_retained(s, s_, truncate_opn, opn);",
+        "assert(LReplicaNextProcess1b(",
+        "lemma_find2a_truncate_log_preserves_vote_if_retained(s, s_, p.msg->log_truncation_point, opn);",
+    ] {
+        assert!(
+            message2a_src.contains(required_fragment),
+            "message2a proof file {} must include 31.9.4.7.b.2 branch fragment `{}`",
+            message2a_path.display(),
+            required_fragment
+        );
+    }
+
+    let find2a_start = message2a_src
+        .find("pub proof fn lemma_Find2aThatCausedVote")
+        .unwrap_or_else(|| {
+            panic!(
+                "message2a proof file {} must contain lemma_Find2aThatCausedVote",
+                message2a_path.display()
+            )
+        });
+    let helper_start_rel = message2a_src[find2a_start..]
+        .find("pub proof fn lemma_find2a_receive_packet_was_sent")
+        .unwrap_or_else(|| {
+            panic!(
+                "message2a proof file {} must contain lemma_find2a_receive_packet_was_sent after lemma_Find2aThatCausedVote",
+                message2a_path.display()
+            )
+        });
+    let find2a_end = find2a_start + helper_start_rel;
+    let find2a_body = &message2a_src[find2a_start..find2a_end];
+
+    assert!(
+        !find2a_body.contains("assert(false);"),
+        "lemma_Find2aThatCausedVote in {} must not contain assert(false) placeholders after 31.9.4.7.b.2",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_Find2aThatCausedVote"
+        ),
+        "message2a proof file {} must keep lemma_Find2aThatCausedVote external until 31.9.4.7.b.3",
+        message2a_path.display()
+    );
+}
