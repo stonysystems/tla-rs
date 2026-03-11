@@ -20,16 +20,29 @@
     "transitions": 0,
     "depth": 0,
     "wall_secs": 240,
-    "elapsed_ms": 240265,
+    "elapsed_ms": 240281,
     "timing": {
-      "candidate_generation_evaluation_ms": 240148,
-      "dedup_hashing_normalization_ms": 4,
-      "initial_state_construction_ms": 94,
+      "candidate_generation_evaluation_ms": 240149,
+      "dedup_hashing_normalization_ms": 6,
+      "initial_state_construction_ms": 106,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 0,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 0,
-      "successor_solving_ms": 19
-    }
+      "successor_solving_ms": 20
+    },
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 13824,
+        "cumulative_solve_elapsed_ms": 239903,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 1,
+        "existential_assignment_count": 2460,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 0
+      }
+    ]
   }
 }

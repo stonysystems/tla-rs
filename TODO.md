@@ -9922,7 +9922,7 @@ Rules for this phase (do not cut corners):
 - `PrimaryBackup`: release 50s vs debug 174s vs TLC 1s (TLC distinct states: 54).
 - `LeaderElection`: release/debug both timeout at 241s with 1 distinct state reached; TLC exhausts in 2s.
 - `Paxos`: release timeout at 269s (4 states) vs debug timeout at 302s (2 states); TLC exhausts in 375s on full run and reaches substantial progress on matched cutoff.
-- Fairness hardening is done (`33.4.4.a`), but phase-attributed source-first timing (`33.4.4.b`) and branch-level blocker diagnosis (`33.4.4.d/e/f`) remain required before claiming true root cause.
+- Fairness hardening (`33.4.4.a`), phase-attributed timing (`33.4.4.b`), and branch-level blocker telemetry surface (`33.4.4.d`) are done; protocol-specific blocker reduction (`33.4.4.e/f`) remains required before claiming true root cause.
 
 - [x] **33.4.4.a Benchmark fairness hardening: release-vs-debug and environment parity** [26-03-10, 23:40] (scope check: benchmark script/report/test/docs updates + artifact regeneration, <500 LOC hand edits; no decomposition required)
   - Re-run the four shared benchmark protocols with source-first in both:
@@ -10004,7 +10004,7 @@ Rules for this phase (do not cut corners):
       - Release build materially reduces wall time for both, but dominant cost remains candidate generation/evaluation.
       - `TwoPhase` and `PrimaryBackup` are documented separately with distinct numeric attributions.
 
-- [ ] **33.4.4.d Add branch-level blocker telemetry for source-first benchmark failures**
+- [x] **33.4.4.d Add branch-level blocker telemetry for source-first benchmark failures** [26-03-11, 20:53] (scope check: branch-telemetry instrumentation + benchmark metadata/report wiring + regression coverage, <500 LOC hand edits; no decomposition required)
   - For exact-mode source-first benchmark runs, emit per-branch or per-branch-family telemetry sufficient to explain where search effort is going:
     - branch label,
     - existential-assignment count,
@@ -10016,6 +10016,21 @@ Rules for this phase (do not cut corners):
     - cumulative time spent in that branch family.
   - Keep the telemetry compact enough for checked-in artifacts, but precise enough that `LeaderElection` and `Paxos` blocker claims are mechanically auditable.
   - Add at least one regression test covering the new branch-level telemetry/report surface.
+  - **Done**:
+    - Extended model-check summary telemetry (`transpiler/src/main.rs`) with per-branch entries capturing:
+      - `branch_label`,
+      - `invocations`,
+      - `existential_assignment_count`,
+      - `candidate_state_count`,
+      - `direct_solver_hits`,
+      - `enumeration_fallback_hits`,
+      - `guard_pruned_candidate_evaluations`,
+      - `successful_successors`,
+      - `cumulative_solve_elapsed_ms`.
+    - Aggregated branch telemetry across explored constants valuations and emitted it in JSON artifacts under `summary.branch_telemetry`.
+    - Updated `scripts/run_model_check_benchmarks.sh` so per-run metadata JSON preserves both `summary.timing` and `summary.branch_telemetry`.
+    - Updated `scripts/compare_tlc_vs_source_first.sh` and regenerated benchmark report to include **Branch-Level Blocker Telemetry (Phase 33.4.4.d)** for `LeaderElection` and `Paxos`, sorted by cumulative solve time.
+    - Added regression coverage in `transpiler/tests/integration.rs` to fail if TODO completion, script/report section, or benchmark artifact branch telemetry keys disappear.
 
 - [ ] **33.4.4.e `LeaderElection` blocker reduction on the matched benchmark model**
   - Reduce the current blocker to the smallest still-honest benchmark-preserving cause. Do **not** retreat to a 1-node toy and claim the benchmark issue is solved.

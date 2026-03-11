@@ -20,16 +20,40 @@
     "transitions": 4,
     "depth": 1,
     "wall_secs": 270,
-    "elapsed_ms": 265227,
+    "elapsed_ms": 265578,
     "timing": {
-      "candidate_generation_evaluation_ms": 244872,
-      "dedup_hashing_normalization_ms": 4,
-      "initial_state_construction_ms": 20351,
+      "candidate_generation_evaluation_ms": 243996,
+      "dedup_hashing_normalization_ms": 5,
+      "initial_state_construction_ms": 21577,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 0,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 0,
       "successor_solving_ms": 0
-    }
+    },
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 120964,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 1,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 2
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 97455,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 1,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 1,
+        "successful_successors": 2
+      }
+    ]
   }
 }

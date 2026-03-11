@@ -257,6 +257,65 @@ print("|".join(str(field) for field in fields))
 PY
 }
 
+parse_source_first_branch_blockers() {
+    local artifact="$1"
+    local max_rows="${2:-4}"
+    if [[ ! -f "$artifact" ]]; then
+        return
+    fi
+    python3 - "$artifact" "$max_rows" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+artifact = sys.argv[1]
+max_rows = int(sys.argv[2])
+try:
+    data = json.load(open(artifact))
+except Exception:
+    raise SystemExit(0)
+
+entries = ((data.get("summary") or {}).get("branch_telemetry") or [])
+if not isinstance(entries, list):
+    raise SystemExit(0)
+
+
+def n(entry, key):
+    value = entry.get(key)
+    if isinstance(value, (int, float)):
+        return value
+    return 0
+
+
+entries = sorted(
+    entries,
+    key=lambda entry: (
+        n(entry, "cumulative_solve_elapsed_ms"),
+        n(entry, "enumeration_fallback_hits"),
+        n(entry, "guard_pruned_candidate_evaluations"),
+        n(entry, "candidate_state_count"),
+    ),
+    reverse=True,
+)
+
+rows_printed = 0
+for entry in entries:
+    if rows_printed >= max_rows:
+        break
+    branch_label = entry.get("branch_label", "n/a")
+    print(
+        f"{branch_label}|"
+        f"{entry.get('existential_assignment_count', 'n/a')}|"
+        f"{entry.get('candidate_state_count', 'n/a')}|"
+        f"{entry.get('direct_solver_hits', 'n/a')}|"
+        f"{entry.get('enumeration_fallback_hits', 'n/a')}|"
+        f"{entry.get('guard_pruned_candidate_evaluations', 'n/a')}|"
+        f"{entry.get('successful_successors', 'n/a')}|"
+        f"{entry.get('cumulative_solve_elapsed_ms', 'n/a')}"
+    )
+    rows_printed += 1
+PY
+}
+
 summary_field() {
     local file="$1" prefix="$2"
     if [[ ! -f "$file" ]]; then
@@ -378,6 +437,30 @@ PY
         done
         echo ""
         echo "- Cross-protocol conclusion: neither small model is currently fixed-overhead dominated; both are dominated by candidate generation/evaluation, with dedup/hash and invariant checking negligible. Release build materially reduces wall time on both protocols but does not change the dominant cost center."
+        echo ""
+
+        echo "## Branch-Level Blocker Telemetry (Phase 33.4.4.d)"
+        echo ""
+        echo "Branch rows come from release canonical source-first artifacts (${SF_RELEASE_DIR#$PROJECT_ROOT/}), sorted by cumulative branch solve time."
+        echo "Tables focus on exact-mode blocker protocols (LeaderElection, Paxos) and keep only top branch families for compact auditability."
+        echo ""
+        for proto in leaderelection paxos; do
+            echo "### $(protocol_display "$proto")"
+            echo ""
+            echo "| Branch label | Existential assignments | Candidate states | Direct solver hits | Enumeration fallback hits | Guard-pruned evals | Successful successors | Cumulative solve ms |"
+            echo "|--------------|-------------------------|------------------|--------------------|---------------------------|--------------------|-----------------------|---------------------|"
+            rows_emitted=0
+            while IFS='|' read -r branch_label existential_count candidate_count direct_hits enumeration_hits guard_pruned_count successful_successors cumulative_solve_ms; do
+                [[ -z "$branch_label" ]] && continue
+                echo "| $branch_label | $existential_count | $candidate_count | $direct_hits | $enumeration_hits | $guard_pruned_count | $successful_successors | $cumulative_solve_ms |"
+                rows_emitted=$((rows_emitted + 1))
+            done < <(parse_source_first_branch_blockers "$SF_RELEASE_DIR/${proto}_benchmark.json")
+            if [[ "$rows_emitted" -eq 0 ]]; then
+                echo "| n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |"
+            fi
+            echo ""
+        done
+        echo "- Interpretation rule for blocker narratives: prioritize branch families with highest cumulative solve ms and enumeration fallback hits; use existential/candidate counts plus guard-pruned/successor outcomes to distinguish domain blow-up from guard-filtered dead-ends."
         echo ""
     fi
 

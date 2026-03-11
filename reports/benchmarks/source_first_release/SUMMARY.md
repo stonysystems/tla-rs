@@ -1,7 +1,7 @@
 # Source-first Benchmark Results
 
-Generated: 2026-03-11 00:04:19 UTC
-Git rev: b2500fb
+Generated: 2026-03-11 00:42:45 UTC
+Git rev: fd77b1c
 Build profile: release
 Transpiler binary: /home/shuai/workspace/tla-rs/transpiler/target/release/verus-transpile
 Threading mode: single-thread
@@ -15,7 +15,7 @@ CPU model: AMD Ryzen Threadripper 2990WX 32-Core Processor
 
 | Protocol | Result | States | Distinct | Depth | Wall time (s) |
 |----------|--------|--------|----------|-------|---------------|
-| twophase | ok(FrontierExhausted) | 8 | 8 | 3 | 16 |
+| twophase | ok(FrontierExhausted) | 8 | 8 | 3 | 18 |
 | primarybackup | ok(FrontierExhausted) | 60 | 60 | 7 | 50 |
 | leaderelection | timeout_reached(TimeoutReached) | 1 | 1 | 0 | 240 |
 | paxos | timeout_reached(TimeoutReached) | 4 | 4 | 1 | 270 |

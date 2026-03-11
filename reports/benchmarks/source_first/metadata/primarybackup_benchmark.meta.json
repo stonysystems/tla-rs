@@ -19,17 +19,107 @@
     "states": 60,
     "transitions": 169,
     "depth": 7,
-    "wall_secs": 167,
-    "elapsed_ms": 166965,
+    "wall_secs": 176,
+    "elapsed_ms": 175877,
     "timing": {
-      "candidate_generation_evaluation_ms": 166679,
-      "dedup_hashing_normalization_ms": 249,
-      "initial_state_construction_ms": 33,
+      "candidate_generation_evaluation_ms": 175569,
+      "dedup_hashing_normalization_ms": 265,
+      "initial_state_construction_ms": 35,
       "invariant_evaluation_ms": 0,
-      "model_config_resolution_ms": 0,
+      "model_config_resolution_ms": 1,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 5,
-      "successor_solving_ms": 4
-    }
+      "source_ingestion_parsing_ms": 6,
+      "successor_solving_ms": 8
+    },
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 1536,
+        "cumulative_solve_elapsed_ms": 36280,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 60,
+        "existential_assignment_count": 6,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 60,
+        "successful_successors": 12
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 1536,
+        "cumulative_solve_elapsed_ms": 17224,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 60,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 60,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 1536,
+        "cumulative_solve_elapsed_ms": 36224,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 60,
+        "existential_assignment_count": 6,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 60,
+        "successful_successors": 28
+      },
+      {
+        "branch_label": "branch_3",
+        "candidate_state_count": 1536,
+        "cumulative_solve_elapsed_ms": 18840,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 60,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 60,
+        "successful_successors": 42
+      },
+      {
+        "branch_label": "branch_4",
+        "candidate_state_count": 1536,
+        "cumulative_solve_elapsed_ms": 17212,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 60,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 60,
+        "successful_successors": 24
+      },
+      {
+        "branch_label": "branch_5",
+        "candidate_state_count": 1536,
+        "cumulative_solve_elapsed_ms": 17368,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 60,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 60,
+        "successful_successors": 12
+      },
+      {
+        "branch_label": "branch_6",
+        "candidate_state_count": 1536,
+        "cumulative_solve_elapsed_ms": 16553,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 60,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 60,
+        "successful_successors": 42
+      },
+      {
+        "branch_label": "branch_7",
+        "candidate_state_count": 1536,
+        "cumulative_solve_elapsed_ms": 15845,
+        "direct_solver_hits": 0,
+        "enumeration_fallback_hits": 60,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 60,
+        "successful_successors": 9
+      }
+    ]
   }
 }

@@ -18026,3 +18026,162 @@ fn test_phase_33_4_4_c_small_model_gap_diagnosis_is_measured_and_protocol_specif
         );
     }
 }
+
+#[test]
+fn test_phase_33_4_4_d_branch_blocker_telemetry_is_preserved_and_reported() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower
+            .contains("- [x] **33.4.4.d add branch-level blocker telemetry for source-first benchmark failures**"),
+        "TODO {} must mark Phase 33.4.4.d complete",
+        todo_path.display()
+    );
+
+    let benchmark_script_path = repo_root.join("scripts/run_model_check_benchmarks.sh");
+    let benchmark_script_src =
+        std::fs::read_to_string(&benchmark_script_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read source-first benchmark script {}: {}",
+                benchmark_script_path.display(),
+                err
+            )
+        });
+    assert!(
+        benchmark_script_src.contains("payload[\"summary\"][\"branch_telemetry\"]"),
+        "source-first benchmark script {} must preserve branch-level telemetry in per-run metadata JSON",
+        benchmark_script_path.display()
+    );
+
+    let compare_script_path = repo_root.join("scripts/compare_tlc_vs_source_first.sh");
+    let compare_script_src = std::fs::read_to_string(&compare_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison script {}: {}",
+            compare_script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "parse_source_first_branch_blockers",
+        "Branch-Level Blocker Telemetry (Phase 33.4.4.d)",
+        "for proto in leaderelection paxos",
+        "Existential assignments",
+        "Candidate states",
+        "Direct solver hits",
+        "Enumeration fallback hits",
+        "Guard-pruned evals",
+        "Successful successors",
+        "Cumulative solve ms",
+    ] {
+        assert!(
+            compare_script_src.contains(required_fragment),
+            "comparison script {} must include `{}`",
+            compare_script_path.display(),
+            required_fragment
+        );
+    }
+
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+    for required_fragment in [
+        "## branch-level blocker telemetry (phase 33.4.4.d)",
+        "### leaderelection",
+        "### paxos",
+        "existential assignments",
+        "candidate states",
+        "direct solver hits",
+        "enumeration fallback hits",
+        "guard-pruned evals",
+        "successful successors",
+        "cumulative solve ms",
+    ] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+
+    for profile_dir in [
+        "reports/benchmarks/source_first",
+        "reports/benchmarks/source_first_release",
+    ] {
+        for protocol in ["twophase", "primarybackup", "leaderelection", "paxos"] {
+            let artifact_path = repo_root
+                .join(profile_dir)
+                .join(format!("{protocol}_benchmark.json"));
+            let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+                panic!(
+                    "failed to read benchmark artifact {}: {}",
+                    artifact_path.display(),
+                    err
+                )
+            });
+            let artifact: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(
+                |err| {
+                    panic!(
+                        "benchmark artifact {} must be valid JSON: {}",
+                        artifact_path.display(),
+                        err
+                    )
+                },
+            );
+            let branch_entries = artifact
+                .pointer("/summary/branch_telemetry")
+                .and_then(|v| v.as_array())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "benchmark artifact {} must include `/summary/branch_telemetry` array",
+                        artifact_path.display()
+                    )
+                });
+            assert!(
+                !branch_entries.is_empty(),
+                "benchmark artifact {} must include non-empty branch telemetry rows",
+                artifact_path.display()
+            );
+            for entry in branch_entries {
+                let obj = entry.as_object().unwrap_or_else(|| {
+                    panic!(
+                        "benchmark artifact {} branch telemetry entry must be object",
+                        artifact_path.display()
+                    )
+                });
+                for numeric_key in [
+                    "invocations",
+                    "existential_assignment_count",
+                    "candidate_state_count",
+                    "direct_solver_hits",
+                    "enumeration_fallback_hits",
+                    "guard_pruned_candidate_evaluations",
+                    "successful_successors",
+                    "cumulative_solve_elapsed_ms",
+                ] {
+                    assert!(
+                        obj.get(numeric_key).map_or(false, |v| v.is_number()),
+                        "benchmark artifact {} branch telemetry entry must include numeric `{}`",
+                        artifact_path.display(),
+                        numeric_key
+                    );
+                }
+                assert!(
+                    obj.get("branch_label").map_or(false, |v| v.is_string()),
+                    "benchmark artifact {} branch telemetry entry must include string `branch_label`",
+                    artifact_path.display()
+                );
+            }
+        }
+    }
+}

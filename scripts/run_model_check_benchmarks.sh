@@ -303,9 +303,13 @@ artifact_file = os.environ.get("ARTIFACT_FILE", "")
 if artifact_file and os.path.exists(artifact_file):
     try:
         artifact = json.load(open(artifact_file))
-        timing = (artifact.get("summary") or {}).get("timing")
+        summary = artifact.get("summary") or {}
+        timing = summary.get("timing")
         if isinstance(timing, dict):
             payload["summary"]["timing"] = timing
+        branch_telemetry = summary.get("branch_telemetry")
+        if isinstance(branch_telemetry, list):
+            payload["summary"]["branch_telemetry"] = branch_telemetry
     except Exception:
         pass
 print(json.dumps(payload, indent=2))

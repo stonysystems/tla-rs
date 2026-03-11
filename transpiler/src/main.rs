@@ -1928,6 +1928,7 @@ struct ModelCheckExecutionSummary {
     constants_valuations_explored: usize,
     timing: ModelCheckPhaseTimingSummary,
     enumeration: ModelCheckEnumerationSummary,
+    branch_telemetry: Vec<ModelCheckBranchTelemetrySummary>,
     liveness: Option<ModelCheckLivenessSummary>,
 }
 
@@ -1952,6 +1953,19 @@ struct ModelCheckEnumerationSummary {
     candidate_evaluation_guardrail_per_state_branch: usize,
     successor_cache_hits: usize,
     successor_cache_misses: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModelCheckBranchTelemetrySummary {
+    branch_label: String,
+    invocations: usize,
+    existential_assignment_count: usize,
+    candidate_state_count: usize,
+    direct_solver_hits: usize,
+    enumeration_fallback_hits: usize,
+    guard_pruned_candidate_evaluations: usize,
+    successful_successors: usize,
+    cumulative_solve_elapsed_ms: u128,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3468,6 +3482,8 @@ fn execute_model_check(
         successor_cache_hits: 0,
         successor_cache_misses: 0,
     };
+    let mut branch_telemetry_summary =
+        BTreeMap::<String, ModelCheckBranchTelemetrySummary>::new();
 
     let state_ty = bundle
         .entrypoints
@@ -3576,6 +3592,7 @@ fn execute_model_check(
             successor_cache_hits: 0,
             successor_cache_misses: 0,
         };
+        let mut run_branch_telemetry = BTreeMap::<String, ModelCheckBranchTelemetrySummary>::new();
         let run_started = Instant::now();
         let mut run_initial_state_construction_ms = 0u128;
         let mut run_successor_solving_total_ms = 0u128;
@@ -3711,6 +3728,7 @@ fn execute_model_check(
                         Some(&solve_timeout_reached),
                     )?;
                     let branch_solve_elapsed_ms = branch_solve_started.elapsed().as_millis();
+                    let successful_successors = solved.successors.len();
                     if update_enumeration_telemetry {
                         run_successor_solving_total_ms = run_successor_solving_total_ms
                             .saturating_add(branch_solve_elapsed_ms);
@@ -3730,6 +3748,41 @@ fn execute_model_check(
                             solved.telemetry.enumeration_candidate_evaluations;
                         run_enumeration_summary.guard_pruned_candidate_evaluations +=
                             solved.telemetry.guard_pruned_candidate_evaluations;
+
+                        let entry = run_branch_telemetry
+                            .entry(branch.label.clone())
+                            .or_insert_with(|| ModelCheckBranchTelemetrySummary {
+                                branch_label: branch.label.clone(),
+                                invocations: 0,
+                                existential_assignment_count: branch_assignments.len().max(1),
+                                candidate_state_count: run_state_candidates.len(),
+                                direct_solver_hits: 0,
+                                enumeration_fallback_hits: 0,
+                                guard_pruned_candidate_evaluations: 0,
+                                successful_successors: 0,
+                                cumulative_solve_elapsed_ms: 0,
+                            });
+                        entry.invocations = entry.invocations.saturating_add(1);
+                        entry.existential_assignment_count = entry
+                            .existential_assignment_count
+                            .max(branch_assignments.len().max(1));
+                        entry.candidate_state_count =
+                            entry.candidate_state_count.max(run_state_candidates.len());
+                        entry.direct_solver_hits = entry
+                            .direct_solver_hits
+                            .saturating_add(solved.telemetry.direct_assignment_branch_solves);
+                        entry.enumeration_fallback_hits = entry
+                            .enumeration_fallback_hits
+                            .saturating_add(solved.telemetry.enumeration_fallback_branch_solves);
+                        entry.guard_pruned_candidate_evaluations = entry
+                            .guard_pruned_candidate_evaluations
+                            .saturating_add(solved.telemetry.guard_pruned_candidate_evaluations);
+                        entry.successful_successors = entry
+                            .successful_successors
+                            .saturating_add(successful_successors);
+                        entry.cumulative_solve_elapsed_ms = entry
+                            .cumulative_solve_elapsed_ms
+                            .saturating_add(branch_solve_elapsed_ms);
                     }
 
                     for successor in solved.successors {
@@ -3914,6 +3967,7 @@ fn execute_model_check(
             constants_valuations_explored,
             timing: run_timing,
             enumeration: run_enumeration_summary,
+            branch_telemetry: run_branch_telemetry.values().cloned().collect(),
             liveness: liveness_summary,
         };
 
@@ -3932,6 +3986,43 @@ fn execute_model_check(
         timing_summary.dedup_hashing_normalization_ms = timing_summary
             .dedup_hashing_normalization_ms
             .saturating_add(run_timing.dedup_hashing_normalization_ms);
+        for entry in &run_summary.branch_telemetry {
+            let aggregate = branch_telemetry_summary
+                .entry(entry.branch_label.clone())
+                .or_insert_with(|| ModelCheckBranchTelemetrySummary {
+                    branch_label: entry.branch_label.clone(),
+                    invocations: 0,
+                    existential_assignment_count: 0,
+                    candidate_state_count: 0,
+                    direct_solver_hits: 0,
+                    enumeration_fallback_hits: 0,
+                    guard_pruned_candidate_evaluations: 0,
+                    successful_successors: 0,
+                    cumulative_solve_elapsed_ms: 0,
+                });
+            aggregate.invocations = aggregate.invocations.saturating_add(entry.invocations);
+            aggregate.existential_assignment_count = aggregate
+                .existential_assignment_count
+                .max(entry.existential_assignment_count);
+            aggregate.candidate_state_count = aggregate
+                .candidate_state_count
+                .max(entry.candidate_state_count);
+            aggregate.direct_solver_hits = aggregate
+                .direct_solver_hits
+                .saturating_add(entry.direct_solver_hits);
+            aggregate.enumeration_fallback_hits = aggregate
+                .enumeration_fallback_hits
+                .saturating_add(entry.enumeration_fallback_hits);
+            aggregate.guard_pruned_candidate_evaluations = aggregate
+                .guard_pruned_candidate_evaluations
+                .saturating_add(entry.guard_pruned_candidate_evaluations);
+            aggregate.successful_successors = aggregate
+                .successful_successors
+                .saturating_add(entry.successful_successors);
+            aggregate.cumulative_solve_elapsed_ms = aggregate
+                .cumulative_solve_elapsed_ms
+                .saturating_add(entry.cumulative_solve_elapsed_ms);
+        }
 
         aggregated_states = aggregated_states.saturating_add(run_summary.states);
         aggregated_transitions = aggregated_transitions.saturating_add(run_summary.transitions);
@@ -4000,6 +4091,7 @@ fn execute_model_check(
     execution.summary.constants_valuations_total = constants_valuations_total;
     execution.summary.constants_valuations_explored = constants_valuations_explored;
     execution.summary.enumeration = enumeration_summary;
+    execution.summary.branch_telemetry = branch_telemetry_summary.values().cloned().collect();
     let total_core_ms = execution.summary.elapsed_ms;
     timing_summary.dedup_hashing_normalization_ms = total_core_ms
         .saturating_sub(timing_summary.initial_state_construction_ms)
@@ -4270,6 +4362,17 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                         "candidate_evaluation_guardrail_per_state_branch": execution.summary.enumeration.candidate_evaluation_guardrail_per_state_branch,
                         "successor_cache_hits": execution.summary.enumeration.successor_cache_hits,
                         "successor_cache_misses": execution.summary.enumeration.successor_cache_misses,
+                        "branch_telemetry": execution.summary.branch_telemetry.iter().map(|branch| serde_json::json!({
+                            "branch_label": branch.branch_label,
+                            "invocations": branch.invocations,
+                            "existential_assignment_count": branch.existential_assignment_count,
+                            "candidate_state_count": branch.candidate_state_count,
+                            "direct_solver_hits": branch.direct_solver_hits,
+                            "enumeration_fallback_hits": branch.enumeration_fallback_hits,
+                            "guard_pruned_candidate_evaluations": branch.guard_pruned_candidate_evaluations,
+                            "successful_successors": branch.successful_successors,
+                            "cumulative_solve_elapsed_ms": branch.cumulative_solve_elapsed_ms,
+                        })).collect::<Vec<_>>(),
                         "timing": {
                             "source_ingestion_parsing_ms": execution.summary.timing.source_ingestion_parsing_ms,
                             "model_config_resolution_ms": execution.summary.timing.model_config_resolution_ms,
@@ -7932,6 +8035,19 @@ max = 1
                 .guard_pruned_candidate_evaluations,
             0
         );
+
+        let branch_telemetry = &execution.summary.branch_telemetry;
+        assert_eq!(branch_telemetry.len(), 1);
+        let branch = &branch_telemetry[0];
+        assert_eq!(branch.branch_label, "branch_0");
+        assert!(branch.invocations > 0);
+        assert_eq!(branch.existential_assignment_count, 1);
+        assert_eq!(branch.candidate_state_count, 2);
+        assert_eq!(branch.direct_solver_hits, 2);
+        assert_eq!(branch.enumeration_fallback_hits, 0);
+        assert_eq!(branch.guard_pruned_candidate_evaluations, 0);
+        assert!(branch.successful_successors > 0);
+        assert!(branch.cumulative_solve_elapsed_ms <= execution.summary.elapsed_ms);
     }
 
     #[test]
@@ -8037,6 +8153,17 @@ max = 1
                 .guard_pruned_candidate_evaluations,
             2
         );
+
+        let branch_telemetry = &execution.summary.branch_telemetry;
+        assert_eq!(branch_telemetry.len(), 1);
+        let branch = &branch_telemetry[0];
+        assert_eq!(branch.branch_label, "branch_0");
+        assert_eq!(branch.existential_assignment_count, 1);
+        assert_eq!(branch.candidate_state_count, 2);
+        assert_eq!(branch.direct_solver_hits, 0);
+        assert_eq!(branch.enumeration_fallback_hits, 1);
+        assert_eq!(branch.guard_pruned_candidate_evaluations, 2);
+        assert_eq!(branch.successful_successors, 0);
     }
 
     #[test]
