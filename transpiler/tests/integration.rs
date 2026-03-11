@@ -8490,16 +8490,52 @@ fn test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status
     let todo_src = std::fs::read_to_string(&todo_path).unwrap_or_else(|err| {
         panic!("failed to read TODO {}: {}", todo_path.display(), err)
     });
-    let todo_section = todo_src
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower.contains("- [x] for each protocol in that list:"),
+        "Phase 33.5 parent checklist item in {} must be marked complete",
+        todo_path.display()
+    );
+    for required_leaf in [
+        "- [x] **33.5.2.a rsl (priority #1)**",
+        "- [x] **33.5.2.b raft (priority #2)**",
+        "- [x] **33.5.2.c paxos (priority #3)**",
+        "- [x] **33.5.2.d verticalpaxos (priority #4)**",
+        "- [x] **33.5.2.e epaxos (priority #5)**",
+        "- [x] **33.5.2.f pbft (priority #6)**",
+        "- [x] **33.5.2.g chainreplication (priority #7)**",
+        "- [x] **33.5.2.h primarybackup (priority #8)**",
+        "- [x] **33.5.2.i twophase (priority #9)**",
+        "- [x] **33.5.2.j leaderelection (priority #10)**",
+    ] {
+        assert!(
+            todo_lower.contains(required_leaf),
+            "Phase 33.5 leaf `{}` must remain checked in {}",
+            required_leaf,
+            todo_path.display()
+        );
+    }
+
+    let phase_tail = todo_src
         .split("### 33.5 Consensus protocol coverage drive")
         .nth(1)
-        .and_then(|tail| tail.split("- [ ] For each protocol in that list:").next())
         .unwrap_or_else(|| {
             panic!(
                 "failed to isolate Phase 33.5 priority-order list in {}",
                 todo_path.display()
             )
         });
+    let split_marker = if phase_tail.contains("- [x] For each protocol in that list:") {
+        "- [x] For each protocol in that list:"
+    } else {
+        "- [ ] For each protocol in that list:"
+    };
+    let todo_section = phase_tail.split(split_marker).next().unwrap_or_else(|| {
+        panic!(
+            "failed to isolate Phase 33.5 priority-order numbered list before checklist boundary in {}",
+            todo_path.display()
+        )
+    });
     let todo_order: Vec<String> = todo_section
         .lines()
         .filter_map(|line| {

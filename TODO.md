@@ -10129,7 +10129,7 @@ Rules for this phase (do not cut corners):
   10. `LeaderElection` (secondary control protocol; keep it green)
   - Added regression `test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status_matrix` to enforce the exact canonical order across both `TODO.md` and `docs/model_checker_status.md` protocol matrix rows.
   - Extended `docs/model_checker_status.md` section `2.5` to record both enforcement guards (`unsupported`-row priority and full canonical order alignment).
-- [ ] For each protocol in that list:
+- [x] For each protocol in that list: [26-03-12, 05:22] (scope check: close parent after all priority leaves completed + add TODO regression guard, <500 LOC hand edits; no decomposition required)
   - [x] **33.5.2.a RSL (priority #1)** [26:03:06, 05:10]
     - [x] **33.5.2.a.1** Relaxed source-first entrypoint validation/binding so protocol-local signatures are accepted (`RslInit(con, ps)` order and `RslNext(ps, ps_)` without explicit constants param).
       - Updated `resolve_required_entrypoints_named`/signature checks to validate by type-role compatibility (state/state' agreement + `LConstants` presence), not hard-coded parameter names/order.
@@ -10217,6 +10217,9 @@ Rules for this phase (do not cut corners):
     - classify first blocker as: unsupported construct / missing domain-config support / state explosion-performance gap / real counterexample
     - land the highest-leverage fix instead of skipping to easier protocols
     - if still infeasible, record exact blocker + next code task in `docs/model_checker_status.md`
+  - **Done**:
+    - All canonical priority leaves `33.5.2.a` through `33.5.2.j` are complete with checked-in model fixtures, artifact evidence, and protocol-specific regression coverage.
+    - Added/updated integration guard `test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status_matrix` so parent-state drift and priority/leaf completion drift cannot silently regress.
 - [x] Where TLC wrappers already exist, add differential comparison on shared small models so source-first and wrapper outcomes agree qualitatively. [26:03:06, 16:20]
   - Strengthened `test_model_check_differential_vs_tlc_wrapper_outcomes_shared_small_models` to require all shared evidence anchors per protocol case:
     - qualitative TLC outcome row in `docs/conversion-testing-guide.md`
