@@ -218,6 +218,38 @@ verus! {
         p
     }
 
+    pub proof fn lemma_RequestInQueueAfterMaybeEnterNewViewComesFromElectionState(
+        s:LProposer,
+        s_:LProposer,
+        sent_packets:Seq<RslPacket>,
+        req:Request
+    )
+        requires LProposerMaybeEnterNewViewAndSend1a(s, s_, sent_packets),
+                 s_.request_queue.contains(req),
+                 !s.request_queue.contains(req),
+        ensures s_.election_state.requests_received_prev_epochs.contains(req)
+                || s_.election_state.requests_received_this_epoch.contains(req),
+    {
+        if s.election_state.current_view.proposer_id == s.constants.my_index
+            && BalLt(s.max_ballot_i_sent_1a, s.election_state.current_view)
+        {
+            SeqConcatenate(
+                s.election_state.requests_received_prev_epochs,
+                s.election_state.requests_received_this_epoch,
+            );
+            assert(
+                (s.election_state.requests_received_prev_epochs + s.election_state.requests_received_this_epoch).contains(req)
+            );
+            assert(
+                s.election_state.requests_received_prev_epochs.contains(req)
+                || s.election_state.requests_received_this_epoch.contains(req)
+            );
+        } else {
+            assert(s_ == s);
+            assert(false);
+        }
+    }
+
     pub proof fn lemma_RequestIn1bMessageHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,

@@ -9610,7 +9610,17 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
             ⇒ `1 verified, 0 errors`.
             `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::chosen --rlimit 40 --triggers-mode silent`
             ⇒ `6 verified, 0 errors`.
-      - [ ] **31.9.4.9**: `refinement_proof/requests.rs` — remove `external_body` from the remaining 3 request provenance lemmas.
+      - [ ] **31.9.4.9**: `refinement_proof/requests.rs` — remove `external_body` from the remaining 3 request provenance lemmas. [2026-03-12] Scope check: de-externalizing all 3 together is likely >500 LOC due cross-lemma dependencies (`RequestIn2a` depends on request-queue provenance, and decided-request depends on `RequestIn2a`); decompose into focused leaves below.
+        - [ ] **31.9.4.9.a**: Remove `#[verifier(external_body)]` from `lemma_RequestInRequestQueueHasCorrespondingRequestMessage` and pass focused check at `--rlimit 40`. [2026-03-12] Direct removal probe currently remains solver-bounded:
+          `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::refinement_proof::requests --verify-function '*lemma_RequestInRequestQueueHasCorrespondingRequestMessage*' --rlimit 40 --triggers-mode silent`
+          ⇒ `0 verified, 1 errors` (`function body check: Resource limit (rlimit) exceeded`). Decompose into focused leaves below.
+          - [x] **31.9.4.9.a.1**: Add/verify a helper that isolates the `MaybeEnterNewViewAndSend1a` branch obligation: if a request is newly in `request_queue` after this proposer step, it must come from election-state request sets. [2026-03-12] Added `lemma_RequestInQueueAfterMaybeEnterNewViewComesFromElectionState` in `refinement_proof/requests.rs`. Focused helper verification:
+            `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::refinement_proof::requests --verify-function '*lemma_RequestInQueueAfterMaybeEnterNewViewComesFromElectionState*' --rlimit 40 --triggers-mode silent`
+            ⇒ `1 verified, 0 errors`.
+          - [ ] **31.9.4.9.a.2**: Refactor `lemma_RequestInRequestQueueHasCorrespondingRequestMessage` branch structure (while still external) to consume the new helper and isolate the remaining process-request append branch obligations from unchanged/subrange queue branches.
+          - [ ] **31.9.4.9.a.3**: Remove `#[verifier(external_body)]` from `lemma_RequestInRequestQueueHasCorrespondingRequestMessage` and pass focused check at `--rlimit 40`; if still bounded, split the process-request append proof into a dedicated helper and re-check.
+        - [ ] **31.9.4.9.b**: Remove `#[verifier(external_body)]` from `lemma_RequestIn2aMessageHasCorrespondingRequestMessage`, using 31.9.4.9.a and existing message1b/message2a helper lemmas; pass focused check at `--rlimit 40`.
+        - [ ] **31.9.4.9.c**: Remove `#[verifier(external_body)]` from `lemma_DecidedRequestWasSentByClient` and re-run focused checks for all request-provenance lemmas/module at `--rlimit 40`.
       - [ ] **31.9.4.10**: `refinement_proof/refinement.rs` — remove `external_body` from `lemma_GetBehaviorRefinementForBehaviorOfOneStep` and `lemma_GetBehaviorRefinement`.
       - [ ] **31.9.4.11**: `refinement_proof/execution.rs` — remove `external_body` from all remaining 6 execution/refinement lemmas.
       - [ ] **31.9.4.12**: Full RSL proof sweep with both modules enabled; confirm all 31.9.4 leaves are complete and update the remaining-count summary.
