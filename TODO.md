@@ -10063,15 +10063,24 @@ Rules for this phase (do not cut corners):
       - unit tests in `transpiler/src/main.rs` and `transpiler/src/modelcheck/solver.rs`,
       - integration gate in `transpiler/tests/integration.rs` requiring TODO completion + release artifact non-trivial progress + zero `LeaderElection` enumeration eval + report evidence.
 
-- [ ] **33.4.4.f `Paxos` blocker reduction on the matched benchmark model**
-  - Same discipline as `33.4.4.e`, but do not assume the same fix automatically transfers just because both currently say "enumeration scalability".
-  - Record the per-branch/per-candidate evidence separately because Paxos has a materially larger per-node state and different guard structure.
-  - If the same underlying solver weakness is confirmed, say so with evidence; otherwise keep the blocker narratives separate.
-  - Success bar:
-    - preferred: the matched 3-node benchmark model produces non-zero transitions / meaningful exact-mode progress,
-    - acceptable fallback: checked-in raw telemetry + exact blocker narrative + next code task.
+- [x] **33.4.4.f `Paxos` blocker reduction on the matched benchmark model** [26-03-11, 23:58] (scope check: solver support for enum-variant `is` next-state constraints + targeted regressions + benchmark/report regeneration, <500 LOC hand edits; no decomposition required)
+  - Confirmed same root weakness as prior blocker class, but on a distinct Paxos shape: helper direct solving failed whenever helper branches constrained enum fields via `s_.field is Variant` (for example `phase`), so large branches (`branch_0`, `branch_2`) fell back to candidate enumeration despite otherwise assignment-style helper constraints.
+  - Landed targeted solver fix in `transpiler/src/modelcheck/solver.rs`:
+    - treat next-state enum variant predicates (`s_.field is Variant`) as direct assignments during branch solving,
+    - include these assignments in "has next-state assignments" / "assigns all next-state root fields" checks so candidate-mode direct solving remains enabled instead of forcing fallback.
+  - Added regression coverage so this does not silently regress:
+    - solver unit tests for next-state enum-variant assignment handling under direct solve + candidate filtering,
+    - model-check regression in `transpiler/src/main.rs` proving helper-call direct solving works when helper constraints use `s_.field is Variant`,
+    - integration gate in `transpiler/tests/integration.rs` enforcing TODO completion + release artifact progress + branch-level direct-solver evidence.
+  - Measured blocker evidence (matched 3-node benchmark, canonical artifacts regenerated with `--timeout 240000`):
+    - release: `states=75`, `transitions=80`, `depth=2`, `stop_reason=TimeoutReached`, `direct_assignment_branch_solves=20`, `enumeration_fallback_branch_solves=0`, `enumeration_candidate_evaluations=0`,
+    - debug: `states=13`, `transitions=14`, `depth=1`, `stop_reason=TimeoutReached`, `direct_assignment_branch_solves=7`, `enumeration_fallback_branch_solves=0`, `enumeration_candidate_evaluations=0`,
+    - prior hot branches now direct-solved in release artifact:
+      - `branch_0`: `direct_solver_hits=3`, `enumeration_fallback_hits=0`,
+      - `branch_2`: `direct_solver_hits=3`, `enumeration_fallback_hits=0`.
+  - Root-cause update for Paxos: blocker is no longer candidate-enumeration fallback; remaining timeout pressure comes from repeated direct-branch solving over very large existential/candidate domains under matched benchmark bounds.
 
-- [ ] **33.4.4.g Benchmark report must explain "why slower?" and "why blocked?" explicitly**
+- [x] **33.4.4.g Benchmark report must explain "why slower?" and "why blocked?" explicitly** [26-03-12, 04:10] (scope check: benchmark comparison generator/report explicit-root-cause section + integration guard + TODO/report refresh, <500 LOC hand edits; no decomposition required)
   - Update `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` so it includes:
     - full-run comparison,
     - same-time-budget progress comparison,
@@ -10083,6 +10092,12 @@ Rules for this phase (do not cut corners):
     - whether that is mostly fixed overhead, debug build, solver overhead, dedup cost, or something else,
     - and why `LeaderElection` / `Paxos` do not currently progress.
   - If state-count semantics differ, keep that explanation, but do **not** let it substitute for actual wall-time root-cause analysis.
+  - **Done**:
+    - Extended `scripts/compare_tlc_vs_source_first.sh` with `parse_blocker_root_cause` and a dedicated **Explicit Root-Cause Answers (Phase 33.4.4.g)** section that answers both required questions directly from checked-in telemetry.
+    - Regenerated `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`; it now states explicitly:
+      - why small-model source-first wall time is currently larger (release telemetry shows dominant `successor_solving`, not fixed startup; debug-vs-release ratios are reported but not treated as sole explanation),
+      - why `LeaderElection`/`Paxos` currently block (timeout under large-domain branch solving pressure, with explicit `enum_fallback_branch_solves` / `enumeration_eval` evidence and top-branch domain sizes).
+    - Added integration guard `test_phase_33_4_4_g_report_explicitly_answers_why_slower_and_why_blocked` in `transpiler/tests/integration.rs` so the explicit Q&A section and evidence terms cannot silently regress.
 
 - [ ] **33.4.4.h Anti-corner-cutting rules for this subsection**
   - Do not shrink the benchmark models or weaken invariants just to make source-first look faster.

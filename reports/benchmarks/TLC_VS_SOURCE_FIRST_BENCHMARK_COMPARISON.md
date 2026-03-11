@@ -1,9 +1,9 @@
 # TLC vs Source-first Benchmark Comparison
 
-Generated: 2026-03-11 02:03:39 UTC
-Git rev: 875a221
+Generated: 2026-03-11 03:14:06 UTC
+Git rev: d93c9ab
 
-Source-first run: Generated: 2026-03-11 01:53:44 UTC
+Source-first run: Generated: 2026-03-11 02:53:32 UTC
 TLC run: Generated: 2026-03-08 16:25:00 UTC
 
 ## Source-first Build/Environment Parity (Phase 33.4.4.a)
@@ -26,10 +26,10 @@ TLC run: Generated: 2026-03-08 16:25:00 UTC
 
 | Protocol | Release result | Release wall (s) | Release stop reason | Debug result | Debug wall (s) | Debug stop reason | Debug/Release wall ratio |
 |----------|----------------|------------------|---------------------|--------------|----------------|-------------------|--------------------------|
-| TwoPhase | ok(FrontierExhausted) | 5 | FrontierExhausted | ok(FrontierExhausted) | 21 | FrontierExhausted | 4.20x |
-| PrimaryBackup | ok(FrontierExhausted) | 12 | FrontierExhausted | ok(FrontierExhausted) | 40 | FrontierExhausted | 3.33x |
-| LeaderElection | timeout_reached(TimeoutReached) | 240 | TimeoutReached | timeout_reached(TimeoutReached) | 242 | TimeoutReached | 1.01x |
-| Paxos | timeout_reached(TimeoutReached) | 270 | TimeoutReached | timeout_reached(TimeoutReached) | 308 | TimeoutReached | 1.14x |
+| TwoPhase | ok(FrontierExhausted) | 1 | FrontierExhausted | ok(FrontierExhausted) | 1 | FrontierExhausted | 1.00x |
+| PrimaryBackup | ok(FrontierExhausted) | 2 | FrontierExhausted | ok(FrontierExhausted) | 8 | FrontierExhausted | 4.00x |
+| LeaderElection | timeout_reached(TimeoutReached) | 241 | TimeoutReached | timeout_reached(TimeoutReached) | 243 | TimeoutReached | 1.01x |
+| Paxos | timeout_reached(TimeoutReached) | 274 | TimeoutReached | timeout_reached(TimeoutReached) | 304 | TimeoutReached | 1.11x |
 
 ## Phase-Attributed Source-First Timing Breakdown (ms)
 
@@ -37,10 +37,10 @@ Canonical source-first timing values come from `reports/benchmarks/source_first_
 
 | Protocol | Source ingest | Model/config | Init construction | Successor solving | Candidate gen/eval | Dedup/hash/normalize | Invariant eval | Report serialize/output |
 |----------|---------------|--------------|-------------------|-------------------|--------------------|----------------------|----------------|--------------------------|
-| TwoPhase | 0 | 0 | 4 | 162 | 4818 | 40 | 0 | 0 |
-| PrimaryBackup | 0 | 0 | 13 | 2128 | 9117 | 268 | 0 | 0 |
-| LeaderElection | 0 | 0 | 110 | 239910 | 273 | 241 | 0 | 0 |
-| Paxos | 0 | 0 | 21855 | 33144 | 211375 | 10 | 0 | 0 |
+| TwoPhase | 0 | 0 | 4 | 168 | 5 | 35 | 0 | 0 |
+| PrimaryBackup | 0 | 0 | 10 | 2008 | 12 | 294 | 0 | 0 |
+| LeaderElection | 0 | 0 | 108 | 239698 | 288 | 242 | 0 | 0 |
+| Paxos | 0 | 0 | 21369 | 222492 | 25805 | 37 | 0 | 0 |
 
 ## Small-Model Wall-Time Gap Diagnosis (Phase 33.4.4.c)
 
@@ -49,13 +49,13 @@ The diagnosis is computed from release canonical telemetry plus debug-vs-release
 
 | Protocol | Release wall (ms) | Candidate gen/eval (ms) | Candidate share | Fixed startup+parsing share | Dedup/hash share | Invariant share | Debug/Release (elapsed-ms) | Dominant release phase | Fixed-overhead dominates? | Dedup meaningful? | Release materially changes wall time? |
 |----------|-------------------|--------------------------|-----------------|-----------------------------|------------------|-----------------|-----------------------------|------------------------|---------------------------|-------------------|----------------------------------------|
-| TwoPhase | 5024 | 4818 | 95.90% | 0.08% (4 ms) | 0.80% (40 ms) | 0.00% (0 ms) | 4.05x | candidate_enumeration | no | no | yes |
-| PrimaryBackup | 11526 | 9117 | 79.10% | 0.11% (13 ms) | 2.33% (268 ms) | 0.00% (0 ms) | 3.48x | candidate_enumeration | no | no | yes |
+| TwoPhase | 212 | 5 | 2.36% | 1.89% (4 ms) | 16.51% (35 ms) | 0.00% (0 ms) | 4.06x | successor_solving | no | yes | yes |
+| PrimaryBackup | 2324 | 12 | 0.52% | 0.43% (10 ms) | 12.65% (294 ms) | 0.00% (0 ms) | 3.36x | successor_solving | no | yes | yes |
 
-- TwoPhase: dominant release cost is `candidate_enumeration` (candidate=95.90%, fixed=0.08%, dedup=0.80%, invariant=0.00%). Fixed-overhead dominates: **no**. Dedup meaningful: **no**. Release materially changes wall time: **yes** (debug/release=4.05x).
-- PrimaryBackup: dominant release cost is `candidate_enumeration` (candidate=79.10%, fixed=0.11%, dedup=2.33%, invariant=0.00%). Fixed-overhead dominates: **no**. Dedup meaningful: **no**. Release materially changes wall time: **yes** (debug/release=3.48x).
+- TwoPhase: dominant release cost is `successor_solving` (candidate=2.36%, fixed=1.89%, dedup=16.51%, invariant=0.00%). Fixed-overhead dominates: **no**. Dedup meaningful: **yes**. Release materially changes wall time: **yes** (debug/release=4.06x).
+- PrimaryBackup: dominant release cost is `successor_solving` (candidate=0.52%, fixed=0.43%, dedup=12.65%, invariant=0.00%). Fixed-overhead dominates: **no**. Dedup meaningful: **yes**. Release materially changes wall time: **yes** (debug/release=3.36x).
 
-- Cross-protocol conclusion: neither small model is currently fixed-overhead dominated; both are dominated by candidate generation/evaluation, with dedup/hash and invariant checking negligible. Release build materially reduces wall time on both protocols but does not change the dominant cost center.
+- Cross-protocol conclusion: neither small model is currently fixed-overhead dominated; both are dominated by successor solving on current release telemetry. Dedup/hash is now non-negligible on both runs, while invariant checking remains negligible. Release build materially reduces wall time on both protocols without changing the dominant phase.
 
 ## Branch-Level Blocker Telemetry (Phase 33.4.4.d)
 
@@ -66,20 +66,39 @@ Tables focus on exact-mode blocker protocols (LeaderElection, Paxos) and keep on
 
 | Branch label | Existential assignments | Candidate states | Direct solver hits | Enumeration fallback hits | Guard-pruned evals | Successful successors | Cumulative solve ms |
 |--------------|-------------------------|------------------|--------------------|---------------------------|--------------------|-----------------------|---------------------|
-| branch_3 | 7380 | 13824 | 56 | 0 | 0 | 39 | 59363 |
-| branch_2 | 7380 | 13824 | 56 | 0 | 0 | 104 | 54845 |
-| branch_5 | 7380 | 13824 | 56 | 0 | 0 | 312 | 52795 |
-| branch_6 | 2460 | 13824 | 55 | 0 | 0 | 156 | 18730 |
+| branch_3 | 7380 | 13824 | 56 | 0 | 0 | 39 | 58830 |
+| branch_2 | 7380 | 13824 | 57 | 0 | 0 | 105 | 55305 |
+| branch_5 | 7380 | 13824 | 56 | 0 | 0 | 312 | 52436 |
+| branch_6 | 2460 | 13824 | 56 | 0 | 0 | 158 | 18874 |
 
 ### Paxos
 
 | Branch label | Existential assignments | Candidate states | Direct solver hits | Enumeration fallback hits | Guard-pruned evals | Successful successors | Cumulative solve ms |
 |--------------|-------------------------|------------------|--------------------|---------------------------|--------------------|-----------------------|---------------------|
-| branch_0 | 3 | 1679616 | 0 | 1 | 0 | 2 | 138882 |
-| branch_2 | 27 | 1679616 | 0 | 1 | 0 | 0 | 68521 |
-| branch_1 | 3 | 1679616 | 1 | 0 | 0 | 3 | 11269 |
+| branch_5 | 3 | 1679616 | 3 | 0 | 0 | 0 | 33802 |
+| branch_1 | 3 | 1679616 | 3 | 0 | 0 | 9 | 33513 |
+| branch_0 | 3 | 1679616 | 3 | 0 | 0 | 2 | 33432 |
+| branch_3 | 3 | 1679616 | 3 | 0 | 0 | 0 | 33405 |
+| branch_2 | 27 | 1679616 | 3 | 0 | 0 | 42 | 33318 |
+| branch_4 | 9 | 1679616 | 3 | 0 | 0 | 27 | 33274 |
+| branch_6 | 1 | 1679616 | 2 | 0 | 0 | 0 | 21748 |
+
+- Phase 33.4.4.f (Paxos blocker reduction): release telemetry now shows direct helper-branch solving with `enumeration_fallback_hits=0` and `enumeration_eval=0`; prior blocker rows `branch_0` and `branch_2` no longer fall back to candidate enumeration.
 
 - Interpretation rule for blocker narratives: prioritize branch families with highest cumulative solve ms and enumeration fallback hits; use existential/candidate counts plus guard-pruned/successor outcomes to distinguish domain blow-up from guard-filtered dead-ends.
+
+## Explicit Root-Cause Answers (Phase 33.4.4.g)
+
+- **Why is source-first currently slower on the protocols that finish?**
+  - **Answer:** release telemetry shows the dominant phase is solver work (`successor_solving` for TwoPhase and `successor_solving` for PrimaryBackup), not fixed startup overhead.
+  - TwoPhase evidence: wall=212ms, candidate share=2.36%, fixed share=1.89% (4ms, dominates=no), dedup share=16.51% (35ms, meaningful=yes), invariant share=0.00%, debug/release=4.06x.
+  - PrimaryBackup evidence: wall=2324ms, candidate share=0.52%, fixed share=0.43% (10ms, dominates=no), dedup share=12.65% (294ms, meaningful=yes), invariant share=0.00%, debug/release=3.36x.
+  - Conclusion: release build materially helps, but the remaining wall-time gap is primarily successor-solving overhead rather than startup or invariant checking.
+
+- **Why do LeaderElection and Paxos still block under matched benchmarks?**
+  - **LeaderElection:** stop_reason=TimeoutReached with timeout at 240336ms (states=280, transitions=804). Blocked mainly by large-domain direct solving, not enumeration fallback (enum_eval=0, enum_fallback_branch_solves=0, direct_solves=395, top_branch=branch_3 direct_hits=56, max_existentials=7380, max_candidates=13824, top_branch_solve_ms=58830).
+  - **Paxos:** stop_reason=TimeoutReached with timeout at 269703ms (states=75, transitions=80). Blocked mainly by large-domain direct solving, not enumeration fallback (enum_eval=0, enum_fallback_branch_solves=0, direct_solves=20, top_branch=branch_5 direct_hits=3, max_existentials=27, max_candidates=1679616, top_branch_solve_ms=33802).
+  - Conclusion: the current blocker is timeout under high branch-domain solve cost; further wins require reducing existential/candidate-domain solve pressure in hot branches.
 
 ## Column Meanings
 
@@ -93,13 +112,13 @@ Tables focus on exact-mode blocker protocols (LeaderElection, Paxos) and keep on
 
 | Protocol | Engine | Result | States (gen) | Distinct | Depth | Wall (s) |
 |----------|--------|--------|--------------|----------|-------|----------|
-| twophase | source-first | ok(FrontierExhausted) | — | 8 | 3 | 5 |
+| twophase | source-first | ok(FrontierExhausted) | — | 8 | 3 | 1 |
 | | TLC | pass | 150 | 64 | 9 | 1 |
-| primarybackup | source-first | ok(FrontierExhausted) | — | 60 | 7 | 12 |
+| primarybackup | source-first | ok(FrontierExhausted) | — | 60 | 7 | 2 |
 | | TLC | pass | 86 | 54 | 10 | 1 |
-| leaderelection | source-first | timeout_reached(TimeoutReached) | — | 276 | 2 | 240 |
+| leaderelection | source-first | timeout_reached(TimeoutReached) | — | 280 | 3 | 241 |
 | | TLC | pass | 100636 | 9337 | 13 | 2 |
-| paxos | source-first | timeout_reached(TimeoutReached) | — | 5 | 1 | 270 |
+| paxos | source-first | timeout_reached(TimeoutReached) | — | 75 | 2 | 274 |
 | | TLC | pass | 25288515 | 3005604 | 37 | 375 |
 
 ## Notes
@@ -108,7 +127,7 @@ Tables focus on exact-mode blocker protocols (LeaderElection, Paxos) and keep on
   centralized Verus `LState` directly. TLC counts states on the TLA+
   wrapper which may include additional message-channel variables.
 - LeaderElection source-first status: `timeout_reached(TimeoutReached)` (stop_reason=TimeoutReached, enumeration_eval=0).
-- Paxos source-first status: `timeout_reached(TimeoutReached)` (stop_reason=TimeoutReached, enumeration_eval=7397877).
+- Paxos source-first status: `timeout_reached(TimeoutReached)` (stop_reason=TimeoutReached, enumeration_eval=0).
   See branch-level blocker telemetry above for per-branch evidence.
 - Configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/`
 - TLC wrappers: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/`

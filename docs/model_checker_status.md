@@ -270,8 +270,8 @@ Metrics shown for supported entries come from the latest JSON artifacts under `r
 | `EPaxos` | `src/protocol/EPaxos/epaxos.rs`, `src/protocol/EPaxos/types.rs` | `transpiler/tests/model_check_fixtures/epaxos_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; preflight fails before exploration) | `unsupported` | N/A | Candidate expansion overflow: struct `LConstants` exceeds `search.max_states` limit (200) during finite-domain construction. | `test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible` |
 | `PBFT` | `src/protocol/PBFT/pbft.rs`, `src/protocol/PBFT/types.rs` | `transpiler/tests/model_check_fixtures/pbft_state_expansion_limit.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 0 / 0 / 20` | N/A | `test_model_check_pbft_bounded_run`, `reports/model_check/pbft_small.json` |
 | `ChainReplication` | `src/protocol/ChainReplication/chain.rs`, `src/protocol/ChainReplication/types.rs` | `transpiler/tests/model_check_fixtures/chainreplication_state_expansion_limit.model.toml` | `bfs`, exact intent (`state_dedup=canonical`; pre-exploration branch-assignment expansion fails) | `unsupported` | N/A | Configuration error: existential domain expansion exceeded limit (200 assignments) during bounded branch existential enumeration. | `test_model_check_chainreplication_blocker_existential_expansion_limit_is_reproducible` |
-| `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `1 / 1 / 0 / 18` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `test_model_check_primarybackup_real_safety_invariants_bounded_run`, `reports/model_check/primarybackup_small.json`, `reports/model_check/primarybackup_safety_invariants.json` |
-| `TwoPhase` | `src/protocol/TwoPhase/twophase.rs`, `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 3 / 1 / 226` | N/A | `test_model_check_twophase_bounded_run`, `test_model_check_twophase_real_safety_invariants_bounded_run`, `reports/model_check/twophase_small.json`, `reports/model_check/twophase_safety_invariants.json` |
+| `PrimaryBackup` | `src/protocol/PrimaryBackup/primarybackup.rs`, `src/protocol/PrimaryBackup/types.rs` | `transpiler/tests/model_check_fixtures/primarybackup_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `2 / 2 / 1 / 19` | N/A | `test_model_check_primarybackup_helper_call_branches_bounded_run`, `test_model_check_primarybackup_real_safety_invariants_bounded_run`, `reports/model_check/primarybackup_small.json`, `reports/model_check/primarybackup_safety_invariants.json` |
+| `TwoPhase` | `src/protocol/TwoPhase/twophase.rs`, `src/protocol/TwoPhase/types.rs` | `transpiler/tests/model_check_fixtures/twophase_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `3 / 4 / 1 / 230` | N/A | `test_model_check_twophase_bounded_run`, `test_model_check_twophase_real_safety_invariants_bounded_run`, `reports/model_check/twophase_small.json`, `reports/model_check/twophase_safety_invariants.json` |
 | `LeaderElection` | `src/protocol/LeaderElection/election.rs`, `src/protocol/LeaderElection/types.rs` | `transpiler/tests/model_check_fixtures/leaderelection_small.model.toml` | `bfs`, exact (`state_dedup=canonical`) | `ok` | `4 / 3 / 1 / 15` | N/A | `test_model_check_leader_election_bounded_run`, `test_model_check_leader_election_real_safety_invariants_bounded_run`, `reports/model_check/leaderelection_small.json`, `reports/model_check/leaderelection_safety_invariants.json` |
 
 ### 4.1 Exact-mode performance baseline snapshot (Phase 33.4)
@@ -282,8 +282,8 @@ This table is the pre-optimization reference point for exact-mode performance wo
 | Protocol | Artifact | `states` | `transitions` | `depth` | `elapsed_ms` | `pruned_by_por` | `symmetry_collapses` | `hash_compaction_collisions` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `Paxos` | `reports/model_check/paxos_small.json` | `1` | `2` | `0` | `6` | `0` | `0` | `0` |
-| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `1` | `1` | `0` | `18` | `0` | `0` | `0` |
-| `TwoPhase` | `reports/model_check/twophase_small.json` | `2` | `3` | `1` | `226` | `0` | `0` | `0` |
+| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `2` | `2` | `1` | `19` | `0` | `0` | `0` |
+| `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `230` | `0` | `0` | `0` |
 | `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `15` | `0` | `0` | `0` |
 
 ### 4.2 Exact-mode optimization delta snapshot (Phase 33.4.2)
@@ -325,10 +325,10 @@ For each of the four shared protocols, the table below lists both the minimal **
 
 | Protocol | Smoke fixture | Benchmark fixture | Source-first result | TLC result | TLC distinct states | TLC wall (s) |
 | --- | --- | --- | --- | --- | --- | --- |
-| `TwoPhase` | `twophase_small.model.toml` | `benchmarks_1h/twophase_benchmark.model.toml` | ok, 8 states, 79s (exhausted) | pass, 64 distinct, 1s (exhausted) | 64 | 1 |
-| `PrimaryBackup` | `primarybackup_small.model.toml` | `benchmarks_1h/primarybackup_benchmark.model.toml` | ok, 60 states, 190s (exhausted) | pass, 54 distinct, 1s (exhausted) | 54 | 1 |
-| `LeaderElection` | `leaderelection_small.model.toml` | `benchmarks_1h/leaderelection_benchmark.model.toml` | BLOCKED (enumeration) | pass, 9,337 distinct, 2s (exhausted) | 9,337 | 2 |
-| `Paxos` | `paxos_small.model.toml` | `benchmarks_1h/paxos_benchmark.model.toml` | BLOCKED (enumeration) | pass, 3M distinct, 375s (exhausted) | 3,005,604 | 375 |
+| `TwoPhase` | `twophase_small.model.toml` | `benchmarks_1h/twophase_benchmark.model.toml` | ok, 8 states, 1s (exhausted) | pass, 64 distinct, 1s (exhausted) | 64 | 1 |
+| `PrimaryBackup` | `primarybackup_small.model.toml` | `benchmarks_1h/primarybackup_benchmark.model.toml` | ok, 60 states, 8s (exhausted) | pass, 54 distinct, 1s (exhausted) | 54 | 1 |
+| `LeaderElection` | `leaderelection_small.model.toml` | `benchmarks_1h/leaderelection_benchmark.model.toml` | timeout_reached, 116 states, 243s (time-bounded) | pass, 9,337 distinct, 2s (exhausted) | 9,337 | 2 |
+| `Paxos` | `paxos_small.model.toml` | `benchmarks_1h/paxos_benchmark.model.toml` | timeout_reached, 13 states, 304s (time-bounded) | pass, 3M distinct, 375s (exhausted) | 3,005,604 | 375 |
 
 Evidence artifacts:
 - Source-first benchmark configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/*.model.toml`

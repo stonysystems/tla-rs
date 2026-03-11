@@ -1,6 +1,6 @@
 {
   "build_profile": "debug",
-  "output_dir": "reports/benchmarks/source_first",
+  "output_dir": "/home/shuai/workspace/tla-rs/reports/benchmarks/source_first",
   "transpiler_bin": "/home/shuai/workspace/tla-rs/transpiler/target/debug/verus-transpile",
   "threading_mode": "single-thread",
   "worker_count": 1,

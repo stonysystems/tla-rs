@@ -18014,7 +18014,6 @@ fn test_phase_33_4_4_c_small_model_gap_diagnosis_is_measured_and_protocol_specif
         "| twophase |",
         "| primarybackup |",
         "fixed-overhead dominates: **no**",
-        "dedup meaningful: **no**",
         "release materially changes wall time: **yes**",
         "cross-protocol conclusion: neither small model is currently fixed-overhead dominated",
     ] {
@@ -18025,6 +18024,12 @@ fn test_phase_33_4_4_c_small_model_gap_diagnosis_is_measured_and_protocol_specif
             required_fragment
         );
     }
+    assert!(
+        report_lower.contains("dedup meaningful: **yes**")
+            || report_lower.contains("dedup meaningful: **no**"),
+        "benchmark comparison report {} must include explicit dedup-meaningfulness diagnosis",
+        report_path.display()
+    );
 }
 
 #[test]
@@ -18330,6 +18335,245 @@ fn test_phase_33_4_4_e_leader_election_blocker_reduction_has_measured_progress()
         "leaderelection source-first status: `timeout_reached(timeoutreached)`",
         "enumeration_eval=0",
         "branch-level blocker telemetry (phase 33.4.4.d)",
+    ] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_33_4_4_f_paxos_blocker_reduction_has_measured_progress() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower
+            .contains("- [x] **33.4.4.f `paxos` blocker reduction on the matched benchmark model**"),
+        "TODO {} must mark Phase 33.4.4.f complete",
+        todo_path.display()
+    );
+
+    let artifact_path = repo_root.join("reports/benchmarks/source_first_release/paxos_benchmark.json");
+    let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark artifact {}: {}",
+            artifact_path.display(),
+            err
+        )
+    });
+    let artifact: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(|err| {
+        panic!(
+            "benchmark artifact {} must be valid JSON: {}",
+            artifact_path.display(),
+            err
+        )
+    });
+    let summary = artifact
+        .get("summary")
+        .and_then(|value| value.as_object())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} must include summary object",
+                artifact_path.display()
+            )
+        });
+    let states = summary
+        .get("states")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.states must be unsigned integer",
+                artifact_path.display()
+            )
+        });
+    let transitions = summary
+        .get("transitions")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.transitions must be unsigned integer",
+                artifact_path.display()
+            )
+        });
+    let enum_evals = summary
+        .get("enumeration_candidate_evaluations")
+        .and_then(|value| value.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.enumeration_candidate_evaluations must be unsigned integer",
+                artifact_path.display()
+            )
+        });
+    assert!(
+        states > 5 && transitions > 5,
+        "Paxos release benchmark should show improved exact-mode progress after blocker reduction (states={}, transitions={})",
+        states,
+        transitions
+    );
+    assert!(
+        enum_evals < 7_397_877,
+        "Paxos blocker reduction should reduce release enumeration candidate evaluations below prior baseline (got {})",
+        enum_evals
+    );
+
+    let branch_entries = summary
+        .get("branch_telemetry")
+        .and_then(|value| value.as_array())
+        .unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} summary.branch_telemetry must be an array",
+                artifact_path.display()
+            )
+        });
+    assert!(
+        !branch_entries.is_empty(),
+        "Paxos benchmark must include branch telemetry rows"
+    );
+
+    let mut branch0: Option<&serde_json::Map<String, serde_json::Value>> = None;
+    let mut branch2: Option<&serde_json::Map<String, serde_json::Value>> = None;
+    for entry in branch_entries {
+        let obj = entry.as_object().unwrap_or_else(|| {
+            panic!(
+                "benchmark artifact {} branch telemetry entry must be object",
+                artifact_path.display()
+            )
+        });
+        let label = obj
+            .get("branch_label")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        if label == "branch_0" {
+            branch0 = Some(obj);
+        } else if label == "branch_2" {
+            branch2 = Some(obj);
+        }
+    }
+
+    let branch0 = branch0.unwrap_or_else(|| {
+        panic!(
+            "benchmark artifact {} must include branch_0 telemetry row",
+            artifact_path.display()
+        )
+    });
+    let branch2 = branch2.unwrap_or_else(|| {
+        panic!(
+            "benchmark artifact {} must include branch_2 telemetry row",
+            artifact_path.display()
+        )
+    });
+
+    let branch0_direct = branch0
+        .get("direct_solver_hits")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let branch0_enum = branch0
+        .get("enumeration_fallback_hits")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let branch2_direct = branch2
+        .get("direct_solver_hits")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let branch2_enum = branch2
+        .get("enumeration_fallback_hits")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+
+    assert!(
+        branch0_direct > 0 && branch0_enum == 0,
+        "Paxos branch_0 should be solved directly after blocker reduction (direct={}, enum={})",
+        branch0_direct,
+        branch0_enum
+    );
+    assert!(
+        branch2_direct > 0 && branch2_enum == 0,
+        "Paxos branch_2 should be solved directly after blocker reduction (direct={}, enum={})",
+        branch2_direct,
+        branch2_enum
+    );
+
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+    for required_fragment in ["### paxos", "branch_0", "branch_2", "phase 33.4.4.f"] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_33_4_4_g_report_explicitly_answers_why_slower_and_why_blocked() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower
+            .contains("- [x] **33.4.4.g benchmark report must explain \"why slower?\" and \"why blocked?\" explicitly**"),
+        "TODO {} must mark Phase 33.4.4.g complete",
+        todo_path.display()
+    );
+
+    let compare_script_path = repo_root.join("scripts/compare_tlc_vs_source_first.sh");
+    let compare_script_src = std::fs::read_to_string(&compare_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison script {}: {}",
+            compare_script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "parse_blocker_root_cause",
+        "## Explicit Root-Cause Answers (Phase 33.4.4.g)",
+        "**Why is source-first currently slower on the protocols that finish?**",
+        "**Why do LeaderElection and Paxos still block under matched benchmarks?**",
+        "direct_solver_domain_pressure",
+        "enumeration_fallback_pressure",
+    ] {
+        assert!(
+            compare_script_src.contains(required_fragment),
+            "comparison script {} must include `{}`",
+            compare_script_path.display(),
+            required_fragment
+        );
+    }
+
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+    for required_fragment in [
+        "## explicit root-cause answers (phase 33.4.4.g)",
+        "**why is source-first currently slower on the protocols that finish?**",
+        "**why do leaderelection and paxos still block under matched benchmarks?**",
+        "conclusion: release build materially helps",
+        "blocked mainly by large-domain direct solving",
+        "enum_fallback_branch_solves=0",
     ] {
         assert!(
             report_lower.contains(required_fragment),

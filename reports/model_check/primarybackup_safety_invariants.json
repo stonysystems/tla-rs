@@ -118,7 +118,7 @@
         "existential_assignment_count": 5,
         "guard_pruned_candidate_evaluations": 0,
         "invocations": 1,
-        "successful_successors": 0
+        "successful_successors": 1
       },
       {
         "branch_label": "branch_7",
@@ -135,29 +135,29 @@
     "candidate_evaluation_guardrail_per_state_branch": 10000,
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
-    "depth": 0,
+    "depth": 1,
     "direct_assignment_branch_solves": 8,
-    "elapsed_ms": 18,
+    "elapsed_ms": 19,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
     "hash_compaction_collisions": 0,
     "pruned_by_por": 0,
-    "states": 1,
+    "states": 2,
     "successor_cache_hits": 0,
     "successor_cache_misses": 1,
     "symmetry_collapses": 0,
     "timing": {
       "candidate_generation_evaluation_ms": 0,
-      "dedup_hashing_normalization_ms": 4,
+      "dedup_hashing_normalization_ms": 5,
       "initial_state_construction_ms": 0,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 0,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 5,
+      "source_ingestion_parsing_ms": 6,
       "successor_solving_ms": 14
     },
-    "transitions": 1
+    "transitions": 2
   },
   "types": "src/protocol/PrimaryBackup/types.rs"
 }

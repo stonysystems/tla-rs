@@ -46,7 +46,7 @@
       {
         "branch_label": "branch_0",
         "candidate_state_count": 1536,
-        "cumulative_solve_elapsed_ms": 1008,
+        "cumulative_solve_elapsed_ms": 997,
         "direct_solver_hits": 60,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 6,
@@ -57,7 +57,7 @@
       {
         "branch_label": "branch_1",
         "candidate_state_count": 1536,
-        "cumulative_solve_elapsed_ms": 930,
+        "cumulative_solve_elapsed_ms": 915,
         "direct_solver_hits": 60,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 3,
@@ -68,7 +68,7 @@
       {
         "branch_label": "branch_2",
         "candidate_state_count": 1536,
-        "cumulative_solve_elapsed_ms": 1002,
+        "cumulative_solve_elapsed_ms": 993,
         "direct_solver_hits": 60,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 6,
@@ -79,7 +79,7 @@
       {
         "branch_label": "branch_3",
         "candidate_state_count": 1536,
-        "cumulative_solve_elapsed_ms": 937,
+        "cumulative_solve_elapsed_ms": 910,
         "direct_solver_hits": 60,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 3,
@@ -90,7 +90,7 @@
       {
         "branch_label": "branch_4",
         "candidate_state_count": 1536,
-        "cumulative_solve_elapsed_ms": 922,
+        "cumulative_solve_elapsed_ms": 919,
         "direct_solver_hits": 60,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 3,
@@ -101,7 +101,7 @@
       {
         "branch_label": "branch_5",
         "candidate_state_count": 1536,
-        "cumulative_solve_elapsed_ms": 922,
+        "cumulative_solve_elapsed_ms": 911,
         "direct_solver_hits": 60,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 3,
@@ -112,9 +112,9 @@
       {
         "branch_label": "branch_6",
         "candidate_state_count": 1536,
-        "cumulative_solve_elapsed_ms": 17449,
-        "direct_solver_hits": 0,
-        "enumeration_fallback_hits": 60,
+        "cumulative_solve_elapsed_ms": 907,
+        "direct_solver_hits": 60,
+        "enumeration_fallback_hits": 0,
         "existential_assignment_count": 3,
         "guard_pruned_candidate_evaluations": 0,
         "invocations": 60,
@@ -123,9 +123,9 @@
       {
         "branch_label": "branch_7",
         "candidate_state_count": 1536,
-        "cumulative_solve_elapsed_ms": 16624,
-        "direct_solver_hits": 0,
-        "enumeration_fallback_hits": 60,
+        "cumulative_solve_elapsed_ms": 902,
+        "direct_solver_hits": 60,
+        "enumeration_fallback_hits": 0,
         "existential_assignment_count": 3,
         "guard_pruned_candidate_evaluations": 0,
         "invocations": 60,
@@ -136,10 +136,10 @@
     "constants_valuations_explored": 1,
     "constants_valuations_total": 1,
     "depth": 7,
-    "direct_assignment_branch_solves": 360,
-    "elapsed_ms": 40104,
-    "enumeration_candidate_evaluations": 552960,
-    "enumeration_fallback_branch_solves": 120,
+    "direct_assignment_branch_solves": 480,
+    "elapsed_ms": 7807,
+    "enumeration_candidate_evaluations": 0,
+    "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
     "hash_compaction_collisions": 0,
     "pruned_by_por": 0,
@@ -148,14 +148,14 @@
     "successor_cache_misses": 60,
     "symmetry_collapses": 0,
     "timing": {
-      "candidate_generation_evaluation_ms": 32259,
-      "dedup_hashing_normalization_ms": 245,
+      "candidate_generation_evaluation_ms": 32,
+      "dedup_hashing_normalization_ms": 285,
       "initial_state_construction_ms": 36,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 1,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 5,
-      "successor_solving_ms": 7564
+      "source_ingestion_parsing_ms": 6,
+      "successor_solving_ms": 7454
     },
     "transitions": 169
   },

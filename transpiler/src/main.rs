@@ -3400,7 +3400,10 @@ fn try_solve_predicate_only_helper_branch(
     let extra_params = helper_fn.params.iter().skip(transition_param_arity);
     let extra_args = args.iter().skip(transition_param_arity);
     for source_assignment in &source_assignments {
-        let mut call_assignment = std::collections::BTreeMap::<String, verus_transpiler::modelcheck::value::RuntimeValue>::new();
+        let mut call_assignment = std::collections::BTreeMap::<
+            String,
+            verus_transpiler::modelcheck::value::RuntimeValue,
+        >::new();
         let mut unsupported = false;
         for (helper_param, arg_expr) in extra_params.clone().zip(extra_args.clone()) {
             match arg_expr {
@@ -3425,11 +3428,13 @@ fn try_solve_predicate_only_helper_branch(
         return Ok(None);
     }
     let mut seen_call_assignments = std::collections::BTreeSet::new();
-    call_site_assignments.retain(|assignment| seen_call_assignments.insert(assignment_key(assignment)));
+    call_site_assignments
+        .retain(|assignment| seen_call_assignments.insert(assignment_key(assignment)));
 
     let mut successors = Vec::new();
     for helper_branch in &helper_transition.branches {
-        let helper_assignments = expand_branch_existentials(helper_branch, &bundle.schema, model_config)?;
+        let helper_assignments =
+            expand_branch_existentials(helper_branch, &bundle.schema, model_config)?;
         let helper_assignments: Vec<ExistentialAssignment> = if helper_assignments.is_empty() {
             vec![std::collections::BTreeMap::new()]
         } else {
@@ -3562,8 +3567,7 @@ fn execute_model_check(
         successor_cache_hits: 0,
         successor_cache_misses: 0,
     };
-    let mut branch_telemetry_summary =
-        BTreeMap::<String, ModelCheckBranchTelemetrySummary>::new();
+    let mut branch_telemetry_summary = BTreeMap::<String, ModelCheckBranchTelemetrySummary>::new();
 
     let state_ty = bundle
         .entrypoints
@@ -3684,11 +3688,8 @@ fn execute_model_check(
             StateCandidatesSource::Expanded(candidates) => Cow::Borrowed(candidates.as_slice()),
             StateCandidatesSource::PinnedTemplate(template) => {
                 let instantiate_started = Instant::now();
-                let instantiated = instantiate_pinned_state_candidate(
-                    template,
-                    Some(constants_value),
-                    bounds,
-                )?;
+                let instantiated =
+                    instantiate_pinned_state_candidate(template, Some(constants_value), bounds)?;
                 run_candidate_generation_ms = run_candidate_generation_ms
                     .saturating_add(instantiate_started.elapsed().as_millis());
                 Cow::Owned(instantiated.into_iter().collect())
@@ -3810,12 +3811,10 @@ fn execute_model_check(
                     let branch_solve_elapsed_ms = branch_solve_started.elapsed().as_millis();
                     let successful_successors = solved.successors.len();
                     if update_enumeration_telemetry {
-                        run_successor_solving_total_ms = run_successor_solving_total_ms
-                            .saturating_add(branch_solve_elapsed_ms);
+                        run_successor_solving_total_ms =
+                            run_successor_solving_total_ms.saturating_add(branch_solve_elapsed_ms);
                         run_candidate_evaluation_ms = run_candidate_evaluation_ms.saturating_add(
-                            solved
-                                .telemetry
-                                .enumeration_candidate_evaluation_elapsed_ms,
+                            solved.telemetry.enumeration_candidate_evaluation_elapsed_ms,
                         );
                     }
 
@@ -4014,8 +4013,8 @@ fn execute_model_check(
             None
         };
 
-        let run_successor_solving_ms = run_successor_solving_total_ms
-            .saturating_sub(run_candidate_evaluation_ms);
+        let run_successor_solving_ms =
+            run_successor_solving_total_ms.saturating_sub(run_candidate_evaluation_ms);
         let run_dedup_hashing_normalization_ms = exploration_elapsed_ms
             .saturating_sub(run_initial_state_construction_ms)
             .saturating_sub(run_successor_solving_total_ms)
@@ -8158,6 +8157,126 @@ verus! {
 verus! {
     pub open spec fn LStep(s: LState, s_: LState, c: LConstants, i: int) -> bool {
         &&& i == 1
+        &&& s_.value == i
+        &&& s_.value <= c.limit
+    }
+
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        exists |i: int| LStep(s, s_, c, i)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert!(
+            execution
+                .summary
+                .enumeration
+                .direct_assignment_branch_solves
+                > 0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_fallback_branch_solves,
+            0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_candidate_evaluations,
+            0
+        );
+        let branch = execution
+            .summary
+            .branch_telemetry
+            .iter()
+            .find(|entry| entry.branch_label == "branch_0")
+            .expect("branch_0 telemetry should be present");
+        assert!(branch.direct_solver_hits > 0);
+        assert_eq!(branch.enumeration_fallback_hits, 0);
+    }
+
+    #[test]
+    fn test_execute_model_check_helper_direct_solver_supports_next_state_is_constraints() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub enum LPhase {
+        Idle,
+        Phase1,
+    }
+    pub struct LState {
+        pub phase: LPhase,
+        pub value: int,
+    }
+    pub struct LConstants {
+        pub limit: int,
+    }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        &&& s.phase is Idle
+        &&& s.value == 0
+        &&& c.limit == 1
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LStep(s: LState, s_: LState, c: LConstants, i: int) -> bool {
+        &&& i == 1
+        &&& s.phase is Idle
+        &&& s_.phase is Phase1
         &&& s_.value == i
         &&& s_.value <= c.limit
     }

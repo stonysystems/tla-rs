@@ -159,9 +159,15 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
         }
     }
 
-    let has_next_state_assignments = branch_has_next_state_assignment(branch);
+    let has_next_state_assignments =
+        branch_has_next_state_assignment(branch, &transition.next_state_param);
     let can_use_direct_assignments = if next_state_candidates.is_some() {
-        has_next_state_assignments && branch_assigns_all_next_state_root_fields(branch, current_state)
+        has_next_state_assignments
+            && branch_assigns_all_next_state_root_fields(
+                branch,
+                current_state,
+                &transition.next_state_param,
+            )
     } else {
         // Keep standalone solver behavior (used by unit tests and non-candidate paths):
         // partial next-state assignments overlay onto the current state.
@@ -558,7 +564,25 @@ fn solve_one_assignment(
                     next_state_targets.insert(path.clone(), evaluated);
                 }
             }
-            other => deferred_constraints.push(other),
+            BranchConstraintIr::Predicate { expr } => {
+                if let Some((path, variant)) =
+                    next_state_variant_assignment(expr, &transition.next_state_param)
+                {
+                    let assigned =
+                        enum_variant_assignment_value(&next_state, &path, &variant, &branch.label)?;
+                    if let Some(existing) = next_state_targets.get(&path) {
+                        if existing != &assigned {
+                            return Ok(None);
+                        }
+                    } else {
+                        write_value_at_path(&mut next_state, &path, assigned.clone())?;
+                        next_state_targets.insert(path, assigned);
+                    }
+                } else {
+                    deferred_constraints.push(constraint);
+                }
+            }
+            BranchConstraintIr::Eq { .. } => deferred_constraints.push(constraint),
         }
     }
 
@@ -746,30 +770,35 @@ fn assignment_compatible_with_branch(
     Ok(true)
 }
 
-fn branch_has_next_state_assignment(branch: &TransitionBranchIr) -> bool {
-    branch.constraints.iter().any(|constraint| {
-        matches!(
-            constraint,
+fn branch_has_next_state_assignment(branch: &TransitionBranchIr, next_state_param: &str) -> bool {
+    branch
+        .constraints
+        .iter()
+        .any(|constraint| match constraint {
             BranchConstraintIr::Eq {
-                target: ConstraintTarget {
-                    root: ConstraintRoot::NextState,
-                    ..
-                },
+                target:
+                    ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        ..
+                    },
                 ..
+            } => true,
+            BranchConstraintIr::Predicate { expr } => {
+                next_state_variant_assignment(expr, next_state_param).is_some()
             }
-        )
-    })
+            _ => false,
+        })
 }
 
 fn branch_assigns_all_next_state_root_fields(
     branch: &TransitionBranchIr,
     current_state: &RuntimeValue,
+    next_state_param: &str,
 ) -> bool {
     let required_fields = match current_state {
-        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => fields
-            .keys()
-            .cloned()
-            .collect::<BTreeSet<String>>(),
+        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
+            fields.keys().cloned().collect::<BTreeSet<String>>()
+        }
         _ => return true,
     };
     if required_fields.is_empty() {
@@ -778,24 +807,86 @@ fn branch_assigns_all_next_state_root_fields(
 
     let mut assigned_fields = BTreeSet::<String>::new();
     for constraint in &branch.constraints {
-        let BranchConstraintIr::Eq {
-            target:
-                ConstraintTarget {
-                    root: ConstraintRoot::NextState,
-                    path,
-                },
-            ..
-        } = constraint
-        else {
-            continue;
-        };
-        if path.is_empty() {
-            return true;
+        match constraint {
+            BranchConstraintIr::Eq {
+                target:
+                    ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path,
+                    },
+                ..
+            } => {
+                if path.is_empty() {
+                    return true;
+                }
+                assigned_fields.insert(path[0].clone());
+            }
+            BranchConstraintIr::Predicate { expr } => {
+                let Some((path, _variant)) = next_state_variant_assignment(expr, next_state_param)
+                else {
+                    continue;
+                };
+                if path.is_empty() {
+                    return true;
+                }
+                assigned_fields.insert(path[0].clone());
+            }
+            _ => {}
         }
-        assigned_fields.insert(path[0].clone());
     }
 
     required_fields.is_subset(&assigned_fields)
+}
+
+fn enum_variant_assignment_value(
+    next_state: &RuntimeValue,
+    path: &[String],
+    variant: &str,
+    branch_label: &str,
+) -> TranspileResult<RuntimeValue> {
+    let current = read_value_at_path(next_state, path)?;
+    match current {
+        RuntimeValue::Enum { ty, fields, .. } => Ok(RuntimeValue::Enum {
+            ty,
+            variant: variant.to_string(),
+            fields,
+        }),
+        other => Err(TranspileError::Config {
+            message: format!(
+                "Failed to evaluate enum-variant next-state assignment in branch `{}` at `s_.{}`: \
+                 `is` target is not an enum value (`{}`).",
+                branch_label,
+                join_path(path),
+                other.canonical_key()
+            ),
+        }),
+    }
+}
+
+fn next_state_variant_assignment(
+    expr: &Expr,
+    next_state_param: &str,
+) -> Option<(Vec<String>, String)> {
+    let Expr::Is(base, variant) = expr else {
+        return None;
+    };
+    let (root, path) = extract_identifier_path(base)?;
+    if root != next_state_param {
+        return None;
+    }
+    Some((path, variant.clone()))
+}
+
+fn extract_identifier_path(expr: &Expr) -> Option<(String, Vec<String>)> {
+    match expr {
+        Expr::Ident(name) => Some((name.clone(), Vec::new())),
+        Expr::Field(base, field) | Expr::Arrow(base, field) => {
+            let (root, mut path) = extract_identifier_path(base)?;
+            path.push(field.clone());
+            Some((root, path))
+        }
+        _ => None,
+    }
 }
 
 fn constraint_depends_on_next_state(
@@ -942,6 +1033,25 @@ mod tests {
         .unwrap()
     }
 
+    fn phase_state(phase_variant: &str, value: i128) -> RuntimeValue {
+        RuntimeValue::struct_value(
+            "LState",
+            vec![
+                (
+                    "phase".to_string(),
+                    RuntimeValue::enum_value(
+                        "LPhase",
+                        phase_variant.to_string(),
+                        Vec::<(String, RuntimeValue)>::new(),
+                    )
+                    .unwrap(),
+                ),
+                ("value".to_string(), RuntimeValue::Int(value)),
+            ],
+        )
+        .unwrap()
+    }
+
     fn constants(limit: i128) -> RuntimeValue {
         RuntimeValue::struct_value(
             "LConstants",
@@ -1008,6 +1118,57 @@ mod tests {
         assert_eq!(
             read_value_at_path(succ, &[String::from("y")]).unwrap(),
             RuntimeValue::Int(3)
+        );
+    }
+
+    #[test]
+    fn test_solve_branch_successors_applies_next_state_enum_variant_constraint() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["value".to_string()],
+                    },
+                    value: Expr::Literal(crate::ast::Literal::Int(1)),
+                },
+                BranchConstraintIr::Predicate {
+                    expr: Expr::Is(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("s_".to_string())),
+                            "phase".to_string(),
+                        )),
+                        "Phase1".to_string(),
+                    ),
+                },
+            ],
+        };
+
+        let successors = solve_branch_successors(
+            &transition(),
+            &branch,
+            &phase_state("Idle", 0),
+            Some(&constants(10)),
+            &[],
+            bounds(),
+            SolverHooks::default(),
+        )
+        .unwrap();
+        assert_eq!(successors.len(), 1);
+        assert_eq!(
+            read_value_at_path(&successors[0], &[String::from("phase")]).unwrap(),
+            RuntimeValue::enum_value(
+                "LPhase",
+                "Phase1".to_string(),
+                Vec::<(String, RuntimeValue)>::new()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            read_value_at_path(&successors[0], &[String::from("value")]).unwrap(),
+            RuntimeValue::Int(1)
         );
     }
 
@@ -1616,6 +1777,52 @@ mod tests {
 
         assert!(result.successors.is_empty());
         assert_eq!(result.telemetry.direct_assignment_branch_solves, 1);
+    }
+
+    #[test]
+    fn test_direct_assignment_solver_treats_next_state_is_as_assignment_with_candidates() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["value".to_string()],
+                    },
+                    value: Expr::Literal(crate::ast::Literal::Int(1)),
+                },
+                BranchConstraintIr::Predicate {
+                    expr: Expr::Is(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("s_".to_string())),
+                            "phase".to_string(),
+                        )),
+                        "Phase1".to_string(),
+                    ),
+                },
+            ],
+        };
+        let candidates = vec![phase_state("Phase1", 1), phase_state("Idle", 1)];
+
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition(),
+            &branch,
+            &phase_state("Idle", 0),
+            Some(&constants(10)),
+            &[],
+            Some(&candidates),
+            None,
+            bounds(),
+            SolverHooks::default(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.successors, vec![phase_state("Phase1", 1)]);
+        assert_eq!(result.telemetry.direct_assignment_branch_solves, 1);
+        assert_eq!(result.telemetry.enumeration_fallback_branch_solves, 0);
+        assert_eq!(result.telemetry.enumeration_candidate_evaluations, 0);
     }
 
     #[test]

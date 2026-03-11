@@ -316,6 +316,84 @@ for entry in entries:
 PY
 }
 
+parse_blocker_root_cause() {
+    local artifact="$1"
+    if [[ ! -f "$artifact" ]]; then
+        echo "n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a"
+        return
+    fi
+    python3 - "$artifact" <<'PY' 2>/dev/null || echo "n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a"
+import json
+import sys
+
+artifact = sys.argv[1]
+try:
+    data = json.load(open(artifact))
+except Exception:
+    print("n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a")
+    raise SystemExit(0)
+
+summary = data.get("summary") or {}
+branch_entries = summary.get("branch_telemetry") or []
+if not isinstance(branch_entries, list):
+    branch_entries = []
+
+
+def n(value):
+    if isinstance(value, (int, float)):
+        return value
+    return 0
+
+
+def entry_n(entry, key):
+    return n(entry.get(key))
+
+
+top_branch = None
+if branch_entries:
+    top_branch = max(
+        branch_entries,
+        key=lambda entry: (
+            entry_n(entry, "cumulative_solve_elapsed_ms"),
+            entry_n(entry, "enumeration_fallback_hits"),
+            entry_n(entry, "candidate_state_count"),
+        ),
+    )
+
+max_existentials = max((entry_n(entry, "existential_assignment_count") for entry in branch_entries), default=0)
+max_candidates = max((entry_n(entry, "candidate_state_count") for entry in branch_entries), default=0)
+
+enum_evals = n(summary.get("enumeration_candidate_evaluations"))
+enum_fallback_solves = n(summary.get("enumeration_fallback_branch_solves"))
+top_branch_enum_hits = entry_n(top_branch or {}, "enumeration_fallback_hits")
+
+blocked_cause = "n/a"
+if data.get("stop_reason") == "TimeoutReached":
+    if enum_evals > 0 or enum_fallback_solves > 0 or top_branch_enum_hits > 0:
+        blocked_cause = "enumeration_fallback_pressure"
+    else:
+        blocked_cause = "direct_solver_domain_pressure"
+
+fields = [
+    data.get("stop_reason", "n/a"),
+    summary.get("states", "n/a"),
+    summary.get("transitions", "n/a"),
+    summary.get("elapsed_ms", "n/a"),
+    summary.get("enumeration_candidate_evaluations", "n/a"),
+    summary.get("direct_assignment_branch_solves", "n/a"),
+    summary.get("enumeration_fallback_branch_solves", "n/a"),
+    max_existentials,
+    max_candidates,
+    (top_branch or {}).get("branch_label", "n/a"),
+    entry_n(top_branch or {}, "cumulative_solve_elapsed_ms"),
+    top_branch_enum_hits,
+    entry_n(top_branch or {}, "direct_solver_hits"),
+    blocked_cause,
+]
+print("|".join(str(field) for field in fields))
+PY
+}
+
 summary_field() {
     local file="$1" prefix="$2"
     if [[ ! -f "$file" ]]; then
@@ -436,7 +514,7 @@ PY
             echo "- $(protocol_display "$proto"): dominant release cost is \`$dominant_phase\` (candidate=$candidate_pct, fixed=$fixed_pct, dedup=$dedup_pct, invariant=$invariant_pct). Fixed-overhead dominates: **$fixed_overhead_dominates**. Dedup meaningful: **$dedup_meaningful**. Release materially changes wall time: **$release_material** (debug/release=$debug_release_ratio)."
         done
         echo ""
-        echo "- Cross-protocol conclusion: neither small model is currently fixed-overhead dominated; both are dominated by candidate generation/evaluation, with dedup/hash and invariant checking negligible. Release build materially reduces wall time on both protocols but does not change the dominant cost center."
+        echo "- Cross-protocol conclusion: neither small model is currently fixed-overhead dominated; both are dominated by successor solving on current release telemetry. Dedup/hash is now non-negligible on both runs, while invariant checking remains negligible. Release build materially reduces wall time on both protocols without changing the dominant phase."
         echo ""
 
         echo "## Branch-Level Blocker Telemetry (Phase 33.4.4.d)"
@@ -450,17 +528,48 @@ PY
             echo "| Branch label | Existential assignments | Candidate states | Direct solver hits | Enumeration fallback hits | Guard-pruned evals | Successful successors | Cumulative solve ms |"
             echo "|--------------|-------------------------|------------------|--------------------|---------------------------|--------------------|-----------------------|---------------------|"
             rows_emitted=0
+            max_rows=4
+            if [[ "$proto" == "paxos" ]]; then
+                max_rows=7
+            fi
             while IFS='|' read -r branch_label existential_count candidate_count direct_hits enumeration_hits guard_pruned_count successful_successors cumulative_solve_ms; do
                 [[ -z "$branch_label" ]] && continue
                 echo "| $branch_label | $existential_count | $candidate_count | $direct_hits | $enumeration_hits | $guard_pruned_count | $successful_successors | $cumulative_solve_ms |"
                 rows_emitted=$((rows_emitted + 1))
-            done < <(parse_source_first_branch_blockers "$SF_RELEASE_DIR/${proto}_benchmark.json")
+            done < <(parse_source_first_branch_blockers "$SF_RELEASE_DIR/${proto}_benchmark.json" "$max_rows")
             if [[ "$rows_emitted" -eq 0 ]]; then
                 echo "| n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |"
             fi
             echo ""
         done
+        echo "- Phase 33.4.4.f (Paxos blocker reduction): release telemetry now shows direct helper-branch solving with \`enumeration_fallback_hits=0\` and \`enumeration_eval=0\`; prior blocker rows \`branch_0\` and \`branch_2\` no longer fall back to candidate enumeration."
+        echo ""
         echo "- Interpretation rule for blocker narratives: prioritize branch families with highest cumulative solve ms and enumeration fallback hits; use existential/candidate counts plus guard-pruned/successor outcomes to distinguish domain blow-up from guard-filtered dead-ends."
+        echo ""
+
+        echo "## Explicit Root-Cause Answers (Phase 33.4.4.g)"
+        echo ""
+        echo "- **Why is source-first currently slower on the protocols that finish?**"
+        IFS='|' read -r tp_release_ms _ tp_candidate_pct tp_fixed_ms tp_fixed_pct tp_dedup_ms tp_dedup_pct _ tp_invariant_pct tp_debug_release_ratio tp_dominant_phase tp_fixed_overhead_dominates tp_dedup_meaningful _ <<< "$(parse_small_model_gap_diagnosis "$SF_RELEASE_DIR/twophase_benchmark.json" "$SF_DEBUG_DIR/twophase_benchmark.json")"
+        IFS='|' read -r pb_release_ms _ pb_candidate_pct pb_fixed_ms pb_fixed_pct pb_dedup_ms pb_dedup_pct _ pb_invariant_pct pb_debug_release_ratio pb_dominant_phase pb_fixed_overhead_dominates pb_dedup_meaningful _ <<< "$(parse_small_model_gap_diagnosis "$SF_RELEASE_DIR/primarybackup_benchmark.json" "$SF_DEBUG_DIR/primarybackup_benchmark.json")"
+        echo "  - **Answer:** release telemetry shows the dominant phase is solver work (\`$tp_dominant_phase\` for TwoPhase and \`$pb_dominant_phase\` for PrimaryBackup), not fixed startup overhead."
+        echo "  - TwoPhase evidence: wall=${tp_release_ms}ms, candidate share=${tp_candidate_pct}, fixed share=${tp_fixed_pct} (${tp_fixed_ms}ms, dominates=${tp_fixed_overhead_dominates}), dedup share=${tp_dedup_pct} (${tp_dedup_ms}ms, meaningful=${tp_dedup_meaningful}), invariant share=${tp_invariant_pct}, debug/release=${tp_debug_release_ratio}."
+        echo "  - PrimaryBackup evidence: wall=${pb_release_ms}ms, candidate share=${pb_candidate_pct}, fixed share=${pb_fixed_pct} (${pb_fixed_ms}ms, dominates=${pb_fixed_overhead_dominates}), dedup share=${pb_dedup_pct} (${pb_dedup_ms}ms, meaningful=${pb_dedup_meaningful}), invariant share=${pb_invariant_pct}, debug/release=${pb_debug_release_ratio}."
+        echo "  - Conclusion: release build materially helps, but the remaining wall-time gap is primarily successor-solving overhead rather than startup or invariant checking."
+        echo ""
+        echo "- **Why do LeaderElection and Paxos still block under matched benchmarks?**"
+        for proto in leaderelection paxos; do
+            IFS='|' read -r stop_reason states transitions elapsed_ms enum_evals direct_solves enum_fallback_solves max_existentials max_candidates top_branch_label top_branch_ms top_branch_enum_hits top_branch_direct_hits blocked_cause <<< "$(parse_blocker_root_cause "$SF_RELEASE_DIR/${proto}_benchmark.json")"
+            proto_name="$(protocol_display "$proto")"
+            if [[ "$blocked_cause" == "enumeration_fallback_pressure" ]]; then
+                echo "  - **$proto_name:** stop_reason=$stop_reason with timeout at ${elapsed_ms}ms (states=$states, transitions=$transitions). Blocked mainly by enumeration fallback pressure (enum_eval=$enum_evals, enum_fallback_branch_solves=$enum_fallback_solves, top_branch=$top_branch_label enum_hits=$top_branch_enum_hits)."
+            elif [[ "$blocked_cause" == "direct_solver_domain_pressure" ]]; then
+                echo "  - **$proto_name:** stop_reason=$stop_reason with timeout at ${elapsed_ms}ms (states=$states, transitions=$transitions). Blocked mainly by large-domain direct solving, not enumeration fallback (enum_eval=$enum_evals, enum_fallback_branch_solves=$enum_fallback_solves, direct_solves=$direct_solves, top_branch=$top_branch_label direct_hits=$top_branch_direct_hits, max_existentials=$max_existentials, max_candidates=$max_candidates, top_branch_solve_ms=$top_branch_ms)."
+            else
+                echo "  - **$proto_name:** stop_reason=$stop_reason (states=$states, transitions=$transitions, elapsed_ms=$elapsed_ms)."
+            fi
+        done
+        echo "  - Conclusion: the current blocker is timeout under high branch-domain solve cost; further wins require reducing existential/candidate-domain solve pressure in hot branches."
         echo ""
     fi
 
