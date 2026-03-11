@@ -1,7 +1,7 @@
 # TLC vs Source-first Benchmark Comparison
 
-Generated: 2026-03-11 03:14:06 UTC
-Git rev: d93c9ab
+Generated: 2026-03-11 03:19:38 UTC
+Git rev: 7e6e09c
 
 Source-first run: Generated: 2026-03-11 02:53:32 UTC
 TLC run: Generated: 2026-03-08 16:25:00 UTC
@@ -99,6 +99,26 @@ Tables focus on exact-mode blocker protocols (LeaderElection, Paxos) and keep on
   - **LeaderElection:** stop_reason=TimeoutReached with timeout at 240336ms (states=280, transitions=804). Blocked mainly by large-domain direct solving, not enumeration fallback (enum_eval=0, enum_fallback_branch_solves=0, direct_solves=395, top_branch=branch_3 direct_hits=56, max_existentials=7380, max_candidates=13824, top_branch_solve_ms=58830).
   - **Paxos:** stop_reason=TimeoutReached with timeout at 269703ms (states=75, transitions=80). Blocked mainly by large-domain direct solving, not enumeration fallback (enum_eval=0, enum_fallback_branch_solves=0, direct_solves=20, top_branch=branch_5 direct_hits=3, max_existentials=27, max_candidates=1679616, top_branch_solve_ms=33802).
   - Conclusion: the current blocker is timeout under high branch-domain solve cost; further wins require reducing existential/candidate-domain solve pressure in hot branches.
+
+## Anti-Corner-Cutting Guardrails (Phase 33.4.4.h)
+
+- Rule 1: Do not shrink benchmark models or weaken invariants just to make source-first look faster.
+- Rule 2: Do not switch the primary comparison to lossy search modes (`hash_compaction64`, symmetry merging, etc.).
+- Rule 3: Do not compare release TLC against debug source-first and call the result final without also checking release source-first.
+- Rule 4: Do not claim a speedup fix based only on wall time if reachable-state counts or exact-mode semantics changed.
+- Rule 5: Do not stop at aggregate "states/sec"; keep phase-attributed timing and branch-level blocker attribution.
+
+The table below records guardrail evidence from checked-in release artifacts and release-vs-debug parity checks.
+
+| Protocol | Release evidence class | Proof strength | Dedup mode | Lossy reasons | Symmetry fields | POR heuristic | Max depth | Max states | Timeout (ms) | Invariants (resolved/configured) | Release-vs-debug bounds match | Release-vs-debug invariant set match |
+|----------|------------------------|----------------|------------|---------------|-----------------|---------------|-----------|------------|--------------|----------------------------------|-------------------------------|--------------------------------------|
+| TwoPhase | exact_proof_strength | True | canonical | none | 0 | none | 100 | 10000000 | 240000 | 3/3 | yes | yes |
+| PrimaryBackup | exact_proof_strength | True | canonical | none | 0 | none | 100 | 10000000 | 240000 | 3/3 | yes | yes |
+| LeaderElection | exact_proof_strength | True | canonical | none | 0 | none | 100 | 10000000 | 240000 | 3/3 | yes | yes |
+| Paxos | exact_proof_strength | True | canonical | none | 0 | none | 100 | 10000000 | 240000 | 3/3 | yes | yes |
+
+- Guardrail interpretation: exact evidence requires `evidence_class=exact_proof_strength`, proof-strength search, canonical dedup, no lossy reasons, and no symmetry-merging in primary artifacts.
+- Guardrail interpretation: release-vs-debug parity checks above ensure benchmark bounds/invariant sets were not quietly relaxed for release-only comparisons.
 
 ## Column Meanings
 

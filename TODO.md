@@ -10099,12 +10099,20 @@ Rules for this phase (do not cut corners):
       - why `LeaderElection`/`Paxos` currently block (timeout under large-domain branch solving pressure, with explicit `enum_fallback_branch_solves` / `enumeration_eval` evidence and top-branch domain sizes).
     - Added integration guard `test_phase_33_4_4_g_report_explicitly_answers_why_slower_and_why_blocked` in `transpiler/tests/integration.rs` so the explicit Q&A section and evidence terms cannot silently regress.
 
-- [ ] **33.4.4.h Anti-corner-cutting rules for this subsection**
+- [x] **33.4.4.h Anti-corner-cutting rules for this subsection** [26-03-12, 05:02] (scope check: explicit guardrail section in benchmark comparison generator/report + regression guard over script/report/artifact evidence fields, <500 LOC hand edits; no decomposition required)
   - Do not shrink the benchmark models or weaken invariants just to make source-first look faster.
   - Do not switch the primary comparison to lossy modes (`hash_compaction64`, symmetry merging, etc.).
   - Do not compare release TLC against debug source-first and call the result final without also checking release source-first.
   - Do not claim a speedup fix based only on wall time if reachable-state counts or exact-mode semantics changed.
   - Do not stop at aggregate "states/sec"; keep the phase and branch attribution so the next fix is obvious.
+  - **Done**:
+    - Extended `scripts/compare_tlc_vs_source_first.sh` with `parse_anti_corner_cutting_status` and a dedicated **Anti-Corner-Cutting Guardrails (Phase 33.4.4.h)** section that records, per protocol, exact-evidence search settings, lossy-mode surface, benchmark bounds, invariant-resolution counts, and release-vs-debug parity checks.
+    - Regenerated `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`; it now contains the five anti-corner-cutting rules explicitly and a guardrail evidence table (`evidence_class`, `proof_strength`, `state_dedup`, `lossy_reasons`, `symmetry_fields`, `por_heuristic`, bounds, and invariant parity).
+    - Added integration regression `test_phase_33_4_4_h_anti_corner_cutting_rules_are_explicit_and_enforced` in `transpiler/tests/integration.rs`, enforcing:
+      - TODO completion marker,
+      - script/report guardrail section presence with explicit rule text,
+      - release benchmark artifacts remain exact-mode (`exact_proof_strength`, no lossy reasons, canonical dedup, no symmetry-merging),
+      - release/debug benchmark bounds and configured/resolved invariant sets remain aligned.
 
 ### 33.5 Consensus protocol coverage drive
 

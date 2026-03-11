@@ -18583,3 +18583,291 @@ fn test_phase_33_4_4_g_report_explicitly_answers_why_slower_and_why_blocked() {
         );
     }
 }
+
+#[test]
+fn test_phase_33_4_4_h_anti_corner_cutting_rules_are_explicit_and_enforced() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower.contains("- [x] **33.4.4.h anti-corner-cutting rules for this subsection**"),
+        "TODO {} must mark Phase 33.4.4.h complete",
+        todo_path.display()
+    );
+
+    let compare_script_path = repo_root.join("scripts/compare_tlc_vs_source_first.sh");
+    let compare_script_src = std::fs::read_to_string(&compare_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison script {}: {}",
+            compare_script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "parse_anti_corner_cutting_status",
+        "## Anti-Corner-Cutting Guardrails (Phase 33.4.4.h)",
+        "Rule 1: Do not shrink benchmark models or weaken invariants",
+        "Rule 2: Do not switch the primary comparison to lossy search modes",
+        "Rule 3: Do not compare release TLC against debug source-first",
+        "Rule 4: Do not claim a speedup fix based only on wall time",
+        "Rule 5: Do not stop at aggregate \\\"states/sec\\\"",
+    ] {
+        assert!(
+            compare_script_src.contains(required_fragment),
+            "comparison script {} must include `{}`",
+            compare_script_path.display(),
+            required_fragment
+        );
+    }
+
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+    for required_fragment in [
+        "## anti-corner-cutting guardrails (phase 33.4.4.h)",
+        "rule 1: do not shrink benchmark models or weaken invariants",
+        "rule 2: do not switch the primary comparison to lossy search modes",
+        "rule 3: do not compare release tlc against debug source-first",
+        "rule 4: do not claim a speedup fix based only on wall time",
+        "rule 5: do not stop at aggregate \"states/sec\"",
+        "release evidence class",
+        "release-vs-debug bounds match",
+        "release-vs-debug invariant set match",
+    ] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+
+    for protocol in ["twophase", "primarybackup", "leaderelection", "paxos"] {
+        let release_artifact_path = repo_root
+            .join("reports/benchmarks/source_first_release")
+            .join(format!("{protocol}_benchmark.json"));
+        let debug_artifact_path = repo_root
+            .join("reports/benchmarks/source_first")
+            .join(format!("{protocol}_benchmark.json"));
+
+        let release_src = std::fs::read_to_string(&release_artifact_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read release benchmark artifact {}: {}",
+                release_artifact_path.display(),
+                err
+            )
+        });
+        let debug_src = std::fs::read_to_string(&debug_artifact_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read debug benchmark artifact {}: {}",
+                debug_artifact_path.display(),
+                err
+            )
+        });
+        let release: serde_json::Value = serde_json::from_str(&release_src).unwrap_or_else(|err| {
+            panic!(
+                "release benchmark artifact {} must be valid JSON: {}",
+                release_artifact_path.display(),
+                err
+            )
+        });
+        let debug: serde_json::Value = serde_json::from_str(&debug_src).unwrap_or_else(|err| {
+            panic!(
+                "debug benchmark artifact {} must be valid JSON: {}",
+                debug_artifact_path.display(),
+                err
+            )
+        });
+
+        let release_search = release
+            .get("search")
+            .and_then(|value| value.as_object())
+            .unwrap_or_else(|| {
+                panic!(
+                    "release benchmark artifact {} must include search object",
+                    release_artifact_path.display()
+                )
+            });
+        let release_evidence = release_search
+            .get("evidence_mode")
+            .and_then(|value| value.as_object())
+            .unwrap_or_else(|| {
+                panic!(
+                    "release benchmark artifact {} must include search.evidence_mode object",
+                    release_artifact_path.display()
+                )
+            });
+        assert_eq!(
+            release_evidence
+                .get("class")
+                .and_then(|value| value.as_str())
+                .unwrap_or(""),
+            "exact_proof_strength",
+            "release benchmark artifact {} must remain exact-mode proof-strength evidence",
+            release_artifact_path.display()
+        );
+        assert_eq!(
+            release_evidence
+                .get("proof_strength")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
+            true,
+            "release benchmark artifact {} must report proof_strength=true",
+            release_artifact_path.display()
+        );
+        let lossy_reasons = release_evidence
+            .get("lossy_reasons")
+            .and_then(|value| value.as_array())
+            .unwrap_or_else(|| {
+                panic!(
+                    "release benchmark artifact {} must include search.evidence_mode.lossy_reasons array",
+                    release_artifact_path.display()
+                )
+            });
+        assert!(
+            lossy_reasons.is_empty(),
+            "release benchmark artifact {} must not rely on lossy evidence reasons",
+            release_artifact_path.display()
+        );
+        assert_eq!(
+            release_search
+                .get("state_dedup")
+                .and_then(|value| value.as_str())
+                .unwrap_or(""),
+            "canonical",
+            "release benchmark artifact {} must use canonical state dedup",
+            release_artifact_path.display()
+        );
+        let symmetry_fields = release_search
+            .get("symmetry_fields")
+            .and_then(|value| value.as_array())
+            .unwrap_or_else(|| {
+                panic!(
+                    "release benchmark artifact {} must include search.symmetry_fields array",
+                    release_artifact_path.display()
+                )
+            });
+        assert!(
+            symmetry_fields.is_empty(),
+            "release benchmark artifact {} must not use symmetry field merging in primary comparison",
+            release_artifact_path.display()
+        );
+        assert_eq!(
+            release_search
+                .get("por_heuristic")
+                .and_then(|value| value.as_str())
+                .unwrap_or(""),
+            "none",
+            "release benchmark artifact {} must keep POR heuristic disabled for exact primary comparison",
+            release_artifact_path.display()
+        );
+
+        let release_invariants = release
+            .get("invariants")
+            .and_then(|value| value.as_object())
+            .unwrap_or_else(|| {
+                panic!(
+                    "release benchmark artifact {} must include invariants object",
+                    release_artifact_path.display()
+                )
+            });
+        let release_configured_count = release_invariants
+            .get("configured_count")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        let release_resolved_count = release_invariants
+            .get("resolved_count")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        assert!(
+            release_configured_count > 0 && release_configured_count == release_resolved_count,
+            "release benchmark artifact {} must keep configured and resolved invariants aligned (configured={}, resolved={})",
+            release_artifact_path.display(),
+            release_configured_count,
+            release_resolved_count
+        );
+
+        let debug_search = debug
+            .get("search")
+            .and_then(|value| value.as_object())
+            .unwrap_or_else(|| {
+                panic!(
+                    "debug benchmark artifact {} must include search object",
+                    debug_artifact_path.display()
+                )
+            });
+        for numeric_field in ["max_depth", "max_states", "timeout_ms"] {
+            let release_value = release_search
+                .get(numeric_field)
+                .and_then(|value| value.as_u64())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "release benchmark artifact {} search.{} must be an unsigned integer",
+                        release_artifact_path.display(),
+                        numeric_field
+                    )
+                });
+            let debug_value = debug_search
+                .get(numeric_field)
+                .and_then(|value| value.as_u64())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "debug benchmark artifact {} search.{} must be an unsigned integer",
+                        debug_artifact_path.display(),
+                        numeric_field
+                    )
+                });
+            assert_eq!(
+                release_value, debug_value,
+                "release/debug benchmark bounds must match for protocol `{}` field `{}` (release={}, debug={})",
+                protocol, numeric_field, release_value, debug_value
+            );
+        }
+
+        let debug_invariants = debug
+            .get("invariants")
+            .and_then(|value| value.as_object())
+            .unwrap_or_else(|| {
+                panic!(
+                    "debug benchmark artifact {} must include invariants object",
+                    debug_artifact_path.display()
+                )
+            });
+        for list_field in ["configured", "resolved"] {
+            let release_list = release_invariants
+                .get(list_field)
+                .and_then(|value| value.as_array())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "release benchmark artifact {} invariants.{} must be an array",
+                        release_artifact_path.display(),
+                        list_field
+                    )
+                });
+            let debug_list = debug_invariants
+                .get(list_field)
+                .and_then(|value| value.as_array())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "debug benchmark artifact {} invariants.{} must be an array",
+                        debug_artifact_path.display(),
+                        list_field
+                    )
+                });
+            assert_eq!(
+                release_list, debug_list,
+                "release/debug invariant set mismatch for protocol `{}` field `{}`",
+                protocol, list_field
+            );
+        }
+    }
+}

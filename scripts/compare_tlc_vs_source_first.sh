@@ -394,6 +394,94 @@ print("|".join(str(field) for field in fields))
 PY
 }
 
+parse_anti_corner_cutting_status() {
+    local release_artifact="$1"
+    local debug_artifact="$2"
+    if [[ ! -f "$release_artifact" ]]; then
+        echo "n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a"
+        return
+    fi
+    python3 - "$release_artifact" "$debug_artifact" <<'PY' 2>/dev/null || echo "n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a"
+import json
+import sys
+
+release_artifact = sys.argv[1]
+debug_artifact = sys.argv[2] if len(sys.argv) > 2 else ""
+
+
+def load(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return {}
+
+
+def extract_fields(payload):
+    search = payload.get("search") or {}
+    evidence = search.get("evidence_mode") or {}
+    invariants = payload.get("invariants") or {}
+    symmetry_fields = search.get("symmetry_fields")
+    if not isinstance(symmetry_fields, list):
+        symmetry_fields = []
+    lossy_reasons = evidence.get("lossy_reasons")
+    if not isinstance(lossy_reasons, list):
+        lossy_reasons = []
+    return {
+        "evidence_class": evidence.get("class", "n/a"),
+        "proof_strength": evidence.get("proof_strength", "n/a"),
+        "state_dedup": search.get("state_dedup", "n/a"),
+        "lossy_reasons": "none" if not lossy_reasons else ",".join(str(reason) for reason in lossy_reasons),
+        "symmetry_count": len(symmetry_fields),
+        "por_heuristic": search.get("por_heuristic", "n/a"),
+        "max_depth": search.get("max_depth", "n/a"),
+        "max_states": search.get("max_states", "n/a"),
+        "timeout_ms": search.get("timeout_ms", "n/a"),
+        "inv_configured": invariants.get("configured_count", "n/a"),
+        "inv_resolved": invariants.get("resolved_count", "n/a"),
+        "inv_configured_names": tuple(invariants.get("configured") or []),
+        "inv_resolved_names": tuple(invariants.get("resolved") or []),
+    }
+
+
+release = extract_fields(load(release_artifact))
+debug_payload = load(debug_artifact) if debug_artifact else {}
+debug = extract_fields(debug_payload) if debug_payload else None
+
+bounds_match = "n/a"
+invariants_match = "n/a"
+if debug is not None:
+    bounds_match = "yes" if (
+        release["max_depth"] == debug["max_depth"]
+        and release["max_states"] == debug["max_states"]
+        and release["timeout_ms"] == debug["timeout_ms"]
+    ) else "no"
+    invariants_match = "yes" if (
+        release["inv_configured"] == debug["inv_configured"]
+        and release["inv_resolved"] == debug["inv_resolved"]
+        and release["inv_configured_names"] == debug["inv_configured_names"]
+        and release["inv_resolved_names"] == debug["inv_resolved_names"]
+    ) else "no"
+
+fields = [
+    release["evidence_class"],
+    release["proof_strength"],
+    release["state_dedup"],
+    release["lossy_reasons"],
+    release["symmetry_count"],
+    release["por_heuristic"],
+    release["max_depth"],
+    release["max_states"],
+    release["timeout_ms"],
+    release["inv_resolved"],
+    release["inv_configured"],
+    bounds_match,
+    invariants_match,
+]
+print("|".join(str(field) for field in fields))
+PY
+}
+
 summary_field() {
     local file="$1" prefix="$2"
     if [[ ! -f "$file" ]]; then
@@ -570,6 +658,27 @@ PY
             fi
         done
         echo "  - Conclusion: the current blocker is timeout under high branch-domain solve cost; further wins require reducing existential/candidate-domain solve pressure in hot branches."
+        echo ""
+
+        echo "## Anti-Corner-Cutting Guardrails (Phase 33.4.4.h)"
+        echo ""
+        echo "- Rule 1: Do not shrink benchmark models or weaken invariants just to make source-first look faster."
+        echo "- Rule 2: Do not switch the primary comparison to lossy search modes (\`hash_compaction64\`, symmetry merging, etc.)."
+        echo "- Rule 3: Do not compare release TLC against debug source-first and call the result final without also checking release source-first."
+        echo "- Rule 4: Do not claim a speedup fix based only on wall time if reachable-state counts or exact-mode semantics changed."
+        echo "- Rule 5: Do not stop at aggregate \"states/sec\"; keep phase-attributed timing and branch-level blocker attribution."
+        echo ""
+        echo "The table below records guardrail evidence from checked-in release artifacts and release-vs-debug parity checks."
+        echo ""
+        echo "| Protocol | Release evidence class | Proof strength | Dedup mode | Lossy reasons | Symmetry fields | POR heuristic | Max depth | Max states | Timeout (ms) | Invariants (resolved/configured) | Release-vs-debug bounds match | Release-vs-debug invariant set match |"
+        echo "|----------|------------------------|----------------|------------|---------------|-----------------|---------------|-----------|------------|--------------|----------------------------------|-------------------------------|--------------------------------------|"
+        for proto in $PROTOCOLS; do
+            IFS='|' read -r evidence_class proof_strength state_dedup lossy_reasons symmetry_count por_heuristic max_depth max_states timeout_ms inv_resolved inv_configured bounds_match invariants_match <<< "$(parse_anti_corner_cutting_status "$SF_RELEASE_DIR/${proto}_benchmark.json" "$SF_DEBUG_DIR/${proto}_benchmark.json")"
+            echo "| $(protocol_display "$proto") | $evidence_class | $proof_strength | $state_dedup | $lossy_reasons | $symmetry_count | $por_heuristic | $max_depth | $max_states | $timeout_ms | $inv_resolved/$inv_configured | $bounds_match | $invariants_match |"
+        done
+        echo ""
+        echo "- Guardrail interpretation: exact evidence requires \`evidence_class=exact_proof_strength\`, proof-strength search, canonical dedup, no lossy reasons, and no symmetry-merging in primary artifacts."
+        echo "- Guardrail interpretation: release-vs-debug parity checks above ensure benchmark bounds/invariant sets were not quietly relaxed for release-only comparisons."
         echo ""
     fi
 
