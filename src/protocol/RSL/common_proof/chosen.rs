@@ -242,6 +242,50 @@ verus! {
         }
     }
 
+    pub proof fn lemma_DecidedOperationWasChosen_change_step(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        idx: int
+    ) -> (q: QuorumOf2bs)
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            0 <= idx < b[i - 1].replicas.len(),
+            0 <= idx < b[i].replicas.len(),
+            c.config.replica_ids.len() > 0,
+            b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state.contains_key(
+                b[i - 1].replicas[idx].replica.executor.ops_complete,
+            ),
+            b[i].replicas[idx].replica.executor.next_op_to_execute
+                == (OutstandingOperation::OutstandingOpKnown{
+                    v: b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[
+                        b[i - 1].replicas[idx].replica.executor.ops_complete
+                    ].candidate_learned_value,
+                    bal: b[i - 1].replicas[idx].replica.learner.max_ballot_seen,
+                }),
+        ensures
+            q.bal == b[i].replicas[idx].replica.executor.next_op_to_execute->bal,
+            q.opn == b[i].replicas[idx].replica.executor.ops_complete,
+            q.v == b[i].replicas[idx].replica.executor.next_op_to_execute->v,
+            q.indices.finite(),
+            q.packets.len() == c.config.replica_ids.len(),
+    {
+        let s = b[i - 1].replicas[idx].replica;
+        let opn = s.executor.ops_complete;
+        let v = s.learner.unexecuted_learner_state[opn].candidate_learned_value;
+        let bal = s.learner.max_ballot_seen;
+        let senders = s.learner.unexecuted_learner_state[opn].received_2b_message_senders;
+        let (indices, packets) = collect_2b_messages(c, senders, opn, idx, b, i, 0);
+
+        let q_out = QuorumOf2bs{c:c, indices:indices, packets:packets, bal:bal, opn:opn, v:v};
+        assert(q_out.indices.finite());
+        assert(q_out.packets.len() == c.config.replica_ids.len()) by {
+            assert(q_out.packets.len() == c.config.replica_ids.len() - 0);
+        };
+        q_out
+    }
+
     #[verifier(external_body)]
     pub proof fn lemma_DecidedOperationWasChosen(
         b: Behavior<RslState>,
@@ -344,6 +388,10 @@ verus! {
             rc.1.len() == c.config.replica_ids.len() - sender_idx,
             forall |sidx: int| rc.0.contains(sidx)
                 ==> sender_idx <= sidx < c.config.replica_ids.len(),
+            forall |sidx: int|
+                sender_idx <= sidx < c.config.replica_ids.len()
+                && senders.contains(c.config.replica_ids[sidx])
+                ==> rc.0.contains(sidx),
             forall |sidx: int| rc.0.contains(sidx) ==> ({
                 let p = rc.1[sidx - sender_idx];
                 &&& p.src == c.config.replica_ids[sidx]
@@ -425,6 +473,18 @@ verus! {
                         assert(new_packets[sidx - sender_idx] == rest_packets[sidx - (sender_idx + 1)]);
                     }
                 };
+                assert forall |sidx: int|
+                    sender_idx <= sidx < c.config.replica_ids.len()
+                    && senders.contains(c.config.replica_ids[sidx])
+                    implies new_indices.contains(sidx) by {
+                    if sidx == sender_idx_unused {
+                        assert(new_indices.contains(sender_idx_unused));
+                    } else {
+                        assert(sender_idx + 1 <= sidx < c.config.replica_ids.len());
+                        assert(rest_indices.contains(sidx));
+                        assert(new_indices.contains(sidx));
+                    }
+                };
                 (new_indices, new_packets)
             } else {
                 let new_packets = seq![dummy_packet] + rest_packets;
@@ -446,6 +506,19 @@ verus! {
                     assert(sender_idx + 1 <= sidx < c.config.replica_ids.len());
                     assert(0 <= sidx - (sender_idx + 1) < rest_packets.len());
                     assert(new_packets[sidx - sender_idx] == rest_packets[sidx - (sender_idx + 1)]);
+                };
+                assert forall |sidx: int|
+                    sender_idx <= sidx < c.config.replica_ids.len()
+                    && senders.contains(c.config.replica_ids[sidx])
+                    implies rest_indices.contains(sidx) by {
+                    if sidx == sender_idx {
+                        assert(c.config.replica_ids[sidx] == sender);
+                        assert(senders.contains(sender));
+                        assert(false);
+                    } else {
+                        assert(sender_idx + 1 <= sidx < c.config.replica_ids.len());
+                        assert(rest_indices.contains(sidx));
+                    }
                 };
                 (rest_indices, new_packets)
             }

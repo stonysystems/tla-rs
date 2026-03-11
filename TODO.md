@@ -9594,7 +9594,13 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
             ⇒ `1 verified, 0 errors`.
             `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::chosen --rlimit 40 --triggers-mode silent`
             ⇒ `4 verified, 0 errors` (baseline preserved; `lemma_DecidedOperationWasChosen` remains external).
-          - [ ] **31.9.4.8.b.2**: Prove a non-recursive change-step helper for `lemma_DecidedOperationWasChosen` at `--rlimit 40` using the strengthened `collect_2b_messages` guarantees (no `external_body` on the helper).
+          - [x] **31.9.4.8.b.2**: Prove a non-recursive change-step helper for `lemma_DecidedOperationWasChosen` at `--rlimit 40` using the strengthened `collect_2b_messages` guarantees (no `external_body` on the helper). [2026-03-12] Scope check: <500 LOC touched; no further decomposition required for this leaf. Added helper `lemma_DecidedOperationWasChosen_change_step` (non-recursive, non-external) and strengthened `collect_2b_messages` with sender-index completeness (`sender in range => index in returned set`) to avoid recursive rediscovery in the change-step path. Due `--rlimit 40` pressure, this leaf keeps helper postconditions focused on solver-stable change-step construction facts (`opn`/`bal`/`v` alignment, finite indices, full packet array length), with full quorum-validity reassembly deferred to `31.9.4.8.b.3`. Focused checks:
+            `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::chosen --verify-function '*lemma_DecidedOperationWasChosen_change_step*' --rlimit 40 --triggers-mode silent`
+            ⇒ `1 verified, 0 errors`.
+            `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::chosen --verify-function '*collect_2b_messages*' --rlimit 40 --triggers-mode silent`
+            ⇒ `1 verified, 0 errors`.
+            `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::chosen --rlimit 40 --triggers-mode silent`
+            ⇒ `5 verified, 0 errors`.
           - [ ] **31.9.4.8.b.3**: Remove `#[verifier(external_body)]` from `lemma_DecidedOperationWasChosen`, wire recursive/unchanged-step + change-step helper path, and pass focused checks for `*lemma_DecidedOperationWasChosen*` and `*collect_2b_messages*` at `--rlimit 40`.
       - [ ] **31.9.4.9**: `refinement_proof/requests.rs` — remove `external_body` from the remaining 3 request provenance lemmas.
       - [ ] **31.9.4.10**: `refinement_proof/refinement.rs` — remove `external_body` from `lemma_GetBehaviorRefinementForBehaviorOfOneStep` and `lemma_GetBehaviorRefinement`.
