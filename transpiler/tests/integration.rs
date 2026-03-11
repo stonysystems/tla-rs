@@ -19881,3 +19881,116 @@ fn test_phase_31_9_4_7_b_3_find2a_external_removed_and_tracked() {
         message2a_path.display()
     );
 }
+
+#[test]
+fn test_phase_31_9_4_7_c_1_maybe_nominate_packet_helper_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.c**",
+        "**31.9.4.7.c.1**",
+        "[x] **31.9.4.7.c.1**",
+        "lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn",
+        "--verify-function '*lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn*' --rlimit 40",
+        "1 verified, 0 errors",
+        "**31.9.4.7.c.2**",
+        "**31.9.4.7.c.3**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.c.1 tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        message2a_src.contains(
+            "pub proof fn lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn"
+        ),
+        "message2a proof file {} must contain lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains(
+            "lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn("
+        ),
+        "message2a proof file {} must call lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn from lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
+        ),
+        "message2a proof file {} must keep lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality external until 31.9.4.7.c.3",
+        message2a_path.display()
+    );
+}
+
+#[test]
+fn test_phase_31_9_4_7_c_2_contradiction_helpers_are_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.c.2**",
+        "[x] **31.9.4.7.c.2**",
+        "lemma_2a_ballot_proposer_id_alignment",
+        "lemma_2a_disjunction_from_implications_contradicts_prestate",
+        "--verify-function '*lemma_2a_ballot_proposer_id_alignment*' --rlimit 40 --triggers-mode silent",
+        "--verify-function '*lemma_2a_disjunction_from_implications_contradicts_prestate*' --rlimit 40 --triggers-mode silent",
+        "**31.9.4.7.c.3**",
+        "[ ] **31.9.4.7.c.3**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.c.2 tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    for required_fragment in [
+        "pub proof fn lemma_2a_ballot_proposer_id_alignment",
+        "pub proof fn lemma_2a_disjunction_from_implications_contradicts_prestate",
+        "lemma_2a_ballot_proposer_id_alignment(p1, p1_proposer_idx, proposer_idx);",
+        "lemma_2a_disjunction_from_implications_contradicts_prestate(p1, s_from_p1);",
+    ] {
+        assert!(
+            message2a_src.contains(required_fragment),
+            "message2a proof file {} must include c.2 helper/call fragment `{}`",
+            message2a_path.display(),
+            required_fragment
+        );
+    }
+    assert!(
+        message2a_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
+        ),
+        "message2a proof file {} must keep lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality external until 31.9.4.7.c.3",
+        message2a_path.display()
+    );
+}

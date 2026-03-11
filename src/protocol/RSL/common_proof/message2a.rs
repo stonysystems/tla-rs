@@ -126,6 +126,98 @@ verus! {
         // Verus case-splits automatically.
     }
 
+    pub proof fn lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn(
+        s: LProposer,
+        s_: LProposer,
+        clock: int,
+        log_truncation_point: int,
+        sent_packets: Seq<RslPacket>,
+        p: RslPacket,
+    )
+        requires
+            LProposerMaybeNominateValueAndSend2a(s, s_, clock, log_truncation_point, sent_packets),
+            sent_packets.contains(p),
+        ensures
+            p.msg is RslMessage2a,
+            p.msg->bal_2a == s.max_ballot_i_sent_1a,
+            p.msg->opn_2a == s.next_operation_number_to_propose,
+    {
+        let j = choose |j: int| 0 <= j < sent_packets.len() && sent_packets[j] == p;
+        let opn = s.next_operation_number_to_propose;
+        assert(sent_packets.len() > 0);
+        lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, clock, log_truncation_point, sent_packets);
+
+        if LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets) {
+            let p_1b: RslPacket = choose |p_1b: RslPacket|
+                s.received_1b_packets.contains(p_1b)
+                && LValIsHighestNumberedProposal(p_1b.msg->votes[opn].max_val, s.received_1b_packets, opn)
+                && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
+                    RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_1b.msg->votes[opn].max_val},
+                    sent_packets);
+            assert(sent_packets[j] =~= LPacket { dst: s.constants.all.config.replica_ids[j],
+                src: s.constants.all.config.replica_ids[s.constants.my_index],
+                msg: RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_1b.msg->votes[opn].max_val} });
+        } else {
+            let batchSize = if s.request_queue.len() <= s.constants.all.params.max_batch_size || s.constants.all.params.max_batch_size < 0 {
+                s.request_queue.len() as int
+            } else {
+                s.constants.all.params.max_batch_size
+            };
+            let v = s.request_queue.subrange(0, batchSize);
+            assert(sent_packets[j] =~= LPacket { dst: s.constants.all.config.replica_ids[j],
+                src: s.constants.all.config.replica_ids[s.constants.my_index],
+                msg: RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: v} });
+        }
+        assert(p.msg == sent_packets[j].msg);
+    }
+
+    pub proof fn lemma_2a_ballot_proposer_id_alignment(
+        p: RslPacket,
+        idx1: int,
+        idx2: int,
+    )
+        requires
+            p.msg is RslMessage2a,
+            p.msg->bal_2a.proposer_id == idx1,
+            p.msg->bal_2a.proposer_id == idx2,
+        ensures
+            idx1 == idx2,
+    {
+        assert(idx1 == p.msg->bal_2a.proposer_id);
+        assert(idx2 == p.msg->bal_2a.proposer_id);
+    }
+
+    pub proof fn lemma_2a_disjunction_from_implications_contradicts_prestate(
+        p: RslPacket,
+        s: LProposer,
+    )
+        requires
+            p.msg is RslMessage2a,
+            BalLt(p.msg->bal_2a, s.max_ballot_i_sent_1a)
+                || (s.max_ballot_i_sent_1a == p.msg->bal_2a
+                    && s.current_state != 1
+                    && s.next_operation_number_to_propose > p.msg->opn_2a),
+            p.msg->bal_2a == s.max_ballot_i_sent_1a,
+            p.msg->opn_2a == s.next_operation_number_to_propose,
+        ensures
+            false,
+    {
+        if BalLt(p.msg->bal_2a, s.max_ballot_i_sent_1a) {
+            assert(BalLt(s.max_ballot_i_sent_1a, s.max_ballot_i_sent_1a));
+            assert(!BalLt(s.max_ballot_i_sent_1a, s.max_ballot_i_sent_1a)) by {
+                assert(!(s.max_ballot_i_sent_1a.seqno < s.max_ballot_i_sent_1a.seqno));
+                assert(!(s.max_ballot_i_sent_1a.proposer_id < s.max_ballot_i_sent_1a.proposer_id));
+            }
+            assert(false);
+        } else {
+            assert(s.max_ballot_i_sent_1a == p.msg->bal_2a
+                && s.current_state != 1
+                && s.next_operation_number_to_propose > p.msg->opn_2a);
+            assert(s.next_operation_number_to_propose > s.next_operation_number_to_propose);
+            assert(false);
+        }
+    }
+
     pub proof fn lemma_2aMessageImplicationsForProposerState(
         b:Behavior<RslState>,
         c:LConstants,
@@ -512,13 +604,8 @@ verus! {
         // p1 was already sent before step i; p2 is newly sent in step i.
         // We'll derive a contradiction: the proposer can't send p2 given its state.
 
-        // Get proposer state implications for p1 at step i-1
-        let alt_proposer_idx = lemma_2aMessageImplicationsForProposerState(b, c, i-1, p1);
-        // Get proposer state implications for p2 at step i (to identify the replica)
-        let alt2_proposer_idx = lemma_2aMessageImplicationsForProposerState(b, c, i, p2);
-        assert(alt_proposer_idx == alt2_proposer_idx);
-        assert(ReplicasDistinct(c.config.replica_ids, proposer_idx, alt_proposer_idx));
-        assert(proposer_idx == alt_proposer_idx);
+        // Get proposer state implications for p1 at step i-1.
+        let p1_proposer_idx = lemma_2aMessageImplicationsForProposerState(b, c, i - 1, p1);
 
         // The proposer state at step i-1 (pre-state of the action that sends p2)
         let s = b[i-1].replicas[proposer_idx].replica.proposer;
@@ -527,54 +614,35 @@ verus! {
         let pkts = ExtractSentPacketsFromIos(ios);
         lemma_ExtractSentPacketsFromIos(ios);
         assert(pkts.contains(p2));
+        lemma_max_balISent1aHasMeAsProposer(b, c, i - 1, proposer_idx);
 
-        // The proposer action is LProposerMaybeNominateValueAndSend2a, which (since pkts
-        // is non-empty) must be either Old or New nomination.
+        // The proposer action is LProposerMaybeNominateValueAndSend2a; since p2 is in pkts,
+        // p2 carries the pre-state proposer ballot/opn.
         assert(LProposerMaybeNominateValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts));
-        lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts);
+        lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn(
+            s,
+            s_,
+            SpontaneousClock(ios).t,
+            a.log_truncation_point,
+            pkts,
+            p2,
+        );
 
-        // In both Old and New nomination, the broadcast message has:
-        //   bal_2a == s.max_ballot_i_sent_1a and opn_2a == s.next_operation_number_to_propose
-        // Since p2 is in the broadcast, p2.msg has these fields.
-        // Use LBroadcastToEveryone structure: all packets have msg == m
-        let i2 = choose |i2: int| 0 <= i2 < pkts.len() && pkts[i2] == p2;
-        if LProposerNominateOldValueAndSend2a(s, s_, a.log_truncation_point, pkts) {
-            let opn = s.next_operation_number_to_propose;
-            let p_1b: RslPacket = choose |p_1b: RslPacket|
-                s.received_1b_packets.contains(p_1b)
-                && LValIsHighestNumberedProposal(p_1b.msg->votes[opn].max_val, s.received_1b_packets, opn)
-                && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
-                    RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_1b.msg->votes[opn].max_val},
-                    pkts);
-            assert(pkts[i2] =~= LPacket { dst: s.constants.all.config.replica_ids[i2],
-                src: s.constants.all.config.replica_ids[s.constants.my_index],
-                msg: RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_1b.msg->votes[opn].max_val} });
-        } else {
-            let opn = s.next_operation_number_to_propose;
-            let batchSize = if s.request_queue.len() <= s.constants.all.params.max_batch_size || s.constants.all.params.max_batch_size < 0 {
-                s.request_queue.len() as int
-            } else {
-                s.constants.all.params.max_batch_size
-            };
-            let v = s.request_queue.subrange(0, batchSize);
-            assert(pkts[i2] =~= LPacket { dst: s.constants.all.config.replica_ids[i2],
-                src: s.constants.all.config.replica_ids[s.constants.my_index],
-                msg: RslMessage::RslMessage2a{bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: v} });
-        }
-        // Now we know: p2.msg->bal_2a == s.max_ballot_i_sent_1a, p2.msg->opn_2a == s.next_operation_number_to_propose
-        assert(p2.msg->bal_2a == s.max_ballot_i_sent_1a);
-        assert(p2.msg->opn_2a == s.next_operation_number_to_propose);
-
-        // Since p1.msg->bal_2a == p2.msg->bal_2a, we have p1.msg->bal_2a == s.max_ballot_i_sent_1a
-        // Since p1.msg->opn_2a == p2.msg->opn_2a, we have p1.msg->opn_2a == s.next_operation_number_to_propose
-        //
-        // From lemma_2aMessageImplicationsForProposerState(b, c, i-1, p1):
-        //   BalLt(p1.msg->bal_2a, s.max_ballot_i_sent_1a) — i.e., BalLt(s.max_ballot_i_sent_1a, s.max_ballot_i_sent_1a), which is false
-        //   OR s.next_operation_number_to_propose > p1.msg->opn_2a — i.e., s.next_opn > s.next_opn, which is false
-        // Both disjuncts are false → contradiction.
-        assert(!BalLt(s.max_ballot_i_sent_1a, s.max_ballot_i_sent_1a));
+        // p1 and p2 share ballot/opn by requires, so p1 also matches this pre-state proposer.
+        assert(p1.msg->bal_2a == s.max_ballot_i_sent_1a);
         assert(p1.msg->opn_2a == s.next_operation_number_to_propose);
-        assert(false);
+        assert(p1.msg->bal_2a.proposer_id == proposer_idx);
+        lemma_2a_ballot_proposer_id_alignment(p1, p1_proposer_idx, proposer_idx);
+
+        let s_from_p1 = b[i - 1].replicas[p1_proposer_idx].replica.proposer;
+        assert(s_from_p1 == s);
+        assert(
+            BalLt(p1.msg->bal_2a, s_from_p1.max_ballot_i_sent_1a)
+            || (s_from_p1.max_ballot_i_sent_1a == p1.msg->bal_2a
+                && s_from_p1.current_state != 1
+                && s_from_p1.next_operation_number_to_propose > p1.msg->opn_2a)
+        );
+        lemma_2a_disjunction_from_implications_contradicts_prestate(p1, s_from_p1);
     }
 
 
