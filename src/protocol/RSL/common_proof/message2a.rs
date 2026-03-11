@@ -199,7 +199,6 @@ verus! {
 
 
 
-    #[verifier(external_body)]
     pub proof fn lemma_Find2aThatCausedVote(
         b:Behavior<RslState>,
         c:LConstants,

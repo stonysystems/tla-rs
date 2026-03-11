@@ -19127,7 +19127,7 @@ fn test_phase_31_9_4_leaf_breakdown_is_explicit_and_blockers_logged() {
         "common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`",
         "nextActionIndex == 0",
         "lemma_LLearnerProcess2b_preserves_nonempty_sender_sets",
-        "**Remaining 15 external_body**",
+        "**Remaining 14 external_body**",
         "common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent`",
         "`--rlimit 80` timed out at 240s",
     ] {
@@ -19366,7 +19366,7 @@ fn test_phase_31_9_4_2_d_integrates_helpers_and_removes_external_body() {
         "lemma_getsent2b_value_matches_candidate",
         "--verify-function '*lemma_GetSent2bMessageFromLearnerState*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 15 external_body**",
+        "**Remaining 14 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19429,7 +19429,7 @@ fn test_phase_31_9_4_3_votewithopn_leaf_is_tracked_and_checked_in() {
         "lemma_VoteWithOpnImplies2aSent",
         "--verify-function '*lemma_VoteWithOpnImplies2aSent*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 15 external_body**",
+        "**Remaining 14 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19480,7 +19480,7 @@ fn test_phase_31_9_4_4_acceptor_implication_leaf_is_tracked_and_checked_in() {
         "lemma_2bMessageImplicationsForCAcceptor",
         "--verify-function '*lemma_2bMessageImplicationsForCAcceptor*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 15 external_body**",
+        "**Remaining 14 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19539,7 +19539,7 @@ fn test_phase_31_9_4_5_message1b_without_opn_leaf_is_tracked_and_checked_in() {
         "lemma_1bMessageWithoutOpnImplicationsFor2b",
         "--verify-function '*lemma_1bMessageWithoutOpnImplicationsFor2b*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 15 external_body**",
+        "**Remaining 14 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19598,7 +19598,7 @@ fn test_phase_31_9_4_6_message1b_with_opn_leaf_is_tracked_and_checked_in() {
         "lemma_1bMessageWithOpnImplicationsFor2b",
         "--verify-function '*lemma_1bMessageWithOpnImplicationsFor2b*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 15 external_body**",
+        "**Remaining 14 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19695,10 +19695,8 @@ fn test_phase_31_9_4_7_a_find2a_refactor_leaf_is_tracked_and_checked_in() {
         message2a_path.display()
     );
     assert!(
-        message2a_src.contains(
-            "#[verifier(external_body)]\n    pub proof fn lemma_Find2aThatCausedVote"
-        ),
-        "message2a proof file {} must keep lemma_Find2aThatCausedVote external until 31.9.4.7.b",
+        message2a_src.contains("pub proof fn lemma_Find2aThatCausedVote"),
+        "message2a proof file {} must contain lemma_Find2aThatCausedVote",
         message2a_path.display()
     );
 }
@@ -19753,10 +19751,8 @@ fn test_phase_31_9_4_7_b_1_truncate_helper_leaf_is_tracked_and_checked_in() {
         message2a_path.display()
     );
     assert!(
-        message2a_src.contains(
-            "#[verifier(external_body)]\n    pub proof fn lemma_Find2aThatCausedVote"
-        ),
-        "message2a proof file {} must keep lemma_Find2aThatCausedVote external until 31.9.4.7.b.3",
+        message2a_src.contains("pub proof fn lemma_Find2aThatCausedVote"),
+        "message2a proof file {} must contain lemma_Find2aThatCausedVote",
         message2a_path.display()
     );
 }
@@ -19833,10 +19829,55 @@ fn test_phase_31_9_4_7_b_2_find2a_branch_placeholders_removed() {
         message2a_path.display()
     );
     assert!(
-        message2a_src.contains(
+        message2a_src.contains("pub proof fn lemma_Find2aThatCausedVote"),
+        "message2a proof file {} must contain lemma_Find2aThatCausedVote",
+        message2a_path.display()
+    );
+}
+
+#[test]
+fn test_phase_31_9_4_7_b_3_find2a_external_removed_and_tracked() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.b**",
+        "[x] **31.9.4.7.b**",
+        "**31.9.4.7.b.3**",
+        "[x] **31.9.4.7.b.3**",
+        "--verify-function '*lemma_Find2aThatCausedVote*' --rlimit 40",
+        "1 verified, 0 errors",
+        "**Remaining 14 external_body**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.b.3 tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        message2a_src.contains("pub proof fn lemma_Find2aThatCausedVote"),
+        "message2a proof file {} must contain lemma_Find2aThatCausedVote",
+        message2a_path.display()
+    );
+    assert!(
+        !message2a_src.contains(
             "#[verifier(external_body)]\n    pub proof fn lemma_Find2aThatCausedVote"
         ),
-        "message2a proof file {} must keep lemma_Find2aThatCausedVote external until 31.9.4.7.b.3",
+        "message2a proof file {} must remove external_body from lemma_Find2aThatCausedVote in 31.9.4.7.b.3",
         message2a_path.display()
     );
 }
