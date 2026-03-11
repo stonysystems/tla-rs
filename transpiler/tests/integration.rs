@@ -19099,3 +19099,42 @@ fn test_phase_33_7_completion_gate_is_closed_with_specific_evidence() {
         );
     }
 }
+
+#[test]
+fn test_phase_31_9_4_leaf_breakdown_is_explicit_and_blockers_logged() {
+    let repo_root = resolve_repo_root_for_integration();
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+
+    assert!(
+        todo_src.contains("**31.9.4 leaf breakdown**"),
+        "TODO {} must include explicit 31.9.4 leaf breakdown",
+        todo_path.display()
+    );
+
+    for leaf_id in 1..=12 {
+        let marker = format!("**31.9.4.{leaf_id}**");
+        assert!(
+            todo_src.contains(&marker),
+            "TODO {} must include leaf marker `{}`",
+            todo_path.display(),
+            marker
+        );
+    }
+
+    for required_fragment in [
+        "common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`",
+        "fails with rlimit at the lemma body",
+        "solver timeout (>600s)",
+        "common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent`",
+        "`--rlimit 80` timed out at 240s",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 31.9.4 decomposition/blocker fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+}

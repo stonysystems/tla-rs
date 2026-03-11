@@ -9481,6 +9481,24 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
       1. ✅ Mark all currently-failing proof fns with `#[verifier(external_body)]` so the full build passes with 0 errors. **DONE (2026-03-08)**: 69 annotations across 12 files. All 21 submodules verify with 0 errors.
       2. ✅ Remove `external_body` from all passing functions. **DONE (2026-03-08)**: 46 annotations removed, 47 functions now verified. 23 remain.
       3. Use fine-grained verification to iterate quickly: `--verify-only-module protocol::RSL::common_proof::message1b` or `--verify-function '*lemma_name*'`.
+    - **31.9.4 leaf breakdown** (all leaves scoped to one lemma or one tightly-coupled pair, each expected <500 LOC touched):
+      - [ ] **31.9.4.1**: `common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`.
+        - [2026-03-11] Attempted focused verification after temporarily removing `external_body`.
+          Result: `--verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_Received2bMessageSendersAlwaysNonempty*' --rlimit 40`
+          fails with rlimit at the lemma body; raising local rlimit to 100 caused solver timeout (>600s) without completion.
+          Keep `external_body` for now; next attempt should first split proof obligations (likely by factoring Process2b/new-key vs carry-over cases into helper lemmas).
+      - [ ] **31.9.4.2**: `common_proof/learner_state.rs` — remove `external_body` from `lemma_GetSent2bMessageFromLearnerState`.
+      - [ ] **31.9.4.3**: `common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent` and re-prove the `recv.msg is RslMessage2a` / Process2a case split with focused verification.
+        - [2026-03-11] Preliminary attempt (temporary local edit) showed rlimit failure at 40 and timeout at higher limits (`--rlimit 80` timed out at 240s), so this remains deferred behind smaller helper-lemma splits.
+      - [ ] **31.9.4.4**: `common_proof/message2b.rs` — remove `external_body` from `lemma_2bMessageImplicationsForCAcceptor` and discharge both "old packet" and "new packet" branches.
+      - [ ] **31.9.4.5**: `common_proof/message1b.rs` — remove `external_body` from `lemma_1bMessageWithoutOpnImplicationsFor2b`.
+      - [ ] **31.9.4.6**: `common_proof/message1b.rs` — remove `external_body` from `lemma_1bMessageWithOpnImplicationsFor2b`.
+      - [ ] **31.9.4.7**: `common_proof/message2a.rs` — remove `external_body` from `lemma_Find2aThatCausedVote` and `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`.
+      - [ ] **31.9.4.8**: `common_proof/chosen.rs` — remove `external_body` from `lemma_DecidedOperationWasChosen` and `collect_2b_messages`.
+      - [ ] **31.9.4.9**: `refinement_proof/requests.rs` — remove `external_body` from the remaining 3 request provenance lemmas.
+      - [ ] **31.9.4.10**: `refinement_proof/refinement.rs` — remove `external_body` from `lemma_GetBehaviorRefinementForBehaviorOfOneStep` and `lemma_GetBehaviorRefinement`.
+      - [ ] **31.9.4.11**: `refinement_proof/execution.rs` — remove `external_body` from all remaining 6 execution/refinement lemmas.
+      - [ ] **31.9.4.12**: Full RSL proof sweep with both modules enabled; confirm all 31.9.4 leaves are complete and update the remaining-count summary.
     - **Reference**: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet codebase at https://github.com/microsoft/Ironclad/tree/main/ironfleet under `protocol/RSL/` proof files. Use these as reference for proof structure and intermediate assertions.
     - **Remaining 21 external_body** (down from 22 after fixing `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`):
       - `refinement_proof/execution.rs` (6): `lemma_AppStateAlwaysValid`, `lemma_TransferredStateAlwaysValid`, `lemma_ReplySentIsAllowed`, `lemma_ReplyInReplyCacheIsAllowed`, `lemma_ReplyInAppStateSupplyIsAllowed`, `lemma_ReplySentViaExecutionIsAllowed`
