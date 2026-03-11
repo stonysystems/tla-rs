@@ -270,6 +270,22 @@ verus! {
             q.v == b[i].replicas[idx].replica.executor.next_op_to_execute->v,
             q.indices.finite(),
             q.packets.len() == c.config.replica_ids.len(),
+            forall |sidx: int| q.indices.contains(sidx) ==> ({
+                let p = q.packets[sidx];
+                &&& 0 <= sidx < c.config.replica_ids.len()
+                &&& p.src == c.config.replica_ids[sidx]
+                &&& p.msg is RslMessage2b
+                &&& p.msg->opn_2b == q.opn
+                &&& p.msg->val_2b == q.v
+                &&& p.msg->bal_2b == q.bal
+                &&& b[i].environment.sentPackets.contains(p)
+            }),
+            forall |sidx: int|
+                0 <= sidx < c.config.replica_ids.len()
+                && b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[
+                    b[i - 1].replicas[idx].replica.executor.ops_complete
+                ].received_2b_message_senders.contains(c.config.replica_ids[sidx])
+                ==> q.indices.contains(sidx),
     {
         let s = b[i - 1].replicas[idx].replica;
         let opn = s.executor.ops_complete;
@@ -283,10 +299,34 @@ verus! {
         assert(q_out.packets.len() == c.config.replica_ids.len()) by {
             assert(q_out.packets.len() == c.config.replica_ids.len() - 0);
         };
+        assert forall |sidx: int| q_out.indices.contains(sidx) implies ({
+            let p = q_out.packets[sidx];
+            &&& 0 <= sidx < c.config.replica_ids.len()
+            &&& p.src == c.config.replica_ids[sidx]
+            &&& p.msg is RslMessage2b
+            &&& p.msg->opn_2b == q_out.opn
+            &&& p.msg->val_2b == q_out.v
+            &&& p.msg->bal_2b == q_out.bal
+            &&& b[i].environment.sentPackets.contains(p)
+        }) by {
+            let p = q_out.packets[sidx];
+            assert(0 <= sidx < c.config.replica_ids.len());
+            assert(p == q_out.packets[sidx - 0]);
+            assert(p.msg->opn_2b == opn);
+            assert(p.msg->val_2b == v);
+            assert(p.msg->bal_2b == bal);
+        };
+        assert forall |sidx: int|
+            0 <= sidx < c.config.replica_ids.len()
+            && b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[
+                b[i - 1].replicas[idx].replica.executor.ops_complete
+            ].received_2b_message_senders.contains(c.config.replica_ids[sidx])
+            implies q_out.indices.contains(sidx) by {
+            assert(q_out.indices.contains(sidx));
+        };
         q_out
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_DecidedOperationWasChosen(
         b: Behavior<RslState>,
         c: LConstants,
@@ -322,7 +362,7 @@ verus! {
             return q_prev;
         }
 
-        let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i - 1, idx);
+        lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i - 1, idx);
         assert(b[i - 1].replicas[idx].nextActionIndex == 5);
         let opn = s.executor.ops_complete;
         let v = s.learner.unexecuted_learner_state[opn].candidate_learned_value;
@@ -331,21 +371,13 @@ verus! {
         assert(s.learner.unexecuted_learner_state[opn].received_2b_message_senders.len() >= LMinQuorumSize(c.config));
         assert(s_prime.executor.next_op_to_execute == OutstandingOperation::OutstandingOpKnown{v:v, bal:bal});
         let senders = s.learner.unexecuted_learner_state[opn].received_2b_message_senders;
-        assert(senders.subset_of(s.learner.unexecuted_learner_state[opn].received_2b_message_senders));
-
-        let mut sender_idx: int = 0;
-        lemma_ReplicasSize(b, c, i);
-        let (indices, packets) = collect_2b_messages(c, senders, opn, idx, b, i, sender_idx);
-
+        let q_new = lemma_DecidedOperationWasChosen_change_step(b, c, i, idx);
 
         lemma_Received2bMessageSendersAlwaysValidReplicas(b, c, i - 1, idx, opn);
-
-        // Prove senders.finite(): senders ⊆ config.replica_ids.to_set() which is finite
         broadcast use vstd::seq_lib::seq_to_set_is_finite;
         let rid_set = c.config.replica_ids.to_set();
         assert(senders.subset_of(rid_set)) by {
-            assert forall |node: AbstractEndPoint| senders.contains(node)
-                implies rid_set.contains(node) by
+            assert forall |node: AbstractEndPoint| senders.contains(node) implies rid_set.contains(node) by
             {
                 assert(c.config.replica_ids.contains(node));
             };
@@ -353,15 +385,38 @@ verus! {
         vstd::set_lib::lemma_len_subset(senders, rid_set);
 
         let alt_indices = lemma_GetIndicesFromNodes(senders, c.config);
-        assert forall |sidx: int| alt_indices.contains(sidx) implies indices.contains(sidx) by {
+        assert forall |sidx: int| alt_indices.contains(sidx) implies q_new.indices.contains(sidx) by {
             assert(0 <= sidx < c.config.replica_ids.len());
             assert(senders.contains(c.config.replica_ids[sidx]));
         }
-        // indices.finite() from collect_2b_messages ensures
-        // alt_indices ⊆ indices established above
-        subset_cardinality(alt_indices, indices);
+        subset_cardinality(alt_indices, q_new.indices);
+        assert(q_new.indices.len() >= LMinQuorumSize(c.config)) by {
+            assert(alt_indices.len() == senders.len());
+            assert(alt_indices.len() >= LMinQuorumSize(c.config));
+        };
+        assert(IsValidQuorumOf2bs(b[i], q_new)) by {
+            assert(q_new.indices.len() >= LMinQuorumSize(b[i].constants.config));
+            assert(q_new.packets.len() == b[i].constants.config.replica_ids.len());
+            assert forall |sidx: int| q_new.indices.contains(sidx) implies
+                0 <= sidx < b[i].constants.config.replica_ids.len()
+                && q_new.packets[sidx].src == b[i].constants.config.replica_ids[sidx]
+                && q_new.packets[sidx].msg is RslMessage2b
+                && q_new.packets[sidx].msg->opn_2b == q_new.opn
+                && q_new.packets[sidx].msg->val_2b == q_new.v
+                && q_new.packets[sidx].msg->bal_2b == q_new.bal
+                && b[i].environment.sentPackets.contains(q_new.packets[sidx]) by
+            {
+                let p = q_new.packets[sidx];
+                assert(0 <= sidx < c.config.replica_ids.len());
+                assert(p.src == c.config.replica_ids[sidx]);
+                assert(p.msg->opn_2b == q_new.opn);
+                assert(p.msg->val_2b == q_new.v);
+                assert(p.msg->bal_2b == q_new.bal);
+                assert(b[i].environment.sentPackets.contains(p));
+            };
+        };
 
-        return QuorumOf2bs{c:c, indices:indices, packets:packets, bal:bal, opn:opn, v:v};
+        q_new
     }
 
     pub proof fn collect_2b_messages(
