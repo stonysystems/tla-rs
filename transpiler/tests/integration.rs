@@ -19994,3 +19994,57 @@ fn test_phase_31_9_4_7_c_2_contradiction_helpers_are_tracked_and_checked_in() {
         message2a_path.display()
     );
 }
+
+#[test]
+fn test_phase_31_9_4_7_c_3_a_old_new_branch_helperization_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.c.3**",
+        "**31.9.4.7.c.3.a**",
+        "[x] **31.9.4.7.c.3.a**",
+        "lemma_2a_old_packet_new_packet_same_ballot_opn_is_impossible",
+        "--verify-function '*lemma_2a_old_packet_new_packet_same_ballot_opn_is_impossible*' --rlimit 40 --triggers-mode silent",
+        "1 verified, 0 errors",
+        "**31.9.4.7.c.3.b**",
+        "**31.9.4.7.c.3.c**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.c.3.a tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    for required_fragment in [
+        "pub proof fn lemma_2a_old_packet_new_packet_same_ballot_opn_is_impossible",
+        "lemma_2a_old_packet_new_packet_same_ballot_opn_is_impossible(b, c, i, p1, p2);",
+    ] {
+        assert!(
+            message2a_src.contains(required_fragment),
+            "message2a proof file {} must include c.3.a helper/call fragment `{}`",
+            message2a_path.display(),
+            required_fragment
+        );
+    }
+    assert!(
+        message2a_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
+        ),
+        "message2a proof file {} must keep lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality external until 31.9.4.7.c.3.c",
+        message2a_path.display()
+    );
+}

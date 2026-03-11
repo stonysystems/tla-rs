@@ -544,6 +544,80 @@ verus! {
         }
     }
 
+    pub proof fn lemma_2a_old_packet_new_packet_same_ballot_opn_is_impossible(
+        b:Behavior<RslState>,
+        c:LConstants,
+        i:int,
+        p1:RslPacket,
+        p2:RslPacket,
+    )
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            b[i].environment.sentPackets.contains(p1),
+            b[i].environment.sentPackets.contains(p2),
+            b[i - 1].environment.sentPackets.contains(p1),
+            !b[i - 1].environment.sentPackets.contains(p2),
+            c.config.replica_ids.contains(p1.src),
+            c.config.replica_ids.contains(p2.src),
+            p1.msg is RslMessage2a,
+            p2.msg is RslMessage2a,
+            p1.msg->opn_2a == p2.msg->opn_2a,
+            p1.msg->bal_2a == p2.msg->bal_2a,
+        ensures
+            false,
+    {
+        lemma_AssumptionsMakeValidTransition(b, c, i - 1);
+        lemma_ConstantsAllConsistent(b, c, i);
+        lemma_ConstantsAllConsistent(b, c, i - 1);
+
+        let (proposer_idx, ios) = lemma_ActionThatSends2aIsMaybeNominateValueAndSend2a(
+            b[i - 1],
+            b[i],
+            p2,
+        );
+        let p1_proposer_idx = lemma_2aMessageImplicationsForProposerState(b, c, i - 1, p1);
+
+        let s = b[i - 1].replicas[proposer_idx].replica.proposer;
+        let s_ = b[i].replicas[proposer_idx].replica.proposer;
+        let a = b[i - 1].replicas[proposer_idx].replica.acceptor;
+        let pkts = ExtractSentPacketsFromIos(ios);
+        lemma_ExtractSentPacketsFromIos(ios);
+        assert(pkts.contains(p2));
+        lemma_max_balISent1aHasMeAsProposer(b, c, i - 1, proposer_idx);
+
+        assert(LProposerMaybeNominateValueAndSend2a(
+            s,
+            s_,
+            SpontaneousClock(ios).t,
+            a.log_truncation_point,
+            pkts,
+        ));
+        lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn(
+            s,
+            s_,
+            SpontaneousClock(ios).t,
+            a.log_truncation_point,
+            pkts,
+            p2,
+        );
+
+        assert(p1.msg->bal_2a == s.max_ballot_i_sent_1a);
+        assert(p1.msg->opn_2a == s.next_operation_number_to_propose);
+        assert(p1.msg->bal_2a.proposer_id == proposer_idx);
+        lemma_2a_ballot_proposer_id_alignment(p1, p1_proposer_idx, proposer_idx);
+
+        let s_from_p1 = b[i - 1].replicas[p1_proposer_idx].replica.proposer;
+        assert(s_from_p1 == s);
+        assert(
+            BalLt(p1.msg->bal_2a, s_from_p1.max_ballot_i_sent_1a)
+            || (s_from_p1.max_ballot_i_sent_1a == p1.msg->bal_2a
+                && s_from_p1.current_state != 1
+                && s_from_p1.next_operation_number_to_propose > p1.msg->opn_2a)
+        );
+        lemma_2a_disjunction_from_implications_contradicts_prestate(p1, s_from_p1);
+    }
+
     #[verifier(external_body)]
     pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality(
         b:Behavior<RslState>,
@@ -600,49 +674,7 @@ verus! {
           assert(p1.msg == p2.msg);
           return;
         }
-
-        // p1 was already sent before step i; p2 is newly sent in step i.
-        // We'll derive a contradiction: the proposer can't send p2 given its state.
-
-        // Get proposer state implications for p1 at step i-1.
-        let p1_proposer_idx = lemma_2aMessageImplicationsForProposerState(b, c, i - 1, p1);
-
-        // The proposer state at step i-1 (pre-state of the action that sends p2)
-        let s = b[i-1].replicas[proposer_idx].replica.proposer;
-        let s_ = b[i].replicas[proposer_idx].replica.proposer;
-        let a = b[i-1].replicas[proposer_idx].replica.acceptor;
-        let pkts = ExtractSentPacketsFromIos(ios);
-        lemma_ExtractSentPacketsFromIos(ios);
-        assert(pkts.contains(p2));
-        lemma_max_balISent1aHasMeAsProposer(b, c, i - 1, proposer_idx);
-
-        // The proposer action is LProposerMaybeNominateValueAndSend2a; since p2 is in pkts,
-        // p2 carries the pre-state proposer ballot/opn.
-        assert(LProposerMaybeNominateValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts));
-        lemma_2a_packet_sent_by_maybe_nominate_has_state_ballot_and_opn(
-            s,
-            s_,
-            SpontaneousClock(ios).t,
-            a.log_truncation_point,
-            pkts,
-            p2,
-        );
-
-        // p1 and p2 share ballot/opn by requires, so p1 also matches this pre-state proposer.
-        assert(p1.msg->bal_2a == s.max_ballot_i_sent_1a);
-        assert(p1.msg->opn_2a == s.next_operation_number_to_propose);
-        assert(p1.msg->bal_2a.proposer_id == proposer_idx);
-        lemma_2a_ballot_proposer_id_alignment(p1, p1_proposer_idx, proposer_idx);
-
-        let s_from_p1 = b[i - 1].replicas[p1_proposer_idx].replica.proposer;
-        assert(s_from_p1 == s);
-        assert(
-            BalLt(p1.msg->bal_2a, s_from_p1.max_ballot_i_sent_1a)
-            || (s_from_p1.max_ballot_i_sent_1a == p1.msg->bal_2a
-                && s_from_p1.current_state != 1
-                && s_from_p1.next_operation_number_to_propose > p1.msg->opn_2a)
-        );
-        lemma_2a_disjunction_from_implications_contradicts_prestate(p1, s_from_p1);
+        lemma_2a_old_packet_new_packet_same_ballot_opn_is_impossible(b, c, i, p1, p2);
     }
 
 
