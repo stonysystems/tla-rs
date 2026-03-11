@@ -9560,7 +9560,17 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
               Required no-external re-check after c.3.b:
               `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*' --rlimit 40 --triggers-mode silent`
               ⇒ `0 verified, 1 errors` (`function body check: Resource limit (rlimit) exceeded`).
-            - [ ] **31.9.4.7.c.3.c**: Remove `#[verifier(external_body)]` and pass focused checks at `--rlimit 40` for both message2a lemmas. [2026-03-12] After c.3.b helperization and re-check, the target no-external body remains solver-bounded at `--rlimit 40`; next step is further local proof split/trigger reduction for the remaining branch context and then retry both focused checks.
+            - [ ] **31.9.4.7.c.3.c**: Remove `#[verifier(external_body)]` and pass focused checks at `--rlimit 40` for both message2a lemmas. [2026-03-12] After c.3.b helperization, direct no-external check remains solver-bounded at `--rlimit 40`. Branch-isolation probes (c.3.c.1) still hit `function body check: Resource limit (rlimit) exceeded`, so finish this leaf via the decomposition below.
+              - [x] **31.9.4.7.c.3.c.1**: Run branch-isolation probes under temporary no-external local edits to classify whether the remaining `rlimit` pressure is dominated by the both-new branch, the old/new contradiction branch, or common-body obligations. [2026-03-12] Completed with two temporary probes:
+                - Probe A (both-new branch replaced with temporary `assert(false)`):  
+                  `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*' --rlimit 40 --triggers-mode silent`  
+                  ⇒ `0 verified, 1 errors` (`function body check: Resource limit (rlimit) exceeded`).
+                - Probe B (old/new branch replaced with temporary `assert(false)`):  
+                  `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*' --rlimit 40 --triggers-mode silent`  
+                  ⇒ `0 verified, 1 errors` (`function body check: Resource limit (rlimit) exceeded`).
+                - Conclusion: no single branch elimination removed the rlimit wall; remaining pressure is in shared/common-body obligations and/or branch-dispatch scaffolding.
+              - [ ] **31.9.4.7.c.3.c.2**: Split the remaining common-body obligations into individually verified helpers (target: old-old induction/precondition transfer and action-dispatch witness extraction), and pass focused helper checks at `--rlimit 40`.
+              - [ ] **31.9.4.7.c.3.c.3**: Remove `#[verifier(external_body)]` and pass focused checks at `--rlimit 40` for both message2a lemmas (`*lemma_Find2aThatCausedVote*` and `*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*`).
       - [ ] **31.9.4.8**: `common_proof/chosen.rs` — remove `external_body` from `lemma_DecidedOperationWasChosen` and `collect_2b_messages`.
       - [ ] **31.9.4.9**: `refinement_proof/requests.rs` — remove `external_body` from the remaining 3 request provenance lemmas.
       - [ ] **31.9.4.10**: `refinement_proof/refinement.rs` — remove `external_body` from `lemma_GetBehaviorRefinementForBehaviorOfOneStep` and `lemma_GetBehaviorRefinement`.

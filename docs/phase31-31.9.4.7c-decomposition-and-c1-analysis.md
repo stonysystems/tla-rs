@@ -155,3 +155,34 @@ Result:
 The c.3.b helperization is complete and verified, but the target no-external body remains
 solver-bounded at `--rlimit 40`. `#[verifier(external_body)]` must stay in place until
 `31.9.4.7.c.3.c` closes the remaining context load and passes both focused message2a checks.
+
+## Completed in 31.9.4.7.c.3.c.1 (Branch-Isolation Probes)
+
+Goal: classify whether the remaining `rlimit` wall is dominated by one branch or by
+shared/common-body obligations in
+`lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`.
+
+Method:
+
+1. Apply temporary no-external local edits and replace the both-new branch body with
+   `assert(false)`, then run:
+
+`timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*' --rlimit 40 --triggers-mode silent`
+
+Result:
+
+`0 verified, 1 errors` (`function body check: Resource limit (rlimit) exceeded`)
+
+2. Apply temporary no-external local edits and replace the old/new contradiction branch body with
+   `assert(false)`, then rerun the same focused command above.
+
+Result:
+
+`0 verified, 1 errors` (`function body check: Resource limit (rlimit) exceeded`)
+
+Conclusion:
+
+- Eliminating either branch independently does not remove the `rlimit` failure.
+- Remaining pressure is in common-body obligations and/or branch-dispatch scaffolding, so c.3.c
+  is decomposed to first split shared obligations into separately verified helpers before the
+  final no-external attempt.

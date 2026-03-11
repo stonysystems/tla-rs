@@ -20101,3 +20101,55 @@ fn test_phase_31_9_4_7_c_3_b_both_new_branch_helperization_is_tracked_and_checke
         message2a_path.display()
     );
 }
+
+#[test]
+fn test_phase_31_9_4_7_c_3_c_1_branch_isolation_probe_is_tracked_and_decomposed() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.c.3.c**",
+        "**31.9.4.7.c.3.c.1**",
+        "[x] **31.9.4.7.c.3.c.1**",
+        "Probe A (both-new branch replaced with temporary `assert(false)`)",
+        "Probe B (old/new branch replaced with temporary `assert(false)`)",
+        "Conclusion: no single branch elimination removed the rlimit wall",
+        "**31.9.4.7.c.3.c.2**",
+        "[ ] **31.9.4.7.c.3.c.2**",
+        "**31.9.4.7.c.3.c.3**",
+        "[ ] **31.9.4.7.c.3.c.3**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.c.3.c.1 decomposition fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let doc_path = repo_root.join("docs/phase31-31.9.4.7c-decomposition-and-c1-analysis.md");
+    let doc_src = std::fs::read_to_string(&doc_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read Phase 31 decomposition note {}: {}",
+            doc_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## Completed in 31.9.4.7.c.3.c.1 (Branch-Isolation Probes)",
+        "Goal: classify whether the remaining `rlimit` wall is dominated by one branch or by",
+        "Result:",
+        "`0 verified, 1 errors` (`function body check: Resource limit (rlimit) exceeded`)",
+        "Conclusion:",
+        "Eliminating either branch independently does not remove the `rlimit` failure.",
+    ] {
+        assert!(
+            doc_src.contains(required_fragment),
+            "Phase 31 decomposition note {} must include c.3.c.1 evidence fragment `{}`",
+            doc_path.display(),
+            required_fragment
+        );
+    }
+}
