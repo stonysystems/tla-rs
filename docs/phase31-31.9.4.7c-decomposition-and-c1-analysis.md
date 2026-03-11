@@ -229,3 +229,40 @@ Integration-stability check (target lemma still external at this leaf):
 Result:
 
 `0 verified, 0 errors`
+
+## Completed in 31.9.4.7.c.3.c.3 (No-External Closure)
+
+Goal: remove `#[verifier(external_body)]` from
+`lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality` and pass focused checks
+for both message2a target lemmas at `--rlimit 40`.
+
+Edits made:
+
+1. Removed `#[verifier(external_body)]` from
+   `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`.
+2. Added explicit decreases ranking across the mutual-recursion chain:
+   - `lemma_2aMessagesFromSameBallotAndOperationMatch`: `3 * i + 2`
+   - `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`: `3 * i + 1`
+   - `lemma_2a_old_old_packets_reduce_to_previous_step`: `3 * i`
+3. Discharged the both-new branch send-membership obligation constructively:
+   from `RslNextOneReplica` witness to `LEnvironment_PerformIos`, then
+   `lemma_new_packet_in_ios` to prove `ios.contains(Send{p1})` before extracting packets.
+
+Focused checks:
+
+`timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*' --rlimit 40 --triggers-mode silent`
+
+Result:
+
+`1 verified, 0 errors`
+
+`timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_Find2aThatCausedVote*' --rlimit 40 --triggers-mode silent`
+
+Result:
+
+`1 verified, 0 errors`
+
+Conclusion:
+
+- c.3.c.3 is complete.
+- `common_proof/message2a.rs` no longer relies on `external_body` for the target lemma.

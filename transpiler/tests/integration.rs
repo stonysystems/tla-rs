@@ -19127,7 +19127,7 @@ fn test_phase_31_9_4_leaf_breakdown_is_explicit_and_blockers_logged() {
         "common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`",
         "nextActionIndex == 0",
         "lemma_LLearnerProcess2b_preserves_nonempty_sender_sets",
-        "**Remaining 14 external_body**",
+        "**Remaining 13 external_body**",
         "common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent`",
         "`--rlimit 80` timed out at 240s",
     ] {
@@ -19366,7 +19366,7 @@ fn test_phase_31_9_4_2_d_integrates_helpers_and_removes_external_body() {
         "lemma_getsent2b_value_matches_candidate",
         "--verify-function '*lemma_GetSent2bMessageFromLearnerState*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 14 external_body**",
+        "**Remaining 13 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19429,7 +19429,7 @@ fn test_phase_31_9_4_3_votewithopn_leaf_is_tracked_and_checked_in() {
         "lemma_VoteWithOpnImplies2aSent",
         "--verify-function '*lemma_VoteWithOpnImplies2aSent*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 14 external_body**",
+        "**Remaining 13 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19480,7 +19480,7 @@ fn test_phase_31_9_4_4_acceptor_implication_leaf_is_tracked_and_checked_in() {
         "lemma_2bMessageImplicationsForCAcceptor",
         "--verify-function '*lemma_2bMessageImplicationsForCAcceptor*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 14 external_body**",
+        "**Remaining 13 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19539,7 +19539,7 @@ fn test_phase_31_9_4_5_message1b_without_opn_leaf_is_tracked_and_checked_in() {
         "lemma_1bMessageWithoutOpnImplicationsFor2b",
         "--verify-function '*lemma_1bMessageWithoutOpnImplicationsFor2b*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 14 external_body**",
+        "**Remaining 13 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19598,7 +19598,7 @@ fn test_phase_31_9_4_6_message1b_with_opn_leaf_is_tracked_and_checked_in() {
         "lemma_1bMessageWithOpnImplicationsFor2b",
         "--verify-function '*lemma_1bMessageWithOpnImplicationsFor2b*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 14 external_body**",
+        "**Remaining 13 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19849,7 +19849,7 @@ fn test_phase_31_9_4_7_b_3_find2a_external_removed_and_tracked() {
         "[x] **31.9.4.7.b.3**",
         "--verify-function '*lemma_Find2aThatCausedVote*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 14 external_body**",
+        "**Remaining 13 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19931,10 +19931,10 @@ fn test_phase_31_9_4_7_c_1_maybe_nominate_packet_helper_is_tracked_and_checked_i
         message2a_path.display()
     );
     assert!(
-        message2a_src.contains(
+        !message2a_src.contains(
             "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
         ),
-        "message2a proof file {} must keep lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality external until 31.9.4.7.c.3",
+        "message2a proof file {} must remove external_body from lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality after 31.9.4.7.c.3.c.3",
         message2a_path.display()
     );
 }
@@ -19954,7 +19954,7 @@ fn test_phase_31_9_4_7_c_2_contradiction_helpers_are_tracked_and_checked_in() {
         "--verify-function '*lemma_2a_ballot_proposer_id_alignment*' --rlimit 40 --triggers-mode silent",
         "--verify-function '*lemma_2a_disjunction_from_implications_contradicts_prestate*' --rlimit 40 --triggers-mode silent",
         "**31.9.4.7.c.3**",
-        "[ ] **31.9.4.7.c.3**",
+        "[x] **31.9.4.7.c.3**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19987,10 +19987,10 @@ fn test_phase_31_9_4_7_c_2_contradiction_helpers_are_tracked_and_checked_in() {
         );
     }
     assert!(
-        message2a_src.contains(
+        !message2a_src.contains(
             "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
         ),
-        "message2a proof file {} must keep lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality external until 31.9.4.7.c.3",
+        "message2a proof file {} must remove external_body from lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality after 31.9.4.7.c.3.c.3",
         message2a_path.display()
     );
 }
@@ -20041,10 +20041,10 @@ fn test_phase_31_9_4_7_c_3_a_old_new_branch_helperization_is_tracked_and_checked
         );
     }
     assert!(
-        message2a_src.contains(
+        !message2a_src.contains(
             "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
         ),
-        "message2a proof file {} must keep lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality external until 31.9.4.7.c.3.c",
+        "message2a proof file {} must remove external_body from lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality after 31.9.4.7.c.3.c.3",
         message2a_path.display()
     );
 }
@@ -20094,10 +20094,10 @@ fn test_phase_31_9_4_7_c_3_b_both_new_branch_helperization_is_tracked_and_checke
         );
     }
     assert!(
-        message2a_src.contains(
+        !message2a_src.contains(
             "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
         ),
-        "message2a proof file {} must keep lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality external until 31.9.4.7.c.3.c",
+        "message2a proof file {} must remove external_body from lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality after 31.9.4.7.c.3.c.3",
         message2a_path.display()
     );
 }
@@ -20118,7 +20118,7 @@ fn test_phase_31_9_4_7_c_3_c_1_branch_isolation_probe_is_tracked_and_decomposed(
         "Conclusion: no single branch elimination removed the rlimit wall",
         "**31.9.4.7.c.3.c.2**",
         "**31.9.4.7.c.3.c.3**",
-        "[ ] **31.9.4.7.c.3.c.3**",
+        "[x] **31.9.4.7.c.3.c.3**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -20169,7 +20169,7 @@ fn test_phase_31_9_4_7_c_3_c_2_shared_obligation_helpers_are_tracked_and_checked
         "--verify-function '*lemma_2a_new_packet_action_dispatch_witness*' --rlimit 40 --triggers-mode silent",
         "Integration-stability check while the target lemma remains external",
         "**31.9.4.7.c.3.c.3**",
-        "[ ] **31.9.4.7.c.3.c.3**",
+        "[x] **31.9.4.7.c.3.c.3**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -20221,6 +20221,91 @@ fn test_phase_31_9_4_7_c_3_c_2_shared_obligation_helpers_are_tracked_and_checked
         assert!(
             doc_src.contains(required_fragment),
             "Phase 31 decomposition note {} must include c.3.c.2 evidence fragment `{}`",
+            doc_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_31_9_4_7_c_3_c_3_external_removed_and_focused_checks_pass() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7**",
+        "[x] **31.9.4.7**",
+        "**31.9.4.7.c**",
+        "[x] **31.9.4.7.c**",
+        "**31.9.4.7.c.3**",
+        "[x] **31.9.4.7.c.3**",
+        "**31.9.4.7.c.3.c**",
+        "[x] **31.9.4.7.c.3.c**",
+        "**31.9.4.7.c.3.c.3**",
+        "[x] **31.9.4.7.c.3.c.3**",
+        "--verify-function '*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*' --rlimit 40 --triggers-mode silent",
+        "--verify-function '*lemma_Find2aThatCausedVote*' --rlimit 40 --triggers-mode silent",
+        "**Remaining 13 external_body**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.c.3.c.3 completion fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        !message2a_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
+        ),
+        "message2a proof file {} must remove external_body from lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality in c.3.c.3",
+        message2a_path.display()
+    );
+    for required_fragment in [
+        "decreases 3 * i + 2",
+        "decreases 3 * i + 1",
+        "decreases 3 * i",
+        "lemma_new_packet_in_ios(e, e_, actor, ios, p1);",
+        "assert(LEnvironment_PerformIos(e, e_, actor, ios));",
+    ] {
+        assert!(
+            message2a_src.contains(required_fragment),
+            "message2a proof file {} must include c.3.c.3 proof fragment `{}`",
+            message2a_path.display(),
+            required_fragment
+        );
+    }
+
+    let doc_path = repo_root.join("docs/phase31-31.9.4.7c-decomposition-and-c1-analysis.md");
+    let doc_src = std::fs::read_to_string(&doc_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read Phase 31 decomposition note {}: {}",
+            doc_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## Completed in 31.9.4.7.c.3.c.3 (No-External Closure)",
+        "Added explicit decreases ranking across the mutual-recursion chain",
+        "lemma_new_packet_in_ios",
+        "1 verified, 0 errors",
+        "c.3.c.3 is complete.",
+    ] {
+        assert!(
+            doc_src.contains(required_fragment),
+            "Phase 31 decomposition note {} must include c.3.c.3 evidence fragment `{}`",
             doc_path.display(),
             required_fragment
         );

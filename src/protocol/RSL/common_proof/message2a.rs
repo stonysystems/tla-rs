@@ -521,7 +521,7 @@ verus! {
                 p1.msg->opn_2a == p2.msg->opn_2a,
                 p1.msg->bal_2a == p2.msg->bal_2a,
         ensures  p1.msg->val_2a == p2.msg->val_2a,
-        decreases 2 * i + 1
+        decreases 3 * i + 2
     {
         if i == 0
         {
@@ -567,6 +567,7 @@ verus! {
         ensures
             b[i - 1].environment.sentPackets.contains(p1),
             p1.msg->val_2a == p2.msg->val_2a,
+        decreases 3 * i
     {
         assert(b[i - 1].environment.sentPackets.contains(p1));
         lemma_2aMessagesFromSameBallotAndOperationMatch(b, c, i - 1, p1, p2);
@@ -590,6 +591,8 @@ verus! {
                 let proposer_idx = rc.0;
                 let ios = rc.1;
                 let pkts = rc.2;
+                &&& 0 <= proposer_idx < b[i - 1].replicas.len()
+                &&& RslNextOneReplica(b[i - 1], b[i], proposer_idx, ios)
                 &&& ios.contains(LIoOp::Send{s:p})
                 &&& pkts == ExtractSentPacketsFromIos(ios)
                 &&& pkts.contains(p)
@@ -732,7 +735,6 @@ verus! {
         assert(p1.msg == p2.msg);
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality(
         b:Behavior<RslState>,
         c:LConstants,
@@ -752,7 +754,7 @@ verus! {
                 p1.msg->bal_2a == p2.msg->bal_2a,
                 b[i-1].environment.sentPackets.contains(p2) ==> b[i-1].environment.sentPackets.contains(p1),
         ensures  p1.msg->val_2a == p2.msg->val_2a,
-        decreases 2 * i
+        decreases 3 * i + 1
     {
         lemma_AssumptionsMakeValidTransition(b, c, i-1);
         lemma_ConstantsAllConsistent(b, c, i);
@@ -771,7 +773,14 @@ verus! {
         if !b[i-1].environment.sentPackets.contains(p1)
         {
           // Both packets were sent in step i-1→i, so they're both in ios.
-          assert(ios.contains(LIoOp::Send{s:p1}));
+          let e = b[i - 1].environment;
+          let e_ = b[i].environment;
+          let actor = e.nextStep->actor;
+          assert(e.nextStep == LEnvStep::LEnvStepHostIos { actor: c.config.replica_ids[proposer_idx], ios });
+          assert(LEnvironment_Next(e, e_));
+          assert(LEnvironment_PerformIos(e, e_, actor, ios));
+          lemma_new_packet_in_ios(e, e_, actor, ios, p1);
+          assert(ios.contains(LIoOp::Send { s: p1 }));
           assert(ios.contains(LIoOp::Send{s:p2}));
           lemma_ExtractSentPacketsFromIos(ios);
           assert(pkts.contains(p1));
