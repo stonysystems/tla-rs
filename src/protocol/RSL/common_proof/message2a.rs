@@ -618,6 +618,40 @@ verus! {
         lemma_2a_disjunction_from_implications_contradicts_prestate(p1, s_from_p1);
     }
 
+    pub proof fn lemma_2a_both_new_packets_same_step_have_same_message(
+        s: LProposer,
+        s_: LProposer,
+        clock: int,
+        log_truncation_point: int,
+        sent_packets: Seq<RslPacket>,
+        p1:RslPacket,
+        p2:RslPacket,
+    )
+        requires
+            LProposerMaybeNominateValueAndSend2a(
+                s,
+                s_,
+                clock,
+                log_truncation_point,
+                sent_packets,
+            ),
+            sent_packets.contains(p1),
+            sent_packets.contains(p2),
+        ensures
+            p1.msg == p2.msg,
+    {
+        lemma_2aSentInSameStepHaveSameMessage(
+            s,
+            s_,
+            clock,
+            log_truncation_point,
+            sent_packets,
+            p1,
+            p2,
+        );
+        assert(p1.msg == p2.msg);
+    }
+
     #[verifier(external_body)]
     pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality(
         b:Behavior<RslState>,
@@ -659,18 +693,23 @@ verus! {
           // Both packets were sent in step i-1→i, so they're both in ios.
           assert(ios.contains(LIoOp::Send{s:p1}));
           assert(ios.contains(LIoOp::Send{s:p2}));
-          // Extract sent_packets and show both p1,p2 are in it
           let pkts = ExtractSentPacketsFromIos(ios);
           lemma_ExtractSentPacketsFromIos(ios);
           assert(pkts.contains(p1));
           assert(pkts.contains(p2));
-          // The action is LReplicaNextReadClockMaybeNominateValueAndSend2a, which calls
-          // LProposerMaybeNominateValueAndSend2a on the proposer. Both packets come from
-          // the same broadcast, so they have the same message.
           let s = b[i-1].replicas[proposer_idx].replica.proposer;
           let s_ = b[i].replicas[proposer_idx].replica.proposer;
           let a = b[i-1].replicas[proposer_idx].replica.acceptor;
-          lemma_2aSentInSameStepHaveSameMessage(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts, p1, p2);
+          assert(LProposerMaybeNominateValueAndSend2a(s, s_, SpontaneousClock(ios).t, a.log_truncation_point, pkts));
+          lemma_2a_both_new_packets_same_step_have_same_message(
+              s,
+              s_,
+              SpontaneousClock(ios).t,
+              a.log_truncation_point,
+              pkts,
+              p1,
+              p2,
+          );
           assert(p1.msg == p2.msg);
           return;
         }

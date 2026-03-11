@@ -121,3 +121,37 @@ Result:
 
 Because of this, `#[verifier(external_body)]` stays in place for now and the next leaf is
 `31.9.4.7.c.3.b`.
+
+## Completed in 31.9.4.7.c.3.b
+
+Added:
+
+- `lemma_2a_both_new_packets_same_step_have_same_message`
+
+This helper isolates the both-new-packets same-step branch so
+`lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality` no longer carries the
+branch-local same-step/message-equality proof inline. The target lemma now extracts
+`ExtractSentPacketsFromIos(ios)`, establishes `LProposerMaybeNominateValueAndSend2a(...)`, and
+calls the helper.
+
+Focused helper check:
+
+`timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2a_both_new_packets_same_step_have_same_message*' --rlimit 40 --triggers-mode silent`
+
+Result:
+
+`1 verified, 0 errors`
+
+Required c.3.b no-external re-check:
+
+`timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*' --rlimit 40 --triggers-mode silent`
+
+Result:
+
+`0 verified, 1 errors` (`function body check: Resource limit (rlimit) exceeded`)
+
+## Current c.3 status after c.3.b
+
+The c.3.b helperization is complete and verified, but the target no-external body remains
+solver-bounded at `--rlimit 40`. `#[verifier(external_body)]` must stay in place until
+`31.9.4.7.c.3.c` closes the remaining context load and passes both focused message2a checks.

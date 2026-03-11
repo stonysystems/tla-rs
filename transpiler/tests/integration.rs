@@ -20048,3 +20048,56 @@ fn test_phase_31_9_4_7_c_3_a_old_new_branch_helperization_is_tracked_and_checked
         message2a_path.display()
     );
 }
+
+#[test]
+fn test_phase_31_9_4_7_c_3_b_both_new_branch_helperization_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.c.3.b**",
+        "[x] **31.9.4.7.c.3.b**",
+        "lemma_2a_both_new_packets_same_step_have_same_message",
+        "--verify-function '*lemma_2a_both_new_packets_same_step_have_same_message*' --rlimit 40 --triggers-mode silent",
+        "0 verified, 1 errors",
+        "Resource limit (rlimit) exceeded",
+        "**31.9.4.7.c.3.c**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.c.3.b tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    for required_fragment in [
+        "pub proof fn lemma_2a_both_new_packets_same_step_have_same_message",
+        "lemma_2a_both_new_packets_same_step_have_same_message(",
+    ] {
+        assert!(
+            message2a_src.contains(required_fragment),
+            "message2a proof file {} must include c.3.b helper/call fragment `{}`",
+            message2a_path.display(),
+            required_fragment
+        );
+    }
+    assert!(
+        message2a_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality"
+        ),
+        "message2a proof file {} must keep lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality external until 31.9.4.7.c.3.c",
+        message2a_path.display()
+    );
+}
