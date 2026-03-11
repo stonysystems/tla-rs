@@ -5,10 +5,10 @@
 - Goal: remove `#[verifier(external_body)]` and keep focused verification stable at `--rlimit 40`.
 - Size assessment: small (<500 LOC touched), no further TODO decomposition required.
 
-## Plan
-1. Remove `#[verifier(external_body)]` from the lemma.
-2. Run focused verification at `--rlimit 40`.
-3. If proof obligations fail, rework old/new packet branches to reuse existing `packet_sending` and message implications lemmas instead of duplicating environment-level derivations.
+## Design Rationale
+- Reuse existing action-origin lemmas (`lemma_ActionThatSends1bIsProcess1a`, `lemma_ActionThatSends2bIsProcess2a`) to keep proof obligations local to this lemma and avoid duplicating environment-level derivations.
+- Make each old/new packet combination explicit so the postcondition disjunction is discharged directly in-branch.
+- Keep the proof change small and scoped (<500 LOC) to preserve maintainability and make focused verification reproducible.
 
 ## Result
 - Initial direct run after annotation removal exposed an unproven contradiction branch and an uncovered ensures disjunct.
