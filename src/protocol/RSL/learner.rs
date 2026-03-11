@@ -19,9 +19,7 @@ verus! {
         ensures
             s.len() > 0,
     {
-        vstd::set_lib::lemma_set_empty_equivalency_len(s);
         if s.len() == 0 {
-            assert(s == Set::<A>::empty());
             assert(!s.contains(x));
             assert(false);
         }

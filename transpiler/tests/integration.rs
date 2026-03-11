@@ -19125,8 +19125,9 @@ fn test_phase_31_9_4_leaf_breakdown_is_explicit_and_blockers_logged() {
 
     for required_fragment in [
         "common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`",
-        "fails with rlimit at the lemma body",
-        "solver timeout (>600s)",
+        "nextActionIndex == 0",
+        "lemma_LLearnerProcess2b_preserves_nonempty_sender_sets",
+        "**Remaining 20 external_body**",
         "common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent`",
         "`--rlimit 80` timed out at 240s",
     ] {
@@ -19149,10 +19150,12 @@ fn test_phase_31_9_4_1_helper_subleaf_is_tracked_and_checked_in() {
     for required_fragment in [
         "**31.9.4.1.a**",
         "[x] **31.9.4.1.a**",
+        "[x] **31.9.4.1**",
         "lemma_LLearnerProcess2b_preserves_nonempty_sender_sets",
         "1 verified, 0 errors",
-        "**31.9.4.1.b**",
-        "**31.9.4.1.c**",
+        "[x] **31.9.4.1.b**",
+        "[x] **31.9.4.1.c**",
+        "--verify-function '*lemma_Received2bMessageSendersAlwaysNonempty*' --rlimit 40",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19182,4 +19185,30 @@ fn test_phase_31_9_4_1_helper_subleaf_is_tracked_and_checked_in() {
             required_symbol
         );
     }
+
+    let learner_state_path = repo_root.join("src/protocol/RSL/common_proof/learner_state.rs");
+    let learner_state_src = std::fs::read_to_string(&learner_state_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read learner-state proof file {}: {}",
+            learner_state_path.display(),
+            err
+        )
+    });
+    assert!(
+        learner_state_src.contains("pub proof fn lemma_Received2bMessageSendersAlwaysNonempty"),
+        "learner-state proof file {} must contain lemma_Received2bMessageSendersAlwaysNonempty",
+        learner_state_path.display()
+    );
+    assert!(
+        !learner_state_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_Received2bMessageSendersAlwaysNonempty"
+        ),
+        "learner-state proof file {} must not keep lemma_Received2bMessageSendersAlwaysNonempty as external_body",
+        learner_state_path.display()
+    );
+    assert!(
+        learner_state_src.contains("lemma_LLearnerProcess2b_preserves_nonempty_sender_sets("),
+        "learner-state proof file {} must call lemma_LLearnerProcess2b_preserves_nonempty_sender_sets in lemma_Received2bMessageSendersAlwaysNonempty",
+        learner_state_path.display()
+    );
 }

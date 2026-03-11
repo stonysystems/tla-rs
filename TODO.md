@@ -9482,16 +9482,15 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
       2. ✅ Remove `external_body` from all passing functions. **DONE (2026-03-08)**: 46 annotations removed, 47 functions now verified. 23 remain.
       3. Use fine-grained verification to iterate quickly: `--verify-only-module protocol::RSL::common_proof::message1b` or `--verify-function '*lemma_name*'`.
     - **31.9.4 leaf breakdown** (all leaves scoped to one lemma or one tightly-coupled pair, each expected <500 LOC touched):
-      - [ ] **31.9.4.1**: `common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`.
+      - [x] **31.9.4.1**: `common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`. [2026-03-12]
         - [x] **31.9.4.1.a**: Add a local helper lemma in `src/protocol/RSL/learner.rs` proving `LLearnerProcess2b` preserves nonempty `received_2b_message_senders` for all keys when the pre-state map already satisfies that property. [2026-03-11] Added `lemma_LLearnerProcess2b_preserves_nonempty_sender_sets` plus helper `lemma_set_contains_implies_len_positive`; focused verification passes:
           `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::learner --verify-function '*lemma_LLearnerProcess2b_preserves_nonempty_sender_sets*' --rlimit 40`
           ⇒ `1 verified, 0 errors`.
-        - [ ] **31.9.4.1.b**: Refactor `common_proof/learner_state.rs::lemma_Received2bMessageSendersAlwaysNonempty` to use the new helper lemma for the Process2b branch and remove `#[verifier(external_body)]`.
-        - [ ] **31.9.4.1.c**: Re-run focused verification for `lemma_Received2bMessageSendersAlwaysNonempty` at rlimit 40 under bounded timeout; if still blocked, record exact failing obligations and split again.
-        - [2026-03-11] Attempted focused verification after temporarily removing `external_body`.
-          Result: `--verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_Received2bMessageSendersAlwaysNonempty*' --rlimit 40`
-          fails with rlimit at the lemma body; raising local rlimit to 100 caused solver timeout (>600s) without completion.
-          Keep `external_body` for now; next attempt should first split proof obligations (likely by factoring Process2b/new-key vs carry-over cases into helper lemmas).
+        - [x] **31.9.4.1.b**: Refactor `common_proof/learner_state.rs::lemma_Received2bMessageSendersAlwaysNonempty` to use the new helper lemma for the Process2b branch and remove `#[verifier(external_body)]`. [2026-03-12] Done: rewrote the lemma with explicit transition-case reasoning (`nextActionIndex == 0` packet-processing branch vs no-receive branch), built the pre-state `forall key` nonempty invariant via recursion, and used `lemma_LLearnerProcess2b_preserves_nonempty_sender_sets` to discharge the Process2b branch.
+        - [x] **31.9.4.1.c**: Re-run focused verification for `lemma_Received2bMessageSendersAlwaysNonempty` at rlimit 40 under bounded timeout; if still blocked, record exact failing obligations and split again. [2026-03-12] Focused verification now passes:
+          `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_Received2bMessageSendersAlwaysNonempty*' --rlimit 40`
+          ⇒ `1 verified, 0 errors`.
+        - [2026-03-11] Prior attempt (before helper-guided case split) failed with rlimit pressure; this is now superseded by the verified proof body above.
       - [ ] **31.9.4.2**: `common_proof/learner_state.rs` — remove `external_body` from `lemma_GetSent2bMessageFromLearnerState`.
       - [ ] **31.9.4.3**: `common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent` and re-prove the `recv.msg is RslMessage2a` / Process2a case split with focused verification.
         - [2026-03-11] Preliminary attempt (temporary local edit) showed rlimit failure at 40 and timeout at higher limits (`--rlimit 80` timed out at 240s), so this remains deferred behind smaller helper-lemma splits.
@@ -9505,12 +9504,12 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
       - [ ] **31.9.4.11**: `refinement_proof/execution.rs` — remove `external_body` from all remaining 6 execution/refinement lemmas.
       - [ ] **31.9.4.12**: Full RSL proof sweep with both modules enabled; confirm all 31.9.4 leaves are complete and update the remaining-count summary.
     - **Reference**: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet codebase at https://github.com/microsoft/Ironclad/tree/main/ironfleet under `protocol/RSL/` proof files. Use these as reference for proof structure and intermediate assertions.
-    - **Remaining 21 external_body** (down from 22 after fixing `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`):
+    - **Remaining 20 external_body** (down from 22 after fixing `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage` and `lemma_Received2bMessageSendersAlwaysNonempty`):
       - `refinement_proof/execution.rs` (6): `lemma_AppStateAlwaysValid`, `lemma_TransferredStateAlwaysValid`, `lemma_ReplySentIsAllowed`, `lemma_ReplyInReplyCacheIsAllowed`, `lemma_ReplyInAppStateSupplyIsAllowed`, `lemma_ReplySentViaExecutionIsAllowed`
       - `refinement_proof/requests.rs` (3): `lemma_RequestInRequestQueueHasCorrespondingRequestMessage`, `lemma_RequestIn2aMessageHasCorrespondingRequestMessage`, `lemma_DecidedRequestWasSentByClient`
       - `refinement_proof/refinement.rs` (2): `lemma_GetBehaviorRefinementForBehaviorOfOneStep`, `lemma_GetBehaviorRefinement`
       - `common_proof/chosen.rs` (2): `lemma_DecidedOperationWasChosen`, `collect_2b_messages`
-      - `common_proof/learner_state.rs` (2): `lemma_Received2bMessageSendersAlwaysNonempty`, `lemma_GetSent2bMessageFromLearnerState`
+      - `common_proof/learner_state.rs` (1): `lemma_GetSent2bMessageFromLearnerState`
       - `common_proof/message1b.rs` (2): `lemma_1bMessageWithoutOpnImplicationsFor2b`, `lemma_1bMessageWithOpnImplicationsFor2b`
       - `common_proof/message2a.rs` (2): `lemma_Find2aThatCausedVote`, `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`
       - `common_proof/message2b.rs` (2): `lemma_VoteWithOpnImplies2aSent`, `lemma_2bMessageImplicationsForCAcceptor`

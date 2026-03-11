@@ -16,6 +16,7 @@ use crate::protocol::RSL::executor::*;
 use crate::protocol::RSL::learner::*;
 use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::proposer::*;
+use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
@@ -65,7 +66,6 @@ verus! {
         }
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_Received2bMessageSendersAlwaysNonempty(
         b: Behavior<RslState>,
         c: LConstants,
@@ -91,7 +91,7 @@ verus! {
         lemma_ConstantsAllConsistent(b, c, i);
 
         let s = b[i - 1].replicas[learner_idx].replica.learner;
-        let s_prime = &b[i].replicas[learner_idx].replica.learner;
+        let s_prime = b[i].replicas[learner_idx].replica.learner;
 
         if s_prime.unexecuted_learner_state == s.unexecuted_learner_state {
             lemma_Received2bMessageSendersAlwaysNonempty(b, c, i - 1, learner_idx, opn);
@@ -99,9 +99,96 @@ verus! {
         }
 
         let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i - 1, learner_idx);
-        if s.unexecuted_learner_state.contains_key(opn) {
-            lemma_Received2bMessageSendersAlwaysNonempty(b, c, i - 1, learner_idx, opn);
+        let sched = b[i - 1].replicas[learner_idx];
+        let sched_prime = b[i].replicas[learner_idx];
+        let next_action_index = sched.nextActionIndex;
+
+        assert(RslNextOneReplica(b[i - 1], b[i], learner_idx, ios));
+        assert(LSchedulerNext(sched, sched_prime, ios));
+
+        assert forall |k: OperationNumber|
+            s.unexecuted_learner_state.contains_key(k) implies s.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
+            lemma_Received2bMessageSendersAlwaysNonempty(b, c, i - 1, learner_idx, k);
         }
+
+        if next_action_index == 0 {
+            assert(LReplicaNextProcessPacket(sched.replica, sched_prime.replica, ios));
+            if ios[0] is TimeoutReceive {
+                assert(s_prime.unexecuted_learner_state == s.unexecuted_learner_state);
+                assert(false);
+            }
+
+            assert(ios[0] is Receive);
+            if ios[0]->r.msg is RslMessageHeartbeat {
+                assert(LReplicaNextReadClockAndProcessPacket(sched.replica, sched_prime.replica, ios));
+                assert(s_prime.unexecuted_learner_state == s.unexecuted_learner_state);
+                assert(false);
+            }
+
+            assert(LReplicaNextProcessPacketWithoutReadingClock(sched.replica, sched_prime.replica, ios));
+            let packet = ios[0]->r;
+
+            if packet.msg is RslMessage2b {
+                assert(LReplicaNextProcess2b(sched.replica, sched_prime.replica, packet, ExtractSentPacketsFromIos(ios)));
+                let op_learnable = sched.replica.executor.ops_complete < packet.msg->opn_2b
+                    || (sched.replica.executor.ops_complete == packet.msg->opn_2b
+                        && sched.replica.executor.next_op_to_execute is OutstandingOpUnknown);
+                if !op_learnable {
+                    assert(s_prime == s);
+                    assert(false);
+                }
+                assert(LLearnerProcess2b(s, s_prime, packet));
+                lemma_LLearnerProcess2b_preserves_nonempty_sender_sets(s, s_prime, packet);
+                assert(s_prime.unexecuted_learner_state[opn].received_2b_message_senders.len() > 0);
+                return;
+            }
+
+            if packet.msg is RslMessageAppStateSupply {
+                assert(LReplicaNextProcessAppStateSupply(
+                    sched.replica,
+                    sched_prime.replica,
+                    packet,
+                    ExtractSentPacketsFromIos(ios),
+                ));
+                assert(LLearnerForgetOperationsBefore(s, s_prime, packet.msg->opn_state_supply));
+                assert(s_prime.unexecuted_learner_state.contains_key(opn) <==> opn >= packet.msg->opn_state_supply
+                    && s.unexecuted_learner_state.contains_key(opn));
+                assert(s.unexecuted_learner_state.contains_key(opn));
+                lemma_Received2bMessageSendersAlwaysNonempty(b, c, i - 1, learner_idx, opn);
+                assert(s_prime.unexecuted_learner_state[opn] == s.unexecuted_learner_state[opn]);
+                return;
+            }
+
+            assert(s_prime.unexecuted_learner_state == s.unexecuted_learner_state);
+            assert(false);
+        }
+
+        assert(LReplicaNoReceiveNext(sched.replica, next_action_index, sched_prime.replica, ios));
+        if next_action_index == 6 {
+            assert(LReplicaNextSpontaneousMaybeExecute(
+                sched.replica,
+                sched_prime.replica,
+                ExtractSentPacketsFromIos(ios),
+            ));
+            assert(LLearnerForgetDecision(s, s_prime, sched.replica.executor.ops_complete));
+            if s.unexecuted_learner_state.contains_key(sched.replica.executor.ops_complete) {
+                assert(s_prime.unexecuted_learner_state == s.unexecuted_learner_state.remove(
+                    sched.replica.executor.ops_complete,
+                ));
+                if opn == sched.replica.executor.ops_complete {
+                    assert(!s_prime.unexecuted_learner_state.contains_key(opn));
+                    assert(false);
+                }
+            } else {
+                assert(s_prime.unexecuted_learner_state == s.unexecuted_learner_state);
+            }
+        } else {
+            assert(s_prime.unexecuted_learner_state == s.unexecuted_learner_state);
+        }
+
+        assert(s.unexecuted_learner_state.contains_key(opn));
+        lemma_Received2bMessageSendersAlwaysNonempty(b, c, i - 1, learner_idx, opn);
+        assert(s_prime.unexecuted_learner_state[opn] == s.unexecuted_learner_state[opn]);
     }
 
     #[verifier(external_body)]
