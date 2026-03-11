@@ -331,19 +331,28 @@ verus! {
     ) -> (rc:(Set<int>, Seq<RslPacket>))
         requires
             IsValidBehaviorPrefix(b, c, i),
-            0 <= i,
-            0 <= idx < b[i].replicas.len(),
-            b[i].replicas[idx].replica.learner.unexecuted_learner_state.contains_key(opn),
+            0 < i,
+            0 <= idx < b[i - 1].replicas.len(),
+            b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state.contains_key(opn),
             senders.subset_of(
-                b[i].replicas[idx].replica.learner.unexecuted_learner_state[opn].received_2b_message_senders
+                b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[opn].received_2b_message_senders
             ),
             0 <= sender_idx <= c.config.replica_ids.len(),
             c.config.replica_ids.len() > 0,
         ensures
             rc.0.finite(),
-        // Original commented-out ensures preserved:
-        //     indices.subset_of(Set::new(|x: int| 0 <= x < c.config.replica_ids.len())),
-        //     packets.len() == c.config.replica_ids.len()
+            rc.1.len() == c.config.replica_ids.len() - sender_idx,
+            forall |sidx: int| rc.0.contains(sidx)
+                ==> sender_idx <= sidx < c.config.replica_ids.len(),
+            forall |sidx: int| rc.0.contains(sidx) ==> ({
+                let p = rc.1[sidx - sender_idx];
+                &&& p.src == c.config.replica_ids[sidx]
+                &&& p.msg is RslMessage2b
+                &&& p.msg->opn_2b == opn
+                &&& p.msg->bal_2b == b[i - 1].replicas[idx].replica.learner.max_ballot_seen
+                &&& p.msg->val_2b == b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[opn].candidate_learned_value
+                &&& b[i].environment.sentPackets.contains(p)
+            }),
         decreases c.config.replica_ids.len() - sender_idx
     {
         broadcast use vstd::set::group_set_axioms;
@@ -362,22 +371,82 @@ verus! {
 
             if senders.contains(sender) {
                 assert(
-                    b[i].replicas[idx].replica.learner.unexecuted_learner_state[opn]
+                    b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[opn]
                         .received_2b_message_senders.contains(sender)
                 ) by {
                     assert(senders.subset_of(
-                        b[i].replicas[idx].replica.learner.unexecuted_learner_state[opn]
+                        b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[opn]
                             .received_2b_message_senders
                     ));
                 }
-                let (sender_idx_unused, p) = lemma_GetSent2bMessageFromLearnerState(b, c, i, idx, opn, sender);
+                let (sender_idx_unused, p) = lemma_GetSent2bMessageFromLearnerState(b, c, i - 1, idx, opn, sender);
+                lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);
+                assert(sender == c.config.replica_ids[sender_idx]);
+                assert(sender == c.config.replica_ids[sender_idx_unused]);
+                assert(sender_idx_unused == sender_idx) by {
+                    if sender_idx_unused != sender_idx {
+                        assert(ReplicasDistinct(c.config.replica_ids, sender_idx_unused, sender_idx));
+                        assert(c.config.replica_ids[sender_idx_unused] != c.config.replica_ids[sender_idx]);
+                        assert(false);
+                    }
+                };
                 let new_indices = set![sender_idx_unused] + rest_indices;
                 // set![sender_idx_unused] = Set::empty().insert(sender_idx_unused) is finite
                 // union of two finite sets is finite (axiom_set_union_finite in group_set_axioms)
                 let new_packets = seq![p] + rest_packets;
+                assert(new_packets.len() == c.config.replica_ids.len() - sender_idx);
+                assert forall |sidx: int| new_indices.contains(sidx)
+                    implies sender_idx <= sidx < c.config.replica_ids.len() by {
+                    if sidx == sender_idx_unused {
+                        assert(sender_idx <= sidx < c.config.replica_ids.len());
+                    } else {
+                        assert(rest_indices.contains(sidx));
+                        assert(sender_idx + 1 <= sidx < c.config.replica_ids.len());
+                        assert(sender_idx <= sidx);
+                    }
+                };
+                assert forall |sidx: int| new_indices.contains(sidx) implies ({
+                    let p_out = new_packets[sidx - sender_idx];
+                    &&& p_out.src == c.config.replica_ids[sidx]
+                    &&& p_out.msg is RslMessage2b
+                    &&& p_out.msg->opn_2b == opn
+                    &&& p_out.msg->bal_2b == b[i - 1].replicas[idx].replica.learner.max_ballot_seen
+                    &&& p_out.msg->val_2b == b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[opn].candidate_learned_value
+                    &&& b[i].environment.sentPackets.contains(p_out)
+                }) by {
+                    if sidx == sender_idx_unused {
+                        assert(sidx == sender_idx);
+                        assert(sidx - sender_idx == 0);
+                        assert(new_packets[sidx - sender_idx] == p);
+                    } else {
+                        assert(rest_indices.contains(sidx));
+                        assert(sender_idx + 1 <= sidx < c.config.replica_ids.len());
+                        assert(0 <= sidx - (sender_idx + 1) < rest_packets.len());
+                        assert(new_packets[sidx - sender_idx] == rest_packets[sidx - (sender_idx + 1)]);
+                    }
+                };
                 (new_indices, new_packets)
             } else {
                 let new_packets = seq![dummy_packet] + rest_packets;
+                assert(new_packets.len() == c.config.replica_ids.len() - sender_idx);
+                assert forall |sidx: int| rest_indices.contains(sidx)
+                    implies sender_idx <= sidx < c.config.replica_ids.len() by {
+                    assert(sender_idx + 1 <= sidx < c.config.replica_ids.len());
+                    assert(sender_idx <= sidx);
+                };
+                assert forall |sidx: int| rest_indices.contains(sidx) implies ({
+                    let p_out = new_packets[sidx - sender_idx];
+                    &&& p_out.src == c.config.replica_ids[sidx]
+                    &&& p_out.msg is RslMessage2b
+                    &&& p_out.msg->opn_2b == opn
+                    &&& p_out.msg->bal_2b == b[i - 1].replicas[idx].replica.learner.max_ballot_seen
+                    &&& p_out.msg->val_2b == b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[opn].candidate_learned_value
+                    &&& b[i].environment.sentPackets.contains(p_out)
+                }) by {
+                    assert(sender_idx + 1 <= sidx < c.config.replica_ids.len());
+                    assert(0 <= sidx - (sender_idx + 1) < rest_packets.len());
+                    assert(new_packets[sidx - sender_idx] == rest_packets[sidx - (sender_idx + 1)]);
+                };
                 (rest_indices, new_packets)
             }
         }
