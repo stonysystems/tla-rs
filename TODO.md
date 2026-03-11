@@ -10314,7 +10314,7 @@ Rules for this phase (do not cut corners):
 
 ### 33.7 Completion gate
 
-- [ ] Do not mark Phase 33 complete until all of the following are true: [REOPENED 2026-03-10]
+- [x] Do not mark Phase 33 complete until all of the following are true: [REOPENED 2026-03-10; closed 26-03-12, 05:45] (scope check: completion-gate closure + explicit evidence mapping + integration drift guard, <500 LOC hand edits; no decomposition required)
   - `docs/model_checker_status.md` is current and specific
   - the unsupported-feature list is shorter and backed by tests
   - at least one previously-uncovered consensus protocol has a checked-in automated source-first run
@@ -10334,6 +10334,15 @@ Rules for this phase (do not cut corners):
   - `LeaderElection` and `Paxos` no longer have only the generic blocker label "enumeration scalability"; each has checked-in branch-level/raw blocker evidence and either:
     - non-zero exact-mode progress on the matched benchmark model, or
     - an exact remaining blocker description with a concrete next implementation task
+  - **Done**:
+    - `docs/model_checker_status.md` now contains protocol-specific matrix rows (source path + model path + blocker/outcome + automated evidence) with no "not looked at" placeholders.
+    - Unsupported protocols are tracked with exact blocker signatures and enforced by integration guards (`test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers`, `test_model_check_unsupported_protocol_rows_require_blocker_regressions`, `test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers`).
+    - Previously uncovered consensus protocol(s) now have checked-in automated source-first evidence (`PBFT` supported bounded run plus artifact/test evidence in matrix + integration suite).
+    - Exact-mode optimization claims are quantified with before/after/delta telemetry in `docs/model_checker_status.md` section `4.2` and checked artifacts (`reports/model_check/*.json`).
+    - Timeout behavior, fairness label rejection, and enumeration-fallback telemetry are implemented and covered by unit/integration tests; JSON report surface exposes the required telemetry fields.
+    - Shared non-toy benchmark fixtures/artifacts for `TwoPhase`/`LeaderElection`/`PrimaryBackup`/`Paxos` are checked in separately from tiny smoke fixtures, with full-run and matched-cutoff comparisons in `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`.
+    - The comparison report explicitly includes generated-base-TLA+ provenance (`verus2-tla` output paths) plus wrapper/property glue paths, release-vs-debug comparison, phase-attributed timing, branch-level blocker telemetry, and explicit root-cause answers.
+    - Added integration regression `test_phase_33_7_completion_gate_is_closed_with_specific_evidence` to prevent silent drift on the completion-gate conditions above.
 
 ---
 

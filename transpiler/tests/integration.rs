@@ -18907,3 +18907,195 @@ fn test_phase_33_4_4_h_anti_corner_cutting_rules_are_explicit_and_enforced() {
         }
     }
 }
+
+#[test]
+fn test_phase_33_7_completion_gate_is_closed_with_specific_evidence() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower.contains(
+            "- [x] do not mark phase 33 complete until all of the following are true:"
+        ),
+        "TODO {} must mark Phase 33.7 completion gate as closed",
+        todo_path.display()
+    );
+    for required_fragment in [
+        "test_model_check_unsupported_protocol_rows_prioritize_real_protocol_blockers",
+        "test_model_check_unsupported_protocol_rows_require_blocker_regressions",
+        "test_model_check_unsupported_protocol_rows_record_exact_smallest_blockers",
+        "test_phase_33_7_completion_gate_is_closed_with_specific_evidence",
+    ] {
+        assert!(
+            todo_lower.contains(required_fragment),
+            "TODO {} must include completion-gate evidence fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let status_doc_path = repo_root.join("docs/model_checker_status.md");
+    let status_doc_src = std::fs::read_to_string(&status_doc_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read model checker status doc {}: {}",
+            status_doc_path.display(),
+            err
+        )
+    });
+    let status_doc_lower = status_doc_src.to_ascii_lowercase();
+    assert!(
+        status_doc_lower.contains("## 4. protocol coverage matrix (source-first, checked-in evidence)"),
+        "status doc {} must contain explicit protocol coverage matrix section",
+        status_doc_path.display()
+    );
+    assert!(
+        !status_doc_lower.contains("not looked at"),
+        "status doc {} must not contain `not looked at` placeholders once Phase 33 gate is closed",
+        status_doc_path.display()
+    );
+    assert!(
+        status_doc_src.contains("| `PBFT`")
+            && status_doc_src.contains("| `PBFT` |")
+            && status_doc_src.contains("test_model_check_pbft_bounded_run"),
+        "status doc {} must include explicit PBFT supported-run evidence",
+        status_doc_path.display()
+    );
+    assert!(
+        status_doc_src.contains("### 4.2 Exact-mode optimization delta snapshot (Phase 33.4.2)")
+            && status_doc_src.contains("| Optimization |")
+            && status_doc_src.contains("| Before |")
+            && status_doc_src.contains("| After |")
+            && status_doc_src.contains("| Delta |"),
+        "status doc {} must include exact-mode before/after optimization delta measurements",
+        status_doc_path.display()
+    );
+
+    let benchmark_report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let benchmark_report_src = std::fs::read_to_string(&benchmark_report_path).unwrap_or_else(
+        |err| {
+            panic!(
+                "failed to read benchmark comparison report {}: {}",
+                benchmark_report_path.display(),
+                err
+            )
+        },
+    );
+    let benchmark_report_lower = benchmark_report_src.to_ascii_lowercase();
+    for required_fragment in [
+        "## source-first build/environment parity (phase 33.4.4.a)",
+        "## phase-attributed source-first timing breakdown (ms)",
+        "## branch-level blocker telemetry (phase 33.4.4.d)",
+        "## explicit root-cause answers (phase 33.4.4.g)",
+        "## side-by-side results",
+        "## same-model provenance",
+        "## matched-cutoff progress (shared 120s budget)",
+        "generated base tla+",
+        "wrapper/property glue",
+        "release result",
+        "debug result",
+    ] {
+        assert!(
+            benchmark_report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            benchmark_report_path.display(),
+            required_fragment
+        );
+    }
+
+    let compare_script_path = repo_root.join("scripts/compare_tlc_vs_source_first.sh");
+    let compare_script_src = std::fs::read_to_string(&compare_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison script {}: {}",
+            compare_script_path.display(),
+            err
+        )
+    });
+    assert!(
+        compare_script_src.contains("for proto in leaderelection paxos"),
+        "comparison script {} must keep explicit blocker-protocol loop for LeaderElection/Paxos",
+        compare_script_path.display()
+    );
+
+    let required_paths = [
+        "transpiler/tests/model_check_fixtures/benchmarks_1h/twophase_benchmark.model.toml",
+        "transpiler/tests/model_check_fixtures/benchmarks_1h/primarybackup_benchmark.model.toml",
+        "transpiler/tests/model_check_fixtures/benchmarks_1h/leaderelection_benchmark.model.toml",
+        "transpiler/tests/model_check_fixtures/benchmarks_1h/paxos_benchmark.model.toml",
+        "reports/benchmarks/source_first_release/twophase_benchmark.json",
+        "reports/benchmarks/source_first_release/primarybackup_benchmark.json",
+        "reports/benchmarks/source_first_release/leaderelection_benchmark.json",
+        "reports/benchmarks/source_first_release/paxos_benchmark.json",
+        "transpiler/tla_test_workspace/transpiler_generated_tla/TwoPhase/Twophase.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla/PrimaryBackup/Primarybackup.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla/LeaderElection/Election.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla/Paxos/Paxos.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/TwoPhase_Benchmark_MC.cfg",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/PrimaryBackup_Benchmark_MC.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/PrimaryBackup_Benchmark_MC.cfg",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/LeaderElection_Benchmark_MC.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/LeaderElection_Benchmark_MC.cfg",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/Paxos_Benchmark_MC.tla",
+        "transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/Paxos_Benchmark_MC.cfg",
+        "reports/benchmarks/source_first_cutoff_120s/SUMMARY.md",
+        "reports/benchmarks/tlc_cutoff_120s/SUMMARY.md",
+    ];
+    for relative_path in required_paths {
+        let path = repo_root.join(relative_path);
+        assert!(
+            path.is_file(),
+            "Phase 33.7 completion gate requires checked-in artifact/file {}; missing",
+            path.display()
+        );
+    }
+
+    for proto in ["leaderelection", "paxos"] {
+        let artifact_path = repo_root
+            .join("reports/benchmarks/source_first_release")
+            .join(format!("{proto}_benchmark.json"));
+        let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
+            panic!(
+                "failed to read benchmark artifact {}: {}",
+                artifact_path.display(),
+                err
+            )
+        });
+        let artifact: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(
+            |err| {
+                panic!(
+                    "benchmark artifact {} must be valid JSON: {}",
+                    artifact_path.display(),
+                    err
+                )
+            },
+        );
+        let summary = artifact
+            .get("summary")
+            .and_then(|value| value.as_object())
+            .unwrap_or_else(|| {
+                panic!(
+                    "benchmark artifact {} must include summary object",
+                    artifact_path.display()
+                )
+            });
+        let states = summary
+            .get("states")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        let transitions = summary
+            .get("transitions")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        assert!(
+            states > 0 && transitions > 0,
+            "release benchmark artifact {} must show non-zero exact-mode progress (states={}, transitions={})",
+            artifact_path.display(),
+            states,
+            transitions
+        );
+    }
+}
