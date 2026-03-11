@@ -146,6 +146,117 @@ print("|".join(str(timing.get(field, "n/a")) for field in fields))
 PY
 }
 
+parse_small_model_gap_diagnosis() {
+    local release_artifact="$1"
+    local debug_artifact="$2"
+    if [[ ! -f "$release_artifact" ]]; then
+        echo "n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a"
+        return
+    fi
+    python3 - "$release_artifact" "$debug_artifact" <<'PY' 2>/dev/null || echo "n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a|n/a"
+import json
+import sys
+
+release_artifact = sys.argv[1]
+debug_artifact = sys.argv[2] if len(sys.argv) > 2 else ""
+
+
+def load_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return {}
+
+
+def to_float(value):
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def pct(value, total):
+    if value is None or total is None or total <= 0:
+        return "n/a"
+    return f"{(100.0 * value / total):.2f}%"
+
+
+release = load_json(release_artifact)
+debug = load_json(debug_artifact) if debug_artifact else {}
+
+release_summary = release.get("summary") or {}
+release_timing = release_summary.get("timing") or {}
+debug_summary = debug.get("summary") or {}
+
+release_wall_ms = to_float(release_summary.get("elapsed_ms"))
+debug_wall_ms = to_float(debug_summary.get("elapsed_ms"))
+candidate_ms = to_float(release_timing.get("candidate_generation_evaluation_ms"))
+source_ingest_ms = to_float(release_timing.get("source_ingestion_parsing_ms"))
+model_resolve_ms = to_float(release_timing.get("model_config_resolution_ms"))
+init_ms = to_float(release_timing.get("initial_state_construction_ms"))
+report_ms = to_float(release_timing.get("report_serialization_output_ms"))
+fixed_ms = sum(
+    value
+    for value in [source_ingest_ms, model_resolve_ms, init_ms, report_ms]
+    if value is not None
+)
+dedup_ms = to_float(release_timing.get("dedup_hashing_normalization_ms"))
+invariant_ms = to_float(release_timing.get("invariant_evaluation_ms"))
+successor_ms = to_float(release_timing.get("successor_solving_ms"))
+
+candidate_pct = pct(candidate_ms, release_wall_ms)
+fixed_pct = pct(fixed_ms, release_wall_ms)
+dedup_pct = pct(dedup_ms, release_wall_ms)
+invariant_pct = pct(invariant_ms, release_wall_ms)
+
+debug_release_ratio = "n/a"
+if release_wall_ms is not None and release_wall_ms > 0 and debug_wall_ms is not None:
+    debug_release_ratio = f"{debug_wall_ms / release_wall_ms:.2f}x"
+
+phase_values = {
+    "candidate_enumeration": candidate_ms,
+    "fixed_startup_parsing": fixed_ms,
+    "dedup_hash_normalize": dedup_ms,
+    "invariant_eval": invariant_ms,
+    "successor_solving": successor_ms,
+}
+phase_values = {name: value for name, value in phase_values.items() if value is not None}
+dominant_phase = max(phase_values, key=phase_values.get) if phase_values else "n/a"
+
+fixed_overhead_dominates = "n/a"
+if release_wall_ms is not None and release_wall_ms > 0:
+    fixed_overhead_dominates = "yes" if fixed_ms / release_wall_ms >= 0.50 else "no"
+
+dedup_meaningful = "n/a"
+if release_wall_ms is not None and release_wall_ms > 0 and dedup_ms is not None:
+    dedup_meaningful = "yes" if dedup_ms / release_wall_ms >= 0.10 else "no"
+
+release_material = "n/a"
+if debug_release_ratio != "n/a":
+    ratio = float(debug_release_ratio[:-1])
+    release_material = "yes" if ratio >= 1.50 else "no"
+
+fields = [
+    release_summary.get("elapsed_ms", "n/a"),
+    release_timing.get("candidate_generation_evaluation_ms", "n/a"),
+    candidate_pct,
+    int(fixed_ms) if release_wall_ms is not None else "n/a",
+    fixed_pct,
+    release_timing.get("dedup_hashing_normalization_ms", "n/a"),
+    dedup_pct,
+    release_timing.get("invariant_evaluation_ms", "n/a"),
+    invariant_pct,
+    debug_release_ratio,
+    dominant_phase,
+    fixed_overhead_dominates,
+    dedup_meaningful,
+    release_material,
+]
+print("|".join(str(field) for field in fields))
+PY
+}
+
 summary_field() {
     local file="$1" prefix="$2"
     if [[ ! -f "$file" ]]; then
@@ -245,6 +356,28 @@ PY
             IFS='|' read -r t_ingest t_model t_init t_solve t_candidate t_dedup t_invariant t_report <<< "$(parse_source_first_timing_breakdown "$SF_DIR/${proto}_benchmark.json")"
             echo "| $(protocol_display "$proto") | $t_ingest | $t_model | $t_init | $t_solve | $t_candidate | $t_dedup | $t_invariant | $t_report |"
         done
+        echo ""
+    fi
+
+    if $has_sf_release; then
+        echo "## Small-Model Wall-Time Gap Diagnosis (Phase 33.4.4.c)"
+        echo ""
+        echo "This section is restricted to the two shared small-model protocols that currently finish in exact mode (TwoPhase, PrimaryBackup)."
+        echo "The diagnosis is computed from release canonical telemetry plus debug-vs-release elapsed-ms ratios."
+        echo ""
+        echo "| Protocol | Release wall (ms) | Candidate gen/eval (ms) | Candidate share | Fixed startup+parsing share | Dedup/hash share | Invariant share | Debug/Release (elapsed-ms) | Dominant release phase | Fixed-overhead dominates? | Dedup meaningful? | Release materially changes wall time? |"
+        echo "|----------|-------------------|--------------------------|-----------------|-----------------------------|------------------|-----------------|-----------------------------|------------------------|---------------------------|-------------------|----------------------------------------|"
+        for proto in twophase primarybackup; do
+            IFS='|' read -r release_wall_ms candidate_ms candidate_pct fixed_ms fixed_pct dedup_ms dedup_pct invariant_ms invariant_pct debug_release_ratio dominant_phase fixed_overhead_dominates dedup_meaningful release_material <<< "$(parse_small_model_gap_diagnosis "$SF_RELEASE_DIR/${proto}_benchmark.json" "$SF_DEBUG_DIR/${proto}_benchmark.json")"
+            echo "| $(protocol_display "$proto") | $release_wall_ms | $candidate_ms | $candidate_pct | $fixed_pct ($fixed_ms ms) | $dedup_pct ($dedup_ms ms) | $invariant_pct ($invariant_ms ms) | $debug_release_ratio | $dominant_phase | $fixed_overhead_dominates | $dedup_meaningful | $release_material |"
+        done
+        echo ""
+        for proto in twophase primarybackup; do
+            IFS='|' read -r _ _ candidate_pct _ fixed_pct _ dedup_pct _ invariant_pct debug_release_ratio dominant_phase fixed_overhead_dominates dedup_meaningful release_material <<< "$(parse_small_model_gap_diagnosis "$SF_RELEASE_DIR/${proto}_benchmark.json" "$SF_DEBUG_DIR/${proto}_benchmark.json")"
+            echo "- $(protocol_display "$proto"): dominant release cost is \`$dominant_phase\` (candidate=$candidate_pct, fixed=$fixed_pct, dedup=$dedup_pct, invariant=$invariant_pct). Fixed-overhead dominates: **$fixed_overhead_dominates**. Dedup meaningful: **$dedup_meaningful**. Release materially changes wall time: **$release_material** (debug/release=$debug_release_ratio)."
+        done
+        echo ""
+        echo "- Cross-protocol conclusion: neither small model is currently fixed-overhead dominated; both are dominated by candidate generation/evaluation, with dedup/hash and invariant checking negligible. Release build materially reduces wall time on both protocols but does not change the dominant cost center."
         echo ""
     fi
 

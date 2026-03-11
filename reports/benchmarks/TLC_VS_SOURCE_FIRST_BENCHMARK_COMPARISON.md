@@ -1,7 +1,7 @@
 # TLC vs Source-first Benchmark Comparison
 
-Generated: 2026-03-11 00:14:06 UTC
-Git rev: b2500fb
+Generated: 2026-03-11 00:21:29 UTC
+Git rev: e9e3341
 
 Source-first run: Generated: 2026-03-11 00:04:19 UTC
 TLC run: Generated: 2026-03-08 16:25:00 UTC
@@ -41,6 +41,21 @@ Canonical source-first timing values come from `reports/benchmarks/source_first_
 | PrimaryBackup | 0 | 0 | 10 | 4 | 48972 | 242 | 0 | 0 |
 | LeaderElection | 0 | 0 | 94 | 19 | 240148 | 4 | 0 | 0 |
 | Paxos | 0 | 0 | 20351 | 0 | 244872 | 4 | 0 | 0 |
+
+## Small-Model Wall-Time Gap Diagnosis (Phase 33.4.4.c)
+
+This section is restricted to the two shared small-model protocols that currently finish in exact mode (TwoPhase, PrimaryBackup).
+The diagnosis is computed from release canonical telemetry plus debug-vs-release elapsed-ms ratios.
+
+| Protocol | Release wall (ms) | Candidate gen/eval (ms) | Candidate share | Fixed startup+parsing share | Dedup/hash share | Invariant share | Debug/Release (elapsed-ms) | Dominant release phase | Fixed-overhead dominates? | Dedup meaningful? | Release materially changes wall time? |
+|----------|-------------------|--------------------------|-----------------|-----------------------------|------------------|-----------------|-----------------------------|------------------------|---------------------------|-------------------|----------------------------------------|
+| TwoPhase | 16335 | 16294 | 99.75% | 0.03% (5 ms) | 0.21% (34 ms) | 0.00% (0 ms) | 4.28x | candidate_enumeration | no | no | yes |
+| PrimaryBackup | 49228 | 48972 | 99.48% | 0.02% (10 ms) | 0.49% (242 ms) | 0.00% (0 ms) | 3.39x | candidate_enumeration | no | no | yes |
+
+- TwoPhase: dominant release cost is `candidate_enumeration` (candidate=99.75%, fixed=0.03%, dedup=0.21%, invariant=0.00%). Fixed-overhead dominates: **no**. Dedup meaningful: **no**. Release materially changes wall time: **yes** (debug/release=4.28x).
+- PrimaryBackup: dominant release cost is `candidate_enumeration` (candidate=99.48%, fixed=0.02%, dedup=0.49%, invariant=0.00%). Fixed-overhead dominates: **no**. Dedup meaningful: **no**. Release materially changes wall time: **yes** (debug/release=3.39x).
+
+- Cross-protocol conclusion: neither small model is currently fixed-overhead dominated; both are dominated by candidate generation/evaluation, with dedup/hash and invariant checking negligible. Release build materially reduces wall time on both protocols but does not change the dominant cost center.
 
 ## Column Meanings
 

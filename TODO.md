@@ -9978,7 +9978,7 @@ Rules for this phase (do not cut corners):
       - Replayed benchmark artifacts in both debug continuity and release canonical dirs and regenerated `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`.
     - Added regression coverage (`test_phase_33_4_4_b_phase_timing_telemetry_is_reported_and_preserved`) that fails if TODO completion marker, scripts/report section, or required artifact timing keys disappear.
 
-- [ ] **33.4.4.c Diagnose the small-model wall-time gap on `TwoPhase` and `PrimaryBackup`**
+- [x] **33.4.4.c Diagnose the small-model wall-time gap on `TwoPhase` and `PrimaryBackup`** [26-03-11, 20:22] (scope check: comparison-script diagnosis section + checked-in report regeneration + regression guard, <500 LOC hand edits; no decomposition required)
   - Use the new telemetry to answer, with numbers, whether the current source-first wall time is dominated by:
     - brute-force candidate enumeration,
     - fixed startup/parsing overhead,
@@ -9992,6 +9992,17 @@ Rules for this phase (do not cut corners):
     - and whether release build materially changes the story.
   - Do **not** accept a vague answer like "TLC is symbolic" or "the models are small" without measured attribution from the source-first side.
   - If the answer differs between `TwoPhase` and `PrimaryBackup`, document them separately instead of collapsing them into one narrative.
+  - **Done**:
+    - Extended `scripts/compare_tlc_vs_source_first.sh` with a dedicated **Small-Model Wall-Time Gap Diagnosis (Phase 33.4.4.c)** section computed directly from release telemetry plus debug/release elapsed-ms ratios.
+    - Regenerated `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` with explicit per-protocol, measured attribution for `TwoPhase` and `PrimaryBackup`.
+    - Measured outcomes from checked-in canonical artifacts:
+      - `TwoPhase` (release): candidate generation/evaluation `16294/16335 ms` (`99.75%`), fixed startup/parsing `5/16335 ms` (`0.03%`), dedup/hash `34/16335 ms` (`0.21%`), invariant eval `0 ms`; debug/release elapsed-ms ratio `4.28x`.
+      - `PrimaryBackup` (release): candidate generation/evaluation `48972/49228 ms` (`99.48%`), fixed startup/parsing `10/49228 ms` (`0.02%`), dedup/hash `242/49228 ms` (`0.49%`), invariant eval `0 ms`; debug/release elapsed-ms ratio `3.39x`.
+    - Explicit answers now recorded in report:
+      - These models are **not** fixed-overhead dominated.
+      - Dedup/hash is **not** a meaningful cost on these two models.
+      - Release build materially reduces wall time for both, but dominant cost remains candidate generation/evaluation.
+      - `TwoPhase` and `PrimaryBackup` are documented separately with distinct numeric attributions.
 
 - [ ] **33.4.4.d Add branch-level blocker telemetry for source-first benchmark failures**
   - For exact-mode source-first benchmark runs, emit per-branch or per-branch-family telemetry sufficient to explain where search effort is going:

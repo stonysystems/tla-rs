@@ -17959,3 +17959,70 @@ fn test_phase_33_4_4_b_phase_timing_telemetry_is_reported_and_preserved() {
         }
     }
 }
+
+#[test]
+fn test_phase_33_4_4_c_small_model_gap_diagnosis_is_measured_and_protocol_specific() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    let todo_lower = todo_src.to_ascii_lowercase();
+    assert!(
+        todo_lower
+            .contains("- [x] **33.4.4.c diagnose the small-model wall-time gap on `twophase` and `primarybackup`**"),
+        "TODO {} must mark Phase 33.4.4.c complete",
+        todo_path.display()
+    );
+
+    let compare_script_path = repo_root.join("scripts/compare_tlc_vs_source_first.sh");
+    let compare_script_src = std::fs::read_to_string(&compare_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read comparison script {}: {}",
+            compare_script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "parse_small_model_gap_diagnosis",
+        "Small-Model Wall-Time Gap Diagnosis (Phase 33.4.4.c)",
+        "for proto in twophase primarybackup",
+        "Fixed-overhead dominates?",
+        "Dedup meaningful?",
+        "Release materially changes wall time?",
+        "candidate_enumeration",
+    ] {
+        assert!(
+            compare_script_src.contains(required_fragment),
+            "comparison script {} must include `{}`",
+            compare_script_path.display(),
+            required_fragment
+        );
+    }
+
+    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read benchmark comparison report {}: {}",
+            report_path.display(),
+            err
+        )
+    });
+    let report_lower = report_src.to_ascii_lowercase();
+    for required_fragment in [
+        "## small-model wall-time gap diagnosis (phase 33.4.4.c)",
+        "| twophase |",
+        "| primarybackup |",
+        "fixed-overhead dominates: **no**",
+        "dedup meaningful: **no**",
+        "release materially changes wall time: **yes**",
+        "cross-protocol conclusion: neither small model is currently fixed-overhead dominated",
+    ] {
+        assert!(
+            report_lower.contains(required_fragment),
+            "benchmark comparison report {} must include `{}`",
+            report_path.display(),
+            required_fragment
+        );
+    }
+}
