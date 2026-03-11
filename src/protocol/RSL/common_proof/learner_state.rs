@@ -261,6 +261,17 @@ verus! {
             lemma_PacketStaysInSentPackets(b, c, i - 1, i, p_prev);
             return (sender_idx_prev, p_prev);
         }
+        assert(
+            !(s_prime.max_ballot_seen == s.max_ballot_seen
+                && s_prime.unexecuted_learner_state == s.unexecuted_learner_state)
+        );
+        assert(
+            !(s.unexecuted_learner_state.contains_key(opn)
+                && s.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender)
+                && s_prime.unexecuted_learner_state[opn].candidate_learned_value
+                    == s.unexecuted_learner_state[opn].candidate_learned_value
+                && s_prime.max_ballot_seen == s.max_ballot_seen)
+        );
 
         let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i - 1, learner_idx);
         let next_action_index = b[i - 1].replicas[learner_idx].nextActionIndex;
@@ -271,6 +282,7 @@ verus! {
         assert(p.msg is RslMessage2b);
         assert(p.src == sender);
         lemma_getsent2b_sender_index_witness(b, c, i, learner_idx, opn, sender, p);
+        lemma_getsent2b_message_shape_from_receive(b, c, i, learner_idx, opn, sender, ios, p);
         let sender_idx = GetReplicaIndex(p.src, c.config);
         assert(0 <= sender_idx < c.config.replica_ids.len());
         assert(sender == c.config.replica_ids[sender_idx]);
@@ -293,6 +305,8 @@ verus! {
         // In the else branch: p.msg->val_2b == candidate_learned_value, satisfying postcondition.
         lemma_getsent2b_receive_packet_was_sent(b, c, i, learner_idx, ios, p);
         assert(b[i].environment.sentPackets.contains(p));
+        assert(p.msg->opn_2b == opn);
+        assert(p.msg->bal_2b == s_prime.max_ballot_seen);
         assert(p.msg->val_2b == s_prime.unexecuted_learner_state[opn].candidate_learned_value);
         return (sender_idx, p);
     }
@@ -326,6 +340,179 @@ verus! {
         assert(match_ios_recv(LIoOp::Receive { r: p }, e.sentPackets));
         assert(e.sentPackets.contains(p));
         lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);
+    }
+
+    proof fn lemma_getsent2b_ballots_not_lt_each_way_implies_equal(a: Ballot, b: Ballot)
+        requires
+            !BalLt(a, b),
+            !BalLt(b, a),
+        ensures
+            a == b,
+    {
+        if a != b {
+            lemma_BalLtMiddle(a, b);
+            assert(false);
+        }
+    }
+
+    pub proof fn lemma_getsent2b_message_shape_from_learner_process2b(
+        s: LLearner,
+        s_prime: LLearner,
+        opn: OperationNumber,
+        sender: AbstractEndPoint,
+        p: RslPacket,
+    )
+        requires
+            p.msg is RslMessage2b,
+            p.src == sender,
+            LLearnerProcess2b(s, s_prime, p),
+            s_prime.unexecuted_learner_state.contains_key(opn),
+            s_prime.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender),
+            !(s_prime.max_ballot_seen == s.max_ballot_seen
+                && s_prime.unexecuted_learner_state == s.unexecuted_learner_state),
+            !(s.unexecuted_learner_state.contains_key(opn)
+                && s.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender)
+                && s_prime.unexecuted_learner_state[opn].candidate_learned_value
+                    == s.unexecuted_learner_state[opn].candidate_learned_value
+                && s_prime.max_ballot_seen == s.max_ballot_seen),
+        ensures
+            p.msg->opn_2b == opn,
+            p.msg->bal_2b == s_prime.max_ballot_seen,
+    {
+        let m = p.msg;
+        if !s.constants.all.config.replica_ids.contains(p.src) || BalLt(m->bal_2b, s.max_ballot_seen) {
+            assert(s_prime == s);
+            assert(false);
+        } else if BalLt(s.max_ballot_seen, m->bal_2b) {
+            let tup_ = LearnerTuple{
+                received_2b_message_senders: set![p.src],
+                candidate_learned_value: m->val_2b,
+            };
+            assert(s_prime == LLearner{
+                constants: s.constants,
+                max_ballot_seen: m->bal_2b,
+                unexecuted_learner_state: map![m->opn_2b => tup_],
+            });
+            if opn != m->opn_2b {
+                assert(!s_prime.unexecuted_learner_state.contains_key(opn));
+                assert(false);
+            }
+            assert(p.msg->opn_2b == opn);
+            assert(p.msg->bal_2b == s_prime.max_ballot_seen);
+        } else if !s.unexecuted_learner_state.contains_key(m->opn_2b) {
+            let tup_ = LearnerTuple{
+                received_2b_message_senders: set![p.src],
+                candidate_learned_value: m->val_2b,
+            };
+            assert(s_prime == LLearner{
+                constants: s.constants,
+                max_ballot_seen: m->bal_2b,
+                unexecuted_learner_state: s.unexecuted_learner_state.insert(m->opn_2b, tup_),
+            });
+            lemma_getsent2b_ballots_not_lt_each_way_implies_equal(m->bal_2b, s.max_ballot_seen);
+            assert(s_prime.max_ballot_seen == s.max_ballot_seen);
+            if opn != m->opn_2b {
+                assert(s_prime.unexecuted_learner_state[opn] == s.unexecuted_learner_state[opn]);
+                assert(s.unexecuted_learner_state.contains_key(opn));
+                assert(s.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender));
+                assert(
+                    s_prime.unexecuted_learner_state[opn].candidate_learned_value
+                        == s.unexecuted_learner_state[opn].candidate_learned_value
+                );
+                assert(s_prime.max_ballot_seen == s.max_ballot_seen);
+                assert(false);
+            }
+            assert(p.msg->opn_2b == opn);
+            assert(p.msg->bal_2b == s_prime.max_ballot_seen);
+        } else if s.unexecuted_learner_state[m->opn_2b].received_2b_message_senders.contains(p.src) {
+            assert(s_prime == s);
+            assert(false);
+        } else {
+            let tup = s.unexecuted_learner_state[m->opn_2b];
+            let tup_ = LearnerTuple{
+                received_2b_message_senders: tup.received_2b_message_senders + set![p.src],
+                candidate_learned_value: tup.candidate_learned_value,
+            };
+            assert(s_prime == LLearner{
+                constants: s.constants,
+                max_ballot_seen: s.max_ballot_seen,
+                unexecuted_learner_state: s.unexecuted_learner_state.insert(m->opn_2b, tup_),
+            });
+            if opn != m->opn_2b {
+                assert(s_prime.unexecuted_learner_state[opn] == s.unexecuted_learner_state[opn]);
+                assert(s.unexecuted_learner_state.contains_key(opn));
+                assert(s.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender));
+                assert(
+                    s_prime.unexecuted_learner_state[opn].candidate_learned_value
+                        == s.unexecuted_learner_state[opn].candidate_learned_value
+                );
+                assert(s_prime.max_ballot_seen == s.max_ballot_seen);
+                assert(false);
+            }
+            lemma_getsent2b_ballots_not_lt_each_way_implies_equal(m->bal_2b, s.max_ballot_seen);
+            assert(m->bal_2b == s.max_ballot_seen);
+            assert(s_prime.max_ballot_seen == s.max_ballot_seen);
+            assert(p.msg->opn_2b == opn);
+            assert(p.msg->bal_2b == s_prime.max_ballot_seen);
+        }
+    }
+
+    pub proof fn lemma_getsent2b_message_shape_from_receive(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        learner_idx: int,
+        opn: OperationNumber,
+        sender: AbstractEndPoint,
+        ios: Seq<RslIo>,
+        p: RslPacket,
+    )
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            0 <= learner_idx < b[i].replicas.len(),
+            b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state.contains_key(opn),
+            b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender),
+            !(b[i].replicas[learner_idx].replica.learner.max_ballot_seen
+                == b[i - 1].replicas[learner_idx].replica.learner.max_ballot_seen
+                && b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state
+                    == b[i - 1].replicas[learner_idx].replica.learner.unexecuted_learner_state),
+            !(b[i - 1].replicas[learner_idx].replica.learner.unexecuted_learner_state.contains_key(opn)
+                && b[i - 1].replicas[learner_idx].replica.learner.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender)
+                && b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state[opn].candidate_learned_value
+                    == b[i - 1].replicas[learner_idx].replica.learner.unexecuted_learner_state[opn].candidate_learned_value
+                && b[i].replicas[learner_idx].replica.learner.max_ballot_seen
+                    == b[i - 1].replicas[learner_idx].replica.learner.max_ballot_seen),
+            RslNextOneReplica(b[i - 1], b[i], learner_idx, ios),
+            b[i - 1].replicas[learner_idx].nextActionIndex == 0,
+            ios[0] is Receive,
+            ios[0]->r == p,
+            p.msg is RslMessage2b,
+            p.src == sender,
+        ensures
+            p.msg->opn_2b == opn,
+            p.msg->bal_2b == b[i].replicas[learner_idx].replica.learner.max_ballot_seen,
+    {
+        let sched = b[i - 1].replicas[learner_idx];
+        let sched_prime = b[i].replicas[learner_idx];
+        let s = sched.replica.learner;
+        let s_prime = sched_prime.replica.learner;
+
+        assert(LSchedulerNext(sched, sched_prime, ios));
+        assert(LReplicaNextProcessPacket(sched.replica, sched_prime.replica, ios));
+        assert(LReplicaNextProcessPacketWithoutReadingClock(sched.replica, sched_prime.replica, ios));
+        assert(LReplicaNextProcess2b(sched.replica, sched_prime.replica, p, ExtractSentPacketsFromIos(ios)));
+
+        let op_learnable = sched.replica.executor.ops_complete < p.msg->opn_2b
+            || (sched.replica.executor.ops_complete == p.msg->opn_2b
+                && sched.replica.executor.next_op_to_execute is OutstandingOpUnknown);
+        if !op_learnable {
+            assert(sched_prime.replica == sched.replica);
+            assert(s_prime == s);
+            assert(false);
+        }
+        assert(LLearnerProcess2b(s, s_prime, p));
+        lemma_getsent2b_message_shape_from_learner_process2b(s, s_prime, opn, sender, p);
     }
 
     pub proof fn lemma_getsent2b_sender_index_witness(

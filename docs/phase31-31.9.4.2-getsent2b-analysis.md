@@ -52,6 +52,20 @@ All temporary code edits were reverted; repository state remains on the prior ve
   - `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_getsent2b_sender_index_witness*' --rlimit 40`
   - Result: `1 verified, 0 errors`.
 
+## 31.9.4.2.c Completion (2026-03-12)
+- Added helper proofs in `src/protocol/RSL/common_proof/learner_state.rs`:
+  - `lemma_getsent2b_message_shape_from_learner_process2b`
+  - `lemma_getsent2b_message_shape_from_receive`
+- Approach:
+  - first derive `LLearnerProcess2b` for the final-branch receive packet from local scheduler/replica transition facts;
+  - then perform explicit `LLearnerProcess2b` branch analysis and rule out stutter branches by contradiction with final-branch negated recursion guards.
+- Resulting obligations discharged in the final branch:
+  - `p.msg->opn_2b == opn`
+  - `p.msg->bal_2b == s_prime.max_ballot_seen`
+- Focused verification passed:
+  - `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_getsent2b_message_shape_from_learner_process2b*' --rlimit 40`
+  - Result: `1 verified, 0 errors`.
+
 ## Decomposition Rationale
 To avoid broad proof context blow-up, split the work into small proof obligations:
 - 31.9.4.2.a: final-branch receive provenance + sentPackets transfer.

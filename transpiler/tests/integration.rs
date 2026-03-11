@@ -19304,3 +19304,51 @@ fn test_phase_31_9_4_2_b_sender_index_witness_helper_is_tracked_and_checked_in()
         );
     }
 }
+
+#[test]
+fn test_phase_31_9_4_2_c_message_shape_helpers_are_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.2.c**",
+        "[x] **31.9.4.2.c**",
+        "lemma_getsent2b_message_shape_from_learner_process2b",
+        "--verify-function '*lemma_getsent2b_message_shape_from_learner_process2b*' --rlimit 40",
+        "1 verified, 0 errors",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.2.c tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let learner_state_path = repo_root.join("src/protocol/RSL/common_proof/learner_state.rs");
+    let learner_state_src = std::fs::read_to_string(&learner_state_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read learner-state proof file {}: {}",
+            learner_state_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "pub proof fn lemma_getsent2b_message_shape_from_learner_process2b",
+        "pub proof fn lemma_getsent2b_message_shape_from_receive",
+        "assert(LReplicaNextProcess2b(sched.replica, sched_prime.replica, p, ExtractSentPacketsFromIos(ios)));",
+        "lemma_getsent2b_message_shape_from_learner_process2b(s, s_prime, opn, sender, p);",
+        "lemma_getsent2b_message_shape_from_receive(b, c, i, learner_idx, opn, sender, ios, p);",
+        "assert(p.msg->opn_2b == opn);",
+        "assert(p.msg->bal_2b == s_prime.max_ballot_seen);",
+    ] {
+        assert!(
+            learner_state_src.contains(required_fragment),
+            "learner-state proof file {} must include 31.9.4.2.c message-shape fragment `{}`",
+            learner_state_path.display(),
+            required_fragment
+        );
+    }
+}
