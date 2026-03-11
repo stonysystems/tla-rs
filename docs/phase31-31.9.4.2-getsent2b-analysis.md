@@ -66,9 +66,25 @@ All temporary code edits were reverted; repository state remains on the prior ve
   - `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_getsent2b_message_shape_from_learner_process2b*' --rlimit 40`
   - Result: `1 verified, 0 errors`.
 
+## 31.9.4.2.d Completion (2026-03-12)
+- Plan:
+  - integrate 2.a/2.b/2.c helper obligations directly in the final branch;
+  - keep recursion stable by using lexicographic decreases for the main/helper proof cycle;
+  - isolate the expensive value-mismatch contradiction into a dedicated helper.
+- Implementation in `src/protocol/RSL/common_proof/learner_state.rs`:
+  - removed `#[verifier(external_body)]` from `lemma_GetSent2bMessageFromLearnerState`;
+  - added `lemma_getsent2b_value_matches_candidate` and called it from the final branch;
+  - added decreases pair to break recursion-cycle ambiguity:
+    - `lemma_GetSent2bMessageFromLearnerState`: `decreases i, 1int`
+    - `lemma_getsent2b_value_matches_candidate`: `decreases i, 0int`
+  - strengthened `lemma_getsent2b_message_shape_from_receive` ensures to return the needed `LLearnerProcess2b(...)` fact and reuse it in the final-branch value proof.
+- Focused verification passed:
+  - `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_GetSent2bMessageFromLearnerState*' --rlimit 40`
+  - Result: `1 verified, 0 errors`.
+
 ## Decomposition Rationale
 To avoid broad proof context blow-up, split the work into small proof obligations:
 - 31.9.4.2.a: final-branch receive provenance + sentPackets transfer.
 - 31.9.4.2.b: sender index witness obligations.
 - 31.9.4.2.c: opn/bal equalities via explicit `LLearnerProcess2b` branch split.
-- 31.9.4.2.d: integrate and re-run focused check at `--rlimit 40`.
+- 31.9.4.2.d: integrate and re-run focused check at `--rlimit 40` (completed 2026-03-12).

@@ -19127,7 +19127,7 @@ fn test_phase_31_9_4_leaf_breakdown_is_explicit_and_blockers_logged() {
         "common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`",
         "nextActionIndex == 0",
         "lemma_LLearnerProcess2b_preserves_nonempty_sender_sets",
-        "**Remaining 20 external_body**",
+        "**Remaining 19 external_body**",
         "common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent`",
         "`--rlimit 80` timed out at 240s",
     ] {
@@ -19347,6 +19347,69 @@ fn test_phase_31_9_4_2_c_message_shape_helpers_are_tracked_and_checked_in() {
         assert!(
             learner_state_src.contains(required_fragment),
             "learner-state proof file {} must include 31.9.4.2.c message-shape fragment `{}`",
+            learner_state_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_31_9_4_2_d_integrates_helpers_and_removes_external_body() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.2.d**",
+        "[x] **31.9.4.2.d**",
+        "lemma_getsent2b_value_matches_candidate",
+        "--verify-function '*lemma_GetSent2bMessageFromLearnerState*' --rlimit 40",
+        "1 verified, 0 errors",
+        "**Remaining 19 external_body**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.2.d tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let learner_state_path = repo_root.join("src/protocol/RSL/common_proof/learner_state.rs");
+    let learner_state_src = std::fs::read_to_string(&learner_state_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read learner-state proof file {}: {}",
+            learner_state_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        learner_state_src.contains("pub proof fn lemma_GetSent2bMessageFromLearnerState"),
+        "learner-state proof file {} must contain lemma_GetSent2bMessageFromLearnerState",
+        learner_state_path.display()
+    );
+    assert!(
+        !learner_state_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_GetSent2bMessageFromLearnerState"
+        ),
+        "learner-state proof file {} must not keep lemma_GetSent2bMessageFromLearnerState as external_body",
+        learner_state_path.display()
+    );
+
+    for required_fragment in [
+        "decreases i, 1int,",
+        "pub proof fn lemma_getsent2b_value_matches_candidate",
+        "decreases i, 0int,",
+        "lemma_getsent2b_value_matches_candidate(",
+        "lemma_getsent2b_message_shape_from_receive(b, c, i, learner_idx, opn, sender, ios, p);",
+        "lemma_getsent2b_receive_packet_was_sent(b, c, i, learner_idx, ios, p);",
+        "LLearnerProcess2b(",
+    ] {
+        assert!(
+            learner_state_src.contains(required_fragment),
+            "learner-state proof file {} must include 31.9.4.2.d integration fragment `{}`",
             learner_state_path.display(),
             required_fragment
         );
