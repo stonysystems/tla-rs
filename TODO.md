@@ -9513,7 +9513,9 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
       - [x] **31.9.4.4**: `common_proof/message2b.rs` — remove `external_body` from `lemma_2bMessageImplicationsForCAcceptor` and discharge both "old packet" and "new packet" branches. [2026-03-12] Scope check: <500 LOC touched, no extra decomposition required. Existing lemma body already discharged both branches; removal of `#[verifier(external_body)]` now verifies directly at focused rlimit 40:
         `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2b --verify-function '*lemma_2bMessageImplicationsForCAcceptor*' --rlimit 40`
         ⇒ `1 verified, 0 errors`.
-      - [ ] **31.9.4.5**: `common_proof/message1b.rs` — remove `external_body` from `lemma_1bMessageWithoutOpnImplicationsFor2b`.
+      - [x] **31.9.4.5**: `common_proof/message1b.rs` — remove `external_body` from `lemma_1bMessageWithoutOpnImplicationsFor2b`. [2026-03-12] Scope check: <500 LOC touched, no extra decomposition required. Reworked the proof to use existing `packet_sending` action lemmas directly (`lemma_ActionThatSends1bIsProcess1a`, `lemma_ActionThatSends2bIsProcess2a`) and trimmed solver-heavy environment scaffolding; added explicit old/new packet branch contradictions by equating `RslNextOneReplica` host-IO witnesses for same-source packets. Focused verification passes:
+        `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message1b --verify-function '*lemma_1bMessageWithoutOpnImplicationsFor2b*' --rlimit 40`
+        ⇒ `1 verified, 0 errors`.
       - [ ] **31.9.4.6**: `common_proof/message1b.rs` — remove `external_body` from `lemma_1bMessageWithOpnImplicationsFor2b`.
       - [ ] **31.9.4.7**: `common_proof/message2a.rs` — remove `external_body` from `lemma_Find2aThatCausedVote` and `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`.
       - [ ] **31.9.4.8**: `common_proof/chosen.rs` — remove `external_body` from `lemma_DecidedOperationWasChosen` and `collect_2b_messages`.
@@ -9522,12 +9524,12 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
       - [ ] **31.9.4.11**: `refinement_proof/execution.rs` — remove `external_body` from all remaining 6 execution/refinement lemmas.
       - [ ] **31.9.4.12**: Full RSL proof sweep with both modules enabled; confirm all 31.9.4 leaves are complete and update the remaining-count summary.
     - **Reference**: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet codebase at https://github.com/microsoft/Ironclad/tree/main/ironfleet under `protocol/RSL/` proof files. Use these as reference for proof structure and intermediate assertions.
-    - **Remaining 17 external_body** (down from 22 after fixing `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`, `lemma_Received2bMessageSendersAlwaysNonempty`, `lemma_GetSent2bMessageFromLearnerState`, `lemma_VoteWithOpnImplies2aSent`, and `lemma_2bMessageImplicationsForCAcceptor`):
+    - **Remaining 16 external_body** (down from 22 after fixing `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`, `lemma_Received2bMessageSendersAlwaysNonempty`, `lemma_GetSent2bMessageFromLearnerState`, `lemma_VoteWithOpnImplies2aSent`, `lemma_2bMessageImplicationsForCAcceptor`, and `lemma_1bMessageWithoutOpnImplicationsFor2b`):
       - `refinement_proof/execution.rs` (6): `lemma_AppStateAlwaysValid`, `lemma_TransferredStateAlwaysValid`, `lemma_ReplySentIsAllowed`, `lemma_ReplyInReplyCacheIsAllowed`, `lemma_ReplyInAppStateSupplyIsAllowed`, `lemma_ReplySentViaExecutionIsAllowed`
       - `refinement_proof/requests.rs` (3): `lemma_RequestInRequestQueueHasCorrespondingRequestMessage`, `lemma_RequestIn2aMessageHasCorrespondingRequestMessage`, `lemma_DecidedRequestWasSentByClient`
       - `refinement_proof/refinement.rs` (2): `lemma_GetBehaviorRefinementForBehaviorOfOneStep`, `lemma_GetBehaviorRefinement`
       - `common_proof/chosen.rs` (2): `lemma_DecidedOperationWasChosen`, `collect_2b_messages`
-      - `common_proof/message1b.rs` (2): `lemma_1bMessageWithoutOpnImplicationsFor2b`, `lemma_1bMessageWithOpnImplicationsFor2b`
+      - `common_proof/message1b.rs` (1): `lemma_1bMessageWithOpnImplicationsFor2b`
       - `common_proof/message2a.rs` (2): `lemma_Find2aThatCausedVote`, `lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality`
       - ~~`common_proof/message2b.rs`~~: 0 (both lemmas pass)
       - ~~`common_proof/packet_sending.rs`~~: 0 (all 6 pass)
