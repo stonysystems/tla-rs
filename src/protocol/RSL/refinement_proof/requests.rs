@@ -20,6 +20,7 @@ use crate::protocol::RSL::learner::*;
 use crate::protocol::RSL::proposer::*;
 use crate::protocol::RSL::replica::*;
 use crate::protocol::RSL::types::*;
+use crate::protocol::common::upper_bound::*;
 use vstd::prelude::*;
 use vstd::{map::*, modes::*, prelude::*, seq::*, seq_lib::*, *};
 use vstd::{set::*, set_lib::*};
@@ -34,6 +35,87 @@ use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
 
 verus! {
+    pub proof fn lemma_RequestInSubrangeImpliesRequestInOriginal(
+        s: Seq<Request>,
+        start: int,
+        end: int,
+        req: Request,
+    )
+        requires
+            0 <= start <= end <= s.len(),
+            s.subrange(start, end).contains(req),
+        ensures
+            s.contains(req),
+    {
+        let idx = choose |idx: int| 0 <= idx < s.subrange(start, end).len() && s.subrange(start, end)[idx] == req;
+        assert(0 <= start + idx < end);
+        assert(s[start + idx] == req);
+        assert(s.contains(req));
+    }
+
+    pub proof fn lemma_RequestInQueueAppendComesFromAppendedElement(
+        s: Seq<Request>,
+        req: Request,
+        val: Request,
+    )
+        requires
+            !s.contains(req),
+            (s + seq![val]).contains(req),
+        ensures
+            req == val,
+    {
+        SeqConcatenate(s, seq![val]);
+        assert(seq![val].contains(req));
+        let idx = choose |idx: int| 0 <= idx < seq![val].len() && seq![val][idx] == req;
+        assert(idx == 0);
+        assert(req == val);
+    }
+
+    pub proof fn lemma_RequestInQueueAfterMaybeNominateValueComesFromPreviousQueue(
+        s: LProposer,
+        s_: LProposer,
+        clock: int,
+        log_truncation_point: int,
+        sent_packets: Seq<RslPacket>,
+        req: Request,
+    )
+        requires
+            LProposerMaybeNominateValueAndSend2a(s, s_, clock, log_truncation_point, sent_packets),
+            s_.request_queue.contains(req),
+        ensures
+            s.request_queue.contains(req),
+    {
+        if !LProposerCanNominateUsingOperationNumber(s, log_truncation_point, s.next_operation_number_to_propose) {
+            assert(s_ == s);
+        } else if !LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose) {
+            assert(LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets));
+            assert(s_.request_queue == s.request_queue);
+        } else if LExistsAcceptorHasProposalLargeThanOpn(s.received_1b_packets, s.next_operation_number_to_propose)
+            || s.request_queue.len() >= s.constants.all.params.max_batch_size
+            || (s.request_queue.len() > 0
+                && s.incomplete_batch_timer is IncompleteBatchTimerOn
+                && clock >= s.incomplete_batch_timer->when)
+        {
+            assert(LProposerNominateNewValueAndSend2a(s, s_, clock, log_truncation_point, sent_packets));
+            let batch_size = if s.request_queue.len() <= s.constants.all.params.max_batch_size || s.constants.all.params.max_batch_size < 0 {
+                s.request_queue.len() as int
+            } else {
+                s.constants.all.params.max_batch_size
+            };
+            assert(s_.request_queue == s.request_queue.subrange(batch_size, s.request_queue.len() as int));
+            lemma_RequestInSubrangeImpliesRequestInOriginal(
+                s.request_queue,
+                batch_size,
+                s.request_queue.len() as int,
+                req,
+            );
+        } else if s.request_queue.len() > 0 && s.incomplete_batch_timer is IncompleteBatchTimerOff {
+            assert(s_.request_queue == s.request_queue);
+        } else {
+            assert(s_ == s);
+        }
+    }
+
     pub proof fn lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -162,7 +244,6 @@ verus! {
         arbitrary()
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_RequestInRequestQueueHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -190,6 +271,8 @@ verus! {
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_AssumptionsMakeValidTransition(b, c, i-1);
 
+        let sched_prev = b[i - 1].replicas[idx];
+        let sched_cur = b[i].replicas[idx];
         let s_prev = b[i-1].replicas[idx].replica.proposer;
         let s_cur = b[i].replicas[idx].replica.proposer;
         let nextActionIndex = b[i-1].replicas[idx].nextActionIndex;
@@ -212,11 +295,21 @@ verus! {
         }
 
         let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i-1, idx);
+        assert(RslNextOneReplica(b[i - 1], b[i], idx, ios));
+        assert(LSchedulerNext(sched_prev, sched_cur, ios));
+
         if nextActionIndex == 1
         {
             // Isolate the "enter new view" queue-reset branch: any newly introduced queue
             // request must come from election-state request sets.
+            assert(LReplicaNoReceiveNext(sched_prev.replica, nextActionIndex, sched_cur.replica, ios));
             let sent_packets = ExtractSentPacketsFromIos(ios);
+            assert(LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(
+                sched_prev.replica,
+                sched_cur.replica,
+                sent_packets,
+            ));
+            assert(LProposerMaybeEnterNewViewAndSend1a(s_prev, s_cur, sent_packets));
             lemma_RequestInQueueAfterMaybeEnterNewViewComesFromElectionState(s_prev, s_cur, sent_packets, req);
             assert(false);
             return arbitrary();
@@ -224,18 +317,251 @@ verus! {
 
         if nextActionIndex != 0
         {
-            // Remaining no-receive branches do not append a fresh request packet directly;
-            // keep these isolated from the process-request append obligation.
+            assert(LReplicaNoReceiveNext(sched_prev.replica, nextActionIndex, sched_cur.replica, ios));
+
+            if nextActionIndex == 3 {
+                let sent_packets = ExtractSentPacketsFromIos(ios);
+                assert(LReplicaNextReadClockMaybeNominateValueAndSend2a(
+                    sched_prev.replica,
+                    sched_cur.replica,
+                    SpontaneousClock(ios),
+                    sent_packets,
+                ));
+                assert(LProposerMaybeNominateValueAndSend2a(
+                    s_prev,
+                    s_cur,
+                    SpontaneousClock(ios).t,
+                    sched_prev.replica.acceptor.log_truncation_point,
+                    sent_packets,
+                ));
+                lemma_RequestInQueueAfterMaybeNominateValueComesFromPreviousQueue(
+                    s_prev,
+                    s_cur,
+                    SpontaneousClock(ios).t,
+                    sched_prev.replica.acceptor.log_truncation_point,
+                    sent_packets,
+                    req,
+                );
+                assert(s_prev.request_queue.contains(req));
+                assert(false);
+            }
+
+            if nextActionIndex == 8 {
+                assert(LReplicaNextReadClockCheckForQuorumOfViewSuspicions(
+                    sched_prev.replica,
+                    sched_cur.replica,
+                    SpontaneousClock(ios),
+                    ExtractSentPacketsFromIos(ios),
+                ));
+                assert(LProposerCheckForQuorumOfViewSuspicions(s_prev, s_cur, SpontaneousClock(ios).t));
+                if BalLt(s_prev.election_state.current_view, s_cur.election_state.current_view) {
+                    assert(s_cur.request_queue == Seq::<Request>::empty());
+                    assert(false);
+                } else {
+                    assert(s_cur.request_queue == s_prev.request_queue);
+                    assert(s_prev.request_queue.contains(req));
+                    assert(false);
+                }
+            }
+
+            if nextActionIndex == 2 {
+                assert(LReplicaNextSpontaneousMaybeEnterPhase2(
+                    sched_prev.replica,
+                    sched_cur.replica,
+                    ExtractSentPacketsFromIos(ios),
+                ));
+                assert(s_cur.request_queue == s_prev.request_queue);
+                assert(s_prev.request_queue.contains(req));
+                assert(false);
+            } else if nextActionIndex == 4 {
+                assert(LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(
+                    sched_prev.replica,
+                    sched_cur.replica,
+                    ExtractSentPacketsFromIos(ios),
+                ));
+                assert(s_cur.request_queue == s_prev.request_queue);
+                assert(s_prev.request_queue.contains(req));
+                assert(false);
+            } else if nextActionIndex == 5 {
+                assert(LReplicaNextSpontaneousMaybeMakeDecision(
+                    sched_prev.replica,
+                    sched_cur.replica,
+                    ExtractSentPacketsFromIos(ios),
+                ));
+                assert(s_cur.request_queue == s_prev.request_queue);
+                assert(s_prev.request_queue.contains(req));
+                assert(false);
+            } else if nextActionIndex == 6 {
+                assert(LReplicaNextSpontaneousMaybeExecute(
+                    sched_prev.replica,
+                    sched_cur.replica,
+                    ExtractSentPacketsFromIos(ios),
+                ));
+                assert(s_cur.request_queue == s_prev.request_queue);
+                assert(s_prev.request_queue.contains(req));
+                assert(false);
+            } else if nextActionIndex == 7 {
+                assert(LReplicaNextReadClockCheckForViewTimeout(
+                    sched_prev.replica,
+                    sched_cur.replica,
+                    SpontaneousClock(ios),
+                    ExtractSentPacketsFromIos(ios),
+                ));
+                assert(s_cur.request_queue == s_prev.request_queue);
+                assert(s_prev.request_queue.contains(req));
+                assert(false);
+            } else {
+                assert(nextActionIndex == 9);
+                assert(LReplicaNextReadClockMaybeSendHeartbeat(
+                    sched_prev.replica,
+                    sched_cur.replica,
+                    SpontaneousClock(ios),
+                    ExtractSentPacketsFromIos(ios),
+                ));
+                assert(s_cur.request_queue == s_prev.request_queue);
+                assert(s_prev.request_queue.contains(req));
+                assert(false);
+            }
+
             assert(false);
             return arbitrary();
         }
 
-        // Remaining path is the packet-processing action. Keep the append obligation localized.
-        if ios[0] is Receive && ios[0]->r.msg is RslMessageRequest
-        {
-            let p = ios[0]->r;
-            assert(IsValidLIoOp(ios[0], c.config.replica_ids[idx], b[i-1].environment));
+        assert(nextActionIndex == 0);
+        assert(LReplicaNextProcessPacket(sched_prev.replica, sched_cur.replica, ios));
+
+        if ios[0] is TimeoutReceive {
+            assert(s_cur.request_queue == s_prev.request_queue);
+            assert(false);
+        }
+        assert(ios[0] is Receive);
+        let p = ios[0]->r;
+
+        if p.msg is RslMessageHeartbeat {
+            assert(LReplicaNextReadClockAndProcessPacket(sched_prev.replica, sched_cur.replica, ios));
+            assert(LReplicaNextProcessHeartbeat(
+                sched_prev.replica,
+                sched_cur.replica,
+                p,
+                ios[1]->t,
+                ExtractSentPacketsFromIos(ios),
+            ));
+            if BalLt(s_prev.election_state.current_view, s_cur.election_state.current_view) {
+                assert(s_cur.request_queue == Seq::<Request>::empty());
+                assert(false);
+            } else {
+                assert(s_cur.request_queue == s_prev.request_queue);
+                assert(s_prev.request_queue.contains(req));
+                assert(false);
+            }
+        }
+
+        assert(LReplicaNextProcessPacketWithoutReadingClock(sched_prev.replica, sched_cur.replica, ios));
+
+        if p.msg is RslMessageRequest {
+            assert(LReplicaNextProcessRequest(
+                sched_prev.replica,
+                sched_cur.replica,
+                p,
+                ExtractSentPacketsFromIos(ios),
+            ));
+            if sched_prev.replica.executor.reply_cache.contains_key(p.src)
+                && p.msg->seqno_req <= sched_prev.replica.executor.reply_cache[p.src].seqno
+            {
+                assert(sched_cur.replica == sched_prev.replica);
+                assert(false);
+            }
+            assert(LProposerProcessRequest(s_prev, s_cur, p));
+            let req_from_packet = Request{client:p.src, seqno:p.msg->seqno_req, request:p.msg->val};
+            if !(s_prev.current_state != 0
+                && (!s_prev.highest_seqno_requested_by_client_this_view.contains_key(req_from_packet.client)
+                    || req_from_packet.seqno > s_prev.highest_seqno_requested_by_client_this_view[req_from_packet.client]))
+            {
+                assert(s_cur.request_queue == s_prev.request_queue);
+                assert(false);
+            }
+            assert(s_cur.request_queue == s_prev.request_queue + seq![req_from_packet]);
+            lemma_RequestInQueueAppendComesFromAppendedElement(s_prev.request_queue, req, req_from_packet);
+            lemma_PacketProcessedImpliesPacketSent(b[i - 1], b[i], idx, ios, p);
+            lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);
+            let e = b[i - 1].environment;
+            assert(LEnvironment_Next(e, b[i].environment));
+            assert(e.nextStep is LEnvStepHostIos);
+            assert(IsValidLEnvStep(e, e.nextStep));
+            assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
+            assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
+            assert(e.nextStep->actor == c.config.replica_ids[idx]);
+            assert(0 <= idx < c.config.replica_ids.len());
+            assert(p.dst == e.nextStep->actor);
+            assert(c.config.replica_ids.contains(p.dst));
             return p;
+        }
+
+        if p.msg is RslMessageInvalid {
+            assert(LReplicaNextProcessInvalid(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            assert(s_cur.request_queue == s_prev.request_queue);
+            assert(false);
+        } else if p.msg is RslMessage1a {
+            assert(LReplicaNextProcess1a(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            assert(s_cur.request_queue == s_prev.request_queue);
+            assert(false);
+        } else if p.msg is RslMessage1b {
+            assert(LReplicaNextProcess1b(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            if sched_prev.replica.constants.all.config.replica_ids.contains(p.src)
+                && p.msg->bal_1b == sched_prev.replica.proposer.max_ballot_i_sent_1a
+                && sched_prev.replica.proposer.current_state == 1
+                && (forall |other_packet:RslPacket| sched_prev.replica.proposer.received_1b_packets.contains(other_packet) ==> other_packet.src != p.src)
+            {
+                assert(s_cur.request_queue == s_prev.request_queue);
+            } else {
+                assert(s_cur == s_prev);
+            }
+            assert(false);
+        } else if p.msg is RslMessageStartingPhase2 {
+            assert(LReplicaNextProcessStartingPhase2(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            assert(s_cur.request_queue == s_prev.request_queue);
+            assert(false);
+        } else if p.msg is RslMessage2a {
+            assert(LReplicaNextProcess2a(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            if sched_prev.replica.acceptor.constants.all.config.replica_ids.contains(p.src)
+                && BalLeq(sched_prev.replica.acceptor.max_bal, p.msg->bal_2a)
+                && LeqUpperBound(p.msg->opn_2a, sched_prev.replica.acceptor.constants.all.params.max_integer_val)
+            {
+                assert(s_cur.request_queue == s_prev.request_queue);
+            } else {
+                assert(s_cur == s_prev);
+            }
+            assert(false);
+        } else if p.msg is RslMessage2b {
+            assert(LReplicaNextProcess2b(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            let op_learnable = sched_prev.replica.executor.ops_complete < p.msg->opn_2b
+                || (sched_prev.replica.executor.ops_complete == p.msg->opn_2b
+                    && sched_prev.replica.executor.next_op_to_execute is OutstandingOpUnknown);
+            if op_learnable {
+                assert(s_cur.request_queue == s_prev.request_queue);
+            } else {
+                assert(s_cur == s_prev);
+            }
+            assert(false);
+        } else if p.msg is RslMessageReply {
+            assert(LReplicaNextProcessReply(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            assert(s_cur == s_prev);
+            assert(false);
+        } else if p.msg is RslMessageAppStateRequest {
+            assert(LReplicaNextProcessAppStateRequest(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            assert(s_cur.request_queue == s_prev.request_queue);
+            assert(false);
+        } else {
+            assert(p.msg is RslMessageAppStateSupply);
+            assert(LReplicaNextProcessAppStateSupply(sched_prev.replica, sched_cur.replica, p, ExtractSentPacketsFromIos(ios)));
+            if sched_prev.replica.executor.constants.all.config.replica_ids.contains(p.src)
+                && p.msg->opn_state_supply > sched_prev.replica.executor.ops_complete
+            {
+                assert(s_cur.request_queue == s_prev.request_queue);
+            } else {
+                assert(s_cur == s_prev);
+            }
+            assert(false);
         }
 
         assert(false);
