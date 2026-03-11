@@ -241,7 +241,6 @@ verus! {
     }
 
 
-    #[verifier(external_body)]
     #[verifier::rlimit(100)]
     pub proof fn lemma_2bMessageImplicationsForCAcceptor(
         b: Behavior<RslState>,

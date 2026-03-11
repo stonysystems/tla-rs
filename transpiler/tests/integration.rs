@@ -19127,7 +19127,7 @@ fn test_phase_31_9_4_leaf_breakdown_is_explicit_and_blockers_logged() {
         "common_proof/learner_state.rs` — remove `external_body` from `lemma_Received2bMessageSendersAlwaysNonempty`",
         "nextActionIndex == 0",
         "lemma_LLearnerProcess2b_preserves_nonempty_sender_sets",
-        "**Remaining 18 external_body**",
+        "**Remaining 17 external_body**",
         "common_proof/message2b.rs` — remove `external_body` from `lemma_VoteWithOpnImplies2aSent`",
         "`--rlimit 80` timed out at 240s",
     ] {
@@ -19366,7 +19366,7 @@ fn test_phase_31_9_4_2_d_integrates_helpers_and_removes_external_body() {
         "lemma_getsent2b_value_matches_candidate",
         "--verify-function '*lemma_GetSent2bMessageFromLearnerState*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 18 external_body**",
+        "**Remaining 17 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19429,7 +19429,7 @@ fn test_phase_31_9_4_3_votewithopn_leaf_is_tracked_and_checked_in() {
         "lemma_VoteWithOpnImplies2aSent",
         "--verify-function '*lemma_VoteWithOpnImplies2aSent*' --rlimit 40",
         "1 verified, 0 errors",
-        "**Remaining 18 external_body**",
+        "**Remaining 17 external_body**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -19465,4 +19465,63 @@ fn test_phase_31_9_4_3_votewithopn_leaf_is_tracked_and_checked_in() {
         "message2b proof file {} must route 31.9.4.3 through lemma_Find2aThatCausedVote",
         message2b_path.display()
     );
+}
+
+#[test]
+fn test_phase_31_9_4_4_acceptor_implication_leaf_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.4**",
+        "[x] **31.9.4.4**",
+        "lemma_2bMessageImplicationsForCAcceptor",
+        "--verify-function '*lemma_2bMessageImplicationsForCAcceptor*' --rlimit 40",
+        "1 verified, 0 errors",
+        "**Remaining 17 external_body**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.4 tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2b_path = repo_root.join("src/protocol/RSL/common_proof/message2b.rs");
+    let message2b_src = std::fs::read_to_string(&message2b_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2b proof file {}: {}",
+            message2b_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        message2b_src.contains("pub proof fn lemma_2bMessageImplicationsForCAcceptor"),
+        "message2b proof file {} must contain lemma_2bMessageImplicationsForCAcceptor",
+        message2b_path.display()
+    );
+    assert!(
+        !message2b_src.contains(
+            "#[verifier(external_body)]\n    #[verifier::rlimit(100)]\n    pub proof fn lemma_2bMessageImplicationsForCAcceptor"
+        ),
+        "message2b proof file {} must not keep lemma_2bMessageImplicationsForCAcceptor as external_body",
+        message2b_path.display()
+    );
+    for required_fragment in [
+        "#[verifier::rlimit(100)]",
+        "if b[i - 1].environment.sentPackets.contains(p) {",
+        "let (acceptor_idx, ios) = lemma_ActionThatSends2bIsProcess2a(b[i - 1], b[i], p);",
+        "assert(recv.msg is RslMessage2a);",
+    ] {
+        assert!(
+            message2b_src.contains(required_fragment),
+            "message2b proof file {} must include 31.9.4.4 branch fragment `{}`",
+            message2b_path.display(),
+            required_fragment
+        );
+    }
 }
