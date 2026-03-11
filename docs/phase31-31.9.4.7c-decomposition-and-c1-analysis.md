@@ -186,3 +186,46 @@ Conclusion:
 - Remaining pressure is in common-body obligations and/or branch-dispatch scaffolding, so c.3.c
   is decomposed to first split shared obligations into separately verified helpers before the
   final no-external attempt.
+
+## Completed in 31.9.4.7.c.3.c.2 (Shared-Obligation Helperization)
+
+Goal: split the remaining common-body obligations from
+`lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality` into separately verified
+helpers before the final no-external attempt.
+
+Added:
+
+- `lemma_2a_old_old_packets_reduce_to_previous_step`
+- `lemma_2a_new_packet_action_dispatch_witness`
+
+Helper roles:
+
+1. `lemma_2a_old_old_packets_reduce_to_previous_step` isolates old-old branch precondition transfer
+   (`b[i-1].sent.contains(p2) ==> b[i-1].sent.contains(p1)`) and the induction call on `i-1`.
+2. `lemma_2a_new_packet_action_dispatch_witness` isolates `ActionThatSends2a` witness extraction,
+   `ExtractSentPacketsFromIos` packet membership, and the `LProposerMaybeNominateValueAndSend2a`
+   context needed by the both-new branch.
+
+The target lemma now dispatches through these helpers rather than carrying those obligations inline.
+
+Focused helper checks:
+
+`timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2a_old_old_packets_reduce_to_previous_step*' --rlimit 40 --triggers-mode silent`
+
+Result:
+
+`1 verified, 0 errors`
+
+`timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2a_new_packet_action_dispatch_witness*' --rlimit 40 --triggers-mode silent`
+
+Result:
+
+`1 verified, 0 errors`
+
+Integration-stability check (target lemma still external at this leaf):
+
+`timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::message2a --verify-function '*lemma_2aMessagesFromSameBallotAndOperationMatchWithoutLossOfGenerality*' --rlimit 40 --triggers-mode silent`
+
+Result:
+
+`0 verified, 0 errors`

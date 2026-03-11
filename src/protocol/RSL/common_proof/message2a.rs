@@ -544,6 +544,86 @@ verus! {
         }
     }
 
+    pub proof fn lemma_2a_old_old_packets_reduce_to_previous_step(
+        b:Behavior<RslState>,
+        c:LConstants,
+        i:int,
+        p1:RslPacket,
+        p2:RslPacket,
+    )
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            b[i].environment.sentPackets.contains(p1),
+            b[i].environment.sentPackets.contains(p2),
+            c.config.replica_ids.contains(p1.src),
+            c.config.replica_ids.contains(p2.src),
+            p1.msg is RslMessage2a,
+            p2.msg is RslMessage2a,
+            p1.msg->opn_2a == p2.msg->opn_2a,
+            p1.msg->bal_2a == p2.msg->bal_2a,
+            b[i - 1].environment.sentPackets.contains(p2),
+            b[i - 1].environment.sentPackets.contains(p2) ==> b[i - 1].environment.sentPackets.contains(p1),
+        ensures
+            b[i - 1].environment.sentPackets.contains(p1),
+            p1.msg->val_2a == p2.msg->val_2a,
+    {
+        assert(b[i - 1].environment.sentPackets.contains(p1));
+        lemma_2aMessagesFromSameBallotAndOperationMatch(b, c, i - 1, p1, p2);
+    }
+
+    pub proof fn lemma_2a_new_packet_action_dispatch_witness(
+        b:Behavior<RslState>,
+        c:LConstants,
+        i:int,
+        p:RslPacket,
+    ) -> (rc:(int, Seq<RslIo>, Seq<RslPacket>))
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            b[i].environment.sentPackets.contains(p),
+            !b[i - 1].environment.sentPackets.contains(p),
+            c.config.replica_ids.contains(p.src),
+            p.msg is RslMessage2a,
+        ensures
+            ({
+                let proposer_idx = rc.0;
+                let ios = rc.1;
+                let pkts = rc.2;
+                &&& ios.contains(LIoOp::Send{s:p})
+                &&& pkts == ExtractSentPacketsFromIos(ios)
+                &&& pkts.contains(p)
+                &&& LProposerMaybeNominateValueAndSend2a(
+                    b[i - 1].replicas[proposer_idx].replica.proposer,
+                    b[i].replicas[proposer_idx].replica.proposer,
+                    SpontaneousClock(ios).t,
+                    b[i - 1].replicas[proposer_idx].replica.acceptor.log_truncation_point,
+                    pkts,
+                )
+            }),
+    {
+        lemma_AssumptionsMakeValidTransition(b, c, i - 1);
+        lemma_ConstantsAllConsistent(b, c, i);
+        lemma_ConstantsAllConsistent(b, c, i - 1);
+
+        let (proposer_idx, ios) = lemma_ActionThatSends2aIsMaybeNominateValueAndSend2a(
+            b[i - 1],
+            b[i],
+            p,
+        );
+        let pkts = ExtractSentPacketsFromIos(ios);
+        lemma_ExtractSentPacketsFromIos(ios);
+        assert(pkts.contains(p));
+        assert(LProposerMaybeNominateValueAndSend2a(
+            b[i - 1].replicas[proposer_idx].replica.proposer,
+            b[i].replicas[proposer_idx].replica.proposer,
+            SpontaneousClock(ios).t,
+            b[i - 1].replicas[proposer_idx].replica.acceptor.log_truncation_point,
+            pkts,
+        ));
+        (proposer_idx, ios, pkts)
+    }
+
     pub proof fn lemma_2a_old_packet_new_packet_same_ballot_opn_is_impossible(
         b:Behavior<RslState>,
         c:LConstants,
@@ -680,20 +760,19 @@ verus! {
 
         if b[i-1].environment.sentPackets.contains(p2)
         {
-          // Both packets had already been sent by i-1, so we induction.
-          lemma_2aMessagesFromSameBallotAndOperationMatch(b, c, i-1, p1, p2);
+          // Both packets had already been sent by i-1, so transfer preconditions and induct.
+          lemma_2a_old_old_packets_reduce_to_previous_step(b, c, i, p1, p2);
           assert(p1.msg->val_2a == p2.msg->val_2a);
           return;
         }
 
-        let (proposer_idx, ios) = lemma_ActionThatSends2aIsMaybeNominateValueAndSend2a(b[i-1], b[i], p2);
+        let (proposer_idx, ios, pkts) = lemma_2a_new_packet_action_dispatch_witness(b, c, i, p2);
 
         if !b[i-1].environment.sentPackets.contains(p1)
         {
           // Both packets were sent in step i-1→i, so they're both in ios.
           assert(ios.contains(LIoOp::Send{s:p1}));
           assert(ios.contains(LIoOp::Send{s:p2}));
-          let pkts = ExtractSentPacketsFromIos(ios);
           lemma_ExtractSentPacketsFromIos(ios);
           assert(pkts.contains(p1));
           assert(pkts.contains(p2));

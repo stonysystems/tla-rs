@@ -20117,7 +20117,6 @@ fn test_phase_31_9_4_7_c_3_c_1_branch_isolation_probe_is_tracked_and_decomposed(
         "Probe B (old/new branch replaced with temporary `assert(false)`)",
         "Conclusion: no single branch elimination removed the rlimit wall",
         "**31.9.4.7.c.3.c.2**",
-        "[ ] **31.9.4.7.c.3.c.2**",
         "**31.9.4.7.c.3.c.3**",
         "[ ] **31.9.4.7.c.3.c.3**",
     ] {
@@ -20148,6 +20147,80 @@ fn test_phase_31_9_4_7_c_3_c_1_branch_isolation_probe_is_tracked_and_decomposed(
         assert!(
             doc_src.contains(required_fragment),
             "Phase 31 decomposition note {} must include c.3.c.1 evidence fragment `{}`",
+            doc_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_31_9_4_7_c_3_c_2_shared_obligation_helpers_are_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.c.3.c.2**",
+        "[x] **31.9.4.7.c.3.c.2**",
+        "lemma_2a_old_old_packets_reduce_to_previous_step",
+        "lemma_2a_new_packet_action_dispatch_witness",
+        "--verify-function '*lemma_2a_old_old_packets_reduce_to_previous_step*' --rlimit 40 --triggers-mode silent",
+        "--verify-function '*lemma_2a_new_packet_action_dispatch_witness*' --rlimit 40 --triggers-mode silent",
+        "Integration-stability check while the target lemma remains external",
+        "**31.9.4.7.c.3.c.3**",
+        "[ ] **31.9.4.7.c.3.c.3**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.c.3.c.2 tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    for required_fragment in [
+        "pub proof fn lemma_2a_old_old_packets_reduce_to_previous_step",
+        "pub proof fn lemma_2a_new_packet_action_dispatch_witness",
+        "lemma_2a_old_old_packets_reduce_to_previous_step(b, c, i, p1, p2);",
+        "let (proposer_idx, ios, pkts) = lemma_2a_new_packet_action_dispatch_witness(b, c, i, p2);",
+    ] {
+        assert!(
+            message2a_src.contains(required_fragment),
+            "message2a proof file {} must include c.3.c.2 helper/call fragment `{}`",
+            message2a_path.display(),
+            required_fragment
+        );
+    }
+
+    let doc_path = repo_root.join("docs/phase31-31.9.4.7c-decomposition-and-c1-analysis.md");
+    let doc_src = std::fs::read_to_string(&doc_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read Phase 31 decomposition note {}: {}",
+            doc_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## Completed in 31.9.4.7.c.3.c.2 (Shared-Obligation Helperization)",
+        "lemma_2a_old_old_packets_reduce_to_previous_step",
+        "lemma_2a_new_packet_action_dispatch_witness",
+        "1 verified, 0 errors",
+        "Integration-stability check (target lemma still external at this leaf):",
+        "0 verified, 0 errors",
+    ] {
+        assert!(
+            doc_src.contains(required_fragment),
+            "Phase 31 decomposition note {} must include c.3.c.2 evidence fragment `{}`",
             doc_path.display(),
             required_fragment
         );
