@@ -325,6 +325,34 @@ verus! {
         lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);
     }
 
+    pub proof fn lemma_find2a_truncate_log_preserves_vote_if_retained(
+        s: LAcceptor,
+        s_: LAcceptor,
+        truncate_opn: OperationNumber,
+        opn: OperationNumber,
+    )
+        requires
+            LAcceptorTruncateLog(s, s_, truncate_opn),
+            s_.votes.contains_key(opn),
+        ensures
+            s.votes.contains_key(opn),
+            s_.votes[opn] == s.votes[opn],
+    {
+        if truncate_opn <= s.log_truncation_point {
+            assert(s_ == s);
+            assert(s_.votes == s.votes);
+            assert(s.votes.contains_key(opn));
+            assert(s_.votes[opn] == s.votes[opn]);
+        } else {
+            assert(RemoveVotesBeforeLogTruncationPoint(s.votes, s_.votes, truncate_opn));
+            let retained_vote = s_.votes[opn];
+            let old_vote = s.votes[opn];
+            assert(retained_vote == s_.votes[opn]);
+            assert(old_vote == s.votes[opn]);
+            assert(s.votes.contains_key(opn) && s_.votes[opn] == s.votes[opn]);
+        }
+    }
+
 
     pub proof fn lemma_2aMessagesFromSameBallotAndOperationMatch(
         b:Behavior<RslState>,

@@ -19702,3 +19702,61 @@ fn test_phase_31_9_4_7_a_find2a_refactor_leaf_is_tracked_and_checked_in() {
         message2a_path.display()
     );
 }
+
+#[test]
+fn test_phase_31_9_4_7_b_1_truncate_helper_leaf_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.7.b**",
+        "**31.9.4.7.b.1**",
+        "[x] **31.9.4.7.b.1**",
+        "lemma_find2a_truncate_log_preserves_vote_if_retained",
+        "--verify-function '*lemma_find2a_truncate_log_preserves_vote_if_retained*' --rlimit 40",
+        "1 verified, 0 errors",
+        "**31.9.4.7.b.2**",
+        "**31.9.4.7.b.3**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.7.b.1 tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let message2a_path = repo_root.join("src/protocol/RSL/common_proof/message2a.rs");
+    let message2a_src = std::fs::read_to_string(&message2a_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read message2a proof file {}: {}",
+            message2a_path.display(),
+            err
+        )
+    });
+
+    assert!(
+        message2a_src.contains("pub proof fn lemma_find2a_truncate_log_preserves_vote_if_retained"),
+        "message2a proof file {} must contain lemma_find2a_truncate_log_preserves_vote_if_retained",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains("let retained_vote = s_.votes[opn];"),
+        "message2a proof file {} must include trigger-seeding retained_vote term in 31.9.4.7.b.1 helper proof",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains("let old_vote = s.votes[opn];"),
+        "message2a proof file {} must include trigger-seeding old_vote term in 31.9.4.7.b.1 helper proof",
+        message2a_path.display()
+    );
+    assert!(
+        message2a_src.contains(
+            "#[verifier(external_body)]\n    pub proof fn lemma_Find2aThatCausedVote"
+        ),
+        "message2a proof file {} must keep lemma_Find2aThatCausedVote external until 31.9.4.7.b.3",
+        message2a_path.display()
+    );
+}
