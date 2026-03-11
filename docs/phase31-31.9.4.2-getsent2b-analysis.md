@@ -28,6 +28,30 @@
 
 All temporary code edits were reverted; repository state remains on the prior verified baseline.
 
+## 31.9.4.2.a Completion (2026-03-12)
+- Added helper proof in `src/protocol/RSL/common_proof/learner_state.rs`:
+  - `lemma_getsent2b_receive_packet_was_sent`
+- The helper proves final-branch receive provenance with local:
+  - `LEnvironment_PerformIos`
+  - `match_ios_recv`
+  - `lemma_PacketStaysInSentPackets`
+- Wired helper call into `lemma_GetSent2bMessageFromLearnerState` final branch.
+- Focused verification passed:
+  - `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_getsent2b_receive_packet_was_sent*' --rlimit 40`
+  - Result: `1 verified, 0 errors`.
+
+## 31.9.4.2.b Completion (2026-03-12)
+- Added helper proof in `src/protocol/RSL/common_proof/learner_state.rs`:
+  - `lemma_getsent2b_sender_index_witness`
+- The helper discharges sender-index obligations with local facts:
+  - `lemma_Received2bMessageSendersAlwaysValidReplicas`
+  - `lemma_FindIndexInSeq`
+  - direct transfer from `p.src == sender`
+- Wired helper call into `lemma_GetSent2bMessageFromLearnerState` final branch before `GetReplicaIndex`.
+- Focused verification passed:
+  - `timeout 300s /home/shuai/tools/verus-x86-linux/verus --crate-type=lib src/lib.rs --verify-only-module protocol::RSL::common_proof::learner_state --verify-function '*lemma_getsent2b_sender_index_witness*' --rlimit 40`
+  - Result: `1 verified, 0 errors`.
+
 ## Decomposition Rationale
 To avoid broad proof context blow-up, split the work into small proof obligations:
 - 31.9.4.2.a: final-branch receive provenance + sentPackets transfer.

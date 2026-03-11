@@ -270,8 +270,10 @@ verus! {
         // The received 2b message's src is the sender that was added to received_2b_message_senders
         assert(p.msg is RslMessage2b);
         assert(p.src == sender);
-        lemma_FindIndexInSeq(c.config.replica_ids, p.src);
+        lemma_getsent2b_sender_index_witness(b, c, i, learner_idx, opn, sender, p);
         let sender_idx = GetReplicaIndex(p.src, c.config);
+        assert(0 <= sender_idx < c.config.replica_ids.len());
+        assert(sender == c.config.replica_ids[sender_idx]);
 
         if p.msg->val_2b != s_prime.unexecuted_learner_state[opn].candidate_learned_value {
             assert(p.msg->bal_2b == s.max_ballot_seen);
@@ -289,8 +291,74 @@ verus! {
             assert(false);
         }
         // In the else branch: p.msg->val_2b == candidate_learned_value, satisfying postcondition.
+        lemma_getsent2b_receive_packet_was_sent(b, c, i, learner_idx, ios, p);
+        assert(b[i].environment.sentPackets.contains(p));
         assert(p.msg->val_2b == s_prime.unexecuted_learner_state[opn].candidate_learned_value);
         return (sender_idx, p);
+    }
+
+    pub proof fn lemma_getsent2b_receive_packet_was_sent(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        learner_idx: int,
+        ios: Seq<RslIo>,
+        p: RslPacket,
+    )
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            0 <= learner_idx < b[i].replicas.len(),
+            RslNextOneReplica(b[i - 1], b[i], learner_idx, ios),
+            b[i - 1].environment.nextStep is LEnvStepHostIos,
+            b[i - 1].environment.nextStep->ios == ios,
+            ios.contains(LIoOp::Receive { r: p }),
+        ensures
+            b[i].environment.sentPackets.contains(p),
+    {
+        let e = b[i - 1].environment;
+        let e_ = b[i].environment;
+        let actor = e.nextStep->actor;
+        assert(LEnvironment_Next(e, e_));
+        assert(e.nextStep == LEnvStep::LEnvStepHostIos { actor, ios });
+        assert(LEnvironment_PerformIos(e, e_, actor, ios));
+        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+        assert(match_ios_recv(LIoOp::Receive { r: p }, e.sentPackets));
+        assert(e.sentPackets.contains(p));
+        lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);
+    }
+
+    pub proof fn lemma_getsent2b_sender_index_witness(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        learner_idx: int,
+        opn: OperationNumber,
+        sender: AbstractEndPoint,
+        p: RslPacket,
+    )
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 <= i,
+            0 <= learner_idx < b[i].replicas.len(),
+            b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state.contains_key(opn),
+            b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender),
+            p.src == sender,
+        ensures
+            ({
+                let sender_idx = GetReplicaIndex(p.src, c.config);
+                &&& 0 <= sender_idx < c.config.replica_ids.len()
+                &&& sender == c.config.replica_ids[sender_idx]
+            }),
+    {
+        lemma_Received2bMessageSendersAlwaysValidReplicas(b, c, i, learner_idx, opn);
+        assert(c.config.replica_ids.contains(sender));
+        assert(c.config.replica_ids.contains(p.src));
+        lemma_FindIndexInSeq(c.config.replica_ids, p.src);
+        let sender_idx = GetReplicaIndex(p.src, c.config);
+        assert(0 <= sender_idx < c.config.replica_ids.len());
+        assert(c.config.replica_ids[sender_idx] == p.src);
+        assert(sender == c.config.replica_ids[sender_idx]);
     }
 
 }

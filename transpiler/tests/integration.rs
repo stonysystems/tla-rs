@@ -19212,3 +19212,95 @@ fn test_phase_31_9_4_1_helper_subleaf_is_tracked_and_checked_in() {
         learner_state_path.display()
     );
 }
+
+#[test]
+fn test_phase_31_9_4_2_a_receive_provenance_helper_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.2.a**",
+        "[x] **31.9.4.2.a**",
+        "lemma_getsent2b_receive_packet_was_sent",
+        "--verify-function '*lemma_getsent2b_receive_packet_was_sent*' --rlimit 40",
+        "1 verified, 0 errors",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.2.a tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let learner_state_path = repo_root.join("src/protocol/RSL/common_proof/learner_state.rs");
+    let learner_state_src = std::fs::read_to_string(&learner_state_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read learner-state proof file {}: {}",
+            learner_state_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "pub proof fn lemma_getsent2b_receive_packet_was_sent",
+        "assert(LEnvironment_PerformIos(e, e_, actor, ios));",
+        "assert(match_ios_recv(LIoOp::Receive { r: p }, e.sentPackets));",
+        "lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);",
+        "lemma_getsent2b_receive_packet_was_sent(b, c, i, learner_idx, ios, p);",
+    ] {
+        assert!(
+            learner_state_src.contains(required_fragment),
+            "learner-state proof file {} must include 31.9.4.2.a receive-provenance fragment `{}`",
+            learner_state_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_31_9_4_2_b_sender_index_witness_helper_is_tracked_and_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "**31.9.4.2.b**",
+        "[x] **31.9.4.2.b**",
+        "lemma_getsent2b_sender_index_witness",
+        "--verify-function '*lemma_getsent2b_sender_index_witness*' --rlimit 40",
+        "1 verified, 0 errors",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 31.9.4.2.b tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let learner_state_path = repo_root.join("src/protocol/RSL/common_proof/learner_state.rs");
+    let learner_state_src = std::fs::read_to_string(&learner_state_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read learner-state proof file {}: {}",
+            learner_state_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "pub proof fn lemma_getsent2b_sender_index_witness",
+        "lemma_Received2bMessageSendersAlwaysValidReplicas(b, c, i, learner_idx, opn);",
+        "lemma_FindIndexInSeq(c.config.replica_ids, p.src);",
+        "lemma_getsent2b_sender_index_witness(b, c, i, learner_idx, opn, sender, p);",
+        "assert(sender == c.config.replica_ids[sender_idx]);",
+    ] {
+        assert!(
+            learner_state_src.contains(required_fragment),
+            "learner-state proof file {} must include 31.9.4.2.b sender-index fragment `{}`",
+            learner_state_path.display(),
+            required_fragment
+        );
+    }
+}
