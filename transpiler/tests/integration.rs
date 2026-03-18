@@ -16126,8 +16126,8 @@ fn test_model_check_pbft_bounded_run() {
         "PBFT fixture should document intentional bounded setup"
     );
     assert!(
-        model_src.contains("max_depth = 1") && model_src.contains("max_states = 200"),
-        "PBFT fixture should stay bounded (`max_depth = 1`, `max_states = 200`)"
+        model_src.contains("max_depth = 1") && model_src.contains("max_states = 500"),
+        "PBFT fixture should stay bounded (`max_depth = 1`, `max_states = 500`)"
     );
     assert!(
         artifact_path.exists(),

@@ -1,6 +1,6 @@
 source_first_matrix_artifacts:
   generated_by: scripts/run_model_check_matrix.sh
-  git_rev: 301e0b1e5430dd89af11823294740d74f59b9e66
+  git_rev: b391a130183e96c1a8e4d9b734f1eb848522249e
   output_dir: reports/model_check
   artifacts:
     - twophase_small.json
