@@ -369,9 +369,9 @@ This table is the pre-optimization reference point for exact-mode performance wo
 | Protocol | Artifact | `states` | `transitions` | `depth` | `elapsed_ms` | `pruned_by_por` | `symmetry_collapses` | `hash_compaction_collisions` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `Paxos` | `reports/model_check/paxos_small.json` | `1` | `2` | `0` | `5` | `0` | `0` | `0` |
-| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `3` | `3` | `1` | `17` | `0` | `0` | `0` |
-| `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `225` | `0` | `0` | `0` |
-| `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `13` | `0` | `0` | `0` |
+| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `3` | `3` | `1` | `16` | `0` | `0` | `0` |
+| `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `220` | `0` | `0` | `0` |
+| `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `12` | `0` | `0` | `0` |
 
 ### 4.2 Exact-mode optimization delta snapshot (Phase 33.4.2)
 

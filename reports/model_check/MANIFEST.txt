@@ -1,6 +1,6 @@
 source_first_matrix_artifacts:
   generated_by: scripts/run_model_check_matrix.sh
-  git_rev: 9f7177d4602f45e880346ca6cf31693cf759b2d6
+  git_rev: 256d0f429ed37425935bf1902ae35343d4bb33b6
   output_dir: reports/model_check
   artifacts:
     - twophase_small.json
@@ -11,7 +11,6 @@ source_first_matrix_artifacts:
     - leaderelection_safety_invariants.json
     - paxos_small.json
     - paxos_safety_invariants.json
-    - pbft_small.json
     - guard_pruned_enumeration.json
     - liveness_avoidable_cycle_violated.json
     - liveness_avoidable_cycle_strong_fairness.json

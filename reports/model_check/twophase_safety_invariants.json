@@ -64,7 +64,7 @@
       {
         "branch_label": "branch_2",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 35,
+        "cumulative_solve_elapsed_ms": 36,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -75,7 +75,7 @@
       {
         "branch_label": "branch_3",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 22,
+        "cumulative_solve_elapsed_ms": 23,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -108,7 +108,7 @@
       {
         "branch_label": "branch_6",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 25,
+        "cumulative_solve_elapsed_ms": 26,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -119,7 +119,7 @@
       {
         "branch_label": "branch_7",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 32,
+        "cumulative_solve_elapsed_ms": 33,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -133,7 +133,7 @@
     "constants_valuations_total": 1,
     "depth": 1,
     "direct_assignment_branch_solves": 8,
-    "elapsed_ms": 223,
+    "elapsed_ms": 226,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
@@ -145,13 +145,13 @@
     "symmetry_collapses": 0,
     "timing": {
       "candidate_generation_evaluation_ms": 1,
-      "dedup_hashing_normalization_ms": 9,
+      "dedup_hashing_normalization_ms": 8,
       "initial_state_construction_ms": 1,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 1,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 5,
-      "successor_solving_ms": 212
+      "successor_solving_ms": 216
     },
     "transitions": 4
   },
