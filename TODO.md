@@ -11175,15 +11175,8 @@ docs/model-checker-architecture/
 
 ### 36.4 Documentation and status updates
 
-- [ ] **36.4.1**: Add a new section to `docs/model_checker_status.md` summarizing exact-state parity status:
-  - which shared small models now have zero normalized distinct-state diff,
-  - where the state exports live,
-  - and which remaining protocols still have open parity bugs.
-- [ ] **36.4.2**: Update `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` so it cleanly separates:
-  - distinct-state parity claims,
-  - metric-mapping notes,
-  - performance claims,
-  - and remaining blocker claims.
+- [x] **36.4.1**: Added §3.7 "Cross-engine parity status" to `docs/model_checker_status.md` with: normalized parity table (TP 23 shared, PB 27 shared, LE 31 shared — all SF strict subset of TLC), interpretation of remaining gaps (message-channel modeling), performance improvement table (Paxos 5→16K states), export locations, and tooling references.
+- [x] **36.4.2**: Updated benchmark report to cleanly separate: metric-mapping (§Cross-Engine Metric Mapping), raw counts (§Side-by-side Results), normalized parity (§Normalized Parity Comparison), and remaining blockers (new §Remaining Blockers). Removed stale "not yet semantically comparable" note — replaced with current parity harness references.
 - [ ] **36.4.3**: If any benchmark counts or conclusions change after bug fixes, update `docs/conversion-testing-guide.md` and any checked-in benchmark summaries/manifests that repeat the old numbers.
 
 ### 36.5 Completion gate

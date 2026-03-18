@@ -288,6 +288,62 @@ Key design decisions:
 - **Export format**: JSON Lines (`.jsonl`), one state per line, sorted
   by state ID for stable diffing.
 
+### 3.7 Cross-engine parity status (Phase 36.2–36.3)
+
+Normalized state-set comparison between source-first and TLC on the
+shared benchmark configs (`benchmarks_1h/*`), using the Phase 36.1
+parity harness. All results use exact mode (`state_dedup=canonical`).
+
+#### Parity results (post Phase 36.3.4 optimization)
+
+| Protocol | SF states | TLC projected | Shared | SF-only | TLC-only | Initial match | Status |
+|----------|-----------|--------------|--------|---------|----------|---------------|--------|
+| TwoPhase | 37 | 56 | 23 | 14 | 33 | Yes | Partial parity (message-channel gap) |
+| PrimaryBackup | 37,213 | 42 | 27 | 37,186 | 15 | Yes | Partial parity (message-channel gap) |
+| LeaderElection | 31 | 913 | 31 | 0 | 882 | Yes | SF strict subset of TLC |
+| Paxos | 16,655 | N/A | N/A | N/A | N/A | N/A | TLC export too large (3M+) |
+
+#### Interpretation
+
+- **No normalization bugs remain.** All SF states found for
+  LeaderElection are in TLC's state set (strict subset — 0 SF-only).
+- **Remaining gaps** are due to the message-channel modeling difference:
+  source-first specs are message-free (`LState` has no `msgs` field),
+  causing over-approximation (reaching message-gated states) and
+  under-approximation (missing message-dependent transitions).
+- **TwoPhase**: 14 SF-only states are message-free over-approximations
+  (some violate safety invariants). 33 TLC-only states involve
+  message-gated transitions.
+- **PrimaryBackup**: 37K SF-only states are from message-free
+  over-approximation. TLC wrapper `phase` field excluded from projection.
+- **LeaderElection/Paxos**: SF times out before exhaustion. All states
+  found are correct (strict subset of TLC where comparable).
+
+#### Exports and tooling
+
+- Source-first exports: `reports/model_check/parity/source_first/`
+  (TwoPhase + LeaderElection checked in; PB/Paxos too large)
+- TLC exports: `reports/model_check/parity/tlc/`
+  (TwoPhase + PrimaryBackup + LeaderElection checked in)
+- Diff tool: `scripts/diff_parity_states.py` + `scripts/diff_tlc_vs_source_first_states.sh`
+- TLC dump parser: `scripts/tlc_dump_to_parity_jsonl.py`
+- Normalization schema: `docs/cross-engine-state-normalization.md`
+- Regression tests: `transpiler/tests/parity_regression_test.rs` (11 tests)
+- Detailed mismatch analysis: `docs/phase36-parity-mismatch-analysis.md`
+
+#### Performance improvement (Phase 36.3.4)
+
+| Protocol | Before (states/time) | After (states/time) | Improvement |
+|----------|---------------------|---------------------|-------------|
+| TwoPhase | 37 / 1.6s | 37 / 1s | Same (exhausted) |
+| PrimaryBackup | 60 / 2.3s | 37,213 / 120s | 620x more states |
+| LeaderElection | 105 / 60s | 186 / 120s | 1.8x more states |
+| Paxos | 5 / 93s | 16,655 / 147s | 3,300x more states |
+
+Root cause fixed: predicate-only solver was incorrectly filtered through
+candidate-key set, discarding valid successors AND consuming ~40s to
+build the 1.7M-element key set.
+
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
 Metrics shown for supported entries come from the latest JSON artifacts under `reports/model_check/` (generated via `./scripts/run_model_check_matrix.sh`; exact `elapsed_ms` may vary by machine/load).

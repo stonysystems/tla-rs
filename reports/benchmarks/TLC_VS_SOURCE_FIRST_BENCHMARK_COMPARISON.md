@@ -189,20 +189,41 @@ counts dramatically: PB 60→37K, LE 2→31, Paxos 5→16K.
 See [`docs/phase36-parity-mismatch-analysis.md`](../../docs/phase36-parity-mismatch-analysis.md)
 for detailed root-cause classification.
 
+## Remaining Blockers
+
+1. **Full state-space exhaustion**: Source-first cannot exhaust the
+   benchmark configs for PB (37K states in 120s), LE (186 in 120s), or
+   Paxos (16K in 147s). TLC exhausts all four. Root cause: solver
+   performance — existential assignment explosion (LE) and initial-state
+   candidate construction cost (Paxos 22s for 1.7M candidates).
+
+2. **Message-channel modeling gap**: Source-first Verus specs are
+   message-free, while TLC hand-written wrappers model explicit message
+   channels (`msgs`). This causes both over-approximation (SF-only states)
+   and under-approximation (TLC-only states). Full parity requires either
+   adding message modeling to the source-first specs or using auto-generated
+   relational wrappers.
+
+3. **Paxos TLC export**: TLC finds 3M+ states — too large for JSONL
+   diff. A smaller Paxos config is needed for parity comparison.
+
+### LeaderElection
+
+- LeaderElection source-first status: `timeout_reached(TimeoutReached)` (186 states in 120s, up from 105 states pre-optimization; enumeration_eval=0 post Phase 36.3.4).
+- All 31 distinct exported states are strict subset of TLC's 913 projected states.
+- See branch-level blocker telemetry above for per-branch evidence.
+
+### Paxos
+
+- Paxos source-first status: `timeout_reached(TimeoutReached)` (16,655 states in 147s, up from 5 states pre-optimization; enumeration_eval=0 post Phase 36.3.4).
+- TLC finds 3,005,604 distinct states — too large for JSONL parity diff.
+
 ## Notes
 
-- **State-count semantics differ**: See the [Cross-Engine Metric Mapping](#cross-engine-metric-mapping-phase-3611)
-  section above for the full mapping. In brief: source-first counts
-  states on the centralized Verus `LState` directly, while TLC counts
-  states on the TLA+ wrapper which may include additional
-  message-channel variables. The `Distinct` columns in the tables above
-  are **not yet semantically comparable** until both sides are projected
-  to a common normalized schema (Phase 36.1.2).
-- LeaderElection source-first status: `timeout_reached(TimeoutReached)` (stop_reason=TimeoutReached, enumeration_eval=0).
-- Paxos source-first status: `timeout_reached(TimeoutReached)` (stop_reason=TimeoutReached, enumeration_eval=0).
-  See branch-level blocker telemetry above for per-branch evidence.
 - Configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/`
 - TLC wrappers: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/`
+- Parity harness: `scripts/diff_parity_states.py`, `scripts/tlc_dump_to_parity_jsonl.py`
+- Detailed analysis: `docs/phase36-parity-mismatch-analysis.md`
 
 ## Same-Model Provenance
 
