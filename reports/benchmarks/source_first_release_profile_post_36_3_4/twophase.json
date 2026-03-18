@@ -1,0 +1,167 @@
+{
+  "deadlock": null,
+  "entrypoints": {
+    "init": "LInit",
+    "next": "LNext"
+  },
+  "invariant_violation": {
+    "depth": 3,
+    "invariant": "LSafetyNoCommitAbortOverlap",
+    "state": "struct:LState{rm_aborted:set:{int:0},rm_committed:set:{int:0},rm_prepared:set:{int:0},tm_prepared:set:{},tm_state:enum:LTMState::Init{}}"
+  },
+  "invariants": {
+    "configured": [
+      "LSafetyNoCommitAbortOverlap",
+      "LSafetyCommittedSubsetPrepared",
+      "LSafetyTmCommittedRequiresAllPrepared"
+    ],
+    "configured_count": 3,
+    "resolved": [
+      "LSafetyNoCommitAbortOverlap",
+      "LSafetyCommittedSubsetPrepared",
+      "LSafetyTmCommittedRequiresAllPrepared"
+    ],
+    "resolved_count": 3
+  },
+  "leads_to_violation": null,
+  "liveness": null,
+  "protocol": "src/protocol/TwoPhase/twophase.rs",
+  "result": "invariant_violated",
+  "search": {
+    "evidence_mode": {
+      "class": "exact_proof_strength",
+      "guidance": "Exact search settings preserve explored-state distinctions for proof-strength bounded evidence.",
+      "lossy_reasons": [],
+      "proof_strength": true
+    },
+    "max_depth": 100,
+    "max_states": 10000000,
+    "por_heuristic": "none",
+    "por_pruned_branches": [],
+    "state_dedup": "canonical",
+    "strategy": "bfs",
+    "successor_semantics": "deadlock",
+    "symmetry_fields": [],
+    "timeout_ms": 120000
+  },
+  "stop_reason": "InvariantViolated",
+  "summary": {
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 768,
+        "cumulative_solve_elapsed_ms": 54,
+        "direct_solver_hits": 36,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 31,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 36,
+        "successful_successors": 26
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 768,
+        "cumulative_solve_elapsed_ms": 150,
+        "direct_solver_hits": 36,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 62,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 36,
+        "successful_successors": 23
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 768,
+        "cumulative_solve_elapsed_ms": 154,
+        "direct_solver_hits": 36,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 62,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 36,
+        "successful_successors": 23
+      },
+      {
+        "branch_label": "branch_3",
+        "candidate_state_count": 768,
+        "cumulative_solve_elapsed_ms": 126,
+        "direct_solver_hits": 36,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 62,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 36,
+        "successful_successors": 29
+      },
+      {
+        "branch_label": "branch_4",
+        "candidate_state_count": 768,
+        "cumulative_solve_elapsed_ms": 36,
+        "direct_solver_hits": 36,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 31,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 36,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_5",
+        "candidate_state_count": 768,
+        "cumulative_solve_elapsed_ms": 37,
+        "direct_solver_hits": 36,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 31,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 36,
+        "successful_successors": 26
+      },
+      {
+        "branch_label": "branch_6",
+        "candidate_state_count": 768,
+        "cumulative_solve_elapsed_ms": 150,
+        "direct_solver_hits": 36,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 62,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 36,
+        "successful_successors": 30
+      },
+      {
+        "branch_label": "branch_7",
+        "candidate_state_count": 768,
+        "cumulative_solve_elapsed_ms": 161,
+        "direct_solver_hits": 36,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 62,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 36,
+        "successful_successors": 46
+      }
+    ],
+    "candidate_evaluation_guardrail_per_state_branch": 10000000,
+    "constants_valuations_explored": 1,
+    "constants_valuations_total": 1,
+    "depth": 3,
+    "direct_assignment_branch_solves": 288,
+    "elapsed_ms": 1045,
+    "enumeration_candidate_evaluations": 0,
+    "enumeration_fallback_branch_solves": 0,
+    "guard_pruned_candidate_evaluations": 0,
+    "hash_compaction_collisions": 0,
+    "pruned_by_por": 0,
+    "states": 79,
+    "successor_cache_hits": 0,
+    "successor_cache_misses": 36,
+    "symmetry_collapses": 0,
+    "timing": {
+      "candidate_generation_evaluation_ms": 6,
+      "dedup_hashing_normalization_ms": 167,
+      "initial_state_construction_ms": 4,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 0,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 0,
+      "successor_solving_ms": 868
+    },
+    "transitions": 203
+  },
+  "types": "src/protocol/TwoPhase/types.rs"
+}

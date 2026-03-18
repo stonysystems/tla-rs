@@ -11166,7 +11166,7 @@ docs/model-checker-architecture/
   - worklist management,
   - and avoidance of unnecessary full-state materialization.
   Record concrete lessons in a checked-in dev note before large solver refactors. Do not cargo-cult code; translate insights into local tests and local invariants.
-- [ ] **36.3.6**: Re-run the matched benchmark suite after each material optimization/fix. Keep old and new artifacts side by side until the comparison report and status page are updated.
+- [x] **36.3.6**: Re-ran benchmarks after Phase 36.3.4 optimization (release mode, 120s timeout). Results: TwoPhase 37 states/1s (unchanged), PrimaryBackup 37,213 states/120s (up from 60), LeaderElection 186 states/120s (up from 105), Paxos 16,655 states/147s (up from 5). Parity: LE 31/913/31 shared (all SF states in TLC, strict subset). PB 37,213/42/27 shared. Updated: benchmark report, parity exports (LE+TP checked in, PB+Paxos too large), regression test baselines. Raw JSON in `reports/benchmarks/source_first_release_profile_post_36_3_4/`.
 - [ ] **36.3.7**: Target outcome for `LeaderElection` and `Paxos`: source-first should complete the current matched benchmark configs in exact mode. If that bar is still not met after the first optimization round, the remaining blocker must no longer be a vague "enumeration scalability" label:
   - it must be reduced to named hot branches / named constructs,
   - backed by checked-in telemetry,

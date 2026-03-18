@@ -1,0 +1,152 @@
+{
+  "deadlock": null,
+  "entrypoints": {
+    "init": "LInit",
+    "next": "LNext"
+  },
+  "invariant_violation": null,
+  "invariants": {
+    "configured": [
+      "LSafetyAcceptedBallotBoundedByPromise",
+      "LSafetyDecidedRequiresQuorum",
+      "LSafetyDecidedMatchesProposedValue"
+    ],
+    "configured_count": 3,
+    "resolved": [
+      "LSafetyAcceptedBallotBoundedByPromise",
+      "LSafetyDecidedRequiresQuorum",
+      "LSafetyDecidedMatchesProposedValue"
+    ],
+    "resolved_count": 3
+  },
+  "leads_to_violation": null,
+  "liveness": null,
+  "protocol": "src/protocol/Paxos/paxos.rs",
+  "result": "timeout_reached",
+  "search": {
+    "evidence_mode": {
+      "class": "exact_proof_strength",
+      "guidance": "Exact search settings preserve explored-state distinctions for proof-strength bounded evidence.",
+      "lossy_reasons": [],
+      "proof_strength": true
+    },
+    "max_depth": 100,
+    "max_states": 10000000,
+    "por_heuristic": "none",
+    "por_pruned_branches": [],
+    "state_dedup": "canonical",
+    "strategy": "bfs",
+    "successor_semantics": "deadlock",
+    "symmetry_fields": [],
+    "timeout_ms": 120000
+  },
+  "stop_reason": "TimeoutReached",
+  "summary": {
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 5,
+        "direct_solver_hits": 13635,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 13635,
+        "successful_successors": 36
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 42,
+        "direct_solver_hits": 13635,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 13635,
+        "successful_successors": 23592
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 43314,
+        "direct_solver_hits": 13635,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 27,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 13635,
+        "successful_successors": 7884
+      },
+      {
+        "branch_label": "branch_3",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 5,
+        "direct_solver_hits": 13635,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 13635,
+        "successful_successors": 1296
+      },
+      {
+        "branch_label": "branch_4",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 13784,
+        "direct_solver_hits": 13635,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 9,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 13635,
+        "successful_successors": 70776
+      },
+      {
+        "branch_label": "branch_5",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 32,
+        "direct_solver_hits": 13634,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 3,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 13634,
+        "successful_successors": 15363
+      },
+      {
+        "branch_label": "branch_6",
+        "candidate_state_count": 1679616,
+        "cumulative_solve_elapsed_ms": 17,
+        "direct_solver_hits": 13634,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 1,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 13634,
+        "successful_successors": 4403
+      }
+    ],
+    "candidate_evaluation_guardrail_per_state_branch": 100000000,
+    "constants_valuations_explored": 1,
+    "constants_valuations_total": 1,
+    "depth": 10,
+    "direct_assignment_branch_solves": 95443,
+    "elapsed_ms": 147376,
+    "enumeration_candidate_evaluations": 0,
+    "enumeration_fallback_branch_solves": 0,
+    "guard_pruned_candidate_evaluations": 0,
+    "hash_compaction_collisions": 0,
+    "pruned_by_por": 0,
+    "states": 16526,
+    "successor_cache_hits": 0,
+    "successor_cache_misses": 16526,
+    "symmetry_collapses": 0,
+    "timing": {
+      "candidate_generation_evaluation_ms": 26148,
+      "dedup_hashing_normalization_ms": 41715,
+      "initial_state_construction_ms": 22314,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 0,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 0,
+      "successor_solving_ms": 57199
+    },
+    "transitions": 123350
+  },
+  "types": "src/protocol/Paxos/types.rs"
+}

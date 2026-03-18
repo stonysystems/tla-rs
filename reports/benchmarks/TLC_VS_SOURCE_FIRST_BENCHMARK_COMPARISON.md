@@ -150,25 +150,24 @@ The canonical normalization schema is defined in
 [`docs/cross-engine-state-normalization.md`](../../docs/cross-engine-state-normalization.md)
 (Phase 36.1.2).
 
-## Side-by-side Results (Raw Counts)
+## Side-by-side Results (Raw Counts, post Phase 36.3.4 optimization)
 
-| Protocol | Engine | Result | States (gen) | Distinct | Depth | Wall (s) |
-|----------|--------|--------|--------------|----------|-------|----------|
-| twophase | source-first | invariant_violated | — | 37* | 3 | 6 |
-| | TLC | pass | 150 | 64 | 9 | 1 |
-| primarybackup | source-first | ok(FrontierExhausted) | — | 60 | 7 | 2 |
-| | TLC | pass | 86 | 54 | 10 | 1 |
-| leaderelection | source-first | timeout_reached(TimeoutReached) | — | 2 | 1 | 31 |
-| | TLC | pass | 100636 | 9337 | 13 | 2 |
-| paxos | source-first | timeout_reached(TimeoutReached) | — | — | — | — |
-| | TLC | pass | 25288515 | 3005604 | 37 | 375 |
+| Protocol | Engine | Result | Distinct | Depth | Wall (s) |
+|----------|--------|--------|----------|-------|----------|
+| twophase | source-first | invariant_violated | 37* | 3 | 1 |
+| | TLC | pass | 64 | 9 | 1 |
+| primarybackup | source-first | timeout (120s) | 37,213 | 39 | 120 |
+| | TLC | pass | 54 | 10 | 1 |
+| leaderelection | source-first | timeout (120s) | 186 | 3 | 120 |
+| | TLC | pass | 9,337 | 13 | 2 |
+| paxos | source-first | timeout (120s) | 16,655 | 10 | 147 |
+| | TLC | pass | 3,005,604 | 37 | 375 |
 
 \* TwoPhase source-first finds 37 states (after PreparedVote enum fix)
 but hits `LSafetyNoCommitAbortOverlap` invariant violation at depth 3.
-This is expected: source-first doesn't model message channels, so it
-over-approximates and reaches safety-violating states.
+Source-first doesn't model message channels, so it over-approximates.
 
-## Normalized Parity Comparison (Phase 36.2)
+## Normalized Parity Comparison (post Phase 36.3.4)
 
 After projecting both engines to protocol-only state (excluding TLC
 `msgs`, `constants`, and wrapper-specific fields like `phase`):
@@ -176,16 +175,16 @@ After projecting both engines to protocol-only state (excluding TLC
 | Protocol | SF projected | TLC projected | Shared | SF-only | TLC-only | Initial match | Status |
 |----------|-------------|--------------|--------|---------|----------|---------------|--------|
 | TwoPhase | 37 | 56 | 23 | 14 | 33 | Yes | Fixed (Phase 36.2.3) |
-| PrimaryBackup | 60 | 42 | 18 | 42 | 24 | Yes | Fixed (Phase 36.2.4) |
-| LeaderElection | 2 | 913 | 2 | 0 | 911 | Yes | Blocked (solver timeout) |
-| Paxos | — | — | — | — | — | — | Blocked (solver timeout) |
+| PrimaryBackup | 37,213 | 42 | 27 | 37,186 | 15 | Yes | Fixed (Phase 36.2.4) |
+| LeaderElection | 31 | 913 | 31 | 0 | 882 | Yes | SF strict subset of TLC |
+| Paxos | 16,655 | N/A | N/A | N/A | N/A | N/A | TLC export too large |
 
-**Interpretation**: For TwoPhase and PrimaryBackup, the remaining gaps
-are entirely due to the message-channel modeling difference — source-first
-specs are message-free (no `msgs` variable), so they over-approximate
-(reach states gated by message delivery in TLC) and also miss states
-reachable only through message-sequence-dependent transitions. Initial
-states match for all comparable protocols. No normalization bugs remain.
+**Interpretation**: All SF states found for LeaderElection are in TLC's
+set (strict subset — no SF-only states). TwoPhase and PrimaryBackup
+have gaps due to message-channel modeling difference. Paxos TLC export
+(3M+ states) is too large for JSONL diff. Phase 36.3.4 optimization
+(skip candidate-key filter for predicate-only solver) improved state
+counts dramatically: PB 60→37K, LE 2→31, Paxos 5→16K.
 
 See [`docs/phase36-parity-mismatch-analysis.md`](../../docs/phase36-parity-mismatch-analysis.md)
 for detailed root-cause classification.
