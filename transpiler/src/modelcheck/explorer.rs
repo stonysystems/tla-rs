@@ -258,6 +258,7 @@ where
 }
 
 /// Same as `explore_state_space_with_traces`, but with explicit state-dedup mode.
+#[allow(clippy::too_many_arguments)]
 pub fn explore_state_space_with_traces_and_dedup<F, I>(
     initial_states: &[RuntimeValue],
     mode: SearchMode,
@@ -796,6 +797,7 @@ fn symmetry_atom_key(raw: String, atoms: &mut std::collections::BTreeMap<String,
     format!("a{id}")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finalize_result(
     explored: Vec<ExploredState>,
     stop_reason: ExplorationStopReason,

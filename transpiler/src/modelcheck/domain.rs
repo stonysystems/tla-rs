@@ -378,6 +378,7 @@ fn expand_named_domain_override(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_enum_variants(
     enum_name: &str,
     enum_def: &EnumDef,

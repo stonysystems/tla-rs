@@ -1139,7 +1139,7 @@ mod tests {
     ///
     /// CAppMessage has: CAppIncrement (tag=0), CAppReply{response:u64} (tag=1), CAppInvalid (tag=2)
     #[test]
-    fn test_enum_macro_match_cappMessage_view_equal() {
+    fn test_enum_macro_match_capp_message_view_equal() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![
@@ -1165,7 +1165,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enum_macro_match_cappMessage_is_marshalable() {
+    fn test_enum_macro_match_capp_message_is_marshalable() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![
@@ -1189,7 +1189,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enum_macro_match_cappMessage_exec_is_marshalable() {
+    fn test_enum_macro_match_capp_message_exec_is_marshalable() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![
@@ -1210,7 +1210,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enum_macro_match_cappMessage_ghost_serialize() {
+    fn test_enum_macro_match_capp_message_ghost_serialize() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![
@@ -1228,7 +1228,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enum_macro_match_cappMessage_serialize() {
+    fn test_enum_macro_match_capp_message_serialize() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![
@@ -1260,7 +1260,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enum_macro_match_cappMessage_deserialize() {
+    fn test_enum_macro_match_capp_message_deserialize() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![
@@ -1296,7 +1296,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enum_macro_match_cappMessage_prefix_lemma() {
+    fn test_enum_macro_match_capp_message_prefix_lemma() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![
@@ -1324,7 +1324,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enum_macro_match_cappMessage_same_views_lemma() {
+    fn test_enum_macro_match_capp_message_same_views_lemma() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![
@@ -1346,7 +1346,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enum_macro_match_cappMessage_injective_lemma() {
+    fn test_enum_macro_match_capp_message_injective_lemma() {
         let config = make_enum_config(vec![make_enum(
             "CAppMessage",
             vec![

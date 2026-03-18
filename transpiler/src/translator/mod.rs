@@ -6469,7 +6469,7 @@ impl Translator {
         // 2. All-inline: every branch returns Tuple with empty VecLit (no delegating calls)
         // In case (2), the trailing proof block is insufficient because Verus loses track
         // of which branch was taken through `let result = { ... }`.
-        let has_tuple_vec_return = matches!(return_type, ExecType::Tuple(types) if types.get(1).map_or(false, |t| matches!(t, ExecType::Vec(_))));
+        let has_tuple_vec_return = matches!(return_type, ExecType::Tuple(types) if types.get(1).is_some_and(|t| matches!(t, ExecType::Vec(_))));
         let needs_inline_msg_proofs = needs.has_delegating_call_in_conditional
             || (has_tuple_vec_return && needs.has_empty_vec);
         let body = if needs_inline_msg_proofs {
@@ -11500,7 +11500,7 @@ impl Translator {
                     || Self::expr_references_var(then_branch, var_name)
                     || else_branch
                         .as_ref()
-                        .map_or(false, |e| Self::expr_references_var(e, var_name))
+                        .is_some_and(|e| Self::expr_references_var(e, var_name))
             }
             _ => false,
         }
@@ -11528,13 +11528,11 @@ impl Translator {
 
         let mut extra_lets = Vec::new();
         let mut hoisted_idx = 0;
-        for i in 1..outputs.len() {
-            if matches!(&outputs[i], ExecExpr::VecLit(_))
-                && Self::expr_references_var(&outputs[i], &var_name)
+        for output in outputs.iter_mut().skip(1) {
+            if matches!(output, ExecExpr::VecLit(_)) && Self::expr_references_var(output, &var_name)
             {
                 let hoisted_name = format!("_sent_{}", hoisted_idx);
-                let veclit =
-                    std::mem::replace(&mut outputs[i], ExecExpr::Var(hoisted_name.clone()));
+                let veclit = std::mem::replace(output, ExecExpr::Var(hoisted_name.clone()));
                 extra_lets.push(ExecExpr::Let {
                     pattern: hoisted_name,
                     ty: None,
@@ -25947,16 +25945,13 @@ mod tests {
         );
 
         // Since it's in proven_functions, body should NOT have assume(false)
-        match &exec_fn.body {
-            ExecExpr::Block(stmts) => {
-                assert!(
-                    stmts.is_empty() || !is_assume_false_stmt(&stmts[0]),
-                    "proven_functions + extra_requires should not emit assume(false)"
-                );
-            }
-            // Non-block body means no assume(false) was prepended — also correct
-            _ => {}
+        if let ExecExpr::Block(stmts) = &exec_fn.body {
+            assert!(
+                stmts.is_empty() || !is_assume_false_stmt(&stmts[0]),
+                "proven_functions + extra_requires should not emit assume(false)"
+            );
         }
+        // Non-block body means no assume(false) was prepended — also correct
     }
 
     #[test]
@@ -25998,16 +25993,13 @@ mod tests {
             .expect("RequestsMatch helper should translate");
 
         // When in proven_functions, the body should NOT have assume(false)
-        match &exec_fn.body {
-            ExecExpr::Block(stmts) => {
-                assert!(
-                    stmts.is_empty() || !is_assume_false_stmt(&stmts[0]),
-                    "proven_functions should skip assume(false)"
-                );
-            }
-            // Non-block body means no assume(false) was prepended — also correct
-            _ => {}
+        if let ExecExpr::Block(stmts) = &exec_fn.body {
+            assert!(
+                stmts.is_empty() || !is_assume_false_stmt(&stmts[0]),
+                "proven_functions should skip assume(false)"
+            );
         }
+        // Non-block body means no assume(false) was prepended — also correct
     }
 
     #[test]

@@ -127,13 +127,10 @@ impl SpecSchema {
     pub fn find_variant_with_field(&self, field_name: &str) -> Option<(String, String)> {
         for (enum_name, enum_def) in &self.enums {
             for variant in &enum_def.variants {
-                match &variant.fields {
-                    VariantFields::Struct(fields) => {
-                        if fields.iter().any(|f| f.name == field_name) {
-                            return Some((enum_name.clone(), variant.name.clone()));
-                        }
+                if let VariantFields::Struct(fields) = &variant.fields {
+                    if fields.iter().any(|f| f.name == field_name) {
+                        return Some((enum_name.clone(), variant.name.clone()));
                     }
-                    _ => {}
                 }
             }
         }
@@ -669,8 +666,10 @@ impl<'a> ConfigInferer<'a> {
 
     /// Derive a `TranspilerConfig` with all Tier 1 fields populated.
     pub fn infer(&self) -> TranspilerConfig {
-        let mut config = TranspilerConfig::default();
-        config.naming = self.naming.clone();
+        let mut config = TranspilerConfig {
+            naming: self.naming.clone(),
+            ..Default::default()
+        };
 
         self.infer_remapping(&mut config);
         self.infer_variant_remapping(&mut config);
@@ -790,20 +789,19 @@ impl<'a> ConfigInferer<'a> {
                         }
                     }
                     Type::Seq(inner) => {
-                        if self.is_primitive_inner_type(inner) {
-                            if !config.vec_fields.contains(&field.name) {
-                                config.vec_fields.push(field.name.clone());
-                            }
+                        if self.is_primitive_inner_type(inner)
+                            && !config.vec_fields.contains(&field.name)
+                        {
+                            config.vec_fields.push(field.name.clone());
                         }
                         // Seq<StructType> → struct_vec_fields handled in Tier 2
                     }
                     Type::Map(key_ty, val_ty) => {
                         if self.is_primitive_inner_type(key_ty)
                             && self.is_primitive_inner_type(val_ty)
+                            && !config.hashmap_index_fields.contains(&field.name)
                         {
-                            if !config.hashmap_index_fields.contains(&field.name) {
-                                config.hashmap_index_fields.push(field.name.clone());
-                            }
+                            config.hashmap_index_fields.push(field.name.clone());
                         }
                         // Map with complex value types → map_fields handled in Tier 2
                     }
@@ -812,12 +810,11 @@ impl<'a> ConfigInferer<'a> {
                         // Check if this is an enum type → clone_fields
                         // Skip unit enums (all-unit variants) since they get #[derive(Copy)]
                         if enum_names.contains(&type_name) {
-                            let is_unit_enum =
-                                self.schema.enums.get(&type_name).map_or(false, |e| {
-                                    e.variants.iter().all(|v| {
-                                        matches!(v.fields, crate::types::VariantFields::Unit)
-                                    })
-                                });
+                            let is_unit_enum = self.schema.enums.get(&type_name).is_some_and(|e| {
+                                e.variants
+                                    .iter()
+                                    .all(|v| matches!(v.fields, crate::types::VariantFields::Unit))
+                            });
                             if !is_unit_enum {
                                 if !config.clone_fields.contains(&field.name) {
                                     config.clone_fields.push(field.name.clone());
@@ -873,7 +870,7 @@ impl<'a> ConfigInferer<'a> {
                             Type::Int | Type::Nat => true,
                             Type::Named(p) => p
                                 .last()
-                                .map_or(false, |n| n == "u64" || n == "i64" || n == "usize"),
+                                .is_some_and(|n| n == "u64" || n == "i64" || n == "usize"),
                             _ => false,
                         }
                     } else {
@@ -2374,7 +2371,7 @@ verus! {
         // Unit enums (all-unit variants) are Copy → NOT in clone_fields
         assert!(!config.clone_fields.contains(&"role".to_string()));
         assert_eq!(config.clone_fields.len(), 0);
-        assert!(config.clone_field_types.get("role").is_none());
+        assert!(!config.clone_field_types.contains_key("role"));
     }
 
     #[test]
@@ -2714,7 +2711,7 @@ verus! {
 
         // Unit enums (CTMState) → Copy, NOT in clone_fields
         assert!(!config.clone_fields.contains(&"tm_state".to_string()));
-        assert!(config.clone_field_types.get("tm_state").is_none());
+        assert!(!config.clone_field_types.contains_key("tm_state"));
 
         // Clone strategy (LState has Set<int> fields → verified)
         assert_eq!(config.clone_strategy.get("CState").unwrap(), "verified");
@@ -2764,7 +2761,7 @@ verus! {
 
         // Unit enums (CPhase) → Copy, NOT in clone_fields
         assert!(!config.clone_fields.contains(&"phase".to_string()));
-        assert!(config.clone_field_types.get("phase").is_none());
+        assert!(!config.clone_field_types.contains_key("phase"));
     }
 
     #[test]
@@ -2805,7 +2802,7 @@ verus! {
 
         // Unit enums (CServerRole) → Copy, NOT in clone_fields
         assert!(!config.clone_fields.contains(&"role".to_string()));
-        assert!(config.clone_field_types.get("role").is_none());
+        assert!(!config.clone_field_types.contains_key("role"));
 
         // Clone strategy (Raft CState has Set<int> fields → verified)
         assert_eq!(config.clone_strategy.get("CState").unwrap(), "verified");

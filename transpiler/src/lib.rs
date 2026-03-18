@@ -791,8 +791,7 @@ impl Transpiler {
 
     /// Convert spec name to exec name (e.g., LInit → CInit)
     fn spec_to_exec_name(spec_name: &str, spec_prefix: &str, exec_prefix: &str) -> String {
-        if spec_name.starts_with(spec_prefix) {
-            let rest = &spec_name[spec_prefix.len()..];
+        if let Some(rest) = spec_name.strip_prefix(spec_prefix) {
             if rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
                 return format!("{}{}", exec_prefix, rest);
             }
@@ -1225,6 +1224,7 @@ impl Transpiler {
     /// - `lemma_empty_seq_map()` / `lemma_empty_<field>_map()`: empty Seq mapping proof
     /// - `lemma_seq_push_map_commute(s, x)` / `lemma_<field>_push_map_commute(s, x)`: push commutativity
     /// - `clone_<field>()`: external_body clone wrapper for struct-typed Vec fields
+    #[allow(clippy::too_many_arguments)]
     fn generate_proof_helper_lemmas(
         has_vec_fields: bool,
         has_set_fields: bool,
@@ -1378,9 +1378,7 @@ impl Transpiler {
                     output.push_str("        idx <= v.len(),\n");
                     output.push_str("        res@.len() == idx as int,\n");
                     output.push_str("        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j]) == v@[j],\n");
-                    output.push_str(&format!(
-                        "        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j])@ == v@[j]@,\n",
-                    ));
+                    output.push_str("        forall|j: int| 0 <= j < idx as int ==> (#[trigger] res@[j])@ == v@[j]@,\n");
                     output.push_str("    decreases\n");
                     output.push_str("        v.len() - idx,\n");
                     output.push_str("    {\n");

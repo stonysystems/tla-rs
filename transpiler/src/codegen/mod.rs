@@ -262,7 +262,7 @@ impl TypeGenerator {
                 Type::Int | Type::Nat => true,
                 Type::Named(p) => p
                     .last()
-                    .map_or(false, |n| n == "u64" || n == "i64" || n == "usize"),
+                    .is_some_and(|n| n == "u64" || n == "i64" || n == "usize"),
                 _ => false,
             },
             _ => false,
@@ -1359,7 +1359,7 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     }
     // Extra aliases from config (sorted for deterministic output).
     let mut extra_alias_entries: Vec<(&String, &String)> = cfg.extra_type_aliases.iter().collect();
-    extra_alias_entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+    extra_alias_entries.sort_by_key(|(a, _)| *a);
     for (alias_name, alias_target) in extra_alias_entries {
         if emitted_alias_names.contains(alias_name.as_str()) {
             all_warnings.push(format!(
@@ -3564,7 +3564,7 @@ mod tests {
     #[test]
     fn test_generate_external_body_clone_with_fields() {
         let generator = TypeGenerator::new(make_config());
-        let fields = vec![
+        let fields = [
             FieldDef {
                 name: "term".to_string(),
                 ty: Type::Int,

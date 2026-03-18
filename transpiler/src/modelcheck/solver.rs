@@ -97,6 +97,7 @@ pub fn solve_branch_successors(
 /// If a branch has direct `s_.* == expr` constraints, solving uses assignment-style
 /// mutation from `current_state`. If not, and `next_state_candidates` is provided,
 /// the solver evaluates the full branch predicate against each candidate `s_` value.
+#[allow(clippy::too_many_arguments)]
 pub fn solve_branch_successors_with_candidates(
     transition: &TransitionIr,
     branch: &TransitionBranchIr,
@@ -124,6 +125,7 @@ pub fn solve_branch_successors_with_candidates(
 
 /// Same as `solve_branch_successors_with_candidates`, but returns per-branch telemetry
 /// and optionally enforces a candidate-enumeration guardrail.
+#[allow(clippy::too_many_arguments)]
 pub fn solve_branch_successors_with_candidates_and_telemetry(
     transition: &TransitionIr,
     branch: &TransitionBranchIr,
@@ -307,6 +309,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn solve_branch_by_candidate_enumeration(
     transition: &TransitionIr,
     branch: &TransitionBranchIr,

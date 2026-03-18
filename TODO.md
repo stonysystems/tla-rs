@@ -11221,7 +11221,7 @@ Reported current state: the latest commit only has one of these five checks pass
   - `CI / Format (push)` ↔ `format` (`cargo fmt --check`)
   - `CI / Verus Verification (push)` ↔ `verify` (`scons --verus-path=...`)
   - `CI / Model-Check Evidence Drift Guard (push)` ↔ `model-check-evidence` (`./scripts/run_model_check_matrix.sh` + `./scripts/verify_model_check_evidence_paths.sh`)
-- [ ] **37.1.2**: Add a checked-in local reproduction helper (preferred: `scripts/run_ci_local.sh`) or an equivalent documented command block that mirrors the workflow jobs closely enough for iterative debugging.
+- [x] **37.1.2**: Added `scripts/run_ci_local.sh` — mirrors all 5 CI jobs locally. Usage: `./scripts/run_ci_local.sh [format|lint|test|verify|evidence|all]`. Verus job skipped when `VERUS_PATH` not set.
 - [x] **37.1.3**: CI status recorded:
   - `CI / Format`: **FAIL** — 399 files have formatting diffs. Fix: `cargo fmt` in `transpiler/`.
   - `CI / Lint`: **FAIL** — 46 clippy errors, all naming convention (`non_snake_case` for test functions with legacy names like `cappMessage`). Fix: rename or allow specific names.
@@ -11236,7 +11236,7 @@ Reported current state: the latest commit only has one of these five checks pass
   - No disabling entire jobs.
   - No weakening `clippy`, `fmt`, verification, or model-check evidence guards unless a previous guard is proven incorrect and replaced by a stricter correct one.
 - [x] **37.2.1.a**: Fixed `CI / Format (push)` by running `cargo fmt` on all 399 unformatted files. Also updated baseline snapshot table in `model_checker_status.md` to match regenerated matrix artifacts (elapsed_ms drift from timing variation).
-- [ ] **37.2.1.b**: `CI / Lint (push)` must pass by fixing actual lint violations or by making the code/lint contract coherent, not by downgrading `-D warnings`.
+- [x] **37.2.1.b**: Fixed all 46 clippy errors: renamed 9 `cappMessage` test functions to snake_case, added `#[allow(clippy::too_many_arguments)]` on 9 solver/explorer functions, converted 10 `field_reassign_with_default` to struct literal syntax, merged 3 identical if-blocks, replaced 4 `.get().is_none()` with `!.contains_key()`, fixed redundant guard, loop var, and if-let patterns. `cargo clippy -- -D warnings` now passes cleanly.
 - [ ] **37.2.1.c**: `CI / Test (push)` must pass by fixing broken tests / broken code paths, not by deleting or ignoring failing tests.
 - [ ] **37.2.1.d**: `CI / Verus Verification (push)` must pass by fixing verification/build issues in the verified code path, not by reducing the verification surface.
 - [ ] **37.2.1.e**: `CI / Model-Check Evidence Drift Guard (push)` must pass by fixing artifact/doc/script drift and keeping evidence reproducible, not by dropping the guard.

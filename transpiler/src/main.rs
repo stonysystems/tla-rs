@@ -479,8 +479,7 @@ enum Commands {
 }
 
 fn strip_spec_prefix<'a>(name: &'a str, spec_prefix: &str) -> &'a str {
-    if name.starts_with(spec_prefix) {
-        let rest = &name[spec_prefix.len()..];
+    if let Some(rest) = name.strip_prefix(spec_prefix) {
         if rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
             return rest;
         }
@@ -3302,6 +3301,7 @@ fn eval_spec_function_call_recursive(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn try_solve_predicate_only_helper_branch(
     transition: &verus_transpiler::modelcheck::ir::TransitionIr,
     branch: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
@@ -4187,6 +4187,7 @@ fn execute_model_check(
     Ok(execution)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_model_check_command(
     input: &Path,
     types: Option<&Path>,
@@ -4846,7 +4847,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 let analysis_result = if spec_paths.len() > 1 {
                     analyze_spec_files(&spec_paths)
                 } else {
-                    analyze_spec_file(&spec_paths[0])
+                    analyze_spec_file(spec_paths[0])
                 };
                 match analysis_result {
                     Ok(schema) => {
@@ -6369,7 +6370,7 @@ Next(s, s_, c) ==
                 max_states,
                 timeout_ms,
                 json_report,
-                export_parity,
+                export_parity: _,
                 model,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
@@ -8998,8 +8999,10 @@ state_dedup = "hash_compaction64"
     fn test_classify_search_evidence_mode_marks_hash_compaction_as_lossy_bug_finding() {
         use verus_transpiler::modelcheck::config::{SearchLimits, StateDedupMode};
 
-        let mut search = SearchLimits::default();
-        search.state_dedup = StateDedupMode::HashCompaction64;
+        let search = SearchLimits {
+            state_dedup: StateDedupMode::HashCompaction64,
+            ..Default::default()
+        };
         let evidence = classify_search_evidence_mode(&search);
 
         assert_eq!(evidence.class, "lossy_bug_finding_accelerator");
@@ -9015,8 +9018,10 @@ state_dedup = "hash_compaction64"
     fn test_classify_search_evidence_mode_marks_symmetry_merging_as_lossy_bug_finding() {
         use verus_transpiler::modelcheck::config::SearchLimits;
 
-        let mut search = SearchLimits::default();
-        search.symmetry_fields = vec!["node_a".to_string()];
+        let search = SearchLimits {
+            symmetry_fields: vec!["node_a".to_string()],
+            ..Default::default()
+        };
         let evidence = classify_search_evidence_mode(&search);
 
         assert_eq!(evidence.class, "lossy_bug_finding_accelerator");
@@ -9357,7 +9362,7 @@ max = 1
             max_set_len: 1,
             max_map_len: 1,
         };
-        let value = RuntimeValue::set_bounded([RuntimeValue::Int(0)].into_iter(), &bounds)
+        let value = RuntimeValue::set_bounded([RuntimeValue::Int(0)], &bounds)
             .expect("set runtime value should construct");
         let domain = DomainSpec::Values {
             values: vec![ModelValue::String("set:{int:0}".to_string())],

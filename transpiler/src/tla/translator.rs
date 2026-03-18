@@ -365,12 +365,10 @@ impl<'a> ExprTranslator<'a> {
                         return "arbitrary()".to_string();
                     }
                 }
-                TlaExpr::UnaryOp { op, .. }
-                    if matches!(
-                        op,
-                        TlaUnaryOp::Subset | TlaUnaryOp::Union | TlaUnaryOp::Domain
-                    ) =>
-                {
+                TlaExpr::UnaryOp {
+                    op: TlaUnaryOp::Subset | TlaUnaryOp::Union | TlaUnaryOp::Domain,
+                    ..
+                } => {
                     if is_generated_d1_context {
                         return "arbitrary()".to_string();
                     }
@@ -2756,9 +2754,7 @@ impl UsageHintEvidence {
             Some("Set<int>")
         } else if self.bool_usage && !self.scalar_usage {
             Some("bool")
-        } else if self.set_element_usage {
-            Some("int")
-        } else if self.scalar_usage {
+        } else if self.set_element_usage || self.scalar_usage {
             Some("int")
         } else {
             None
@@ -4482,16 +4478,15 @@ impl ModuleTranslator {
                 if matches!(op, TlaBinOp::In | TlaBinOp::NotIn) && is_target_ident(right) {
                     evidence.set_membership = true;
                 }
-                if matches!(op, TlaBinOp::In | TlaBinOp::NotIn) && is_target_ident(left) {
-                    evidence.set_element_usage = true;
-                } else if matches!(op, TlaBinOp::In | TlaBinOp::NotIn)
-                    && matches!(
-                        left.as_ref(),
-                        TlaExpr::UnaryOp {
-                            op: TlaUnaryOp::Not,
-                            operand
-                        } if is_target_ident(operand)
-                    )
+                if matches!(op, TlaBinOp::In | TlaBinOp::NotIn)
+                    && (is_target_ident(left)
+                        || matches!(
+                            left.as_ref(),
+                            TlaExpr::UnaryOp {
+                                op: TlaUnaryOp::Not,
+                                operand
+                            } if is_target_ident(operand)
+                        ))
                 {
                     evidence.set_element_usage = true;
                 }
@@ -4803,11 +4798,10 @@ impl ModuleTranslator {
                     matches!(then_expr.as_ref(), TlaExpr::Tuple(elements) if elements.is_empty());
                 let else_is_empty_tuple =
                     matches!(else_expr.as_ref(), TlaExpr::Tuple(elements) if elements.is_empty());
-                if lhs.is_some() && lhs == rhs {
-                    lhs
-                } else if matches!(lhs.as_deref(), Some("Map<int, int>"))
-                    && matches!(rhs.as_deref(), Some("Seq<int>"))
-                    && else_is_empty_tuple
+                if (lhs.is_some() && lhs == rhs)
+                    || (matches!(lhs.as_deref(), Some("Map<int, int>"))
+                        && matches!(rhs.as_deref(), Some("Seq<int>"))
+                        && else_is_empty_tuple)
                 {
                     lhs
                 } else if matches!(rhs.as_deref(), Some("Map<int, int>"))
@@ -5944,8 +5938,10 @@ mod tests {
 
     #[test]
     fn test_translate_op_apply_module_operator_injects_implicit_state_args() {
-        let mut config = TranslatorConfig::default();
-        config.spec_prefix = "L".to_string();
+        let mut config = TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            ..Default::default()
+        };
         config.constant_names.insert("N".to_string());
         config
             .operator_info
@@ -5961,8 +5957,10 @@ mod tests {
 
     #[test]
     fn test_translate_op_apply_module_operator_avoids_double_call_when_state_explicit() {
-        let mut config = TranslatorConfig::default();
-        config.spec_prefix = "L".to_string();
+        let mut config = TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            ..Default::default()
+        };
         config.constant_names.insert("N".to_string());
         config
             .operator_info
@@ -5983,8 +5981,10 @@ mod tests {
 
     #[test]
     fn test_translate_op_apply_module_operator_injects_only_missing_implicit_args() {
-        let mut config = TranslatorConfig::default();
-        config.spec_prefix = "L".to_string();
+        let mut config = TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            ..Default::default()
+        };
         config.constant_names.insert("N".to_string());
         config
             .operator_info
@@ -6004,8 +6004,10 @@ mod tests {
 
     #[test]
     fn test_translate_op_apply_uses_source_to_generated_mapping_for_non_ident_state_args() {
-        let mut config = TranslatorConfig::default();
-        config.spec_prefix = "L".to_string();
+        let mut config = TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            ..Default::default()
+        };
         config.constant_names.insert("N".to_string());
         config
             .operator_info
@@ -6051,8 +6053,10 @@ mod tests {
 
     #[test]
     fn test_translate_op_apply_uses_source_to_generated_mapping_for_constants_param_reorder() {
-        let mut config = TranslatorConfig::default();
-        config.spec_prefix = "L".to_string();
+        let mut config = TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            ..Default::default()
+        };
         config.constant_names.insert("Cfg".to_string());
         config
             .operator_info
@@ -6340,8 +6344,10 @@ mod tests {
 
     #[test]
     fn test_non_generated_module_operator_call_preserves_record_arg_from_param_type_hint() {
-        let mut config = TranslatorConfig::default();
-        config.spec_prefix = "L".to_string();
+        let mut config = TranslatorConfig {
+            spec_prefix: "L".to_string(),
+            ..Default::default()
+        };
         config.constant_names.insert("Votes".to_string());
         config.operator_info.insert(
             "AddVoteAndRemoveOldOnes".to_string(),

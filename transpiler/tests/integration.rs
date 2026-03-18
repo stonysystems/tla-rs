@@ -2903,7 +2903,7 @@ fn test_replica_dispatch_assume_drift_guard() {
             assume_lines
         );
 
-        for (line_no, line_text) in assume_lines {
+        if let Some((line_no, line_text)) = assume_lines.into_iter().next() {
             all_dispatch_assumes.push((fn_name.to_string(), line_no, line_text.clone()));
             panic!(
                 "unexpected assume in replica fallback dispatch function {}:{}: {}",
@@ -4532,7 +4532,7 @@ fn test_d1_on_community_tla_specs() {
     );
     // TwoPhase_community.tla fails on record set constructor [type : {"Prepared"}, rm : RM]
     assert!(
-        failures.len() >= 1,
+        !failures.is_empty(),
         "Expected at least 1 failure (TwoPhase record set), got {}",
         failures.len()
     );
@@ -7012,7 +7012,7 @@ fn test_generate_marshalable_rsl_type_count() {
 // ============================================================
 
 #[test]
-fn test_generate_marshalable_enum_cappMessage_from_toml() {
+fn test_generate_marshalable_enum_capp_message_from_toml() {
     let code = load_and_generate_marshalable("../src/protocol/RSL/types_transpile.toml");
 
     // CAppMessage enum impl should be generated
@@ -17553,7 +17553,7 @@ fn test_workspace_directory_structure_complete() {
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
                 .count()
         })
         .unwrap_or(0);
@@ -17568,7 +17568,7 @@ fn test_workspace_directory_structure_complete() {
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
                 .count()
         })
         .unwrap_or(0);
@@ -17867,13 +17867,12 @@ fn test_phase_33_4_4_a_release_debug_parity_artifacts_and_metadata_are_checked_i
             run_context_path.display()
         );
         assert!(
-            run_context
+            !run_context
                 .get("machine")
                 .and_then(|m| m.get("platform"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
-                .len()
-                > 0,
+                .is_empty(),
             "run-context metadata {} must record machine platform",
             run_context_path.display()
         );
@@ -17925,7 +17924,7 @@ fn test_phase_33_4_4_a_release_debug_parity_artifacts_and_metadata_are_checked_i
                     per_run_meta
                         .get("summary")
                         .and_then(|s| s.get(summary_field))
-                        .map_or(false, |v| v.is_number()),
+                        .is_some_and(|v| v.is_number()),
                     "per-run metadata {} must include numeric summary field `{}`",
                     per_run_meta_path.display(),
                     summary_field
@@ -18105,7 +18104,7 @@ fn test_phase_33_4_4_b_phase_timing_telemetry_is_reported_and_preserved() {
                 "report_serialization_output_ms",
             ] {
                 assert!(
-                    timing.get(key).map_or(false, |v| v.is_number()),
+                    timing.get(key).is_some_and(|v| v.is_number()),
                     "benchmark artifact {} must include numeric timing field `{}`",
                     artifact_path.display(),
                     key
@@ -18331,14 +18330,14 @@ fn test_phase_33_4_4_d_branch_blocker_telemetry_is_preserved_and_reported() {
                     "cumulative_solve_elapsed_ms",
                 ] {
                     assert!(
-                        obj.get(numeric_key).map_or(false, |v| v.is_number()),
+                        obj.get(numeric_key).is_some_and(|v| v.is_number()),
                         "benchmark artifact {} branch telemetry entry must include numeric `{}`",
                         artifact_path.display(),
                         numeric_key
                     );
                 }
                 assert!(
-                    obj.get("branch_label").map_or(false, |v| v.is_string()),
+                    obj.get("branch_label").is_some_and(|v| v.is_string()),
                     "benchmark artifact {} branch telemetry entry must include string `branch_label`",
                     artifact_path.display()
                 );
@@ -18879,12 +18878,11 @@ fn test_phase_33_4_4_h_anti_corner_cutting_rules_are_explicit_and_enforced() {
             "release benchmark artifact {} must remain exact-mode proof-strength evidence",
             release_artifact_path.display()
         );
-        assert_eq!(
+        assert!(
             release_evidence
                 .get("proof_strength")
                 .and_then(|value| value.as_bool())
                 .unwrap_or(false),
-            true,
             "release benchmark artifact {} must report proof_strength=true",
             release_artifact_path.display()
         );
