@@ -554,6 +554,42 @@ fn count_branch_constraint_telemetry(branch: &TransitionBranchIr) -> (usize, usi
     (direct_assigned, deferred)
 }
 
+/// Detect if a constraint is a frame condition: `s_.path == s.path`.
+///
+/// A frame condition assigns the next-state field to the same field of the
+/// current state. Since `next_state` starts as `current_state.clone()`, these
+/// are tautological and can be skipped to avoid unnecessary evaluator calls.
+///
+/// Returns true if the constraint is `Eq { target: NextState(path), value }`
+/// where `value` is a simple field access `current_state_param.path`.
+fn is_frame_condition(target_path: &[String], value: &Expr, current_state_param: &str) -> bool {
+    // Extract segments from the value expression (e.g., `s.field` → ["s", "field"])
+    fn extract_expr_segments(expr: &Expr) -> Option<Vec<String>> {
+        match expr {
+            Expr::Ident(name) => Some(vec![name.clone()]),
+            Expr::Field(base, field) | Expr::Arrow(base, field) => {
+                let mut segments = extract_expr_segments(base)?;
+                segments.push(field.clone());
+                Some(segments)
+            }
+            _ => None,
+        }
+    }
+
+    let Some(segments) = extract_expr_segments(value) else {
+        return false;
+    };
+    if segments.is_empty() {
+        return false;
+    }
+    // First segment must be the current state parameter
+    if segments[0] != current_state_param {
+        return false;
+    }
+    // Remaining segments must match the target path exactly
+    segments[1..] == *target_path
+}
+
 fn filter_successors_to_candidate_keys(
     successors: Vec<RuntimeValue>,
     candidate_state_keys: Option<&BTreeSet<String>>,
@@ -590,6 +626,14 @@ fn solve_one_assignment(
                     },
                 value,
             } => {
+                // Frame-condition optimization (Phase 36.3.5): skip `s_.f == s.f`
+                // since next_state starts as current_state.clone(), making these
+                // tautological. This avoids building the environment, evaluating
+                // the expression, and writing the value.
+                if is_frame_condition(path, value, &transition.current_state_param) {
+                    continue;
+                }
+
                 let env = build_environment(
                     transition,
                     current_state,
@@ -2014,5 +2058,58 @@ mod tests {
         let got =
             read_value_at_path(&root, &[String::from("inner"), String::from("count")]).unwrap();
         assert_eq!(got, RuntimeValue::Int(5));
+    }
+
+    #[test]
+    fn test_is_frame_condition_simple_field() {
+        // s_.x == s.x → frame condition
+        let path = vec!["x".to_string()];
+        let value = Expr::Field(Box::new(Expr::Ident("s".to_string())), "x".to_string());
+        assert!(is_frame_condition(&path, &value, "s"));
+    }
+
+    #[test]
+    fn test_is_frame_condition_nested_field() {
+        // s_.inner.count == s.inner.count → frame condition
+        let path = vec!["inner".to_string(), "count".to_string()];
+        let value = Expr::Field(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "inner".to_string(),
+            )),
+            "count".to_string(),
+        );
+        assert!(is_frame_condition(&path, &value, "s"));
+    }
+
+    #[test]
+    fn test_is_frame_condition_not_frame_different_field() {
+        // s_.x == s.y → NOT a frame condition
+        let path = vec!["x".to_string()];
+        let value = Expr::Field(Box::new(Expr::Ident("s".to_string())), "y".to_string());
+        assert!(!is_frame_condition(&path, &value, "s"));
+    }
+
+    #[test]
+    fn test_is_frame_condition_not_frame_complex_expr() {
+        // s_.x == s.x + 1 → NOT a frame condition (complex expression)
+        let path = vec!["x".to_string()];
+        let value = Expr::Binary(
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "x".to_string(),
+            )),
+            BinOp::Add,
+            Box::new(Expr::Literal(crate::ast::Literal::Int(1))),
+        );
+        assert!(!is_frame_condition(&path, &value, "s"));
+    }
+
+    #[test]
+    fn test_is_frame_condition_wrong_root() {
+        // s_.x == c.x → NOT a frame condition (constants, not current state)
+        let path = vec!["x".to_string()];
+        let value = Expr::Field(Box::new(Expr::Ident("c".to_string())), "x".to_string());
+        assert!(!is_frame_condition(&path, &value, "s"));
     }
 }
