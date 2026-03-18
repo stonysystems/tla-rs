@@ -49,7 +49,7 @@
       {
         "branch_label": "branch_1",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 32,
+        "cumulative_solve_elapsed_ms": 30,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -71,7 +71,7 @@
       {
         "branch_label": "branch_3",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 22,
+        "cumulative_solve_elapsed_ms": 21,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -82,7 +82,7 @@
       {
         "branch_label": "branch_4",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 23,
+        "cumulative_solve_elapsed_ms": 19,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -93,7 +93,7 @@
       {
         "branch_label": "branch_5",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 20,
+        "cumulative_solve_elapsed_ms": 19,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -104,7 +104,7 @@
       {
         "branch_label": "branch_6",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 25,
+        "cumulative_solve_elapsed_ms": 23,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -115,7 +115,7 @@
       {
         "branch_label": "branch_7",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 32,
+        "cumulative_solve_elapsed_ms": 29,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -129,7 +129,7 @@
     "constants_valuations_total": 1,
     "depth": 1,
     "direct_assignment_branch_solves": 8,
-    "elapsed_ms": 220,
+    "elapsed_ms": 207,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
@@ -140,14 +140,14 @@
     "successor_cache_misses": 1,
     "symmetry_collapses": 0,
     "timing": {
-      "candidate_generation_evaluation_ms": 0,
-      "dedup_hashing_normalization_ms": 9,
+      "candidate_generation_evaluation_ms": 1,
+      "dedup_hashing_normalization_ms": 8,
       "initial_state_construction_ms": 1,
       "invariant_evaluation_ms": 0,
-      "model_config_resolution_ms": 0,
+      "model_config_resolution_ms": 1,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 4,
-      "successor_solving_ms": 210
+      "successor_solving_ms": 197
     },
     "transitions": 4
   },

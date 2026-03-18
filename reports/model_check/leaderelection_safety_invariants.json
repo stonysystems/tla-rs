@@ -124,7 +124,7 @@
     "constants_valuations_total": 1,
     "depth": 1,
     "direct_assignment_branch_solves": 7,
-    "elapsed_ms": 13,
+    "elapsed_ms": 12,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
@@ -136,12 +136,12 @@
     "symmetry_collapses": 0,
     "timing": {
       "candidate_generation_evaluation_ms": 0,
-      "dedup_hashing_normalization_ms": 5,
+      "dedup_hashing_normalization_ms": 4,
       "initial_state_construction_ms": 1,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 1,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 6,
+      "source_ingestion_parsing_ms": 5,
       "successor_solving_ms": 7
     },
     "transitions": 3
