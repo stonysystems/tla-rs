@@ -42,7 +42,7 @@
       {
         "branch_label": "branch_0",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 27,
+        "cumulative_solve_elapsed_ms": 24,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -53,7 +53,7 @@
       {
         "branch_label": "branch_1",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 34,
+        "cumulative_solve_elapsed_ms": 33,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -64,7 +64,7 @@
       {
         "branch_label": "branch_2",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 36,
+        "cumulative_solve_elapsed_ms": 35,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -75,7 +75,7 @@
       {
         "branch_label": "branch_3",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 23,
+        "cumulative_solve_elapsed_ms": 22,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -108,7 +108,7 @@
       {
         "branch_label": "branch_6",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 26,
+        "cumulative_solve_elapsed_ms": 25,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -119,7 +119,7 @@
       {
         "branch_label": "branch_7",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 33,
+        "cumulative_solve_elapsed_ms": 32,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -133,7 +133,7 @@
     "constants_valuations_total": 1,
     "depth": 1,
     "direct_assignment_branch_solves": 8,
-    "elapsed_ms": 230,
+    "elapsed_ms": 223,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
@@ -145,13 +145,13 @@
     "symmetry_collapses": 0,
     "timing": {
       "candidate_generation_evaluation_ms": 1,
-      "dedup_hashing_normalization_ms": 8,
+      "dedup_hashing_normalization_ms": 9,
       "initial_state_construction_ms": 1,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 1,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 5,
-      "successor_solving_ms": 220
+      "successor_solving_ms": 212
     },
     "transitions": 4
   },

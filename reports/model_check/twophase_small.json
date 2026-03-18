@@ -49,7 +49,7 @@
       {
         "branch_label": "branch_1",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 33,
+        "cumulative_solve_elapsed_ms": 32,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -60,7 +60,7 @@
       {
         "branch_label": "branch_2",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 36,
+        "cumulative_solve_elapsed_ms": 34,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -82,7 +82,7 @@
       {
         "branch_label": "branch_4",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 20,
+        "cumulative_solve_elapsed_ms": 21,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -115,7 +115,7 @@
       {
         "branch_label": "branch_7",
         "candidate_state_count": 48,
-        "cumulative_solve_elapsed_ms": 33,
+        "cumulative_solve_elapsed_ms": 34,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 121,
@@ -129,7 +129,7 @@
     "constants_valuations_total": 1,
     "depth": 1,
     "direct_assignment_branch_solves": 8,
-    "elapsed_ms": 226,
+    "elapsed_ms": 225,
     "enumeration_candidate_evaluations": 0,
     "enumeration_fallback_branch_solves": 0,
     "guard_pruned_candidate_evaluations": 0,
@@ -146,8 +146,8 @@
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 0,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 5,
-      "successor_solving_ms": 216
+      "source_ingestion_parsing_ms": 4,
+      "successor_solving_ms": 215
     },
     "transitions": 4
   },

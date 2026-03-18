@@ -67,7 +67,7 @@
       "dedup_hashing_normalization_ms": 0,
       "initial_state_construction_ms": 0,
       "invariant_evaluation_ms": 0,
-      "model_config_resolution_ms": 1,
+      "model_config_resolution_ms": 0,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 1,
       "successor_solving_ms": 0

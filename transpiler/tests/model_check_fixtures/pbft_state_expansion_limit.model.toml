@@ -21,7 +21,7 @@ max_map_len = 1
 
 [search]
 max_depth = 1
-max_states = 500
+max_states = 2000
 timeout_ms = 10000
 
 [properties]
