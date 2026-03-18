@@ -9,10 +9,10 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 - **Verification command**: `/home/users/zihao/verus/verus --crate-type=lib src/lib.rs`
 - **Build command**: `scons --verus-path=/home/users/zihao/verus`
 
-## Current Status (2026-03-12)
+## Current Status (2026-03-18)
 
-Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete, and Phase 33 (model-checker hardening / protocol coverage / benchmark evidence discipline) has its completion gate closed. The remaining open work is now concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
-The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet larger consensus models still hit exact-mode candidate/state-expansion scalability limits. Current model-check status is tracked in `docs/model_checker_status.md`.
+Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete, and the earlier Phase 33 benchmark-evidence closure is preserved as a historical checkpoint, but the benchmark comparison now motivates two follow-up implementation phases: Phase 36 (exact-state parity and performance debugging) is the top priority, and Phase 37 (CI/CD recovery) is next. The remaining proof-heavy work is still concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
+The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`.
 
 **What works:**
 - TLA+ → Verus spec transpilation (Phase 9): ✅ Complete
@@ -35,6 +35,8 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - Phase 22 model checker baseline: ✅ COMPLETE — source-first `verus-transpile model-check` supports BFS/DFS, invariant/deadlock checking, counterexample traces, wrapper generation, symmetry/hash/POR reductions, and bounded `leads_to`/fairness; checked-in bounded source-first smoke runs exist for TwoPhase, LeaderElection, PrimaryBackup, and Paxos
 - Phase 33 model checker hardening / coverage / benchmark evidence: ✅ COMPLETION GATE CLOSED — canonical status matrix, blocker fixtures, matched TLC-vs-source-first benchmark artifacts, same-time-budget progress tables, release-vs-debug comparison, wall-time attribution, and branch-level blocker telemetry are checked in
 - Phase 35 beginner model checker architecture survey/tutorial: ✅ COMPLETE — `docs/model-checker-architecture/` now contains the beginner tutorial, walkthrough, comparison, optimization audit, evidence ledger, and review guards
+- Phase 36 exact-state parity / performance debugging: 🚧 NEW TOP PRIORITY — benchmark comparison now needs semantic-parity debugging and performance root-cause work before further model-checker claims should be trusted
+- Phase 37 CI/CD recovery: 🚧 NEXT PRIORITY — the current GitHub Actions workflow must be restored to green without weakening checks
 - Documentation: transpiler config reference, proof patterns, regeneration scripts
 - Type generator: correct View impl for Set<int>/Seq<int>/Seq<NamedType> with `.map()` conversion; clone_strategy for HashSet-containing structs
 - 145 transpiler integration tests pass (including 10 verifying generated module public APIs, 1 verus2tla roundtrip for all 7 protocols, 10 D4 pipeline regression tests, 9 message generation per-protocol tests, 9 marshalling round-trip tests, 10 LNext scheduler analysis tests, 3 action classification tests, 9 scaffold structure tests, 9 host-init compilation tests, 15 scheduler generation tests [2 TOML roundtrip, 1 exact counts, 1 consistency, 1 message_variant validity, 1 heuristic coverage, 9 scaffold compilation], 2 impl file dead code stripping tests)
@@ -46,18 +48,22 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **Phase 31 is still incomplete** — the RSL refinement-proof port now has 10 remaining `external_body` lemmas to discharge (2 in `refinement_proof/requests.rs`, 2 in `refinement_proof/refinement.rs`, 6 in `refinement_proof/execution.rs`), followed by a full sweep with both proof modules enabled.
 - **Phase 34 is still incomplete** — the Raft refinement proof still has 12 assumes left. The main blocker is the strict-term LeaderCompleteness argument (`d_rli <= k` wall), and the final SMS assume depends on resolving that LC path.
 - **Native model checker is still partial** — the remaining blockers are now concentrated in exact-mode candidate/state-expansion scalability, finite-domain configuration limits, and protocol-specific unsupported rows tracked in `docs/model_checker_status.md`.
+- **Exact-state parity between TLC and source-first is not yet demonstrated** — the benchmark report currently shows mismatched reachable-state counts on shared models. Before trusting any performance comparison, the repo needs deterministic state-set export, normalized state/edge diffing, and root-cause fixes until the exact reachable distinct-state sets agree on the shared small-model cases.
 - **Consensus protocol source-first coverage is still not fully green** — all target protocols now have checked-in status/evidence rows, but only TwoPhase, LeaderElection, PrimaryBackup, Paxos, and PBFT currently have checked-in bounded `result = ok` runs. RSL, Raft, VerticalPaxos, EPaxos, and ChainReplication still bottom out at checked-in blocker models.
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
+- **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
 
 **Next steps (priority order):**
-1. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
-2. **Phase 34: Raft Network Model and Complete Refinement Proof** — eliminate the remaining 12 assumes. The dominant blocker is the strict-term LeaderCompleteness argument (`d_rli <= k` wall), which still needs a stronger induction/provenance strategy. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
-3. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
-4. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
-5. **Phase 20 cleanup** — finish the remaining auto-inference cleanup.
+1. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models and fix the source-first performance pathologies exposed by the benchmark comparison. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--top-priority).
+2. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks, and keep the evidence/benchmark guards aligned with any schema or artifact changes from Phase 36. See [Phase 37](#phase-37-cicd-recovery--next-priority).
+3. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
+4. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
+5. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
+6. **Phase 20 cleanup** — finish the remaining auto-inference cleanup.
+7. **Phase 34: Raft Network Model and Complete Refinement Proof** — eliminate the remaining 12 assumes. This is currently the lowest-priority major open phase; the dominant blocker is the strict-term LeaderCompleteness argument (`d_rli <= k` wall), which still needs a stronger induction/provenance strategy. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
 
-**Active work**: The highest-priority open proof phases are now **Phase 31** (RSL refinement proof de-externalization) and **Phase 34** (Raft refinement proof assume elimination). Phase 35 is complete, and Phase 33's completion gate is closed; reopen model-checker work only when new implementation goals justify it. See `reports/raft_refinement_proof.md` for detailed Raft status.
+**Active work**: The top-priority implementation phase is now **Phase 36** (exact-state parity and performance debugging), followed by **Phase 37** (CI/CD recovery). After that, the next proof phase is **Phase 31** (RSL refinement proof de-externalization). **Phase 34** (Raft refinement proof assume elimination) is currently the lowest-priority major open phase. Phase 35 is complete, and Phase 33 should be treated as a historical evidence-discipline milestone rather than the final word on model-checker correctness/performance. See `reports/raft_refinement_proof.md` for detailed Raft status.
 
 ## Reference
 
@@ -94,6 +100,8 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 25. [Phase 33: Model Checker Hardening, Protocol Coverage, and Performance](#phase-33-model-checker-hardening-protocol-coverage-and-performance)
 26. [Phase 34: Raft Network Model and Complete Refinement Proof](#phase-34-raft-network-model-and-complete-refinement-proof)
 27. [Phase 35: Beginner Model Checker Architecture Survey and Tutorial — TOP PRIORITY](#phase-35-beginner-model-checker-architecture-survey-and-tutorial--top-priority)
+28. [Phase 36: Exact-State Parity and Performance Debugging — TOP PRIORITY](#phase-36-exact-state-parity-and-performance-debugging--top-priority)
+29. [Phase 37: CI/CD Recovery — NEXT PRIORITY](#phase-37-cicd-recovery--next-priority)
 
 ---
 
@@ -10493,6 +10501,8 @@ Rules for this phase (do not cut corners):
     - The comparison report explicitly includes generated-base-TLA+ provenance (`verus2-tla` output paths) plus wrapper/property glue paths, release-vs-debug comparison, phase-attributed timing, branch-level blocker telemetry, and explicit root-cause answers.
     - Added integration regression `test_phase_33_7_completion_gate_is_closed_with_specific_evidence` to prevent silent drift on the completion-gate conditions above.
 
+**Historical note**: Phase 33 remains a completed evidence/discipline milestone. New implementation work prompted by the benchmark comparison is tracked separately in [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--top-priority) and [Phase 37](#phase-37-cicd-recovery--next-priority) so we do not silently reinterpret the closed Phase 33 gate.
+
 ---
 
 ## Phase 34: Raft Network Model and Complete Refinement Proof
@@ -11092,3 +11102,191 @@ docs/model-checker-architecture/
 | 35.7 Optimization audit | ~2-4 hours |
 | 35.8/35.9 QC pass | ~1-2 hours |
 | **Total** | **~16-28 hours** |
+
+---
+
+## Phase 36: Exact-State Parity and Performance Debugging — TOP PRIORITY
+
+**Goal**: Treat the current TLC-vs-source-first benchmark comparison as a bug report, not just a status snapshot. The immediate deliverables are:
+- exact reachable-state parity on the shared **small** models after normalizing the same semantic state representation,
+- concrete root-cause fixes for any source-first successor-generation / dedup / wrapper-semantics bugs that parity debugging uncovers,
+- and materially improved source-first benchmark behavior on the shared non-toy models (especially `LeaderElection` and `Paxos`).
+
+**Why this phase exists**:
+- The current benchmark report shows suspicious count gaps (`TLC` vs source-first) on supposedly matched models.
+- The current report also shows a severe performance gap, plus `LeaderElection` / `Paxos` exact-mode benchmark runs timing out while `TLC` completes.
+- CI recovery is required too, but it is tracked separately as Phase 37 so the model-checker debugging plan remains the top implementation focus.
+
+**Hard rules for this phase (do not cut corners):**
+- Do **not** paper over count mismatches by changing model bounds, invariants, fairness, or search mode unless the change is required for semantic correctness and is documented as such.
+- Do **not** compare unlike metrics. `TLC` "states found" / "distinct states" and source-first `summary.states` / `summary.transitions` must be mapped explicitly before claiming a bug or claiming success.
+- Do **not** accept "counts are different because the engines are different" without exporting and diffing normalized state sets. On the same exact semantics, the normalized reachable **distinct** state sets must match.
+- Do **not** use lossy search modes (`hash_compaction64`, symmetry-merging evidence mode, etc.) for parity claims. Use exact-mode only.
+- Do **not** stop at aggregate timing. Keep branch-level and phase-level telemetry so performance claims remain attributable.
+- Do **not** hand-write new TLA+ semantics for comparison. Use the existing repo wrapper/generation workflow and clearly record any wrapper-side normalization used for parity diffing.
+
+### 36.1 Metric mapping and exact-state parity harness
+
+- [ ] **36.1.1**: Add an explicit metric-mapping note to `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` and `docs/model_checker_status.md` clarifying which pairs are actually comparable:
+  - `TLC distinct states` ↔ source-first normalized reachable distinct-state count,
+  - `TLC states found` ↔ **not automatically equal** to source-first `summary.transitions`,
+  - any non-equivalent fields must be labeled as such before further analysis.
+- [ ] **36.1.2**: Define one canonical cross-engine state normalization schema for parity work. It must:
+  - project to the underlying protocol state only,
+  - ignore wrapper-only bookkeeping that is not semantically part of the protocol state,
+  - normalize collection ordering / map ordering / record-field ordering deterministically,
+  - and be written down in a checked-in doc section before diffing begins.
+- [ ] **36.1.3**: Add exact-mode source-first state export for the shared small-model cases (`TwoPhase`, `PrimaryBackup`, `LeaderElection`, `Paxos`) under a checked-in debug artifact path (preferred: `reports/model_check/parity/source_first/`).
+  - Each export must include: normalized state payload, stable state ID, predecessor IDs, outgoing action labels, and whether the state is initial.
+  - Export order must be deterministic so diffs are stable in CI and code review.
+- [ ] **36.1.4**: Add a TLC-side export path for the same shared small models under a checked-in debug artifact path (preferred: `reports/model_check/parity/tlc/`).
+  - If `TLC` cannot directly emit all reachable normalized states in the needed format, add a wrapper-side or post-processing pipeline that still uses the repo's generated wrapper artifacts rather than hand-maintained semantics.
+  - The end result must be machine-diffable and derived reproducibly from checked-in inputs.
+- [ ] **36.1.5**: Add a checked-in diff tool (preferred: `scripts/diff_tlc_vs_source_first_states.sh` or a Rust test helper) that compares:
+  - normalized distinct-state sets,
+  - normalized initial-state sets,
+  - normalized action-labeled edge sets where feasible,
+  - and reports the first source-first-only and TLC-only witness states with shortest-path provenance.
+- [ ] **36.1.6**: Add regression coverage that fails if normalized distinct-state parity regresses on the shared small models.
+  - Start with `TwoPhase` and `PrimaryBackup`.
+  - Then extend to `LeaderElection` small and `Paxos` small once the harness is stable.
+
+### 36.2 Root-cause debugging on the shared small models
+
+- [ ] **36.2.1**: Run the new parity harness on the shared small models first and classify each mismatch before editing solver code. Allowed root-cause buckets:
+  - initial-state construction bug,
+  - successor-generation bug,
+  - helper-call / predicate-branch solving bug,
+  - wrapper/projection mismatch,
+  - deadlock/stuttering/fairness semantic mismatch,
+  - dedup/canonicalization bug,
+  - metric-definition bug (counts not actually comparable).
+- [ ] **36.2.2**: For the first real semantic mismatch found, add a focused failing regression that reproduces it on the smallest possible model before implementing the fix.
+- [ ] **36.2.3**: Fix small-model parity for `TwoPhase`.
+  - Completion bar: zero normalized distinct-state diff and zero normalized initial-state diff.
+  - If edge-set parity is not exact on the first pass, keep the mismatch witness in the checked-in report and continue until either edge parity is fixed or the remaining difference is proved to be a metric-reporting mismatch rather than a semantic one.
+- [ ] **36.2.4**: Fix small-model parity for `PrimaryBackup` with the same bar as `TwoPhase`.
+- [ ] **36.2.5**: Fix small-model parity for `LeaderElection` and `Paxos`.
+  - Do not defer these indefinitely behind benchmark work; if the small-model semantics do not align, benchmark conclusions are not trustworthy.
+- [ ] **36.2.6**: Update `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` after each parity bug is fixed so the narrative reflects actual post-fix counts rather than stale numbers.
+- [ ] **36.2.7**: If parity debugging shows the current benchmark report compared unlike metrics, keep the corrected explanation in the report **and** still finish the normalized distinct-state diff work. Merely correcting the prose is not sufficient.
+
+### 36.3 Performance bug hunt on matched benchmarks
+
+- [ ] **36.3.1**: After small-model parity is green for at least `TwoPhase` and `PrimaryBackup`, profile the current source-first hot path on the non-toy shared benchmarks (`benchmarks_1h/*`) in release mode.
+  - Keep phase-level timing, branch-level timing, candidate-domain sizes, direct-solver hit rates, fallback rates, and dedup/hash costs.
+  - Do not rely only on the existing aggregate wall-time table.
+- [ ] **36.3.2**: Add finer-grained telemetry for the dominant hot branches in `LeaderElection` and `Paxos`, including at minimum:
+  - existential-assignment counts,
+  - candidate-state counts before/after pruning,
+  - number of fields derived directly from equalities vs brute-force enumerated,
+  - number of evaluator calls per successful successor,
+  - and time spent in normalization / hashing / cloning / branch solving separately.
+- [ ] **36.3.3**: Audit whether the current source-first engine is materializing full cartesian candidate spaces before applying simple equality/guard constraints. If yes, treat that as a correctness/performance bug and replace it with constraint-driven candidate construction.
+- [ ] **36.3.4**: Prioritize fixes that reduce obviously wasted work in exact mode:
+  - derive concrete next-state fields from branch equalities before enumerating unconstrained fields,
+  - prune impossible branches earlier,
+  - avoid recomputing large normalized values / hashes,
+  - and avoid cloning full candidate states when only a small field subset is under construction.
+- [ ] **36.3.5**: Inspect one or more mature explicit-state model-checker implementations (for example TLC and/or another explicit-state engine) specifically for:
+  - enabled-action generation,
+  - state fingerprinting / hashing,
+  - worklist management,
+  - and avoidance of unnecessary full-state materialization.
+  Record concrete lessons in a checked-in dev note before large solver refactors. Do not cargo-cult code; translate insights into local tests and local invariants.
+- [ ] **36.3.6**: Re-run the matched benchmark suite after each material optimization/fix. Keep old and new artifacts side by side until the comparison report and status page are updated.
+- [ ] **36.3.7**: Target outcome for `LeaderElection` and `Paxos`: source-first should complete the current matched benchmark configs in exact mode. If that bar is still not met after the first optimization round, the remaining blocker must no longer be a vague "enumeration scalability" label:
+  - it must be reduced to named hot branches / named constructs,
+  - backed by checked-in telemetry,
+  - with a smallest reproducible performance reproducer or blocker model,
+  - and a concrete next implementation task that is more specific than "make solver faster".
+
+### 36.4 Documentation and status updates
+
+- [ ] **36.4.1**: Add a new section to `docs/model_checker_status.md` summarizing exact-state parity status:
+  - which shared small models now have zero normalized distinct-state diff,
+  - where the state exports live,
+  - and which remaining protocols still have open parity bugs.
+- [ ] **36.4.2**: Update `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` so it cleanly separates:
+  - distinct-state parity claims,
+  - metric-mapping notes,
+  - performance claims,
+  - and remaining blocker claims.
+- [ ] **36.4.3**: If any benchmark counts or conclusions change after bug fixes, update `docs/conversion-testing-guide.md` and any checked-in benchmark summaries/manifests that repeat the old numbers.
+
+### 36.5 Completion gate
+
+- [ ] Do not mark Phase 36 complete until all of the following are true:
+  - the benchmark report explicitly defines which `TLC` and source-first metrics are semantically comparable,
+  - checked-in normalized state exports exist for the shared small-model cases on both engines,
+  - `TwoPhase`, `PrimaryBackup`, `LeaderElection`, and `Paxos` shared **small** models have zero normalized distinct-state diff,
+  - any transition-edge mismatch that remains has been either fixed or proved to be a reporting-surface mismatch rather than a semantic-state mismatch,
+  - the benchmark report and status page have been regenerated/updated after the fixes,
+  - source-first benchmark behavior on the shared non-toy models is materially improved and backed by new telemetry,
+  - `LeaderElection` and `Paxos` no longer rely on the generic blocker label alone,
+  - and the new protections are strong enough that future count/performance/documentation drift will fail tests or scripts rather than silently regressing.
+
+---
+
+## Phase 37: CI/CD Recovery — NEXT PRIORITY
+
+**Goal**: Restore a fully green current GitHub Actions workflow in `.github/workflows/ci.yml` without weakening checks, while keeping the new model-checker parity/performance artifacts and guards maintainable. The target is explicitly all 5 current push checks:
+- `CI / Format (push)`
+- `CI / Lint (push)`
+- `CI / Model-Check Evidence Drift Guard (push)`
+- `CI / Verus Verification (push)`
+- `CI / Test (push)`
+
+Reported current state: the latest commit only has one of these five checks passing. Treat that as a repo-bug backlog, not as a reason to relax the workflow.
+
+**Why this phase is separate from Phase 36**:
+- Phase 36 is already a large model-checker debugging/refactor effort.
+- CI/CD recovery is also substantial, but it should follow the model-checker fixes so the workflow can be updated against the final artifact/test shape rather than churn during deep debugging.
+
+**Hard rules for this phase (do not cut corners):**
+- Do **not** weaken correctness checks just to get green badges.
+- Do **not** disable entire jobs, add `continue-on-error`, or silently drop evidence guardrails.
+- Do **not** change artifact/report paths without updating every guard script, doc reference, and workflow step that depends on them.
+
+### 37.1 Reproduce and localize failures
+
+- [ ] **37.1.1**: Reproduce the current GitHub Actions workflow locally using the actual job split in `.github/workflows/ci.yml`:
+  - `CI / Test (push)` ↔ `test` (`cargo test --all-features` in `transpiler/`)
+  - `CI / Lint (push)` ↔ `lint` (`cargo clippy --all-targets --all-features -- -D warnings`)
+  - `CI / Format (push)` ↔ `format` (`cargo fmt --check`)
+  - `CI / Verus Verification (push)` ↔ `verify` (`scons --verus-path=...`)
+  - `CI / Model-Check Evidence Drift Guard (push)` ↔ `model-check-evidence` (`./scripts/run_model_check_matrix.sh` + `./scripts/verify_model_check_evidence_paths.sh`)
+- [ ] **37.1.2**: Add a checked-in local reproduction helper (preferred: `scripts/run_ci_local.sh`) or an equivalent documented command block that mirrors the workflow jobs closely enough for iterative debugging.
+- [ ] **37.1.3**: Record the status of all 5 push checks (pass/fail) and the first failing step(s) / exact root cause(s) for each failing check in a checked-in dev note or TODO sub-bullets before making broad workflow changes.
+
+### 37.2 Restore green CI without weakening checks
+
+- [ ] **37.2.1**: Fix the current CI failures across all 5 push checks without deleting coverage.
+  - No `continue-on-error`.
+  - No disabling entire jobs.
+  - No weakening `clippy`, `fmt`, verification, or model-check evidence guards unless a previous guard is proven incorrect and replaced by a stricter correct one.
+- [ ] **37.2.1.a**: `CI / Format (push)` must pass by fixing formatting issues in repo files, not by removing the formatter check.
+- [ ] **37.2.1.b**: `CI / Lint (push)` must pass by fixing actual lint violations or by making the code/lint contract coherent, not by downgrading `-D warnings`.
+- [ ] **37.2.1.c**: `CI / Test (push)` must pass by fixing broken tests / broken code paths, not by deleting or ignoring failing tests.
+- [ ] **37.2.1.d**: `CI / Verus Verification (push)` must pass by fixing verification/build issues in the verified code path, not by reducing the verification surface.
+- [ ] **37.2.1.e**: `CI / Model-Check Evidence Drift Guard (push)` must pass by fixing artifact/doc/script drift and keeping evidence reproducible, not by dropping the guard.
+- [ ] **37.2.2**: If the new parity/debug artifacts are too large or too slow for default CI, keep the full exports outside the default workflow but add a smaller deterministic CI-safe guard that still catches semantic drift (for example a compact state-set hash or a small-model parity diff test).
+- [ ] **37.2.3**: Ensure the `model-check-evidence` job remains green after any artifact/schema changes from Phase 36. Update:
+  - `scripts/run_model_check_matrix.sh`,
+  - `scripts/verify_model_check_evidence_paths.sh`,
+  - `docs/model_checker_status.md`,
+  - and any benchmark-manifest/report generation scripts together.
+
+### 37.3 Completion gate
+
+- [ ] Do not mark Phase 37 complete until all of the following are true:
+  - all 5 current push checks pass end to end:
+    - `CI / Format (push)`
+    - `CI / Lint (push)`
+    - `CI / Model-Check Evidence Drift Guard (push)`
+    - `CI / Verus Verification (push)`
+    - `CI / Test (push)`
+  - local reproduction of the workflow exists and is documented or scripted,
+  - no major correctness/evidence job has been disabled or watered down,
+  - any new parity/performance evidence guards introduced by Phase 36 are represented in CI in a deterministic form,
+  - and the workflow is stable enough that future artifact/doc drift should fail CI rather than silently passing.
