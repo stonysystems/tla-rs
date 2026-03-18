@@ -11127,7 +11127,7 @@ docs/model-checker-architecture/
 
 ### 36.1 Metric mapping and exact-state parity harness
 
-- [ ] **36.1.1**: Add an explicit metric-mapping note to `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` and `docs/model_checker_status.md` clarifying which pairs are actually comparable:
+- [x] **36.1.1**: Add an explicit metric-mapping note to `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` and `docs/model_checker_status.md` clarifying which pairs are actually comparable:
   - `TLC distinct states` ↔ source-first normalized reachable distinct-state count,
   - `TLC states found` ↔ **not automatically equal** to source-first `summary.transitions`,
   - any non-equivalent fields must be labeled as such before further analysis.

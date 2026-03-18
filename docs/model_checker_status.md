@@ -257,6 +257,22 @@ Paxos safety-invariant run additionally enforces: three configured/resolved in-s
   - `test_model_check_telemetry_comparison_script_reports_expected_deltas` verifies the script output contains the required metric rows/deltas and that matrix automation is wired to produce the delta report.
   - The same regression also locks the exact-mode reachable-state policy section (`§4.3`) so exactness-changing optimizations require explicit correctness bug-fix documentation.
 
+### 3.5 Cross-engine metric mapping (Phase 36.1.1)
+
+When comparing source-first results against TLC results (see
+`reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`),
+the following metric pairs must be mapped carefully:
+
+| TLC metric | Source-first metric | Comparable? | Notes |
+|------------|---------------------|-------------|-------|
+| `Distinct states` | `summary.states` | **Not yet** — needs normalized projection | TLC counts wrapper-level states (includes message-channel variables); source-first counts `LState` states. Must project both to same protocol-only schema before parity claims. |
+| `States found` | — | **Not comparable** | TLC pre-dedup generation counter has no source-first equivalent. |
+| `Depth` | `summary.depth` | Comparable (same search strategy) | Both are max BFS depth; caveat: wrapper-induced extra initial states can shift depth. |
+| `Wall time` | `elapsed_ms` | Comparable (same hardware) | Directly comparable for performance, but different state spaces mean wall-time gaps don't prove algorithmic inefficiency. |
+| — | `summary.transitions` | No TLC equivalent | Source-first transition count has no directly equivalent TLC scalar. |
+
+Full mapping details are in the benchmark comparison report.
+
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
 Metrics shown for supported entries come from the latest JSON artifacts under `reports/model_check/` (generated via `./scripts/run_model_check_matrix.sh`; exact `elapsed_ms` may vary by machine/load).

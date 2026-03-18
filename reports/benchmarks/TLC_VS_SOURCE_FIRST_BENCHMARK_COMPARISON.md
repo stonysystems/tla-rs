@@ -128,6 +128,28 @@ The table below records guardrail evidence from checked-in release artifacts and
 - `Wall (s)`: wall-clock elapsed time in seconds.
 - For source-first, `States (gen)` is currently reported as `—` because the checked-in benchmark summaries expose deduplicated explored states, not a separate generated-state counter.
 
+## Cross-Engine Metric Mapping (Phase 36.1.1)
+
+The following table classifies which TLC and source-first metrics are
+semantically comparable and which are not. **Do not draw parity or
+performance conclusions from non-equivalent metric pairs.**
+
+| TLC metric | Source-first metric | Comparable? | Notes |
+|------------|---------------------|-------------|-------|
+| `Distinct states` | `summary.states` | **Not yet** — requires normalized projection | TLC counts states on the TLA+ wrapper (which may include message-channel / bookkeeping variables). Source-first counts states on the centralized Verus `LState` directly. The two are **not automatically equal** even on correct semantics until both sides are projected to the same normalized protocol-only state schema (see Phase 36.1.2). |
+| `States found` (generated) | — (not exposed) | **Not comparable** | TLC `States found` counts total state visits including revisits before fingerprinting. Source-first does not expose a pre-dedup generation counter; its `summary.states` is already deduplicated. These are fundamentally different quantities. |
+| `Depth` | `summary.depth` | **Comparable with caveat** | Both report the maximum BFS/DFS depth reached. Comparable only when both engines use the same search strategy (BFS) and the same initial-state set. Wrapper-induced extra initial states or different successor ordering can shift depth. |
+| `Wall time` | `elapsed_ms` | **Comparable (same hardware)** | Wall-clock elapsed time on the same machine with the same timeout. Directly comparable for performance analysis, but state-count differences mean the engines may be exploring different state spaces, so wall-time gaps do not automatically indicate algorithmic inefficiency. |
+| — | `summary.transitions` | **No TLC equivalent in current export** | Source-first tracks total transitions explored. TLC does not report a directly equivalent scalar in the current wrapper output. Do not equate `TLC States found` with source-first `transitions`. |
+
+**Key implication for the Side-by-side Results table below:** the
+`Distinct` column currently compares non-equivalent quantities (TLC
+wrapper-state distinct count vs source-first `LState` distinct count).
+The count gaps (e.g., TwoPhase 64 vs 8, LeaderElection 9337 vs 280)
+may reflect wrapper-vs-protocol projection differences, actual semantic
+bugs, or both. Phase 36.1.2–36.2 will resolve this by defining a
+normalized projection schema and diffing state sets.
+
 ## Side-by-side Results
 
 | Protocol | Engine | Result | States (gen) | Distinct | Depth | Wall (s) |
@@ -143,9 +165,13 @@ The table below records guardrail evidence from checked-in release artifacts and
 
 ## Notes
 
-- **State-count semantics differ**: Source-first counts states on the
-  centralized Verus `LState` directly. TLC counts states on the TLA+
-  wrapper which may include additional message-channel variables.
+- **State-count semantics differ**: See the [Cross-Engine Metric Mapping](#cross-engine-metric-mapping-phase-3611)
+  section above for the full mapping. In brief: source-first counts
+  states on the centralized Verus `LState` directly, while TLC counts
+  states on the TLA+ wrapper which may include additional
+  message-channel variables. The `Distinct` columns in the tables above
+  are **not yet semantically comparable** until both sides are projected
+  to a common normalized schema (Phase 36.1.2).
 - LeaderElection source-first status: `timeout_reached(TimeoutReached)` (stop_reason=TimeoutReached, enumeration_eval=0).
 - Paxos source-first status: `timeout_reached(TimeoutReached)` (stop_reason=TimeoutReached, enumeration_eval=0).
   See branch-level blocker telemetry above for per-branch evidence.
