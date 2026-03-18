@@ -18,10 +18,10 @@ TELEMETRY_DELTA_REPORT="${TELEMETRY_DELTA_REPORT:-$OUTPUT_DIR/OPTIMIZATION_DELTA
 
 mkdir -p "$OUTPUT_DIR"
 
-if [[ ! -x "$TRANSPILER_BIN" ]]; then
-    echo "Building transpiler binary ($TRANSPILER_BIN)..."
-    cargo build --manifest-path "$PROJECT_ROOT/transpiler/Cargo.toml" --bin verus-transpile
-fi
+# Always rebuild to ensure the binary matches the current source.
+# On CI with cargo cache, a stale binary might miss new features.
+echo "Building transpiler binary ($TRANSPILER_BIN)..."
+cargo build --manifest-path "$PROJECT_ROOT/transpiler/Cargo.toml" --bin verus-transpile
 
 declare -a MATRIX_CASES=(
     "twophase_small|src/protocol/TwoPhase/twophase.rs|src/protocol/TwoPhase/types.rs|transpiler/tests/model_check_fixtures/twophase_small.model.toml"
