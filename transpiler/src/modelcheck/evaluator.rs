@@ -292,11 +292,7 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
             let inner = eval_expr(inner, ctx)?;
             eval_unary(*op, &inner)
         }
-        Expr::Forall {
-            vars,
-            body,
-            ..
-        } => eval_quantifier(vars, body, ctx, QuantifierKind::Forall),
+        Expr::Forall { vars, body, .. } => eval_quantifier(vars, body, ctx, QuantifierKind::Forall),
         Expr::Exists { vars, body } => eval_quantifier(vars, body, ctx, QuantifierKind::Exists),
         Expr::Match { scrutinee, arms } => eval_match_expr(scrutinee, arms, ctx),
     }
@@ -452,10 +448,7 @@ fn apply_struct_update(
     updates: Vec<(String, RuntimeValue)>,
 ) -> TranspileResult<RuntimeValue> {
     match base {
-        RuntimeValue::Struct {
-            ty,
-            mut fields,
-        } => {
+        RuntimeValue::Struct { ty, mut fields } => {
             validate_struct_update_target(expected_name, &ty, None)?;
             for (field, value) in updates {
                 if !fields.contains_key(&field) {
@@ -1636,16 +1629,16 @@ mod tests {
 
     #[test]
     fn test_eval_quantifiers_with_finite_domain_resolver() {
-        let quantifier_domain =
-            |binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                let Some(Type::Int) = binding.ty else {
-                    return Err(TranspileError::Config {
-                        message: "test resolver expects int quantifier type".to_string(),
-                    });
-                };
-                Ok(vec![RuntimeValue::Int(0), RuntimeValue::Int(1)])
+        let quantifier_domain = |binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
+            let Some(Type::Int) = binding.ty else {
+                return Err(TranspileError::Config {
+                    message: "test resolver expects int quantifier type".to_string(),
+                });
             };
-        let ctx = EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
+            Ok(vec![RuntimeValue::Int(0), RuntimeValue::Int(1)])
+        };
+        let ctx =
+            EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
 
         let forall_expr = Expr::Forall {
             vars: vec![int_binding("i")],
@@ -1697,11 +1690,11 @@ mod tests {
                 ),
             ])),
         };
-        let quantifier_domain =
-            |_binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                Ok(vec![RuntimeValue::Int(0), RuntimeValue::Int(1)])
-            };
-        let ctx = EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
+        let quantifier_domain = |_binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
+            Ok(vec![RuntimeValue::Int(0), RuntimeValue::Int(1)])
+        };
+        let ctx =
+            EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
         let exists_out = eval_expr(&multi_exists, &ctx).unwrap();
         assert_eq!(exists_out, RuntimeValue::Bool(true));
 
@@ -1728,17 +1721,23 @@ mod tests {
             vars: vec![int_binding("a"), int_binding("b")],
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
-        let quantifier_domain =
-            |binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                let name = binding.name().unwrap_or_default();
-                if name == "b" {
-                    Ok(vec![])
-                } else {
-                    Ok(vec![RuntimeValue::Int(0)])
-                }
-            };
-        let ctx = EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
-        assert_eq!(eval_expr(&multi_forall, &ctx).unwrap(), RuntimeValue::Bool(true));
-        assert_eq!(eval_expr(&multi_exists, &ctx).unwrap(), RuntimeValue::Bool(false));
+        let quantifier_domain = |binding: &Binding| -> TranspileResult<Vec<RuntimeValue>> {
+            let name = binding.name().unwrap_or_default();
+            if name == "b" {
+                Ok(vec![])
+            } else {
+                Ok(vec![RuntimeValue::Int(0)])
+            }
+        };
+        let ctx =
+            EvalContext::new(test_bounds()).with_quantifier_domain_evaluator(&quantifier_domain);
+        assert_eq!(
+            eval_expr(&multi_forall, &ctx).unwrap(),
+            RuntimeValue::Bool(true)
+        );
+        assert_eq!(
+            eval_expr(&multi_exists, &ctx).unwrap(),
+            RuntimeValue::Bool(false)
+        );
     }
 }

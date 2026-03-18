@@ -260,9 +260,9 @@ impl TypeGenerator {
         match ty {
             Type::Set(inner) => match inner.as_ref() {
                 Type::Int | Type::Nat => true,
-                Type::Named(p) => {
-                    p.last().map_or(false, |n| n == "u64" || n == "i64" || n == "usize")
-                }
+                Type::Named(p) => p
+                    .last()
+                    .map_or(false, |n| n == "u64" || n == "i64" || n == "usize"),
                 _ => false,
             },
             _ => false,
@@ -271,12 +271,7 @@ impl TypeGenerator {
 
     /// Generate verified Clone impl using `clone_hashset_u64` for HashSet<u64> fields.
     /// No `#[verifier(external_body)]` — all field clones are verified.
-    fn generate_verified_clone(
-        &self,
-        exec_name: &str,
-        fields: &[&FieldDef],
-        code: &mut String,
-    ) {
+    fn generate_verified_clone(&self, exec_name: &str, fields: &[&FieldDef], code: &mut String) {
         code.push_str(&format!("impl Clone for {} {{\n", exec_name));
         code.push_str(&format!(
             "{}fn clone(&self) -> (res: Self)\n{}ensures\n{}    res@ == self@,\n{}    res.{}() == self.{}(),\n",
@@ -1299,10 +1294,7 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     all_code.push_str("// DO NOT EDIT MANUALLY\n\n");
 
     // Auto-inject imports required by clone strategies
-    let needs_hashset_clone_import = cfg
-        .clone_strategy
-        .values()
-        .any(|v| v == "verified");
+    let needs_hashset_clone_import = cfg.clone_strategy.values().any(|v| v == "verified");
 
     // Custom imports (sorted case-insensitively for rustfmt compatibility)
     // Filter out self-referential types_gen imports that would cause
@@ -1325,7 +1317,10 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
         if needs_hashset_clone_import {
             let hashset_import =
                 "use crate::common::collections::hashsets::clone_hashset_u64;".to_string();
-            if !sorted_imports.iter().any(|i| i.contains("clone_hashset_u64")) {
+            if !sorted_imports
+                .iter()
+                .any(|i| i.contains("clone_hashset_u64"))
+            {
                 sorted_imports.push(hashset_import);
             }
         }

@@ -11215,14 +11215,19 @@ Reported current state: the latest commit only has one of these five checks pass
 
 ### 37.1 Reproduce and localize failures
 
-- [ ] **37.1.1**: Reproduce the current GitHub Actions workflow locally using the actual job split in `.github/workflows/ci.yml`:
+- [x] **37.1.1**: Reproduced all 5 CI jobs locally. Results: Format FAIL (399 files), Lint FAIL (46 clippy errors — naming conventions), Test PASS, Verus N/A (requires specific version), Model-Check Evidence PASS.
   - `CI / Test (push)` ↔ `test` (`cargo test --all-features` in `transpiler/`)
   - `CI / Lint (push)` ↔ `lint` (`cargo clippy --all-targets --all-features -- -D warnings`)
   - `CI / Format (push)` ↔ `format` (`cargo fmt --check`)
   - `CI / Verus Verification (push)` ↔ `verify` (`scons --verus-path=...`)
   - `CI / Model-Check Evidence Drift Guard (push)` ↔ `model-check-evidence` (`./scripts/run_model_check_matrix.sh` + `./scripts/verify_model_check_evidence_paths.sh`)
 - [ ] **37.1.2**: Add a checked-in local reproduction helper (preferred: `scripts/run_ci_local.sh`) or an equivalent documented command block that mirrors the workflow jobs closely enough for iterative debugging.
-- [ ] **37.1.3**: Record the status of all 5 push checks (pass/fail) and the first failing step(s) / exact root cause(s) for each failing check in a checked-in dev note or TODO sub-bullets before making broad workflow changes.
+- [x] **37.1.3**: CI status recorded:
+  - `CI / Format`: **FAIL** — 399 files have formatting diffs. Fix: `cargo fmt` in `transpiler/`.
+  - `CI / Lint`: **FAIL** — 46 clippy errors, all naming convention (`non_snake_case` for test functions with legacy names like `cappMessage`). Fix: rename or allow specific names.
+  - `CI / Test`: **PASS** — all tests pass including 1532 lib + 302 integration + 11 parity + 53 roundtrip.
+  - `CI / Verus Verification`: **UNKNOWN** — requires specific Verus version (0.2026.02.03) not available locally. Local Verus is rolling/0.2024.09.05.
+  - `CI / Model-Check Evidence`: **PASS** — matrix artifacts regenerated, evidence paths verified (14 artifacts).
 
 ### 37.2 Restore green CI without weakening checks
 
@@ -11230,7 +11235,7 @@ Reported current state: the latest commit only has one of these five checks pass
   - No `continue-on-error`.
   - No disabling entire jobs.
   - No weakening `clippy`, `fmt`, verification, or model-check evidence guards unless a previous guard is proven incorrect and replaced by a stricter correct one.
-- [ ] **37.2.1.a**: `CI / Format (push)` must pass by fixing formatting issues in repo files, not by removing the formatter check.
+- [x] **37.2.1.a**: Fixed `CI / Format (push)` by running `cargo fmt` on all 399 unformatted files. Also updated baseline snapshot table in `model_checker_status.md` to match regenerated matrix artifacts (elapsed_ms drift from timing variation).
 - [ ] **37.2.1.b**: `CI / Lint (push)` must pass by fixing actual lint violations or by making the code/lint contract coherent, not by downgrading `-D warnings`.
 - [ ] **37.2.1.c**: `CI / Test (push)` must pass by fixing broken tests / broken code paths, not by deleting or ignoring failing tests.
 - [ ] **37.2.1.d**: `CI / Verus Verification (push)` must pass by fixing verification/build issues in the verified code path, not by reducing the verification surface.

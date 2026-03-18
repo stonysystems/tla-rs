@@ -251,9 +251,8 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
             // Lazily compute candidate keys only when needed for filtering
             if candidate_state_keys.is_none() {
                 if let Some(candidates) = next_state_candidates {
-                    candidate_state_keys = Some(
-                        candidates.iter().map(RuntimeValue::canonical_key).collect(),
-                    );
+                    candidate_state_keys =
+                        Some(candidates.iter().map(RuntimeValue::canonical_key).collect());
                 }
             }
             let successors = filter_successors_to_candidate_keys(
@@ -287,9 +286,8 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     // Lazily compute candidate keys only when needed for filtering
     if candidate_state_keys.is_none() {
         if let Some(candidates) = next_state_candidates {
-            candidate_state_keys = Some(
-                candidates.iter().map(RuntimeValue::canonical_key).collect(),
-            );
+            candidate_state_keys =
+                Some(candidates.iter().map(RuntimeValue::canonical_key).collect());
         }
     }
     let successors = filter_successors_to_candidate_keys(

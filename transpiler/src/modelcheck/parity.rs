@@ -48,7 +48,12 @@ pub fn export_parity_jsonl<W1: Write, W2: Write>(
 ) -> std::io::Result<()> {
     // States: sorted by canonical key (BTreeMap iteration order)
     for (key, meta) in &graph.nodes {
-        let line = state_to_jsonl_line(key, &meta.state, initial_state_keys.contains(key), meta.depth);
+        let line = state_to_jsonl_line(
+            key,
+            &meta.state,
+            initial_state_keys.contains(key),
+            meta.depth,
+        );
         writeln!(states_writer, "{line}")?;
     }
 
@@ -105,9 +110,13 @@ mod tests {
     #[test]
     fn test_canonical_json_set_sorted() {
         let set = RuntimeValue::Set(
-            vec![RuntimeValue::Int(3), RuntimeValue::Int(1), RuntimeValue::Int(2)]
-                .into_iter()
-                .collect(),
+            vec![
+                RuntimeValue::Int(3),
+                RuntimeValue::Int(1),
+                RuntimeValue::Int(2),
+            ]
+            .into_iter()
+            .collect(),
         );
         let json = set.to_canonical_json();
         assert_eq!(json, serde_json::json!([1, 2, 3]));

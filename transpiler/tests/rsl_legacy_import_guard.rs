@@ -46,14 +46,16 @@ fn test_generated_rsl_modules_keep_legacy_impl_imports_constrained() {
 
 #[test]
 fn test_types_gen_is_the_only_generated_legacy_type_bridge() {
-    let source =
-        fs::read_to_string("../src/generated/RSL/types_gen.rs").expect("Failed to read types_gen.rs");
+    let source = fs::read_to_string("../src/generated/RSL/types_gen.rs")
+        .expect("Failed to read types_gen.rs");
     assert!(
         source.contains("pub use crate::implementation::RSL::acceptorimpl::CAcceptor;"),
         "types_gen.rs should keep CAcceptor ownership bridge"
     );
     assert!(
-        source.contains("pub use crate::implementation::RSL::ExecutorImpl::{CExecutor, CIncompleteBatchTimer};"),
+        source.contains(
+            "pub use crate::implementation::RSL::ExecutorImpl::{CExecutor, CIncompleteBatchTimer};"
+        ),
         "types_gen.rs should keep CExecutor ownership bridge"
     );
     assert!(

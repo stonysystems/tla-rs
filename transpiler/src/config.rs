@@ -1568,11 +1568,19 @@ mod tests {
 
         let config = TranspilerConfig::from_toml(toml).unwrap();
         assert_eq!(config.clone_up_to_view_types.len(), 5);
-        assert!(config.clone_up_to_view_types.contains(&"CRequest".to_string()));
-        assert!(config.clone_up_to_view_types.contains(&"CReply".to_string()));
+        assert!(config
+            .clone_up_to_view_types
+            .contains(&"CRequest".to_string()));
+        assert!(config
+            .clone_up_to_view_types
+            .contains(&"CReply".to_string()));
         assert!(config.clone_up_to_view_types.contains(&"CVote".to_string()));
-        assert!(config.clone_up_to_view_types.contains(&"CLearnerTuple".to_string()));
-        assert!(config.clone_up_to_view_types.contains(&"EndPoint".to_string()));
+        assert!(config
+            .clone_up_to_view_types
+            .contains(&"CLearnerTuple".to_string()));
+        assert!(config
+            .clone_up_to_view_types
+            .contains(&"EndPoint".to_string()));
     }
 
     #[test]

@@ -4414,14 +4414,18 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     .collect();
 
                 // Deduplicate explored states by canonical key (keep shallowest depth)
-                let mut deduped: std::collections::BTreeMap<String, &verus_transpiler::modelcheck::explorer::ExploredState> =
-                    std::collections::BTreeMap::new();
+                let mut deduped: std::collections::BTreeMap<
+                    String,
+                    &verus_transpiler::modelcheck::explorer::ExploredState,
+                > = std::collections::BTreeMap::new();
                 for es in &execution.exploration.explored {
                     let key = es.state.canonical_key();
                     let entry = deduped.entry(key);
                     use std::collections::btree_map::Entry;
                     match entry {
-                        Entry::Vacant(e) => { e.insert(es); }
+                        Entry::Vacant(e) => {
+                            e.insert(es);
+                        }
                         Entry::Occupied(mut e) => {
                             if es.depth < e.get().depth {
                                 e.insert(es);
@@ -4431,11 +4435,10 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
 
                 let states_path = parity_dir.join("states.jsonl");
-                let mut states_file = std::io::BufWriter::new(
-                    std::fs::File::create(&states_path).map_err(|e| {
+                let mut states_file =
+                    std::io::BufWriter::new(std::fs::File::create(&states_path).map_err(|e| {
                         miette::miette!("Failed to create {}: {}", states_path.display(), e)
-                    })?,
-                );
+                    })?);
 
                 // Export states sorted by canonical key (BTreeMap order)
                 for (key, es) in &deduped {

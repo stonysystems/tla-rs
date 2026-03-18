@@ -225,7 +225,9 @@ impl RuntimeValue {
             RuntimeValue::Int(v) => serde_json::json!(*v),
             RuntimeValue::Nat(v) => serde_json::json!(*v),
             RuntimeValue::String(v) => JsonValue::String(v.clone()),
-            RuntimeValue::Enum { variant, fields, .. } => {
+            RuntimeValue::Enum {
+                variant, fields, ..
+            } => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("_variant".to_string(), JsonValue::String(variant.clone()));
                 for (k, v) in fields {
@@ -446,9 +448,14 @@ mod tests {
 
     #[test]
     fn test_to_canonical_json_struct_drops_type_name() {
-        let state =
-            RuntimeValue::struct_value("LState", vec![("b".to_string(), RuntimeValue::Int(2)), ("a".to_string(), RuntimeValue::Int(1))])
-                .unwrap();
+        let state = RuntimeValue::struct_value(
+            "LState",
+            vec![
+                ("b".to_string(), RuntimeValue::Int(2)),
+                ("a".to_string(), RuntimeValue::Int(1)),
+            ],
+        )
+        .unwrap();
         let json = state.to_canonical_json();
         // Fields sorted alphabetically, type name dropped
         assert_eq!(json, serde_json::json!({"a": 1, "b": 2}));
@@ -462,7 +469,10 @@ mod tests {
             variant: "Committed".to_string(),
             fields: BTreeMap::new(),
         };
-        assert_eq!(val.to_canonical_json(), serde_json::json!({"_variant": "Committed"}));
+        assert_eq!(
+            val.to_canonical_json(),
+            serde_json::json!({"_variant": "Committed"})
+        );
     }
 
     #[test]
@@ -474,7 +484,9 @@ mod tests {
             fields: BTreeMap::new(),
         };
         let set = RuntimeValue::Set(
-            vec![RuntimeValue::Int(1), RuntimeValue::Int(0)].into_iter().collect(),
+            vec![RuntimeValue::Int(1), RuntimeValue::Int(0)]
+                .into_iter()
+                .collect(),
         );
         let state = RuntimeValue::struct_value(
             "LState",

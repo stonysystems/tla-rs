@@ -138,12 +138,12 @@
     "symmetry_collapses": 0,
     "timing": {
       "candidate_generation_evaluation_ms": 0,
-      "dedup_hashing_normalization_ms": 6,
-      "initial_state_construction_ms": 0,
+      "dedup_hashing_normalization_ms": 5,
+      "initial_state_construction_ms": 1,
       "invariant_evaluation_ms": 0,
       "model_config_resolution_ms": 1,
       "report_serialization_output_ms": 0,
-      "source_ingestion_parsing_ms": 5,
+      "source_ingestion_parsing_ms": 6,
       "successor_solving_ms": 7
     },
     "transitions": 3

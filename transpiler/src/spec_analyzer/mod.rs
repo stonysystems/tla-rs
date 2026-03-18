@@ -325,9 +325,8 @@ fn validate_linit_signature(
             ));
         }
         if first_is_constants == second_is_constants {
-            issues.push(
-                "expected exactly one constants parameter of type `LConstants`".to_string(),
-            );
+            issues
+                .push("expected exactly one constants parameter of type `LConstants`".to_string());
         }
     }
 
@@ -813,10 +812,12 @@ impl<'a> ConfigInferer<'a> {
                         // Check if this is an enum type → clone_fields
                         // Skip unit enums (all-unit variants) since they get #[derive(Copy)]
                         if enum_names.contains(&type_name) {
-                            let is_unit_enum = self.schema.enums.get(&type_name)
-                                .map_or(false, |e| e.variants.iter().all(|v| {
-                                    matches!(v.fields, crate::types::VariantFields::Unit)
-                                }));
+                            let is_unit_enum =
+                                self.schema.enums.get(&type_name).map_or(false, |e| {
+                                    e.variants.iter().all(|v| {
+                                        matches!(v.fields, crate::types::VariantFields::Unit)
+                                    })
+                                });
                             if !is_unit_enum {
                                 if !config.clone_fields.contains(&field.name) {
                                     config.clone_fields.push(field.name.clone());
@@ -870,9 +871,9 @@ impl<'a> ConfigInferer<'a> {
                     if let Type::Set(inner) = &f.ty {
                         match inner.as_ref() {
                             Type::Int | Type::Nat => true,
-                            Type::Named(p) => p.last().map_or(false, |n| {
-                                n == "u64" || n == "i64" || n == "usize"
-                            }),
+                            Type::Named(p) => p
+                                .last()
+                                .map_or(false, |n| n == "u64" || n == "i64" || n == "usize"),
                             _ => false,
                         }
                     } else {
@@ -2403,14 +2404,8 @@ verus! {
         let config = inferer.infer();
 
         // Structs with Set<int> fields get verified clone (u64-compatible inner type)
-        assert_eq!(
-            config.clone_strategy.get("CState").unwrap(),
-            "verified"
-        );
-        assert_eq!(
-            config.clone_strategy.get("CConstants").unwrap(),
-            "verified"
-        );
+        assert_eq!(config.clone_strategy.get("CState").unwrap(), "verified");
+        assert_eq!(config.clone_strategy.get("CConstants").unwrap(), "verified");
         // Structs without Set fields should NOT need special clone strategy
         assert!(!config.clone_strategy.contains_key("CConfig"));
     }
@@ -2722,10 +2717,7 @@ verus! {
         assert!(config.clone_field_types.get("tm_state").is_none());
 
         // Clone strategy (LState has Set<int> fields → verified)
-        assert_eq!(
-            config.clone_strategy.get("CState").unwrap(),
-            "verified"
-        );
+        assert_eq!(config.clone_strategy.get("CState").unwrap(), "verified");
     }
 
     #[test]
@@ -2816,10 +2808,7 @@ verus! {
         assert!(config.clone_field_types.get("role").is_none());
 
         // Clone strategy (Raft CState has Set<int> fields → verified)
-        assert_eq!(
-            config.clone_strategy.get("CState").unwrap(),
-            "verified"
-        );
+        assert_eq!(config.clone_strategy.get("CState").unwrap(), "verified");
     }
 
     #[test]
@@ -3309,7 +3298,9 @@ verus! {
                     assert!(
                         v == "verified" || v == "external_body",
                         "[{}] clone_strategy for {} should be verified or external_body, got {}",
-                        name, k, v
+                        name,
+                        k,
+                        v
                     );
                 }
             }

@@ -1322,9 +1322,7 @@ pub enum FunctionClassification {
         spec_return_type: Type,
     },
     /// Function is skipped (not translated).
-    Skipped {
-        reason: String,
-    },
+    Skipped { reason: String },
 }
 
 /// Information about a registered spec function, used for looking up
@@ -1473,7 +1471,12 @@ impl Translator {
     pub fn is_value_returning(&self, spec_name: &str) -> bool {
         self.function_registry
             .get(spec_name)
-            .map(|info| matches!(info.classification, FunctionClassification::ValueReturning { .. }))
+            .map(|info| {
+                matches!(
+                    info.classification,
+                    FunctionClassification::ValueReturning { .. }
+                )
+            })
             .unwrap_or(false)
     }
 
@@ -2117,7 +2120,9 @@ impl Translator {
                         expr: Box::new(expr),
                     }
                 } else {
-                    let type_name = ctx.input_types.get(name.as_str())
+                    let type_name = ctx
+                        .input_types
+                        .get(name.as_str())
                         .and_then(|ty| self.get_exec_type_name(ty));
                     self.clone_for_type(expr, type_name.as_deref())
                 }
@@ -2156,11 +2161,7 @@ impl Translator {
                 )
             }
             // Let: recurse into value to handle input refs
-            ExecExpr::Let {
-                pattern,
-                ty,
-                value,
-            } => ExecExpr::Let {
+            ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 value: Box::new(self.clone_if_input_ref(*value.clone(), ctx)),
@@ -2177,7 +2178,11 @@ impl Translator {
     ///   `if cond { (s_mid, vec![]) } else { CGrantVote(...) }`
     /// into:
     ///   `if cond { proof { lemma_empty_msg_map(); } (s_mid, vec![]) } else { CGrantVote(...) }`
-    fn inject_inline_empty_msg_proofs(expr: ExecExpr, msg_type: &str, lemma_name: &str) -> ExecExpr {
+    fn inject_inline_empty_msg_proofs(
+        expr: ExecExpr,
+        msg_type: &str,
+        lemma_name: &str,
+    ) -> ExecExpr {
         match expr {
             ExecExpr::If {
                 cond,
@@ -2191,7 +2196,9 @@ impl Translator {
                     lemma_name,
                 )),
                 else_branch: else_branch.map(|eb| {
-                    Box::new(Self::inject_inline_empty_msg_proofs(*eb, msg_type, lemma_name))
+                    Box::new(Self::inject_inline_empty_msg_proofs(
+                        *eb, msg_type, lemma_name,
+                    ))
                 }),
             },
             ExecExpr::Block(stmts) => {
@@ -2201,7 +2208,12 @@ impl Translator {
                 let mut new_stmts = Vec::new();
                 for stmt in stmts {
                     // Check for Let bindings with VecLit values (hoisted sent_packets)
-                    if let ExecExpr::Let { ref pattern, ty: _, ref value } = stmt {
+                    if let ExecExpr::Let {
+                        ref pattern,
+                        ty: _,
+                        ref value,
+                    } = stmt
+                    {
                         if let ExecExpr::VecLit(ref elems) = **value {
                             if elems.is_empty() {
                                 // Empty vec: proof { lemma_empty_<name>(); }
@@ -2217,9 +2229,8 @@ impl Translator {
                                 // Non-empty vec: assert extensional equality of mapped view
                                 // assert(_sent_0@.map(|i: int, p: CType| p@) =~= seq![...])
                                 let var_name = pattern.clone();
-                                let proof_assert = Self::build_veclit_proof_assert(
-                                    &var_name, elems, msg_type,
-                                );
+                                let proof_assert =
+                                    Self::build_veclit_proof_assert(&var_name, elems, msg_type);
                                 new_stmts.push(stmt);
                                 if let Some(proof) = proof_assert {
                                     new_stmts.push(proof);
@@ -2283,7 +2294,9 @@ impl Translator {
                         let proof_stmts: Vec<ExecExpr> = fields
                             .into_iter()
                             .map(|field_path| ExecExpr::Call {
-                                func: "crate::common::collections::hashsets::lemma_hashset_view_len".to_string(),
+                                func:
+                                    "crate::common::collections::hashsets::lemma_hashset_view_len"
+                                        .to_string(),
                                 args: vec![ExecExpr::Var(format!("&{}", field_path))],
                             })
                             .collect();
@@ -2298,9 +2311,12 @@ impl Translator {
                 then_branch,
                 else_branch,
             } => {
-                let then_branch = Box::new(Self::inject_cardinality_bridge_proofs(*then_branch, set_fields));
-                let else_branch =
-                    else_branch.map(|eb| Box::new(Self::inject_cardinality_bridge_proofs(*eb, set_fields)));
+                let then_branch = Box::new(Self::inject_cardinality_bridge_proofs(
+                    *then_branch,
+                    set_fields,
+                ));
+                let else_branch = else_branch
+                    .map(|eb| Box::new(Self::inject_cardinality_bridge_proofs(*eb, set_fields)));
                 let result = ExecExpr::If {
                     cond,
                     then_branch,
@@ -2312,14 +2328,12 @@ impl Translator {
                     let proof_stmts: Vec<ExecExpr> = fields
                         .into_iter()
                         .map(|field_path| ExecExpr::Call {
-                            func: "crate::common::collections::hashsets::lemma_hashset_view_len".to_string(),
+                            func: "crate::common::collections::hashsets::lemma_hashset_view_len"
+                                .to_string(),
                             args: vec![ExecExpr::Var(format!("&{}", field_path))],
                         })
                         .collect();
-                    ExecExpr::Block(vec![
-                        ExecExpr::ProofBlock { stmts: proof_stmts },
-                        result,
-                    ])
+                    ExecExpr::Block(vec![ExecExpr::ProofBlock { stmts: proof_stmts }, result])
                 } else {
                     result
                 }
@@ -2333,7 +2347,12 @@ impl Translator {
                 scrutinee,
                 arms: arms
                     .into_iter()
-                    .map(|(pat, body)| (pat, Self::inject_cardinality_bridge_proofs(body, set_fields)))
+                    .map(|(pat, body)| {
+                        (
+                            pat,
+                            Self::inject_cardinality_bridge_proofs(body, set_fields),
+                        )
+                    })
                     .collect(),
             },
             other => other,
@@ -2342,7 +2361,10 @@ impl Translator {
 
     /// Extract field paths from If conditions that contain HashSet.len() comparisons.
     /// Returns a list of field paths like "s.received_1b_packets" that need cardinality lemmas.
-    fn extract_cardinality_fields_from_expr(expr: &ExecExpr, set_fields: &HashSet<String>) -> Vec<String> {
+    fn extract_cardinality_fields_from_expr(
+        expr: &ExecExpr,
+        set_fields: &HashSet<String>,
+    ) -> Vec<String> {
         let mut fields = Vec::new();
         if let ExecExpr::If { cond, .. } = expr {
             Self::collect_len_fields_from_condition(cond, set_fields, &mut fields);
@@ -2355,9 +2377,15 @@ impl Translator {
 
     /// Recursively scan a condition expression for Cast(MethodCall { method: "len" }, "u64") patterns.
     /// Collects the receiver field paths into `fields`.
-    fn collect_len_fields_from_condition(expr: &ExecExpr, set_fields: &HashSet<String>, fields: &mut Vec<String>) {
+    fn collect_len_fields_from_condition(
+        expr: &ExecExpr,
+        set_fields: &HashSet<String>,
+        fields: &mut Vec<String>,
+    ) {
         match expr {
-            ExecExpr::Binary { lhs, rhs, op } if op == ">=" || op == "<" || op == "<=" || op == ">" => {
+            ExecExpr::Binary { lhs, rhs, op }
+                if op == ">=" || op == "<" || op == "<=" || op == ">" =>
+            {
                 // Check if lhs or rhs is a Cast(.len(), u64)
                 if let Some(field_path) = Self::extract_len_cast_field(lhs, set_fields) {
                     fields.push(field_path);
@@ -2443,7 +2471,10 @@ impl Translator {
                 else_branch,
             } => {
                 // Recurse into branches first
-                let then_branch = Box::new(Self::inject_contains_membership_proofs(*then_branch, set_fields));
+                let then_branch = Box::new(Self::inject_contains_membership_proofs(
+                    *then_branch,
+                    set_fields,
+                ));
                 let else_branch = else_branch
                     .map(|eb| Box::new(Self::inject_contains_membership_proofs(*eb, set_fields)));
 
@@ -2471,7 +2502,10 @@ impl Translator {
                     // proof { broadcast use vstd::std_specs::hash::group_hash_axioms; lemma_set_map_contains(field@, *x); }
                     let contains_proof = ExecExpr::ProofBlock {
                         stmts: vec![
-                            ExecExpr::Var("broadcast use vstd::std_specs::hash::group_hash_axioms".to_string()),
+                            ExecExpr::Var(
+                                "broadcast use vstd::std_specs::hash::group_hash_axioms"
+                                    .to_string(),
+                            ),
                             ExecExpr::Call {
                                 func: "lemma_set_map_contains".to_string(),
                                 args: vec![
@@ -2481,8 +2515,8 @@ impl Translator {
                             },
                         ],
                     };
-                    let else_with_proof = else_branch
-                        .map(|eb| Box::new(Self::prepend_to_block(*eb, contains_proof)));
+                    let else_with_proof =
+                        else_branch.map(|eb| Box::new(Self::prepend_to_block(*eb, contains_proof)));
 
                     ExecExpr::If {
                         cond,
@@ -2498,7 +2532,10 @@ impl Translator {
                     // Then branch (contains returned true):
                     let contains_proof = ExecExpr::ProofBlock {
                         stmts: vec![
-                            ExecExpr::Var("broadcast use vstd::std_specs::hash::group_hash_axioms".to_string()),
+                            ExecExpr::Var(
+                                "broadcast use vstd::std_specs::hash::group_hash_axioms"
+                                    .to_string(),
+                            ),
                             ExecExpr::Call {
                                 func: "lemma_set_map_contains".to_string(),
                                 args: vec![
@@ -2546,7 +2583,10 @@ impl Translator {
                 arms: arms
                     .into_iter()
                     .map(|(pat, body)| {
-                        (pat, Self::inject_contains_membership_proofs(body, set_fields))
+                        (
+                            pat,
+                            Self::inject_contains_membership_proofs(body, set_fields),
+                        )
                     })
                     .collect(),
             },
@@ -2671,7 +2711,9 @@ impl Translator {
                             ExecExpr::Unary { op, expr } if op == "&" => {
                                 if let ExecExpr::Var(name) = expr.as_ref() {
                                     Some(name.clone())
-                                } else { None }
+                                } else {
+                                    None
+                                }
                             }
                             _ => None,
                         };
@@ -2693,19 +2735,30 @@ impl Translator {
         extra_requires: &HashMap<String, Vec<String>>,
     ) -> ExecExpr {
         match expr {
-            ExecExpr::If { cond, then_branch, else_branch } => ExecExpr::If {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
                 cond,
                 then_branch: Box::new(Self::inject_preserves_in_branches(
-                    *then_branch, helper_bindings, extra_requires,
+                    *then_branch,
+                    helper_bindings,
+                    extra_requires,
                 )),
-                else_branch: else_branch.map(|eb| Box::new(
-                    Self::inject_preserves_in_branches(*eb, helper_bindings, extra_requires),
-                )),
+                else_branch: else_branch.map(|eb| {
+                    Box::new(Self::inject_preserves_in_branches(
+                        *eb,
+                        helper_bindings,
+                        extra_requires,
+                    ))
+                }),
             },
             ExecExpr::Block(stmts) => {
                 let mut new_stmts = Vec::new();
                 for stmt in stmts {
-                    let stmt = Self::inject_preserves_in_branches(stmt, helper_bindings, extra_requires);
+                    let stmt =
+                        Self::inject_preserves_in_branches(stmt, helper_bindings, extra_requires);
                     new_stmts.push(stmt);
                 }
                 ExecExpr::Block(new_stmts)
@@ -2716,15 +2769,19 @@ impl Translator {
                 let callee_name = func.clone();
                 let first_arg_name = match args.first() {
                     Some(ExecExpr::Unary { op, expr }) if op == "&" => {
-                        if let ExecExpr::Var(name) = expr.as_ref() { Some(name.clone()) } else { None }
+                        if let ExecExpr::Var(name) = expr.as_ref() {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
                     }
                     Some(ExecExpr::Var(name)) => Some(name.clone()),
                     _ => None,
                 };
                 if let Some(arg_name) = first_arg_name {
                     // Check if this arg is a helper-bound variable
-                    if let Some((_, original_input)) = helper_bindings.iter()
-                        .find(|(bound, _)| bound == &arg_name)
+                    if let Some((_, original_input)) =
+                        helper_bindings.iter().find(|(bound, _)| bound == &arg_name)
                     {
                         // Check if the callee has extra_requires mentioning fields
                         if let Some(requires) = extra_requires.get(&callee_name) {
@@ -2734,18 +2791,15 @@ impl Translator {
                                 // Look for patterns: original_input.field
                                 let field_pattern = format!("{}.log", original_input);
                                 if req.contains(&field_pattern) {
-                                    proof_stmts.push(ExecExpr::Assert(Box::new(
-                                        ExecExpr::Var(format!(
-                                            "{}@.log =~= {}@.log",
-                                            arg_name, original_input
-                                        ))
-                                    )));
-                                    proof_stmts.push(ExecExpr::Assert(Box::new(
-                                        ExecExpr::Var(format!(
+                                    proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Var(
+                                        format!("{}@.log =~= {}@.log", arg_name, original_input),
+                                    ))));
+                                    proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Var(
+                                        format!(
                                             "{}@.log.len() == {}@.log.len()",
                                             arg_name, original_input
-                                        ))
-                                    )));
+                                        ),
+                                    ))));
                                 }
                             }
                             if !proof_stmts.is_empty() {
@@ -2769,9 +2823,8 @@ impl Translator {
         msg_type: &str,
     ) -> Option<ExecExpr> {
         let n = elems.len();
-        let mapped_elements: Vec<String> = (0..n)
-            .map(|i| format!("{}@[{}]@", var_name, i))
-            .collect();
+        let mapped_elements: Vec<String> =
+            (0..n).map(|i| format!("{}@[{}]@", var_name, i)).collect();
         let seq_str = if n == 1 {
             format!("Seq::empty().push({})", mapped_elements[0])
         } else {
@@ -2795,19 +2848,22 @@ impl Translator {
     fn strip_double_ref_on_inputs(expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
         match expr {
             ExecExpr::Call { func, args } => {
-                let args = args.into_iter().map(|a| {
-                    // Strip & from input params: &s → s (s is already &CState)
-                    if let ExecExpr::Unary { ref op, ref expr } = a {
-                        if op == "&" {
-                            if let ExecExpr::Var(ref name) = **expr {
-                                if ctx.is_input(name) {
-                                    return (**expr).clone();
+                let args = args
+                    .into_iter()
+                    .map(|a| {
+                        // Strip & from input params: &s → s (s is already &CState)
+                        if let ExecExpr::Unary { ref op, ref expr } = a {
+                            if op == "&" {
+                                if let ExecExpr::Var(ref name) = **expr {
+                                    if ctx.is_input(name) {
+                                        return (**expr).clone();
+                                    }
                                 }
                             }
                         }
-                    }
-                    Self::strip_double_ref_on_inputs(a, ctx)
-                }).collect();
+                        Self::strip_double_ref_on_inputs(a, ctx)
+                    })
+                    .collect();
                 ExecExpr::Call { func, args }
             }
             ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
@@ -2816,15 +2872,26 @@ impl Translator {
                 value: Box::new(Self::strip_double_ref_on_inputs(*value, ctx)),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
-                stmts.into_iter().map(|s| Self::strip_double_ref_on_inputs(s, ctx)).collect()
+                stmts
+                    .into_iter()
+                    .map(|s| Self::strip_double_ref_on_inputs(s, ctx))
+                    .collect(),
             ),
-            ExecExpr::If { cond, then_branch, else_branch } => ExecExpr::If {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
                 cond: Box::new(Self::strip_double_ref_on_inputs(*cond, ctx)),
                 then_branch: Box::new(Self::strip_double_ref_on_inputs(*then_branch, ctx)),
-                else_branch: else_branch.map(|e| Box::new(Self::strip_double_ref_on_inputs(*e, ctx))),
+                else_branch: else_branch
+                    .map(|e| Box::new(Self::strip_double_ref_on_inputs(*e, ctx))),
             },
             ExecExpr::Tuple(elems) => ExecExpr::Tuple(
-                elems.into_iter().map(|e| Self::strip_double_ref_on_inputs(e, ctx)).collect()
+                elems
+                    .into_iter()
+                    .map(|e| Self::strip_double_ref_on_inputs(e, ctx))
+                    .collect(),
             ),
             ExecExpr::Unary { op, expr } => ExecExpr::Unary {
                 op,
@@ -2880,7 +2947,12 @@ impl Translator {
         }
     }
 
-    fn is_expr_typed_matching(&self, expr: &Expr, ctx: &TransformContext, names: &[String]) -> bool {
+    fn is_expr_typed_matching(
+        &self,
+        expr: &Expr,
+        ctx: &TransformContext,
+        names: &[String],
+    ) -> bool {
         match expr {
             Expr::Ident(name) => {
                 ctx.input_types
@@ -3341,7 +3413,10 @@ impl Translator {
                         if let Some(helper) = self.get_clone_helper_name(field_name) {
                             Self::make_ref_call(helper, expr)
                         } else {
-                            let field_type = self.config.clone_field_types.get(field_name.as_str())
+                            let field_type = self
+                                .config
+                                .clone_field_types
+                                .get(field_name.as_str())
                                 .map(|s| s.as_str());
                             self.clone_for_type(expr, field_type)
                         }
@@ -3374,7 +3449,10 @@ impl Translator {
                             if let Some(helper) = self.get_clone_helper_name(field_name) {
                                 Self::make_ref_call(helper, *inner.clone())
                             } else {
-                                let field_type = self.config.clone_field_types.get(field_name.as_str())
+                                let field_type = self
+                                    .config
+                                    .clone_field_types
+                                    .get(field_name.as_str())
                                     .map(|s| s.as_str());
                                 self.clone_for_type(*inner.clone(), field_type)
                             }
@@ -3524,9 +3602,9 @@ impl Translator {
                 // If operands still involve u64 values (deref'd params, vars),
                 // wrap in `as usize` for Vec indexing
                 let needs_cast = matches!(&lhs,
-                    ExecExpr::Unary { op, .. } if op == "*") ||
-                    matches!(&lhs, ExecExpr::Var(_)) ||
-                    matches!(&lhs, ExecExpr::Field(..));
+                    ExecExpr::Unary { op, .. } if op == "*")
+                    || matches!(&lhs, ExecExpr::Var(_))
+                    || matches!(&lhs, ExecExpr::Field(..));
                 if needs_cast {
                     ExecExpr::Cast(Box::new(binary), "usize".to_string())
                 } else {
@@ -7018,10 +7096,7 @@ impl Translator {
         // (skip when assume_postconditions is enabled — extra requires would break callers)
         // Exception: proven_functions need recommends since they don't have assume(false)
         if !self.config.assume_postconditions
-            || self
-                .config
-                .proven_functions
-                .contains(&func.spec_fn.name)
+            || self.config.proven_functions.contains(&func.spec_fn.name)
         {
             for recommends_expr in &func.spec_fn.recommends {
                 requires.push(self.expr_to_requires_string(recommends_expr));
@@ -7705,10 +7780,7 @@ impl Translator {
         // Skip when assume_postconditions is enabled — extra requires would break callers
         // Exception: proven_functions need recommends since they don't have assume(false)
         if !self.config.assume_postconditions
-            || self
-                .config
-                .proven_functions
-                .contains(&func.spec_fn.name)
+            || self.config.proven_functions.contains(&func.spec_fn.name)
         {
             for recommends_expr in &func.spec_fn.recommends {
                 requires.push(self.expr_to_view_requires_string(
@@ -9648,7 +9720,7 @@ impl Translator {
                 let base_expr = self.clone_if_input_ref(base_expr, ctx);
                 let translated_fields: TranspileResult<Vec<_>> = fields
                     .iter()
-                    .filter(|(fname, _)| fname != "..")  // base is already captured above
+                    .filter(|(fname, _)| fname != "..") // base is already captured above
                     .map(|(fname, fexpr)| {
                         let expr = self.transform_expr(fexpr, ctx)?;
                         // Clone input parameters when assigning to struct fields
@@ -10089,7 +10161,10 @@ impl Translator {
                 // Dereference input references before casting (e.g., &u64 as u64 → *param as u64)
                 let inner = if let ExecExpr::Var(ref name) = inner {
                     if ctx.is_input(name) && self.is_scalar_input_param(name, ctx) {
-                        ExecExpr::Unary { op: "*".to_string(), expr: Box::new(inner) }
+                        ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: Box::new(inner),
+                        }
                     } else {
                         inner
                     }
@@ -10543,11 +10618,7 @@ impl Translator {
                     let translated_args = translated_args?;
                     if args.len() == 2
                         && *condition_arg < args.len()
-                        && self.is_expr_typed_matching(
-                            &args[*condition_arg],
-                            ctx,
-                            condition_types,
-                        )
+                        && self.is_expr_typed_matching(&args[*condition_arg], ctx, condition_types)
                     {
                         return Ok(ExecExpr::Call {
                             func: self.translate_name(func_name),
@@ -10777,10 +10848,8 @@ impl Translator {
                 let tmp_name = "__set_tmp";
                 let clone_call =
                     Self::make_ref_call(self.hashset_clone_fn().to_string(), inner_recv);
-                let translated_args: Result<Vec<ExecExpr>, _> = args
-                    .iter()
-                    .map(|a| self.transform_expr(a, ctx))
-                    .collect();
+                let translated_args: Result<Vec<ExecExpr>, _> =
+                    args.iter().map(|a| self.transform_expr(a, ctx)).collect();
                 // Dereference mutation args: HashSet::insert takes owned T, not &T
                 let needs_deref = mut_method == "insert" || mut_method == "push";
                 let deref_args = self.deref_mutation_args(mut_args, ctx, needs_deref);
@@ -11143,9 +11212,14 @@ impl Translator {
                 // Check if rhs is also an identifier (copy case)
                 if let Expr::Ident(rhs_name) = rhs {
                     if ctx.input_params.contains(rhs_name) {
-                        let type_name = ctx.input_types.get(rhs_name.as_str())
+                        let type_name = ctx
+                            .input_types
+                            .get(rhs_name.as_str())
                             .and_then(|ty| self.get_exec_type_name(ty));
-                        return Ok(self.clone_for_type(ExecExpr::Var(rhs_name.clone()), type_name.as_deref()));
+                        return Ok(self.clone_for_type(
+                            ExecExpr::Var(rhs_name.clone()),
+                            type_name.as_deref(),
+                        ));
                     }
                 }
                 return self.transform_expr(rhs, ctx);
@@ -11223,11 +11297,16 @@ impl Translator {
                         // Check if RHS is an input param - if so, generate clone
                         if let Expr::Ident(rhs_name) = rhs.as_ref() {
                             if ctx.input_params.contains(rhs_name) {
-                                let type_name = ctx.input_types.get(rhs_name.as_str())
+                                let type_name = ctx
+                                    .input_types
+                                    .get(rhs_name.as_str())
                                     .and_then(|ty| self.get_exec_type_name(ty));
                                 output_exprs.push((
                                     name.clone(),
-                                    self.clone_for_type(ExecExpr::Var(rhs_name.clone()), type_name.as_deref()),
+                                    self.clone_for_type(
+                                        ExecExpr::Var(rhs_name.clone()),
+                                        type_name.as_deref(),
+                                    ),
                                 ));
                                 continue;
                             }
@@ -11243,11 +11322,16 @@ impl Translator {
                         // Check if LHS is an input param - if so, generate clone
                         if let Expr::Ident(lhs_name) = lhs.as_ref() {
                             if ctx.input_params.contains(lhs_name) {
-                                let type_name = ctx.input_types.get(lhs_name.as_str())
+                                let type_name = ctx
+                                    .input_types
+                                    .get(lhs_name.as_str())
                                     .and_then(|ty| self.get_exec_type_name(ty));
                                 output_exprs.push((
                                     name.clone(),
-                                    self.clone_for_type(ExecExpr::Var(lhs_name.clone()), type_name.as_deref()),
+                                    self.clone_for_type(
+                                        ExecExpr::Var(lhs_name.clone()),
+                                        type_name.as_deref(),
+                                    ),
                                 ));
                                 continue;
                             }
@@ -11398,17 +11482,25 @@ impl Translator {
                 Self::expr_references_var(receiver, var_name)
                     || args.iter().any(|a| Self::expr_references_var(a, var_name))
             }
-            ExecExpr::Call { args, .. } => args.iter().any(|a| Self::expr_references_var(a, var_name)),
-            ExecExpr::Struct { fields, .. } => {
-                fields.iter().any(|(_, e)| Self::expr_references_var(e, var_name))
+            ExecExpr::Call { args, .. } => {
+                args.iter().any(|a| Self::expr_references_var(a, var_name))
             }
+            ExecExpr::Struct { fields, .. } => fields
+                .iter()
+                .any(|(_, e)| Self::expr_references_var(e, var_name)),
             ExecExpr::VecLit(elems) => elems.iter().any(|e| Self::expr_references_var(e, var_name)),
             ExecExpr::Tuple(elems) => elems.iter().any(|e| Self::expr_references_var(e, var_name)),
             ExecExpr::Block(stmts) => stmts.iter().any(|e| Self::expr_references_var(e, var_name)),
-            ExecExpr::If { cond, then_branch, else_branch } => {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 Self::expr_references_var(cond, var_name)
                     || Self::expr_references_var(then_branch, var_name)
-                    || else_branch.as_ref().map_or(false, |e| Self::expr_references_var(e, var_name))
+                    || else_branch
+                        .as_ref()
+                        .map_or(false, |e| Self::expr_references_var(e, var_name))
             }
             _ => false,
         }
@@ -11441,7 +11533,8 @@ impl Translator {
                 && Self::expr_references_var(&outputs[i], &var_name)
             {
                 let hoisted_name = format!("_sent_{}", hoisted_idx);
-                let veclit = std::mem::replace(&mut outputs[i], ExecExpr::Var(hoisted_name.clone()));
+                let veclit =
+                    std::mem::replace(&mut outputs[i], ExecExpr::Var(hoisted_name.clone()));
                 extra_lets.push(ExecExpr::Let {
                     pattern: hoisted_name,
                     ty: None,
@@ -16559,10 +16652,7 @@ mod tests {
                 exec: ExecCallStrategy::ConditionalBinary {
                     op: "<".to_string(),
                     condition_arg: 1,
-                    condition_types: vec![
-                        "UpperBound".to_string(),
-                        "CUpperBound".to_string(),
-                    ],
+                    condition_types: vec!["UpperBound".to_string(), "CUpperBound".to_string()],
                 },
             },
         );
@@ -25899,9 +25989,7 @@ mod tests {
     fn test_proven_functions_skip_assume_false() {
         let mut config = TranslatorConfig::default();
         config.assume_postconditions = true;
-        config
-            .proven_functions
-            .insert("RequestsMatch".to_string());
+        config.proven_functions.insert("RequestsMatch".to_string());
         let translator = Translator::new(config);
         let annotated = make_helper_for_assume_postconditions_tests("RequestsMatch");
 
@@ -25957,10 +26045,9 @@ mod tests {
     fn test_extra_requires_not_duplicated_in_helpers() {
         // If extra_requires matches an auto-derived requires, it should not be duplicated
         let mut config = TranslatorConfig::default();
-        config.extra_requires.insert(
-            "CRequestsMatch".to_string(),
-            vec!["r1.valid()".to_string()],
-        );
+        config
+            .extra_requires
+            .insert("CRequestsMatch".to_string(), vec!["r1.valid()".to_string()]);
         let translator = Translator::new(config);
         let annotated = make_helper_for_assume_postconditions_tests("RequestsMatch");
 
@@ -26289,12 +26376,8 @@ mod tests {
     #[test]
     fn test_clone_for_type_with_clone_up_to_view_types() {
         let mut config = TranslatorConfig::default();
-        config
-            .clone_up_to_view_types
-            .insert("CRequest".to_string());
-        config
-            .clone_up_to_view_types
-            .insert("CReply".to_string());
+        config.clone_up_to_view_types.insert("CRequest".to_string());
+        config.clone_up_to_view_types.insert("CReply".to_string());
         let translator = Translator::new(config);
 
         // Type in list should use clone_up_to_view
@@ -26328,9 +26411,7 @@ mod tests {
     #[test]
     fn test_clone_for_type_with_global_clone_method_fallback() {
         let mut config = TranslatorConfig::default();
-        config
-            .clone_up_to_view_types
-            .insert("CRequest".to_string());
+        config.clone_up_to_view_types.insert("CRequest".to_string());
         config.clone_method = Some("clone_up_to_view".to_string());
         let translator = Translator::new(config);
 
@@ -26343,8 +26424,7 @@ mod tests {
         );
 
         // Type NOT in list: falls through to clone_method global config
-        let result2 =
-            translator.clone_for_type(ExecExpr::Var("bal".to_string()), Some("CBallot"));
+        let result2 = translator.clone_for_type(ExecExpr::Var("bal".to_string()), Some("CBallot"));
         assert!(
             matches!(&result2, ExecExpr::MethodCall { method, .. } if method == "clone_up_to_view"),
             "CBallot should use global clone_method fallback: {:?}",
@@ -26361,13 +26441,19 @@ mod tests {
         let ty = Type::Named(Path {
             segments: vec!["LAcceptor".to_string()],
         });
-        assert_eq!(translator.get_exec_type_name(&ty), Some("CAcceptor".to_string()));
+        assert_eq!(
+            translator.get_exec_type_name(&ty),
+            Some("CAcceptor".to_string())
+        );
 
         // Named type without L-prefix → kept as-is
         let ty2 = Type::Named(Path {
             segments: vec!["EndPoint".to_string()],
         });
-        assert_eq!(translator.get_exec_type_name(&ty2), Some("EndPoint".to_string()));
+        assert_eq!(
+            translator.get_exec_type_name(&ty2),
+            Some("EndPoint".to_string())
+        );
 
         // Reference type → unwrap
         let ty3 = Type::Reference {
@@ -26376,7 +26462,10 @@ mod tests {
             })),
             mutable: false,
         };
-        assert_eq!(translator.get_exec_type_name(&ty3), Some("CRequest".to_string()));
+        assert_eq!(
+            translator.get_exec_type_name(&ty3),
+            Some("CRequest".to_string())
+        );
 
         // Non-named type
         assert_eq!(translator.get_exec_type_name(&Type::Int), None);
@@ -26403,19 +26492,13 @@ mod tests {
     #[test]
     fn test_is_clone_up_to_view_type() {
         let mut config = TranslatorConfig::default();
-        config
-            .clone_up_to_view_types
-            .insert("CRequest".to_string());
-        config
-            .clone_up_to_view_types
-            .insert("CReply".to_string());
+        config.clone_up_to_view_types.insert("CRequest".to_string());
+        config.clone_up_to_view_types.insert("CReply".to_string());
         config.clone_up_to_view_types.insert("CVote".to_string());
         config
             .clone_up_to_view_types
             .insert("CLearnerTuple".to_string());
-        config
-            .clone_up_to_view_types
-            .insert("EndPoint".to_string());
+        config.clone_up_to_view_types.insert("EndPoint".to_string());
         let translator = Translator::new(config);
 
         assert!(translator.is_clone_up_to_view_type("CRequest"));
@@ -26430,9 +26513,7 @@ mod tests {
     #[test]
     fn test_clone_if_input_ref_uses_clone_up_to_view_for_listed_type() {
         let mut config = TranslatorConfig::default();
-        config
-            .clone_up_to_view_types
-            .insert("CRequest".to_string());
+        config.clone_up_to_view_types.insert("CRequest".to_string());
         let translator = Translator::new(config);
 
         let mut input_types = HashMap::new();
@@ -26465,9 +26546,7 @@ mod tests {
     #[test]
     fn test_clone_if_input_ref_uses_regular_clone_for_unlisted_type() {
         let mut config = TranslatorConfig::default();
-        config
-            .clone_up_to_view_types
-            .insert("CRequest".to_string());
+        config.clone_up_to_view_types.insert("CRequest".to_string());
         let translator = Translator::new(config);
 
         let mut input_types = HashMap::new();
@@ -26508,10 +26587,7 @@ mod tests {
                 exec: ExecCallStrategy::ConditionalBinary {
                     op: "<=".to_string(),
                     condition_arg: 1,
-                    condition_types: vec![
-                        "UpperBound".to_string(),
-                        "CUpperBound".to_string(),
-                    ],
+                    condition_types: vec!["UpperBound".to_string(), "CUpperBound".to_string()],
                 },
             },
         );
@@ -26519,14 +26595,14 @@ mod tests {
 
         let call = Expr::Call {
             func: crate::ast::Path::single("LeqUpperBound".to_string()),
-            args: vec![
-                Expr::Ident("x".to_string()),
-                Expr::Ident("y".to_string()),
-            ],
+            args: vec![Expr::Ident("x".to_string()), Expr::Ident("y".to_string())],
         };
 
         let result = translator.expr_to_simple_string(&call);
-        assert_eq!(result, "(x <= y)", "spec_binary_op should expand LeqUpperBound to <=");
+        assert_eq!(
+            result, "(x <= y)",
+            "spec_binary_op should expand LeqUpperBound to <="
+        );
     }
 
     #[test]
@@ -26543,10 +26619,7 @@ mod tests {
                 exec: ExecCallStrategy::ConditionalBinary {
                     op: "<=".to_string(),
                     condition_arg: 1,
-                    condition_types: vec![
-                        "UpperBound".to_string(),
-                        "CUpperBound".to_string(),
-                    ],
+                    condition_types: vec!["UpperBound".to_string(), "CUpperBound".to_string()],
                 },
             },
         );
@@ -26736,8 +26809,16 @@ borrowed_args = [0]
             "LGrantVote",
             FunctionKind::Predicate,
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Output),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Input,
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Output,
+                ),
             ],
             Type::Bool,
             None,
@@ -26762,7 +26843,11 @@ borrowed_args = [0]
             "step_down_if_needed",
             FunctionKind::Helper,
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Input,
+                ),
                 ("new_term".to_string(), Type::Int, ParameterMode::Input),
             ],
             Type::Named(Path::single("LState".to_string())),
@@ -26793,7 +26878,11 @@ borrowed_args = [0]
             "log_up_to_date",
             FunctionKind::Helper,
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Input,
+                ),
                 ("term".to_string(), Type::Int, ParameterMode::Input),
                 ("index".to_string(), Type::Int, ParameterMode::Input),
             ],
@@ -26839,15 +26928,25 @@ borrowed_args = [0]
     #[test]
     fn test_register_helper_with_type_remapping() {
         let mut config = TranslatorConfig::default();
-        config.type_remapping.insert("LRaftMessage".to_string(), "CRaftMessage".to_string());
+        config
+            .type_remapping
+            .insert("LRaftMessage".to_string(), "CRaftMessage".to_string());
         let mut translator = Translator::new(config);
 
         let annotated = make_test_annotated(
             "LHandleRequestVoteMsg",
             FunctionKind::Predicate,
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Output),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Input,
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Output,
+                ),
             ],
             Type::Bool,
             None,
@@ -26855,7 +26954,9 @@ borrowed_args = [0]
 
         translator.register_function(&annotated);
 
-        let info = translator.get_function_info("LHandleRequestVoteMsg").unwrap();
+        let info = translator
+            .get_function_info("LHandleRequestVoteMsg")
+            .unwrap();
         assert_eq!(info.exec_name, "CHandleRequestVoteMsg");
         assert_eq!(info.classification, FunctionClassification::Predicate);
     }
@@ -26869,8 +26970,16 @@ borrowed_args = [0]
             "LGrantVote",
             FunctionKind::Predicate,
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Output),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Input,
+                ),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Output,
+                ),
             ],
             Type::Bool,
             None,
@@ -26882,7 +26991,11 @@ borrowed_args = [0]
             "step_down_if_needed",
             FunctionKind::Helper,
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Input,
+                ),
                 ("term".to_string(), Type::Int, ParameterMode::Input),
             ],
             Type::Named(Path::single("LState".to_string())),
@@ -26898,15 +27011,24 @@ borrowed_args = [0]
         assert!(translator.is_value_returning("step_down_if_needed"));
         assert!(!translator.is_value_returning("LNext"));
         assert_eq!(
-            translator.get_function_info("LGrantVote").unwrap().classification,
+            translator
+                .get_function_info("LGrantVote")
+                .unwrap()
+                .classification,
             FunctionClassification::Predicate
         );
         assert!(matches!(
-            translator.get_function_info("step_down_if_needed").unwrap().classification,
+            translator
+                .get_function_info("step_down_if_needed")
+                .unwrap()
+                .classification,
             FunctionClassification::ValueReturning { .. }
         ));
         assert!(matches!(
-            translator.get_function_info("LNext").unwrap().classification,
+            translator
+                .get_function_info("LNext")
+                .unwrap()
+                .classification,
             FunctionClassification::Skipped { .. }
         ));
     }
@@ -26919,9 +27041,11 @@ borrowed_args = [0]
         let annotated = make_test_annotated(
             "LComputeHelper",
             FunctionKind::Helper,
-            vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
-            ],
+            vec![(
+                "s".to_string(),
+                Type::Named(Path::single("LState".to_string())),
+                ParameterMode::Input,
+            )],
             Type::Named(Path::single("LState".to_string())),
             None, // No explicit return type in annotation
         );
@@ -26988,18 +27112,27 @@ borrowed_args = [0]
         let annotated = make_test_annotated_with_body(
             "identity_helper",
             FunctionKind::Helper,
-            vec![("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input)],
+            vec![(
+                "s".to_string(),
+                Type::Named(Path::single("LState".to_string())),
+                ParameterMode::Input,
+            )],
             Type::Named(Path::single("LState".to_string())),
             Some("LState".to_string()),
             body,
         );
 
-        let result = translator.translate_helper(&annotated).expect("should translate");
+        let result = translator
+            .translate_helper(&annotated)
+            .expect("should translate");
         // The body should be clone of s, not raw s
         match &result.body {
             ExecExpr::Clone(inner) => {
-                assert!(matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s"),
-                    "Expected clone of s, got {:?}", inner);
+                assert!(
+                    matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s"),
+                    "Expected clone of s, got {:?}",
+                    inner
+                );
             }
             other => panic!("Expected Clone(Var(s)), got {:?}", other),
         }
@@ -27016,14 +27149,18 @@ borrowed_args = [0]
         let body = Expr::If {
             cond: Box::new(Expr::Gt(
                 Box::new(Expr::Ident("new_term".to_string())),
-                Box::new(Expr::Field(Box::new(Expr::Ident("s".to_string())), "current_term".to_string())),
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "current_term".to_string(),
+                )),
             )),
             then_branch: Box::new(Expr::StructUpdate {
                 name: Some(Path::single("LState".to_string())),
                 base: Box::new(Expr::Ident("s".to_string())),
-                fields: vec![
-                    ("current_term".to_string(), Expr::Ident("new_term".to_string())),
-                ],
+                fields: vec![(
+                    "current_term".to_string(),
+                    Expr::Ident("new_term".to_string()),
+                )],
             }),
             else_branch: Some(Box::new(Expr::Ident("s".to_string()))),
         };
@@ -27032,7 +27169,11 @@ borrowed_args = [0]
             "step_down_if_needed",
             FunctionKind::Helper,
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Input,
+                ),
                 ("new_term".to_string(), Type::Int, ParameterMode::Input),
             ],
             Type::Named(Path::single("LState".to_string())),
@@ -27040,18 +27181,30 @@ borrowed_args = [0]
             body,
         );
 
-        let result = translator.translate_helper(&annotated).expect("should translate");
+        let result = translator
+            .translate_helper(&annotated)
+            .expect("should translate");
         // The body should be an If where the else branch has s cloned
         match &result.body {
-            ExecExpr::If { else_branch: Some(else_br), then_branch, .. } => {
+            ExecExpr::If {
+                else_branch: Some(else_br),
+                then_branch,
+                ..
+            } => {
                 // Else branch: s.clone()
-                assert!(matches!(else_br.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
-                    "Expected else branch to be s.clone(), got {:?}", else_br);
+                assert!(
+                    matches!(else_br.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
+                    "Expected else branch to be s.clone(), got {:?}",
+                    else_br
+                );
                 // Then branch: StructUpdate with base cloned
                 match then_branch.as_ref() {
                     ExecExpr::StructUpdate { base, .. } => {
-                        assert!(matches!(base.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
-                            "Expected StructUpdate base to be s.clone(), got {:?}", base);
+                        assert!(
+                            matches!(base.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
+                            "Expected StructUpdate base to be s.clone(), got {:?}",
+                            base
+                        );
                     }
                     other => panic!("Expected StructUpdate in then branch, got {:?}", other),
                 }
@@ -27075,7 +27228,11 @@ borrowed_args = [0]
             "log_up_to_date",
             FunctionKind::Helper,
             vec![
-                ("s".to_string(), Type::Named(Path::single("LState".to_string())), ParameterMode::Input),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                    ParameterMode::Input,
+                ),
                 ("term".to_string(), Type::Int, ParameterMode::Input),
             ],
             Type::Bool,
@@ -27083,7 +27240,9 @@ borrowed_args = [0]
             body,
         );
 
-        let result = translator.translate_helper(&annotated).expect("should translate");
+        let result = translator
+            .translate_helper(&annotated)
+            .expect("should translate");
         // The body should be a binary comparison, not a Clone
         match &result.body {
             ExecExpr::Binary { op, .. } => {
@@ -27102,9 +27261,10 @@ borrowed_args = [0]
         let expr = Expr::StructUpdate {
             name: Some(Path::single("LState".to_string())),
             base: Box::new(Expr::Ident("s".to_string())),
-            fields: vec![
-                ("current_term".to_string(), Expr::Ident("new_term".to_string())),
-            ],
+            fields: vec![(
+                "current_term".to_string(),
+                Expr::Ident("new_term".to_string()),
+            )],
         };
 
         let ctx = TransformContext {
@@ -27113,7 +27273,10 @@ borrowed_args = [0]
             input_params: vec!["s".to_string(), "new_term".to_string()],
             output_types: HashMap::new(),
             input_types: HashMap::from([
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
                 ("new_term".to_string(), Type::Int),
             ]),
             field_substitutions: HashMap::new(),
@@ -27121,17 +27284,25 @@ borrowed_args = [0]
             requires: vec![],
         };
 
-        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("should transform");
         match &result {
             ExecExpr::StructUpdate { base, fields, .. } => {
                 // Base should be s.clone()
-                assert!(matches!(base.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
-                    "Expected StructUpdate base to be s.clone(), got {:?}", base);
+                assert!(
+                    matches!(base.as_ref(), ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Var(name) if name == "s")),
+                    "Expected StructUpdate base to be s.clone(), got {:?}",
+                    base
+                );
                 // Field value new_term should be *new_term (scalar deref)
                 let (fname, fexpr) = &fields[0];
                 assert_eq!(fname, "current_term");
-                assert!(matches!(fexpr, ExecExpr::Unary { op, .. } if op == "*"),
-                    "Expected scalar deref for new_term field, got {:?}", fexpr);
+                assert!(
+                    matches!(fexpr, ExecExpr::Unary { op, .. } if op == "*"),
+                    "Expected scalar deref for new_term field, got {:?}",
+                    fexpr
+                );
             }
             other => panic!("Expected StructUpdate, got {:?}", other),
         }
@@ -27145,9 +27316,7 @@ borrowed_args = [0]
         let expr = Expr::StructUpdate {
             name: Some(Path::single("LState".to_string())),
             base: Box::new(Expr::Ident("local_var".to_string())),
-            fields: vec![
-                ("current_term".to_string(), Expr::Literal(Literal::Int(5))),
-            ],
+            fields: vec![("current_term".to_string(), Expr::Literal(Literal::Int(5)))],
         };
 
         let ctx = TransformContext {
@@ -27155,20 +27324,26 @@ borrowed_args = [0]
             output_params: vec![],
             input_params: vec!["s".to_string()], // local_var is NOT an input param
             output_types: HashMap::new(),
-            input_types: HashMap::from([
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-            ]),
+            input_types: HashMap::from([(
+                "s".to_string(),
+                Type::Named(Path::single("LState".to_string())),
+            )]),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
             requires: vec![],
         };
 
-        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("should transform");
         match &result {
             ExecExpr::StructUpdate { base, .. } => {
                 // Base should be raw local_var (NOT cloned)
-                assert!(matches!(base.as_ref(), ExecExpr::Var(name) if name == "local_var"),
-                    "Expected raw Var(local_var), got {:?}", base);
+                assert!(
+                    matches!(base.as_ref(), ExecExpr::Var(name) if name == "local_var"),
+                    "Expected raw Var(local_var), got {:?}",
+                    base
+                );
             }
             other => panic!("Expected StructUpdate, got {:?}", other),
         }
@@ -27209,7 +27384,10 @@ borrowed_args = [0]
             input_params: vec!["s".to_string(), "term".to_string()],
             output_types: HashMap::new(),
             input_types: HashMap::from([
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
                 ("term".to_string(), Type::Int),
             ]),
             field_substitutions: HashMap::new(),
@@ -27217,7 +27395,9 @@ borrowed_args = [0]
             requires: vec![],
         };
 
-        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("should transform");
         // Expected: Block [ Let { s_mid = Cstep_down_if_needed(&s, &term) }, Field(s_mid, current_term) ]
         match &result {
             ExecExpr::Block(stmts) => {
@@ -27231,11 +27411,17 @@ borrowed_args = [0]
                                 assert_eq!(func, "Cstep_down_if_needed");
                                 assert_eq!(args.len(), 2, "Expected 2 args");
                                 // First arg: &s
-                                assert!(matches!(&args[0], ExecExpr::Unary { op, .. } if op == "&"),
-                                    "Expected &s, got {:?}", args[0]);
+                                assert!(
+                                    matches!(&args[0], ExecExpr::Unary { op, .. } if op == "&"),
+                                    "Expected &s, got {:?}",
+                                    args[0]
+                                );
                                 // Second arg: &term
-                                assert!(matches!(&args[1], ExecExpr::Unary { op, .. } if op == "&"),
-                                    "Expected &term, got {:?}", args[1]);
+                                assert!(
+                                    matches!(&args[1], ExecExpr::Unary { op, .. } if op == "&"),
+                                    "Expected &term, got {:?}",
+                                    args[1]
+                                );
                             }
                             other => panic!("Expected Call, got {:?}", other),
                         }
@@ -27246,8 +27432,11 @@ borrowed_args = [0]
                 match &stmts[1] {
                     ExecExpr::Field(base, field) => {
                         assert_eq!(field, "current_term");
-                        assert!(matches!(base.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
-                            "Expected Var(s_mid), got {:?}", base);
+                        assert!(
+                            matches!(base.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
+                            "Expected Var(s_mid), got {:?}",
+                            base
+                        );
                     }
                     other => panic!("Expected Field, got {:?}", other),
                 }
@@ -27274,21 +27463,27 @@ borrowed_args = [0]
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string(), "term".to_string()],
             output_types: HashMap::new(),
-            input_types: HashMap::from([
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-            ]),
+            input_types: HashMap::from([(
+                "s".to_string(),
+                Type::Named(Path::single("LState".to_string())),
+            )]),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
             requires: vec![],
         };
 
-        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("should transform");
         match &result {
             ExecExpr::Field(base, field) => {
                 assert_eq!(field, "current_term");
                 // s_mid should be raw Var, not cloned
-                assert!(matches!(base.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
-                    "Expected Var(s_mid), got {:?}", base);
+                assert!(
+                    matches!(base.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
+                    "Expected Var(s_mid), got {:?}",
+                    base
+                );
             }
             other => panic!("Expected Field, got {:?}", other),
         }
@@ -27310,21 +27505,28 @@ borrowed_args = [0]
             config: &translator.config,
             output_params: vec!["s_".to_string()],
             input_params: vec!["s".to_string()],
-            output_types: HashMap::from([
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
-            ]),
-            input_types: HashMap::from([
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-            ]),
+            output_types: HashMap::from([(
+                "s_".to_string(),
+                Type::Named(Path::single("LState".to_string())),
+            )]),
+            input_types: HashMap::from([(
+                "s".to_string(),
+                Type::Named(Path::single("LState".to_string())),
+            )]),
             field_substitutions: HashMap::new(),
             temp_var_counter: std::cell::RefCell::new(0),
             requires: vec![],
         };
 
-        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("should transform");
         // `s_ == s_mid` should produce just `s_mid` (the local var, not cloned)
-        assert!(matches!(&result, ExecExpr::Var(name) if name == "s_mid"),
-            "Expected Var(s_mid), got {:?}", result);
+        assert!(
+            matches!(&result, ExecExpr::Var(name) if name == "s_mid"),
+            "Expected Var(s_mid), got {:?}",
+            result
+        );
     }
 
     // ============ Sub-Action Call Recognition Tests (Phase 29.2.4) ============
@@ -27340,10 +27542,10 @@ borrowed_args = [0]
         let expr = Expr::Call {
             func: Path::single("LGrantVote".to_string()),
             args: vec![
-                Expr::Ident("s_mid".to_string()),   // let-bound local
-                Expr::Ident("s_".to_string()),       // output
-                Expr::Ident("c".to_string()),        // input
-                Expr::Ident("term".to_string()),     // input
+                Expr::Ident("s_mid".to_string()),        // let-bound local
+                Expr::Ident("s_".to_string()),           // output
+                Expr::Ident("c".to_string()),            // input
+                Expr::Ident("term".to_string()),         // input
                 Expr::Ident("sent_packets".to_string()), // output
             ],
         };
@@ -27353,12 +27555,24 @@ borrowed_args = [0]
             output_params: vec!["s_".to_string(), "sent_packets".to_string()],
             input_params: vec!["s".to_string(), "c".to_string(), "term".to_string()],
             output_types: HashMap::from([
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("sent_packets".to_string(), Type::Named(Path::single("Seq".to_string()))),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "sent_packets".to_string(),
+                    Type::Named(Path::single("Seq".to_string())),
+                ),
             ]),
             input_types: HashMap::from([
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "c".to_string(),
+                    Type::Named(Path::single("LConstants".to_string())),
+                ),
                 ("term".to_string(), Type::Int),
             ]),
             field_substitutions: HashMap::new(),
@@ -27366,32 +27580,49 @@ borrowed_args = [0]
             requires: vec![],
         };
 
-        let result = translator.transform_expr(&expr, &ctx).expect("should transform");
+        let result = translator
+            .transform_expr(&expr, &ctx)
+            .expect("should transform");
         match &result {
             ExecExpr::Call { func, args } => {
                 assert_eq!(func, "CGrantVote", "Expected CGrantVote");
-                assert_eq!(args.len(), 3, "Expected 3 input args (s_mid, c, term), got {}: {:?}", args.len(), args);
+                assert_eq!(
+                    args.len(),
+                    3,
+                    "Expected 3 input args (s_mid, c, term), got {}: {:?}",
+                    args.len(),
+                    args
+                );
                 // First arg: &s_mid
                 match &args[0] {
                     ExecExpr::Unary { op, expr } if op == "&" => {
-                        assert!(matches!(expr.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
-                            "Expected &s_mid, got &{:?}", expr);
+                        assert!(
+                            matches!(expr.as_ref(), ExecExpr::Var(name) if name == "s_mid"),
+                            "Expected &s_mid, got &{:?}",
+                            expr
+                        );
                     }
                     other => panic!("Expected &s_mid, got {:?}", other),
                 }
                 // Second arg: &c
                 match &args[1] {
                     ExecExpr::Unary { op, expr } if op == "&" => {
-                        assert!(matches!(expr.as_ref(), ExecExpr::Var(name) if name == "c"),
-                            "Expected &c, got &{:?}", expr);
+                        assert!(
+                            matches!(expr.as_ref(), ExecExpr::Var(name) if name == "c"),
+                            "Expected &c, got &{:?}",
+                            expr
+                        );
                     }
                     other => panic!("Expected &c, got {:?}", other),
                 }
                 // Third arg: &term
                 match &args[2] {
                     ExecExpr::Unary { op, expr } if op == "&" => {
-                        assert!(matches!(expr.as_ref(), ExecExpr::Var(name) if name == "term"),
-                            "Expected &term, got &{:?}", expr);
+                        assert!(
+                            matches!(expr.as_ref(), ExecExpr::Var(name) if name == "term"),
+                            "Expected &term, got &{:?}",
+                            expr
+                        );
                     }
                     other => panic!("Expected &term, got {:?}", other),
                 }
@@ -27425,12 +27656,24 @@ borrowed_args = [0]
             output_params: vec!["s_".to_string(), "sent_packets".to_string()],
             input_params: vec!["s".to_string(), "c".to_string(), "term".to_string()],
             output_types: HashMap::from([
-                ("s_".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("sent_packets".to_string(), Type::Named(Path::single("Seq".to_string()))),
+                (
+                    "s_".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "sent_packets".to_string(),
+                    Type::Named(Path::single("Seq".to_string())),
+                ),
             ]),
             input_types: HashMap::from([
-                ("s".to_string(), Type::Named(Path::single("LState".to_string()))),
-                ("c".to_string(), Type::Named(Path::single("LConstants".to_string()))),
+                (
+                    "s".to_string(),
+                    Type::Named(Path::single("LState".to_string())),
+                ),
+                (
+                    "c".to_string(),
+                    Type::Named(Path::single("LConstants".to_string())),
+                ),
                 ("term".to_string(), Type::Int),
             ]),
             field_substitutions: HashMap::new(),
@@ -27439,7 +27682,9 @@ borrowed_args = [0]
         };
 
         // Test the call directly
-        let result = translator.transform_expr(&call, &ctx).expect("should transform");
+        let result = translator
+            .transform_expr(&call, &ctx)
+            .expect("should transform");
         match &result {
             ExecExpr::Call { func, args } => {
                 assert_eq!(func, "CGrantVote");

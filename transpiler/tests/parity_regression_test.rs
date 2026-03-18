@@ -246,14 +246,21 @@ fn test_twophase_prepare_branch_produces_successors() {
         .current_dir(root.join("transpiler"))
         .output()
         .expect("Failed to run cargo build");
-    assert!(build.status.success(), "cargo build failed: {}", String::from_utf8_lossy(&build.stderr));
+    assert!(
+        build.status.success(),
+        "cargo build failed: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
 
     let output = Command::new(&binary)
         .args([
             "model-check",
-            "--input", "src/protocol/TwoPhase/twophase.rs",
-            "--types", "src/protocol/TwoPhase/types.rs",
-            "--model", "transpiler/tests/model_check_fixtures/twophase_parity_bug_repro.model.toml",
+            "--input",
+            "src/protocol/TwoPhase/twophase.rs",
+            "--types",
+            "src/protocol/TwoPhase/types.rs",
+            "--model",
+            "transpiler/tests/model_check_fixtures/twophase_parity_bug_repro.model.toml",
             "--json-report",
         ])
         .current_dir(&root)

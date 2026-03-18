@@ -579,14 +579,16 @@ fn expand_struct_values(
 
     let mut out = Vec::new();
     for fields in combinations {
-        out.push(RuntimeValue::struct_value(struct_def.name.clone(), fields).map_err(
-            |err| TranspileError::Config {
-                message: format!(
-                    "Failed to construct runtime struct value for `{}`: {}",
-                    struct_name, err
-                ),
-            },
-        )?);
+        out.push(
+            RuntimeValue::struct_value(struct_def.name.clone(), fields).map_err(|err| {
+                TranspileError::Config {
+                    message: format!(
+                        "Failed to construct runtime struct value for `{}`: {}",
+                        struct_name, err
+                    ),
+                }
+            })?,
+        );
     }
     let out = unique_sorted(out);
     if out.is_empty() {
@@ -873,7 +875,9 @@ enum PrimitiveNamedIntegerKind {
     Unsigned,
 }
 
-fn primitive_named_integer_kind(candidates: &[String]) -> Option<(String, PrimitiveNamedIntegerKind)> {
+fn primitive_named_integer_kind(
+    candidates: &[String],
+) -> Option<(String, PrimitiveNamedIntegerKind)> {
     for candidate in candidates {
         let short = candidate.rsplit("::").next().unwrap_or(candidate.as_str());
         let kind = match short {
@@ -1260,10 +1264,10 @@ mod tests {
     fn test_expand_branch_existentials_named_primitive_prefers_explicit_override() {
         let mut model = base_model();
         model.quantifiers.nat = Some(NatDomain { max: 1 });
-        model.quantifiers.types.insert(
-            "u64".to_string(),
-            DomainSpec::IntRange { min: 7, max: 7 },
-        );
+        model
+            .quantifiers
+            .types
+            .insert("u64".to_string(), DomainSpec::IntRange { min: 7, max: 7 });
         let branch = mk_branch(vec![ExistentialVarIr {
             name: "id".to_string(),
             ty: Some(Type::Named(Path::single("u64".to_string()))),
@@ -1366,10 +1370,7 @@ mod tests {
     fn test_expand_branch_existentials_named_struct_without_override_uses_schema_fields() {
         let mut model = base_model();
         model.quantifiers.int = Some(IntDomain { min: 0, max: 0 });
-        let schema = mk_struct_schema(
-            "LLogEntry",
-            vec![("term", Type::Int), ("value", Type::Int)],
-        );
+        let schema = mk_struct_schema("LLogEntry", vec![("term", Type::Int), ("value", Type::Int)]);
         let branch = mk_branch(vec![ExistentialVarIr {
             name: "entry".to_string(),
             ty: Some(Type::Named(Path::single("LLogEntry".to_string()))),
@@ -1406,10 +1407,14 @@ mod tests {
         }]);
 
         let assignments = expand_branch_existentials(&branch, &schema, &model).unwrap();
-        assert_eq!(assignments.len(), 2, "expected empty + single-entry sequences");
-        assert!(assignments.iter().any(
-            |a| matches!(a.get("log"), Some(RuntimeValue::Seq(values)) if values.is_empty())
-        ));
+        assert_eq!(
+            assignments.len(),
+            2,
+            "expected empty + single-entry sequences"
+        );
+        assert!(assignments
+            .iter()
+            .any(|a| matches!(a.get("log"), Some(RuntimeValue::Seq(values)) if values.is_empty())));
         assert!(assignments.iter().any(|a| {
             matches!(
                 a.get("log"),

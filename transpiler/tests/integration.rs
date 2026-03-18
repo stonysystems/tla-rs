@@ -2058,7 +2058,9 @@ fn test_rsl_generated_assume_false_footprint_drift_guard() {
          Expected (fresh): {:?}\n\
          Expected (stale): {:?}\n\
          Regenerate with scripts/regenerate_rsl.sh and update baseline if intentional.",
-        observed_assume_false, fresh_af_owned, stale_af_owned
+        observed_assume_false,
+        fresh_af_owned,
+        stale_af_owned
     );
 
     // Track targeted assume() drift (irreducible View-mapping gaps)
@@ -7965,12 +7967,15 @@ fn test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts() 
         });
 
         let get_u64 = |pointer: &str| -> u64 {
-            report.pointer(pointer).and_then(|v| v.as_u64()).unwrap_or_else(|| {
-                panic!(
-                    "baseline artifact `{}` missing numeric pointer `{}`",
-                    case.artifact_path, pointer
-                )
-            })
+            report
+                .pointer(pointer)
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "baseline artifact `{}` missing numeric pointer `{}`",
+                        case.artifact_path, pointer
+                    )
+                })
         };
 
         assert_eq!(
@@ -8236,8 +8241,9 @@ fn test_model_check_telemetry_comparison_script_reports_expected_deltas() {
         );
     }
 
-    let matrix_script = std::fs::read_to_string(repo_root.join("scripts/run_model_check_matrix.sh"))
-        .expect("failed to read scripts/run_model_check_matrix.sh");
+    let matrix_script =
+        std::fs::read_to_string(repo_root.join("scripts/run_model_check_matrix.sh"))
+            .expect("failed to read scripts/run_model_check_matrix.sh");
     assert!(
         matrix_script.contains("compare_model_check_telemetry.sh"),
         "matrix script should invoke telemetry comparison automation"
@@ -8487,9 +8493,8 @@ fn test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status
     let repo_root = resolve_repo_root_for_integration();
 
     let todo_path = repo_root.join("TODO.md");
-    let todo_src = std::fs::read_to_string(&todo_path).unwrap_or_else(|err| {
-        panic!("failed to read TODO {}: {}", todo_path.display(), err)
-    });
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     let todo_lower = todo_src.to_ascii_lowercase();
     assert!(
         todo_lower.contains("- [x] for each protocol in that list:"),
@@ -8599,8 +8604,8 @@ fn test_model_check_phase33_5_priority_order_is_canonical_across_todo_and_status
 }
 
 #[test]
-fn test_model_checker_architecture_phase_35_8_1_enforces_multi_file_structure_not_single_shallow_doc()
-{
+fn test_model_checker_architecture_phase_35_8_1_enforces_multi_file_structure_not_single_shallow_doc(
+) {
     let repo_root = resolve_repo_root_for_integration();
     let tutorial_dir = repo_root.join("docs/model-checker-architecture");
 
@@ -8981,7 +8986,9 @@ fn test_model_checker_architecture_phase_35_8_5_separates_optimization_feature_l
         );
     }
     assert!(
-        readme_src.contains("If one statement mixes more than one category, split it into separate statements"),
+        readme_src.contains(
+            "If one statement mixes more than one category, split it into separate statements"
+        ),
         "Phase 35.8.5 section in {} must explicitly forbid category blurring in one statement",
         readme_path.display()
     );
@@ -9340,7 +9347,10 @@ fn test_model_checker_architecture_phase_35_9_readme_targets_zero_background_and
     let reading_order_section = readme_src
         .split("## Reading Order")
         .nth(1)
-        .and_then(|tail| tail.split("## What You Will Understand After Reading").next())
+        .and_then(|tail| {
+            tail.split("## What You Will Understand After Reading")
+                .next()
+        })
         .unwrap_or_else(|| {
             panic!(
                 "failed to isolate reading-order section in README {}",
@@ -9381,7 +9391,8 @@ fn test_model_checker_architecture_phase_35_9_readme_targets_zero_background_and
 #[test]
 fn test_model_checker_architecture_phase_35_9_traditional_tutorial_is_concrete_not_slogan_only() {
     let repo_root = resolve_repo_root_for_integration();
-    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
     let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
         panic!(
             "failed to read traditional tutorial chapter {}: {}",
@@ -9595,7 +9606,8 @@ fn test_model_checker_architecture_phase_35_9_comparison_covers_similarities_dif
 
     assert!(
         comparison_src.contains("## Side-by-Side Matrix")
-            && comparison_src.contains("| Concern | Traditional TLA+ / TLC | tla-rs source-first |")
+            && comparison_src
+                .contains("| Concern | Traditional TLA+ / TLC | tla-rs source-first |")
             && comparison_src.contains("Why this difference matters"),
         "comparison doc {} must include side-by-side matrix with explicit why-it-matters column",
         comparison_path.display()
@@ -9617,7 +9629,9 @@ fn test_model_checker_architecture_phase_35_9_comparison_covers_similarities_dif
             )
         });
     assert!(
-        !similarities_section.to_ascii_lowercase().contains("will capture"),
+        !similarities_section
+            .to_ascii_lowercase()
+            .contains("will capture"),
         "similarities section in {} must not remain placeholder text",
         comparison_path.display()
     );
@@ -9668,7 +9682,9 @@ fn test_model_checker_architecture_phase_35_9_optimization_audit_distinguishes_c
         audit_path.display()
     );
     assert!(
-        audit_src.to_ascii_lowercase().contains("no item is fully confirmed yet"),
+        audit_src
+            .to_ascii_lowercase()
+            .contains("no item is fully confirmed yet"),
         "optimization audit doc {} must state plainly when confirmed bucket is currently empty",
         audit_path.display()
     );
@@ -9681,7 +9697,10 @@ fn test_model_checker_architecture_phase_35_9_optimization_audit_distinguishes_c
     let uncertain_section = audit_src
         .split("## Possibly different but not yet confirmed")
         .nth(1)
-        .and_then(|tail| tail.split("## Not an optimization; only a feature/reporting difference").next())
+        .and_then(|tail| {
+            tail.split("## Not an optimization; only a feature/reporting difference")
+                .next()
+        })
         .unwrap_or_else(|| {
             panic!(
                 "failed to isolate uncertain-candidate section in {}",
@@ -9896,14 +9915,15 @@ fn test_model_checker_architecture_phase_35_9_engine_crosswalk_matches_compariso
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
     let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
-    let crosswalk_path = repo_root.join("docs/model-checker-architecture/artifacts/engine-crosswalk.csv");
+    let crosswalk_path =
+        repo_root.join("docs/model-checker-architecture/artifacts/engine-crosswalk.csv");
 
     let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
         panic!(
@@ -9962,7 +9982,8 @@ fn test_model_checker_architecture_phase_35_9_engine_crosswalk_matches_compariso
     });
     let expected_csv_header = "concern,traditional_tla_tlc,tlars_source_first,same_similar_different,why_it_matters,evidence_status,notes";
     assert_eq!(
-        csv_header, expected_csv_header,
+        csv_header,
+        expected_csv_header,
         "engine crosswalk csv {} header drifted from required comparison-aligned schema",
         crosswalk_path.display()
     );
@@ -9990,7 +10011,8 @@ fn test_model_checker_architecture_phase_35_9_engine_crosswalk_matches_compariso
     );
 
     assert_eq!(
-        crosswalk_concerns, comparison_concerns,
+        crosswalk_concerns,
+        comparison_concerns,
         "engine crosswalk csv {} concerns must exactly match comparison matrix concern order in {}",
         crosswalk_path.display(),
         comparison_path.display()
@@ -10017,7 +10039,11 @@ fn test_model_checker_architecture_phase_35_9_tutorial_is_readable_for_newcomers
         )
     });
     let glossary_src = std::fs::read_to_string(&glossary_path).unwrap_or_else(|err| {
-        panic!("failed to read glossary {}: {}", glossary_path.display(), err)
+        panic!(
+            "failed to read glossary {}: {}",
+            glossary_path.display(),
+            err
+        )
     });
     let traditional_src = std::fs::read_to_string(&traditional_path).unwrap_or_else(|err| {
         panic!(
@@ -10163,7 +10189,10 @@ fn test_model_checker_architecture_phase_35_10_1_beginner_can_follow_readme_path
     let reading_order_section = readme_src
         .split("## Reading Order")
         .nth(1)
-        .and_then(|tail| tail.split("## What You Will Understand After Reading").next())
+        .and_then(|tail| {
+            tail.split("## What You Will Understand After Reading")
+                .next()
+        })
         .unwrap_or_else(|| {
             panic!(
                 "failed to isolate reading-order section in {}",
@@ -10184,13 +10213,15 @@ fn test_model_checker_architecture_phase_35_10_1_beginner_can_follow_readme_path
     let mut prev_pos = None;
     for (index, file_name) in ordered_entries {
         let expected_entry = format!("{index}. `{file_name}`");
-        let pos = reading_order_section.find(&expected_entry).unwrap_or_else(|| {
-            panic!(
-                "reading-order section in {} must include ordered entry `{}`",
-                readme_path.display(),
-                expected_entry
-            )
-        });
+        let pos = reading_order_section
+            .find(&expected_entry)
+            .unwrap_or_else(|| {
+                panic!(
+                    "reading-order section in {} must include ordered entry `{}`",
+                    readme_path.display(),
+                    expected_entry
+                )
+            });
         if let Some(prev) = prev_pos {
             assert!(
                 prev < pos,
@@ -10216,7 +10247,8 @@ fn test_model_checker_architecture_phase_35_10_1_beginner_can_follow_readme_path
 fn test_model_checker_architecture_phase_35_10_2_traditional_tutorial_is_tlc_primary_reference_point(
 ) {
     let repo_root = resolve_repo_root_for_integration();
-    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
     let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
         panic!(
             "failed to read traditional tutorial chapter {}: {}",
@@ -10388,9 +10420,9 @@ fn test_model_checker_architecture_phase_35_10_4_comparison_explicitly_answers_s
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
@@ -10521,9 +10553,9 @@ fn test_model_checker_architecture_phase_35_10_5_optimization_audit_is_disciplin
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
@@ -10587,7 +10619,8 @@ fn test_model_checker_architecture_phase_35_10_5_optimization_audit_is_disciplin
 
     assert!(
         sources_src.contains("## TLC Absence-Claim Wording Rule")
-            && sources_src.contains("No equivalent mechanism was found in the reviewed TLC sources"),
+            && sources_src
+                .contains("No equivalent mechanism was found in the reviewed TLC sources"),
         "sources-and-evidence doc {} must keep explicit weaker-form TLC absence wording rule",
         sources_path.display()
     );
@@ -10681,15 +10714,16 @@ fn test_model_checker_architecture_phase_35_10_6_every_substantive_claim_is_sour
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
     let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
     let sources_path = repo_root.join("docs/model-checker-architecture/sources-and-evidence.md");
-    let optimization_path = repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
+    let optimization_path =
+        repo_root.join("docs/model-checker-architecture/tlars-only-optimizations.md");
 
     let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
         panic!(
@@ -10770,7 +10804,12 @@ fn test_model_checker_architecture_phase_35_10_6_every_substantive_claim_is_sour
     let notes_idx = header
         .iter()
         .position(|cell| cell == "Notes")
-        .unwrap_or_else(|| panic!("comparison matrix in {} must include `Notes` column", comparison_path.display()));
+        .unwrap_or_else(|| {
+            panic!(
+                "comparison matrix in {} must include `Notes` column",
+                comparison_path.display()
+            )
+        });
 
     let data_rows: Vec<&Vec<String>> = matrix_rows
         .iter()
@@ -10787,7 +10826,10 @@ fn test_model_checker_architecture_phase_35_10_6_every_substantive_claim_is_sour
     for row in data_rows {
         let evidence_status = row[evidence_idx].trim();
         assert!(
-            matches!(evidence_status, "directly_evidenced" | "inference_from_sources" | "uncertain_not_confirmed"),
+            matches!(
+                evidence_status,
+                "directly_evidenced" | "inference_from_sources" | "uncertain_not_confirmed"
+            ),
             "comparison row in {} has invalid evidence status `{}`: {:?}",
             comparison_path.display(),
             evidence_status,
@@ -10896,9 +10938,8 @@ fn test_model_checker_architecture_phase_35_10_7_deliverable_lives_under_docs_an
             err
         )
     });
-    let todo_src = std::fs::read_to_string(&todo_path).unwrap_or_else(|err| {
-        panic!("failed to read TODO {}: {}", todo_path.display(), err)
-    });
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
 
     assert!(
         readme_src.contains("## Documentation-Only Deliverable Rule (Phase 35.8.9)")
@@ -10964,9 +11005,9 @@ fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     fn normalize_markdown_header(cell: &str) -> String {
@@ -10984,7 +11025,8 @@ fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
 
     let repo_root = resolve_repo_root_for_integration();
     let comparison_path = repo_root.join("docs/model-checker-architecture/comparison.md");
-    let crosswalk_path = repo_root.join("docs/model-checker-architecture/artifacts/engine-crosswalk.csv");
+    let crosswalk_path =
+        repo_root.join("docs/model-checker-architecture/artifacts/engine-crosswalk.csv");
 
     let comparison_src = std::fs::read_to_string(&comparison_path).unwrap_or_else(|err| {
         panic!(
@@ -11038,7 +11080,8 @@ fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
         .map(|cell| normalize_markdown_header(cell))
         .collect();
     assert_eq!(
-        markdown_header, expected_header,
+        markdown_header,
+        expected_header,
         "comparison matrix header in {} drifted from the engine-crosswalk schema",
         comparison_path.display()
     );
@@ -11070,21 +11113,26 @@ fn test_model_checker_architecture_comparison_and_crosswalk_stay_in_sync() {
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty());
-    let csv_header_line = csv_lines.next().unwrap_or_else(|| {
-        panic!("engine crosswalk CSV {} is empty", crosswalk_path.display())
-    });
+    let csv_header_line = csv_lines
+        .next()
+        .unwrap_or_else(|| panic!("engine crosswalk CSV {} is empty", crosswalk_path.display()));
     let csv_header: Vec<String> = csv_header_line
         .split(',')
         .map(|cell| cell.trim().to_string())
         .collect();
     assert_eq!(
-        csv_header, expected_header,
+        csv_header,
+        expected_header,
         "CSV header in {} drifted from the comparison matrix schema",
         crosswalk_path.display()
     );
 
     let csv_rows: Vec<Vec<String>> = csv_lines
-        .map(|line| line.split(',').map(|cell| cell.trim().to_string()).collect())
+        .map(|line| {
+            line.split(',')
+                .map(|cell| cell.trim().to_string())
+                .collect()
+        })
         .collect();
     for row in &csv_rows {
         assert_eq!(
@@ -11115,9 +11163,9 @@ fn test_model_checker_architecture_comparison_includes_required_side_by_side_min
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
@@ -11187,9 +11235,9 @@ fn test_model_checker_architecture_comparison_includes_required_minimum_concern_
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let required_concerns = [
@@ -11305,7 +11353,12 @@ fn test_model_checker_architecture_comparison_synthesis_explicitly_answers_requi
     let synthesis_section = comparison_src
         .split("## Synthesis")
         .nth(1)
-        .unwrap_or_else(|| panic!("comparison doc {} must include a Synthesis section", comparison_path.display()));
+        .unwrap_or_else(|| {
+            panic!(
+                "comparison doc {} must include a Synthesis section",
+                comparison_path.display()
+            )
+        });
     let synthesis_lower = synthesis_section.to_ascii_lowercase();
 
     let required_questions = [
@@ -11357,9 +11410,9 @@ fn test_model_checker_architecture_comparison_major_differences_explain_required
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
@@ -11529,8 +11582,8 @@ fn test_model_checker_architecture_tlars_only_optimizations_doc_separates_requir
 }
 
 #[test]
-fn test_model_checker_architecture_tlars_only_optimizations_confirmed_section_records_required_fields()
-{
+fn test_model_checker_architecture_tlars_only_optimizations_confirmed_section_records_required_fields(
+) {
     fn parse_markdown_row(line: &str) -> Vec<String> {
         line.trim()
             .trim_matches('|')
@@ -11541,9 +11594,9 @@ fn test_model_checker_architecture_tlars_only_optimizations_confirmed_section_re
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
@@ -11559,7 +11612,10 @@ fn test_model_checker_architecture_tlars_only_optimizations_confirmed_section_re
     let confirmed_section = audit_src
         .split("## Confirmed tla-rs-only in reviewed comparison")
         .nth(1)
-        .and_then(|tail| tail.split("## Possibly different but not yet confirmed").next())
+        .and_then(|tail| {
+            tail.split("## Possibly different but not yet confirmed")
+                .next()
+        })
         .unwrap_or_else(|| {
             panic!(
                 "failed to isolate confirmed-optimizations section in {}",
@@ -11620,7 +11676,9 @@ fn test_model_checker_architecture_tlars_only_optimizations_confirmed_section_re
     }
 
     assert!(
-        confirmed_section.to_ascii_lowercase().contains("no item is fully confirmed yet"),
+        confirmed_section
+            .to_ascii_lowercase()
+            .contains("no item is fully confirmed yet"),
         "confirmed-optimizations section in {} must state plainly when zero items are confirmed",
         audit_path.display()
     );
@@ -11639,9 +11697,9 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_3_audits_
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
@@ -11742,7 +11800,9 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_3_audits_
         "`hash_compaction64` exactness/lossiness labeling",
     ];
     for required_candidate in required_candidates {
-        let row = data_rows.iter().find(|row| row[candidate_idx] == required_candidate);
+        let row = data_rows
+            .iter()
+            .find(|row| row[candidate_idx] == required_candidate);
         assert!(
             row.is_some(),
             "Phase 35.7.3 matrix in {} must explicitly audit candidate `{}`",
@@ -11800,9 +11860,9 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_no
 
     fn is_markdown_separator_row(cells: &[String]) -> bool {
         !cells.is_empty()
-            && cells
-                .iter()
-                .all(|cell| !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+            && cells.iter().all(|cell| {
+                !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':' || c == ' ')
+            })
     }
 
     let repo_root = resolve_repo_root_for_integration();
@@ -11838,7 +11898,10 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_no
     let confirmed_section = audit_src
         .split("## Confirmed tla-rs-only in reviewed comparison")
         .nth(1)
-        .and_then(|tail| tail.split("## Possibly different but not yet confirmed").next())
+        .and_then(|tail| {
+            tail.split("## Possibly different but not yet confirmed")
+                .next()
+        })
         .unwrap_or_else(|| {
             panic!(
                 "failed to isolate confirmed-optimizations section in {}",
@@ -11846,7 +11909,9 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_no
             )
         });
     assert!(
-        confirmed_section.to_ascii_lowercase().contains("no item is fully confirmed yet"),
+        confirmed_section
+            .to_ascii_lowercase()
+            .contains("no item is fully confirmed yet"),
         "confirmed section in {} must still state plainly when no item is confirmed",
         audit_path.display()
     );
@@ -11894,7 +11959,12 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_no
     let candidate_idx = header
         .iter()
         .position(|cell| cell == "Candidate")
-        .unwrap_or_else(|| panic!("matrix in {} must include `Candidate` column", audit_path.display()));
+        .unwrap_or_else(|| {
+            panic!(
+                "matrix in {} must include `Candidate` column",
+                audit_path.display()
+            )
+        });
     let classification_idx = header
         .iter()
         .position(|cell| cell == "Current Classification")
@@ -11930,7 +12000,9 @@ fn test_model_checker_architecture_tlars_only_optimizations_phase_35_7_4_does_no
             });
         let classification = row[classification_idx].to_ascii_lowercase();
         assert!(
-            !classification.trim_start().starts_with("confirmed tla-rs-only"),
+            !classification
+                .trim_start()
+                .starts_with("confirmed tla-rs-only"),
             "Phase 35.7.4 audit in {} must not force `{}` into confirmed classification",
             audit_path.display(),
             candidate
@@ -12039,7 +12111,8 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         "Supports claims".to_string(),
     ];
     assert_eq!(
-        *header, expected_header,
+        *header,
+        expected_header,
         "Source Ledger header in {} drifted from required schema",
         sources_path.display()
     );
@@ -12047,7 +12120,10 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
     let data_rows: Vec<&Vec<String>> = rows
         .iter()
         .skip(2)
-        .filter(|row| !row.iter().all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' ')))
+        .filter(|row| {
+            !row.iter()
+                .all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+        })
         .collect();
     assert!(
         !data_rows.is_empty(),
@@ -12264,7 +12340,8 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         sources_src.contains("## TLC Internals Evidence Exclusions"),
         "sources-and-evidence doc must include TLC internals evidence exclusion policy section"
     );
-    let is_primary_kind = |kind: &str| kind == "official docs" || kind == "book" || kind == "source code";
+    let is_primary_kind =
+        |kind: &str| kind == "official docs" || kind == "book" || kind == "source code";
     let banned_discussion_or_blog_patterns = [
         "reddit.com",
         "stackoverflow.com",
@@ -12361,7 +12438,8 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         "Notes".to_string(),
     ];
     assert_eq!(
-        preference_rows[0], expected_preference_header,
+        preference_rows[0],
+        expected_preference_header,
         "Traditional TLC Primary-Source Preference header in {} drifted from required schema",
         sources_path.display()
     );
@@ -12379,7 +12457,10 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
     let preference_data_rows: Vec<&Vec<String>> = preference_rows
         .iter()
         .skip(2)
-        .filter(|row| !row.iter().all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' ')))
+        .filter(|row| {
+            !row.iter()
+                .all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+        })
         .collect();
     assert!(
         !preference_data_rows.is_empty(),
@@ -12471,14 +12552,18 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
         "Notes".to_string(),
     ];
     assert_eq!(
-        cross_engine_rows[0], expected_cross_engine_header,
+        cross_engine_rows[0],
+        expected_cross_engine_header,
         "Cross-Engine Claim Confidence Register header in {} drifted from required schema",
         sources_path.display()
     );
     let cross_engine_data_rows: Vec<&Vec<String>> = cross_engine_rows
         .iter()
         .skip(2)
-        .filter(|row| !row.iter().all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' ')))
+        .filter(|row| {
+            !row.iter()
+                .all(|cell| cell.chars().all(|c| c == '-' || c == ':' || c == ' '))
+        })
         .collect();
     assert!(
         !cross_engine_data_rows.is_empty(),
@@ -12542,7 +12627,8 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
             sources_path.display(),
             row
         );
-        if claim_statement_lower.contains("no equivalent mechanism was found in the reviewed tlc sources")
+        if claim_statement_lower
+            .contains("no equivalent mechanism was found in the reviewed tlc sources")
         {
             found_weaker_absence_claim = true;
             let has_traditional_tlc_source = evidence_ids
@@ -12581,7 +12667,8 @@ fn test_model_checker_architecture_sources_and_evidence_tracks_primary_source_le
 #[test]
 fn test_model_checker_architecture_traditional_tla_tutorial_starts_with_toolchain_primer() {
     let repo_root = resolve_repo_root_for_integration();
-    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
     let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
         panic!(
             "failed to read traditional TLC tutorial {}: {}",
@@ -12670,7 +12757,8 @@ fn test_model_checker_architecture_traditional_tla_tutorial_starts_with_toolchai
 #[test]
 fn test_model_checker_architecture_traditional_tla_tutorial_has_ordered_tlc_execution_path() {
     let repo_root = resolve_repo_root_for_integration();
-    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
     let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
         panic!(
             "failed to read traditional TLC tutorial {}: {}",
@@ -12717,13 +12805,15 @@ fn test_model_checker_architecture_traditional_tla_tutorial_has_ordered_tlc_exec
     ];
     let mut search_from = 0usize;
     for step in required_steps {
-        let relative_idx = ordered_path_lower[search_from..].find(step).unwrap_or_else(|| {
-            panic!(
-                "ordered TLC path section in {} must include required step `{}`",
-                tutorial_path.display(),
-                step
-            )
-        });
+        let relative_idx = ordered_path_lower[search_from..]
+            .find(step)
+            .unwrap_or_else(|| {
+                panic!(
+                    "ordered TLC path section in {} must include required step `{}`",
+                    tutorial_path.display(),
+                    step
+                )
+            });
         search_from += relative_idx + step.len();
     }
 }
@@ -12731,7 +12821,8 @@ fn test_model_checker_architecture_traditional_tla_tutorial_has_ordered_tlc_exec
 #[test]
 fn test_model_checker_architecture_traditional_tla_tutorial_includes_pipeline_diagram() {
     let repo_root = resolve_repo_root_for_integration();
-    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
     let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
         panic!(
             "failed to read traditional TLC tutorial {}: {}",
@@ -12787,10 +12878,11 @@ fn test_model_checker_architecture_traditional_tla_tutorial_includes_pipeline_di
 }
 
 #[test]
-fn test_model_checker_architecture_traditional_tla_tutorial_explains_explicit_state_vs_theorem_proving()
-{
+fn test_model_checker_architecture_traditional_tla_tutorial_explains_explicit_state_vs_theorem_proving(
+) {
     let repo_root = resolve_repo_root_for_integration();
-    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
     let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
         panic!(
             "failed to read traditional TLC tutorial {}: {}",
@@ -12847,7 +12939,8 @@ fn test_model_checker_architecture_traditional_tla_tutorial_explains_explicit_st
 #[test]
 fn test_model_checker_architecture_traditional_tla_tutorial_explains_practical_limits() {
     let repo_root = resolve_repo_root_for_integration();
-    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
     let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
         panic!(
             "failed to read traditional TLC tutorial {}: {}",
@@ -12895,7 +12988,8 @@ fn test_model_checker_architecture_traditional_tla_tutorial_explains_practical_l
 #[test]
 fn test_model_checker_architecture_traditional_tla_tutorial_is_repo_concrete() {
     let repo_root = resolve_repo_root_for_integration();
-    let tutorial_path = repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
+    let tutorial_path =
+        repo_root.join("docs/model-checker-architecture/traditional-tla-model-checking.md");
     let tutorial_src = std::fs::read_to_string(&tutorial_path).unwrap_or_else(|err| {
         panic!(
             "failed to read traditional TLC tutorial {}: {}",
@@ -12998,20 +13092,22 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_has_ordered_execu
     ];
     let mut search_from = 0usize;
     for step in required_steps {
-        let relative_idx = ordered_path_lower[search_from..].find(step).unwrap_or_else(|| {
-            panic!(
-                "ordered source-first path section in {} must include required step `{}`",
-                tutorial_path.display(),
-                step
-            )
-        });
+        let relative_idx = ordered_path_lower[search_from..]
+            .find(step)
+            .unwrap_or_else(|| {
+                panic!(
+                    "ordered source-first path section in {} must include required step `{}`",
+                    tutorial_path.display(),
+                    step
+                )
+            });
         search_from += relative_idx + step.len();
     }
 }
 
 #[test]
-fn test_model_checker_architecture_tlars_source_first_tutorial_includes_architecture_diagram_with_modules()
-{
+fn test_model_checker_architecture_tlars_source_first_tutorial_includes_architecture_diagram_with_modules(
+) {
     let repo_root = resolve_repo_root_for_integration();
     let tutorial_path =
         repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
@@ -13087,8 +13183,8 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_includes_architec
 }
 
 #[test]
-fn test_model_checker_architecture_tlars_source_first_tutorial_explains_plain_language_technique_path()
-{
+fn test_model_checker_architecture_tlars_source_first_tutorial_explains_plain_language_technique_path(
+) {
     let repo_root = resolve_repo_root_for_integration();
     let tutorial_path =
         repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
@@ -13168,8 +13264,8 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_explains_plain_la
 }
 
 #[test]
-fn test_model_checker_architecture_tlars_source_first_tutorial_explains_main_known_limits_from_repo_status()
-{
+fn test_model_checker_architecture_tlars_source_first_tutorial_explains_main_known_limits_from_repo_status(
+) {
     let repo_root = resolve_repo_root_for_integration();
     let tutorial_path =
         repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
@@ -13249,8 +13345,8 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_explains_main_kno
 }
 
 #[test]
-fn test_model_checker_architecture_tlars_source_first_tutorial_major_subsections_include_local_anchors()
-{
+fn test_model_checker_architecture_tlars_source_first_tutorial_major_subsections_include_local_anchors(
+) {
     let repo_root = resolve_repo_root_for_integration();
     let tutorial_path =
         repo_root.join("docs/model-checker-architecture/tlars-source-first-model-checking.md");
@@ -13312,8 +13408,8 @@ fn test_model_checker_architecture_tlars_source_first_tutorial_major_subsections
 }
 
 #[test]
-fn test_model_checker_architecture_walkthrough_uses_shared_small_model_with_checked_in_evidence_on_both_engines()
-{
+fn test_model_checker_architecture_walkthrough_uses_shared_small_model_with_checked_in_evidence_on_both_engines(
+) {
     let repo_root = resolve_repo_root_for_integration();
     let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
     let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
@@ -13373,8 +13469,8 @@ fn test_model_checker_architecture_walkthrough_uses_shared_small_model_with_chec
 }
 
 #[test]
-fn test_model_checker_architecture_walkthrough_traces_ordered_input_init_successor_invariant_and_output()
-{
+fn test_model_checker_architecture_walkthrough_traces_ordered_input_init_successor_invariant_and_output(
+) {
     let repo_root = resolve_repo_root_for_integration();
     let walkthrough_path = repo_root.join("docs/model-checker-architecture/walkthrough.md");
     let walkthrough_src = std::fs::read_to_string(&walkthrough_path).unwrap_or_else(|err| {
@@ -13487,7 +13583,10 @@ fn test_model_checker_architecture_walkthrough_has_parallel_tlc_and_source_first
     let track_a = walkthrough_src
         .split("## Parallel Track A: Traditional TLC Terms")
         .nth(1)
-        .and_then(|tail| tail.split("\n## Parallel Track B: tla-rs Source-First Terms").next())
+        .and_then(|tail| {
+            tail.split("\n## Parallel Track B: tla-rs Source-First Terms")
+                .next()
+        })
         .unwrap_or_else(|| {
             panic!(
                 "failed to isolate traditional parallel track section in {}",
@@ -14008,19 +14107,18 @@ fn test_model_check_semantic_closure_features_require_unit_integration_and_statu
     });
     let integration_test_names = collect_test_function_names(&integration_src);
 
-    let assert_unit_tests =
-        |feature: &str, source_label: &str, source: &str, tests: &[&str]| {
-            for test_name in tests {
-                let anchor = format!("fn {}(", test_name);
-                assert!(
-                    source.contains(&anchor),
-                    "feature `{}` is missing unit regression `{}` in {}",
-                    feature,
-                    test_name,
-                    source_label
-                );
-            }
-        };
+    let assert_unit_tests = |feature: &str, source_label: &str, source: &str, tests: &[&str]| {
+        for test_name in tests {
+            let anchor = format!("fn {}(", test_name);
+            assert!(
+                source.contains(&anchor),
+                "feature `{}` is missing unit regression `{}` in {}",
+                feature,
+                test_name,
+                source_label
+            );
+        }
+    };
 
     let assert_integration_tests = |feature: &str, tests: &[&str]| {
         for test_name in tests {
@@ -14420,7 +14518,10 @@ fn test_model_check_primarybackup_real_safety_invariants_bounded_run() {
         .pointer("/invariants/resolved_count")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    assert_eq!(configured_count, 3, "expected 3 configured safety invariants");
+    assert_eq!(
+        configured_count, 3,
+        "expected 3 configured safety invariants"
+    );
     assert_eq!(resolved_count, 3, "expected 3 resolved safety invariants");
 
     let expected_invariants = [
@@ -14719,7 +14820,10 @@ fn test_model_check_twophase_real_safety_invariants_bounded_run() {
         .pointer("/invariants/resolved_count")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    assert_eq!(configured_count, 3, "expected 3 configured safety invariants");
+    assert_eq!(
+        configured_count, 3,
+        "expected 3 configured safety invariants"
+    );
     assert_eq!(resolved_count, 3, "expected 3 resolved safety invariants");
 
     let expected_invariants = [
@@ -14942,7 +15046,8 @@ fn test_model_check_leader_election_real_safety_invariants_bounded_run() {
     let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/LeaderElection/election.rs");
     let types = repo_root.join("src/protocol/LeaderElection/types.rs");
-    let model_path = resolve_model_check_fixture_path("leaderelection_safety_invariants.model.toml");
+    let model_path =
+        resolve_model_check_fixture_path("leaderelection_safety_invariants.model.toml");
     let artifact_path = repo_root.join("reports/model_check/leaderelection_safety_invariants.json");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
@@ -15018,7 +15123,10 @@ fn test_model_check_leader_election_real_safety_invariants_bounded_run() {
         .pointer("/invariants/resolved_count")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    assert_eq!(configured_count, 3, "expected 3 configured safety invariants");
+    assert_eq!(
+        configured_count, 3,
+        "expected 3 configured safety invariants"
+    );
     assert_eq!(resolved_count, 3, "expected 3 resolved safety invariants");
 
     let expected_invariants = [
@@ -15154,8 +15262,8 @@ fn test_model_check_paxos_bounded_run() {
             err
         )
     });
-    let artifact_report: serde_json::Value =
-        serde_json::from_str(&artifact_src).expect("checked-in Paxos artifact should be valid JSON");
+    let artifact_report: serde_json::Value = serde_json::from_str(&artifact_src)
+        .expect("checked-in Paxos artifact should be valid JSON");
     let result = report
         .get("result")
         .and_then(|v| v.as_str())
@@ -15305,7 +15413,10 @@ fn test_model_check_paxos_real_safety_invariants_bounded_run() {
         .pointer("/invariants/resolved_count")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    assert_eq!(configured_count, 3, "expected 3 configured safety invariants");
+    assert_eq!(
+        configured_count, 3,
+        "expected 3 configured safety invariants"
+    );
     assert_eq!(resolved_count, 3, "expected 3 resolved safety invariants");
     let states = report
         .pointer("/summary/states")
@@ -15372,7 +15483,10 @@ fn test_model_check_paxos_real_safety_invariants_bounded_run() {
         .pointer("/summary/transitions")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    assert_eq!(result, artifact_result, "Paxos safety result drifted from artifact");
+    assert_eq!(
+        result, artifact_result,
+        "Paxos safety result drifted from artifact"
+    );
     assert_eq!(
         search_state_dedup, artifact_search_state_dedup,
         "Paxos safety exactness mode drifted from artifact"
@@ -15504,9 +15618,9 @@ fn test_model_check_report_classifies_exact_vs_lossy_search_evidence_mode() {
             )
         });
     assert!(
-        lossy_reasons.iter().any(
-            |reason| reason.as_str() == Some("hash_compaction64_collision_risk")
-        ),
+        lossy_reasons
+            .iter()
+            .any(|reason| reason.as_str() == Some("hash_compaction64_collision_risk")),
         "hash-compaction run should record collision-risk reason; report={}",
         lossy_report
     );
@@ -16185,7 +16299,8 @@ fn test_model_check_raft_blocker_existential_expansion_limit_is_reproducible() {
     let repo_root = resolve_repo_root_for_integration();
     let input = repo_root.join("src/protocol/Raft/raft.rs");
     let types = repo_root.join("src/protocol/Raft/types.rs");
-    let model_path = resolve_model_check_fixture_path("raft_existential_expansion_limit.model.toml");
+    let model_path =
+        resolve_model_check_fixture_path("raft_existential_expansion_limit.model.toml");
     assert!(input.exists(), "Missing input spec: {}", input.display());
     assert!(types.exists(), "Missing types spec: {}", types.display());
     let model_src = std::fs::read_to_string(&model_path)
@@ -17537,7 +17652,8 @@ fn test_property_bundles_complete_for_all_non_rsl_protocols() {
 #[test]
 fn test_benchmark_comparison_report_includes_matched_cutoff_progress_and_blocked_rows() {
     let repo_root = resolve_repo_root_for_integration();
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -17636,7 +17752,8 @@ fn test_phase_33_4_4_a_release_debug_parity_artifacts_and_metadata_are_checked_i
         todo_path.display()
     );
 
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -17694,7 +17811,9 @@ fn test_phase_33_4_4_a_release_debug_parity_artifacts_and_metadata_are_checked_i
             );
         }
 
-        let run_context_path = repo_root.join(profile_dir).join("metadata/run_context.json");
+        let run_context_path = repo_root
+            .join(profile_dir)
+            .join("metadata/run_context.json");
         let run_context_src = std::fs::read_to_string(&run_context_path).unwrap_or_else(|err| {
             panic!(
                 "failed to read run-context metadata {}: {}",
@@ -17702,15 +17821,14 @@ fn test_phase_33_4_4_a_release_debug_parity_artifacts_and_metadata_are_checked_i
                 err
             )
         });
-        let run_context: serde_json::Value = serde_json::from_str(&run_context_src).unwrap_or_else(
-            |err| {
+        let run_context: serde_json::Value =
+            serde_json::from_str(&run_context_src).unwrap_or_else(|err| {
                 panic!(
                     "run-context metadata {} must be valid JSON: {}",
                     run_context_path.display(),
                     err
                 )
-            },
-        );
+            });
         assert_eq!(
             run_context
                 .get("build_profile")
@@ -17867,7 +17985,8 @@ fn test_phase_33_4_4_b_phase_timing_telemetry_is_reported_and_preserved() {
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     let todo_lower = todo_src.to_ascii_lowercase();
     assert!(
-        todo_lower.contains("- [x] **33.4.4.b add phase-attributed source-first timing telemetry**"),
+        todo_lower
+            .contains("- [x] **33.4.4.b add phase-attributed source-first timing telemetry**"),
         "TODO {} must mark Phase 33.4.4.b complete",
         todo_path.display()
     );
@@ -17914,7 +18033,8 @@ fn test_phase_33_4_4_b_phase_timing_telemetry_is_reported_and_preserved() {
         );
     }
 
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -17957,15 +18077,14 @@ fn test_phase_33_4_4_b_phase_timing_telemetry_is_reported_and_preserved() {
                     err
                 )
             });
-            let artifact: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(
-                |err| {
+            let artifact: serde_json::Value =
+                serde_json::from_str(&artifact_src).unwrap_or_else(|err| {
                     panic!(
                         "benchmark artifact {} must be valid JSON: {}",
                         artifact_path.display(),
                         err
                     )
-                },
-            );
+                });
             let timing = artifact
                 .pointer("/summary/timing")
                 .and_then(|v| v.as_object())
@@ -18036,7 +18155,8 @@ fn test_phase_33_4_4_c_small_model_gap_diagnosis_is_measured_and_protocol_specif
         );
     }
 
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -18126,7 +18246,8 @@ fn test_phase_33_4_4_d_branch_blocker_telemetry_is_preserved_and_reported() {
         );
     }
 
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -18170,15 +18291,14 @@ fn test_phase_33_4_4_d_branch_blocker_telemetry_is_preserved_and_reported() {
                     err
                 )
             });
-            let artifact: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(
-                |err| {
+            let artifact: serde_json::Value =
+                serde_json::from_str(&artifact_src).unwrap_or_else(|err| {
                     panic!(
                         "benchmark artifact {} must be valid JSON: {}",
                         artifact_path.display(),
                         err
                     )
-                },
-            );
+                });
             let branch_entries = artifact
                 .pointer("/summary/branch_telemetry")
                 .and_then(|v| v.as_array())
@@ -18236,13 +18356,15 @@ fn test_phase_33_4_4_e_leader_election_blocker_reduction_has_measured_progress()
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     let todo_lower = todo_src.to_ascii_lowercase();
     assert!(
-        todo_lower
-            .contains("- [x] **33.4.4.e `leaderelection` blocker reduction on the matched benchmark model**"),
+        todo_lower.contains(
+            "- [x] **33.4.4.e `leaderelection` blocker reduction on the matched benchmark model**"
+        ),
         "TODO {} must mark Phase 33.4.4.e complete",
         todo_path.display()
     );
 
-    let artifact_path = repo_root.join("reports/benchmarks/source_first_release/leaderelection_benchmark.json");
+    let artifact_path =
+        repo_root.join("reports/benchmarks/source_first_release/leaderelection_benchmark.json");
     let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark artifact {}: {}",
@@ -18357,7 +18479,8 @@ fn test_phase_33_4_4_e_leader_election_blocker_reduction_has_measured_progress()
         max_candidate_states
     );
 
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -18390,13 +18513,15 @@ fn test_phase_33_4_4_f_paxos_blocker_reduction_has_measured_progress() {
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     let todo_lower = todo_src.to_ascii_lowercase();
     assert!(
-        todo_lower
-            .contains("- [x] **33.4.4.f `paxos` blocker reduction on the matched benchmark model**"),
+        todo_lower.contains(
+            "- [x] **33.4.4.f `paxos` blocker reduction on the matched benchmark model**"
+        ),
         "TODO {} must mark Phase 33.4.4.f complete",
         todo_path.display()
     );
 
-    let artifact_path = repo_root.join("reports/benchmarks/source_first_release/paxos_benchmark.json");
+    let artifact_path =
+        repo_root.join("reports/benchmarks/source_first_release/paxos_benchmark.json");
     let artifact_src = std::fs::read_to_string(&artifact_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark artifact {}: {}",
@@ -18536,7 +18661,8 @@ fn test_phase_33_4_4_f_paxos_blocker_reduction_has_measured_progress() {
         branch2_enum
     );
 
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -18594,7 +18720,8 @@ fn test_phase_33_4_4_g_report_explicitly_answers_why_slower_and_why_blocked() {
         );
     }
 
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -18659,7 +18786,8 @@ fn test_phase_33_4_4_h_anti_corner_cutting_rules_are_explicit_and_enforced() {
         );
     }
 
-    let report_path = repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
+    let report_path =
+        repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
     let report_src = std::fs::read_to_string(&report_path).unwrap_or_else(|err| {
         panic!(
             "failed to read benchmark comparison report {}: {}",
@@ -18917,9 +19045,8 @@ fn test_phase_33_7_completion_gate_is_closed_with_specific_evidence() {
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     let todo_lower = todo_src.to_ascii_lowercase();
     assert!(
-        todo_lower.contains(
-            "- [x] do not mark phase 33 complete until all of the following are true:"
-        ),
+        todo_lower
+            .contains("- [x] do not mark phase 33 complete until all of the following are true:"),
         "TODO {} must mark Phase 33.7 completion gate as closed",
         todo_path.display()
     );
@@ -18947,7 +19074,8 @@ fn test_phase_33_7_completion_gate_is_closed_with_specific_evidence() {
     });
     let status_doc_lower = status_doc_src.to_ascii_lowercase();
     assert!(
-        status_doc_lower.contains("## 4. protocol coverage matrix (source-first, checked-in evidence)"),
+        status_doc_lower
+            .contains("## 4. protocol coverage matrix (source-first, checked-in evidence)"),
         "status doc {} must contain explicit protocol coverage matrix section",
         status_doc_path.display()
     );
@@ -18975,15 +19103,14 @@ fn test_phase_33_7_completion_gate_is_closed_with_specific_evidence() {
 
     let benchmark_report_path =
         repo_root.join("reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md");
-    let benchmark_report_src = std::fs::read_to_string(&benchmark_report_path).unwrap_or_else(
-        |err| {
+    let benchmark_report_src =
+        std::fs::read_to_string(&benchmark_report_path).unwrap_or_else(|err| {
             panic!(
                 "failed to read benchmark comparison report {}: {}",
                 benchmark_report_path.display(),
                 err
             )
-        },
-    );
+        });
     let benchmark_report_lower = benchmark_report_src.to_ascii_lowercase();
     for required_fragment in [
         "## source-first build/environment parity (phase 33.4.4.a)",
@@ -19064,15 +19191,14 @@ fn test_phase_33_7_completion_gate_is_closed_with_specific_evidence() {
                 err
             )
         });
-        let artifact: serde_json::Value = serde_json::from_str(&artifact_src).unwrap_or_else(
-            |err| {
+        let artifact: serde_json::Value =
+            serde_json::from_str(&artifact_src).unwrap_or_else(|err| {
                 panic!(
                     "benchmark artifact {} must be valid JSON: {}",
                     artifact_path.display(),
                     err
                 )
-            },
-        );
+            });
         let summary = artifact
             .get("summary")
             .and_then(|value| value.as_object())
