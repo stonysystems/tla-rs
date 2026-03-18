@@ -11131,11 +11131,7 @@ docs/model-checker-architecture/
   - `TLC distinct states` ↔ source-first normalized reachable distinct-state count,
   - `TLC states found` ↔ **not automatically equal** to source-first `summary.transitions`,
   - any non-equivalent fields must be labeled as such before further analysis.
-- [ ] **36.1.2**: Define one canonical cross-engine state normalization schema for parity work. It must:
-  - project to the underlying protocol state only,
-  - ignore wrapper-only bookkeeping that is not semantically part of the protocol state,
-  - normalize collection ordering / map ordering / record-field ordering deterministically,
-  - and be written down in a checked-in doc section before diffing begins.
+- [x] **36.1.2**: Define one canonical cross-engine state normalization schema for parity work. See `docs/cross-engine-state-normalization.md`. Key decisions: project to protocol state only (TLC `state` variable / source-first `LState`); exclude `constants` and `msgs`; normalize to canonical JSON (alphabetically sorted record fields, canonically sorted set elements, `_variant` tags for enums); state identity = SHA-256 of minified JSON; export as sorted JSON Lines (`.jsonl`). References added to `docs/model_checker_status.md` (§3.6) and benchmark comparison report.
 - [ ] **36.1.3**: Add exact-mode source-first state export for the shared small-model cases (`TwoPhase`, `PrimaryBackup`, `LeaderElection`, `Paxos`) under a checked-in debug artifact path (preferred: `reports/model_check/parity/source_first/`).
   - Each export must include: normalized state payload, stable state ID, predecessor IDs, outgoing action labels, and whether the state is initial.
   - Export order must be deterministic so diffs are stable in CI and code review.

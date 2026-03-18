@@ -273,6 +273,21 @@ the following metric pairs must be mapped carefully:
 
 Full mapping details are in the benchmark comparison report.
 
+### 3.6 Cross-engine state normalization schema (Phase 36.1.2)
+
+The canonical normalization schema for comparing reachable state sets
+between source-first and TLC is defined in
+[`docs/cross-engine-state-normalization.md`](cross-engine-state-normalization.md).
+
+Key design decisions:
+- **Projection**: both engines project to protocol state only (`LState`
+  / TLC `state` variable); `constants` and `msgs` are excluded.
+- **Canonical form**: nested JSON with alphabetically sorted record
+  fields, canonically sorted set elements, and `_variant` tags for enums.
+- **State identity**: SHA-256 of minified canonical JSON.
+- **Export format**: JSON Lines (`.jsonl`), one state per line, sorted
+  by state ID for stable diffing.
+
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
 Metrics shown for supported entries come from the latest JSON artifacts under `reports/model_check/` (generated via `./scripts/run_model_check_matrix.sh`; exact `elapsed_ms` may vary by machine/load).

@@ -147,8 +147,9 @@ performance conclusions from non-equivalent metric pairs.**
 wrapper-state distinct count vs source-first `LState` distinct count).
 The count gaps (e.g., TwoPhase 64 vs 8, LeaderElection 9337 vs 280)
 may reflect wrapper-vs-protocol projection differences, actual semantic
-bugs, or both. Phase 36.1.2–36.2 will resolve this by defining a
-normalized projection schema and diffing state sets.
+bugs, or both. The canonical normalization schema for parity diffing is
+defined in [`docs/cross-engine-state-normalization.md`](../../docs/cross-engine-state-normalization.md)
+(Phase 36.1.2). Phase 36.1.3–36.2 will implement the export/diff pipeline.
 
 ## Side-by-side Results
 
