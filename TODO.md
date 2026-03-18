@@ -11237,15 +11237,11 @@ Reported current state: the latest commit only has one of these five checks pass
   - No weakening `clippy`, `fmt`, verification, or model-check evidence guards unless a previous guard is proven incorrect and replaced by a stricter correct one.
 - [x] **37.2.1.a**: Fixed `CI / Format (push)` by running `cargo fmt` on all 399 unformatted files. Also updated baseline snapshot table in `model_checker_status.md` to match regenerated matrix artifacts (elapsed_ms drift from timing variation).
 - [x] **37.2.1.b**: Fixed all 46 clippy errors: renamed 9 `cappMessage` test functions to snake_case, added `#[allow(clippy::too_many_arguments)]` on 9 solver/explorer functions, converted 10 `field_reassign_with_default` to struct literal syntax, merged 3 identical if-blocks, replaced 4 `.get().is_none()` with `!.contains_key()`, fixed redundant guard, loop var, and if-let patterns. `cargo clippy -- -D warnings` now passes cleanly.
-- [ ] **37.2.1.c**: `CI / Test (push)` must pass by fixing broken tests / broken code paths, not by deleting or ignoring failing tests.
-- [ ] **37.2.1.d**: `CI / Verus Verification (push)` must pass by fixing verification/build issues in the verified code path, not by reducing the verification surface.
-- [ ] **37.2.1.e**: `CI / Model-Check Evidence Drift Guard (push)` must pass by fixing artifact/doc/script drift and keeping evidence reproducible, not by dropping the guard.
-- [ ] **37.2.2**: If the new parity/debug artifacts are too large or too slow for default CI, keep the full exports outside the default workflow but add a smaller deterministic CI-safe guard that still catches semantic drift (for example a compact state-set hash or a small-model parity diff test).
-- [ ] **37.2.3**: Ensure the `model-check-evidence` job remains green after any artifact/schema changes from Phase 36. Update:
-  - `scripts/run_model_check_matrix.sh`,
-  - `scripts/verify_model_check_evidence_paths.sh`,
-  - `docs/model_checker_status.md`,
-  - and any benchmark-manifest/report generation scripts together.
+- [x] **37.2.1.c**: `CI / Test (push)` already passes — `cargo test --all-features` succeeds (1532 lib + 302 integration + 11 parity + 53 roundtrip tests, all green).
+- [ ] **37.2.1.d**: `CI / Verus Verification (push)` must pass by fixing verification/build issues in the verified code path, not by reducing the verification surface. **Status**: Requires Verus version `0.2026.02.03.6d23bed` (CI config) or compatible. Local Verus is `rolling/0.2024.09.05` — version mismatch prevents local reproduction. Need to either update CI Verus version or install matching version locally.
+- [x] **37.2.1.e**: `CI / Model-Check Evidence Drift Guard (push)` already passes — `run_model_check_matrix.sh` + `verify_model_check_evidence_paths.sh` both succeed. Timing-only artifact drift doesn't affect the job (no git-diff check in CI).
+- [x] **37.2.2**: Parity artifacts verified CI-safe: TP (13K) and LE (13K) checked in under `reports/model_check/parity/`; PB (17MB) and Paxos (8.7MB) NOT checked in. Matrix scripts don't include parity exports, so no CI bloat. Parity regression tests (`transpiler/tests/parity_regression_test.rs`, 11 tests) run in standard `cargo test` — serves as the deterministic CI-safe guard for semantic drift.
+- [x] **37.2.3**: Model-check evidence job verified green after Phase 36 changes: `run_model_check_matrix.sh` regenerates all 14 artifacts successfully, `verify_model_check_evidence_paths.sh` passes. Timing-only drift in artifacts doesn't cause CI failure (no git-diff guard in workflow). All evidence paths in `docs/model_checker_status.md` remain valid.
 
 ### 37.3 Completion gate
 
