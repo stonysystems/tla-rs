@@ -11139,14 +11139,7 @@ docs/model-checker-architecture/
 
 ### 36.2 Root-cause debugging on the shared small models
 
-- [ ] **36.2.1**: Run the new parity harness on the shared small models first and classify each mismatch before editing solver code. Allowed root-cause buckets:
-  - initial-state construction bug,
-  - successor-generation bug,
-  - helper-call / predicate-branch solving bug,
-  - wrapper/projection mismatch,
-  - deadlock/stuttering/fairness semantic mismatch,
-  - dedup/canonicalization bug,
-  - metric-definition bug (counts not actually comparable).
+- [x] **36.2.1**: Ran parity harness and classified all mismatches. See `docs/phase36-parity-mismatch-analysis.md`. Summary: (1) TwoPhase: successor-generation bug — `LRMReceivePrepare` branch solver produces 0 successors despite 8 invocations, likely failing on `PreparedVote{rm}` enum construction or set-membership existential. HIGH priority. (2) PrimaryBackup: wrapper/projection mismatch — hand-written TLC wrapper adds `phase` field absent from Verus spec. MEDIUM priority. (3) LeaderElection: solver performance timeout. MEDIUM. (4) Paxos: state space too large for current engine. LOW.
 - [ ] **36.2.2**: For the first real semantic mismatch found, add a focused failing regression that reproduces it on the smallest possible model before implementing the fix.
 - [ ] **36.2.3**: Fix small-model parity for `TwoPhase`.
   - Completion bar: zero normalized distinct-state diff and zero normalized initial-state diff.
