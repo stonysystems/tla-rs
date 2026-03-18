@@ -68,7 +68,7 @@
       {
         "branch_label": "branch_2",
         "candidate_state_count": 24,
-        "cumulative_solve_elapsed_ms": 2,
+        "cumulative_solve_elapsed_ms": 1,
         "direct_solver_hits": 1,
         "enumeration_fallback_hits": 0,
         "existential_assignment_count": 5,
@@ -149,13 +149,13 @@
     "symmetry_collapses": 0,
     "timing": {
       "candidate_generation_evaluation_ms": 0,
-      "dedup_hashing_normalization_ms": 6,
+      "dedup_hashing_normalization_ms": 7,
       "initial_state_construction_ms": 0,
       "invariant_evaluation_ms": 0,
-      "model_config_resolution_ms": 1,
+      "model_config_resolution_ms": 0,
       "report_serialization_output_ms": 0,
       "source_ingestion_parsing_ms": 6,
-      "successor_solving_ms": 11
+      "successor_solving_ms": 10
     },
     "transitions": 3
   },

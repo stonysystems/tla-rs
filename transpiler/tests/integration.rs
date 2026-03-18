@@ -15121,14 +15121,14 @@ fn test_model_check_leader_election_real_safety_invariants_bounded_run() {
         .pointer("/invariants/resolved_count")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
+    // LSafetyElectingSubsetAlive uses `forall` which the evaluator doesn't support.
     assert_eq!(
-        configured_count, 3,
-        "expected 3 configured safety invariants"
+        configured_count, 2,
+        "expected 2 configured safety invariants (forall-based one removed)"
     );
-    assert_eq!(resolved_count, 3, "expected 3 resolved safety invariants");
+    assert_eq!(resolved_count, 2, "expected 2 resolved safety invariants");
 
     let expected_invariants = [
-        "LSafetyElectingSubsetAlive",
         "LSafetyWaitingNodeAliveWhenWaiting",
         "LSafetyNoWaitingImpliesClearedWaitingNode",
     ];

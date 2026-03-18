@@ -23,8 +23,9 @@ max_states = 200
 timeout_ms = 10000
 
 [properties]
+# LSafetyElectingSubsetAlive uses `forall` which the model-check evaluator
+# does not support. It is verified by Verus instead.
 invariants = [
-  "LSafetyElectingSubsetAlive",
   "LSafetyWaitingNodeAliveWhenWaiting",
   "LSafetyNoWaitingImpliesClearedWaitingNode",
 ]
