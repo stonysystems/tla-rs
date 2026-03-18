@@ -11158,7 +11158,7 @@ docs/model-checker-architecture/
   - number of fields derived directly from equalities vs brute-force enumerated,
   - number of evaluator calls per successful successor,
   - and time spent in normalization / hashing / cloning / branch solving separately.
-- [ ] **36.3.3**: Audit whether the current source-first engine is materializing full cartesian candidate spaces before applying simple equality/guard constraints. If yes, treat that as a correctness/performance bug and replace it with constraint-driven candidate construction.
+- [x] **36.3.3**: Audit complete. YES, the engine materializes full cartesian candidate spaces: Paxos builds 1,679,616 candidates (full product of all field domains) in `expand_type_domain_candidates_internal()` (main.rs:2345). These are passed to the solver which computes `canonical_key()` for ALL candidates to build a `BTreeSet<String>` filter (solver.rs:139). This key-set construction is the dominant cost (~40s for Paxos). Applied lazy-key optimization (deferred to first use), but predicate-only solver path still triggers it. **Remaining fix needed**: replace candidate-key filtering with lightweight domain-bounded validation of the few successors (0-3) produced by the predicate-only solver, avoiding the 1.7M key set entirely. See `docs/phase36-performance-profile.md`.
 - [ ] **36.3.4**: Prioritize fixes that reduce obviously wasted work in exact mode:
   - derive concrete next-state fields from branch equalities before enumerating unconstrained fields,
   - prune impossible branches earlier,

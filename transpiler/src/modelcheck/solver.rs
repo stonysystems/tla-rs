@@ -136,12 +136,12 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     hooks: SolverHooks<'_>,
     should_stop: Option<&dyn Fn() -> bool>,
 ) -> TranspileResult<BranchSolveResult> {
-    let candidate_state_keys: Option<BTreeSet<String>> = next_state_candidates.map(|candidates| {
-        candidates
-            .iter()
-            .map(RuntimeValue::canonical_key)
-            .collect::<BTreeSet<_>>()
-    });
+    // Candidate key set for filtering direct-assignment successors.
+    // OPTIMIZATION: Defer computation until needed. For large candidate pools
+    // (e.g., 1.7M for Paxos), computing canonical_key() for every candidate
+    // was the dominant cost (~40s). When the predicate-only solver handles
+    // the branch, this set is never needed.
+    let mut candidate_state_keys: Option<BTreeSet<String>> = None;
 
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
@@ -184,6 +184,14 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 &assignments,
                 bounds,
             )? {
+                // Lazily compute candidate keys for filtering
+                if candidate_state_keys.is_none() {
+                    if let Some(candidates) = next_state_candidates {
+                        candidate_state_keys = Some(
+                            candidates.iter().map(RuntimeValue::canonical_key).collect(),
+                        );
+                    }
+                }
                 let successors = filter_successors_to_candidate_keys(
                     deduplicate_successors(successors),
                     candidate_state_keys.as_ref(),
@@ -245,6 +253,14 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     let mut successors = Vec::new();
     for assignment in assignments {
         if should_stop.map(|check| check()).unwrap_or(false) {
+            // Lazily compute candidate keys only when needed for filtering
+            if candidate_state_keys.is_none() {
+                if let Some(candidates) = next_state_candidates {
+                    candidate_state_keys = Some(
+                        candidates.iter().map(RuntimeValue::canonical_key).collect(),
+                    );
+                }
+            }
             let successors = filter_successors_to_candidate_keys(
                 deduplicate_successors(successors),
                 candidate_state_keys.as_ref(),
@@ -273,6 +289,14 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
         }
     }
 
+    // Lazily compute candidate keys only when needed for filtering
+    if candidate_state_keys.is_none() {
+        if let Some(candidates) = next_state_candidates {
+            candidate_state_keys = Some(
+                candidates.iter().map(RuntimeValue::canonical_key).collect(),
+            );
+        }
+    }
     let successors = filter_successors_to_candidate_keys(
         deduplicate_successors(successors),
         candidate_state_keys.as_ref(),
@@ -1827,6 +1851,9 @@ mod tests {
 
     #[test]
     fn test_predicate_only_solver_hook_respects_candidate_state_filter() {
+        // The predicate-only solver results are filtered against the
+        // candidate key set. Candidate keys are computed lazily to avoid
+        // the cost of canonical_key() for all candidates until needed.
         let branch = TransitionBranchIr {
             label: "branch_0".to_string(),
             existential_vars: vec![],
@@ -1868,6 +1895,7 @@ mod tests {
         )
         .unwrap();
 
+        // Only state(1,0) passes: state(9,9) is not in the candidate set
         assert_eq!(result.successors, vec![state(1, 0)]);
         assert_eq!(result.telemetry.direct_assignment_branch_solves, 1);
     }

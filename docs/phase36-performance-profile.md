@@ -110,15 +110,45 @@ product of all possible values for each field of each node.
 
 \* Different state counts due to message-channel modeling difference
 
-## Recommendations
+## Phase 36.3.3 Audit Results
 
-1. **Phase 36.3.3 (audit)**: Confirm the solver IS materializing full
-   cartesian candidates before applying constraints (the 1.7M number
-   for Paxos proves this)
-2. **Phase 36.3.4 (optimization)**: Implement constraint-driven field
-   assignment: for each branch, extract `s_.field == expr` equalities
-   and compute those fields first, only enumerating truly unconstrained
-   fields
-3. **High impact for Paxos**: For function/map-typed state, copy
+**Confirmed**: The engine materializes full cartesian candidates. The
+bottleneck pipeline is:
+
+1. `expand_type_domain_candidates_internal()` (main.rs:2345) — builds
+   1.7M candidates as `Vec<RuntimeValue>` via nested cartesian product
+   of all field domains. Takes 22s for Paxos.
+
+2. `solve_branch_successors_with_candidates_and_telemetry()` (solver.rs:139)
+   — computes `canonical_key()` for ALL 1.7M candidates to build a
+   `BTreeSet<String>` lookup set. This is the dominant solver cost (~40s).
+
+3. `filter_successors_to_candidate_keys()` (solver.rs:503) — filters
+   the 0-3 successors produced by the predicate-only solver against the
+   1.7M-element key set. The filtering itself is O(1) per successor,
+   but building the key set is O(n * key_length) with n=1.7M.
+
+**Applied optimization**: Made candidate-key computation lazy (deferred
+until first use). This helps paths that never need the key set (e.g.,
+direct-assignment-only branches) but does NOT help the predicate-only
+solver path which still triggers key computation.
+
+## Remaining Optimizations (Phase 36.3.4)
+
+1. **Critical (highest impact)**: Replace candidate-key filtering with
+   domain-bounded validation. Instead of computing 1.7M canonical keys,
+   validate each of the 0-3 successors against the field domain bounds
+   directly. This is O(successor_count * field_count) instead of
+   O(candidate_count * key_length).
+
+2. **High impact**: Don't construct the 1.7M candidate set at all when
+   all branches use the predicate-only solver path. Add a pre-check that
+   tests whether LNext branches are all single-predicate helper calls.
+
+3. **Medium impact**: For function/map-typed state (Paxos), copy
    unmodified entries from pre-state rather than enumerating all
-   possible values
+   possible values for all nodes.
+
+4. **Medium impact**: For initial-state construction, use the init
+   function's constraints to prune the candidate space rather than
+   iterating all 1.7M candidates.
