@@ -11,6 +11,7 @@
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -203,5 +204,75 @@ fn test_parity_leaderelection_overlap() {
         shared >= 2,
         "LeaderElection shared count should be at least 2 (got {})",
         shared
+    );
+}
+
+// =========================================================================
+// Bug repro: TwoPhase LRMReceivePrepare produces 0 successors (Phase 36.2.2)
+//
+// The source-first solver fails to produce successors for branches with
+// enum variants that have fields (e.g., PreparedVote{rm}). This test
+// runs the model checker on a minimal 1-RM config and checks the state
+// count. When the bug is fixed, state count should be >4.
+// =========================================================================
+
+#[test]
+fn test_twophase_prepare_branch_produces_successors() {
+    let root = repo_root();
+    let binary = root.join("transpiler/target/debug/verus-transpile");
+
+    // Build if needed
+    let build = Command::new("cargo")
+        .args(["build", "--bin", "verus-transpile"])
+        .current_dir(root.join("transpiler"))
+        .output()
+        .expect("Failed to run cargo build");
+    assert!(build.status.success(), "cargo build failed: {}", String::from_utf8_lossy(&build.stderr));
+
+    let output = Command::new(&binary)
+        .args([
+            "model-check",
+            "--input", "src/protocol/TwoPhase/twophase.rs",
+            "--types", "src/protocol/TwoPhase/types.rs",
+            "--model", "transpiler/tests/model_check_fixtures/twophase_parity_bug_repro.model.toml",
+            "--json-report",
+        ])
+        .current_dir(&root)
+        .output()
+        .expect("Failed to run model-check");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("Failed to parse JSON report: {}. stdout: {}", e, stdout));
+
+    let states = report["summary"]["states"].as_u64().unwrap_or(0);
+    let branch_telemetry = report["summary"]["branch_telemetry"].as_array().unwrap();
+
+    // Find LRMReceivePrepare branch (branch_1 — second branch in LNext)
+    // It should have successful_successors > 0 when the bug is fixed.
+    let branch1_successors: u64 = branch_telemetry
+        .get(1)
+        .and_then(|b| b["successful_successors"].as_u64())
+        .unwrap_or(0);
+
+    // CURRENT BUG: branch_1 produces 0 successors.
+    // When fixed, this should produce successors and total states should
+    // increase from 4 to something higher (TLC finds 16 projected states
+    // for 1 RM).
+    //
+    // This test documents the current buggy baseline. Update the assertion
+    // when the bug is fixed:
+    //   assert!(branch1_successors > 0, "LRMReceivePrepare should produce successors");
+    //   assert!(states > 4, "Should find prepare/commit paths (TLC finds 16)");
+    assert_eq!(
+        branch1_successors, 0,
+        "BUG BASELINE: LRMReceivePrepare currently produces 0 successors. \
+         If this assertion fails, the bug may be fixed — update the test!"
+    );
+    assert!(
+        states <= 4,
+        "BUG BASELINE: with bug, only abort paths explored (<=4 states). \
+         Got {} states — if higher, the PreparedVote bug may be fixed!",
+        states
     );
 }

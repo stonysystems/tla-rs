@@ -1,0 +1,34 @@
+# Minimal TwoPhase config to reproduce the LRMReceivePrepare successor bug.
+# 1 RM, minimal domain. The solver should find that LRMReceivePrepare
+# produces successors (rm=0 is in c.rm, not prepared, not aborted),
+# but currently produces 0.
+#
+# Expected: >8 distinct states (prepare/commit paths should be reachable).
+# Actual (bug): 4 distinct states (only abort paths explored).
+
+[constants.domains.rm]
+kind = "values"
+values = ["set:{int:0}"]
+
+[quantifiers.int]
+min = 0
+max = 0
+
+[quantifiers.types.LTPCMessage]
+kind = "enum_subset"
+variants = ["Prepare", "Commit", "Abort"]
+
+[collections]
+max_set_len = 1
+max_seq_len = 1
+
+[search]
+max_depth = 20
+max_states = 1000
+timeout_ms = 30000
+candidate_eval_guardrail = 100000
+
+[properties]
+invariants = []
+check_deadlock = false
+successor_semantics = "deadlock"
