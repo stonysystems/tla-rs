@@ -236,6 +236,11 @@ enum Commands {
         #[arg(long)]
         json_report: bool,
 
+        /// Export parity JSONL files (states + edges) to the given directory.
+        /// Used for cross-engine state-set comparison (Phase 36.1).
+        #[arg(long)]
+        export_parity: Option<PathBuf>,
+
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
@@ -4361,6 +4366,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             max_states,
             timeout_ms,
             json_report,
+            export_parity,
             model,
         } => {
             if cli.verbose {
@@ -4391,6 +4397,66 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 model.as_path(),
             )?;
             let search_evidence_mode = classify_search_evidence_mode(&model_config.search);
+
+            // Parity export (Phase 36.1.3)
+            if let Some(parity_dir) = export_parity {
+                std::fs::create_dir_all(parity_dir).map_err(|e| {
+                    miette::miette!("Failed to create parity export directory: {}", e)
+                })?;
+
+                // Identify initial states (depth 0 in explored set)
+                let initial_keys: std::collections::BTreeSet<String> = execution
+                    .exploration
+                    .explored
+                    .iter()
+                    .filter(|s| s.depth == 0)
+                    .map(|s| s.state.canonical_key())
+                    .collect();
+
+                // Deduplicate explored states by canonical key (keep shallowest depth)
+                let mut deduped: std::collections::BTreeMap<String, &verus_transpiler::modelcheck::explorer::ExploredState> =
+                    std::collections::BTreeMap::new();
+                for es in &execution.exploration.explored {
+                    let key = es.state.canonical_key();
+                    let entry = deduped.entry(key);
+                    use std::collections::btree_map::Entry;
+                    match entry {
+                        Entry::Vacant(e) => { e.insert(es); }
+                        Entry::Occupied(mut e) => {
+                            if es.depth < e.get().depth {
+                                e.insert(es);
+                            }
+                        }
+                    }
+                }
+
+                let states_path = parity_dir.join("states.jsonl");
+                let mut states_file = std::io::BufWriter::new(
+                    std::fs::File::create(&states_path).map_err(|e| {
+                        miette::miette!("Failed to create {}: {}", states_path.display(), e)
+                    })?,
+                );
+
+                // Export states sorted by canonical key (BTreeMap order)
+                for (key, es) in &deduped {
+                    let line = serde_json::json!({
+                        "id": key,
+                        "state": es.state.to_canonical_json(),
+                        "initial": initial_keys.contains(key),
+                        "depth": es.depth,
+                    });
+                    use std::io::Write;
+                    writeln!(states_file, "{}", serde_json::to_string(&line).unwrap())
+                        .map_err(|e| miette::miette!("Write error: {}", e))?;
+                }
+                drop(states_file);
+
+                eprintln!(
+                    "Parity export: {} distinct states written to {}",
+                    deduped.len(),
+                    states_path.display()
+                );
+            }
 
             if *json_report {
                 let mut report = serde_json::json!({
@@ -6300,6 +6366,7 @@ Next(s, s_, c) ==
                 max_states,
                 timeout_ms,
                 json_report,
+                export_parity,
                 model,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
@@ -6489,6 +6556,7 @@ invariants = ["LInv"]
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -6571,6 +6639,7 @@ fairness = { weak = ["branch_0"] }
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -6653,6 +6722,7 @@ fairness = { weak = ["branch_typo"], strong = ["branch_missing"] }
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -6735,6 +6805,7 @@ max = 1
             max_states: Some(2048),
             timeout_ms: Some(7777),
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -6943,6 +7014,7 @@ max = 1
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -7018,6 +7090,7 @@ max = 1
             max_states: None,
             timeout_ms: None,
             json_report: true,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9174,6 +9247,7 @@ max = 1
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9248,6 +9322,7 @@ max = 1
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9334,6 +9409,7 @@ verus! {
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9389,6 +9465,7 @@ verus! {
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9469,6 +9546,7 @@ invariants = ["LMissing"]
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9551,6 +9629,7 @@ invariants = ["LMissing"]
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9618,6 +9697,7 @@ verus! {
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9682,6 +9762,7 @@ verus! {
             max_states: None,
             timeout_ms: None,
             json_report: false,
+            export_parity: None,
             model: model_path,
         };
         let cli = Cli {

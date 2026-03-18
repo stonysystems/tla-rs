@@ -1,5 +1,6 @@
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{CollectionBounds, ModelValue};
+use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Concrete runtime value used by source-first model checking.
@@ -210,6 +211,59 @@ impl RuntimeValue {
             }
         }
     }
+
+    /// Convert to the canonical JSON representation defined in
+    /// `docs/cross-engine-state-normalization.md`.
+    ///
+    /// Records/structs become JSON objects with alphabetically sorted fields
+    /// (type name is dropped). Enums become objects with a `_variant` key.
+    /// Sets become sorted arrays. Maps become sorted `[key, value]` pair arrays.
+    pub fn to_canonical_json(&self) -> JsonValue {
+        match self {
+            RuntimeValue::Unit => JsonValue::Null,
+            RuntimeValue::Bool(v) => JsonValue::Bool(*v),
+            RuntimeValue::Int(v) => serde_json::json!(*v),
+            RuntimeValue::Nat(v) => serde_json::json!(*v),
+            RuntimeValue::String(v) => JsonValue::String(v.clone()),
+            RuntimeValue::Enum { variant, fields, .. } => {
+                let mut obj = serde_json::Map::new();
+                obj.insert("_variant".to_string(), JsonValue::String(variant.clone()));
+                for (k, v) in fields {
+                    obj.insert(k.clone(), v.to_canonical_json());
+                }
+                JsonValue::Object(obj)
+            }
+            RuntimeValue::Tuple(items) => {
+                JsonValue::Array(items.iter().map(|v| v.to_canonical_json()).collect())
+            }
+            RuntimeValue::Struct { fields, .. } => {
+                // BTreeMap is already alphabetically sorted
+                let obj: serde_json::Map<String, JsonValue> = fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.to_canonical_json()))
+                    .collect();
+                JsonValue::Object(obj)
+            }
+            RuntimeValue::Seq(items) => {
+                JsonValue::Array(items.iter().map(|v| v.to_canonical_json()).collect())
+            }
+            RuntimeValue::Set(items) => {
+                // BTreeSet is already canonically sorted
+                JsonValue::Array(items.iter().map(|v| v.to_canonical_json()).collect())
+            }
+            RuntimeValue::Map(entries) => {
+                // BTreeMap is already sorted by key
+                JsonValue::Array(
+                    entries
+                        .iter()
+                        .map(|(k, v)| {
+                            JsonValue::Array(vec![k.to_canonical_json(), v.to_canonical_json()])
+                        })
+                        .collect(),
+                )
+            }
+        }
+    }
 }
 
 impl From<ModelValue> for RuntimeValue {
@@ -388,6 +442,56 @@ mod tests {
         .unwrap();
         assert_eq!(seq.element_at(1), Some(&RuntimeValue::Bool(true)));
         assert_eq!(seq.element_at(2), None);
+    }
+
+    #[test]
+    fn test_to_canonical_json_struct_drops_type_name() {
+        let state =
+            RuntimeValue::struct_value("LState", vec![("b".to_string(), RuntimeValue::Int(2)), ("a".to_string(), RuntimeValue::Int(1))])
+                .unwrap();
+        let json = state.to_canonical_json();
+        // Fields sorted alphabetically, type name dropped
+        assert_eq!(json, serde_json::json!({"a": 1, "b": 2}));
+    }
+
+    #[test]
+    fn test_to_canonical_json_enum_has_variant_tag() {
+        use std::collections::BTreeMap;
+        let val = RuntimeValue::Enum {
+            ty: "TMState".to_string(),
+            variant: "Committed".to_string(),
+            fields: BTreeMap::new(),
+        };
+        assert_eq!(val.to_canonical_json(), serde_json::json!({"_variant": "Committed"}));
+    }
+
+    #[test]
+    fn test_to_canonical_json_nested() {
+        use std::collections::BTreeMap;
+        let inner_enum = RuntimeValue::Enum {
+            ty: "TMState".to_string(),
+            variant: "Init".to_string(),
+            fields: BTreeMap::new(),
+        };
+        let set = RuntimeValue::Set(
+            vec![RuntimeValue::Int(1), RuntimeValue::Int(0)].into_iter().collect(),
+        );
+        let state = RuntimeValue::struct_value(
+            "LState",
+            vec![
+                ("tm_state".to_string(), inner_enum),
+                ("prepared".to_string(), set),
+            ],
+        )
+        .unwrap();
+        let json = state.to_canonical_json();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "prepared": [0, 1],
+                "tm_state": {"_variant": "Init"},
+            })
+        );
     }
 
     #[test]
