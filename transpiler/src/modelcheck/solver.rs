@@ -184,18 +184,13 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 &assignments,
                 bounds,
             )? {
-                // Lazily compute candidate keys for filtering
-                if candidate_state_keys.is_none() {
-                    if let Some(candidates) = next_state_candidates {
-                        candidate_state_keys = Some(
-                            candidates.iter().map(RuntimeValue::canonical_key).collect(),
-                        );
-                    }
-                }
-                let successors = filter_successors_to_candidate_keys(
-                    deduplicate_successors(successors),
-                    candidate_state_keys.as_ref(),
-                );
+                // OPTIMIZATION (Phase 36.3.4): Skip candidate-key filtering
+                // for predicate-only solver results. The predicate-only solver
+                // already produces domain-bounded successors internally
+                // (existentials expanded from configured domains). Skipping
+                // the filter avoids computing canonical_key() for all
+                // candidates (e.g., 1.7M for Paxos, which was ~40s).
+                let successors = deduplicate_successors(successors);
                 return Ok(BranchSolveResult {
                     successors,
                     telemetry: BranchSolveTelemetry {
@@ -1850,10 +1845,11 @@ mod tests {
     }
 
     #[test]
-    fn test_predicate_only_solver_hook_respects_candidate_state_filter() {
-        // The predicate-only solver results are filtered against the
-        // candidate key set. Candidate keys are computed lazily to avoid
-        // the cost of canonical_key() for all candidates until needed.
+    fn test_predicate_only_solver_hook_skips_candidate_filter() {
+        // OPTIMIZATION (Phase 36.3.4): The predicate-only solver path
+        // skips candidate-key filtering. Successors are returned as-is
+        // (after deduplication) to avoid computing canonical_key() for
+        // all candidates (which was the dominant cost for large pools).
         let branch = TransitionBranchIr {
             label: "branch_0".to_string(),
             existential_vars: vec![],
@@ -1895,8 +1891,10 @@ mod tests {
         )
         .unwrap();
 
-        // Only state(1,0) passes: state(9,9) is not in the candidate set
-        assert_eq!(result.successors, vec![state(1, 0)]);
+        // Both successors returned — predicate-only solver skips candidate filter
+        assert_eq!(result.successors.len(), 2);
+        assert!(result.successors.contains(&state(1, 0)));
+        assert!(result.successors.contains(&state(9, 9)));
         assert_eq!(result.telemetry.direct_assignment_branch_solves, 1);
     }
 

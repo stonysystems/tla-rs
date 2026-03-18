@@ -8223,7 +8223,7 @@ fn test_model_check_telemetry_comparison_script_reports_expected_deltas() {
         "`3/5 -> 3/5`",
         "`1/0 -> 1/0`",
         "`1/2`",
-        "`2/2`",
+        "`3/3`",
         "`3/4`",
         "`4/3`",
         "| `reports/model_check/paxos_small.json` | `1/2` | `1/2` | ok |",
