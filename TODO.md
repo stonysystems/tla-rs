@@ -11177,7 +11177,7 @@ docs/model-checker-architecture/
 
 - [x] **36.4.1**: Added §3.7 "Cross-engine parity status" to `docs/model_checker_status.md` with: normalized parity table (TP 23 shared, PB 27 shared, LE 31 shared — all SF strict subset of TLC), interpretation of remaining gaps (message-channel modeling), performance improvement table (Paxos 5→16K states), export locations, and tooling references.
 - [x] **36.4.2**: Updated benchmark report to cleanly separate: metric-mapping (§Cross-Engine Metric Mapping), raw counts (§Side-by-side Results), normalized parity (§Normalized Parity Comparison), and remaining blockers (new §Remaining Blockers). Removed stale "not yet semantically comparable" note — replaced with current parity harness references.
-- [ ] **36.4.3**: If any benchmark counts or conclusions change after bug fixes, update `docs/conversion-testing-guide.md` and any checked-in benchmark summaries/manifests that repeat the old numbers.
+- [x] **36.4.3**: Updated stale benchmark counts in `docs/conversion-testing-guide.md` (TwoPhase 8→37, PB 60→37K, LE BLOCKED→186, Paxos BLOCKED→16K) and `docs/model_checker_status.md` §4.4 (same number updates).
 
 ### 36.5 Completion gate
 

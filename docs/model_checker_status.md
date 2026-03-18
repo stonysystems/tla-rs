@@ -412,10 +412,10 @@ For each of the four shared protocols, the table below lists both the minimal **
 
 | Protocol | Smoke fixture | Benchmark fixture | Source-first result | TLC result | TLC distinct states | TLC wall (s) |
 | --- | --- | --- | --- | --- | --- | --- |
-| `TwoPhase` | `twophase_small.model.toml` | `benchmarks_1h/twophase_benchmark.model.toml` | ok, 8 states, 1s (exhausted) | pass, 64 distinct, 1s (exhausted) | 64 | 1 |
-| `PrimaryBackup` | `primarybackup_small.model.toml` | `benchmarks_1h/primarybackup_benchmark.model.toml` | ok, 60 states, 8s (exhausted) | pass, 54 distinct, 1s (exhausted) | 54 | 1 |
-| `LeaderElection` | `leaderelection_small.model.toml` | `benchmarks_1h/leaderelection_benchmark.model.toml` | timeout_reached, 116 states, 243s (time-bounded) | pass, 9,337 distinct, 2s (exhausted) | 9,337 | 2 |
-| `Paxos` | `paxos_small.model.toml` | `benchmarks_1h/paxos_benchmark.model.toml` | timeout_reached, 13 states, 304s (time-bounded) | pass, 3M distinct, 375s (exhausted) | 3,005,604 | 375 |
+| `TwoPhase` | `twophase_small.model.toml` | `benchmarks_1h/twophase_benchmark.model.toml` | inv_violated, 37 states, 1s | pass, 64 distinct, 1s (exhausted) | 64 | 1 |
+| `PrimaryBackup` | `primarybackup_small.model.toml` | `benchmarks_1h/primarybackup_benchmark.model.toml` | timeout, 37,213 states, 120s | pass, 54 distinct, 1s (exhausted) | 54 | 1 |
+| `LeaderElection` | `leaderelection_small.model.toml` | `benchmarks_1h/leaderelection_benchmark.model.toml` | timeout, 186 states, 120s | pass, 9,337 distinct, 2s (exhausted) | 9,337 | 2 |
+| `Paxos` | `paxos_small.model.toml` | `benchmarks_1h/paxos_benchmark.model.toml` | timeout, 16,655 states, 147s | pass, 3M distinct, 375s (exhausted) | 3,005,604 | 375 |
 
 Evidence artifacts:
 - Source-first benchmark configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/*.model.toml`

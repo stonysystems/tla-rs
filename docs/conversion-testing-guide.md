@@ -670,12 +670,14 @@ MC wrappers add finite domains, explicit message channels, and safety invariants
 
 Matched TLC and source-first model checking on the same finite models with the same safety invariants. Full comparison: `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md`. Replay: `scripts/run_tlc_benchmarks.sh`, `scripts/run_model_check_benchmarks.sh`, `scripts/compare_tlc_vs_source_first.sh`.
 
-| Protocol | Source-first | TLC (distinct states / wall) | Model |
-|----------|-------------|------------------------------|-------|
-| TwoPhase | 8 states, 79s (exhausted) | 64 / 1s (exhausted) | 2 RMs |
-| PrimaryBackup | 60 states, 190s (exhausted) | 54 / 1s (exhausted) | max_log=1, values={0,1} |
-| LeaderElection | BLOCKED (enumeration) | 9,337 / 2s (exhausted) | 3 nodes |
-| Paxos | BLOCKED (enumeration) | 3,005,604 / 375s (exhausted) | 3 nodes, quorum=2 |
+| Protocol | Source-first (release, 120s) | TLC (distinct states / wall) | Model |
+|----------|-------------------------------|------------------------------|-------|
+| TwoPhase | 37 states, 1s (inv. violated*) | 64 / 1s (exhausted) | 2 RMs |
+| PrimaryBackup | 37,213 states, 120s (timeout) | 54 / 1s (exhausted) | max_log=1, values={0,1} |
+| LeaderElection | 186 states, 120s (timeout) | 9,337 / 2s (exhausted) | 3 nodes |
+| Paxos | 16,655 states, 147s (timeout) | 3,005,604 / 375s (exhausted) | 3 nodes, quorum=2 |
+
+\* TwoPhase source-first over-approximates (no message channels) and hits safety invariant at depth 3.
 
 Benchmark configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/`. TLC wrappers: `transpiler/tla_test_workspace/transpiler_generated_tla_with_properties/benchmarks_1h/`.
 
