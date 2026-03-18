@@ -310,9 +310,29 @@ def parse_tlc_dump(dump_text):
     return states
 
 
-def process_dump(dump_text, protocol='twophase'):
+# Per-protocol fields to exclude from the projected state.
+# These are wrapper-level bookkeeping that doesn't exist in the Verus spec.
+EXCLUDE_FIELDS = {
+    'twophase': [],
+    'primarybackup': ['phase'],  # Hand-written TLC wrapper adds phase field
+    'leaderelection': [],
+    'paxos': [],
+}
+
+
+def remove_excluded_fields(state_dict, excluded):
+    """Remove excluded fields from a normalized state dict."""
+    if not excluded or not isinstance(state_dict, dict):
+        return state_dict
+    return {k: v for k, v in state_dict.items() if k not in excluded}
+
+
+def process_dump(dump_text, protocol='twophase', extra_exclude=None):
     """Process TLC dump text and produce parity JSONL lines."""
     tag_map = ENUM_TAG_MAPS.get(protocol, {})
+    excluded = list(EXCLUDE_FIELDS.get(protocol, []))
+    if extra_exclude:
+        excluded.extend(extra_exclude)
     states = parse_tlc_dump(dump_text)
 
     seen = {}  # canonical_json_str -> (json_obj, state_num)
@@ -325,6 +345,7 @@ def process_dump(dump_text, protocol='twophase'):
         # Parse the state variable value
         state_val = parse_tla_value(var_dict['state'])
         normalized = normalize_to_json(state_val, tag_map)
+        normalized = remove_excluded_fields(normalized, excluded)
 
         # Produce canonical JSON (sorted keys, minified)
         canonical_str = json.dumps(normalized, sort_keys=True, separators=(',', ':'))
@@ -356,12 +377,14 @@ def main():
     parser.add_argument('--protocol', '-p', default='twophase',
                         choices=['twophase', 'primarybackup', 'leaderelection', 'paxos'],
                         help='Protocol name for enum tag normalization')
+    parser.add_argument('--exclude-fields', nargs='*', default=None,
+                        help='Additional state fields to exclude from projection')
     args = parser.parse_args()
 
     with open(args.dump_file, 'r') as f:
         dump_text = f.read()
 
-    lines = process_dump(dump_text, args.protocol)
+    lines = process_dump(dump_text, args.protocol, args.exclude_fields)
 
     if args.output:
         with open(args.output, 'w') as f:

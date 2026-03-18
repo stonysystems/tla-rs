@@ -34,31 +34,27 @@ difference (message channels), not a solver bug. Full parity would require
 either adding message channel modeling to the source-first spec or using
 the auto-generated relational wrapper (which doesn't include `msgs`).
 
-## PrimaryBackup (54 TLC vs 60 SF — 0 shared)
+## PrimaryBackup (42 TLC vs 60 SF — 18 shared) — FIXED in Phase 36.2.4
 
-**Root cause: wrapper/projection mismatch**
+**Root cause: wrapper/projection mismatch (FIXED)**
 
-Zero shared states despite both engines exhausting the state space. The
-TLC wrapper (`PrimaryBackup_Benchmark_MC.tla`) is **hand-written** and
+The TLC wrapper (`PrimaryBackup_Benchmark_MC.tla`) is hand-written and
 adds a `phase` field (`"Idle"`, `"WaitBackup"`, `"WaitAck"`,
-`"ReadyToCommit"`) that does NOT exist in the Verus spec (`LState` in
-`src/protocol/PrimaryBackup/types.rs`).
+`"ReadyToCommit"`) that does NOT exist in the Verus spec (`LState`).
 
-This `phase` field is wrapper-level bookkeeping that decomposes the
-source-first spec's atomic transitions into finer-grained message-passing
-steps. It is NOT semantically part of the protocol state — it's an
-artifact of the hand-written TLC wrapper's modeling choice.
+**Fix**: Added `phase` to `EXCLUDE_FIELDS['primarybackup']` in
+`tlc_dump_to_parity_jsonl.py`. After exclusion, TLC states that differed
+only in `phase` collapse: 54 → 42 projected distinct states.
 
-**Consequence**: The TLC and source-first specs model the protocol at
-different granularity levels. Parity comparison requires either:
-1. Projecting out `phase` from TLC states before comparison, OR
-2. Regenerating the TLC wrapper from the same Verus spec using the
-   automated `generate-mc-wrapper` pipeline
+**Post-fix parity**: 60 SF / 42 TLC / 18 shared. Initial states match.
+- 42 SF-only: Source-first over-approximates without message channels
+  (e.g., backup commits before primary sends, violating real protocol).
+- 24 TLC-only: Message-gated transitions produce states unreachable
+  without the `msgs` variable (e.g., higher `view` values from failover
+  sequences gated on message receipt).
 
-**Fix priority: MEDIUM** — this is a normalization/projection issue, not a
-semantic bug. Fix by either:
-- Adding `phase` to the TLC normalizer's exclusion list, OR
-- Regenerating the wrapper from the Verus spec (preferred long-term)
+**Remaining gap**: Same fundamental modeling difference as TwoPhase —
+source-first doesn't model message channels.
 
 ## LeaderElection (913 TLC vs 2 SF — 2 shared, 911 TLC-only)
 
@@ -94,6 +90,6 @@ performance improvements.
 | Protocol | SF states | TLC states | Shared | Root cause | Bucket | Priority |
 |----------|-----------|------------|--------|------------|--------|----------|
 | TwoPhase | 37 | 56 | 23 | **FIXED** (config: PreparedVote missing from enum_subset) | config bug (fixed) | DONE |
-| PrimaryBackup | 60 | 54 | 0 | Hand-written TLC wrapper adds `phase` field | wrapper/projection mismatch | MEDIUM |
+| PrimaryBackup | 60 | 42 | 18 | **FIXED** (excluded `phase` field from TLC projection) | wrapper/projection mismatch (fixed) | DONE |
 | LeaderElection | 2 | 913 | 2 | Solver timeout during candidate enumeration | successor-generation bug (perf) | MEDIUM |
 | Paxos | ~75 | 3M+ | N/A | State space too large for current engine | successor-generation bug (perf) | LOW |

@@ -144,9 +144,11 @@ fn test_parity_primarybackup_tlc_state_count() {
     let path = repo_root().join("reports/model_check/parity/tlc/primarybackup/states.jsonl");
     let ids = load_state_ids(&path);
     let distinct = count_distinct(&ids);
+    // After Phase 36.2.4: 42 projected states (down from 54) after
+    // excluding the wrapper-only `phase` field.
     assert_eq!(
-        distinct, 54,
-        "PrimaryBackup TLC projected distinct state count changed (expected 54, got {})",
+        distinct, 42,
+        "PrimaryBackup TLC projected distinct state count changed (expected 42, got {})",
         distinct
     );
 }
@@ -159,11 +161,14 @@ fn test_parity_primarybackup_overlap() {
     let sf_ids = load_state_ids(&sf_path);
     let tlc_ids = load_state_ids(&tlc_path);
     let shared = count_shared(&sf_ids, &tlc_ids);
-    // Current baseline: 0 shared (representation mismatch — field naming
-    // or enum encoding differs between engines). This should INCREASE as
-    // normalization bugs are fixed in Phase 36.2.
-    // For now, just record the baseline.
-    let _baseline = shared; // 0 as of Phase 36.1.6
+    // After Phase 36.2.4: 18 shared (up from 0) after excluding the
+    // wrapper-only `phase` field. Remaining gap (42 SF-only + 24 TLC-only)
+    // is message-channel modeling difference, not a normalization bug.
+    assert_eq!(
+        shared, 18,
+        "PrimaryBackup shared state count changed (expected 18, got {})",
+        shared
+    );
 }
 
 // =========================================================================
