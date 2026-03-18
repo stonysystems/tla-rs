@@ -86,6 +86,7 @@ jobs:
   verify:
     name: Verus Verification
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     env:
       # Pin to 0.2026.01.14 — later versions (e.g., 0.2026.03.17) removed
       # vstd::std_specs::hash::{KeysAdditionalSpecFns, SetIterAdditionalSpecFns}
