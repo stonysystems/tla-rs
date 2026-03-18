@@ -125,7 +125,7 @@ Status below is based on checked-in automated integration tests under `transpile
 
 Pass condition used by tests: command success + valid JSON + `summary.states > 0` + `summary.transitions > 0`.
 Paxos additionally enforces artifact parity for stable fields (`result`, `search.state_dedup`, `summary.states`, `summary.transitions`, `summary.depth`) against `reports/model_check/paxos_small.json`.
-TwoPhase safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/twophase_safety_invariants.json`.
+TwoPhase safety-invariant run additionally enforces: one configured/resolved in-source safety predicate (`LSafetyTmCommittedRequiresAllPrepared`) and `invariant_violation = null`, with parity checks against `reports/model_check/twophase_safety_invariants.json`. Note: `LSafetyNoCommitAbortOverlap` and `LSafetyCommittedSubsetPrepared` use `forall` quantifiers that the model-check evaluator does not support.
 PrimaryBackup safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/primarybackup_safety_invariants.json`.
 LeaderElection safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/leaderelection_safety_invariants.json`.
 Paxos safety-invariant run additionally enforces: three configured/resolved in-source safety predicates and `invariant_violation = null`, with parity checks against `reports/model_check/paxos_safety_invariants.json`.
@@ -369,8 +369,8 @@ This table is the pre-optimization reference point for exact-mode performance wo
 | Protocol | Artifact | `states` | `transitions` | `depth` | `elapsed_ms` | `pruned_by_por` | `symmetry_collapses` | `hash_compaction_collisions` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `Paxos` | `reports/model_check/paxos_small.json` | `1` | `2` | `0` | `5` | `0` | `0` | `0` |
-| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `3` | `3` | `1` | `17` | `0` | `0` | `0` |
-| `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `224` | `0` | `0` | `0` |
+| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `3` | `3` | `1` | `16` | `0` | `0` | `0` |
+| `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `226` | `0` | `0` | `0` |
 | `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `13` | `0` | `0` | `0` |
 
 ### 4.2 Exact-mode optimization delta snapshot (Phase 33.4.2)

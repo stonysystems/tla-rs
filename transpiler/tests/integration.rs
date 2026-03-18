@@ -14820,17 +14820,15 @@ fn test_model_check_twophase_real_safety_invariants_bounded_run() {
         .pointer("/invariants/resolved_count")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
+    // Only LSafetyTmCommittedRequiresAllPrepared is configured — the other two
+    // use `forall` quantifiers which the model-check evaluator does not support.
     assert_eq!(
-        configured_count, 3,
-        "expected 3 configured safety invariants"
+        configured_count, 1,
+        "expected 1 configured safety invariant (forall-based ones removed)"
     );
-    assert_eq!(resolved_count, 3, "expected 3 resolved safety invariants");
+    assert_eq!(resolved_count, 1, "expected 1 resolved safety invariant");
 
-    let expected_invariants = [
-        "LSafetyNoCommitAbortOverlap",
-        "LSafetyCommittedSubsetPrepared",
-        "LSafetyTmCommittedRequiresAllPrepared",
-    ];
+    let expected_invariants = ["LSafetyTmCommittedRequiresAllPrepared"];
     for name in expected_invariants {
         assert!(
             report
