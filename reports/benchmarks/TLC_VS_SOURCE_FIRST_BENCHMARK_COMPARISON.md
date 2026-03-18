@@ -143,26 +143,52 @@ performance conclusions from non-equivalent metric pairs.**
 | — | `summary.transitions` | **No TLC equivalent in current export** | Source-first tracks total transitions explored. TLC does not report a directly equivalent scalar in the current wrapper output. Do not equate `TLC States found` with source-first `transitions`. |
 
 **Key implication for the Side-by-side Results table below:** the
-`Distinct` column currently compares non-equivalent quantities (TLC
-wrapper-state distinct count vs source-first `LState` distinct count).
-The count gaps (e.g., TwoPhase 64 vs 8, LeaderElection 9337 vs 280)
-may reflect wrapper-vs-protocol projection differences, actual semantic
-bugs, or both. The canonical normalization schema for parity diffing is
-defined in [`docs/cross-engine-state-normalization.md`](../../docs/cross-engine-state-normalization.md)
-(Phase 36.1.2). Phase 36.1.3–36.2 will implement the export/diff pipeline.
+`Distinct` column compares non-equivalent quantities (TLC wrapper-state
+distinct count vs source-first `LState` distinct count). See the
+Normalized Parity Comparison section below for the projected comparison.
+The canonical normalization schema is defined in
+[`docs/cross-engine-state-normalization.md`](../../docs/cross-engine-state-normalization.md)
+(Phase 36.1.2).
 
-## Side-by-side Results
+## Side-by-side Results (Raw Counts)
 
 | Protocol | Engine | Result | States (gen) | Distinct | Depth | Wall (s) |
 |----------|--------|--------|--------------|----------|-------|----------|
-| twophase | source-first | ok(FrontierExhausted) | — | 8 | 3 | 1 |
+| twophase | source-first | invariant_violated | — | 37* | 3 | 6 |
 | | TLC | pass | 150 | 64 | 9 | 1 |
 | primarybackup | source-first | ok(FrontierExhausted) | — | 60 | 7 | 2 |
 | | TLC | pass | 86 | 54 | 10 | 1 |
-| leaderelection | source-first | timeout_reached(TimeoutReached) | — | 280 | 3 | 241 |
+| leaderelection | source-first | timeout_reached(TimeoutReached) | — | 2 | 1 | 31 |
 | | TLC | pass | 100636 | 9337 | 13 | 2 |
-| paxos | source-first | timeout_reached(TimeoutReached) | — | 75 | 2 | 274 |
+| paxos | source-first | timeout_reached(TimeoutReached) | — | — | — | — |
 | | TLC | pass | 25288515 | 3005604 | 37 | 375 |
+
+\* TwoPhase source-first finds 37 states (after PreparedVote enum fix)
+but hits `LSafetyNoCommitAbortOverlap` invariant violation at depth 3.
+This is expected: source-first doesn't model message channels, so it
+over-approximates and reaches safety-violating states.
+
+## Normalized Parity Comparison (Phase 36.2)
+
+After projecting both engines to protocol-only state (excluding TLC
+`msgs`, `constants`, and wrapper-specific fields like `phase`):
+
+| Protocol | SF projected | TLC projected | Shared | SF-only | TLC-only | Initial match | Status |
+|----------|-------------|--------------|--------|---------|----------|---------------|--------|
+| TwoPhase | 37 | 56 | 23 | 14 | 33 | Yes | Fixed (Phase 36.2.3) |
+| PrimaryBackup | 60 | 42 | 18 | 42 | 24 | Yes | Fixed (Phase 36.2.4) |
+| LeaderElection | 2 | 913 | 2 | 0 | 911 | Yes | Blocked (solver timeout) |
+| Paxos | — | — | — | — | — | — | Blocked (solver timeout) |
+
+**Interpretation**: For TwoPhase and PrimaryBackup, the remaining gaps
+are entirely due to the message-channel modeling difference — source-first
+specs are message-free (no `msgs` variable), so they over-approximate
+(reach states gated by message delivery in TLC) and also miss states
+reachable only through message-sequence-dependent transitions. Initial
+states match for all comparable protocols. No normalization bugs remain.
+
+See [`docs/phase36-parity-mismatch-analysis.md`](../../docs/phase36-parity-mismatch-analysis.md)
+for detailed root-cause classification.
 
 ## Notes
 

@@ -11145,8 +11145,9 @@ docs/model-checker-architecture/
 - [x] **36.2.4**: Fixed PrimaryBackup parity. Root cause: hand-written TLC wrapper adds `phase` field absent from Verus spec. Fix: added `phase` to `EXCLUDE_FIELDS` in `tlc_dump_to_parity_jsonl.py`, collapsing 54 → 42 TLC projected states. Post-fix: 60 SF / 42 TLC / 18 shared (initial states match, up from 0 shared). Remaining gap is message-channel modeling difference.
 - [ ] **36.2.5**: Fix small-model parity for `LeaderElection` and `Paxos`.
   - Do not defer these indefinitely behind benchmark work; if the small-model semantics do not align, benchmark conclusions are not trustworthy.
-- [ ] **36.2.6**: Update `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` after each parity bug is fixed so the narrative reflects actual post-fix counts rather than stale numbers.
-- [ ] **36.2.7**: If parity debugging shows the current benchmark report compared unlike metrics, keep the corrected explanation in the report **and** still finish the normalized distinct-state diff work. Merely correcting the prose is not sufficient.
+  - **Status**: No normalization bugs found. Both protocols have correct initial states (shared with TLC where comparable). The blocker is solver performance: LeaderElection times out at 2 states (30s), Paxos times out during initial-state construction. These require solver optimization (Phase 36.3) to produce enough states for meaningful parity comparison. SF states found so far are strict subsets of TLC states — no over-approximation bug.
+- [x] **36.2.6**: Updated `TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` with post-fix counts: TwoPhase 37 SF / 56 TLC / 23 shared, PrimaryBackup 60 SF / 42 TLC / 18 shared. Added "Normalized Parity Comparison" table with projected counts, interpretation, and link to analysis doc.
+- [x] **36.2.7**: Benchmark report now contains both the corrected metric-mapping explanation (Phase 36.1.1) AND the normalized projected state-set comparison table (Phase 36.2.6) with actual post-fix numbers. Unlike metrics are clearly labeled.
 
 ### 36.3 Performance bug hunt on matched benchmarks
 
