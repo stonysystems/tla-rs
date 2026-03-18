@@ -53,6 +53,13 @@ pub struct BranchSolveTelemetry {
     pub guard_pruned_candidate_evaluations: usize,
     /// Wall-clock time spent in candidate-evaluation fallback for this branch solve.
     pub enumeration_candidate_evaluation_elapsed_ms: u128,
+    /// Number of next-state fields derived directly from `s_.field == expr` equalities
+    /// (Phase 36.3.2 finer-grained telemetry).
+    pub direct_assigned_fields: usize,
+    /// Number of deferred constraint evaluations (non-next-state equalities/predicates).
+    pub deferred_constraint_evaluations: usize,
+    /// Total evaluator calls across all assignments for this branch solve.
+    pub evaluator_calls: usize,
 }
 
 /// Result payload for one branch-solve attempt.
@@ -197,10 +204,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                     successors,
                     telemetry: BranchSolveTelemetry {
                         direct_assignment_branch_solves: 1,
-                        enumeration_fallback_branch_solves: 0,
-                        enumeration_candidate_evaluations: 0,
-                        guard_pruned_candidate_evaluations: 0,
-                        enumeration_candidate_evaluation_elapsed_ms: 0,
+                        ..Default::default()
                     },
                 });
             }
@@ -226,11 +230,11 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
             return Ok(BranchSolveResult {
                 successors,
                 telemetry: BranchSolveTelemetry {
-                    direct_assignment_branch_solves: 0,
                     enumeration_fallback_branch_solves: 1,
                     enumeration_candidate_evaluations: candidate_evaluations,
                     guard_pruned_candidate_evaluations,
                     enumeration_candidate_evaluation_elapsed_ms,
+                    ..Default::default()
                 },
             });
         }
@@ -265,10 +269,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 successors,
                 telemetry: BranchSolveTelemetry {
                     direct_assignment_branch_solves: 1,
-                    enumeration_fallback_branch_solves: 0,
-                    enumeration_candidate_evaluations: 0,
-                    guard_pruned_candidate_evaluations: 0,
-                    enumeration_candidate_evaluation_elapsed_ms: 0,
+                    ..Default::default()
                 },
             });
         }
@@ -297,14 +298,16 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
         candidate_state_keys.as_ref(),
     );
 
+    let (direct_fields, deferred_evals) = count_branch_constraint_telemetry(branch);
+    let assignment_count = existential_assignments.len().max(1);
     Ok(BranchSolveResult {
         successors,
         telemetry: BranchSolveTelemetry {
             direct_assignment_branch_solves: 1,
-            enumeration_fallback_branch_solves: 0,
-            enumeration_candidate_evaluations: 0,
-            guard_pruned_candidate_evaluations: 0,
-            enumeration_candidate_evaluation_elapsed_ms: 0,
+            direct_assigned_fields: direct_fields,
+            deferred_constraint_evaluations: deferred_evals,
+            evaluator_calls: (direct_fields + deferred_evals) * assignment_count,
+            ..Default::default()
         },
     })
 }
@@ -518,6 +521,37 @@ pub fn deduplicate_successors(successors: Vec<RuntimeValue>) -> Vec<RuntimeValue
         }
     }
     unique
+}
+
+/// Count structural telemetry from a branch's constraint set.
+fn count_branch_constraint_telemetry(branch: &TransitionBranchIr) -> (usize, usize) {
+    let mut direct_assigned = 0usize;
+    let mut deferred = 0usize;
+    for constraint in &branch.constraints {
+        match constraint {
+            BranchConstraintIr::Eq {
+                target:
+                    ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        ..
+                    },
+                ..
+            } => {
+                direct_assigned += 1;
+            }
+            BranchConstraintIr::Predicate { expr } => {
+                if next_state_variant_assignment(expr, "s_").is_some() {
+                    direct_assigned += 1;
+                } else {
+                    deferred += 1;
+                }
+            }
+            _ => {
+                deferred += 1;
+            }
+        }
+    }
+    (direct_assigned, deferred)
 }
 
 fn filter_successors_to_candidate_keys(

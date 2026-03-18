@@ -1970,6 +1970,10 @@ struct ModelCheckBranchTelemetrySummary {
     guard_pruned_candidate_evaluations: usize,
     successful_successors: usize,
     cumulative_solve_elapsed_ms: u128,
+    // Phase 36.3.2 finer-grained telemetry
+    direct_assigned_fields: usize,
+    deferred_constraint_evaluations: usize,
+    evaluator_calls: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3845,6 +3849,9 @@ fn execute_model_check(
                                 guard_pruned_candidate_evaluations: 0,
                                 successful_successors: 0,
                                 cumulative_solve_elapsed_ms: 0,
+                                direct_assigned_fields: 0,
+                                deferred_constraint_evaluations: 0,
+                                evaluator_calls: 0,
                             });
                         entry.invocations = entry.invocations.saturating_add(1);
                         entry.existential_assignment_count = entry
@@ -3867,6 +3874,15 @@ fn execute_model_check(
                         entry.cumulative_solve_elapsed_ms = entry
                             .cumulative_solve_elapsed_ms
                             .saturating_add(branch_solve_elapsed_ms);
+                        entry.direct_assigned_fields = entry
+                            .direct_assigned_fields
+                            .max(solved.telemetry.direct_assigned_fields);
+                        entry.deferred_constraint_evaluations = entry
+                            .deferred_constraint_evaluations
+                            .max(solved.telemetry.deferred_constraint_evaluations);
+                        entry.evaluator_calls = entry
+                            .evaluator_calls
+                            .saturating_add(solved.telemetry.evaluator_calls);
                     }
 
                     for successor in solved.successors {
@@ -4083,6 +4099,9 @@ fn execute_model_check(
                     guard_pruned_candidate_evaluations: 0,
                     successful_successors: 0,
                     cumulative_solve_elapsed_ms: 0,
+                    direct_assigned_fields: 0,
+                    deferred_constraint_evaluations: 0,
+                    evaluator_calls: 0,
                 });
             aggregate.invocations = aggregate.invocations.saturating_add(entry.invocations);
             aggregate.existential_assignment_count = aggregate
@@ -4106,6 +4125,15 @@ fn execute_model_check(
             aggregate.cumulative_solve_elapsed_ms = aggregate
                 .cumulative_solve_elapsed_ms
                 .saturating_add(entry.cumulative_solve_elapsed_ms);
+            aggregate.direct_assigned_fields = aggregate
+                .direct_assigned_fields
+                .max(entry.direct_assigned_fields);
+            aggregate.deferred_constraint_evaluations = aggregate
+                .deferred_constraint_evaluations
+                .max(entry.deferred_constraint_evaluations);
+            aggregate.evaluator_calls = aggregate
+                .evaluator_calls
+                .saturating_add(entry.evaluator_calls);
         }
 
         aggregated_states = aggregated_states.saturating_add(run_summary.states);
@@ -4521,6 +4549,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             "guard_pruned_candidate_evaluations": branch.guard_pruned_candidate_evaluations,
                             "successful_successors": branch.successful_successors,
                             "cumulative_solve_elapsed_ms": branch.cumulative_solve_elapsed_ms,
+                            "direct_assigned_fields": branch.direct_assigned_fields,
+                            "deferred_constraint_evaluations": branch.deferred_constraint_evaluations,
+                            "evaluator_calls": branch.evaluator_calls,
                         })).collect::<Vec<_>>(),
                         "timing": {
                             "source_ingestion_parsing_ms": execution.summary.timing.source_ingestion_parsing_ms,
