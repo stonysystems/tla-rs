@@ -11151,9 +11151,7 @@ docs/model-checker-architecture/
 
 ### 36.3 Performance bug hunt on matched benchmarks
 
-- [ ] **36.3.1**: After small-model parity is green for at least `TwoPhase` and `PrimaryBackup`, profile the current source-first hot path on the non-toy shared benchmarks (`benchmarks_1h/*`) in release mode.
-  - Keep phase-level timing, branch-level timing, candidate-domain sizes, direct-solver hit rates, fallback rates, and dedup/hash costs.
-  - Do not rely only on the existing aggregate wall-time table.
+- [x] **36.3.1**: Profiled all 4 protocols in release mode. See `docs/phase36-performance-profile.md` and raw JSON in `reports/benchmarks/source_first_release_profile/`. Key findings: TwoPhase (1.6s, good), PrimaryBackup (2.3s, good), LeaderElection (60s timeout, 105 states — 2,460–7,380 existential assignments × 13,824 candidates per branch), Paxos (93s timeout, 5 states — **1,679,616 candidates per branch**, cartesian explosion). Both slow protocols are dominated by solver time (>99%). Critical optimization: replace cartesian candidate construction with constraint-driven field assignment.
 - [ ] **36.3.2**: Add finer-grained telemetry for the dominant hot branches in `LeaderElection` and `Paxos`, including at minimum:
   - existential-assignment counts,
   - candidate-state counts before/after pruning,

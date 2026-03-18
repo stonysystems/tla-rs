@@ -1,0 +1,152 @@
+{
+  "deadlock": null,
+  "entrypoints": {
+    "init": "LInit",
+    "next": "LNext"
+  },
+  "invariant_violation": null,
+  "invariants": {
+    "configured": [
+      "LSafetyElectingSubsetAlive",
+      "LSafetyWaitingNodeAliveWhenWaiting",
+      "LSafetyNoWaitingImpliesClearedWaitingNode"
+    ],
+    "configured_count": 3,
+    "resolved": [
+      "LSafetyElectingSubsetAlive",
+      "LSafetyWaitingNodeAliveWhenWaiting",
+      "LSafetyNoWaitingImpliesClearedWaitingNode"
+    ],
+    "resolved_count": 3
+  },
+  "leads_to_violation": null,
+  "liveness": null,
+  "protocol": "src/protocol/LeaderElection/election.rs",
+  "result": "timeout_reached",
+  "search": {
+    "evidence_mode": {
+      "class": "exact_proof_strength",
+      "guidance": "Exact search settings preserve explored-state distinctions for proof-strength bounded evidence.",
+      "lossy_reasons": [],
+      "proof_strength": true
+    },
+    "max_depth": 100,
+    "max_states": 10000000,
+    "por_heuristic": "none",
+    "por_pruned_branches": [],
+    "state_dedup": "canonical",
+    "strategy": "bfs",
+    "successor_semantics": "deadlock",
+    "symmetry_fields": [],
+    "timeout_ms": 60000
+  },
+  "stop_reason": "TimeoutReached",
+  "summary": {
+    "branch_telemetry": [
+      {
+        "branch_label": "branch_0",
+        "candidate_state_count": 13824,
+        "cumulative_solve_elapsed_ms": 4724,
+        "direct_solver_hits": 15,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 2460,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 15,
+        "successful_successors": 0
+      },
+      {
+        "branch_label": "branch_1",
+        "candidate_state_count": 13824,
+        "cumulative_solve_elapsed_ms": 4611,
+        "direct_solver_hits": 15,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 2460,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 15,
+        "successful_successors": 42
+      },
+      {
+        "branch_label": "branch_2",
+        "candidate_state_count": 13824,
+        "cumulative_solve_elapsed_ms": 14550,
+        "direct_solver_hits": 15,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 7380,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 15,
+        "successful_successors": 28
+      },
+      {
+        "branch_label": "branch_3",
+        "candidate_state_count": 13824,
+        "cumulative_solve_elapsed_ms": 14184,
+        "direct_solver_hits": 14,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 7380,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 14,
+        "successful_successors": 5
+      },
+      {
+        "branch_label": "branch_4",
+        "candidate_state_count": 13824,
+        "cumulative_solve_elapsed_ms": 4315,
+        "direct_solver_hits": 14,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 2460,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 14,
+        "successful_successors": 5
+      },
+      {
+        "branch_label": "branch_5",
+        "candidate_state_count": 13824,
+        "cumulative_solve_elapsed_ms": 12888,
+        "direct_solver_hits": 14,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 7380,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 14,
+        "successful_successors": 69
+      },
+      {
+        "branch_label": "branch_6",
+        "candidate_state_count": 13824,
+        "cumulative_solve_elapsed_ms": 4628,
+        "direct_solver_hits": 14,
+        "enumeration_fallback_hits": 0,
+        "existential_assignment_count": 2460,
+        "guard_pruned_candidate_evaluations": 0,
+        "invocations": 14,
+        "successful_successors": 39
+      }
+    ],
+    "candidate_evaluation_guardrail_per_state_branch": 100000000,
+    "constants_valuations_explored": 1,
+    "constants_valuations_total": 1,
+    "depth": 3,
+    "direct_assignment_branch_solves": 101,
+    "elapsed_ms": 60348,
+    "enumeration_candidate_evaluations": 0,
+    "enumeration_fallback_branch_solves": 0,
+    "guard_pruned_candidate_evaluations": 0,
+    "hash_compaction_collisions": 0,
+    "pruned_by_por": 0,
+    "states": 105,
+    "successor_cache_hits": 0,
+    "successor_cache_misses": 105,
+    "symmetry_collapses": 0,
+    "timing": {
+      "candidate_generation_evaluation_ms": 277,
+      "dedup_hashing_normalization_ms": 59,
+      "initial_state_construction_ms": 112,
+      "invariant_evaluation_ms": 0,
+      "model_config_resolution_ms": 5,
+      "report_serialization_output_ms": 0,
+      "source_ingestion_parsing_ms": 0,
+      "successor_solving_ms": 59900
+    },
+    "transitions": 188
+  },
+  "types": "src/protocol/LeaderElection/types.rs"
+}
