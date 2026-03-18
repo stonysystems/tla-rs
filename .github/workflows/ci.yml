@@ -87,7 +87,7 @@ jobs:
     name: Verus Verification
     runs-on: ubuntu-22.04
     env:
-      VERUS_VERSION: "0.2026.02.03.6d23bed"
+      VERUS_VERSION: "0.2026.03.17.a96bad0"
     steps:
       - uses: actions/checkout@v4
 
@@ -107,7 +107,7 @@ jobs:
       - name: Download Verus
         if: steps.cache-verus.outputs.cache-hit != 'true'
         run: |
-          wget -q https://github.com/verus-lang/verus/releases/download/release/rolling/${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip
+          wget -q https://github.com/verus-lang/verus/releases/download/release/${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip
           unzip -q verus-${VERUS_VERSION}-x86-linux.zip -d ~/
           mv ~/verus-x86-linux ~/verus
 
@@ -117,7 +117,7 @@ jobs:
       - name: Install Rust toolchain for Verus
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.93.0
+          toolchain: 1.94.0
           components: rustfmt
 
       - name: Verify with Verus
