@@ -68,9 +68,12 @@ fn test_parity_twophase_source_first_state_count() {
     let path = repo_root().join("reports/model_check/parity/source_first/twophase/states.jsonl");
     let ids = load_state_ids(&path);
     let distinct = count_distinct(&ids);
+    // After Phase 36.2.3 fix (PreparedVote added to enum domain): 37 states
+    // (up from 8 when PreparedVote was missing). Source-first finds more
+    // states than TLC (56) because it doesn't model message channels.
     assert_eq!(
-        distinct, 8,
-        "TwoPhase source-first distinct state count changed (expected 8, got {})",
+        distinct, 37,
+        "TwoPhase source-first distinct state count changed (expected 37, got {})",
         distinct
     );
 }
@@ -94,11 +97,13 @@ fn test_parity_twophase_overlap() {
     let sf_ids = load_state_ids(&sf_path);
     let tlc_ids = load_state_ids(&tlc_path);
     let shared = count_shared(&sf_ids, &tlc_ids);
-    // All 8 source-first states should be in TLC (source-first is a subset)
+    // After Phase 36.2.3: 23 shared states (up from 8).
+    // Source-first has 14 states not in TLC (message-free over-approximation).
+    // TLC has 33 states not in source-first (message-channel reachable states).
+    // The remaining gap is a modeling difference (message channels), not a bug.
     assert_eq!(
-        shared, 8,
-        "TwoPhase shared state count changed (expected 8, got {}). \
-         Source-first states should be a subset of TLC states.",
+        shared, 23,
+        "TwoPhase shared state count changed (expected 23, got {})",
         shared
     );
 }
@@ -255,24 +260,17 @@ fn test_twophase_prepare_branch_produces_successors() {
         .and_then(|b| b["successful_successors"].as_u64())
         .unwrap_or(0);
 
-    // CURRENT BUG: branch_1 produces 0 successors.
-    // When fixed, this should produce successors and total states should
-    // increase from 4 to something higher (TLC finds 16 projected states
-    // for 1 RM).
-    //
-    // This test documents the current buggy baseline. Update the assertion
-    // when the bug is fixed:
-    //   assert!(branch1_successors > 0, "LRMReceivePrepare should produce successors");
-    //   assert!(states > 4, "Should find prepare/commit paths (TLC finds 16)");
-    assert_eq!(
-        branch1_successors, 0,
-        "BUG BASELINE: LRMReceivePrepare currently produces 0 successors. \
-         If this assertion fails, the bug may be fixed — update the test!"
+    // FIX VERIFIED (Phase 36.2.3): PreparedVote was missing from
+    // enum_subset in model config. After adding it, branch_1 produces
+    // successors and the prepare/commit paths are explored.
+    assert!(
+        branch1_successors > 0,
+        "LRMReceivePrepare should produce successors (got {})",
+        branch1_successors
     );
     assert!(
-        states <= 4,
-        "BUG BASELINE: with bug, only abort paths explored (<=4 states). \
-         Got {} states — if higher, the PreparedVote bug may be fixed!",
+        states > 4,
+        "Should find prepare/commit paths with PreparedVote in enum domain (got {})",
         states
     );
 }

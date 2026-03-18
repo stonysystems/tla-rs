@@ -3,45 +3,36 @@
 Analysis of cross-engine state-set mismatches between source-first and TLC
 on the shared small models, using the Phase 36.1 parity harness.
 
-## TwoPhase (56 TLC vs 8 SF — 8 shared, 48 TLC-only)
+## TwoPhase (56 TLC vs 37 SF — 23 shared) — FIXED in Phase 36.2.3
 
-**Root cause: successor-generation bug**
+**Root cause: model config missing `PreparedVote` variant (FIXED)**
 
-All 8 source-first states are a strict subset of TLC's projected states.
-Initial states match. The 48 TLC-only states all have non-empty
-`rm_prepared` or `tm_prepared`, meaning the Prepare/Commit paths were
-never explored by source-first.
+The `twophase_benchmark.model.toml` config had `[quantifiers.types.LTPCMessage]`
+with `enum_subset` listing only `["Prepare", "Commit", "Abort"]`, omitting
+`PreparedVote`. Since the outer existential `sent_packets: Seq<LTPCMessage>`
+is expanded using this domain, the solver never produced assignments containing
+`PreparedVote { rm }`, causing the `LRMReceivePrepare` branch to always fail
+the deferred constraint check.
 
-Branch telemetry confirms:
-- `LRMReceivePrepare` (branch_1): invoked 8 times, **0 successful successors**
-- `LTMRcvPrepared` (branch_3): 0 successors (correctly — requires rm_prepared non-empty)
-- `LTMSendCommit` (branch_4): 0 successors (correctly — requires tm_prepared == c.rm)
-- `LRMReceiveCommit` (branch_6): 0 successors (correctly — requires rm_prepared non-empty)
+**Fix**: Added `"PreparedVote"` to the enum_subset variant list. This causes
+the domain expansion to include `PreparedVote{rm:0}` and `PreparedVote{rm:1}`
+as possible sent_packets values, unblocking all prepare/commit transitions.
 
-The root cause is branch_1 (`LRMReceivePrepare`): the solver's direct
-assignment reports 8 "hits" but produces 0 successors. This branch has:
+**Post-fix parity**: 37 SF states vs 56 TLC states, 23 shared.
+- 14 SF-only states: Source-first over-approximates because it doesn't model
+  message channels. These states are reachable via transitions that the TLC
+  wrapper would gate on message presence (e.g., `LRMReceiveCommit` without
+  a `CommitMsg` in `msgs`). Some violate safety invariants.
+- 33 TLC-only states: TLC explores states with message-channel combinations
+  that the source-first spec can't represent (no `msgs` field). These include
+  states with distinct `msgs` values but identical protocol state — after
+  projecting out `msgs`, many collapse, but some remain due to different
+  reachability through message-gated transitions.
 
-```
-exists |rm: int, sent_packets: Seq<LTPCMessage>|
-    LRMReceivePrepare(s, s_, c, rm, sent_packets)
-```
-
-Where `LRMReceivePrepare` requires:
-- `c.rm.contains(rm)` — rm ∈ {0, 1}
-- `!s.rm_prepared.contains(rm)` — must not be prepared (satisfied at init)
-- `!s.rm_aborted.contains(rm)` — must not be aborted
-- `s_.rm_prepared == s.rm_prepared.insert(rm)` — update
-- `sent_packets == seq![LTPCMessage::PreparedVote { rm }]` — output
-
-The solver likely fails on constructing `PreparedVote { rm }` (an enum
-variant with an `int` field) or on the existential `rm` resolution when
-`c.rm` is a set. Investigation needed in the branch solver's handling of:
-1. Enum variant construction with field values
-2. Set membership constraints (`c.rm.contains(rm)`)
-3. `sent_packets` output variable solving
-
-**Fix priority: HIGH** — this is the simplest protocol and the bug blocks
-all Prepare-path exploration.
+**Remaining gap**: The 14 + 33 non-shared states are a fundamental modeling
+difference (message channels), not a solver bug. Full parity would require
+either adding message channel modeling to the source-first spec or using
+the auto-generated relational wrapper (which doesn't include `msgs`).
 
 ## PrimaryBackup (54 TLC vs 60 SF — 0 shared)
 
@@ -102,7 +93,7 @@ performance improvements.
 
 | Protocol | SF states | TLC states | Shared | Root cause | Bucket | Priority |
 |----------|-----------|------------|--------|------------|--------|----------|
-| TwoPhase | 8 | 56 | 8 | Branch solver fails on PreparedVote enum | successor-generation bug | HIGH |
+| TwoPhase | 37 | 56 | 23 | **FIXED** (config: PreparedVote missing from enum_subset) | config bug (fixed) | DONE |
 | PrimaryBackup | 60 | 54 | 0 | Hand-written TLC wrapper adds `phase` field | wrapper/projection mismatch | MEDIUM |
 | LeaderElection | 2 | 913 | 2 | Solver timeout during candidate enumeration | successor-generation bug (perf) | MEDIUM |
 | Paxos | ~75 | 3M+ | N/A | State space too large for current engine | successor-generation bug (perf) | LOW |

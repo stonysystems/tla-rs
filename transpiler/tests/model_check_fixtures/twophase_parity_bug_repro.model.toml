@@ -1,10 +1,9 @@
-# Minimal TwoPhase config to reproduce the LRMReceivePrepare successor bug.
-# 1 RM, minimal domain. The solver should find that LRMReceivePrepare
-# produces successors (rm=0 is in c.rm, not prepared, not aborted),
-# but currently produces 0.
+# Minimal TwoPhase config for parity testing.
+# 1 RM, minimal domain. Should find all reachable states including
+# prepare/commit paths.
 #
-# Expected: >8 distinct states (prepare/commit paths should be reachable).
-# Actual (bug): 4 distinct states (only abort paths explored).
+# Root cause of prior 0-successor bug: PreparedVote was missing from
+# the enum_subset. Now fixed.
 
 [constants.domains.rm]
 kind = "values"
@@ -16,7 +15,7 @@ max = 0
 
 [quantifiers.types.LTPCMessage]
 kind = "enum_subset"
-variants = ["Prepare", "Commit", "Abort"]
+variants = ["Prepare", "PreparedVote", "Commit", "Abort"]
 
 [collections]
 max_set_len = 1

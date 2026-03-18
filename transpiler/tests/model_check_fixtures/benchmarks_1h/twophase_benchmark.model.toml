@@ -19,7 +19,7 @@ max = 1
 
 [quantifiers.types.LTPCMessage]
 kind = "enum_subset"
-variants = ["Prepare", "Commit", "Abort"]
+variants = ["Prepare", "PreparedVote", "Commit", "Abort"]
 
 [collections]
 max_set_len = 2

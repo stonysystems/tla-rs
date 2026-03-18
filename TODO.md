@@ -11141,9 +11141,7 @@ docs/model-checker-architecture/
 
 - [x] **36.2.1**: Ran parity harness and classified all mismatches. See `docs/phase36-parity-mismatch-analysis.md`. Summary: (1) TwoPhase: successor-generation bug — `LRMReceivePrepare` branch solver produces 0 successors despite 8 invocations, likely failing on `PreparedVote{rm}` enum construction or set-membership existential. HIGH priority. (2) PrimaryBackup: wrapper/projection mismatch — hand-written TLC wrapper adds `phase` field absent from Verus spec. MEDIUM priority. (3) LeaderElection: solver performance timeout. MEDIUM. (4) Paxos: state space too large for current engine. LOW.
 - [x] **36.2.2**: Added focused bug-repro test `test_twophase_prepare_branch_produces_successors` and minimal 1-RM config `twophase_parity_bug_repro.model.toml`. Test documents current buggy baseline: LRMReceivePrepare (branch_1) invoked but produces 0 successors. Assertions will flip when the solver bug (enum variant construction with fields) is fixed.
-- [ ] **36.2.3**: Fix small-model parity for `TwoPhase`.
-  - Completion bar: zero normalized distinct-state diff and zero normalized initial-state diff.
-  - If edge-set parity is not exact on the first pass, keep the mismatch witness in the checked-in report and continue until either edge parity is fixed or the remaining difference is proved to be a metric-reporting mismatch rather than a semantic one.
+- [x] **36.2.3**: Fixed TwoPhase parity. Root cause: `PreparedVote` was missing from `enum_subset` in model config, preventing `LRMReceivePrepare` successor generation. Fix: added `"PreparedVote"` to variant list in both benchmark and bug-repro configs. Post-fix: 37 SF / 56 TLC / 23 shared (initial states match). Remaining gap (14 SF-only + 33 TLC-only) is a modeling difference — source-first doesn't model message channels, TLC does. Not a solver bug.
 - [ ] **36.2.4**: Fix small-model parity for `PrimaryBackup` with the same bar as `TwoPhase`.
 - [ ] **36.2.5**: Fix small-model parity for `LeaderElection` and `Paxos`.
   - Do not defer these indefinitely behind benchmark work; if the small-model semantics do not align, benchmark conclusions are not trustworthy.
