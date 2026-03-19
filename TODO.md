@@ -11207,11 +11207,11 @@ docs/model-checker-architecture/
   - [x] **36.3.7.b**: Dominant cost buckets classified per-protocol (see HOTSPOT_LEDGER.md §3):
     - **LE**: Repeated evaluator work on failed existential assignments (branches 2,3,5 = 71.5% of solver time, 461 exist/inv with <6 succ/inv). Guard-first evaluation is the top optimization.
     - **Paxos**: Dedup/canonicalization (32.1s, 32%), init-state construction (21.8s, 22%), LRecvPromise solver (19.7s, 20%). Hash-based dedup is top priority.
-  - [ ] **36.3.7.c**: Implement the next optimization only after there is a smallest reproducer for it.
-    - Candidate order to investigate:
-    - skip tautological frame conditions such as `s_.f == s.f` before evaluator/solver work,
+  - [x] **36.3.7.c**: Implemented guard-first evaluation in `solve_one_assignment()` (Phase 36.3.7.c). Constraints that don't depend on `s_` (next state) are evaluated BEFORE cloning current_state and processing assignments. This avoids the expensive clone + evaluate cycle when guards fail. **Results**: LE 2-node 3.0x faster (6.7s→2.3s), LE 3-node 2.8x more states (127→355 in 120s), Paxos solver 8.2x faster (19.8s→2.4s, total 99.8s→81.2s), PB 18x more states (37K→668K). Added `guard_pruned_assignments` telemetry field and 2 unit tests. Raw JSON in `reports/benchmarks/source_first_release_profile_post_36_3_7c/`.
+    - Remaining optimization candidates (from original list):
+    - hash-based dedup (u64 fingerprint instead of canonical_key String) — now P0 for Paxos+PB,
+    - lazy init-state construction — now P1 for Paxos,
     - construct `s_` from direct assignments plus carried frame fields instead of full cartesian candidate products when the branch shape allows it,
-    - remove string-heavy temporary candidate-membership checks from the hot exact-mode path without weakening exact dedup semantics,
     - reduce repeated full-state cloning on hot branches.
   - [ ] **36.3.7.d**: After each optimization, rerun all of the following before claiming success:
     - the smallest reproducer,
@@ -11222,7 +11222,7 @@ docs/model-checker-architecture/
   - [ ] **36.3.7.e**: If either matched benchmark still does not complete, check in an explicit blocker row instead of an aspirational note.
     - Required fields: protocol, exact fixture, exact hot branches, exact before/after timings, exact candidate/existential counts, and the next code location to attack.
     - The next TODO leaf must be more specific than "make solver faster".
-    - **Paxos 3-node now exhausts** (17,370 states, 99.8s). Only LeaderElection still times out.
+    - **Paxos 3-node now exhausts** (17,370 states, 81.2s after guard-first optimization). Only LeaderElection still times out (355 states/120s, up from 127).
 
 ### 36.4 Documentation and status updates
 
@@ -11242,7 +11242,7 @@ Phase 36 completion status (reframed 2026-03-19 so the remaining work stays acti
     - or intentional modeling mismatch with witness states and a written boundary explanation.
   - [x] any transition-edge mismatch that remains has been either fixed or proved to be a reporting-surface mismatch rather than a semantic-state mismatch (Phase 36.2.1: all gaps classified)
   - [x] the benchmark report and status page have been regenerated/updated after the fixes (Phase 36.4.1-36.4.3)
-  - [x] source-first benchmark behavior on the shared non-toy models is materially improved and backed by new telemetry (Phase 36.3.4: Paxos 5→16K, PB 60→37K, LE 105→186)
+  - [x] source-first benchmark behavior on the shared non-toy models is materially improved and backed by new telemetry (Phase 36.3.4: Paxos 5→16K, PB 60→37K, LE 105→186; Phase 36.3.7.c: Paxos solver 8.2x faster, LE 2.8x more states, PB 18x more states)
   - [ ] `LeaderElection` has either:
     - exhaustive parity on a shared exact-mode fixture, or
     - a checked-in smallest reproducer plus a checked-in blocker ledger that names the exact remaining hot branches and next code task.

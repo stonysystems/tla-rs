@@ -60,6 +60,9 @@ pub struct BranchSolveTelemetry {
     pub deferred_constraint_evaluations: usize,
     /// Total evaluator calls across all assignments for this branch solve.
     pub evaluator_calls: usize,
+    /// Number of existential assignments pruned by guard-first evaluation
+    /// (Phase 36.3.7.c: constraints checked before cloning next state).
+    pub guard_pruned_assignments: usize,
 }
 
 /// Result payload for one branch-solve attempt.
@@ -67,6 +70,17 @@ pub struct BranchSolveTelemetry {
 pub struct BranchSolveResult {
     pub successors: Vec<RuntimeValue>,
     pub telemetry: BranchSolveTelemetry,
+}
+
+/// Outcome of solving one existential assignment within a branch.
+enum AssignmentOutcome {
+    /// Assignment produced a valid successor state.
+    Successor(RuntimeValue),
+    /// Assignment failed a guard constraint (no s_ dependency) before
+    /// cloning/constructing the next state.
+    GuardPruned,
+    /// Assignment failed a deferred or next-state constraint.
+    ConstraintFailed,
 }
 
 /// Solve one normalized `LNext` branch into concrete successor states.
@@ -257,6 +271,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     }
 
     let mut successors = Vec::new();
+    let mut guard_pruned_assignments = 0usize;
     for assignment in assignments {
         if should_stop.map(|check| check()).unwrap_or(false) {
             // Lazily compute candidate keys only when needed for filtering
@@ -274,11 +289,12 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 successors,
                 telemetry: BranchSolveTelemetry {
                     direct_assignment_branch_solves: 1,
+                    guard_pruned_assignments,
                     ..Default::default()
                 },
             });
         }
-        if let Some(next_state) = solve_one_assignment(
+        match solve_one_assignment(
             transition,
             branch,
             current_state,
@@ -287,7 +303,9 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
             bounds,
             hooks,
         )? {
-            successors.push(next_state);
+            AssignmentOutcome::Successor(next_state) => successors.push(next_state),
+            AssignmentOutcome::GuardPruned => guard_pruned_assignments += 1,
+            AssignmentOutcome::ConstraintFailed => {}
         }
     }
 
@@ -312,6 +330,7 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
             direct_assigned_fields: direct_fields,
             deferred_constraint_evaluations: deferred_evals,
             evaluator_calls: (direct_fields + deferred_evals) * assignment_count,
+            guard_pruned_assignments,
             ..Default::default()
         },
     })
@@ -616,12 +635,39 @@ fn solve_one_assignment(
     existential_assignment: &ExistentialAssignment,
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
-) -> TranspileResult<Option<RuntimeValue>> {
+) -> TranspileResult<AssignmentOutcome> {
+    // Phase 36.3.7.c: Guard-first evaluation — check constraints that depend
+    // only on the current state + existential params (not s_) BEFORE cloning
+    // current_state and processing assignments. For branches where most
+    // existential assignments fail the guard, this avoids the expensive
+    // clone + evaluate cycle entirely.
+    let (guard_constraints, non_guard_constraints): (Vec<_>, Vec<_>) = branch
+        .constraints
+        .iter()
+        .partition(|c| !constraint_depends_on_next_state(c, transition));
+
+    if !guard_constraints.is_empty() {
+        let guard_env = build_environment(
+            transition,
+            current_state,
+            None, // no s_ needed for guard constraints
+            constants,
+            existential_assignment,
+        );
+        for constraint in &guard_constraints {
+            let satisfied = evaluate_constraint(constraint, &guard_env, bounds, hooks)?;
+            if !satisfied {
+                return Ok(AssignmentOutcome::GuardPruned);
+            }
+        }
+    }
+
+    // Guards passed — now proceed with next-state construction.
     let mut next_state = current_state.clone();
     let mut deferred_constraints = Vec::new();
     let mut next_state_targets: BTreeMap<Vec<String>, RuntimeValue> = BTreeMap::new();
 
-    for constraint in &branch.constraints {
+    for constraint in &non_guard_constraints {
         match constraint {
             BranchConstraintIr::Eq {
                 target:
@@ -660,7 +706,7 @@ fn solve_one_assignment(
 
                 if let Some(existing) = next_state_targets.get(path) {
                     if existing != &evaluated {
-                        return Ok(None);
+                        return Ok(AssignmentOutcome::ConstraintFailed);
                     }
                 } else {
                     write_value_at_path(&mut next_state, path, evaluated.clone())?;
@@ -675,7 +721,7 @@ fn solve_one_assignment(
                         enum_variant_assignment_value(&next_state, &path, &variant, &branch.label)?;
                     if let Some(existing) = next_state_targets.get(&path) {
                         if existing != &assigned {
-                            return Ok(None);
+                            return Ok(AssignmentOutcome::ConstraintFailed);
                         }
                     } else {
                         write_value_at_path(&mut next_state, &path, assigned.clone())?;
@@ -699,11 +745,11 @@ fn solve_one_assignment(
         );
         let satisfied = evaluate_constraint(constraint, &env, bounds, hooks)?;
         if !satisfied {
-            return Ok(None);
+            return Ok(AssignmentOutcome::ConstraintFailed);
         }
     }
 
-    Ok(Some(next_state))
+    Ok(AssignmentOutcome::Successor(next_state))
 }
 
 fn evaluate_constraint(
@@ -2116,5 +2162,174 @@ mod tests {
         let path = vec!["x".to_string()];
         let value = Expr::Field(Box::new(Expr::Ident("c".to_string())), "x".to_string());
         assert!(!is_frame_condition(&path, &value, "s"));
+    }
+
+    #[test]
+    fn test_guard_first_prunes_assignments_before_cloning() {
+        // Branch with: s_.x == 99, s_.y == s.y (frame), AND a guard `s.x > c.limit`
+        // The guard only references s and c, not s_. When the guard fails
+        // (s.x=4, c.limit=10 → 4 > 10 is false), the assignment should be
+        // guard-pruned without cloning current_state.
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![
+                // Guard: s.x > c.limit (no s_ dependency)
+                BranchConstraintIr::Predicate {
+                    expr: Expr::Gt(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("s".to_string())),
+                            "x".to_string(),
+                        )),
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("c".to_string())),
+                            "limit".to_string(),
+                        )),
+                    ),
+                },
+                // Assignment: s_.x == 99
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["x".to_string()],
+                    },
+                    value: Expr::Literal(crate::ast::Literal::Int(99)),
+                },
+                // Frame: s_.y == s.y
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["y".to_string()],
+                    },
+                    value: Expr::Field(Box::new(Expr::Ident("s".to_string())), "y".to_string()),
+                },
+            ],
+        };
+
+        let transition_ir = TransitionIr {
+            current_state_param: "s".to_string(),
+            next_state_param: "s_".to_string(),
+            constants_param: Some("c".to_string()),
+            branches: vec![branch.clone()],
+        };
+
+        // s.x=4, c.limit=10 → guard fails (4 > 10 is false)
+        let current = state(4, 7);
+        let result = solve_one_assignment(
+            &transition_ir,
+            &branch,
+            &current,
+            Some(&constants(10)),
+            &BTreeMap::new(),
+            bounds(),
+            SolverHooks::default(),
+        )
+        .unwrap();
+        assert!(
+            matches!(result, AssignmentOutcome::GuardPruned),
+            "Expected GuardPruned when s.x < c.limit"
+        );
+
+        // s.x=20, c.limit=10 → guard passes (20 > 10), produces successor
+        let current_pass = state(20, 7);
+        let result = solve_one_assignment(
+            &transition_ir,
+            &branch,
+            &current_pass,
+            Some(&constants(10)),
+            &BTreeMap::new(),
+            bounds(),
+            SolverHooks::default(),
+        )
+        .unwrap();
+        assert!(
+            matches!(result, AssignmentOutcome::Successor(_)),
+            "Expected Successor when s.x > c.limit"
+        );
+        if let AssignmentOutcome::Successor(next) = result {
+            assert_eq!(
+                read_value_at_path(&next, &["x".to_string()]).unwrap(),
+                RuntimeValue::Int(99)
+            );
+            assert_eq!(
+                read_value_at_path(&next, &["y".to_string()]).unwrap(),
+                RuntimeValue::Int(7)
+            );
+        }
+    }
+
+    #[test]
+    fn test_guard_first_telemetry_in_branch_solve() {
+        // Branch with a guard that always fails: 3 existential assignments should
+        // all be guard-pruned, producing 0 successors and guard_pruned_assignments=3.
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![crate::modelcheck::ir::ExistentialVarIr {
+                name: "v".to_string(),
+                ty: None,
+            }],
+            constraints: vec![
+                // Guard: s.x > 100 (always fails for s.x=4)
+                BranchConstraintIr::Predicate {
+                    expr: Expr::Gt(
+                        Box::new(Expr::Field(
+                            Box::new(Expr::Ident("s".to_string())),
+                            "x".to_string(),
+                        )),
+                        Box::new(Expr::Literal(crate::ast::Literal::Int(100))),
+                    ),
+                },
+                // Assignment: s_.x == v
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["x".to_string()],
+                    },
+                    value: Expr::Ident("v".to_string()),
+                },
+                // Frame: s_.y == s.y
+                BranchConstraintIr::Eq {
+                    target: ConstraintTarget {
+                        root: ConstraintRoot::NextState,
+                        path: vec!["y".to_string()],
+                    },
+                    value: Expr::Field(Box::new(Expr::Ident("s".to_string())), "y".to_string()),
+                },
+            ],
+        };
+
+        let transition_ir = TransitionIr {
+            current_state_param: "s".to_string(),
+            next_state_param: "s_".to_string(),
+            constants_param: Some("c".to_string()),
+            branches: vec![branch],
+        };
+
+        // 3 existential assignments for v: {0, 1, 2}
+        let assignments: Vec<ExistentialAssignment> = (0..3)
+            .map(|i| {
+                let mut a = BTreeMap::new();
+                a.insert("v".to_string(), RuntimeValue::Int(i));
+                a
+            })
+            .collect();
+
+        let current = state(4, 7);
+        let result = solve_branch_successors_with_candidates_and_telemetry(
+            &transition_ir,
+            &transition_ir.branches[0],
+            &current,
+            Some(&constants(10)),
+            &assignments,
+            None,
+            None,
+            bounds(),
+            SolverHooks::default(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.successors.len(), 0);
+        assert_eq!(result.telemetry.guard_pruned_assignments, 3);
     }
 }

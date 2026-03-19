@@ -1974,6 +1974,8 @@ struct ModelCheckBranchTelemetrySummary {
     direct_assigned_fields: usize,
     deferred_constraint_evaluations: usize,
     evaluator_calls: usize,
+    // Phase 36.3.7.c guard-first telemetry
+    guard_pruned_assignments: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3852,6 +3854,7 @@ fn execute_model_check(
                                 direct_assigned_fields: 0,
                                 deferred_constraint_evaluations: 0,
                                 evaluator_calls: 0,
+                                guard_pruned_assignments: 0,
                             });
                         entry.invocations = entry.invocations.saturating_add(1);
                         entry.existential_assignment_count = entry
@@ -3883,6 +3886,9 @@ fn execute_model_check(
                         entry.evaluator_calls = entry
                             .evaluator_calls
                             .saturating_add(solved.telemetry.evaluator_calls);
+                        entry.guard_pruned_assignments = entry
+                            .guard_pruned_assignments
+                            .saturating_add(solved.telemetry.guard_pruned_assignments);
                     }
 
                     for successor in solved.successors {
@@ -4102,6 +4108,7 @@ fn execute_model_check(
                     direct_assigned_fields: 0,
                     deferred_constraint_evaluations: 0,
                     evaluator_calls: 0,
+                    guard_pruned_assignments: 0,
                 });
             aggregate.invocations = aggregate.invocations.saturating_add(entry.invocations);
             aggregate.existential_assignment_count = aggregate
@@ -4134,6 +4141,9 @@ fn execute_model_check(
             aggregate.evaluator_calls = aggregate
                 .evaluator_calls
                 .saturating_add(entry.evaluator_calls);
+            aggregate.guard_pruned_assignments = aggregate
+                .guard_pruned_assignments
+                .saturating_add(entry.guard_pruned_assignments);
         }
 
         aggregated_states = aggregated_states.saturating_add(run_summary.states);
@@ -4552,6 +4562,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             "direct_assigned_fields": branch.direct_assigned_fields,
                             "deferred_constraint_evaluations": branch.deferred_constraint_evaluations,
                             "evaluator_calls": branch.evaluator_calls,
+                            "guard_pruned_assignments": branch.guard_pruned_assignments,
                         })).collect::<Vec<_>>(),
                         "timing": {
                             "source_ingestion_parsing_ms": execution.summary.timing.source_ingestion_parsing_ms,
