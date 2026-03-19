@@ -11175,9 +11175,7 @@ docs/model-checker-architecture/
   - Do not defer these indefinitely behind generic benchmark work; if parity remains partial, reduce it to a checked-in blocker with exact fixtures, exact branch labels, and exact witness states.
   - **Current repo status (2026-03-19)**: `LeaderElection` no longer looks like a normalization bug. The current parity report says source-first exports 31 projected states, all shared with TLC's 913 projected states (strict subset), while the benchmark run still times out at 186 states / 120s. `Paxos` improves to 16,655 states / 147s on the benchmark, but TLC projected-state export is still too large for direct JSONL diff on the current benchmark config.
   - [x] **36.2.5.a**: Re-ran LE parity export (debug, 120s timeout): 12 distinct states, all in TLC's 913 projected set (0 SF-only). Count varies by build mode and timeout (31 in release/120s, 12 in debug/120s) — this is a performance difference, not a correctness change. **Confirmed: strict subset holds.**
-  - [ ] **36.2.5.b**: Add a smallest `LeaderElection` performance/parity reproducer that isolates the current hot branch shape while still using the same semantic normalization surface.
-    - This reproducer may use smaller bounds than the benchmark, but it must not replace the benchmark fixture in the report.
-    - It must finish fast enough for focused before/after iteration and must record the exact relation to the benchmark fixture.
+  - [x] **36.2.5.b**: Added `leaderelection_perf_repro.model.toml` (2-node config). Exhausts at 108 states/depth 5 in 6.5s release / 24s debug. Same branch structure as 3-node benchmark: branches 2,3,5 have 172 existential assignments (hot branches). All 7 branches produce successors. Does NOT replace benchmark fixture.
   - [ ] **36.2.5.c**: Create a TLC-exportable shared `Paxos` parity fixture that is small enough for JSONL diff but still exercises the same problematic initial-state / branch-construction shape seen in the benchmark.
     - The purpose is semantic debugging, not benchmark replacement.
     - Keep the current matched benchmark config unchanged for performance claims.

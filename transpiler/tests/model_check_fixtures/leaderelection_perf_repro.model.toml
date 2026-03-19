@@ -1,0 +1,44 @@
+# Smallest LeaderElection performance/parity reproducer (Phase 36.2.5.b).
+#
+# Uses 2 nodes instead of the benchmark's 3 nodes to reduce the state space
+# while exercising the same branch shapes. Must finish fast enough for
+# focused before/after iteration (target: <30s in debug, <10s in release).
+#
+# This reproducer does NOT replace the benchmark fixture. The benchmark
+# (leaderelection_benchmark.model.toml) remains the canonical comparison
+# target for TLC parity and performance claims.
+#
+# Relation to benchmark:
+# - Same protocol spec and branch structure
+# - Same semantic normalization (no message channels in source-first)
+# - 2 nodes vs 3 nodes: reduces existential assignment space
+
+[constants.assignments]
+num_nodes = 0
+
+[constants.domains.nodes]
+kind = "values"
+values = ["set:{int:0,int:1}"]
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[quantifiers.types.LElectionMessage]
+kind = "enum_subset"
+variants = ["Election", "Answer", "Coordinator"]
+
+[collections]
+max_seq_len = 2
+max_set_len = 2
+
+[search]
+max_depth = 20
+max_states = 100000
+timeout_ms = 30000
+candidate_eval_guardrail = 10000000
+
+[properties]
+invariants = []
+check_deadlock = false
+successor_semantics = "deadlock"
