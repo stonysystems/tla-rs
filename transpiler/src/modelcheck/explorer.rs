@@ -1,5 +1,6 @@
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{SearchLimits, StateDedupMode};
+use crate::modelcheck::parity::ParityDebugExporter;
 use crate::modelcheck::value::RuntimeValue;
 use std::collections::{BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -266,8 +267,39 @@ pub fn explore_state_space_with_traces_and_dedup<F, I>(
     state_dedup: StateDedupMode,
     symmetry_fields: &[String],
     check_deadlock: bool,
+    successor_fn: F,
+    invariant_checker: I,
+) -> TranspileResult<ExplorationResult>
+where
+    F: FnMut(&RuntimeValue) -> TranspileResult<Vec<TracedSuccessor>>,
+    I: FnMut(&RuntimeValue, usize) -> TranspileResult<Option<String>>,
+{
+    explore_state_space_with_traces_dedup_and_debug(
+        initial_states,
+        mode,
+        limits,
+        state_dedup,
+        symmetry_fields,
+        check_deadlock,
+        successor_fn,
+        invariant_checker,
+        None,
+    )
+}
+
+/// Same as `explore_state_space_with_traces_and_dedup`, but with an optional streaming
+/// debug exporter that writes JSONL lines during exploration.
+#[allow(clippy::too_many_arguments)]
+pub fn explore_state_space_with_traces_dedup_and_debug<F, I>(
+    initial_states: &[RuntimeValue],
+    mode: SearchMode,
+    limits: ExplorationLimits,
+    state_dedup: StateDedupMode,
+    symmetry_fields: &[String],
+    check_deadlock: bool,
     mut successor_fn: F,
     mut invariant_checker: I,
+    mut debug_exporter: Option<&mut ParityDebugExporter>,
 ) -> TranspileResult<ExplorationResult>
 where
     F: FnMut(&RuntimeValue) -> TranspileResult<Vec<TracedSuccessor>>,
@@ -299,12 +331,26 @@ where
             if matches!(state_dedup, StateDedupMode::HashCompaction64) {
                 hash_representatives.insert(key.clone(), dedup_canonical);
             }
+            if let Some(ref mut exporter) = debug_exporter {
+                let _ = exporter.record_generated(
+                    &key,
+                    state,
+                    0,
+                    true,
+                    None,
+                    None,
+                    "accepted_distinct",
+                );
+                let _ = exporter.record_distinct(&key, state, 0, true, None, None);
+            }
             states_by_key.insert(key.clone(), state.clone());
             frontier.push_back(FrontierItem {
                 key,
                 state: state.clone(),
                 depth: 0,
             });
+        } else if let Some(ref mut exporter) = debug_exporter {
+            let _ = exporter.record_generated(&key, state, 0, true, None, None, "duplicate");
         }
     }
 
@@ -440,9 +486,36 @@ where
                 stats.symmetry_collapses += 1;
             }
             let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
+            let branch_label = if successor.action_branch.is_empty() {
+                None
+            } else {
+                Some(successor.action_branch.as_str())
+            };
             if visited.insert(key.clone()) {
                 if matches!(state_dedup, StateDedupMode::HashCompaction64) {
                     hash_representatives.insert(key.clone(), dedup_canonical);
+                }
+                if let Some(ref mut exporter) = debug_exporter {
+                    let _ = exporter.record_generated(
+                        &key,
+                        &successor.state,
+                        item.depth + 1,
+                        false,
+                        Some(&item.key),
+                        branch_label,
+                        "accepted_distinct",
+                    );
+                    let _ = exporter.record_distinct(
+                        &key,
+                        &successor.state,
+                        item.depth + 1,
+                        false,
+                        Some(&item.key),
+                        branch_label,
+                    );
+                    if let Some(label) = branch_label {
+                        let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                    }
                 }
                 states_by_key.insert(key.clone(), successor.state.clone());
                 parents.insert(
@@ -459,6 +532,20 @@ where
                 });
                 stats.successors_enqueued += 1;
             } else {
+                if let Some(ref mut exporter) = debug_exporter {
+                    let _ = exporter.record_generated(
+                        &key,
+                        &successor.state,
+                        item.depth + 1,
+                        false,
+                        Some(&item.key),
+                        branch_label,
+                        "duplicate",
+                    );
+                    if let Some(label) = branch_label {
+                        let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                    }
+                }
                 if is_hash_collision(&hash_representatives, &key, &dedup_canonical) {
                     stats.hash_compaction_collisions += 1;
                 }
@@ -469,6 +556,9 @@ where
         stats.max_frontier_size = stats.max_frontier_size.max(frontier.len());
     }
 
+    if let Some(ref mut exporter) = debug_exporter {
+        let _ = exporter.flush();
+    }
     Ok(finalize_result(
         explored,
         ExplorationStopReason::FrontierExhausted,
@@ -1614,5 +1704,82 @@ mod tests {
         assert_eq!(result.stats.visited_states, 2);
         assert_eq!(result.stats.symmetry_collapses, 0);
         assert_eq!(ids(&result), vec![1, 2]);
+    }
+
+    #[test]
+    fn test_streaming_debug_exporter_produces_correct_output() {
+        // Graph: 0 --LStep--> 1 --LStep--> 0 (duplicate)
+        let dir = tempfile::tempdir().unwrap();
+        let mut exporter = ParityDebugExporter::new(dir.path()).unwrap();
+
+        let graph = BTreeMap::from([(0, vec![(1, "LStep")]), (1, vec![(0, "LStep")])]);
+
+        let result = explore_state_space_with_traces_dedup_and_debug(
+            &[state(0)],
+            SearchMode::Bfs,
+            limits(10, 20),
+            StateDedupMode::Canonical,
+            &[],
+            false,
+            |s| {
+                let next = graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|(id, action)| TracedSuccessor {
+                        action_branch: (*action).to_string(),
+                        state: state(*id),
+                    })
+                    .collect();
+                Ok(next)
+            },
+            |_s, _| Ok(None),
+            Some(&mut exporter),
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+        assert_eq!(result.stats.visited_states, 2);
+        assert_eq!(result.stats.duplicate_successors, 1);
+
+        drop(exporter); // flush on drop
+
+        // generated_states: 1 initial + 1 accepted successor + 1 duplicate = 3
+        let gen = std::fs::read_to_string(dir.path().join("generated_states.jsonl")).unwrap();
+        let gen_lines: Vec<&str> = gen.trim().split('\n').collect();
+        assert_eq!(gen_lines.len(), 3, "expected 3 generated records");
+
+        // Check classifications
+        let classifications: Vec<String> = gen_lines
+            .iter()
+            .map(|l| {
+                let v: serde_json::Value = serde_json::from_str(l).unwrap();
+                v["classification"].as_str().unwrap().to_string()
+            })
+            .collect();
+        assert_eq!(
+            classifications,
+            vec!["accepted_distinct", "accepted_distinct", "duplicate"]
+        );
+
+        // distinct_states: 2 (state 0 and state 1)
+        let dist = std::fs::read_to_string(dir.path().join("distinct_states.jsonl")).unwrap();
+        let dist_lines: Vec<&str> = dist.trim().split('\n').collect();
+        assert_eq!(dist_lines.len(), 2, "expected 2 distinct states");
+
+        // edges: 2 (0->1 and 1->0 both seen, but 1->0 is a duplicate state edge)
+        let edges = std::fs::read_to_string(dir.path().join("edges.jsonl")).unwrap();
+        let edge_lines: Vec<&str> = edges.trim().split('\n').collect();
+        assert_eq!(
+            edge_lines.len(),
+            2,
+            "expected 2 edges (including duplicate-target edge)"
+        );
+
+        // All edge branch labels should be "LStep"
+        for line in &edge_lines {
+            let v: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert_eq!(v["branch_label"], "LStep");
+        }
     }
 }

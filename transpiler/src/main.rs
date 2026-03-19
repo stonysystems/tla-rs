@@ -241,6 +241,12 @@ enum Commands {
         #[arg(long)]
         export_parity: Option<PathBuf>,
 
+        /// Export streaming debug JSONL files during exploration (Phase 36.1.7).
+        /// Writes generated_states.jsonl, distinct_states.jsonl, and edges.jsonl
+        /// with per-state provenance (predecessor, branch_label, classification).
+        #[arg(long)]
+        export_parity_debug: Option<PathBuf>,
+
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
@@ -3512,6 +3518,7 @@ fn execute_model_check(
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
     selected_search: CliSearchMode,
     selected_invariants: &[&verus_transpiler::ast::SpecFunction],
+    export_parity_debug: Option<&Path>,
 ) -> Result<ModelCheckExecution> {
     use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
@@ -3519,7 +3526,7 @@ fn execute_model_check(
     use verus_transpiler::modelcheck::config::PorHeuristic;
     use verus_transpiler::modelcheck::domain::expand_branch_existentials;
     use verus_transpiler::modelcheck::explorer::{
-        explore_state_space_with_traces_and_dedup, ExplorationLimits, ExplorationStopReason,
+        explore_state_space_with_traces_dedup_and_debug, ExplorationLimits, ExplorationStopReason,
         TracedSuccessor,
     };
     use verus_transpiler::modelcheck::graph::build_explored_graph_index;
@@ -3529,6 +3536,7 @@ fn execute_model_check(
     use verus_transpiler::modelcheck::liveness::{
         check_leads_to_violations, resolve_leads_to_obligations, LivenessHooks,
     };
+    use verus_transpiler::modelcheck::parity::ParityDebugExporter;
     use verus_transpiler::modelcheck::por::infer_invisible_branch_pruning;
     use verus_transpiler::modelcheck::solver::{
         solve_branch_successors_with_candidates_and_telemetry, SolverHooks,
@@ -3916,7 +3924,11 @@ fn execute_model_check(
             };
 
         let exploration_started = Instant::now();
-        let mut exploration = explore_state_space_with_traces_and_dedup(
+        let mut debug_exporter = export_parity_debug.map(|dir| {
+            ParityDebugExporter::new(dir)
+                .unwrap_or_else(|e| panic!("Failed to create parity debug exporter: {e}"))
+        });
+        let mut exploration = explore_state_space_with_traces_dedup_and_debug(
             &initial_states,
             search_mode,
             limits,
@@ -3951,6 +3963,7 @@ fn execute_model_check(
                     .saturating_add(invariant_started.elapsed().as_millis());
                 result
             },
+            debug_exporter.as_mut(),
         )
         .map_err(|e| miette::miette!("{}", e))?;
         let exploration_elapsed_ms = exploration_started.elapsed().as_millis();
@@ -4237,6 +4250,7 @@ fn run_model_check_command(
     max_states: Option<usize>,
     timeout_ms: Option<u64>,
     model: &Path,
+    export_parity_debug: Option<&Path>,
 ) -> Result<ModelCheckCommandExecution> {
     use std::time::Instant;
     use verus_transpiler::modelcheck::config::{
@@ -4297,6 +4311,7 @@ fn run_model_check_command(
         &model_config,
         selected_search,
         &selected_invariants,
+        export_parity_debug,
     )?;
     execution.summary.timing.source_ingestion_parsing_ms = source_ingestion_parsing_ms;
     execution.summary.timing.model_config_resolution_ms = model_config_resolution_ms;
@@ -4406,6 +4421,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             timeout_ms,
             json_report,
             export_parity,
+            export_parity_debug,
             model,
         } => {
             if cli.verbose {
@@ -4434,6 +4450,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 *max_states,
                 *timeout_ms,
                 model.as_path(),
+                export_parity_debug.as_deref(),
             )?;
             let search_evidence_mode = classify_search_evidence_mode(&model_config.search);
 
@@ -6435,6 +6452,7 @@ Next(s, s_, c) ==
                 timeout_ms,
                 json_report,
                 export_parity: _,
+                export_parity_debug: _,
                 model,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
@@ -6625,6 +6643,7 @@ invariants = ["LInv"]
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -6708,6 +6727,7 @@ fairness = { weak = ["branch_0"] }
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -6791,6 +6811,7 @@ fairness = { weak = ["branch_typo"], strong = ["branch_missing"] }
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -6874,6 +6895,7 @@ max = 1
             timeout_ms: Some(7777),
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -6955,6 +6977,7 @@ timeout_ms = 60000
             None,
             None,
             model_path.as_path(),
+            None,
         )
         .unwrap();
         assert_eq!(baseline.execution.summary.result, "ok");
@@ -6984,6 +7007,7 @@ timeout_ms = 60000
             None,
             timeout_override,
             model_path.as_path(),
+            None,
         )
         .unwrap();
         assert_eq!(timeout_run.execution.summary.result, "timeout_reached");
@@ -7017,6 +7041,7 @@ timeout_ms = 60000
             None,
             timeout_alias_override,
             model_path.as_path(),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -7083,6 +7108,7 @@ max = 1
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -7159,6 +7185,7 @@ max = 1
             timeout_ms: None,
             json_report: true,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -7251,6 +7278,7 @@ invariants = ["LInvBad"]
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -7332,6 +7360,7 @@ max = 2
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -7437,6 +7466,7 @@ max_states = 50
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -7545,6 +7575,7 @@ max_states = 50
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -7650,6 +7681,7 @@ max_states = 50
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -7770,6 +7802,7 @@ max_states = 50
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -7844,6 +7877,7 @@ max = 2
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap_err();
         assert!(
@@ -7927,6 +7961,7 @@ leads_to = [{ name = "eventual_one", from = "LFrom", to = "LTo" }]
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8025,6 +8060,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8111,6 +8147,7 @@ max = 1
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8223,6 +8260,7 @@ max = 1
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8340,6 +8378,7 @@ max = 1
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8460,6 +8499,7 @@ max = 1
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8566,6 +8606,7 @@ max = 1
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8679,6 +8720,7 @@ max = 10001
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap_err();
 
@@ -8763,6 +8805,7 @@ fairness = { strong = ["branch_2", "branch_3"] }
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8855,6 +8898,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -8949,6 +8993,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -9034,6 +9079,7 @@ state_dedup = "hash_compaction64"
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -9164,6 +9210,7 @@ symmetry_fields = ["value"]
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -9253,6 +9300,7 @@ invariants = ["LVisibleBound"]
             &model_config,
             CliSearchMode::Bfs,
             &selected_invariants,
+            None,
         )
         .unwrap();
 
@@ -9320,6 +9368,7 @@ max = 1
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9395,6 +9444,7 @@ max = 1
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9482,6 +9532,7 @@ verus! {
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9538,6 +9589,7 @@ verus! {
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9619,6 +9671,7 @@ invariants = ["LMissing"]
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9702,6 +9755,7 @@ invariants = ["LMissing"]
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9770,6 +9824,7 @@ verus! {
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {
@@ -9835,6 +9890,7 @@ verus! {
             timeout_ms: None,
             json_report: false,
             export_parity: None,
+            export_parity_debug: None,
             model: model_path,
         };
         let cli = Cli {

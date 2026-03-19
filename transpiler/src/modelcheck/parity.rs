@@ -7,7 +7,8 @@
 use crate::modelcheck::graph::ExploredGraphIndex;
 use crate::modelcheck::value::RuntimeValue;
 use std::collections::BTreeSet;
-use std::io::Write;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 
 /// One line in the parity JSONL export.
 fn state_to_jsonl_line(
@@ -71,6 +72,120 @@ pub fn export_parity_jsonl<W1: Write, W2: Write>(
 /// Collect canonical keys for initial states from the initial-state slice.
 pub fn collect_initial_state_keys(initial_states: &[RuntimeValue]) -> BTreeSet<String> {
     initial_states.iter().map(|s| s.canonical_key()).collect()
+}
+
+/// Streaming debug exporter that writes JSONL lines during exploration.
+///
+/// Produces three files:
+/// - `generated_states.jsonl`: every candidate state before dedup (initial + successors)
+/// - `distinct_states.jsonl`: every first-seen accepted state
+/// - `edges.jsonl`: predecessor→successor edges with branch labels
+///
+/// This is designed for focused parity fixtures (small state spaces) to enable
+/// first-divergence debugging without requiring a second full in-memory graph copy.
+pub struct ParityDebugExporter {
+    generated_writer: BufWriter<std::fs::File>,
+    distinct_writer: BufWriter<std::fs::File>,
+    edges_writer: BufWriter<std::fs::File>,
+}
+
+impl ParityDebugExporter {
+    /// Create a new exporter writing to the given directory.
+    /// Creates the directory and the three output files.
+    pub fn new(dir: &Path) -> std::io::Result<Self> {
+        std::fs::create_dir_all(dir)?;
+        Ok(Self {
+            generated_writer: BufWriter::new(std::fs::File::create(
+                dir.join("generated_states.jsonl"),
+            )?),
+            distinct_writer: BufWriter::new(std::fs::File::create(
+                dir.join("distinct_states.jsonl"),
+            )?),
+            edges_writer: BufWriter::new(std::fs::File::create(dir.join("edges.jsonl"))?),
+        })
+    }
+
+    /// Record a generated state (before dedup decision).
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_generated(
+        &mut self,
+        state_id: &str,
+        state: &RuntimeValue,
+        depth: usize,
+        is_initial: bool,
+        predecessor_id: Option<&str>,
+        branch_label: Option<&str>,
+        classification: &str,
+    ) -> std::io::Result<()> {
+        let obj = serde_json::json!({
+            "state_id": state_id,
+            "state": state.to_canonical_json(),
+            "depth": depth,
+            "initial": is_initial,
+            "branch_label": branch_label,
+            "predecessor_state_id": predecessor_id,
+            "classification": classification,
+        });
+        writeln!(
+            self.generated_writer,
+            "{}",
+            serde_json::to_string(&obj).expect("JSON serialization should not fail")
+        )
+    }
+
+    /// Record a distinct (first-seen accepted) state.
+    pub fn record_distinct(
+        &mut self,
+        state_id: &str,
+        state: &RuntimeValue,
+        depth: usize,
+        is_initial: bool,
+        predecessor_id: Option<&str>,
+        branch_label: Option<&str>,
+    ) -> std::io::Result<()> {
+        let obj = serde_json::json!({
+            "state_id": state_id,
+            "state": state.to_canonical_json(),
+            "depth": depth,
+            "initial": is_initial,
+            "branch_label": branch_label,
+            "predecessor_state_id": predecessor_id,
+        });
+        writeln!(
+            self.distinct_writer,
+            "{}",
+            serde_json::to_string(&obj).expect("JSON serialization should not fail")
+        )
+    }
+
+    /// Record an edge (predecessor→successor with branch label).
+    pub fn record_edge(
+        &mut self,
+        predecessor_id: &str,
+        successor_id: &str,
+        branch_label: &str,
+        depth: usize,
+    ) -> std::io::Result<()> {
+        let obj = serde_json::json!({
+            "src": predecessor_id,
+            "dst": successor_id,
+            "branch_label": branch_label,
+            "depth": depth,
+        });
+        writeln!(
+            self.edges_writer,
+            "{}",
+            serde_json::to_string(&obj).expect("JSON serialization should not fail")
+        )
+    }
+
+    /// Flush all writers.
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        self.generated_writer.flush()?;
+        self.distinct_writer.flush()?;
+        self.edges_writer.flush()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -213,5 +328,90 @@ mod tests {
         assert_eq!(edge_lines.len(), 1);
         let edge: serde_json::Value = serde_json::from_str(edge_lines[0]).unwrap();
         assert_eq!(edge["action"], "Step");
+    }
+
+    #[test]
+    fn test_parity_debug_exporter_writes_three_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let s1 = make_state(vec![("x", 0)]);
+        let s2 = make_state(vec![("x", 1)]);
+        let k1 = s1.canonical_key();
+        let k2 = s2.canonical_key();
+
+        {
+            let mut exporter = ParityDebugExporter::new(dir.path()).unwrap();
+
+            // Initial state: generated + distinct
+            exporter
+                .record_generated(&k1, &s1, 0, true, None, None, "accepted_distinct")
+                .unwrap();
+            exporter
+                .record_distinct(&k1, &s1, 0, true, None, None)
+                .unwrap();
+
+            // Successor: generated + distinct + edge
+            exporter
+                .record_generated(
+                    &k2,
+                    &s2,
+                    1,
+                    false,
+                    Some(&k1),
+                    Some("LStep"),
+                    "accepted_distinct",
+                )
+                .unwrap();
+            exporter
+                .record_distinct(&k2, &s2, 1, false, Some(&k1), Some("LStep"))
+                .unwrap();
+            exporter.record_edge(&k1, &k2, "LStep", 1).unwrap();
+
+            // Duplicate: generated only
+            exporter
+                .record_generated(&k1, &s1, 1, false, Some(&k2), Some("LStep"), "duplicate")
+                .unwrap();
+
+            exporter.flush().unwrap();
+        }
+
+        // Verify generated_states.jsonl
+        let gen_content =
+            std::fs::read_to_string(dir.path().join("generated_states.jsonl")).unwrap();
+        let gen_lines: Vec<&str> = gen_content.trim().split('\n').collect();
+        assert_eq!(
+            gen_lines.len(),
+            3,
+            "3 generated records (1 init + 1 succ + 1 dup)"
+        );
+
+        let first: serde_json::Value = serde_json::from_str(gen_lines[0]).unwrap();
+        assert_eq!(first["classification"], "accepted_distinct");
+        assert_eq!(first["initial"], true);
+        assert!(first["predecessor_state_id"].is_null());
+
+        let dup: serde_json::Value = serde_json::from_str(gen_lines[2]).unwrap();
+        assert_eq!(dup["classification"], "duplicate");
+        assert!(!dup["predecessor_state_id"].is_null());
+
+        // Verify distinct_states.jsonl
+        let dist_content =
+            std::fs::read_to_string(dir.path().join("distinct_states.jsonl")).unwrap();
+        let dist_lines: Vec<&str> = dist_content.trim().split('\n').collect();
+        assert_eq!(dist_lines.len(), 2, "2 distinct states");
+
+        let second: serde_json::Value = serde_json::from_str(dist_lines[1]).unwrap();
+        assert_eq!(second["initial"], false);
+        assert_eq!(second["branch_label"], "LStep");
+
+        // Verify edges.jsonl
+        let edges_content = std::fs::read_to_string(dir.path().join("edges.jsonl")).unwrap();
+        let edge_lines: Vec<&str> = edges_content.trim().split('\n').collect();
+        assert_eq!(edge_lines.len(), 1, "1 edge");
+
+        let edge: serde_json::Value = serde_json::from_str(edge_lines[0]).unwrap();
+        assert_eq!(edge["branch_label"], "LStep");
+        assert_eq!(edge["depth"], 1);
+        assert_eq!(edge["src"], k1);
+        assert_eq!(edge["dst"], k2);
     }
 }
