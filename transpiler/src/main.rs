@@ -9890,7 +9890,7 @@ manual_code = "manual_helpers.rs"
         // manual_code should NOT be injected in generate-types mode;
         // it is a function-generation concern (belongs in *_gen.rs, not types_gen.rs).
         assert!(
-            generated.find("ManualTypesHelper").is_none(),
+            !generated.contains("ManualTypesHelper"),
             "manual_code must not be injected during generate-types"
         );
     }

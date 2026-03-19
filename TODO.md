@@ -11326,9 +11326,7 @@ Reported current state: the latest commit only has one of these five checks pass
   - No disabling entire jobs.
   - No weakening `clippy`, `fmt`, verification, or model-check evidence guards unless a previous guard is proven incorrect and replaced by a stricter correct one.
 - [x] **37.2.1.a**: Fixed `CI / Format (push)` by running `cargo fmt` on all 399 unformatted files. Also updated baseline snapshot table in `model_checker_status.md` to match regenerated matrix artifacts (elapsed_ms drift from timing variation).
-- [ ] **37.2.1.b**: Keep `CI / Lint (push)` green after repo updates.
-  - **REOPENED (2026-03-19)**: `cargo clippy --all-targets --all-features -- -D warnings` currently fails on `clippy::search_is_some` at `transpiler/src/main.rs:9893`.
-  - Fix the current regression, rerun the full clippy job, and only mark this checked again when the entire command is clean.
+- [x] **37.2.1.b**: Fixed `clippy::search_is_some` regression at `main.rs:9893`: replaced `.find("ManualTypesHelper").is_none()` with `!.contains("ManualTypesHelper")`. Full `cargo clippy -- -D warnings` now passes.
 - [x] **37.2.1.c**: `CI / Test (push)` already passes — `cargo test --all-features` succeeds (1532 lib + 302 integration + 11 parity + 53 roundtrip tests, all green).
 - [ ] **37.2.1.d**: Restore `CI / Verus Verification (push)` to actual green, not just "correctly red".
   - **REOPENED (2026-03-19)**: local reproduction currently fails before proof checking because `scons` tries to build `.NET` targets and `dotnet` is missing.
