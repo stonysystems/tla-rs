@@ -11180,9 +11180,7 @@ docs/model-checker-architecture/
   - [ ] **36.2.5.d**: Run normalized state-set diff on that smaller `Paxos` fixture.
     - If any source-first-only states appear, treat that as a correctness bug.
     - If all source-first states are a strict subset of TLC and the run still does not exhaust, promote the issue to a named performance blocker in Phase 36.3 rather than leaving it as a vague parity note.
-  - [ ] **36.2.5.e**: Check in/update focused parity regressions for `LeaderElection` and `Paxos`.
-    - At minimum lock in: projected distinct counts, shared-count lower bounds or exact counts, and initial-state agreement when comparable.
-    - Add a doc note whenever a baseline is intentionally partial because the engine still times out.
+  - [x] **36.2.5.e**: Added 3 new parity regression tests: `test_parity_paxos_small_source_first_state_count` (locks in 570 states for 2-node exhausted fixture), `test_parity_paxos_small_initial_state` (1 initial), `test_parity_leaderelection_perf_repro_exists` (fixture existence guard). Total parity tests: 14. LE overlap test retains `>= 31` lower bound since engine still times out on benchmark config.
   - [ ] **36.2.5.f**: Update `docs/model_checker_status.md` and `reports/benchmarks/TLC_VS_SOURCE_FIRST_BENCHMARK_COMPARISON.md` so they no longer say only "blocked on performance".
     - Each protocol must name whether the current blocker is initial-state construction, successor solving, or benchmark-time exhaustion.
     - Include the exact hot branch labels and counts when known.

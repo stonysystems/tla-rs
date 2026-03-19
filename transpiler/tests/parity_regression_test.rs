@@ -295,3 +295,46 @@ fn test_twophase_prepare_branch_produces_successors() {
         states
     );
 }
+
+// =========================================================================
+// Paxos parity regression (small 2-node fixture, Phase 36.2.5.c)
+// =========================================================================
+
+#[test]
+fn test_parity_paxos_small_source_first_state_count() {
+    let path = repo_root().join("reports/model_check/parity/source_first/paxos/states.jsonl");
+    let ids = load_state_ids(&path);
+    let distinct = count_distinct(&ids);
+    // Phase 36.2.5.c: 2-node Paxos (quorum=1, int 0..1) exhausts at 570 states.
+    assert_eq!(
+        distinct, 570,
+        "Paxos small source-first distinct state count changed (expected 570, got {})",
+        distinct
+    );
+}
+
+#[test]
+fn test_parity_paxos_small_initial_state() {
+    let path = repo_root().join("reports/model_check/parity/source_first/paxos/states.jsonl");
+    let initial = load_initial_state_ids(&path);
+    assert_eq!(
+        initial.len(),
+        1,
+        "Paxos small should have exactly 1 initial state (got {})",
+        initial.len()
+    );
+}
+
+// =========================================================================
+// LeaderElection performance reproducer regression (Phase 36.2.5.b)
+// =========================================================================
+
+#[test]
+fn test_parity_leaderelection_perf_repro_exists() {
+    let path = repo_root()
+        .join("transpiler/tests/model_check_fixtures/leaderelection_perf_repro.model.toml");
+    assert!(
+        path.exists(),
+        "LeaderElection 2-node performance reproducer fixture should exist"
+    );
+}
