@@ -11203,15 +11203,10 @@ docs/model-checker-architecture/
 - [ ] **36.3.7**: Drive `LeaderElection` and `Paxos` from "still slow" to a concrete, code-level blocker ledger.
   - The preferred outcome is still completion of the current matched benchmark configs in exact mode.
   - If that bar is not met yet, do not stop at "enumeration scalability". Reduce the remaining work to specific hot branches, specific code locations, and specific measured costs.
-  - [ ] **36.3.7.a**: Build a checked-in hotspot ledger for the latest `LeaderElection` and `Paxos` release runs.
-    - For each top branch record: `branch_label`, `existential_assignment_count`, `candidate_state_count`, `cumulative_solve_elapsed_ms`, `evaluator_calls`, `direct_assigned_fields`, `deferred_constraint_evaluations`, and whether the time is in init-state construction or successor solving.
-    - Put this in a doc/artifact that can be diffed over time; do not leave it only in one-off console output.
-  - [ ] **36.3.7.b**: For each top branch, classify the dominant cost bucket:
-    - cartesian candidate materialization,
-    - repeated evaluator/frame-condition work,
-    - canonicalization/dedup cost,
-    - deep clone/state materialization,
-    - or initial-state construction before exploration even starts.
+  - [x] **36.3.7.a**: Built checked-in hotspot ledger at `reports/benchmarks/HOTSPOT_LEDGER.md` with raw JSON at `reports/benchmarks/source_first_release_profile_post_36_3_7a/`. Fixed predicate-only solver telemetry (was returning zeros for evaluator_calls/direct_assigned_fields/deferred_constraint_evaluations). **Key finding**: Paxos 3-node benchmark now **exhausts** at 17,370 states in 99.8s (FrontierExhausted), up from 16,655/timeout. LeaderElection still times out at 127 states/120s.
+  - [x] **36.3.7.b**: Dominant cost buckets classified per-protocol (see HOTSPOT_LEDGER.md §3):
+    - **LE**: Repeated evaluator work on failed existential assignments (branches 2,3,5 = 71.5% of solver time, 461 exist/inv with <6 succ/inv). Guard-first evaluation is the top optimization.
+    - **Paxos**: Dedup/canonicalization (32.1s, 32%), init-state construction (21.8s, 22%), LRecvPromise solver (19.7s, 20%). Hash-based dedup is top priority.
   - [ ] **36.3.7.c**: Implement the next optimization only after there is a smallest reproducer for it.
     - Candidate order to investigate:
     - skip tautological frame conditions such as `s_.f == s.f` before evaluator/solver work,
@@ -11227,6 +11222,7 @@ docs/model-checker-architecture/
   - [ ] **36.3.7.e**: If either matched benchmark still does not complete, check in an explicit blocker row instead of an aspirational note.
     - Required fields: protocol, exact fixture, exact hot branches, exact before/after timings, exact candidate/existential counts, and the next code location to attack.
     - The next TODO leaf must be more specific than "make solver faster".
+    - **Paxos 3-node now exhausts** (17,370 states, 99.8s). Only LeaderElection still times out.
 
 ### 36.4 Documentation and status updates
 

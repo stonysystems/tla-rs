@@ -200,10 +200,15 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 // the filter avoids computing canonical_key() for all
                 // candidates (e.g., 1.7M for Paxos, which was ~40s).
                 let successors = deduplicate_successors(successors);
+                let (direct_fields, deferred_evals) = count_branch_constraint_telemetry(branch);
+                let assignment_count = assignments.len().max(1);
                 return Ok(BranchSolveResult {
                     successors,
                     telemetry: BranchSolveTelemetry {
                         direct_assignment_branch_solves: 1,
+                        direct_assigned_fields: direct_fields,
+                        deferred_constraint_evaluations: deferred_evals,
+                        evaluator_calls: (direct_fields + deferred_evals) * assignment_count,
                         ..Default::default()
                     },
                 });

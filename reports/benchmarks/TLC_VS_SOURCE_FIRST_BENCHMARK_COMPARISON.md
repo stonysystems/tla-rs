@@ -177,14 +177,15 @@ After projecting both engines to protocol-only state (excluding TLC
 | TwoPhase | 37 | 56 | 23 | 14 | 33 | Yes | Fixed (Phase 36.2.3) |
 | PrimaryBackup | 37,213 | 42 | 27 | 37,186 | 15 | Yes | Fixed (Phase 36.2.4) |
 | LeaderElection | 31 | 913 | 31 | 0 | 882 | Yes | SF strict subset of TLC |
-| Paxos | 16,655 | N/A | N/A | N/A | N/A | N/A | TLC export too large |
+| Paxos | 17,370 | N/A | N/A | N/A | N/A | N/A | TLC export too large; **SF now exhausts** (99.8s) |
 
 **Interpretation**: All SF states found for LeaderElection are in TLC's
 set (strict subset — no SF-only states). TwoPhase and PrimaryBackup
 have gaps due to message-channel modeling difference. Paxos TLC export
-(3M+ states) is too large for JSONL diff. Phase 36.3.4 optimization
+(3M+ states) is too large for JSONL diff. **Paxos SF now exhausts** at
+17,370 states in 99.8s (Phase 36.3.7.a). Phase 36.3.4 optimization
 (skip candidate-key filter for predicate-only solver) improved state
-counts dramatically: PB 60→37K, LE 2→31, Paxos 5→16K.
+counts dramatically: PB 60→37K, LE 2→31, Paxos 5→17K.
 
 See [`docs/phase36-parity-mismatch-analysis.md`](../../docs/phase36-parity-mismatch-analysis.md)
 for detailed root-cause classification.
@@ -196,8 +197,8 @@ for detailed root-cause classification.
 | Protocol | Blocker | Hot branches | Parity fixture |
 |----------|---------|-------------|----------------|
 | PrimaryBackup | Benchmark-time exhaustion (37K/120s) | None dominant (~250ms/branch) | Benchmark config |
-| LeaderElection | Existential assignment explosion | `branch_2,3,5`: 7,380 assignments × 13,824 candidates | `leaderelection_perf_repro.model.toml` (2-node, 108 states/6.5s) |
-| Paxos | Init construction (22s/1.7M candidates) + solver (57s) | All 4 branches (~11s each) | `paxos_parity_small.model.toml` (2-node, 570 states/5.8s) |
+| LeaderElection | Existential assignment explosion (127 states/120s) | `branch_2` (LSendAnswer, 33%), `branch_3` (LReceiveAnswer, 22%), `branch_5` (LReceiveCoordinator, 16%) — 461 exist/inv | `leaderelection_perf_repro.model.toml` (2-node, 108 states/6.7s) |
+| Paxos | **Resolved** — now exhausts (17,370 states/99.8s) | `branch_2` (LRecvPromise, 99.3% of solver time); dedup 32% of total | `paxos_parity_small.model.toml` (2-node, 570 states) |
 
 ### 2. Message-channel modeling gap
 
@@ -215,14 +216,17 @@ exhausted) but a matching TLC wrapper is not yet available.
 
 ### LeaderElection
 
-- LeaderElection source-first status: `timeout_reached(TimeoutReached)` (186 states in 120s, up from 105 states pre-optimization; enumeration_eval=0 post Phase 36.3.4).
-- All 31 distinct exported states are strict subset of TLC's 913 projected states.
-- See branch-level blocker telemetry above for per-branch evidence.
+- LeaderElection source-first status: `timeout_reached(TimeoutReached)` (127 states in 120s; branches 2,3,5 account for 71.5% of solver time).
+- All exported states are strict subset of TLC's 913 projected states.
+- See `reports/benchmarks/HOTSPOT_LEDGER.md` for per-branch hotspot analysis.
+- Next optimization: guard-first evaluation to skip existential combinations where branch guard fails.
 
 ### Paxos
 
-- Paxos source-first status: `timeout_reached(TimeoutReached)` (16,655 states in 147s, up from 5 states pre-optimization; enumeration_eval=0 post Phase 36.3.4).
-- TLC finds 3,005,604 distinct states — too large for JSONL parity diff.
+- Paxos source-first status: **`FrontierExhausted`** (17,370 distinct states in 99.8s). Previously timed out at 16,655/147s.
+- Dominant costs: dedup/canonicalization 32s (32%), init construction 22s (22%), LRecvPromise solver 20s (20%).
+- TLC finds 3,005,604 distinct states — SF finds only 17,370 because SF doesn't model message channels.
+- See `reports/benchmarks/HOTSPOT_LEDGER.md` for per-branch analysis.
 
 ## Notes
 

@@ -302,7 +302,7 @@ parity harness. All results use exact mode (`state_dedup=canonical`).
 | TwoPhase | 37 | 56 | 23 | 14 | 33 | Yes | Partial parity (message-channel gap) |
 | PrimaryBackup | 37,213 | 42 | 27 | 37,186 | 15 | Yes | Partial parity (message-channel gap) |
 | LeaderElection | 31 | 913 | 31 | 0 | 882 | Yes | SF strict subset of TLC |
-| Paxos | 16,655 | N/A | N/A | N/A | N/A | N/A | TLC export too large (3M+) |
+| Paxos | 17,370 | N/A | N/A | N/A | N/A | N/A | TLC export too large (3M+); SF now exhausts (99.8s) |
 
 #### Interpretation
 
@@ -339,11 +339,14 @@ parity harness. All results use exact mode (`state_dedup=canonical`).
 | TwoPhase | 37 / 1.6s | 37 / 1s | Same (exhausted) |
 | PrimaryBackup | 60 / 2.3s | 37,213 / 120s | 620x more states |
 | LeaderElection | 105 / 60s | 186 / 120s | 1.8x more states |
-| Paxos | 5 / 93s | 16,655 / 147s | 3,300x more states |
+| Paxos | 5 / 93s | 17,370 / 99.8s (**exhausted**) | 3,474x more states |
 
 Root cause fixed: predicate-only solver was incorrectly filtered through
 candidate-key set, discarding valid successors AND consuming ~40s to
 build the 1.7M-element key set.
+
+**Update (Phase 36.3.7.a)**: Paxos 3-node benchmark now **exhausts** (17,370 distinct states, 99.8s).
+See `reports/benchmarks/HOTSPOT_LEDGER.md` for per-branch hotspot analysis.
 
 ## 4. Protocol coverage matrix (source-first, checked-in evidence)
 
@@ -416,7 +419,7 @@ For each of the four shared protocols, the table below lists both the minimal **
 | `TwoPhase` | `twophase_small.model.toml` | `benchmarks_1h/twophase_benchmark.model.toml` | inv_violated, 37 states, 1s | pass, 64 distinct, 1s (exhausted) | 64 | 1 |
 | `PrimaryBackup` | `primarybackup_small.model.toml` | `benchmarks_1h/primarybackup_benchmark.model.toml` | timeout, 37,213 states, 120s | pass, 54 distinct, 1s (exhausted) | 54 | 1 |
 | `LeaderElection` | `leaderelection_small.model.toml` | `benchmarks_1h/leaderelection_benchmark.model.toml` | timeout, 186 states, 120s | pass, 9,337 distinct, 2s (exhausted) | 9,337 | 2 |
-| `Paxos` | `paxos_small.model.toml` | `benchmarks_1h/paxos_benchmark.model.toml` | timeout, 16,655 states, 147s | pass, 3M distinct, 375s (exhausted) | 3,005,604 | 375 |
+| `Paxos` | `paxos_small.model.toml` | `benchmarks_1h/paxos_benchmark.model.toml` | **exhausted, 17,370 states, 99.8s** | pass, 3M distinct, 375s (exhausted) | 3,005,604 | 375 |
 
 **Specific blockers by protocol (Phase 36.2.5.f)**:
 
@@ -424,8 +427,8 @@ For each of the four shared protocols, the table below lists both the minimal **
 |----------|-------------|--------|-------------|----------------|
 | TwoPhase | Exhausted (inv violation) | Completes in 1s / 37 states. Hits invariant at depth 3 due to message-free over-approximation. | N/A (all branches fast) | `twophase_benchmark.model.toml` |
 | PrimaryBackup | Benchmark-time exhaustion | 37K states in 120s (timeout). Solver time dominates. No specific hot branch — all 8 branches ~250ms each. | None dominant | `primarybackup_benchmark.model.toml` |
-| LeaderElection | Successor solving | 186 states in 120s. Branches 2,3,5 have 7,380 existential assignments × 13,824 candidates each. Frame-condition skip helped ~2x. | `branch_2`, `branch_3`, `branch_5` (172 exist. assigns on 2-node repro) | `leaderelection_perf_repro.model.toml` (2-node, exhausts at 108 states/6.5s) |
-| Paxos | Initial-state construction + successor solving | 16K states in 147s. 22s in init (1.7M candidate construction), 57s in solver. Small 2-node fixture exhausts at 570 states/5.8s. | All 4 branches (~11s each on benchmark) | `paxos_parity_small.model.toml` (2-node, exhausts at 570 states) |
+| LeaderElection | Successor solving | 127 states in 120s. Branches 2,3,5 (LSendAnswer, LReceiveAnswer, LReceiveCoordinator) = 71.5% of solver time, 461 exist/inv. See `reports/benchmarks/HOTSPOT_LEDGER.md`. | `branch_2`, `branch_3`, `branch_5` (461 exist/inv on 3-node, 172 on 2-node) | `leaderelection_perf_repro.model.toml` (2-node, exhausts at 108 states/6.7s) |
+| Paxos | **Exhausted** (dedup-dominated) | **17,370 states in 99.8s (exhausted)**. Dedup 32s (32%), init 22s (22%), LRecvPromise 20s (20%). See `reports/benchmarks/HOTSPOT_LEDGER.md`. | `branch_2` (LRecvPromise, 99.3% of solver time) | `paxos_parity_small.model.toml` (2-node, exhausts at 570 states) |
 
 Evidence artifacts:
 - Source-first benchmark configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/*.model.toml`
