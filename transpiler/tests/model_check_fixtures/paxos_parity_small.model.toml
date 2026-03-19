@@ -1,0 +1,33 @@
+# Small Paxos parity fixture for cross-engine state-set comparison.
+# Uses 3 nodes/quorum=2 (same as benchmark) but smaller value domain
+# (int 0..1 instead of 0..2) to keep TLC state space manageable.
+#
+# Purpose: semantic parity debugging, NOT benchmark replacement.
+# The benchmark config (benchmarks_1h/paxos_benchmark.model.toml)
+# remains unchanged for performance claims.
+
+[constants.assignments]
+quorum_size = 1
+node_id = 0
+
+[constants.domains.acceptors]
+kind = "values"
+values = ["set:{int:0,int:1}"]
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[collections]
+max_set_len = 2
+max_seq_len = 2
+
+[search]
+max_depth = 50
+max_states = 100000
+timeout_ms = 120000
+
+[properties]
+invariants = []
+check_deadlock = false
+successor_semantics = "deadlock"
