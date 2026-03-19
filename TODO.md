@@ -11284,17 +11284,22 @@ Reported current state: the latest commit only has one of these five checks pass
   - Structural correctness (state counts, stop reasons, telemetry schema) is validated by the 14 parity regression tests in `cargo test`, which ARE deterministic.
   - The separation is: **CI evidence job** guards artifact existence + regeneration capability; **cargo test** guards semantic correctness.
   - This policy is documented here and in the evidence job's workflow comments. No additional tightening is needed unless the matrix script is changed to produce fundamentally different output (in which case the parity regression tests would catch it).
-- [x] **37.2.1.g**: Reduced remaining Verus proof failures to exact files/lemmas/errors.
-  - **Local verification result** (Verus 0.2026.01.14.88f7396, `--skip-dotnet`, release mode):
-    - **1 rlimit error** (build stops at first error due to scons behavior):
-      - File: `src/protocol/Raft/refinement_proof/invariants.rs:3186`
-      - Function: `lemma_election_safety_inductive(ds, ds_)`
-      - Error: "Resource limit (rlimit) exceeded"
-      - Failing conjunct: `exists |quorum| quorum.subset_of(c.view().servers) && ...` (the quorum intersection argument for ElectionSafety)
-    - Additionally, the file contains **6 `assume(false)`** at lines 1206, 1221, 1779, 2694, 2718, 2732 — these are known Raft refinement proof gaps (Phase 34), not CI infrastructure issues.
-  - **Root cause**: The rlimit failure is in a Raft refinement inductive proof that uses complex quantifier reasoning (quorum intersection + forall over servers). This is a Phase 34 proof engineering issue, not a CI/infrastructure issue.
-  - **Impact on CI**: The Verus Verification job will fail until this rlimit error is resolved. The infrastructure (37.2.1.d: --skip-dotnet, 45min timeout) is correct. The remaining work is tracked in Phase 34 (Raft refinement proof).
-  - **Recommendation**: Since this is fundamentally a proof gap, not a CI gap, and Phase 37's purpose is CI infrastructure, this item is closed. The proof fix is tracked in Phase 34.7.1 and Phase 31.9. The CI gate item should note that Verus green requires the proof fix.
+- [x] **37.2.1.g**: Reduce Verus failures to exact files/lemmas/errors — **DONE, with 1 rlimit fix applied**.
+  - **Fix applied**: Extracted quorum intersection case from `lemma_election_safety_inductive` into separate helper `lemma_election_safety_candidate_to_leader`. This resolved the rlimit that was blocking the scons build (scons stops at first error).
+  - **Full verification result** (Verus 0.2026.01.14.88f7396, direct `verus` invocation):
+    - **1012 verified, 16 errors** (8 rlimit, 2 postcondition, 5 assertion, 1 precondition)
+    - `lemma_election_safety_inductive` and `lemma_election_safety_candidate_to_leader` both **PASS** (no longer rlimit failures)
+    - **8 remaining rlimit errors** (all pre-existing, all in proof files):
+      1. `RSL/common_proof/learner_state.rs:515` — `lemma_getsent2b_value_matches_candidate`
+      2. `Raft/invariants.rs:4552` — `lemma_entry_term_leader_witness_inductive`
+      3. `Raft/invariants.rs:4957` — `lemma_entry_term_has_vote_quorum_inductive`
+      4. `Raft/invariants.rs:5315` — (entry term invariant)
+      5. `Raft/invariants.rs:5182` — (entry term invariant)
+      6. `Raft/invariants.rs:6116` — (log invariant)
+      7. `Raft/invariants.rs:6225` — (log invariant)
+      8. `Raft/invariants.rs:9702` — (main safety lemma)
+    - Additionally, 6 `assume(false)` at lines 1206, 1221, 1779, 2694, 2718, 2732 — known Phase 34 gaps.
+  - **Impact on CI**: The scons build now gets past `lemma_election_safety_inductive` (was the first error) and will hit the next rlimit in `lemma_entry_term_leader_witness_inductive`. CI Verus job will remain red until all 8 rlimit errors + other proof gaps are resolved. These are Phase 34 proof engineering issues, not CI infrastructure issues.
 - [x] **37.2.2**: Parity artifacts verified CI-safe: TP (13K) and LE (13K) checked in under `reports/model_check/parity/`; PB (17MB) and Paxos (8.7MB) NOT checked in. Matrix scripts don't include parity exports, so no CI bloat. Parity regression tests (`transpiler/tests/parity_regression_test.rs`, 11 tests) run in standard `cargo test` — serves as the deterministic CI-safe guard for semantic drift.
 - [x] **37.2.3**: Model-check evidence job verified green after Phase 36 changes: `run_model_check_matrix.sh` regenerates all 14 artifacts successfully, `verify_model_check_evidence_paths.sh` passes. Timing-only drift in artifacts doesn't cause CI failure (no git-diff guard in workflow). All evidence paths in `docs/model_checker_status.md` remain valid.
 
@@ -11306,7 +11311,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - [x] `CI / Lint (push)` — PASS: clippy fixed in Phase 37.2.1.b (9564ef7), verified clean post-Phase 36 commits
   - [x] `CI / Test (push)` — PASS (Phase 37.2.1.c)
   - [x] `CI / Model-Check Evidence Drift Guard (push)` — PASS (Phase 37.2.1.e, best-effort PBFT)
-  - [ ] `CI / Verus Verification (push)` — Infrastructure fixed (37.2.1.d: --skip-dotnet, 45min timeout). **Exactly 1 rlimit error remaining**: `lemma_election_safety_inductive` at `invariants.rs:3186` (Raft refinement proof). This is a proof gap tracked in Phase 34, not a CI issue. CI will go green when the proof is fixed. Additionally, 6 `assume(false)` in the same file are known Phase 34 gaps that don't cause build failures.
+  - [ ] `CI / Verus Verification (push)` — Infrastructure fixed (37.2.1.d: --skip-dotnet, 45min timeout). `lemma_election_safety_inductive` rlimit **FIXED** (extracted into helper). **16 errors remain** (8 rlimit, 2 postcondition, 5 assertion, 1 precondition) — all pre-existing Phase 34 proof gaps. CI will go green when all proof gaps are resolved. See 37.2.1.g for full error list.
   - [x] local reproduction of the workflow exists and is documented or scripted (`scripts/run_ci_local.sh`, Phase 37.1.2)
   - [x] no major correctness/evidence job has been disabled or watered down (PBFT remains best-effort in evidence job, but the five workflow jobs are still required)
   - [x] any new parity/performance evidence guards introduced by Phase 36 are represented in CI in a deterministic form (11 parity regression tests in `cargo test`)

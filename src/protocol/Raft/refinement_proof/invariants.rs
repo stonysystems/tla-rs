@@ -3177,6 +3177,103 @@ verus! {
     ///
     /// Proof strategy:
     /// - Let server_id be the stepping server.
+    /// Helper: prove that when a Candidate becomes Leader, no other server
+    /// can be Leader at the same term (quorum intersection argument).
+    ///
+    /// Extracted from lemma_election_safety_inductive case (b) to reduce
+    /// rlimit pressure on the main proof.
+    proof fn lemma_election_safety_candidate_to_leader(
+        ds: RaftDistributedState, ds_: RaftDistributedState,
+        stepping: int, other: int
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+            0 <= stepping < ds.num_servers,
+            0 <= other < ds.num_servers,
+            stepping != other,
+            LNext(ds.server_states[stepping], ds_.server_states[stepping],
+                  ds.server_constants[stepping]),
+            forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != stepping ==>
+                ds_.server_states[j] == ds.server_states[j],
+            ds_.server_states[stepping].role is Leader,
+            ds_.server_states[other].role is Leader,
+            ds_.server_states[stepping].current_term == ds_.server_states[other].current_term,
+            !(ds.server_states[stepping].role is Leader),
+        ensures
+            false // contradiction — this situation cannot arise
+    {
+        broadcast use vstd::set_lib::group_set_properties;
+
+        let s = ds.server_states[stepping];
+        let s_ = ds_.server_states[stepping];
+        let c = ds.server_constants[stepping];
+        let term = ds_.server_states[stepping].current_term;
+        let other_votes = ds.server_states[other].votes_granted;
+        let stepping_votes = ds_.server_states[stepping].votes_granted;
+        let n = ds.num_servers;
+        let quorum_size = ds.server_constants[other].quorum_size;
+
+        // Stepping went from non-Leader to Leader via LNext.
+        lemma_lnext_non_leader_to_leader_was_candidate(
+            ds.server_states[stepping],
+            ds_.server_states[stepping],
+            ds.server_constants[stepping]);
+        assert(ds.server_states[stepping].role is Candidate);
+
+        // Establish ds_ components needed
+        lemma_voters_voted_for_candidate_inductive(ds, ds_);
+        lemma_votes_granted_are_servers_inductive(ds, ds_);
+        lemma_vote_response_integrity_inductive(ds, ds_);
+
+        // Both vote sets are subsets of c.servers
+        let universe = ds.server_constants[other].servers;
+        assert(universe =~= Set::new(|j: int| 0 <= j < n));
+
+        // Show vote sets ⊆ universe
+        assert(other_votes.subset_of(universe)) by {
+            assert forall |v: int| other_votes.contains(v)
+            implies universe.contains(v) by {
+                assert(VotesGrantedAreServers(ds));
+            }
+        };
+        assert(stepping_votes.subset_of(universe)) by {
+            assert forall |v: int| stepping_votes.contains(v)
+            implies universe.contains(v) by {
+                assert(VotesGrantedAreServers(ds_));
+            }
+        };
+
+        // Universe is finite with len == N
+        lemma_range_set_finite(n);
+
+        // Vote sets are finite (subsets of finite set)
+        lemma_len_subset(other_votes, universe);
+        lemma_len_subset(stepping_votes, universe);
+
+        // Both have quorum-sized vote sets
+        assert(other_votes.len() >= quorum_size);
+        assert(stepping_votes.len() >= quorum_size);
+        assert(quorum_size == n / 2 + 1);
+
+        // Key claim: the vote sets are completely disjoint.
+        lemma_vote_sets_disjoint(
+            ds, ds_, stepping, other, term, n);
+        assert(other_votes.disjoint(stepping_votes));
+
+        // Disjoint subsets: |A ∪ B| = |A| + |B|
+        assert((other_votes + stepping_votes).subset_of(universe)) by {
+            assert forall |v: int| (other_votes + stepping_votes).contains(v)
+            implies universe.contains(v) by {}
+        };
+        lemma_len_subset(other_votes + stepping_votes, universe);
+
+        // Contradiction: |A| + |B| ≥ 2*quorum_size > N ≥ |A ∪ B| = |A| + |B|
+        assert(other_votes.len() + stepping_votes.len()
+               > universe.len());
+    }
+
     /// - For pairs (i, j) where neither is server_id: unchanged, so safe.
     /// - For pairs involving server_id: case split on what server_id did.
     ///   - If server_id became Leader (via LReceiveVoteAndBecomeLeader):
@@ -3289,74 +3386,9 @@ verus! {
                         assert(ds.server_states[stepping].current_term == ds.server_states[other].current_term);
                     } else {
                         // Case (b): stepping was Candidate, became Leader.
-                        // Derive contradiction: no other server is Leader at same term.
-
-                        let term = ds_.server_states[stepping].current_term;
-                        let other_votes = ds.server_states[other].votes_granted;
-                        let stepping_votes = ds_.server_states[stepping].votes_granted;
-                        let n = ds.num_servers;
-                        let quorum_size = ds.server_constants[other].quorum_size;
-
-                        // Stepping went from non-Leader to Leader via LNext.
-                        lemma_lnext_non_leader_to_leader_was_candidate(
-                            ds.server_states[stepping],
-                            ds_.server_states[stepping],
-                            ds.server_constants[stepping]);
-                        assert(ds.server_states[stepping].role is Candidate);
-
-                        // Establish ds_ components needed
-                        lemma_voters_voted_for_candidate_inductive(ds, ds_);
-                        lemma_votes_granted_are_servers_inductive(ds, ds_);
-                        lemma_vote_response_integrity_inductive(ds, ds_);
-
-                        // Both vote sets are subsets of c.servers
-                        let universe = ds.server_constants[other].servers;
-                        assert(universe =~= Set::new(|j: int| 0 <= j < n));
-
-                        // Show vote sets ⊆ universe
-                        assert(other_votes.subset_of(universe)) by {
-                            assert forall |v: int| other_votes.contains(v)
-                            implies universe.contains(v) by {
-                                assert(VotesGrantedAreServers(ds));
-                            }
-                        };
-                        assert(stepping_votes.subset_of(universe)) by {
-                            assert forall |v: int| stepping_votes.contains(v)
-                            implies universe.contains(v) by {
-                                assert(VotesGrantedAreServers(ds_));
-                            }
-                        };
-
-                        // Universe is finite with len == N
-                        lemma_range_set_finite(n);
-
-                        // Vote sets are finite (subsets of finite set)
-                        lemma_len_subset(other_votes, universe);
-                        lemma_len_subset(stepping_votes, universe);
-
-                        // Both have quorum-sized vote sets
-                        assert(other_votes.len() >= quorum_size);
-                        assert(stepping_votes.len() >= quorum_size);
-                        assert(quorum_size == n / 2 + 1);
-
-                        // Key claim: the vote sets are completely disjoint.
-                        // Proved by calling helper that avoids deep nesting.
-                        lemma_vote_sets_disjoint(
-                            ds, ds_, stepping, other, term, n);
-                        assert(other_votes.disjoint(stepping_votes));
-
-                        // Disjoint subsets: |A ∪ B| = |A| + |B|
-                        // (broadcast use group_set_properties at top of fn)
-                        // |A ∪ B| ≤ |universe|
-                        assert((other_votes + stepping_votes).subset_of(universe)) by {
-                            assert forall |v: int| (other_votes + stepping_votes).contains(v)
-                            implies universe.contains(v) by {}
-                        };
-                        lemma_len_subset(other_votes + stepping_votes, universe);
-
-                        // Contradiction: |A| + |B| ≥ 2*quorum_size > N ≥ |A ∪ B| = |A| + |B|
-                        assert(other_votes.len() + stepping_votes.len()
-                               > universe.len());
+                        // Derive contradiction via quorum intersection helper.
+                        lemma_election_safety_candidate_to_leader(
+                            ds, ds_, stepping, other);
                     }
                 }
             }
