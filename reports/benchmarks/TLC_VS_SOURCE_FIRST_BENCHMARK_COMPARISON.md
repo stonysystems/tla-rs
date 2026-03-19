@@ -189,23 +189,29 @@ counts dramatically: PB 60→37K, LE 2→31, Paxos 5→16K.
 See [`docs/phase36-parity-mismatch-analysis.md`](../../docs/phase36-parity-mismatch-analysis.md)
 for detailed root-cause classification.
 
-## Remaining Blockers
+## Remaining Blockers (Phase 36.2.5.f)
 
-1. **Full state-space exhaustion**: Source-first cannot exhaust the
-   benchmark configs for PB (37K states in 120s), LE (186 in 120s), or
-   Paxos (16K in 147s). TLC exhausts all four. Root cause: solver
-   performance — existential assignment explosion (LE) and initial-state
-   candidate construction cost (Paxos 22s for 1.7M candidates).
+### 1. Protocol-specific performance blockers
 
-2. **Message-channel modeling gap**: Source-first Verus specs are
-   message-free, while TLC hand-written wrappers model explicit message
-   channels (`msgs`). This causes both over-approximation (SF-only states)
-   and under-approximation (TLC-only states). Full parity requires either
-   adding message modeling to the source-first specs or using auto-generated
-   relational wrappers.
+| Protocol | Blocker | Hot branches | Parity fixture |
+|----------|---------|-------------|----------------|
+| PrimaryBackup | Benchmark-time exhaustion (37K/120s) | None dominant (~250ms/branch) | Benchmark config |
+| LeaderElection | Existential assignment explosion | `branch_2,3,5`: 7,380 assignments × 13,824 candidates | `leaderelection_perf_repro.model.toml` (2-node, 108 states/6.5s) |
+| Paxos | Init construction (22s/1.7M candidates) + solver (57s) | All 4 branches (~11s each) | `paxos_parity_small.model.toml` (2-node, 570 states/5.8s) |
 
-3. **Paxos TLC export**: TLC finds 3M+ states — too large for JSONL
-   diff. A smaller Paxos config is needed for parity comparison.
+### 2. Message-channel modeling gap
+
+Source-first Verus specs are message-free, while TLC hand-written
+wrappers model explicit message channels (`msgs`). This causes both
+over-approximation (SF-only states) and under-approximation (TLC-only
+states). Full parity requires either adding message modeling to the
+source-first specs or using auto-generated relational wrappers.
+
+### 3. Paxos TLC export
+
+TLC finds 3M+ states on the benchmark config — too large for JSONL
+diff. A small 2-node Paxos source-first fixture now exists (570 states,
+exhausted) but a matching TLC wrapper is not yet available.
 
 ### LeaderElection
 

@@ -418,6 +418,15 @@ For each of the four shared protocols, the table below lists both the minimal **
 | `LeaderElection` | `leaderelection_small.model.toml` | `benchmarks_1h/leaderelection_benchmark.model.toml` | timeout, 186 states, 120s | pass, 9,337 distinct, 2s (exhausted) | 9,337 | 2 |
 | `Paxos` | `paxos_small.model.toml` | `benchmarks_1h/paxos_benchmark.model.toml` | timeout, 16,655 states, 147s | pass, 3M distinct, 375s (exhausted) | 3,005,604 | 375 |
 
+**Specific blockers by protocol (Phase 36.2.5.f)**:
+
+| Protocol | Blocker type | Detail | Hot branches | Parity fixture |
+|----------|-------------|--------|-------------|----------------|
+| TwoPhase | Exhausted (inv violation) | Completes in 1s / 37 states. Hits invariant at depth 3 due to message-free over-approximation. | N/A (all branches fast) | `twophase_benchmark.model.toml` |
+| PrimaryBackup | Benchmark-time exhaustion | 37K states in 120s (timeout). Solver time dominates. No specific hot branch — all 8 branches ~250ms each. | None dominant | `primarybackup_benchmark.model.toml` |
+| LeaderElection | Successor solving | 186 states in 120s. Branches 2,3,5 have 7,380 existential assignments × 13,824 candidates each. Frame-condition skip helped ~2x. | `branch_2`, `branch_3`, `branch_5` (172 exist. assigns on 2-node repro) | `leaderelection_perf_repro.model.toml` (2-node, exhausts at 108 states/6.5s) |
+| Paxos | Initial-state construction + successor solving | 16K states in 147s. 22s in init (1.7M candidate construction), 57s in solver. Small 2-node fixture exhausts at 570 states/5.8s. | All 4 branches (~11s each on benchmark) | `paxos_parity_small.model.toml` (2-node, exhausts at 570 states) |
+
 Evidence artifacts:
 - Source-first benchmark configs: `transpiler/tests/model_check_fixtures/benchmarks_1h/*.model.toml`
 - Source-first JSON artifacts: `reports/benchmarks/source_first/*.json`
