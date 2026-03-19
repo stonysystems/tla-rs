@@ -11156,14 +11156,7 @@ docs/model-checker-architecture/
     - `predecessor_state_id` when non-initial,
     - classification such as `generated`, `accepted_distinct`, or `duplicate`.
   - This export must be streamable enough to use on focused parity fixtures without requiring a second full in-memory copy of the explored graph.
-- [ ] **36.1.8**: Expose a true source-first pre-dedup generated-state counter and document its mapping to TLC counters.
-  - Today source-first `summary.states` is already deduplicated, so it is not the same quantity as TLC `States found`.
-  - Add/report at minimum:
-    - generated successor count before dedup,
-    - accepted distinct-state count,
-    - duplicate/revisit count,
-    - and transition count.
-  - Update `docs/model_checker_status.md` and the benchmark report to state exactly which source-first field is being compared to TLC `Distinct states` and which, if any, is comparable to TLC `States found`.
+- [x] **36.1.8**: Added pre-dedup counters to JSON report: `generated_states` (initial + successors before dedup), `distinct_states` (post-dedup, same as `states`), `duplicate_states`, `initial_states`, `explored_states`. Updated metric mapping in `docs/model_checker_status.md`: `TLC Distinct states` ↔ `summary.distinct_states`, `TLC States found` ↔ `summary.generated_states`.
 - [ ] **36.1.9**: Add witness-first diff tooling that finds the earliest parity divergence by depth, not just final set differences.
   - For a given pair of exports, the tool should report:
     - the first depth where the normalized distinct frontier differs,

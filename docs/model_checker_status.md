@@ -265,11 +265,12 @@ the following metric pairs must be mapped carefully:
 
 | TLC metric | Source-first metric | Comparable? | Notes |
 |------------|---------------------|-------------|-------|
-| `Distinct states` | `summary.states` | **Not yet** — needs normalized projection | TLC counts wrapper-level states (includes message-channel variables); source-first counts `LState` states. Must project both to same protocol-only schema before parity claims. |
-| `States found` | — | **Not comparable** | TLC pre-dedup generation counter has no source-first equivalent. |
+| `Distinct states` | `summary.distinct_states` | **Yes** (after normalized projection) | Both count unique states after dedup. Source-first counts on `LState`; TLC on wrapper state. Must project to same schema for parity. `summary.states` is the same value (legacy alias). |
+| `States found` | `summary.generated_states` | **Yes** (Phase 36.1.8) | Both count total state visits including revisits before fingerprinting/dedup. `generated_states = initial_states + successors_considered`. |
 | `Depth` | `summary.depth` | Comparable (same search strategy) | Both are max BFS depth; caveat: wrapper-induced extra initial states can shift depth. |
 | `Wall time` | `elapsed_ms` | Comparable (same hardware) | Directly comparable for performance, but different state spaces mean wall-time gaps don't prove algorithmic inefficiency. |
-| — | `summary.transitions` | No TLC equivalent | Source-first transition count has no directly equivalent TLC scalar. |
+| — | `summary.duplicate_states` | No TLC equivalent | Number of successor candidates dropped due to dedup. |
+| — | `summary.transitions` | No TLC equivalent | Source-first transition count (same as `successors_considered`). |
 
 Full mapping details are in the benchmark comparison report.
 

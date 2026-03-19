@@ -4625,6 +4625,28 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             serde_json::json!(report_serialization_output_ms),
                         );
                     }
+                    // Phase 36.1.8: pre-dedup counters for TLC parity mapping
+                    let stats = &execution.exploration.stats;
+                    summary.insert(
+                        "generated_states".to_string(),
+                        serde_json::json!(stats.initial_states + stats.successors_considered),
+                    );
+                    summary.insert(
+                        "distinct_states".to_string(),
+                        serde_json::json!(stats.visited_states),
+                    );
+                    summary.insert(
+                        "duplicate_states".to_string(),
+                        serde_json::json!(stats.duplicate_successors),
+                    );
+                    summary.insert(
+                        "initial_states".to_string(),
+                        serde_json::json!(stats.initial_states),
+                    );
+                    summary.insert(
+                        "explored_states".to_string(),
+                        serde_json::json!(stats.explored_states),
+                    );
                 }
                 let rendered = serde_json::to_string_pretty(&report).map_err(|e| {
                     miette::miette!("Failed to serialize model-check JSON report: {}", e)
