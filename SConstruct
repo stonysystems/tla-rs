@@ -25,6 +25,18 @@ AddOption('--no-verify',
   action='store_true',
   help="Don't verify, just build executables")
 
+AddOption('--skip-verus',
+  dest='skip_verus',
+  default=False,
+  action='store_true',
+  help="Skip Verus verification, only build C# projects")
+
+AddOption('--skip-dotnet',
+  dest='skip_dotnet',
+  default=False,
+  action='store_true',
+  help="Skip .NET/C# builds, only run Verus verification")
+
 AddOption('--debug-build',
   dest='debug_build',
   default=False,
@@ -32,19 +44,20 @@ AddOption('--debug-build',
   help="Build executables in debug mode")
 
 verus_path = GetOption('verus_path')
-if verus_path is None:
-  sys.stderr.write("ERROR:  Missing --verus-path= on command line\n")
+if verus_path is None and not GetOption('skip_verus'):
+  sys.stderr.write("ERROR:  Missing --verus-path= on command line (use --skip-verus to skip Verus verification)\n")
   exit(-1)
 
 #verus_variant = "debug" if GetOption('debug_build') else "release"
 verus_variant = "release"
 # verus_script = os.path.join(verus_path, f"source/target-verus/{verus_variant}/verus")
 verus_script = verus_path
-if sys.platform == 'win32':
-    verus_script = verus_script + ".exe"
-if not os.path.exists(verus_script):
-  sys.stderr.write("ERROR:  Could not find %s\n" % (verus_script))
-  exit(-1)
+if verus_script is not None:
+  if sys.platform == 'win32':
+      verus_script = verus_script + ".exe"
+  if not os.path.exists(verus_script):
+    sys.stderr.write("ERROR:  Could not find %s\n" % (verus_script))
+    exit(-1)
 
 env = Environment(ENV=os.environ)
 
@@ -132,13 +145,16 @@ add_verus_builder(env)
 #
 ####################################################################
 
-# env.DotnetBuild('bin/IronLockServer.dll', 'csharp/IronLockServer/IronLockServer.csproj')
-env.DotnetBuild('bin/IronRSLClient.dll', 'csharp/IronRSLClient/IronRSLClient.csproj')
-env.DotnetBuild('bin/IronRSLServer.dll', 'csharp/IronRSLServer/IronRSLServer.csproj')
-env.DotnetBuild('bin/IronRSLClientUDP.dll', 'csharp/IronRSLClientUDP/IronRSLClientUDP.csproj')
-env.DotnetBuild('bin/IronRSLServerUDP.dll', 'csharp/IronRSLServerUDP/IronRSLServerUDP.csproj')
-env.DotnetBuild('bin/CreateIronServiceCerts.dll', 'csharp/CreateIronServiceCerts/CreateIronServiceCerts.csproj')
-env.DotnetBuild('bin/TestIoFramework.dll', 'csharp/TestIoFramework/TestIoFramework.csproj')
-env.DotnetBuild('bin/IronProtocolServer.dll', 'csharp/IronProtocolServer/IronProtocolServer.csproj')
-env.DotnetBuild('bin/IronRaftClient.dll', 'csharp/IronRaftClient/IronRaftClient.csproj')
-env.VerusBuild('liblib.so', 'src/lib.rs')
+if not GetOption('skip_dotnet'):
+  # env.DotnetBuild('bin/IronLockServer.dll', 'csharp/IronLockServer/IronLockServer.csproj')
+  env.DotnetBuild('bin/IronRSLClient.dll', 'csharp/IronRSLClient/IronRSLClient.csproj')
+  env.DotnetBuild('bin/IronRSLServer.dll', 'csharp/IronRSLServer/IronRSLServer.csproj')
+  env.DotnetBuild('bin/IronRSLClientUDP.dll', 'csharp/IronRSLClientUDP/IronRSLClientUDP.csproj')
+  env.DotnetBuild('bin/IronRSLServerUDP.dll', 'csharp/IronRSLServerUDP/IronRSLServerUDP.csproj')
+  env.DotnetBuild('bin/CreateIronServiceCerts.dll', 'csharp/CreateIronServiceCerts/CreateIronServiceCerts.csproj')
+  env.DotnetBuild('bin/TestIoFramework.dll', 'csharp/TestIoFramework/TestIoFramework.csproj')
+  env.DotnetBuild('bin/IronProtocolServer.dll', 'csharp/IronProtocolServer/IronProtocolServer.csproj')
+  env.DotnetBuild('bin/IronRaftClient.dll', 'csharp/IronRaftClient/IronRaftClient.csproj')
+
+if not GetOption('skip_verus'):
+  env.VerusBuild('liblib.so', 'src/lib.rs')

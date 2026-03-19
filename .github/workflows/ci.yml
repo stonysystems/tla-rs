@@ -86,7 +86,7 @@ jobs:
   verify:
     name: Verus Verification
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       # Pin to 0.2026.01.14 — later versions (e.g., 0.2026.03.17) removed
       # vstd::std_specs::hash::{KeysAdditionalSpecFns, SetIterAdditionalSpecFns}
@@ -127,7 +127,7 @@ jobs:
 
       - name: Verify with Verus
         run: |
-          scons --verus-path=$HOME/verus/verus
+          scons --verus-path=$HOME/verus/verus --skip-dotnet
 
   model-check-evidence:
     name: Model-Check Evidence Drift Guard

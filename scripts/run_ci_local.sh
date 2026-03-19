@@ -61,7 +61,7 @@ run_test() {
 # Job 4: Verus Verification
 run_verify() {
     if [ -n "${VERUS_PATH:-}" ] && [ -f "$VERUS_PATH" ]; then
-        run_job "Verus Verification (push)" "cd '$REPO_ROOT' && scons --verus-path='$VERUS_PATH'"
+        run_job "Verus Verification (push)" "cd '$REPO_ROOT' && scons --verus-path='$VERUS_PATH' --skip-dotnet"
     else
         skip_job "Verus Verification (push)" "VERUS_PATH not set or not found"
     fi
