@@ -11142,13 +11142,7 @@ docs/model-checker-architecture/
 - [x] **36.1.6**: Added `transpiler/tests/parity_regression_test.rs` with 10 regression tests covering TwoPhase (state counts, overlap, initial states), PrimaryBackup (state counts, overlap baseline), and LeaderElection (partial counts, overlap). Tests validate checked-in JSONL exports. Baselines: TwoPhase 8/56/8-shared, PrimaryBackup 60/54/0-shared (repr mismatch), LeaderElection 2/913/2-shared.
 - [x] **36.1.7**: Added `--export-parity-debug <dir>` CLI flag that streams JSONL debug exports during exploration. Writes three files: `generated_states.jsonl` (every candidate before dedup, with `classification: accepted_distinct|duplicate`), `distinct_states.jsonl` (first-seen accepted states), `edges.jsonl` (predecessor→successor with `branch_label` and `depth`). Each record includes `state_id`, canonical `state`, `depth`, `initial`, `branch_label`, `predecessor_state_id`. Implemented via `ParityDebugExporter` struct in `parity.rs`, hooked into the main exploration loop in `explorer.rs` with zero overhead when disabled. Added 2 unit tests (exporter I/O, exploration integration). No in-memory graph copy required — writes are streaming via `BufWriter`.
 - [x] **36.1.8**: Added pre-dedup counters to JSON report: `generated_states` (initial + successors before dedup), `distinct_states` (post-dedup, same as `states`), `duplicate_states`, `initial_states`, `explored_states`. Updated metric mapping in `docs/model_checker_status.md`: `TLC Distinct states` ↔ `summary.distinct_states`, `TLC States found` ↔ `summary.generated_states`.
-- [ ] **36.1.9**: Add witness-first diff tooling that finds the earliest parity divergence by depth, not just final set differences.
-  - For a given pair of exports, the tool should report:
-    - the first depth where the normalized distinct frontier differs,
-    - source-first-only witness states at that depth,
-    - TLC-only witness states at that depth,
-    - and the predecessor / branch provenance on the source-first side when available.
-  - The point is to turn "counts differ" into "this exact branch failed to reach / over-reached this exact normalized state".
+- [x] **36.1.9**: Added `scripts/diff_parity_by_depth.py` — witness-first depth diff tool. Groups states by depth, finds the first depth where frontiers diverge, reports per-side witness states with predecessor/branch provenance (from `--export-parity-debug`). Supports `--json` output. Handles TLC exports with no depth info (depth=-1). Tested with 13 unit tests (`scripts/test_diff_parity_by_depth.py`) including smoke test on real TwoPhase exports. Validated: TwoPhase SF(37) vs TLC(56), 23 shared, first divergence at depth -1 (TLC has no depth).
 
 ### 36.2 Root-cause debugging on the shared small models
 
@@ -11220,7 +11214,7 @@ docs/model-checker-architecture/
 Phase 36 completion status (reframed 2026-03-19 so the remaining work stays actionable):
   - [x] the benchmark report explicitly defines which `TLC` and source-first metrics are semantically comparable (Phase 36.1.1)
   - [x] checked-in normalized state exports exist for the shared small-model cases on both engines (Phase 36.1.3/36.1.4: TP+LE source-first, TP+PB+LE TLC)
-  - [ ] source-first has a checked-in debug-capable state export surface that can explain parity mismatches with concrete witness states and predecessor/branch provenance rather than only final counts (Phase 36.1.7-36.1.9)
+  - [x] source-first has a checked-in debug-capable state export surface that can explain parity mismatches with concrete witness states and predecessor/branch provenance rather than only final counts (Phase 36.1.7-36.1.9)
   - [ ] every remaining normalized mismatch on the shared protocols is forced into exactly one bucket with checked-in evidence:
     - corrected engine bug,
     - corrected wrapper/projection mismatch,
