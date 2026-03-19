@@ -112,13 +112,36 @@ Raw JSON reports: `reports/benchmarks/source_first_release_profile_post_36_3_7c/
 | Paxos | **8.2x** | **18.6%** | 17,370 states, exhausted 18s faster |
 | PB | **>100x** | **18x states** | 668K vs 37K in comparable time |
 
-## 5. Next Code Tasks
+## 5. Explicit Blocker Status (Phase 36.3.7.e)
+
+### Paxos: RESOLVED
+
+Paxos 3-node benchmark **exhausts** at 17,370 states in 81.2s (down from 99.8s pre-guard-first, and from timeout/5 states pre-36.3.4). No remaining performance blocker. The 2-node fixture also exhausts at 570 states/5.8s.
+
+### LeaderElection: BLOCKED — solver throughput on existential-heavy branches
+
+| Field | Value |
+|-------|-------|
+| Protocol | LeaderElection |
+| Fixture | `benchmarks_1h/leaderelection_benchmark.model.toml` (3 nodes) |
+| Result | **Timeout** (120s), 355 states explored |
+| Hot branches | branch_2 (LSendAnswer), branch_3 (LReceiveAnswer), branch_5 (LReceiveCoordinator) |
+| Hot branch cost | 84,488 ms combined (70.6% of total solver time) |
+| Existential assignments per inv | ~7,380 per hot branch (3-node config) |
+| Successful successors per inv | <6 per invocation (low yield) |
+| Guard-pruned assignments | Substantial (brought 127→355 states, 2.8x improvement) |
+| Before guard-first (36.3.7.a) | 127 states / 120s timeout |
+| After guard-first (36.3.7.c) | 355 states / 120s timeout |
+| 2-node reproducer | Exhausts at 108 states / 2.3s (down from 6.7s) |
+| **Next code task** | **Hash-based dedup** in `explorer.rs`: replace `BTreeSet<String>` canonical_key with `HashSet<u64>` fingerprint. For LE 3-node, dedup is only 0.4% of time, so the primary gain is from Paxos/PB; the LE blocker is pure solver throughput. The next LE-specific target is reducing the existential explosion in helper function expansion within `solver.rs` predicate-only path — either by tighter domain bounds or by incremental assignment (assign-then-check instead of enumerate-then-filter). |
+
+## 6. Next Code Tasks
 
 | Priority | Protocol | Optimization | Expected impact | Code location |
 |----------|----------|-------------|-----------------|---------------|
-| **P0** | Paxos, PB | Hash-based dedup (u64 fingerprint instead of canonical_key String) | ~34% Paxos total time reduction, ~99% PB total time reduction | `explorer.rs` / `main.rs` dedup path |
-| **P1** | Paxos | Lazy init-state construction (avoid 1.7M candidate materialization) | ~29% Paxos total time reduction (23s→<1s) | `main.rs` initial state |
-| **P2** | LE | Further solver optimization within helper function inner loops | Additional solver reduction | `solver.rs` predicate-only path |
+| **P0** | PB, Paxos | Hash-based dedup (u64 fingerprint instead of canonical_key String) | ~34% Paxos total, ~99% PB total | `explorer.rs` dedup path |
+| **P1** | LE | Incremental existential assignment with early termination | Reduce 7,380 assignments/branch to domain-bounded subset | `solver.rs` predicate-only path, helper expansion |
+| **P2** | Paxos | Lazy init-state construction (avoid 1.7M candidate materialization) | ~29% Paxos total (23s→<1s) | `main.rs` initial state |
 
 ---
 

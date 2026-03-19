@@ -56,40 +56,51 @@ only in `phase` collapse: 54 → 42 projected distinct states.
 **Remaining gap**: Same fundamental modeling difference as TwoPhase —
 source-first doesn't model message channels.
 
-## LeaderElection (913 TLC vs 2 SF — 2 shared, 911 TLC-only)
+## LeaderElection (913 TLC vs 355 SF — strict subset)
 
-**Root cause: successor-generation bug (performance/timeout)**
+**Root cause: solver performance on existential-heavy branches**
 
-Source-first finds 2 states (1 initial + 1 successor) before timing out
-at 30s. The 2 states it finds are in TLC's set. TLC finds 913 projected
-distinct states (from 9,337 raw states) in ~2s.
+Source-first finds 355 states in 120s timeout (3-node benchmark, post
+guard-first optimization Phase 36.3.7.c). All SF states are in TLC's set
+(31/913 shared on parity export, 355 on benchmark — strict subset confirmed).
+TLC finds 913 projected distinct states in ~2s.
 
-The source-first engine spends almost all time in successor solving
-(30s for just 2 states), indicating a solver scalability issue — likely
-exponential candidate enumeration for branches with multiple existential
-variables over the 3-node domain.
+The source-first engine spends 99.2% of time in solver (branches 2,3,5
+account for 70.6%), with 7,380 existential assignments per invocation
+and <6 successors per invocation. Guard-first evaluation improved
+throughput 2.8x (127→355 states) but the solver is still the bottleneck.
 
-**Fix priority: MEDIUM** — this is a performance bug, not a correctness
-bug. The 2 states source-first finds are correct; it just can't find
-more within the timeout.
+**2-node reproducer**: `leaderelection_perf_repro.model.toml` exhausts at
+108 states / 2.3s (down from 6.7s before guard-first).
 
-## Paxos (3M+ TLC vs ~75 SF at 1h — not compared)
+**Bucket**: Intentional modeling difference (message channels, same as
+TwoPhase/PB) PLUS solver performance timeout. All SF states are correct;
+the engine just can't reach all 913 TLC-projected states within the timeout.
 
-**Status: not yet diffable**
+**Next optimization**: Incremental existential assignment in `solver.rs`
+predicate-only path. See `HOTSPOT_LEDGER.md` §5 for full blocker details.
 
-Paxos source-first times out after finding ~75 states in 1 hour. TLC
-finds 3M+ states. The state-space gap is too large for meaningful parity
-comparison on the benchmark config. A much smaller Paxos config is needed
-for parity work.
+## Paxos — RESOLVED (exhausts on both fixtures)
 
-**Fix priority: LOW** — requires both a smaller model config and solver
-performance improvements.
+**Status: RESOLVED**
+
+Paxos 3-node benchmark **exhausts** at 17,370 states in 81.2s (post
+guard-first optimization, down from 99.8s). The 2-node parity fixture
+(`paxos_parity_small.model.toml`) exhausts at 570 states / 5.8s.
+
+Cross-engine diff is not yet possible because no matching 2-node TLC
+wrapper exists (existing `Paxos_Benchmark_MC.tla` hardcodes 3 nodes).
+However, since Paxos exhausts on both fixtures, there is no remaining
+performance blocker. The correctness question (are SF states a strict
+subset of TLC?) requires the TLC wrapper to answer definitively.
+
+**Bucket**: Resolved performance issue. No remaining blocker.
 
 ## Summary Classification Table
 
-| Protocol | SF states | TLC states | Shared | Root cause | Bucket | Priority |
-|----------|-----------|------------|--------|------------|--------|----------|
-| TwoPhase | 37 | 56 | 23 | **FIXED** (config: PreparedVote missing from enum_subset) | config bug (fixed) | DONE |
-| PrimaryBackup | 60 | 42 | 18 | **FIXED** (excluded `phase` field from TLC projection) | wrapper/projection mismatch (fixed) | DONE |
-| LeaderElection | 2 | 913 | 2 | Solver timeout during candidate enumeration | successor-generation bug (perf) | MEDIUM |
-| Paxos | ~75 | 3M+ | N/A | State space too large for current engine | successor-generation bug (perf) | LOW |
+| Protocol | SF states | TLC states | Shared | Root cause | Bucket | Status |
+|----------|-----------|------------|--------|------------|--------|--------|
+| TwoPhase | 37 | 56 | 23 | Config: PreparedVote missing from enum_subset | config bug (fixed) | **DONE** |
+| PrimaryBackup | 60 | 42 | 18 | Excluded `phase` field from TLC projection | wrapper/projection mismatch (fixed) | **DONE** |
+| LeaderElection | 355 | 913 | 31 | Solver timeout on existential-heavy branches | performance + modeling mismatch | **BLOCKED** (see HOTSPOT_LEDGER.md §5) |
+| Paxos | 17,370 | N/A | N/A | Solver perf (was timeout, now exhausts) | resolved performance issue | **DONE** |
