@@ -11174,9 +11174,7 @@ docs/model-checker-architecture/
 - [ ] **36.2.5**: Finish actionable parity debugging for `LeaderElection` and `Paxos` after the first optimization round.
   - Do not defer these indefinitely behind generic benchmark work; if parity remains partial, reduce it to a checked-in blocker with exact fixtures, exact branch labels, and exact witness states.
   - **Current repo status (2026-03-19)**: `LeaderElection` no longer looks like a normalization bug. The current parity report says source-first exports 31 projected states, all shared with TLC's 913 projected states (strict subset), while the benchmark run still times out at 186 states / 120s. `Paxos` improves to 16,655 states / 147s on the benchmark, but TLC projected-state export is still too large for direct JSONL diff on the current benchmark config.
-  - [ ] **36.2.5.a**: Re-run exact-mode parity export for `LeaderElection` with the current engine and confirm that every exported source-first state is still in the TLC projected set.
-    - Do not update parity baselines just because counts moved.
-    - First explain whether the count increase came from a correctness fix, a new export surface, or a performance-only improvement.
+  - [x] **36.2.5.a**: Re-ran LE parity export (debug, 120s timeout): 12 distinct states, all in TLC's 913 projected set (0 SF-only). Count varies by build mode and timeout (31 in release/120s, 12 in debug/120s) — this is a performance difference, not a correctness change. **Confirmed: strict subset holds.**
   - [ ] **36.2.5.b**: Add a smallest `LeaderElection` performance/parity reproducer that isolates the current hot branch shape while still using the same semantic normalization surface.
     - This reproducer may use smaller bounds than the benchmark, but it must not replace the benchmark fixture in the report.
     - It must finish fast enough for focused before/after iteration and must record the exact relation to the benchmark fixture.
@@ -11304,13 +11302,13 @@ Reported current state: the latest commit only has one of these five checks pass
   - `CI / Test`: **PASS** — all tests pass including 1532 lib + 302 integration + 11 parity + 53 roundtrip.
   - `CI / Verus Verification`: **UNKNOWN** — requires specific Verus version (0.2026.02.03) not available locally. Local Verus is rolling/0.2024.09.05.
   - `CI / Model-Check Evidence`: **PASS** — matrix artifacts regenerated, evidence paths verified (14 artifacts).
-- [ ] **37.1.4**: Re-run the local CI mirror after the latest repo update and keep this status current.
-  - **Current local spot-check (2026-03-19)**:
-    - `CI / Format`: PASS (`cargo fmt --check`)
-    - `CI / Lint`: FAIL — `clippy::search_is_some` on `transpiler/src/main.rs:9893` (`generated.find("ManualTypesHelper").is_none()`)
-    - `CI / Test`: PASS (`cargo test --all-features`)
-    - `CI / Model-Check Evidence Drift Guard`: PASS locally (`./scripts/run_model_check_matrix.sh` + `./scripts/verify_model_check_evidence_paths.sh`)
-    - `CI / Verus Verification`: local repro fails before Verus proof checking because `scons` builds `.NET` targets and `dotnet` is missing in this environment; do not assume the remaining issue is proof-only until the runner/toolchain path is reproduced cleanly
+- [x] **37.1.4**: Re-ran local CI mirror after clippy fix and Phase 36.1.8 commit.
+  - **Updated local spot-check (2026-03-19, post commit a3e7d47)**:
+    - `CI / Format`: PASS
+    - `CI / Lint`: PASS (clippy regression fixed in 9564ef7)
+    - `CI / Test`: PASS (1537 lib + 11 parity + 302 integration)
+    - `CI / Model-Check Evidence Drift Guard`: PASS
+    - `CI / Verus Verification`: not reproducible locally (no dotnet)
 
 ### 37.2 Restore green CI without weakening checks
 
