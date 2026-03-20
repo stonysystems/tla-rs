@@ -309,7 +309,6 @@ verus! {
         &&& (forall|i: int| #![trigger high_level_behavior[i]] 0 <= i < high_level_behavior.len() - 1 ==> RslSystemNext(high_level_behavior[i], high_level_behavior[i + 1]))
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_GetBehaviorRefinementForBehaviorOfOneStep(
         b: Behavior<RslState>,
         c: LConstants
@@ -354,7 +353,16 @@ verus! {
         }
 
         assert(IsMaximalQuorumOf2bsSequence(b[0], qs));
-        assert(SystemRefinementRelation(b[0], rs));
+        // Bridge SystemRefinementRelation → RslSystemRefinement
+        lemma_ProduceAbstractStateSatisfiesRefinementRelation(b, c, 0, qs, rs);
+        assert(RslSystemRefinement(b[0], rs));
+
+        // Show RslSystemInit holds for the initial abstract state
+        assert(qs.len() == 0);
+        assert(GetSequenceOfRequestBatches(qs) =~= Seq::<RequestBatch>::empty());
+        assert(rs.requests =~= Set::<Request>::empty());
+        assert(rs.replies =~= Set::<Reply>::empty());
+
         let high_level_behavior = seq![rs];
         high_level_behavior
     }
@@ -506,7 +514,6 @@ verus! {
         high_level_behavior
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_GetBehaviorRefinement(
         low_level_behavior: Seq<RslState>,
         c: LConstants
@@ -520,7 +527,26 @@ verus! {
     {
         let b = ConvertBehaviorSeqToImap(low_level_behavior);
         lemma_ConvertBehaviorSeqToImap_ensures(low_level_behavior);
-        let high_level_behavior = lemma_GetBehaviorRefinementForPrefix(b, c, low_level_behavior.len() - 1);
+        let n = low_level_behavior.len();
+        // b[i] == low_level_behavior[i] for all i in [0, n)
+        let high_level_behavior = lemma_GetBehaviorRefinementForPrefix(b, c, n - 1);
+        // RslSystemBehaviorRefinementCorrectImap(b, n, high_level_behavior) holds.
+        // We need RslSystemBehaviorRefinementCorrect(..., low_level_behavior, high_level_behavior).
+
+        // Bridge: b[i] == low_level_behavior[i] implies RslSystemRefinement on low_level_behavior
+        assert forall |i: int| 0 <= i < n
+            implies RslSystemRefinement(low_level_behavior[i], high_level_behavior[i]) by {
+            assert(b[i] == low_level_behavior[i]);
+            assert(RslSystemRefinement(b[i], high_level_behavior[i]));
+        };
+
+        // Bridge: server_addresses
+        // MapSeqToSet(c.config.replica_ids, |x| x) =~= Set::new(|x| b[0].constants.config.replica_ids.contains(x))
+        lemma_ConstantsAllConsistent(b, c, 0);
+        assert(b[0].constants == c);
+        assert(MapSeqToSet(c.config.replica_ids, |x: AbstractEndPoint| x) =~=
+               Set::new(|x: AbstractEndPoint| b[0].constants.config.replica_ids.contains(x)));
+
         high_level_behavior
     }
 }
