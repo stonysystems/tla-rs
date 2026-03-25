@@ -11390,11 +11390,8 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ### 38.2 Study the three named references and turn them into `design.md`
 
-- [ ] **38.2.1**: Before serious implementation, inspect the three named references and write structured notes into `transpiler/DPOR_based_model_tla_rs_checker/design.md`:
-  - `GenMC` (`https://github.com/MPI-SWS/genmc`) — treat as the overall architecture reference.
-  - `Nidhugg` (`https://github.com/nidhugg/nidhugg`) — treat as the direct DPOR algorithm reference.
-  - `CDSChecker` (`https://github.com/computersforpeace/model-checker`) — treat as the smaller/older reference for compact execution/action/schedule structure.
-- [ ] **38.2.2**: `design.md` must contain one subsection per reference with:
+- [x] **38.2.1**: Inspected all three references (2026-03-25) and wrote structured notes into `design.md`. GenMC (commit `22d3d0b`): stateless model checker at LLVM-IR level, execution-graph-based exploration, optimal DPOR. Nidhugg (commit `9e86fc0`): DPORDriver + pluggable TraceBuilder pattern (TSOTraceBuilder, RFSCTraceBuilder, etc.), BVClock vector clocks. CDSChecker (commit `5c4efe5`): compact Action/Execution/Schedule/NodeStack/ClockVector abstractions.
+- [x] **38.2.2**: `design.md` contains one subsection per reference with all required fields. Each has:
   - exact repo URL,
   - checked date,
   - exact commit hash or branch state inspected,
@@ -11402,13 +11399,13 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - what to copy conceptually,
   - what **not** to copy,
   - and a local module/data-structure mapping for the tla-rs prototype.
-- [ ] **38.2.3**: `design.md` must have a required table like:
+- [x] **38.2.3**: `design.md` has the concept selection table with 14 rows covering: stateless exploration, execution graphs, DPORDriver+TraceBuilder, source-DPOR, optimal-DPOR (deferred), vector clocks, action representation, NodeStack, sleep sets (deferred), wakeup trees (deferred), symmetry reduction (deferred), state fingerprinting, memory model consistency (rejected), C/LLVM interpretation (rejected), barrier-aware checking (rejected). Original required table format:
   | Reference | Borrow This | Do Not Blindly Copy This | Local Mapping |
   |-----------|-------------|---------------------------|---------------|
   | GenMC | architecture/layering | full production complexity | `engine/`, `explorer/`, `trace/`, `report/` |
   | Nidhugg | source-DPOR / backtrack / wakeup logic | implementation details tied to its host environment | `dpor/`, `dependence/`, `replay/` |
   | CDSChecker | compact action/execution/schedule patterns | C/C++ memory-model-specific assumptions | `action/`, `state/`, `scheduler/`, `clock` or hb tracking |
-- [ ] **38.2.4**: `design.md` must answer these tla-rs-specific questions before code gets deep:
+- [x] **38.2.4**: All 7 tla-rs-specific questions answered in `design.md`: checker input contract (spec module + invariants + model config), unit of concurrency (process_id, action_branch), ProcessId derivation (from Next predicate existential), conservative dependence relation (all cross-process dependent initially, field-disjointness refinement), event trace representation (TlaEvent struct with seq/process/branch/state/clock), backtrack data (BTreeSet<ProcessId> per event; sleep sets deferred), v1 scope exclusions (no liveness, no weak memory, no symbolic, no sleep sets). Original question list:
   - What is the checker input contract for translated tla-rs specs?
   - What is the unit of concurrency: branch, process step, helper-expanded step, or something else?
   - How is `ProcessId` identified or derived for each test/protocol?
@@ -11416,7 +11413,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - What is the event trace representation?
   - What data is stored for backtrack sets, sleep sets, wakeup tree nodes, and bug traces?
   - What is out of scope for v1 (for example liveness/fairness, weak memory, symbolic solving)?
-- [ ] **38.2.5**: Write an explicit "prototype-to-mainline integration gate" section in `design.md`. It must say that no rewrite of `transpiler/src/modelcheck` is allowed until the prototype has its own green regression story.
+- [x] **38.2.5**: Integration gate section written in `design.md` with 5 explicit conditions (green 20-case suite, baseline/DPOR agreement, telemetry review, migration plan, performance documentation). Already completed in Phase 38.1.2; verified and retained.
 
 ### 38.3 Lock down the 20-case test corpus first
 
