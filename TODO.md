@@ -11361,7 +11361,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ### 38.1 Create the isolated workfolder and make the contract explicit
 
-- [ ] **38.1.1**: Create the new workfolder exactly at `transpiler/DPOR_based_model_tla_rs_checker/`. It should begin isolated and self-explanatory. Minimum required top-level files/directories:
+- [x] **38.1.1**: Created the workfolder at `transpiler/DPOR_based_model_tla_rs_checker/` with the required structure: `README.md`, `design.md`, `src/`, `scripts/`, `tests/{README.md, manifest.toml, tla/, tla-rs/, reports/}`. All empty directories have `.gitkeep` files. Minimum required top-level files/directories:
   ```
   transpiler/DPOR_based_model_tla_rs_checker/
   ├── README.md
@@ -11375,18 +11375,18 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
       ├── tla-rs/
       └── reports/
   ```
-- [ ] **38.1.2**: Decide and document whether this workfolder is:
+- [x] **38.1.2**: Decided: **separate Cargo crate** (`dpor-checker`). Rationale: isolation prevents coupling with `transpiler/src/modelcheck/`, enables independent testing, and provides a clear integration boundary. Decision documented in `design.md` §"Workfolder Organization Decision". Decide and document whether this workfolder is:
   - a separate Cargo crate,
   - a library/binary under the existing `transpiler` crate,
   - or a hybrid prototype with local modules plus scripts.
   Record the decision and the reason in `design.md`. The default bias should be isolation, not premature integration.
-- [ ] **38.1.3**: `README.md` must explain, in one screen:
+- [x] **38.1.3**: `README.md` written — explains what the prototype checks, corpus layout (`tla/` source-of-truth, `tla-rs/` generated), regeneration command (`scripts/regenerate_corpus.sh`), full-suite command (`scripts/run_full_suite.sh`), design references, and integration policy. `README.md` must explain, in one screen:
   - what this prototype checks,
   - that `tests/tla/` is the source-of-truth corpus,
   - that `tests/tla-rs/` is generated,
   - the single blessed command to regenerate the corpus,
   - and the single blessed command to run all 20 tests.
-- [ ] **38.1.4**: `tests/README.md` must define the case-ordering rule (`01_...` through `20_...`), expected-status vocabulary (`ok`, `invariant_violation`, `deadlock`, `known_unimplemented`, etc.), and what counts as a regression.
+- [x] **38.1.4**: `tests/README.md` written — defines case-ordering (`01_`–`05_` micro, `06_`–`10_` concurrency, `11_`–`15_` small protocols, `16_`–`20_` full protocols), expected-status vocabulary (`ok`, `invariant_violation`, `deadlock`, `known_unimplemented`, `timeout`), regression definition (4 concrete conditions), and corpus provenance documentation requirement.
 
 ### 38.2 Study the three named references and turn them into `design.md`
 

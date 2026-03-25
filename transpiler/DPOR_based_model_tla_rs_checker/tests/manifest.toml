@@ -1,0 +1,42 @@
+# DPOR Checker Test Corpus Manifest
+#
+# Each [[case]] entry defines one test case in the 20-case corpus.
+# Cases are ordered 01_ to 20_ from easiest to hardest.
+#
+# Required fields:
+#   id             - Case ID matching the directory name (e.g., "01_counter")
+#   expected_status - One of: ok, invariant_violation, deadlock, known_unimplemented, timeout
+#   description    - One-line description of what the case tests
+#
+# Optional fields:
+#   source         - Provenance: where the TLA+ file came from
+#   init           - Name of the Init predicate (default: "Init")
+#   next           - Name of the Next predicate (default: "Next")
+#   invariants     - List of invariant names to check
+#   constants      - Inline constant assignments or reference to model config
+#   notes          - Free-text notes about the case
+#   negative       - true if this is a negative case (expected violation/deadlock)
+
+# ============================================================
+# Cases 01-05: Micro-models
+# ============================================================
+
+# (Cases to be populated in Phase 38.3)
+
+# ============================================================
+# Cases 06-10: Classical concurrency
+# ============================================================
+
+# (Cases to be populated in Phase 38.3)
+
+# ============================================================
+# Cases 11-15: Small distributed protocols
+# ============================================================
+
+# (Cases to be populated in Phase 38.3)
+
+# ============================================================
+# Cases 16-20: Full protocol models
+# ============================================================
+
+# (Cases to be populated in Phase 38.3)
