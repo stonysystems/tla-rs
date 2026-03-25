@@ -9,10 +9,10 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 - **Verification command**: `/home/users/zihao/verus/verus --crate-type=lib src/lib.rs`
 - **Build command**: `scons --verus-path=/home/users/zihao/verus`
 
-## Current Status (2026-03-19)
+## Current Status (2026-03-25)
 
 Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete, and the earlier Phase 33 benchmark-evidence closure is preserved as a historical checkpoint, but the benchmark comparison now motivates two follow-up implementation phases: Phase 36 (exact-state parity and performance debugging) is the top priority, and Phase 37 (CI/CD recovery) is next. The remaining proof-heavy work is still concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
-The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`.
+The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. A new greenfield Phase 38 has now been added for a separate DPOR-based checker prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
 
 **What works:**
 - TLA+ → Verus spec transpilation (Phase 9): ✅ Complete
@@ -37,6 +37,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - Phase 35 beginner model checker architecture survey/tutorial: ✅ COMPLETE — `docs/model-checker-architecture/` now contains the beginner tutorial, walkthrough, comparison, optimization audit, evidence ledger, and review guards
 - Phase 36 exact-state parity / performance debugging: 🚧 NEW TOP PRIORITY — benchmark comparison now needs semantic-parity debugging and performance root-cause work before further model-checker claims should be trusted
 - Phase 37 CI/CD recovery: 🚧 NEXT PRIORITY — the current GitHub Actions workflow must be restored to green without weakening checks
+- Phase 38 DPOR-based checker prototype track: 🚧 NEW SEPARATE TRACK — prototype a real DPOR explorer under `transpiler/DPOR_based_model_tla_rs_checker/` with a fixed 20-case TLA+→tla-rs test gauntlet, design notes, and milestone-by-milestone full-suite runs before touching `transpiler/src/modelcheck`
 - Documentation: transpiler config reference, proof patterns, regeneration scripts
 - Type generator: correct View impl for Set<int>/Seq<int>/Seq<NamedType> with `.map()` conversion; clone_strategy for HashSet-containing structs
 - 145 transpiler integration tests pass (including 10 verifying generated module public APIs, 1 verus2tla roundtrip for all 7 protocols, 10 D4 pipeline regression tests, 9 message generation per-protocol tests, 9 marshalling round-trip tests, 10 LNext scheduler analysis tests, 3 action classification tests, 9 scaffold structure tests, 9 host-init compilation tests, 15 scheduler generation tests [2 TOML roundtrip, 1 exact counts, 1 consistency, 1 message_variant validity, 1 heuristic coverage, 9 scaffold compilation], 2 impl file dead code stripping tests)
@@ -53,17 +54,19 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
+- **Standalone DPOR-based checker workfolder is still missing** — `transpiler/DPOR_based_model_tla_rs_checker/` does not exist yet. Phase 38 defines the required folder contract, design notes, 20-case TLA+ corpus, translated tla-rs corpus, baseline oracle, DPOR milestones, and regression discipline so this work does not turn into an ad hoc rewrite.
 
 **Next steps (priority order):**
 1. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models and fix the source-first performance pathologies exposed by the benchmark comparison. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--top-priority).
 2. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks, and keep the evidence/benchmark guards aligned with any schema or artifact changes from Phase 36. See [Phase 37](#phase-37-cicd-recovery--next-priority).
-3. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
-4. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
-5. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
-6. **Phase 20 cleanup** — finish the remaining auto-inference cleanup.
-7. **Phase 34: Raft Network Model and Complete Refinement Proof** — eliminate the remaining 12 assumes. This is currently the lowest-priority major open phase; the dominant blocker is the strict-term LeaderCompleteness argument (`d_rli <= k` wall), which still needs a stronger induction/provenance strategy. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
+3. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — create the isolated workfolder, lock down the 20-case TLA+→tla-rs corpus, write `design.md` from GenMC/Nidhugg/CDSChecker notes, and keep a baseline-vs-DPOR full-suite scoreboard from the first milestone onward. This is a separate incubator track; do not let it silently rewrite the current mainline checker before the prototype earns it. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--new-separate-workfolder).
+4. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
+5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
+6. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
+7. **Phase 20 cleanup** — finish the remaining auto-inference cleanup.
+8. **Phase 34: Raft Network Model and Complete Refinement Proof** — eliminate the remaining 12 assumes. This is currently the lowest-priority major open phase; the dominant blocker is the strict-term LeaderCompleteness argument (`d_rli <= k` wall), which still needs a stronger induction/provenance strategy. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
 
-**Active work**: The top-priority implementation phase is now **Phase 36** (exact-state parity and performance debugging), followed by **Phase 37** (CI/CD recovery). After that, the next proof phase is **Phase 31** (RSL refinement proof de-externalization). **Phase 34** (Raft refinement proof assume elimination) is currently the lowest-priority major open phase. Phase 35 is complete, and Phase 33 should be treated as a historical evidence-discipline milestone rather than the final word on model-checker correctness/performance. See `reports/raft_refinement_proof.md` for detailed Raft status.
+**Active work**: The top-priority implementation phase is now **Phase 36** (exact-state parity and performance debugging), followed by **Phase 37** (CI/CD recovery). **Phase 38** is a separate incubator track for a DPOR prototype and must stay under `transpiler/DPOR_based_model_tla_rs_checker/` until it has its own design doc, 20-case corpus, baseline oracle, and regression harness. After that, the next proof phase is **Phase 31** (RSL refinement proof de-externalization). **Phase 34** (Raft refinement proof assume elimination) is currently the lowest-priority major open phase. Phase 35 is complete, and Phase 33 should be treated as a historical evidence-discipline milestone rather than the final word on model-checker correctness/performance. See `reports/raft_refinement_proof.md` for detailed Raft status.
 
 ## Reference
 
@@ -102,6 +105,7 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 27. [Phase 35: Beginner Model Checker Architecture Survey and Tutorial — TOP PRIORITY](#phase-35-beginner-model-checker-architecture-survey-and-tutorial--top-priority)
 28. [Phase 36: Exact-State Parity and Performance Debugging — TOP PRIORITY](#phase-36-exact-state-parity-and-performance-debugging--top-priority)
 29. [Phase 37: CI/CD Recovery — NEXT PRIORITY](#phase-37-cicd-recovery--next-priority)
+30. [Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — NEW SEPARATE WORKFOLDER](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--new-separate-workfolder)
 
 ---
 
@@ -11319,3 +11323,318 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - [x] no major correctness/evidence job has been disabled or watered down (PBFT remains best-effort in evidence job, but the five workflow jobs are still required)
   - [x] any new parity/performance evidence guards introduced by Phase 36 are represented in CI in a deterministic form (11 parity regression tests in `cargo test`)
   - [x] the workflow/evidence story is explicit enough that artifact drift is either intentionally allowed and documented or deterministically guarded (Phase 37.2.1.f: timing drift intentionally allowed, structural correctness guarded by parity regression tests)
+
+---
+
+## Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — NEW SEPARATE WORKFOLDER
+
+**Goal**: Build a standalone DPOR-based model checker prototype for translated tla-rs specs under `transpiler/DPOR_based_model_tla_rs_checker/`. The first-class deliverables are:
+- an isolated workfolder that does **not** destabilize `transpiler/src/modelcheck`,
+- a fixed 20-case TLA+ corpus under `transpiler/DPOR_based_model_tla_rs_checker/tests/tla/`,
+- reproducible translated tla-rs inputs under `transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/`,
+- a serious `design.md` grounded in the named upstream references (`GenMC`, `Nidhugg`, `CDSChecker`),
+- a baseline exhaustive explorer kept as a correctness oracle,
+- a DPOR explorer that is checked against that oracle on the small cases,
+- and a milestone-by-milestone full-suite scoreboard so regressions are visible immediately.
+
+**Why this phase exists**:
+- The current repo has a source-first checker plus a conservative POR heuristic, but it does **not** yet have a clean standalone DPOR architecture track for tla-rs specs.
+- A separate greenfield workfolder is the safest way to experiment with DPOR data structures and algorithms without silently breaking the existing checker while Phase 36 and Phase 37 are still active.
+- This work is explicitly test-driven: before algorithm work gets complicated, the project needs a locked test corpus, a reproducible TLA+→tla-rs generation flow, and a baseline oracle.
+- The user explicitly wants this work to learn from three existing DPOR/model-checker codebases:
+  - `GenMC` (`https://github.com/MPI-SWS/genmc`) as the best overall architecture reference,
+  - `Nidhugg` (`https://github.com/nidhugg/nidhugg`) as the best direct DPOR algorithm reference,
+  - `CDSChecker` (`https://github.com/computersforpeace/model-checker`) as the best smaller/older algorithmic reference.
+
+**Hard rules for this phase (do not cut corners):**
+- Do **not** start by editing `transpiler/src/modelcheck`. All early work for this phase lives under `transpiler/DPOR_based_model_tla_rs_checker/`.
+- Do **not** start by implementing an optimized DPOR engine. First create the workfolder, write `design.md`, define the 20 cases, and keep a simple exhaustive baseline explorer as a permanent oracle.
+- Do **not** hand-edit generated files under `tests/tla-rs/`. The TLA+ files under `tests/tla/` are the source of truth; generated tla-rs files are derived artifacts and must be regenerable by one script/command.
+- Do **not** begin with `Paxos` or `Raft`. The project must earn those hard cases by first passing the easy micro-models and classical concurrency cases.
+- Do **not** claim DPOR correctness on small cases unless baseline exploration and DPOR agree on verdict plus normalized reachable-state set (or first violation witness) under the same finite bounds.
+- Do **not** drop a hard test because it is inconvenient. If a late protocol case is currently too large, shrink constants/model bounds and keep the case in the suite with an explicit status; never silently delete it.
+- Do **not** accept a suite that only has green cases. At least 6 of the 20 named cases must exercise counterexample or deadlock detection.
+- Do **not** treat the upstream repos as vague inspiration. `design.md` must pin the exact upstream commit hash (or at minimum the checked date + default branch state inspected) and record what is borrowed, what is rejected, and how the idea maps into tla-rs.
+- Do **not** implement sleep sets, wakeup trees, or more aggressive DPOR tricks before deterministic trace replay and conservative dependence checking exist.
+- Do **not** let a milestone land without running all 20 cases. Every small milestone and commit should run the full suite, record the pass count, and identify regressions immediately.
+- Do **not** invent a second incompatible state-normalization story. Reuse or mirror the canonical JSON / fingerprint discipline already established by Phase 36 when comparing baseline vs DPOR results.
+
+### 38.1 Create the isolated workfolder and make the contract explicit
+
+- [ ] **38.1.1**: Create the new workfolder exactly at `transpiler/DPOR_based_model_tla_rs_checker/`. It should begin isolated and self-explanatory. Minimum required top-level files/directories:
+  ```
+  transpiler/DPOR_based_model_tla_rs_checker/
+  ├── README.md
+  ├── design.md
+  ├── src/
+  ├── scripts/
+  └── tests/
+      ├── README.md
+      ├── manifest.toml
+      ├── tla/
+      ├── tla-rs/
+      └── reports/
+  ```
+- [ ] **38.1.2**: Decide and document whether this workfolder is:
+  - a separate Cargo crate,
+  - a library/binary under the existing `transpiler` crate,
+  - or a hybrid prototype with local modules plus scripts.
+  Record the decision and the reason in `design.md`. The default bias should be isolation, not premature integration.
+- [ ] **38.1.3**: `README.md` must explain, in one screen:
+  - what this prototype checks,
+  - that `tests/tla/` is the source-of-truth corpus,
+  - that `tests/tla-rs/` is generated,
+  - the single blessed command to regenerate the corpus,
+  - and the single blessed command to run all 20 tests.
+- [ ] **38.1.4**: `tests/README.md` must define the case-ordering rule (`01_...` through `20_...`), expected-status vocabulary (`ok`, `invariant_violation`, `deadlock`, `known_unimplemented`, etc.), and what counts as a regression.
+
+### 38.2 Study the three named references and turn them into `design.md`
+
+- [ ] **38.2.1**: Before serious implementation, inspect the three named references and write structured notes into `transpiler/DPOR_based_model_tla_rs_checker/design.md`:
+  - `GenMC` (`https://github.com/MPI-SWS/genmc`) — treat as the overall architecture reference.
+  - `Nidhugg` (`https://github.com/nidhugg/nidhugg`) — treat as the direct DPOR algorithm reference.
+  - `CDSChecker` (`https://github.com/computersforpeace/model-checker`) — treat as the smaller/older reference for compact execution/action/schedule structure.
+- [ ] **38.2.2**: `design.md` must contain one subsection per reference with:
+  - exact repo URL,
+  - checked date,
+  - exact commit hash or branch state inspected,
+  - the repo areas reviewed (`README`, `doc/`, `src/`, key files),
+  - what to copy conceptually,
+  - what **not** to copy,
+  - and a local module/data-structure mapping for the tla-rs prototype.
+- [ ] **38.2.3**: `design.md` must have a required table like:
+  | Reference | Borrow This | Do Not Blindly Copy This | Local Mapping |
+  |-----------|-------------|---------------------------|---------------|
+  | GenMC | architecture/layering | full production complexity | `engine/`, `explorer/`, `trace/`, `report/` |
+  | Nidhugg | source-DPOR / backtrack / wakeup logic | implementation details tied to its host environment | `dpor/`, `dependence/`, `replay/` |
+  | CDSChecker | compact action/execution/schedule patterns | C/C++ memory-model-specific assumptions | `action/`, `state/`, `scheduler/`, `clock` or hb tracking |
+- [ ] **38.2.4**: `design.md` must answer these tla-rs-specific questions before code gets deep:
+  - What is the checker input contract for translated tla-rs specs?
+  - What is the unit of concurrency: branch, process step, helper-expanded step, or something else?
+  - How is `ProcessId` identified or derived for each test/protocol?
+  - What is the initial conservative dependence relation?
+  - What is the event trace representation?
+  - What data is stored for backtrack sets, sleep sets, wakeup tree nodes, and bug traces?
+  - What is out of scope for v1 (for example liveness/fairness, weak memory, symbolic solving)?
+- [ ] **38.2.5**: Write an explicit "prototype-to-mainline integration gate" section in `design.md`. It must say that no rewrite of `transpiler/src/modelcheck` is allowed until the prototype has its own green regression story.
+
+### 38.3 Lock down the 20-case test corpus first
+
+- [ ] **38.3.1**: Create exactly 20 named cases under `transpiler/DPOR_based_model_tla_rs_checker/tests/tla/`, ordered from easiest to hardest with fixed `01_...` to `20_...` prefixes.
+- [ ] **38.3.2**: The required starting list is:
+
+| # | Case ID | Expected primary outcome | Purpose / why it exists | Seed |
+|---|---------|--------------------------|--------------------------|------|
+| 1 | `01_aplusb` | `ok` | Smallest possible end-to-end sanity check: parsing, init, one-step transition, invariant plumbing. | hand-written TLA+ |
+| 2 | `02_counter_incdec` | `ok` | Tiny shared-state concurrency model with multiple enabled actions. | hand-written TLA+ |
+| 3 | `03_counter_race_bug` | `invariant_violation` | Must prove the checker can find a basic race/counterexample, not only pass green runs. | hand-written TLA+ |
+| 4 | `04_lock_basic` | `ok` | First lock-shaped model; basic mutual exclusion and enabledness. | hand-written TLA+ |
+| 5 | `05_broken_lock_bug` | `invariant_violation` or `deadlock` | Negative lock case so missed interleavings show up immediately. | hand-written TLA+ |
+| 6 | `06_ticket_lock` | `ok` | Ordered lock handoff; more interleavings than the trivial lock. | hand-written TLA+ |
+| 7 | `07_producer_consumer_1slot` | `ok` | Small communication/buffer case with partial independence. | hand-written TLA+ |
+| 8 | `08_bounded_buffer_2slot` | `ok` | More enabled operations and queue-state interactions. | hand-written TLA+ |
+| 9 | `09_peterson_mutex_2p` | `ok` | Classical concurrency benchmark; useful DPOR sanity case. | hand-written TLA+ |
+| 10 | `10_bakery_mutex_3p` | `ok` | More processes / more interleavings / more reduction opportunity. | hand-written TLA+ |
+| 11 | `11_readers_writers_small` | `ok` | Mixed shared/local state with multiple role types. | hand-written TLA+ |
+| 12 | `12_dining_philosophers_3` | `deadlock` or explicit violation | Required deadlock-detection stress case. | hand-written TLA+ |
+| 13 | `13_twophase_small` | `ok` | First real protocol case. | seed from `transpiler/tests/tla_examples/TwoPhase.tla` or generated `TwoPhase/` TLA |
+| 14 | `14_leader_election_small` | `ok` | Protocol-sized interleavings with per-node state. | seed from generated `LeaderElection/` TLA |
+| 15 | `15_chain_replication_small` | `ok` | Pipeline/message-flow case. | seed from generated `ChainReplication/` TLA |
+| 16 | `16_primarybackup_small` | `ok` | Required by the user; important mid/high-complexity protocol gate. | seed from generated `PrimaryBackup/` TLA |
+| 17 | `17_paxos_small` | `ok` | Required by the user; consensus interleavings and quorum-sensitive state. | seed from `transpiler/tests/tla_examples/Paxos.tla` or generated `Paxos/` TLA |
+| 18 | `18_pbft_small` | `ok` or explicit bounded status | Byzantine-style protocol shape; good late stress case. | seed from `transpiler/tests/tla_examples/PBFT.tla` or generated `PBFT/` TLA |
+| 19 | `19_epaxos_small` | `ok` or explicit bounded status | Dependency-rich late stress case. | seed from generated `EPaxos/` TLA |
+| 20 | `20_raft_small` | `ok` | Required final hard case; must stay in the suite from day one even if initially not green. | seed from `transpiler/tests/tla_examples/Raft.tla` or generated `Raft/` TLA |
+
+- [ ] **38.3.3**: For each case, add a row to `tests/manifest.toml` with at minimum:
+  - `id`
+  - `difficulty_rank`
+  - `source_kind` (`handwritten`, `repo_example`, `generated_repo_tla`)
+  - `tla_entry`
+  - `tla_aux_modules`
+  - `generated_tlars_entry`
+  - `expected_primary_result`
+  - `expected_property`
+  - `model_bounds`
+  - `requires_deadlock_check`
+  - `milestone_gate`
+  - `notes`
+- [ ] **38.3.4**: At least 6 of the 20 cases must be negative cases (expected invariant violation or expected deadlock). These can be distinct TLA+ specs or paired property/config profiles, but they must run in the same full-suite harness.
+- [ ] **38.3.5**: Prefer existing local TLA assets for the harder protocol cases:
+  - `transpiler/tests/tla_examples/`
+  - `transpiler/tla_test_workspace/transpiler_generated_tla/`
+  The point is to reuse known repo semantics where possible, not to freehand a different protocol.
+
+### 38.4 Build a reproducible TLA+ → tla-rs corpus generation pipeline
+
+- [ ] **38.4.1**: Add one script under `transpiler/DPOR_based_model_tla_rs_checker/scripts/` whose only job is to regenerate the entire translated corpus from `tests/tla/` into `tests/tla-rs/`.
+- [ ] **38.4.2**: Use the repo’s real transpiler workflow, not a fake placeholder. The expected command shape is:
+  ```bash
+  cargo run --manifest-path transpiler/Cargo.toml --bin verus-transpile -- \
+    translate-tla \
+    --input <case>.tla \
+    --output <case>.rs \
+    --gen-modes
+  ```
+  or the equivalent checked-in binary invocation.
+- [ ] **38.4.3**: For multi-module cases (`Types.tla` plus protocol module, or other support modules), preserve the module layout under both `tests/tla/` and `tests/tla-rs/`. Do **not** collapse a multi-file case into one handwritten artifact just to make generation easier.
+- [ ] **38.4.4**: Generated outputs under `tests/tla-rs/` must be mirrored by case ID and must be reproducible from a clean checkout. If the transpiler cannot translate one of the planned cases yet, record the failure explicitly in `tests/manifest.toml` and the suite report; do **not** hand-fix the generated Rust.
+- [ ] **38.4.5**: `tests/README.md` must document how each hard protocol case was sourced (for example from `transpiler/tests/tla_examples/` vs `transpiler/tla_test_workspace/transpiler_generated_tla/`), so the corpus provenance is auditable.
+
+### 38.5 Build the full-suite harness and scoreboard before deep DPOR work
+
+- [ ] **38.5.1**: Add one blessed full-suite command (script or cargo entrypoint) that runs all 20 cases in order and writes machine-readable results under `transpiler/DPOR_based_model_tla_rs_checker/tests/reports/`.
+- [ ] **38.5.2**: The result schema for each case should include at minimum:
+  - `case_id`
+  - `engine` (`baseline` or `dpor`)
+  - `result`
+  - `stop_reason`
+  - `states`
+  - `transitions`
+  - `distinct_states`
+  - `max_depth_reached`
+  - `elapsed_ms`
+  - `first_violation_depth`
+  - `backtracks_added`
+  - `sleep_prunes`
+  - `wakeup_nodes`
+  - `regression_vs_previous`
+- [ ] **38.5.3**: Keep a human-readable pass matrix in `tests/reports/README.md` or `tests/reports/latest.md` showing, for each milestone:
+  - total cases passed,
+  - total known-failing cases,
+  - new regressions,
+  - fixed regressions,
+  - and which cases moved from `known_unimplemented` to hard pass/fail verdicts.
+- [ ] **38.5.4**: Every commit / milestone for this phase must run all 20 cases and update the scoreboard. If pass count drops, treat it as a regression until proven otherwise.
+- [ ] **38.5.5**: Reuse or mirror Phase 36’s canonical JSON/fingerprint state normalization for baseline-vs-DPOR parity on the cases where full parity is feasible. Do not invent a new incompatible fingerprint format unless there is a written reason in `design.md`.
+
+### 38.6 Keep a simple exhaustive baseline explorer as a permanent oracle
+
+- [ ] **38.6.1**: Implement a minimal, boring, exact baseline explorer first. It may be slower than DPOR; that is acceptable. Its job is correctness, not speed.
+- [ ] **38.6.2**: Baseline v1 must support:
+  - initial-state construction for the finite case bounds,
+  - exact successor generation,
+  - invariant checking,
+  - deadlock detection,
+  - deterministic replay of a discovered trace,
+  - and normalized state-set export for parity comparison.
+- [ ] **38.6.3**: Do **not** delete the baseline once DPOR starts passing tests. The baseline is the small-case oracle that prevents unsound reductions from looking like progress.
+- [ ] **38.6.4**: Cases `01` through `12` should be the default parity/validation set for baseline vs DPOR. Any later case that still exhausts under small bounds should join that parity set too.
+
+### 38.7 Define the tla-rs DPOR event model and dependence relation explicitly
+
+- [ ] **38.7.1**: Before source-DPOR code gets deep, define the core runtime objects in `design.md` and then in code:
+  - `ProcessId`
+  - `ActionId` / branch label
+  - `Event`
+  - `ExecutionPrefix` / trace
+  - `EnabledSet`
+  - `BacktrackSet`
+  - `SleepSet`
+  - `WakeupTree`
+  - `StateFingerprint`
+- [ ] **38.7.2**: Decide how a translated tla-rs step becomes a DPOR event. For example:
+  - branch label + concrete bindings,
+  - branch label + logical actor/process id,
+  - helper-expanded leaf step,
+  - or another well-defined unit.
+  Record the decision and its tradeoffs.
+- [ ] **38.7.3**: Start with a conservative dependence relation. Missing reductions is acceptable early; missing bugs is not. The first conflict model can over-approximate dependence, but must not under-approximate it without proof.
+- [ ] **38.7.4**: Each protocol case from `13` onward must record, in its case notes or manifest, how process identity is derived (for example node id, proposer id, replica id, client id, or action family only if no finer actor is available).
+
+### 38.8 Implement DPOR in milestones, not as one giant leap
+
+- [ ] **38.8.1**: First DPOR milestone: deterministic replay of an execution prefix and conservative backtrack-point recording.
+- [ ] **38.8.2**: Second milestone: source-DPOR style backtrack/source-set insertion with exact verdict parity against the baseline on the small cases.
+- [ ] **38.8.3**: Third milestone: wakeup-tree / sleep-set style improvements only after the previous milestone is exact on the baseline-parity subset.
+- [ ] **38.8.4**: At each DPOR milestone, require evidence of both:
+  - no verdict regressions against the baseline parity subset,
+  - and at least some reduction benefit on the independence-heavy cases (`04` through `11` are the first expected wins).
+- [ ] **38.8.5**: Bug traces must remain reproducible. If DPOR reports a violation or deadlock, the prototype must be able to replay the witness deterministically and show the concrete prefix that triggered it.
+
+### 38.9 Harden on the real protocol cases instead of stopping at toy examples
+
+- [ ] **38.9.1**: Do not declare success after only the micro-models. The required hard protocol gates are:
+  - `16_primarybackup_small`
+  - `17_paxos_small`
+  - `20_raft_small`
+  These three are mandatory because the user explicitly called them out.
+- [ ] **38.9.2**: Cases `13` through `20` must remain in every full-suite run from the beginning, even if some begin as `known_unimplemented` or `known_timeout` under the initial milestone.
+- [ ] **38.9.3**: For the harder protocol cases, document the first blocker precisely:
+  - translation gap,
+  - missing action/process extraction,
+  - dependence too conservative,
+  - state explosion,
+  - deadlock semantics gap,
+  - or another concrete reason.
+  "Too hard" is not an acceptable status label.
+- [ ] **38.9.4**: When a harder case is not yet baseline-feasible, keep the previous best known result as the regression target and promote it to baseline parity later if/when finite bounds make that practical.
+
+### 38.10 Integration gate: do not rewrite the main checker prematurely
+
+- [ ] **38.10.1**: The workfolder stays separate until all of the following are true:
+  - the 20-case corpus exists and is reproducible,
+  - `design.md` is populated with pinned reference notes,
+  - the baseline oracle exists,
+  - the full-suite harness exists,
+  - the parity subset is exact under DPOR,
+  - and the required hard protocol gates are no longer hand-waved.
+- [ ] **38.10.2**: If/when integration into `transpiler/src/modelcheck` is proposed, write an explicit migration plan first:
+  - which modules move,
+  - what existing code is replaced or kept,
+  - how CLI/reporting surfaces stay compatible,
+  - and how old vs new engines are compared during the switchover.
+- [ ] **38.10.3**: Until that migration plan exists, treat the prototype as an incubator, not a justification for ad hoc edits in the mainline checker.
+
+### 38.11 Acceptance criteria
+
+1. [ ] `transpiler/DPOR_based_model_tla_rs_checker/` exists with `README.md`, `design.md`, `src/`, `scripts/`, and `tests/`.
+2. [ ] `tests/tla/` contains exactly 20 named cases, ordered `01` through `20`, from `APlusB`/lock basics up to `PrimaryBackup`, `Paxos`, and `Raft`.
+3. [ ] `tests/tla-rs/` contains the translated tla-rs corpus, and one documented command/script can regenerate it from scratch.
+4. [ ] `design.md` contains pinned notes from `GenMC`, `Nidhugg`, and `CDSChecker`, including "borrow / do not copy / local mapping" decisions.
+5. [ ] A simple exhaustive baseline explorer exists and is kept as a permanent oracle for the parity subset.
+6. [ ] A full-suite command exists and is run on all 20 cases at every milestone, with a machine-readable report plus a human-readable scoreboard.
+7. [ ] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.
+8. [ ] DPOR and the baseline agree on verdict plus normalized state set or first witness for the small parity subset.
+9. [ ] `PrimaryBackup`, `Paxos`, and `Raft` are present as required hard cases and are never silently removed from the suite.
+10. [ ] No mainline rewrite of `transpiler/src/modelcheck` happens before the prototype earns the integration gate in `38.10`.
+
+### 38.12 Suggested execution order
+
+```
+38.1 Create isolated workfolder + README/tests contract
+  ↓
+38.2 Study GenMC/Nidhugg/CDSChecker and write real design notes
+  ↓
+38.3 Lock the 20-case TLA+ corpus and manifest
+  ↓
+38.4 Automate TLA+ → tla-rs corpus generation
+  ↓
+38.5 Build full-suite harness + scoreboard
+  ↓
+38.6 Implement exact baseline explorer first
+  ↓
+38.7 Define event/process/dependence model
+  ↓
+38.8 Land DPOR in conservative milestones with parity checks
+  ↓
+38.9 Push through the real protocol cases (PrimaryBackup / Paxos / Raft mandatory)
+  ↓
+38.10 Only then discuss integration into the main checker
+```
+
+### 38.13 Estimated effort
+
+| Step | Effort |
+|------|--------|
+| 38.1 Workfolder + contract | ~0.5-1 day |
+| 38.2 Reference study + `design.md` | ~2-4 days |
+| 38.3 20-case corpus definition | ~2-4 days |
+| 38.4 Corpus generation pipeline | ~1-2 days |
+| 38.5 Harness + scoreboard | ~1-3 days |
+| 38.6 Baseline exhaustive oracle | ~3-6 days |
+| 38.7 Event/dependence model | ~2-4 days |
+| 38.8 DPOR milestones | ~1-3 weeks |
+| 38.9 Hard protocol closure | ~1-3 weeks |
+| 38.10 Integration planning | ~1-2 days |
+| **Total** | **~4-8 weeks of focused work** |
