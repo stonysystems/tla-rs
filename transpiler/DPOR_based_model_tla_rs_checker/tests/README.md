@@ -42,11 +42,33 @@ regression — it is progress.
 
 ## Corpus Provenance
 
-For protocol-scale cases (cases 11+), the TLA+ source may come from:
+| Case | Source | Provenance |
+|------|--------|------------|
+| 01-12 | Hand-written TLA+ | Original specs in `tests/tla/` |
+| 13 (TwoPhase) | `transpiler/tests/tla_examples/TwoPhase.tla` | Copied verbatim |
+| 14 (LeaderElection) | `transpiler/tla_test_workspace/transpiler_generated_tla/LeaderElection/` | Copied verbatim |
+| 15 (ChainReplication) | `transpiler/tla_test_workspace/transpiler_generated_tla/ChainReplication/` | Copied verbatim |
+| 16 (PrimaryBackup) | `transpiler/tla_test_workspace/transpiler_generated_tla/PrimaryBackup/` | Copied verbatim |
+| 17 (Paxos) | `transpiler/tests/tla_examples/Paxos.tla` | Copied verbatim |
+| 18 (PBFT) | `transpiler/tests/tla_examples/PBFT.tla` | Copied verbatim |
+| 19 (EPaxos) | `transpiler/tla_test_workspace/transpiler_generated_tla/EPaxos/` | Copied verbatim |
+| 20 (Raft) | `transpiler/tests/tla_examples/Raft.tla` | Copied verbatim |
 
-- `transpiler/tests/tla_examples/` — existing TLA+ examples in the repo
-- `transpiler/tla_test_workspace/transpiler_generated_tla/` — auto-generated TLA+
-- `src/protocol/*/` — Verus spec files (used as tla-rs input directly)
+The `source` field in `manifest.toml` records the exact provenance per case.
 
-The exact source for each case is documented in `manifest.toml` under the
-`source` field.
+## Corpus Generation
+
+Regenerate the tla-rs translations from TLA+ sources:
+
+```bash
+cd transpiler/DPOR_based_model_tla_rs_checker
+./scripts/regenerate_corpus.sh
+```
+
+**Current translation status** (2026-03-25): 12/20 cases translate successfully.
+8 cases fail because the transpiler doesn't yet support certain TLA+ features
+used in the hand-written specs (CONSTANT params, EXCEPT notation, function
+definitions). Failed cases have a `TRANSLATION_FAILED` marker in `tests/tla-rs/`.
+
+The `tla-rs/` directory is a generated artifact — do NOT hand-edit files there.
+Run `regenerate_corpus.sh` to reproduce from a clean checkout.

@@ -11464,8 +11464,8 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ### 38.4 Build a reproducible TLA+ → tla-rs corpus generation pipeline
 
-- [ ] **38.4.1**: Add one script under `transpiler/DPOR_based_model_tla_rs_checker/scripts/` whose only job is to regenerate the entire translated corpus from `tests/tla/` into `tests/tla-rs/`.
-- [ ] **38.4.2**: Use the repo’s real transpiler workflow, not a fake placeholder. The expected command shape is:
+- [x] **38.4.1**: Added `scripts/regenerate_corpus.sh` — reads manifest.toml for each case, invokes `verus-transpile translate-tla` on the entry TLA+ file, and translates auxiliary modules. Records SUCCESS/FAIL/SKIP per case with summary. Current result: 12/20 succeed, 8 fail (transpiler doesn’t support CONSTANT params, EXCEPT, function definitions in hand-written specs).
+- [x] **38.4.2**: Script uses the real transpiler: `verus-transpile translate-tla --input <case>.tla --output <case>.rs --gen-modes`. Uses the repo’s real transpiler workflow, not a fake placeholder. The expected command shape is:
   ```bash
   cargo run --manifest-path transpiler/Cargo.toml --bin verus-transpile -- \
     translate-tla \
@@ -11474,9 +11474,9 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
     --gen-modes
   ```
   or the equivalent checked-in binary invocation.
-- [ ] **38.4.3**: For multi-module cases (`Types.tla` plus protocol module, or other support modules), preserve the module layout under both `tests/tla/` and `tests/tla-rs/`. Do **not** collapse a multi-file case into one handwritten artifact just to make generation easier.
-- [ ] **38.4.4**: Generated outputs under `tests/tla-rs/` must be mirrored by case ID and must be reproducible from a clean checkout. If the transpiler cannot translate one of the planned cases yet, record the failure explicitly in `tests/manifest.toml` and the suite report; do **not** hand-fix the generated Rust.
-- [ ] **38.4.5**: `tests/README.md` must document how each hard protocol case was sourced (for example from `transpiler/tests/tla_examples/` vs `transpiler/tla_test_workspace/transpiler_generated_tla/`), so the corpus provenance is auditable.
+- [x] **38.4.3**: Multi-module cases (14-16, 19) preserve Types.tla alongside the main module in both `tests/tla/` and `tests/tla-rs/`. Script translates auxiliary modules automatically.
+- [x] **38.4.4**: Generated outputs mirrored by case ID under `tests/tla-rs/`. Reproducible from clean checkout via `./scripts/regenerate_corpus.sh`. Failed cases get a `TRANSLATION_FAILED` marker file — no hand-fixing of generated Rust.
+- [x] **38.4.5**: `tests/README.md` updated with per-case provenance table showing exact source path for each protocol case (13-20). Documents current 12/20 translation success rate and the generation command.
 
 ### 38.5 Build the full-suite harness and scoreboard before deep DPOR work
 
