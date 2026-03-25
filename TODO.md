@@ -11417,8 +11417,8 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ### 38.3 Lock down the 20-case test corpus first
 
-- [ ] **38.3.1**: Create exactly 20 named cases under `transpiler/DPOR_based_model_tla_rs_checker/tests/tla/`, ordered from easiest to hardest with fixed `01_...` to `20_...` prefixes.
-- [ ] **38.3.2**: The required starting list is:
+- [x] **38.3.1**: Created all 20 named cases under `tests/tla/` with `01_` to `20_` prefixes. Cases 01-12 hand-written TLA+ (micro-models, classical concurrency, dining philosophers). Cases 13-20 copied from repo assets (`tla_examples/` and `transpiler_generated_tla/`).
+- [x] **38.3.2**: All 20 cases from the required list implemented. The required starting list is:
 
 | # | Case ID | Expected primary outcome | Purpose / why it exists | Seed |
 |---|---------|--------------------------|--------------------------|------|
@@ -11443,7 +11443,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 | 19 | `19_epaxos_small` | `ok` or explicit bounded status | Dependency-rich late stress case. | seed from generated `EPaxos/` TLA |
 | 20 | `20_raft_small` | `ok` | Required final hard case; must stay in the suite from day one even if initially not green. | seed from `transpiler/tests/tla_examples/Raft.tla` or generated `Raft/` TLA |
 
-- [ ] **38.3.3**: For each case, add a row to `tests/manifest.toml` with at minimum:
+- [x] **38.3.3**: All 20 cases have full manifest.toml entries with all required fields (id, difficulty_rank, source_kind, tla_entry, tla_aux_modules, expected_primary_result, expected_property, model_bounds, requires_deadlock_check, milestone_gate, negative, notes). For each case, add a row to `tests/manifest.toml` with at minimum:
   - `id`
   - `difficulty_rank`
   - `source_kind` (`handwritten`, `repo_example`, `generated_repo_tla`)
@@ -11456,8 +11456,8 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - `requires_deadlock_check`
   - `milestone_gate`
   - `notes`
-- [ ] **38.3.4**: At least 6 of the 20 cases must be negative cases (expected invariant violation or expected deadlock). These can be distinct TLA+ specs or paired property/config profiles, but they must run in the same full-suite harness.
-- [ ] **38.3.5**: Prefer existing local TLA assets for the harder protocol cases:
+- [x] **38.3.4**: 6 negative cases: 03_counter_race_bug (invariant_violation), 05_broken_lock_bug (invariant_violation), 08_bounded_buffer_2slot (invariant_violation via BoundedBufferBug.tla), 10_bakery_mutex_3p (invariant_violation via BakeryMutexBug.tla), 11_readers_writers_small (invariant_violation via ReadersWritersBug.tla), 12_dining_philosophers_3 (deadlock). Each negative case has the correct variant alongside the correct spec.
+- [x] **38.3.5**: Protocol cases 13-20 sourced from existing repo assets: TwoPhase.tla, LeaderElection/, ChainReplication/, PrimaryBackup/ from `transpiler_generated_tla/`; Paxos.tla, PBFT.tla, Raft.tla from `tla_examples/`; EPaxos/ from `transpiler_generated_tla/`. Prefer existing local TLA assets for the harder protocol cases:
   - `transpiler/tests/tla_examples/`
   - `transpiler/tla_test_workspace/transpiler_generated_tla/`
   The point is to reuse known repo semantics where possible, not to freehand a different protocol.

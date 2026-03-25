@@ -1,42 +1,328 @@
 # DPOR Checker Test Corpus Manifest
 #
-# Each [[case]] entry defines one test case in the 20-case corpus.
-# Cases are ordered 01_ to 20_ from easiest to hardest.
-#
-# Required fields:
-#   id             - Case ID matching the directory name (e.g., "01_counter")
-#   expected_status - One of: ok, invariant_violation, deadlock, known_unimplemented, timeout
-#   description    - One-line description of what the case tests
-#
-# Optional fields:
-#   source         - Provenance: where the TLA+ file came from
-#   init           - Name of the Init predicate (default: "Init")
-#   next           - Name of the Next predicate (default: "Next")
-#   invariants     - List of invariant names to check
-#   constants      - Inline constant assignments or reference to model config
-#   notes          - Free-text notes about the case
-#   negative       - true if this is a negative case (expected violation/deadlock)
+# 20 cases ordered 01_ to 20_ from easiest to hardest.
+# At least 6 are negative cases (invariant_violation or deadlock).
 
 # ============================================================
 # Cases 01-05: Micro-models
 # ============================================================
 
-# (Cases to be populated in Phase 38.3)
+[[case]]
+id = "01_aplusb"
+difficulty_rank = 1
+source_kind = "handwritten"
+tla_entry = "APlusB.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "SumInvariant"
+model_bounds = "a,b: 0..3"
+requires_deadlock_check = false
+milestone_gate = "M1"
+negative = false
+notes = "Smallest sanity check: single-step, single invariant."
+
+[[case]]
+id = "02_counter_incdec"
+difficulty_rank = 2
+source_kind = "handwritten"
+tla_entry = "CounterIncDec.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "TypeOK"
+model_bounds = "NumProcs=2, counter: 0..4"
+requires_deadlock_check = false
+milestone_gate = "M1"
+negative = false
+notes = "Two processes, shared counter, multiple enabled actions."
+
+[[case]]
+id = "03_counter_race_bug"
+difficulty_rank = 3
+source_kind = "handwritten"
+tla_entry = "CounterRaceBug.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "invariant_violation"
+expected_property = "TotalCorrect"
+model_bounds = "NumProcs=2"
+requires_deadlock_check = false
+milestone_gate = "M1"
+negative = true
+notes = "NEGATIVE: lost-update race. Checker must find the interleaving where both read before either writes."
+
+[[case]]
+id = "04_lock_basic"
+difficulty_rank = 4
+source_kind = "handwritten"
+tla_entry = "LockBasic.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "MutualExclusion"
+model_bounds = "NumProcs=2"
+requires_deadlock_check = false
+milestone_gate = "M1"
+negative = false
+notes = "Basic lock; mutual exclusion holds."
+
+[[case]]
+id = "05_broken_lock_bug"
+difficulty_rank = 5
+source_kind = "handwritten"
+tla_entry = "BrokenLockBug.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "invariant_violation"
+expected_property = "MutualExclusion"
+model_bounds = "NumProcs=2"
+requires_deadlock_check = false
+milestone_gate = "M1"
+negative = true
+notes = "NEGATIVE: lock acquire doesn't check lock variable. Both enter critical section."
 
 # ============================================================
 # Cases 06-10: Classical concurrency
 # ============================================================
 
-# (Cases to be populated in Phase 38.3)
+[[case]]
+id = "06_ticket_lock"
+difficulty_rank = 6
+source_kind = "handwritten"
+tla_entry = "TicketLock.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "MutualExclusion"
+model_bounds = "NumProcs=2, ticket: 0..5"
+requires_deadlock_check = false
+milestone_gate = "M2"
+negative = false
+notes = "Ordered lock handoff; more interleavings."
+
+[[case]]
+id = "07_producer_consumer_1slot"
+difficulty_rank = 7
+source_kind = "handwritten"
+tla_entry = "ProducerConsumer1Slot.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "SafetyInvariant"
+model_bounds = "produced: 0..3"
+requires_deadlock_check = false
+milestone_gate = "M2"
+negative = false
+notes = "Single-slot buffer; partial independence between produce/consume."
+
+[[case]]
+id = "08_bounded_buffer_2slot"
+difficulty_rank = 8
+source_kind = "handwritten"
+tla_entry = "BoundedBufferBug.tla"
+tla_aux_modules = ["BoundedBuffer2Slot.tla"]
+generated_tlars_entry = ""
+expected_primary_result = "invariant_violation"
+expected_property = "BufferNotOverflow"
+model_bounds = "MaxVal=3"
+requires_deadlock_check = false
+milestone_gate = "M2"
+negative = true
+notes = "NEGATIVE: buggy buffer variant omits count check; overflow detected. Correct version in BoundedBuffer2Slot.tla."
+
+[[case]]
+id = "09_peterson_mutex_2p"
+difficulty_rank = 9
+source_kind = "handwritten"
+tla_entry = "PetersonMutex.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "MutualExclusion"
+model_bounds = ""
+requires_deadlock_check = false
+milestone_gate = "M2"
+negative = false
+notes = "Classical DPOR benchmark; exactly 2 processes."
+
+[[case]]
+id = "10_bakery_mutex_3p"
+difficulty_rank = 10
+source_kind = "handwritten"
+tla_entry = "BakeryMutexBug.tla"
+tla_aux_modules = ["BakeryMutex.tla"]
+generated_tlars_entry = ""
+expected_primary_result = "invariant_violation"
+expected_property = "MutualExclusion"
+model_bounds = "NumProcs=3, number: 0..4"
+requires_deadlock_check = false
+milestone_gate = "M2"
+negative = true
+notes = "NEGATIVE: buggy bakery missing tiebreaker — equal numbers both enter. Correct version in BakeryMutex.tla."
 
 # ============================================================
 # Cases 11-15: Small distributed protocols
 # ============================================================
 
-# (Cases to be populated in Phase 38.3)
+[[case]]
+id = "11_readers_writers_small"
+difficulty_rank = 11
+source_kind = "handwritten"
+tla_entry = "ReadersWritersBug.tla"
+tla_aux_modules = ["ReadersWriters.tla"]
+generated_tlars_entry = ""
+expected_primary_result = "invariant_violation"
+expected_property = "Safety"
+model_bounds = "NumReaders=2, NumWriters=1"
+requires_deadlock_check = false
+milestone_gate = "M3"
+negative = true
+notes = "NEGATIVE: buggy writer skips reader check — concurrent read/write. Correct version in ReadersWriters.tla."
+
+[[case]]
+id = "12_dining_philosophers_3"
+difficulty_rank = 12
+source_kind = "handwritten"
+tla_entry = "DiningPhilosophers.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "deadlock"
+expected_property = "NoStarvation"
+model_bounds = "NumPhil=3"
+requires_deadlock_check = true
+milestone_gate = "M3"
+negative = true
+notes = "NEGATIVE: deadlock expected when all philosophers pick left fork."
+
+[[case]]
+id = "13_twophase_small"
+difficulty_rank = 13
+source_kind = "repo_example"
+tla_entry = "TwoPhase.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "TCConsistent"
+model_bounds = "RM={r1,r2}, small finite"
+requires_deadlock_check = false
+milestone_gate = "M3"
+negative = false
+source = "transpiler/tests/tla_examples/TwoPhase.tla"
+notes = "First real protocol. 2-RM two-phase commit."
+
+[[case]]
+id = "14_leader_election_small"
+difficulty_rank = 14
+source_kind = "generated_repo_tla"
+tla_entry = "LeaderElection.tla"
+tla_aux_modules = ["Types.tla"]
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "LSafety"
+model_bounds = "2 nodes"
+requires_deadlock_check = false
+milestone_gate = "M3"
+negative = false
+source = "transpiler/tla_test_workspace/transpiler_generated_tla/LeaderElection/"
+notes = "Bully leader election; per-node state."
+
+[[case]]
+id = "15_chain_replication_small"
+difficulty_rank = 15
+source_kind = "generated_repo_tla"
+tla_entry = "ChainReplication.tla"
+tla_aux_modules = ["Types.tla"]
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "LSafety"
+model_bounds = "2 nodes"
+requires_deadlock_check = false
+milestone_gate = "M4"
+negative = false
+source = "transpiler/tla_test_workspace/transpiler_generated_tla/ChainReplication/"
+notes = "Pipeline/message-flow case."
 
 # ============================================================
 # Cases 16-20: Full protocol models
 # ============================================================
 
-# (Cases to be populated in Phase 38.3)
+[[case]]
+id = "16_primarybackup_small"
+difficulty_rank = 16
+source_kind = "generated_repo_tla"
+tla_entry = "PrimaryBackup.tla"
+tla_aux_modules = ["Types.tla"]
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "LSafety"
+model_bounds = "2 nodes"
+requires_deadlock_check = false
+milestone_gate = "M4"
+negative = false
+source = "transpiler/tla_test_workspace/transpiler_generated_tla/PrimaryBackup/"
+notes = "Mid/high-complexity protocol gate."
+
+[[case]]
+id = "17_paxos_small"
+difficulty_rank = 17
+source_kind = "repo_example"
+tla_entry = "Paxos.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "ok"
+expected_property = "Consistency"
+model_bounds = "2 acceptors, quorum=1"
+requires_deadlock_check = false
+milestone_gate = "M4"
+negative = false
+source = "transpiler/tests/tla_examples/Paxos.tla"
+notes = "Consensus; quorum-sensitive state space."
+
+[[case]]
+id = "18_pbft_small"
+difficulty_rank = 18
+source_kind = "repo_example"
+tla_entry = "PBFT.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "known_unimplemented"
+expected_property = "Safety"
+model_bounds = "4 nodes (3f+1), small view"
+requires_deadlock_check = false
+milestone_gate = "M5"
+negative = false
+source = "transpiler/tests/tla_examples/PBFT.tla"
+notes = "Byzantine protocol; may exceed current bounds. Start as known_unimplemented."
+
+[[case]]
+id = "19_epaxos_small"
+difficulty_rank = 19
+source_kind = "generated_repo_tla"
+tla_entry = "EPaxos.tla"
+tla_aux_modules = ["Types.tla"]
+generated_tlars_entry = ""
+expected_primary_result = "known_unimplemented"
+expected_property = "LSafety"
+model_bounds = "2 nodes"
+requires_deadlock_check = false
+milestone_gate = "M5"
+negative = false
+source = "transpiler/tla_test_workspace/transpiler_generated_tla/EPaxos/"
+notes = "Dependency-rich late stress case. Start as known_unimplemented."
+
+[[case]]
+id = "20_raft_small"
+difficulty_rank = 20
+source_kind = "repo_example"
+tla_entry = "Raft.tla"
+tla_aux_modules = []
+generated_tlars_entry = ""
+expected_primary_result = "known_unimplemented"
+expected_property = "ElectionSafety"
+model_bounds = "2 servers, 1 term"
+requires_deadlock_check = false
+milestone_gate = "M5"
+negative = false
+source = "transpiler/tests/tla_examples/Raft.tla"
+notes = "Final hard case. Must stay in suite from day one even if not initially green."
