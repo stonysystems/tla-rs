@@ -250,6 +250,178 @@ struct ExecutionTrace {
 
 ---
 
+## Core DPOR Runtime Types (Phase 38.7.1)
+
+The following types are the core runtime objects for the DPOR prototype.
+They are defined here first (design.md) and will be implemented in Rust
+when Phase 38.8 begins.
+
+```rust
+/// Identifies a process/actor in the protocol.
+/// For distributed protocols: server/node index.
+/// For single-process specs: always ProcessId(0).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProcessId(pub u32);
+
+/// Identifies a specific action branch within the Next predicate.
+/// E.g., "LTMRcvPrepared", "LTMCommit", "LAdd" — corresponds to
+/// one disjunct in the Next == A1 \/ A2 \/ ... predicate.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ActionId {
+    pub branch_label: String,
+    pub process: ProcessId,
+}
+
+/// A single step in an execution trace.
+/// Represents one process taking one action, producing a successor state.
+#[derive(Clone, Debug)]
+pub struct Event {
+    pub seq: usize,                       // Global sequence number (0-indexed)
+    pub action: ActionId,                 // Which process took which action
+    pub pre_state: StateFingerprint,      // State before this step
+    pub post_state: StateFingerprint,     // State after this step
+    pub clock: VectorClock,               // Lamport vector clock at this event
+}
+
+/// Compact state identity for dedup and comparison.
+/// Mirrors Phase 36's canonical_key() / u64 fingerprint scheme.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct StateFingerprint(pub u64);
+
+/// Lamport vector clock indexed by ProcessId.
+/// Used to track happens-before between events.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct VectorClock {
+    pub clocks: BTreeMap<ProcessId, u64>,
+}
+
+impl VectorClock {
+    pub fn tick(&mut self, process: ProcessId) {
+        *self.clocks.entry(process).or_insert(0) += 1;
+    }
+    pub fn merge(&mut self, other: &VectorClock) {
+        for (&pid, &ts) in &other.clocks {
+            let entry = self.clocks.entry(pid).or_insert(0);
+            *entry = (*entry).max(ts);
+        }
+    }
+    pub fn happens_before(&self, other: &VectorClock) -> bool {
+        self.clocks.iter().all(|(&pid, &ts)| {
+            ts <= *other.clocks.get(&pid).unwrap_or(&0)
+        }) && self != other
+    }
+}
+
+/// An ordered prefix of an execution: a sequence of events from the initial state.
+#[derive(Clone, Debug)]
+pub struct ExecutionPrefix {
+    pub events: Vec<Event>,
+    pub initial_state: StateFingerprint,
+}
+
+/// The set of processes that are enabled (have at least one valid transition)
+/// in a given state.
+pub type EnabledSet = BTreeSet<ProcessId>;
+
+/// At each event in the trace, records which alternative processes should be
+/// explored at this decision point (source-DPOR backtrack insertion).
+#[derive(Clone, Debug, Default)]
+pub struct BacktrackInfo {
+    pub backtrack: BTreeSet<ProcessId>,   // Processes to try as alternatives
+    pub done: BTreeSet<ProcessId>,        // Processes already explored here
+}
+
+/// Per-event sleep set (v2+, initially empty).
+pub type SleepSet = BTreeSet<ActionId>;
+
+/// Wakeup tree node (v3+, placeholder).
+pub struct WakeupTree {
+    // Deferred — not implemented in v1
+}
+```
+
+---
+
+## Event Model Decision (Phase 38.7.2)
+
+**Decision**: A tla-rs step becomes a DPOR event as
+**(process_id, branch_label, concrete_existential_bindings)**.
+
+**How it works**:
+1. The `Next` predicate is a disjunction: `Next == \E p \in Procs: A1(p) \/ A2(p) \/ ...`
+2. The model checker's transition IR decomposes this into branches, each with:
+   - A `branch_label` (e.g., "LTMRcvPrepared")
+   - Existential variables (e.g., `p`, `r`, `sender`)
+   - A solver that produces successor states
+3. For DPOR, the **unit of scheduling** is `(process_id, branch_label)`:
+   - `process_id` = the existential variable that identifies the acting process
+   - `branch_label` = which action disjunct was taken
+4. Two events at the same sequence position are **alternative interleavings**
+   if they have different `process_id` values.
+
+**Tradeoffs**:
+- **Coarser than helper-expanded steps**: We don't decompose a single action
+  into sub-steps. This is simpler but may miss independence within an action.
+- **Finer than branch-only**: We distinguish by process_id, not just branch label.
+  This enables DPOR to skip interleavings between independent processes.
+- **Practical**: Matches the existing checker's branch/solver structure.
+
+---
+
+## Conservative Dependence Relation (Phase 38.7.3)
+
+**v1 dependence relation** (conservative over-approximation):
+
+Two events `e1 = (p1, a1)` and `e2 = (p2, a2)` are **dependent** if:
+- `p1 == p2` (same process — always dependent), **OR**
+- They both appear in the same execution and the post-state of one differs
+  depending on whether the other has already occurred (observable effect).
+
+**v1 implementation** (simplest correct approach):
+- **All cross-process events are dependent** (no reduction).
+- This is trivially sound: it explores every interleaving, same as BFS/DFS.
+- DPOR with this relation degenerates to exhaustive exploration.
+
+**v1.1 refinement** (first useful reduction):
+- Two events are **independent** if they modify **disjoint sets of state fields**.
+- The existing solver already tracks `direct_assigned_fields` per branch.
+- Static analysis: if `branch_A` writes only `{s.x, s.y}` and `branch_B` writes
+  only `{s.z}`, and neither reads the other's written fields, they are independent.
+- This is a **field-level** independence check, not a value-level check.
+
+**Why conservative is OK**: Missing reductions means exploring more interleavings
+(slower but correct). Missing bugs means under-approximating dependence (unsound).
+v1 is correct by construction; v1.1 must be validated against v1 on all small cases.
+
+---
+
+## Process Identity Derivation (Phase 38.7.4)
+
+| Case | Protocol | ProcessId derivation | Notes |
+|------|----------|---------------------|-------|
+| 01 | APlusB | `ProcessId(0)` (single process) | No concurrency |
+| 02 | CounterIncDec | Existential `p` in `\E p \in Procs` | Process = thread |
+| 03 | CounterRaceBug | Existential `p` in `\E p \in Procs` | Process = thread |
+| 04 | LockBasic | Existential `p` in `\E p \in Procs` | Process = thread |
+| 05 | BrokenLockBug | Existential `p` in `\E p \in Procs` | Process = thread |
+| 06 | TicketLock | Existential `p` in `\E p \in Procs` | Process = thread |
+| 07 | ProducerConsumer | Action name (`Produce`/`Consume`) | 2 implicit processes |
+| 08 | BoundedBuffer | Action name (`Produce`/`Consume`) | 2 implicit processes |
+| 09 | PetersonMutex | Existential `p` in `\E p \in P` | P = {0, 1} |
+| 10 | BakeryMutex | Existential `p` in `\E p \in Procs` | Process = thread |
+| 11 | ReadersWriters | Existential `r`/`w` in `\E r \in Readers` / `\E w \in Writers` | Two process families |
+| 12 | DiningPhilosophers | Existential `p` in `\E p \in Phil` | Process = philosopher |
+| 13 | TwoPhase | Existential `r` in `\E r \in RM` + TM actions | RM processes + 1 TM |
+| 14 | LeaderElection | Existential `node` in branch params | Process = node |
+| 15 | ChainReplication | Existential `c` / node id in branch params | Process = chain node |
+| 16 | PrimaryBackup | Existential `c` / node id in branch params | Process = primary/backup |
+| 17 | Paxos | Existential over acceptors/proposers | Process = acceptor/proposer |
+| 18 | PBFT | Node id in branch params | Process = replica |
+| 19 | EPaxos | Node id in branch params | Process = replica |
+| 20 | Raft | Server id in branch params | Process = server |
+
+---
+
 ## Prototype-to-Mainline Integration Gate (Phase 38.2.5)
 
 **No rewrite of `transpiler/src/modelcheck` is allowed** until ALL of the

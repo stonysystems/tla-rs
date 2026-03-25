@@ -11520,24 +11520,10 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ### 38.7 Define the tla-rs DPOR event model and dependence relation explicitly
 
-- [ ] **38.7.1**: Before source-DPOR code gets deep, define the core runtime objects in `design.md` and then in code:
-  - `ProcessId`
-  - `ActionId` / branch label
-  - `Event`
-  - `ExecutionPrefix` / trace
-  - `EnabledSet`
-  - `BacktrackSet`
-  - `SleepSet`
-  - `WakeupTree`
-  - `StateFingerprint`
-- [ ] **38.7.2**: Decide how a translated tla-rs step becomes a DPOR event. For example:
-  - branch label + concrete bindings,
-  - branch label + logical actor/process id,
-  - helper-expanded leaf step,
-  - or another well-defined unit.
-  Record the decision and its tradeoffs.
-- [ ] **38.7.3**: Start with a conservative dependence relation. Missing reductions is acceptable early; missing bugs is not. The first conflict model can over-approximate dependence, but must not under-approximate it without proof.
-- [ ] **38.7.4**: Each protocol case from `13` onward must record, in its case notes or manifest, how process identity is derived (for example node id, proposer id, replica id, client id, or action family only if no finer actor is available).
+- [x] **38.7.1**: Defined all 9 core runtime types in `design.md` §"Core DPOR Runtime Types": `ProcessId(u32)`, `ActionId{branch_label, process}`, `Event{seq, action, pre/post_state, clock}`, `ExecutionPrefix{events, initial_state}`, `EnabledSet = BTreeSet<ProcessId>`, `BacktrackInfo{backtrack, done}`, `SleepSet = BTreeSet<ActionId>` (v2+), `WakeupTree` (v3+ placeholder), `StateFingerprint(u64)`. Also defined `VectorClock` with `tick()`, `merge()`, `happens_before()` methods.
+- [x] **38.7.2**: Event model decision documented in `design.md` §"Event Model Decision": a tla-rs step becomes DPOR event as **(process_id, branch_label)**. Unit of scheduling = (process_id, branch_label) matching the existing checker's branch/solver structure. Coarser than helper-expanded steps (simpler), finer than branch-only (enables per-process independence). Tradeoffs documented.
+- [x] **38.7.3**: Conservative dependence relation documented in `design.md` §"Conservative Dependence Relation". v1: all cross-process events dependent (no reduction, correct by construction). v1.1 refinement: field-level independence check using existing `direct_assigned_fields` telemetry — independent if disjoint written fields and no cross-reads. v1.1 must be validated against v1 on small cases.
+- [x] **38.7.4**: Process identity derivation documented in `design.md` for all 20 cases. Cases 01: single process. Cases 02-06/09-12: existential `p` from `\E p \in Procs`. Cases 07-08: implicit 2 processes (Produce/Consume). Cases 13-20: protocol-specific (RM/TM, node, server, acceptor/proposer, replica).
 
 ### 38.8 Implement DPOR in milestones, not as one giant leap
 
