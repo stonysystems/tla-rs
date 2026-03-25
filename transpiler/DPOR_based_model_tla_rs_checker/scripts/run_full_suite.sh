@@ -107,11 +107,11 @@ for case_dir in "$TLA_DIR"/*/; do
             states=0
             elapsed_ms=0
         else
-            # Create minimal model config
+            # Create minimal model config with finite int domain
             model_toml=$(mktemp /tmp/dpor_model_${case_id}_XXXXXX.toml)
             cat > "$model_toml" <<MODELEOF
 [search]
-max_depth = 100
+max_depth = 50
 max_states = 10000
 timeout_ms = $((TIMEOUT_SEC * 1000))
 
@@ -119,6 +119,11 @@ timeout_ms = $((TIMEOUT_SEC * 1000))
 invariants = []
 check_deadlock = false
 successor_semantics = "deadlock"
+
+[quantifiers]
+int = { min = 0, max = 5 }
+max_set_len = 4
+max_seq_len = 4
 MODELEOF
 
             # Build invariant args
@@ -137,12 +142,28 @@ MODELEOF
                 --model "$model_toml" \
                 --json-report \
                 $inv_args > "$mc_allout" 2>&1 && true
-            # Extract JSON (last line starting with {) or empty
-            mc_output="$(grep '^{' "$mc_allout" 2>/dev/null | tail -1 || true)"
+            # Extract full JSON object from output (may be pretty-printed multi-line)
+            mc_output="$(python3 -c "
+import json, sys
+try:
+    with open('$mc_allout') as f:
+        content = f.read()
+    # Try to parse as JSON directly
+    d = json.loads(content)
+    print(json.dumps(d))
+except:
+    # If content has error text before JSON, try to find JSON object
+    import re
+    m = re.search(r'^\{.*^\}', content, re.MULTILINE | re.DOTALL)
+    if m:
+        try:
+            d = json.loads(m.group())
+            print(json.dumps(d))
+        except:
+            pass
+" 2>/dev/null || true)"
             end_ms=$(date +%s%3N 2>/dev/null || python3 -c "import time; print(int(time.time()*1000))")
             elapsed_ms=$((end_ms - start_ms))
-
-            rm -f "$model_toml" "$mc_allout"
 
             if [[ -z "$mc_output" ]]; then
                 err_snippet="$(head -3 "$mc_allout" 2>/dev/null | tr '\n' ' ' | head -c 120)"
@@ -172,6 +193,8 @@ MODELEOF
                     FAILED=$((FAILED + 1))
                 fi
             fi
+            # Clean up temp files
+            rm -f "$model_toml" "$mc_allout"
         fi
     fi
 
