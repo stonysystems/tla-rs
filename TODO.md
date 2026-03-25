@@ -11527,7 +11527,12 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ### 38.8 Implement DPOR in milestones, not as one giant leap
 
-- [ ] **38.8.1**: First DPOR milestone: deterministic replay of an execution prefix and conservative backtrack-point recording.
+- [ ] **38.8.1**: First DPOR milestone: deterministic replay of an execution prefix and conservative backtrack-point recording. Decomposed:
+  - [x] **38.8.1.a**: Initialized Cargo crate with `Cargo.toml` (depends on `verus-transpiler`), `src/lib.rs` (re-exports `RuntimeValue`), `src/main.rs` (placeholder CLI). `cargo test` passes, `cargo build` succeeds.
+  - [x] **38.8.1.b**: Implemented all core DPOR types in `src/types.rs`: `ProcessId(u32)`, `ActionId{branch_label, process}`, `Event{seq, action, pre/post_state, clock}`, `ExecutionPrefix{events, initial_state}`, `BacktrackInfo{backtrack, done}`, `StateFingerprint(u64)`, `VectorClock{clocks}` with `tick()`, `merge()`, `happens_before()`, `get()`. 9 unit tests: ordering, tick, merge, happens-before, concurrency, backtrack default, execution construction, fingerprint equality, action ordering.
+  - [ ] **38.8.1.c**: Implement deterministic trace replay: given an `ExecutionPrefix` (sequence of `(ProcessId, ActionId)` choices), re-execute the trace from the initial state and reconstruct the full sequence of states. This uses the existing model checker's `solve_traced_successors_for_state()` to produce successors, then picks the one matching the scheduled process/action.
+  - [ ] **38.8.1.d**: Implement conservative backtrack-point recording: after exploring one complete execution, walk backward through the trace and record backtrack points where an alternative process was enabled but not chosen. v1: all enabled processes at each step are backtrack candidates (no independence filtering yet).
+  - [ ] **38.8.1.e**: Add a smoke test: run the conservative DPOR explorer on case 01 (APlusB) and verify it produces the same verdict and state count as the baseline.
 - [ ] **38.8.2**: Second milestone: source-DPOR style backtrack/source-set insertion with exact verdict parity against the baseline on the small cases.
 - [ ] **38.8.3**: Third milestone: wakeup-tree / sleep-set style improvements only after the previous milestone is exact on the baseline-parity subset.
 - [ ] **38.8.4**: At each DPOR milestone, require evidence of both:
