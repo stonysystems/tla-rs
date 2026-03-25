@@ -8,6 +8,7 @@
 //! prototype-to-mainline integration gate.
 
 pub mod baseline;
+pub mod explorer;
 pub mod types;
 
 /// Re-export shared types from the transpiler for convenience.
