@@ -11480,7 +11480,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ### 38.5 Build the full-suite harness and scoreboard before deep DPOR work
 
-- [ ] **38.5.1**: Add one blessed full-suite command (script or cargo entrypoint) that runs all 20 cases in order and writes machine-readable results under `transpiler/DPOR_based_model_tla_rs_checker/tests/reports/`.
+- [x] **38.5.1**: Added `scripts/run_full_suite.sh` — runs all 20 cases using the existing `verus-transpile model-check` baseline, writes JSON results to `tests/reports/latest.json`. Supports `--timeout N` flag. Initial run: 0 passed, 8 translation_failed, 3 known_unimplemented, 9 checker_error (model checker requires types.rs sibling file that standalone translated specs don't have).
 - [ ] **38.5.2**: The result schema for each case should include at minimum:
   - `case_id`
   - `engine` (`baseline` or `dpor`)
@@ -11496,7 +11496,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - `sleep_prunes`
   - `wakeup_nodes`
   - `regression_vs_previous`
-- [ ] **38.5.3**: Keep a human-readable pass matrix in `tests/reports/README.md` or `tests/reports/latest.md` showing, for each milestone:
+- [x] **38.5.3**: Created `tests/reports/latest.md` with M0 scoreboard: 20 cases, 0 passed, 8 translation_failed, 3 known_unimplemented, 9 checker_error. Per-case status table with blockers documented (TLA+ translation gaps + model checker types.rs requirement). Keep a human-readable pass matrix in `tests/reports/README.md` or `tests/reports/latest.md` showing, for each milestone:
   - total cases passed,
   - total known-failing cases,
   - new regressions,
