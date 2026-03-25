@@ -296,9 +296,11 @@ fn validate_linit_signature(
     expected_state_type: &Type,
 ) -> TranspileResult<()> {
     let mut issues = Vec::new();
-    if linit.params.len() != 2 {
+    // Accept 1-parameter Init (state only, for standalone translated TLA+ specs)
+    // or 2-parameter Init (state + constants, for protocol specs with LConstants)
+    if linit.params.len() != 1 && linit.params.len() != 2 {
         issues.push(format!(
-            "expected 2 parameters, found {}",
+            "expected 1 or 2 parameters, found {}",
             linit.params.len()
         ));
     }
@@ -308,7 +310,17 @@ fn validate_linit_signature(
             format_type_for_diagnostic(&linit.return_type)
         ));
     }
-    if linit.params.len() == 2 {
+    if linit.params.len() == 1 {
+        // 1-parameter form: LInit(state: LState) -> bool
+        // The single param must match the expected state type
+        if linit.params[0].ty != *expected_state_type {
+            issues.push(format!(
+                "expected single parameter of type `{}`, found `{}`",
+                format_type_for_diagnostic(expected_state_type),
+                format_type_for_diagnostic(&linit.params[0].ty)
+            ));
+        }
+    } else if linit.params.len() == 2 {
         let first_is_state = linit.params[0].ty == *expected_state_type;
         let second_is_state = linit.params[1].ty == *expected_state_type;
         let first_is_constants = is_named_type(&linit.params[0].ty, "LConstants");
@@ -330,7 +342,7 @@ fn validate_linit_signature(
     if !issues.is_empty() {
         return Err(crate::error::TranspileError::Config {
             message: format!(
-                "Incompatible `{}` signature.\nExpected: {}(state: {}, constants: LConstants) -> bool (parameter order/name may vary)\nFound: {}\nIssues: {}\nFix: provide one state parameter matching `{}` and one `LConstants` parameter.",
+                "Incompatible `{}` signature.\nExpected: {}(state: {}[, constants: LConstants]) -> bool (parameter order/name may vary)\nFound: {}\nIssues: {}\nFix: provide one state parameter matching `{}` and optionally one `LConstants` parameter.",
                 expected_name,
                 expected_name,
                 format_type_for_diagnostic(expected_state_type),
@@ -537,27 +549,27 @@ pub fn ingest_protocol_sources_with_types_and_entrypoints(
                 ),
             });
         }
-        explicit_types_file.to_path_buf()
+        Some(explicit_types_file.to_path_buf())
     } else {
         let inferred_types_file = protocol_dir.join("types.rs");
-        if !inferred_types_file.exists() {
-            return Err(crate::error::TranspileError::Config {
-                message: format!(
-                    "Expected sibling types.rs for protocol source {}: missing {}",
-                    protocol_file.display(),
-                    inferred_types_file.display()
-                ),
-            });
+        if inferred_types_file.exists() {
+            Some(inferred_types_file)
+        } else {
+            // No types file — standalone spec (e.g., translated TLA+)
+            None
         }
-        inferred_types_file
     };
 
-    let (schema, spec_functions) =
-        analyze_spec_files_with_ast(&[types_file.as_path(), protocol_file])?;
+    let (schema, spec_functions) = if let Some(ref types_path) = types_file {
+        analyze_spec_files_with_ast(&[types_path.as_path(), protocol_file])?
+    } else {
+        // Analyze protocol file alone — types are defined inline
+        analyze_spec_files_with_ast(&[protocol_file])?
+    };
     let entrypoints = resolve_required_entrypoints_named(&spec_functions, init_name, next_name)?;
 
     Ok(ProtocolSourceBundle {
-        types_file,
+        types_file: types_file.unwrap_or_else(|| protocol_file.to_path_buf()),
         protocol_file: protocol_file.to_path_buf(),
         schema,
         spec_functions,
@@ -1965,8 +1977,11 @@ verus! {
 
     #[test]
     fn test_ingest_protocol_sources_missing_types_file() {
+        // When types.rs is missing, ingestion should still proceed for standalone specs.
+        // The spec must have valid LInit/LNext to succeed.
         let dir = tempdir().unwrap();
         let proto_path = dir.path().join("demo.rs");
+        // This spec lacks LNext, so it should fail on missing entrypoint, not on missing types
         fs::write(
             &proto_path,
             "verus! { pub open spec fn LInit() -> bool { true } }",
@@ -1975,7 +1990,12 @@ verus! {
 
         let err = ingest_protocol_sources(&proto_path).unwrap_err();
         assert!(matches!(err, crate::error::TranspileError::Config { .. }));
-        assert!(err.to_string().contains("missing"));
+        // Should fail because LNext is missing, not because types.rs is missing
+        assert!(
+            err.to_string().contains("LNext"),
+            "Expected LNext-related error, got: {}",
+            err
+        );
     }
 
     #[test]

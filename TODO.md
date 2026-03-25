@@ -11507,7 +11507,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ### 38.6 Keep a simple exhaustive baseline explorer as a permanent oracle
 
-- [ ] **38.6.1**: Implement a minimal, boring, exact baseline explorer first. It may be slower than DPOR; that is acceptable. Its job is correctness, not speed.
+- [x] **38.6.1**: Enabled the existing source-first model checker as the baseline explorer for standalone translated TLA+ specs. Two changes: (1) `spec_analyzer/mod.rs`: accept 1-parameter `LInit(state)` (no LConstants required), and make `types.rs` optional (standalone specs define types inline). (2) `main.rs`: when no LConstants parameter exists, use a dummy Unit constants type with a single empty valuation. Case 01 (APlusB) now passes: `result=ok`, 21 states, `FrontierExhausted`, `LSumInvariant` verified.
 - [ ] **38.6.2**: Baseline v1 must support:
   - initial-state construction for the finite case bounds,
   - exact successor generation,

@@ -3596,6 +3596,9 @@ fn execute_model_check(
         .ok_or_else(|| miette::miette!("Missing current-state parameter in next entrypoint."))?
         .ty
         .clone();
+    // LConstants is optional: standalone translated TLA+ specs may have
+    // LInit(state) without a constants parameter. In that case, use a
+    // dummy unit constants type with a single empty valuation.
     let constants_ty = bundle
         .entrypoints
         .linit
@@ -3607,14 +3610,13 @@ fn execute_model_check(
                 verus_transpiler::ast::Type::Named(path) if path.last() == Some("LConstants")
             )
         })
-        .ok_or_else(|| {
-            miette::miette!(
-                "Missing `LConstants` parameter in init entrypoint `{}`.",
-                bundle.entrypoints.linit.name
-            )
-        })?
-        .ty
-        .clone();
+        .map(|p| p.ty.clone())
+        .unwrap_or_else(|| {
+            // No LConstants parameter — use a dummy unit type
+            verus_transpiler::ast::Type::Named(verus_transpiler::ast::Path::single(
+                "Unit".to_string(),
+            ))
+        });
 
     enum StateCandidatesSource {
         Expanded(Vec<verus_transpiler::modelcheck::value::RuntimeValue>),
@@ -3652,17 +3654,23 @@ fn execute_model_check(
         .saturating_add(state_candidates_started.elapsed().as_millis());
 
     let constants_candidates_started = Instant::now();
-    let constants_candidates = expand_type_domain_candidates(
-        "candidate_constants",
-        "candidate_constants",
-        &constants_ty,
-        &bundle.schema,
-        model_config,
-    )?;
+    let is_unit_constants = matches!(&constants_ty, verus_transpiler::ast::Type::Named(path) if path.last() == Some("Unit"));
+    let constants_values = if is_unit_constants {
+        // No LConstants in the spec — use a single dummy unit valuation
+        vec![verus_transpiler::modelcheck::value::RuntimeValue::Unit]
+    } else {
+        let constants_candidates = expand_type_domain_candidates(
+            "candidate_constants",
+            "candidate_constants",
+            &constants_ty,
+            &bundle.schema,
+            model_config,
+        )?;
+        resolve_constants_values(constants_candidates, model_config)?
+    };
     timing_summary.candidate_generation_evaluation_ms = timing_summary
         .candidate_generation_evaluation_ms
         .saturating_add(constants_candidates_started.elapsed().as_millis());
-    let constants_values = resolve_constants_values(constants_candidates, model_config)?;
     let constants_valuations_total = constants_values.len();
 
     let mut assignments_by_branch = BTreeMap::new();
