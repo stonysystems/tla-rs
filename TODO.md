@@ -11,8 +11,8 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Current Status (2026-03-25)
 
-Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete, and the earlier Phase 33 benchmark-evidence closure is preserved as a historical checkpoint, but the benchmark comparison now motivates two follow-up implementation phases: Phase 36 (exact-state parity and performance debugging) is the top priority, and Phase 37 (CI/CD recovery) is next. The remaining proof-heavy work is still concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
-The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. A new greenfield Phase 38 has now been added for a separate DPOR-based checker prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
+Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. The top-priority implementation track is now Phase 38 (the separate DPOR-based checker prototype), followed by Phase 36 (exact-state parity and performance debugging) and then Phase 37 (CI/CD recovery). The remaining proof-heavy work is still concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
+The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. Phase 38 is a greenfield prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
 
 **What works:**
 - TLA+ → Verus spec transpilation (Phase 9): ✅ Complete
@@ -35,9 +35,9 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - Phase 22 model checker baseline: ✅ COMPLETE — source-first `verus-transpile model-check` supports BFS/DFS, invariant/deadlock checking, counterexample traces, wrapper generation, symmetry/hash/POR reductions, and bounded `leads_to`/fairness; checked-in bounded source-first smoke runs exist for TwoPhase, LeaderElection, PrimaryBackup, and Paxos
 - Phase 33 model checker hardening / coverage / benchmark evidence: ✅ COMPLETION GATE CLOSED — canonical status matrix, blocker fixtures, matched TLC-vs-source-first benchmark artifacts, same-time-budget progress tables, release-vs-debug comparison, wall-time attribution, and branch-level blocker telemetry are checked in
 - Phase 35 beginner model checker architecture survey/tutorial: ✅ COMPLETE — `docs/model-checker-architecture/` now contains the beginner tutorial, walkthrough, comparison, optimization audit, evidence ledger, and review guards
-- Phase 36 exact-state parity / performance debugging: 🚧 NEW TOP PRIORITY — benchmark comparison now needs semantic-parity debugging and performance root-cause work before further model-checker claims should be trusted
-- Phase 37 CI/CD recovery: 🚧 NEXT PRIORITY — the current GitHub Actions workflow must be restored to green without weakening checks
-- Phase 38 DPOR-based checker prototype track: 🚧 NEW SEPARATE TRACK — prototype a real DPOR explorer under `transpiler/DPOR_based_model_tla_rs_checker/` with a fixed 20-case TLA+→tla-rs test gauntlet, design notes, and milestone-by-milestone full-suite runs before touching `transpiler/src/modelcheck`
+- Phase 38 DPOR-based checker prototype track: 🚧 TOP PRIORITY — prototype a real DPOR explorer under `transpiler/DPOR_based_model_tla_rs_checker/` with a fixed 20-case TLA+→tla-rs test gauntlet, design notes, and milestone-by-milestone full-suite runs before touching `transpiler/src/modelcheck`
+- Phase 36 exact-state parity / performance debugging: 🚧 HIGH PRIORITY FOLLOW-UP — benchmark comparison still needs semantic-parity debugging and performance root-cause work before further model-checker claims should be trusted
+- Phase 37 CI/CD recovery: 🚧 FOLLOW-UP PRIORITY — the current GitHub Actions workflow must be restored to green without weakening checks
 - Documentation: transpiler config reference, proof patterns, regeneration scripts
 - Type generator: correct View impl for Set<int>/Seq<int>/Seq<NamedType> with `.map()` conversion; clone_strategy for HashSet-containing structs
 - 145 transpiler integration tests pass (including 10 verifying generated module public APIs, 1 verus2tla roundtrip for all 7 protocols, 10 D4 pipeline regression tests, 9 message generation per-protocol tests, 9 marshalling round-trip tests, 10 LNext scheduler analysis tests, 3 action classification tests, 9 scaffold structure tests, 9 host-init compilation tests, 15 scheduler generation tests [2 TOML roundtrip, 1 exact counts, 1 consistency, 1 message_variant validity, 1 heuristic coverage, 9 scaffold compilation], 2 impl file dead code stripping tests)
@@ -57,16 +57,16 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **Standalone DPOR-based checker workfolder is still missing** — `transpiler/DPOR_based_model_tla_rs_checker/` does not exist yet. Phase 38 defines the required folder contract, design notes, 20-case TLA+ corpus, translated tla-rs corpus, baseline oracle, DPOR milestones, and regression discipline so this work does not turn into an ad hoc rewrite.
 
 **Next steps (priority order):**
-1. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models and fix the source-first performance pathologies exposed by the benchmark comparison. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--top-priority).
-2. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks, and keep the evidence/benchmark guards aligned with any schema or artifact changes from Phase 36. See [Phase 37](#phase-37-cicd-recovery--next-priority).
-3. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — create the isolated workfolder, lock down the 20-case TLA+→tla-rs corpus, write `design.md` from GenMC/Nidhugg/CDSChecker notes, and keep a baseline-vs-DPOR full-suite scoreboard from the first milestone onward. This is a separate incubator track; do not let it silently rewrite the current mainline checker before the prototype earns it. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--new-separate-workfolder).
+1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — create the isolated workfolder, lock down the 20-case TLA+→tla-rs corpus, write `design.md` from GenMC/Nidhugg/CDSChecker notes, and keep a baseline-vs-DPOR full-suite scoreboard from the first milestone onward. This is a separate incubator track; do not let it silently rewrite the current mainline checker before the prototype earns it. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
+2. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models and fix the source-first performance pathologies exposed by the benchmark comparison. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
+3. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks, and keep the evidence/benchmark guards aligned with any schema or artifact changes from Phase 36. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
 4. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
 5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
 6. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
 7. **Phase 20 cleanup** — finish the remaining auto-inference cleanup.
 8. **Phase 34: Raft Network Model and Complete Refinement Proof** — eliminate the remaining 12 assumes. This is currently the lowest-priority major open phase; the dominant blocker is the strict-term LeaderCompleteness argument (`d_rli <= k` wall), which still needs a stronger induction/provenance strategy. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
 
-**Active work**: The top-priority implementation phase is now **Phase 36** (exact-state parity and performance debugging), followed by **Phase 37** (CI/CD recovery). **Phase 38** is a separate incubator track for a DPOR prototype and must stay under `transpiler/DPOR_based_model_tla_rs_checker/` until it has its own design doc, 20-case corpus, baseline oracle, and regression harness. After that, the next proof phase is **Phase 31** (RSL refinement proof de-externalization). **Phase 34** (Raft refinement proof assume elimination) is currently the lowest-priority major open phase. Phase 35 is complete, and Phase 33 should be treated as a historical evidence-discipline milestone rather than the final word on model-checker correctness/performance. See `reports/raft_refinement_proof.md` for detailed Raft status.
+**Active work**: The top-priority implementation phase is now **Phase 38** (the isolated DPOR prototype track under `transpiler/DPOR_based_model_tla_rs_checker/`). **Phase 36** remains the next model-checker correctness/performance follow-up, and **Phase 37** follows it for CI recovery. The DPOR work must stay in the separate workfolder until it has its own design doc, 20-case corpus, baseline oracle, and regression harness. After that, the next proof phase is **Phase 31** (RSL refinement proof de-externalization). **Phase 34** (Raft refinement proof assume elimination) is currently the lowest-priority major open phase. Phase 35 is complete, and Phase 33 should be treated as a historical evidence-discipline milestone rather than the final word on model-checker correctness/performance. See `reports/raft_refinement_proof.md` for detailed Raft status.
 
 ## Reference
 
@@ -103,9 +103,9 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 25. [Phase 33: Model Checker Hardening, Protocol Coverage, and Performance](#phase-33-model-checker-hardening-protocol-coverage-and-performance)
 26. [Phase 34: Raft Network Model and Complete Refinement Proof](#phase-34-raft-network-model-and-complete-refinement-proof)
 27. [Phase 35: Beginner Model Checker Architecture Survey and Tutorial — TOP PRIORITY](#phase-35-beginner-model-checker-architecture-survey-and-tutorial--top-priority)
-28. [Phase 36: Exact-State Parity and Performance Debugging — TOP PRIORITY](#phase-36-exact-state-parity-and-performance-debugging--top-priority)
-29. [Phase 37: CI/CD Recovery — NEXT PRIORITY](#phase-37-cicd-recovery--next-priority)
-30. [Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — NEW SEPARATE WORKFOLDER](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--new-separate-workfolder)
+28. [Phase 36: Exact-State Parity and Performance Debugging — HIGH PRIORITY FOLLOW-UP](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up)
+29. [Phase 37: CI/CD Recovery — FOLLOW-UP PRIORITY](#phase-37-cicd-recovery--follow-up-priority)
+30. [Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — TOP PRIORITY](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority)
 
 ---
 
@@ -10507,7 +10507,7 @@ Rules for this phase (do not cut corners):
     - The comparison report explicitly includes generated-base-TLA+ provenance (`verus2-tla` output paths) plus wrapper/property glue paths, release-vs-debug comparison, phase-attributed timing, branch-level blocker telemetry, and explicit root-cause answers.
     - Added integration regression `test_phase_33_7_completion_gate_is_closed_with_specific_evidence` to prevent silent drift on the completion-gate conditions above.
 
-**Historical note**: Phase 33 remains a completed evidence/discipline milestone. New implementation work prompted by the benchmark comparison is tracked separately in [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--top-priority) and [Phase 37](#phase-37-cicd-recovery--next-priority) so we do not silently reinterpret the closed Phase 33 gate.
+**Historical note**: Phase 33 remains a completed evidence/discipline milestone. New implementation work prompted by the benchmark comparison is tracked separately in [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up) and [Phase 37](#phase-37-cicd-recovery--follow-up-priority) so we do not silently reinterpret the closed Phase 33 gate.
 
 ---
 
@@ -11111,7 +11111,7 @@ docs/model-checker-architecture/
 
 ---
 
-## Phase 36: Exact-State Parity and Performance Debugging — TOP PRIORITY
+## Phase 36: Exact-State Parity and Performance Debugging — HIGH PRIORITY FOLLOW-UP
 
 **Goal**: Treat the current TLC-vs-source-first benchmark comparison as a bug report, not just a status snapshot. The immediate deliverables are:
 - exact reachable-state parity on the shared **small** models after normalizing the same semantic state representation,
@@ -11121,7 +11121,7 @@ docs/model-checker-architecture/
 **Why this phase exists**:
 - The current benchmark report shows suspicious count gaps (`TLC` vs source-first) on supposedly matched models.
 - The current report also shows a severe performance gap, plus `LeaderElection` / `Paxos` exact-mode benchmark runs timing out while `TLC` completes.
-- CI recovery is required too, but it is tracked separately as Phase 37 so the model-checker debugging plan remains the top implementation focus.
+- CI recovery is required too, but it is tracked separately as Phase 37 so the model-checker debugging plan remains an important follow-up implementation focus.
 
 **Hard rules for this phase (do not cut corners):**
 - Do **not** paper over count mismatches by changing model bounds, invariants, fairness, or search mode unless the change is required for semantic correctness and is documented as such.
@@ -11224,7 +11224,7 @@ Phase 36 completion status (reframed 2026-03-19 so the remaining work stays acti
 
 ---
 
-## Phase 37: CI/CD Recovery — NEXT PRIORITY
+## Phase 37: CI/CD Recovery — FOLLOW-UP PRIORITY
 
 **Goal**: Restore a fully green current GitHub Actions workflow in `.github/workflows/ci.yml` without weakening checks, while keeping the new model-checker parity/performance artifacts and guards maintainable. The target is explicitly all 5 current push checks:
 - `CI / Format (push)`
@@ -11326,7 +11326,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ---
 
-## Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — NEW SEPARATE WORKFOLDER
+## Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — TOP PRIORITY
 
 **Goal**: Build a standalone DPOR-based model checker prototype for translated tla-rs specs under `transpiler/DPOR_based_model_tla_rs_checker/`. The first-class deliverables are:
 - an isolated workfolder that does **not** destabilize `transpiler/src/modelcheck`,
