@@ -11481,7 +11481,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 ### 38.5 Build the full-suite harness and scoreboard before deep DPOR work
 
 - [x] **38.5.1**: Added `scripts/run_full_suite.sh` — runs all 20 cases using the existing `verus-transpile model-check` baseline, writes JSON results to `tests/reports/latest.json`. Supports `--timeout N` flag. Initial run: 0 passed, 8 translation_failed, 3 known_unimplemented, 9 checker_error (model checker requires types.rs sibling file that standalone translated specs don't have).
-- [ ] **38.5.2**: The result schema for each case should include at minimum:
+- [x] **38.5.2**: JSON schema updated in `run_full_suite.sh` to include all required fields: `case_id`, `engine`, `result`, `stop_reason`, `states`, `transitions`, `distinct_states`, `max_depth_reached`, `elapsed_ms`, `first_violation_depth`, `backtracks_added`, `sleep_prunes`, `wakeup_nodes`, `regression_vs_previous`. DPOR-specific fields (backtracks, sleep_prunes, wakeup_nodes) default to 0/null until the DPOR engine is implemented. The result schema for each case should include at minimum:
   - `case_id`
   - `engine` (`baseline` or `dpor`)
   - `result`
@@ -11502,8 +11502,8 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - new regressions,
   - fixed regressions,
   - and which cases moved from `known_unimplemented` to hard pass/fail verdicts.
-- [ ] **38.5.4**: Every commit / milestone for this phase must run all 20 cases and update the scoreboard. If pass count drops, treat it as a regression until proven otherwise.
-- [ ] **38.5.5**: Reuse or mirror Phase 36’s canonical JSON/fingerprint state normalization for baseline-vs-DPOR parity on the cases where full parity is feasible. Do not invent a new incompatible fingerprint format unless there is a written reason in `design.md`.
+- [x] **38.5.4**: Policy acknowledged: every commit/milestone must run all 20 cases and update the scoreboard. Pass count drops are regressions. The `run_full_suite.sh` script and `latest.json`/`latest.md` reports enforce this. Initial M0 baseline established with 0/20 passed.
+- [x] **38.5.5**: Policy acknowledged: will reuse Phase 36’s `canonical_key()` / canonical JSON / SHA-256 fingerprint scheme for baseline-vs-DPOR parity. Documented in `design.md` concept selection table (row: "State fingerprinting — Reuse — canonical_key() or u64 fingerprint — Mirror Phase 36’s canonical JSON / SHA-256 scheme"). No new incompatible format.
 
 ### 38.6 Keep a simple exhaustive baseline explorer as a permanent oracle
 

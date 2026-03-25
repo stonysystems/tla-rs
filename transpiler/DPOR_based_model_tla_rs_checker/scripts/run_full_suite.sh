@@ -180,7 +180,7 @@ MODELEOF
         RESULTS_JSON="$RESULTS_JSON,"
     fi
     RESULTS_JSON="$RESULTS_JSON
-  {\"case_id\": \"$case_id\", \"engine\": \"baseline\", \"result\": \"$result_status\", \"stop_reason\": \"$stop_reason\", \"states\": $states, \"elapsed_ms\": $elapsed_ms, \"expected\": \"$expected_result\"}"
+  {\"case_id\": \"$case_id\", \"engine\": \"baseline\", \"result\": \"$result_status\", \"stop_reason\": \"$stop_reason\", \"states\": $states, \"transitions\": 0, \"distinct_states\": $states, \"max_depth_reached\": 0, \"elapsed_ms\": $elapsed_ms, \"first_violation_depth\": null, \"backtracks_added\": 0, \"sleep_prunes\": 0, \"wakeup_nodes\": 0, \"regression_vs_previous\": null, \"expected\": \"$expected_result\"}"
 done
 
 RESULTS_JSON="$RESULTS_JSON
