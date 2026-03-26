@@ -48,8 +48,8 @@ pub struct DporResult {
     pub max_depth: usize,
     /// Total transitions fired.
     pub transitions_fired: usize,
-    /// Whether an invariant violation was found (placeholder for v2).
-    pub violation: Option<String>,
+    /// Violation witness if an invariant violation was found.
+    pub violation: Option<ViolationWitness>,
 }
 
 /// Configuration for the DPOR explorer.
@@ -66,6 +66,36 @@ pub struct DporConfig {
     /// Requires `use_independence` to be true (sleep sets need the independence relation).
     /// When footprints are empty (reads_whole_state), sleep sets provide no benefit.
     pub use_sleep_sets: bool,
+    /// Invariant names to check on each reached state. Empty = no checking.
+    pub invariants: Vec<String>,
+}
+
+/// A recorded step in a violation witness trace.
+#[derive(Clone, Debug)]
+pub struct WitnessStep {
+    /// State fingerprint before this step.
+    pub state_fingerprint: StateFingerprint,
+    /// Canonical state key before this step.
+    pub state_key: String,
+    /// The transition taken (ordering_key from enabled set).
+    pub transition_key: String,
+    /// Depth at which this step was taken.
+    pub depth: usize,
+}
+
+/// A violation witness: the trace from initial state to the violating state.
+#[derive(Clone, Debug)]
+pub struct ViolationWitness {
+    /// Name of the violated invariant.
+    pub invariant: String,
+    /// The violating state's canonical key.
+    pub violating_state_key: String,
+    /// The violating state's fingerprint.
+    pub violating_state_fingerprint: StateFingerprint,
+    /// Depth at which the violation was found.
+    pub depth: usize,
+    /// Ordered trace from initial state to violation.
+    pub trace: Vec<WitnessStep>,
 }
 
 impl Default for DporConfig {
@@ -75,6 +105,7 @@ impl Default for DporConfig {
             max_states: 100_000,
             use_independence: false,
             use_sleep_sets: false,
+            invariants: vec![],
         }
     }
 }
@@ -121,11 +152,42 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         }
     };
 
+    // Resolve invariant functions
+    let invariant_fns = ctx.resolve_invariants(&config.invariants);
+
+    // Helper: check invariants and return violation witness if found
+    let check_state = |state: &RuntimeValue, depth: usize, trace: &[WitnessStep]| -> Option<ViolationWitness> {
+        if invariant_fns.is_empty() {
+            return None;
+        }
+        match ctx.check_invariants(state, &invariant_fns) {
+            Ok(Some(violated)) => Some(ViolationWitness {
+                invariant: violated,
+                violating_state_key: state.canonical_key(),
+                violating_state_fingerprint: crate::enabled::hash_state(state),
+                depth,
+                trace: trace.to_vec(),
+            }),
+            _ => None,
+        }
+    };
+
     // Explore from each initial state
     for initial in &initial_states {
         let initial_key = initial.canonical_key();
         if !distinct_states.insert(initial_key.clone()) {
             continue; // Already seen this initial state
+        }
+
+        // Check invariants on initial state
+        if let Some(witness) = check_state(initial, 0, &[]) {
+            return DporResult {
+                distinct_states,
+                traces_explored: 0,
+                max_depth: 0,
+                transitions_fired: 0,
+                violation: Some(witness),
+            };
         }
 
         let enabled = match ctx.enabled_transitions(initial) {
@@ -153,104 +215,113 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         // DFS with explicit stack
         let mut stack: Vec<StackFrame> = vec![initial_frame];
 
-        while let Some(frame) = stack.last_mut() {
+        while !stack.is_empty() {
             // Check limits
             if distinct_states.len() >= config.max_states {
                 break;
             }
 
-            // Find a transition in backtrack that isn't in done or sleep
-            let next_transition = frame
-                .backtrack
-                .iter()
-                .find(|key| !frame.done.contains(*key) && !frame.sleep.contains(*key))
-                .cloned();
+            // Phase 1: Extract data from the top frame (scoped mutable borrow)
+            let action = {
+                let frame = stack.last_mut().unwrap();
+                let next_transition = frame
+                    .backtrack
+                    .iter()
+                    .find(|key| !frame.done.contains(*key) && !frame.sleep.contains(*key))
+                    .cloned();
 
-            match next_transition {
-                Some(key) => {
-                    // Mark as done, and add to sleep set for future siblings
-                    frame.done.insert(key.clone());
-                    if config.use_sleep_sets {
-                        frame.sleep.insert(key.clone());
+                match next_transition {
+                    Some(key) => {
+                        frame.done.insert(key.clone());
+                        if config.use_sleep_sets {
+                            frame.sleep.insert(key.clone());
+                        }
+                        let transition = frame
+                            .enabled
+                            .iter()
+                            .find(|t| t.ordering_key == key)
+                            .cloned();
+                        match transition {
+                            Some(t) => {
+                                frame.chosen = Some(t.clone());
+                                transitions_fired += 1;
+                                let parent_state = frame.state.clone();
+                                let parent_depth = frame.depth;
+                                let parent_sleep = frame.sleep.clone();
+                                let parent_enabled = frame.enabled.clone();
+                                Some((key, t, parent_state, parent_depth, parent_sleep, parent_enabled))
+                            }
+                            None => continue,
+                        }
                     }
+                    None => None,
+                }
+            };
+            // Mutable borrow of `frame` is released here
 
-                    // Find the transition object
-                    let transition = frame
-                        .enabled
-                        .iter()
-                        .find(|t| t.ordering_key == key)
-                        .cloned();
-
-                    let Some(transition) = transition else {
-                        continue;
-                    };
-
-                    frame.chosen = Some(transition.clone());
-                    transitions_fired += 1;
-
+            match action {
+                Some((key, transition, parent_state, parent_depth, parent_sleep, parent_enabled)) => {
                     // Get the actual successor state
-                    let successors = match ctx.full_successors(&frame.state) {
+                    let successors = match ctx.full_successors(&parent_state) {
                         Ok(s) => s,
                         Err(_) => continue,
                     };
 
-                    // Find the successor matching this transition's fingerprint
                     let successor = successors
                         .iter()
                         .find(|s| crate::enabled::hash_state(s) == transition.successor_fingerprint)
                         .cloned();
 
-                    let Some(successor) = successor else {
-                        // Fingerprint mismatch — skip this transition
-                        continue;
-                    };
+                    let Some(successor) = successor else { continue; };
 
                     let succ_key = successor.canonical_key();
                     let is_new = distinct_states.insert(succ_key);
 
-                    let depth = frame.depth + 1;
+                    let depth = parent_depth + 1;
                     if depth > max_depth {
                         max_depth = depth;
                     }
 
-                    // Only push a new frame if depth limit not reached
-                    // and state is new (avoid infinite loops on cycles)
+                    // Check invariants on the new state
+                    if is_new && !invariant_fns.is_empty() {
+                        let mut trace: Vec<WitnessStep> = Vec::new();
+                        for i in 0..stack.len() {
+                            if let Some(ch) = &stack[i].chosen {
+                                trace.push(WitnessStep {
+                                    state_fingerprint: stack[i].state_fingerprint,
+                                    state_key: stack[i].state.canonical_key(),
+                                    transition_key: ch.ordering_key.clone(),
+                                    depth: stack[i].depth,
+                                });
+                            }
+                        }
+
+                        if let Some(witness) = check_state(&successor, depth, &trace) {
+                            return DporResult {
+                                distinct_states,
+                                traces_explored,
+                                max_depth,
+                                transitions_fired,
+                                violation: Some(witness),
+                            };
+                        }
+                    }
+
+                    // Push child frame if depth limit not reached and state is new
                     if depth < config.max_depth && is_new {
                         let enabled = match ctx.enabled_transitions(&successor) {
                             Ok(e) => e,
                             Err(_) => vec![],
                         };
 
-                        // Build backtrack set: with independence, only include
-                        // transitions dependent on the chosen one.
-                        // Without independence, include all enabled (conservative).
-                        let backtrack: BTreeSet<String> = if let Some(ref fps) = footprints {
-                            // Get the chosen transition's footprint
-                            // Note: transition.branch_label may not map directly to IR branch labels
-                            // For safety, if we can't find a footprint, treat as dependent (conservative)
-                            enabled
-                                .iter()
-                                .filter(|t| {
-                                    // In v1: all transitions share ProcessId(0), so they're all
-                                    // from the same "process". In source-DPOR, same-process transitions
-                                    // are always dependent. Independence only applies across processes.
-                                    // For now, include all as dependent (correct for single-process).
-                                    true
-                                })
-                                .map(|t| t.ordering_key.clone())
-                                .collect()
+                        let backtrack: BTreeSet<String> = if let Some(ref _fps) = footprints {
+                            enabled.iter().map(|t| t.ordering_key.clone()).collect()
                         } else {
                             enabled.iter().map(|t| t.ordering_key.clone()).collect()
                         };
 
-                        // Compute child sleep set: inherit parent's sleep entries
-                        // that are independent of the chosen transition.
                         let child_sleep = if config.use_sleep_sets {
-                            compute_child_sleep_set(
-                                &frame.sleep,
-                                &transition,
-                                &frame.enabled,
-                            )
+                            compute_child_sleep_set(&parent_sleep, &transition, &parent_enabled)
                         } else {
                             BTreeSet::new()
                         };
@@ -266,12 +337,6 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                             depth,
                         });
                     }
-
-                    // Note: the chosen transition is added to this frame's sleep set
-                    // BEFORE pushing the child. This way, when the child eventually
-                    // pops and control returns to this frame, subsequent sibling
-                    // transitions will see the explored transition in the sleep set
-                    // and propagate it to their children.
                 }
                 None => {
                     // All backtrack alternatives explored at this depth — pop
@@ -629,12 +694,14 @@ max_seq_len = 4
             max_states: 1_000,
             use_independence: false,
             use_sleep_sets: false,
+            invariants: vec![],
         };
         let with_independence = DporConfig {
             max_depth: 20,
             max_states: 1_000,
             use_independence: true,
             use_sleep_sets: false,
+            invariants: vec![],
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -670,12 +737,14 @@ max_seq_len = 4
             max_states: 1_000,
             use_independence: false,
             use_sleep_sets: false,
+            invariants: vec![],
         };
         let with_sleep = DporConfig {
             max_depth: 20,
             max_states: 1_000,
             use_independence: true,
             use_sleep_sets: true,
+            invariants: vec![],
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -765,6 +834,132 @@ max_seq_len = 4
         let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled);
         assert!(child_sleep.contains("0000"), "Independent transition stays asleep");
         assert!(!child_sleep.contains("0001"), "Dependent transition is woken up");
+    }
+
+    // =========================================================================
+    // Invariant checking and violation witness tests (Phase 38.8.5)
+    // =========================================================================
+
+    #[test]
+    fn test_dpor_invariant_check_aplusb_passes() {
+        // APlusB with LSumInvariant — should find no violation
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => return,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 1_000,
+            invariants: vec!["LSumInvariant".to_string()],
+            ..Default::default()
+        };
+        let result = explore_dpor(&ctx, &config);
+        assert!(
+            result.violation.is_none(),
+            "APlusB should pass LSumInvariant — no violation expected"
+        );
+        assert!(result.distinct_states.len() > 1, "Should explore states");
+        eprintln!("APlusB invariant check: {} states, no violation ✓", result.distinct_states.len());
+    }
+
+    #[test]
+    fn test_dpor_invariant_check_counter_race_bug() {
+        // CounterRaceBug with LTotalCorrect — should find violation
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/03_counter_race_bug/CounterRaceBug.rs");
+        if !spec_file.exists() { return; }
+        let model_path = case_model_config("03_counter_race_bug");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(e) => { eprintln!("Skip: {}", e); return; }
+        };
+
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: vec!["LTotalCorrect".to_string()],
+            ..Default::default()
+        };
+        let result = explore_dpor(&ctx, &config);
+        assert!(
+            result.violation.is_some(),
+            "CounterRaceBug should violate LTotalCorrect"
+        );
+        let witness = result.violation.unwrap();
+        assert_eq!(witness.invariant, "LTotalCorrect");
+        assert!(witness.depth > 0, "Violation should be at depth > 0");
+        assert!(!witness.trace.is_empty(), "Witness trace should not be empty");
+        eprintln!(
+            "CounterRaceBug violation: invariant={}, depth={}, trace_len={} ✓",
+            witness.invariant, witness.depth, witness.trace.len()
+        );
+    }
+
+    #[test]
+    fn test_dpor_invariant_check_broken_lock() {
+        // BrokenLockBug with LMutualExclusion — should find violation
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/05_broken_lock_bug/BrokenLockBug.rs");
+        if !spec_file.exists() { return; }
+        let model_path = case_model_config("05_broken_lock_bug");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(e) => { eprintln!("Skip: {}", e); return; }
+        };
+
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: vec!["LMutualExclusion".to_string()],
+            ..Default::default()
+        };
+        let result = explore_dpor(&ctx, &config);
+        assert!(
+            result.violation.is_some(),
+            "BrokenLockBug should violate LMutualExclusion"
+        );
+        let witness = result.violation.unwrap();
+        assert_eq!(witness.invariant, "LMutualExclusion");
+        assert!(!witness.trace.is_empty(), "Witness trace should not be empty");
+        eprintln!(
+            "BrokenLockBug violation: invariant={}, depth={}, trace_len={} ✓",
+            witness.invariant, witness.depth, witness.trace.len()
+        );
+    }
+
+    #[test]
+    fn test_dpor_invariant_check_readers_writers() {
+        // ReadersWritersBug with LSafety — should find violation
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/11_readers_writers_small/ReadersWritersBug.rs");
+        if !spec_file.exists() { return; }
+        let model_path = case_model_config("11_readers_writers_small");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(e) => { eprintln!("Skip: {}", e); return; }
+        };
+
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: vec!["LSafety".to_string()],
+            ..Default::default()
+        };
+        let result = explore_dpor(&ctx, &config);
+        assert!(
+            result.violation.is_some(),
+            "ReadersWritersBug should violate LSafety"
+        );
+        let witness = result.violation.unwrap();
+        assert_eq!(witness.invariant, "LSafety");
+        eprintln!(
+            "ReadersWritersBug violation: invariant={}, depth={}, trace_len={} ✓",
+            witness.invariant, witness.depth, witness.trace.len()
+        );
     }
 
     // =========================================================================

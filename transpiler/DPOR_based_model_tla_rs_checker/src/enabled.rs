@@ -343,6 +343,56 @@ impl SpecContext {
             predicate_only_branch_solver: None,
         }
     }
+
+    /// Resolve invariant spec functions by name from the loaded spec.
+    pub fn resolve_invariants(&self, names: &[String]) -> Vec<verus_transpiler::ast::SpecFunction> {
+        names
+            .iter()
+            .filter_map(|name| {
+                self.bundle.spec_functions.iter().find(|f| f.name == *name).cloned()
+            })
+            .collect()
+    }
+
+    /// Check invariants on a state. Returns the name of the first violated invariant,
+    /// or None if all hold.
+    pub fn check_invariants(
+        &self,
+        state: &RuntimeValue,
+        invariants: &[verus_transpiler::ast::SpecFunction],
+    ) -> TranspileResult<Option<String>> {
+        use verus_transpiler::modelcheck::invariant::{first_invariant_violation, InvariantHooks};
+
+        let call_eval = |func_path: &verus_transpiler::ast::Path,
+                         args: &[RuntimeValue]|
+         -> TranspileResult<RuntimeValue> {
+            eval_spec_function_call_recursive(
+                &self.bundle.spec_functions,
+                &self.bundle.schema,
+                &self.model_config,
+                func_path,
+                args,
+                self.bounds,
+                0,
+            )
+        };
+        let quant_eval =
+            |binding: &verus_transpiler::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
+                verus_transpiler::modelcheck::helpers::expand_quantifier_domain_for_binding(
+                    binding,
+                    &self.bundle.schema,
+                    &self.model_config,
+                )
+            };
+
+        let hooks = InvariantHooks {
+            call_evaluator: Some(&call_eval),
+            method_evaluator: None,
+            quantifier_domain_evaluator: Some(&quant_eval),
+        };
+
+        first_invariant_violation(invariants, state, self.constants.as_ref(), self.bounds, hooks)
+    }
 }
 
 /// Resolve LConstants value from model config, if the spec has a constants parameter.
