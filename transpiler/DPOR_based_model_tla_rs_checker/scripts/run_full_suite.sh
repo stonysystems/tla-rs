@@ -132,9 +132,9 @@ max_seq_len = 4
 MODELEOF
             fi
 
-            # Build invariant args
+            # Build invariant args (skip for deadlock cases — use config's check_deadlock instead)
             inv_args=""
-            if [[ -n "$expected_property" ]]; then
+            if [[ -n "$expected_property" && "$expected_result" != "deadlock" ]]; then
                 inv_args="--invariant L${expected_property}"
             fi
 
