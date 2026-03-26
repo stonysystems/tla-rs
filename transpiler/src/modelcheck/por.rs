@@ -281,7 +281,7 @@ fn collect_expr_state_reads(
                 out_reads_whole_state,
             );
         }
-        Expr::Exists { body, .. } | Expr::Closure { body, .. } => {
+        Expr::Exists { body, .. } | Expr::Closure { body, .. } | Expr::Choose { body, .. } => {
             collect_expr_state_reads(
                 body,
                 current_state_param,

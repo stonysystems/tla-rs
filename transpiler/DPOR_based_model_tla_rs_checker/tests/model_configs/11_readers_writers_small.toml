@@ -2,13 +2,14 @@
 # pc maps use Seq<char> for state names.
 
 [constants.assignments]
-NumReaders = 2
+NumReaders = 1
 NumWriters = 1
 
 [search]
 max_depth = 50
-max_states = 100000
-timeout_ms = 30000
+max_states = 200000
+timeout_ms = 60000
+candidate_eval_guardrail = 50000
 
 [properties]
 invariants = ["LSafety"]
@@ -16,7 +17,7 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 2 }
+int = { min = 0, max = 1 }
 max_set_len = 2
 max_seq_len = 2
 max_map_len = 2

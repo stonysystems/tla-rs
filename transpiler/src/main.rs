@@ -587,7 +587,7 @@ fn collect_called_functions_from_expr(expr: &verus_transpiler::Expr, out: &mut H
             }
             collect_called_functions_from_expr(body, out);
         }
-        Expr::Exists { body, .. } | Expr::Closure { body, .. } => {
+        Expr::Exists { body, .. } | Expr::Closure { body, .. } | Expr::Choose { body, .. } => {
             collect_called_functions_from_expr(body, out);
         }
         Expr::Struct { fields, .. } => {
@@ -2580,7 +2580,7 @@ fn expr_mentions_identifier(expr: &verus_transpiler::ast::Expr, ident: &str) -> 
                     .any(|expr| expr_mentions_identifier(expr, ident))
             }) || (!shadowed && expr_mentions_identifier(body, ident))
         }
-        Expr::Exists { vars, body } => {
+        Expr::Exists { vars, body } | Expr::Choose { vars, body } => {
             let shadowed = vars.iter().any(|var| var.name() == Some(ident));
             !shadowed && expr_mentions_identifier(body, ident)
         }

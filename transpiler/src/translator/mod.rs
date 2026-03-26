@@ -10185,6 +10185,18 @@ impl Translator {
                     help: None,
                 })
             }
+
+            Expr::Choose { vars, body: _ } => {
+                // Choose expressions (CHOOSE x : P(x)) not supported in exec translation
+                Err(TranspileError::UnsupportedPattern {
+                    message: format!(
+                        "Choose expression with {} vars not supported in exec translation",
+                        vars.len()
+                    ),
+                    span: None,
+                    help: None,
+                })
+            }
         }
     }
 

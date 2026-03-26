@@ -595,7 +595,7 @@ impl ModeAnalyzer {
                 body,
             } => Self::contains_self_call(body, func_name),
 
-            Expr::Exists { vars: _, body } | Expr::Closure { params: _, body } => {
+            Expr::Exists { vars: _, body } | Expr::Closure { params: _, body } | Expr::Choose { vars: _, body } => {
                 Self::contains_self_call(body, func_name)
             }
 

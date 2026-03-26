@@ -298,6 +298,23 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
             crate::ast::Literal::String(v) => RuntimeValue::String(v.clone()),
         }),
         Expr::Binary(lhs, op, rhs) => {
+            // Short-circuit evaluation for logical operators
+            if *op == crate::ast::BinOp::And {
+                let lhs_val = eval_expr(lhs, ctx)?;
+                if lhs_val == RuntimeValue::Bool(false) {
+                    return Ok(RuntimeValue::Bool(false));
+                }
+                let rhs_val = eval_expr(rhs, ctx)?;
+                return eval_binary(&lhs_val, *op, &rhs_val);
+            }
+            if *op == crate::ast::BinOp::Or {
+                let lhs_val = eval_expr(lhs, ctx)?;
+                if lhs_val == RuntimeValue::Bool(true) {
+                    return Ok(RuntimeValue::Bool(true));
+                }
+                let rhs_val = eval_expr(rhs, ctx)?;
+                return eval_binary(&lhs_val, *op, &rhs_val);
+            }
             let lhs = eval_expr(lhs, ctx)?;
             let rhs = eval_expr(rhs, ctx)?;
             eval_binary(&lhs, *op, &rhs)
@@ -308,6 +325,10 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         }
         Expr::Forall { vars, body, .. } => eval_quantifier(vars, body, ctx, QuantifierKind::Forall),
         Expr::Exists { vars, body } => eval_quantifier(vars, body, ctx, QuantifierKind::Exists),
+        Expr::Choose { vars, body } => {
+            // Choose: find any value satisfying the predicate
+            eval_choose(vars, body, ctx)
+        }
         Expr::Match { scrutinee, arms } => eval_match_expr(scrutinee, arms, ctx),
         Expr::Closure { params: _, body: _ } => {
             // Closures are used in Map::new(domain, |x| val) style expressions.
@@ -405,6 +426,61 @@ fn eval_quantifier_bindings(
             Ok(false)
         }
     }
+}
+
+/// Evaluate a CHOOSE expression: find any value in the domain satisfying the predicate.
+/// Returns the first satisfying value, or an error if none exists.
+fn eval_choose(
+    vars: &[Binding],
+    body: &Expr,
+    ctx: &EvalContext<'_>,
+) -> TranspileResult<RuntimeValue> {
+    if vars.is_empty() {
+        return Err(unsupported_construct("CHOOSE with no bound variables"));
+    }
+
+    let domain_evaluator = ctx.quantifier_domain_evaluator.ok_or_else(|| {
+        unsupported_construct("CHOOSE quantifier without domain resolver hook")
+    })?;
+
+    eval_choose_bindings(vars, 0, body, ctx, domain_evaluator)
+}
+
+fn eval_choose_bindings(
+    vars: &[Binding],
+    idx: usize,
+    body: &Expr,
+    ctx: &EvalContext<'_>,
+    domain_evaluator: &QuantifierDomainEvaluator<'_>,
+) -> TranspileResult<RuntimeValue> {
+    if idx == vars.len() {
+        let satisfied = expect_bool(&eval_expr(body, ctx)?, "CHOOSE body")?;
+        if satisfied {
+            // Return the value of the first (outermost) bound variable
+            let Pattern::Ident(name) = &vars[0].pattern else {
+                return Err(unsupported_construct("CHOOSE with non-identifier binding"));
+            };
+            return ctx.bindings.get(name).cloned().ok_or_else(|| {
+                type_error("CHOOSE variable not found in context")
+            });
+        }
+        return Err(type_error("CHOOSE: no satisfying value found"));
+    }
+
+    let binding = &vars[idx];
+    let Pattern::Ident(name) = &binding.pattern else {
+        return Err(unsupported_construct("CHOOSE with non-identifier binding"));
+    };
+    let domain = domain_evaluator(binding)?;
+
+    for value in domain {
+        let nested = ctx.child_with_binding(name.clone(), value);
+        match eval_choose_bindings(vars, idx + 1, body, &nested, domain_evaluator) {
+            Ok(result) => return Ok(result),
+            Err(_) => continue, // try next value
+        }
+    }
+    Err(type_error("CHOOSE: no satisfying value found in domain"))
 }
 
 fn eval_struct_expr(

@@ -1082,7 +1082,7 @@ fn expr_mentions_identifier(expr: &Expr, ident: &str) -> bool {
                     .flat_map(|trigger| trigger.exprs.iter())
                     .any(|trigger_expr| expr_mentions_identifier(trigger_expr, ident))
         }
-        Expr::Exists { body, .. } | Expr::Closure { body, .. } => {
+        Expr::Exists { body, .. } | Expr::Closure { body, .. } | Expr::Choose { body, .. } => {
             expr_mentions_identifier(body, ident)
         }
         Expr::If {

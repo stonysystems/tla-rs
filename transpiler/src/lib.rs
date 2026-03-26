@@ -1914,7 +1914,7 @@ impl Transpiler {
             }
             Expr::Call { args, .. } => args.iter().any(Self::spec_uses_remove),
             Expr::Index(base, idx) => Self::spec_uses_remove(base) || Self::spec_uses_remove(idx),
-            Expr::Forall { body, .. } | Expr::Exists { body, .. } | Expr::Closure { body, .. } => {
+            Expr::Forall { body, .. } | Expr::Exists { body, .. } | Expr::Closure { body, .. } | Expr::Choose { body, .. } => {
                 Self::spec_uses_remove(body)
             }
             _ => false,
@@ -2088,7 +2088,7 @@ impl Transpiler {
                             .any(|e| Self::spec_uses_empty_collection(e, detect_set))
                     })
             }
-            Expr::Exists { body, .. } | Expr::Closure { body, .. } => {
+            Expr::Exists { body, .. } | Expr::Closure { body, .. } | Expr::Choose { body, .. } => {
                 Self::spec_uses_empty_collection(body, detect_set)
             }
             Expr::Struct { fields, .. } => fields

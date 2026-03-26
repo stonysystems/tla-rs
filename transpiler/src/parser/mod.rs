@@ -990,6 +990,11 @@ impl<'a> VerusBlockParser<'a> {
             return self.parse_exists_expr();
         }
 
+        // Check for choose expression
+        if self.try_consume("choose") {
+            return self.parse_choose_expr();
+        }
+
         // Check for match expression
         if self.try_consume("match") {
             return self.parse_match_expr();
@@ -1723,6 +1728,25 @@ impl<'a> VerusBlockParser<'a> {
         let body = self.parse_expression()?;
 
         Ok(Expr::Exists {
+            vars,
+            body: Box::new(body),
+        })
+    }
+
+    /// Parse choose expression: choose |var| predicate
+    fn parse_choose_expr(&mut self) -> TranspileResult<Expr> {
+        self.skip_whitespace();
+
+        // Parse |vars|
+        self.expect('|')?;
+        let vars = self.parse_binding_list()?;
+        self.expect('|')?;
+        self.skip_whitespace();
+
+        // Parse body (the predicate)
+        let body = self.parse_expression()?;
+
+        Ok(Expr::Choose {
             vars,
             body: Box::new(body),
         })

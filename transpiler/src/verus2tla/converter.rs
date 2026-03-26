@@ -329,6 +329,26 @@ impl Verus2TlaConverter {
                 ))
             }
 
+            VerusExpr::Choose { vars, body } => {
+                // Convert CHOOSE x : P(x) to TLA+ CHOOSE
+                if vars.is_empty() {
+                    return Err(ConversionError::UnsupportedConstruct(
+                        "CHOOSE with no bound variables".to_string(),
+                    ));
+                }
+                let Pattern::Ident(name) = &vars[0].pattern else {
+                    return Err(ConversionError::UnsupportedConstruct(
+                        "Non-identifier binding in CHOOSE".to_string(),
+                    ));
+                };
+                let body_expr = self.convert_expr(body)?;
+                Ok(TlaExpr::Choose {
+                    var: name.clone(),
+                    set: None,
+                    body: Box::new(body_expr),
+                })
+            }
+
             // Control flow
             VerusExpr::If {
                 cond,
@@ -952,7 +972,8 @@ impl Verus2TlaConverter {
             | VerusExpr::Unary(_, inner) => self.expr_contains_call(inner, func_name),
             VerusExpr::Forall { body, .. }
             | VerusExpr::Exists { body, .. }
-            | VerusExpr::Closure { body, .. } => self.expr_contains_call(body, func_name),
+            | VerusExpr::Closure { body, .. }
+            | VerusExpr::Choose { body, .. } => self.expr_contains_call(body, func_name),
             VerusExpr::If {
                 cond,
                 then_branch,
