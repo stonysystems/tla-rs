@@ -69,15 +69,40 @@ impl SpecContext {
     }
 
     /// Construct initial states.
+    ///
+    /// First tries full domain expansion. If that exceeds limits, falls back to
+    /// an empty-collection template approach that constructs a candidate state
+    /// with all collection fields set to empty (Set::empty(), Map::empty(), Seq::empty())
+    /// and checks if LInit accepts it.
     pub fn initial_states(&self) -> TranspileResult<Vec<RuntimeValue>> {
         let state_ty = &self.bundle.entrypoints.lnext.params[0].ty;
-        let candidates = expand_type_domain_candidates(
+
+        // Try full domain expansion first
+        let candidates = match expand_type_domain_candidates(
             "candidate_states",
             "candidate_state",
             state_ty,
             &self.bundle.schema,
             &self.model_config,
-        )?;
+        ) {
+            Ok(c) => c,
+            Err(_) => {
+                // Fallback: build empty-collection template candidates
+                match self.build_empty_template_candidates(state_ty) {
+                    Ok(c) if !c.is_empty() => c,
+                    _ => {
+                        // Re-try domain expansion to get the original error
+                        expand_type_domain_candidates(
+                            "candidate_states",
+                            "candidate_state",
+                            state_ty,
+                            &self.bundle.schema,
+                            &self.model_config,
+                        )?
+                    }
+                }
+            }
+        };
 
         let call_eval = |func_path: &verus_transpiler::ast::Path,
                          args: &[RuntimeValue]|
@@ -92,10 +117,18 @@ impl SpecContext {
                 0,
             )
         };
+        let quant_eval =
+            |binding: &verus_transpiler::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
+                verus_transpiler::modelcheck::helpers::expand_quantifier_domain_for_binding(
+                    binding,
+                    &self.bundle.schema,
+                    &self.model_config,
+                )
+            };
         let hooks = InitHooks {
             call_evaluator: Some(&call_eval),
             method_evaluator: None,
-            quantifier_domain_evaluator: None,
+            quantifier_domain_evaluator: Some(&quant_eval),
         };
         construct_initial_states(
             &self.bundle.entrypoints.linit,
@@ -104,6 +137,94 @@ impl SpecContext {
             self.bounds,
             hooks,
         )
+    }
+
+    /// Build candidate states using empty-collection templates.
+    ///
+    /// For structs where all collection fields can be empty (Set::empty, Map::empty,
+    /// Seq::empty) and scalar fields have small domains, this produces a manageable
+    /// candidate set without full cross-product expansion.
+    fn build_empty_template_candidates(
+        &self,
+        state_ty: &verus_transpiler::ast::Type,
+    ) -> TranspileResult<Vec<RuntimeValue>> {
+        use verus_transpiler::ast::Type;
+        use verus_transpiler::modelcheck::domain::find_struct_definition;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let struct_def = match state_ty {
+            Type::Named(path) => find_struct_definition(&self.bundle.schema, path),
+            _ => None,
+        };
+        let Some(struct_def) = struct_def else {
+            return Ok(vec![]);
+        };
+
+        // Build field domains: for collection types, use only the empty value.
+        // For scalar types, use the normal small domain.
+        let expansion_limit = self.model_config.search.max_states;
+        let mut field_domains: Vec<(String, Vec<RuntimeValue>)> = Vec::new();
+
+        for field in &struct_def.fields {
+            let domain = match &field.ty {
+                Type::Set(_) | Type::Generic(path, _) if path.last() == Some("Set") => {
+                    vec![RuntimeValue::Set(BTreeSet::new())]
+                }
+                Type::Map(_, _) | Type::Generic(path, _) if path.last() == Some("Map") => {
+                    vec![RuntimeValue::Map(BTreeMap::new())]
+                }
+                Type::Seq(_) | Type::Generic(path, _) if path.last() == Some("Seq") => {
+                    vec![RuntimeValue::Seq(Vec::new())]
+                }
+                _ => {
+                    // For scalar types, use normal domain expansion
+                    match verus_transpiler::modelcheck::domain::expand_type_domain(
+                        &field.ty,
+                        &self.bundle.schema,
+                        &self.model_config,
+                        &self.bounds,
+                        expansion_limit,
+                        0,
+                    ) {
+                        Ok(values) => values,
+                        Err(_) => return Ok(vec![]),
+                    }
+                }
+            };
+            field_domains.push((field.name.clone(), domain));
+        }
+
+        // Cross-product of field domains (should be small since collections are pinned to empty)
+        let mut candidates = vec![BTreeMap::new()];
+        for (field_name, domain) in &field_domains {
+            let mut next = Vec::new();
+            for partial in &candidates {
+                for value in domain {
+                    let mut candidate = partial.clone();
+                    candidate.insert(field_name.clone(), value.clone());
+                    next.push(candidate);
+                    if next.len() > expansion_limit {
+                        return Ok(vec![]);
+                    }
+                }
+            }
+            candidates = next;
+        }
+
+        // Convert to RuntimeValue::Struct
+        let mut results = Vec::new();
+        for fields in candidates {
+            let value = RuntimeValue::struct_value(
+                struct_def.name.clone(),
+                fields.into_iter().collect::<Vec<_>>(),
+            )
+            .map_err(|e| verus_transpiler::error::TranspileError::Config {
+                message: format!("Failed to build template candidate: {}", e),
+            })?;
+            results.push(value);
+        }
+
+        Ok(results)
     }
 
     /// Enumerate all enabled transitions from a given state.

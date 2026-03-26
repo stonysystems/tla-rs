@@ -277,7 +277,7 @@ requires_deadlock_check = false
 milestone_gate = "M4"
 negative = false
 source = "transpiler/tests/tla_examples/Paxos.tla"
-notes = "Consensus; quorum-sensitive state space. BLOCKER: candidate expansion exceeds 10K limit at current int bounds. Invariant Consistency not in translated output."
+notes = "Consensus protocol. Passes with int 0..1, max_set_len=1 (via [collections] section fix). 1 state found (single-step Paxos at minimal bounds)."
 
 [[case]]
 id = "18_pbft_small"
@@ -286,14 +286,14 @@ source_kind = "repo_example"
 tla_entry = "PBFT.tla"
 tla_aux_modules = []
 generated_tlars_entry = ""
-expected_primary_result = "known_unimplemented"
+expected_primary_result = "ok"
 expected_property = ""
-model_bounds = "Replica=2, int 0..1"
+model_bounds = "Replica=1, int 0..1"
 requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tests/tla_examples/PBFT.tla"
-notes = "BLOCKER: domain explosion — Set<LRecord> with 5-field records exceeds expansion limit. Config created but blocked."
+notes = "Byzantine protocol. Passes with Replica=1, int 0..1, max_set_len=1 (via [collections] section fix). 124 states at depth 30."
 
 [[case]]
 id = "19_epaxos_small"

@@ -127,7 +127,8 @@ fn cartesian_assignments(
     Ok(assignments)
 }
 
-fn expand_type_domain(
+/// Expand a type into its finite domain of possible RuntimeValues.
+pub fn expand_type_domain(
     ty: &Type,
     schema: &SpecSchema,
     model: &ModelConfig,
