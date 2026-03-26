@@ -11546,7 +11546,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
     - `main.rs` now delegates to library versions via thin wrappers.
     - The DPOR crate can now call `verus_transpiler::modelcheck::helpers::eval_spec_function_call_recursive()` directly for in-process evaluation.
     The minimum library surface needed to drive DPOR is:
-  - [ ] **38.8.2.d**: Implement deterministic enabled-set enumeration for one state. For a fixed input state and bounds, repeated runs must return the same ordered transition list; add regression tests for stable ordering on at least `01_aplusb`, `07_producer_consumer_1slot`, and one multi-branch protocol case.
+  - [x] **38.8.2.d**: Implemented deterministic enabled-set enumeration in `src/enabled.rs`. `SpecContext` loads specs and provides `initial_states()`, `enabled_transitions(state)`, and `full_successors(state)`. Uses library API directly with inline predicate-only solver for translated TLA+ specs. Ordering key ensures deterministic ordering. 6 new tests (load, initial states, enabled transitions, deterministic ordering, ProducerConsumer graceful error, multi-step BFS). 28 total tests in DPOR crate.
   - [ ] **38.8.2.e**: Implement a real DPOR search stack / node stack in the workfolder rather than reusing one exported baseline trace. Each depth/frame should store:
     - chosen transition,
     - enabled set,

@@ -8,6 +8,7 @@
 //! prototype-to-mainline integration gate.
 
 pub mod baseline;
+pub mod enabled;
 pub mod explorer;
 pub mod types;
 
