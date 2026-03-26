@@ -364,7 +364,7 @@ impl SpecContext {
 }
 
 /// Hash a RuntimeValue into a compact StateFingerprint.
-fn hash_state(state: &RuntimeValue) -> StateFingerprint {
+pub fn hash_state(state: &RuntimeValue) -> StateFingerprint {
     use std::hash::{Hash, Hasher};
     let key = state.canonical_key();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();

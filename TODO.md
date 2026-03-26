@@ -11547,13 +11547,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
     - The DPOR crate can now call `verus_transpiler::modelcheck::helpers::eval_spec_function_call_recursive()` directly for in-process evaluation.
     The minimum library surface needed to drive DPOR is:
   - [x] **38.8.2.d**: Implemented deterministic enabled-set enumeration in `src/enabled.rs`. `SpecContext` loads specs and provides `initial_states()`, `enabled_transitions(state)`, and `full_successors(state)`. Uses library API directly with inline predicate-only solver for translated TLA+ specs. Ordering key ensures deterministic ordering. 6 new tests (load, initial states, enabled transitions, deterministic ordering, ProducerConsumer graceful error, multi-step BFS). 28 total tests in DPOR crate.
-  - [ ] **38.8.2.e**: Implement a real DPOR search stack / node stack in the workfolder rather than reusing one exported baseline trace. Each depth/frame should store:
-    - chosen transition,
-    - enabled set,
-    - `backtrack`,
-    - `done`,
-    - state fingerprint before/after,
-    - and parent information needed to reconstruct the prefix.
+  - [x] **38.8.2.e**: Implemented DPOR search stack in `src/dpor.rs`. `StackFrame` stores: state + fingerprint, enabled set, done set, backtrack set, chosen transition, depth. `explore_dpor()` runs DFS with explicit stack, backtrack-based alternative exploration, state dedup via `canonical_key()`, and configurable max_depth/max_states limits. v1 (conservative): backtrack = all enabled transitions (equivalent to exhaustive DFS). **APlusB: 21 distinct states matching baseline exactly.** 4 tests: exhaustive exploration, deterministic ordering, max_depth respected, max_states respected. 32 total tests in DPOR crate. Each depth/frame stores:
   - [ ] **38.8.2.f**: Land source-DPOR backtrack/source-set insertion conservatively first. The first correctness bar is:
     - same verdict as baseline on the parity subset,
     - same normalized reachable-state set on the green small cases,
