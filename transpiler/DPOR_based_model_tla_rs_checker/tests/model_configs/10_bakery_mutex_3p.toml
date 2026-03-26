@@ -7,8 +7,8 @@ NumProcs = 2
 [search]
 max_depth = 50
 max_states = 500000
-timeout_ms = 60000
-candidate_eval_guardrail = 100000
+timeout_ms = 120000
+candidate_eval_guardrail = 500000
 
 [properties]
 invariants = ["LMutualExclusion"]

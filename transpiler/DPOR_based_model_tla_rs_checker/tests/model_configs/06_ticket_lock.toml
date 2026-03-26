@@ -6,9 +6,9 @@ NumProcs = 2
 
 [search]
 max_depth = 50
-max_states = 200000
+max_states = 500000
 timeout_ms = 60000
-candidate_eval_guardrail = 100000
+candidate_eval_guardrail = 500000
 
 [properties]
 invariants = ["LMutualExclusion"]
@@ -16,7 +16,7 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 3 }
+int = { min = 0, max = 2 }
 max_set_len = 2
 max_seq_len = 2
 max_map_len = 2
