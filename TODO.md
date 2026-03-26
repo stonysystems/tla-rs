@@ -11534,11 +11534,55 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - [x] **38.8.1.d**: Implemented conservative backtrack-point recording in `src/explorer.rs`. Uses export-based approach: runs baseline with `--export-parity-debug`, parses `distinct_states.jsonl` + `edges.jsonl` to build `ExportedGraph`, builds adjacency map, then walks a DFS trace recording `BacktrackInfo` at each step. v1: all alternative successors are backtrack candidates (no independence filtering). Includes `compute_backtrack_sets()`, `build_adjacency()`, `run_baseline_with_export()`, `parse_exported_graph()`. 6 unit tests (empty graph, simple graph, adjacency, linear trace, branching trace with backtrack point, APlusB integration).
   - [x] **38.8.1.e**: Smoke test passes: APlusB (1 process, 1 action) produces 0 backtrack points as expected (linear graph, no alternatives). The `test_run_baseline_with_export_aplusb` test verifies: non-empty states, 1 initial state, non-empty edges, 0 backtrack points. The `test_backtrack_sets_branching` unit test verifies that branching graphs correctly identify 1 backtrack point.
 - [ ] **38.8.2**: Second milestone: source-DPOR style backtrack/source-set insertion with exact verdict parity against the baseline on the small cases.
+  - [ ] **38.8.2.a**: Raise the small-case baseline/parity subset above the current 2/12 pass floor before judging DPOR exactness. Use the blocker buckets already recorded in `tests/reports/latest.md` as the worklist:
+    - translation gaps on `02`-`06` and `10`-`12`,
+    - translated-spec parse failures on `08`-`09`,
+    - missing invariant discoverability on `13` and `17`,
+    - and entrypoint/signature compatibility on `14`-`16`.
+  - [ ] **38.8.2.b**: Define the in-process DPOR stepping contract in the workfolder. Add a concrete `EnabledTransition` / `ScheduledStep` style struct carrying at minimum:
+    - `process_id`,
+    - `branch_label`,
+    - successor state / fingerprint,
+    - deterministic ordering key,
+    - and the branch read/write footprint used by dependence checking.
+  - [ ] **38.8.2.c**: Extract or expose the minimum model-checker library surface needed to drive DPOR without shelling out per step. The prototype may keep the subprocess baseline oracle, but the DPOR inner loop itself must be able to:
+    - enumerate enabled transitions from one concrete state,
+    - compute successor states deterministically,
+    - and recover the chosen action label / process identity for replay.
+  - [ ] **38.8.2.d**: Implement deterministic enabled-set enumeration for one state. For a fixed input state and bounds, repeated runs must return the same ordered transition list; add regression tests for stable ordering on at least `01_aplusb`, `07_producer_consumer_1slot`, and one multi-branch protocol case.
+  - [ ] **38.8.2.e**: Implement a real DPOR search stack / node stack in the workfolder rather than reusing one exported baseline trace. Each depth/frame should store:
+    - chosen transition,
+    - enabled set,
+    - `backtrack`,
+    - `done`,
+    - state fingerprint before/after,
+    - and parent information needed to reconstruct the prefix.
+  - [ ] **38.8.2.f**: Land source-DPOR backtrack/source-set insertion conservatively first. The first correctness bar is:
+    - same verdict as baseline on the parity subset,
+    - same normalized reachable-state set on the green small cases,
+    - or the same first witness class/depth on the negative small cases.
+    Do not require reduction yet if the dependence relation is still "all cross-process steps dependent".
+  - [ ] **38.8.2.g**: Reuse the existing branch-footprint machinery in `transpiler/src/modelcheck/por.rs` as the first real dependence refinement, instead of inventing a second incompatible read/write analysis. Validate the refined dependence relation against the conservative one on the parity subset before claiming pruning wins.
+  - [ ] **38.8.2.h**: Add a milestone report for the parity subset (`01`-`12` by default) with one row per case: baseline verdict, DPOR verdict, baseline distinct states, DPOR distinct states, first witness depth, backtracks added, and elapsed time. This report is the completion artifact for `38.8.2`.
 - [ ] **38.8.3**: Third milestone: wakeup-tree / sleep-set style improvements only after the previous milestone is exact on the baseline-parity subset.
+  - [ ] **38.8.3.a**: Add per-depth sleep-set storage and pruning only after `38.8.2` reaches exact parity on the current baseline-feasible small cases.
+  - [ ] **38.8.3.b**: Gate sleep-set pruning behind parity checks against the `38.8.2` DPOR engine so any verdict/witness drift is caught immediately.
+  - [ ] **38.8.3.c**: Require a checked-in before/after reduction table for the independence-heavy cases (`04`-`11`) showing where sleep sets help and where they do not.
+  - [ ] **38.8.3.d**: Treat wakeup trees as a separate follow-up decision, not an automatic next step. Only add them if sleep sets are correct, measurable, and still leave obvious redundant exploration on the checked corpus.
+  - [ ] **38.8.3.e**: If wakeup trees do land, keep the witness/report schema stable so baseline-vs-DPOR and DPOR-vs-DPOR milestone comparisons remain diffable.
 - [ ] **38.8.4**: At each DPOR milestone, require evidence of both:
   - no verdict regressions against the baseline parity subset,
   - and at least some reduction benefit on the independence-heavy cases (`04` through `11` are the first expected wins).
+  - [ ] **38.8.4.a**: Add an automated baseline-vs-DPOR comparison step that fails the milestone if any parity-subset case changes verdict unexpectedly.
+  - [ ] **38.8.4.b**: For positive cases, compare normalized reachable-state sets using the same canonical JSON / fingerprint discipline as Phase 36; for negative cases, compare witness class plus first failure depth.
+  - [ ] **38.8.4.c**: Treat pass-count drops, new `checker_error`, or new `known_unimplemented` rows on any previously-working case as regressions, even if the DPOR engine improved elsewhere.
+  - [ ] **38.8.4.d**: Reduction claims must cite concrete case IDs and numbers. "Faster overall" or "fewer interleavings in theory" does not close a milestone.
+  - [ ] **38.8.4.e**: Do not count cases that still fail in the baseline (`translation_failed`, `checker_error`, `known_unimplemented`) as DPOR reduction evidence; they belong in the blocker ledger, not the reduction win column.
 - [ ] **38.8.5**: Bug traces must remain reproducible. If DPOR reports a violation or deadlock, the prototype must be able to replay the witness deterministically and show the concrete prefix that triggered it.
+  - [ ] **38.8.5.a**: Define a checked-in witness format that records at minimum: initial-state fingerprint, ordered `(process_id, branch_label)` decisions, intermediate state fingerprints, and the failing condition.
+  - [ ] **38.8.5.b**: Implement a replay entrypoint (library helper or CLI command) that re-executes the witness prefix deterministically from the initial state and confirms the same failure at the same depth.
+  - [ ] **38.8.5.c**: Add replay regression tests for at least three negative cases once they are baseline-feasible: one invariant violation micro-case, one deadlock case, and one protocol-sized negative/bug case if available.
+  - [ ] **38.8.5.d**: Do not mark witness reproducibility complete while the prototype still depends on opaque baseline-export traces for the failing prefix; the replay must be driven from the DPOR engine's own scheduled decisions.
 
 ### 38.9 Harden on the real protocol cases instead of stopping at toy examples
 
@@ -11547,7 +11591,12 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - `17_paxos_small`
   - `20_raft_small`
   These three are mandatory because the user explicitly called them out.
+  - [ ] **38.9.1.a**: `16_primarybackup_small` must move out of generic `checker_error` status into one explicit blocker or a real verdict. Record the first blocking layer precisely: entrypoint compatibility, invariant plumbing, action/process extraction, dependence, or state explosion.
+  - [ ] **38.9.1.b**: `17_paxos_small` must likewise move out of generic `checker_error` status into one explicit blocker or a real verdict. Keep the blocker tied to a concrete file/module/algorithm surface, not just "consensus is hard".
+  - [ ] **38.9.1.c**: `20_raft_small` must be present in the suite and graduate from placeholder status to a concrete bounded plan, even if the first result is still `translation_failed`, `known_unimplemented`, or `known_timeout`.
 - [ ] **38.9.2**: Cases `13` through `20` must remain in every full-suite run from the beginning, even if some begin as `known_unimplemented` or `known_timeout` under the initial milestone.
+  - [ ] **38.9.2.a**: Make the full-suite runner fail loudly if any manifest case `13`-`20` is missing from the generated report.
+  - [ ] **38.9.2.b**: Keep a per-case status column in the scoreboard for `13`-`20` even when the result is still blocked; the goal is visible pressure, not a clean-looking table.
 - [ ] **38.9.3**: For the harder protocol cases, document the first blocker precisely:
   - translation gap,
   - missing action/process extraction,
@@ -11556,7 +11605,19 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - deadlock semantics gap,
   - or another concrete reason.
   "Too hard" is not an acceptable status label.
+  - [ ] **38.9.3.a**: Add a hard-case blocker ledger under `tests/reports/` (or extend `latest.md`) with one row per case `13`-`20`, including current result, first blocker, and the next code task.
+  - [ ] **38.9.3.b**: Every blocker entry must point to a concrete surface:
+    - parser/translator gap,
+    - spec-analyzer / entrypoint mismatch,
+    - invariant-selection gap,
+    - DPOR process extraction gap,
+    - dependence false-sharing,
+    - or measured state explosion with a reproducer.
+  - [ ] **38.9.3.c**: When a blocker changes category, update the ledger in the same commit as the code change so the repo history shows why progress happened.
 - [ ] **38.9.4**: When a harder case is not yet baseline-feasible, keep the previous best known result as the regression target and promote it to baseline parity later if/when finite bounds make that practical.
+  - [ ] **38.9.4.a**: Record the current best-known outcome for each of `13`-`20` in machine-readable form (`ok`, `invariant_violation`, `deadlock`, `known_timeout`, `known_unimplemented`, `translation_failed`, etc.).
+  - [ ] **38.9.4.b**: If bounds are shrunk to make a hard case finite, check in the new bound choice and explain why it is still semantically useful for Phase 38 regression purposes.
+  - [ ] **38.9.4.c**: Promotion from "best known blocked result" to "baseline parity target" must happen explicitly in the manifest/scoreboard, not implicitly in prose.
 
 ### 38.10 Integration gate: do not rewrite the main checker prematurely
 
@@ -11567,12 +11628,21 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - the full-suite harness exists,
   - the parity subset is exact under DPOR,
   - and the required hard protocol gates are no longer hand-waved.
+  - [ ] **38.10.1.a**: No Phase 38 algorithm work should move files out of `transpiler/DPOR_based_model_tla_rs_checker/` before `38.8.2` parity and the `38.9` blocker ledger are both real.
+  - [ ] **38.10.1.b**: Shared-library extractions from `transpiler/src/modelcheck` are allowed only when they are narrow, semantics-preserving, and justified by the prototype's need for an in-process stepping/replay API.
+  - [ ] **38.10.1.c**: Any such shared extraction must land with existing mainline model-check tests still green; do not hide DPOR work inside unrelated mainline refactors.
 - [ ] **38.10.2**: If/when integration into `transpiler/src/modelcheck` is proposed, write an explicit migration plan first:
   - which modules move,
   - what existing code is replaced or kept,
   - how CLI/reporting surfaces stay compatible,
   - and how old vs new engines are compared during the switchover.
+  - [ ] **38.10.2.a**: The migration plan must name the exact prototype modules that would move (`types`, `dependence`, `replay`, `search`, report surfaces, etc.) and which mainline modules remain the source of truth.
+  - [ ] **38.10.2.b**: The migration plan must define a shadow-mode comparison period where baseline and DPOR can both be run on the same fixtures from the normal CLI/reporting surfaces.
+  - [ ] **38.10.2.c**: The migration plan must include a rollback story: how to disable the integrated DPOR path without losing the prototype corpus, harness, or evidence.
+  - [ ] **38.10.2.d**: The migration plan must preserve or explicitly supersede the current JSON/report schema so Phase 36/38 evidence consumers do not silently break.
 - [ ] **38.10.3**: Until that migration plan exists, treat the prototype as an incubator, not a justification for ad hoc edits in the mainline checker.
+  - [ ] **38.10.3.a**: Keep Phase 38 feature work reviewable as prototype-local commits where possible; avoid mixed commits that simultaneously change the incubator and rewrite production checker behavior.
+  - [ ] **38.10.3.b**: If a mainline bug fix is discovered while doing prototype work, land it as a separately-justified mainline fix, not as an unreviewable side effect of "DPOR prep".
 
 ### 38.11 Acceptance criteria
 
