@@ -2301,6 +2301,8 @@ fn validate_fairness_labels_against_lnext_branches(
     ))
 }
 
+// expand_type_domain_candidates moved to verus_transpiler::modelcheck::domain
+// (Phase 38.8.2.c library extraction)
 fn expand_type_domain_candidates(
     label: &str,
     var_name: &str,
@@ -2308,150 +2310,18 @@ fn expand_type_domain_candidates(
     schema: &verus_transpiler::spec_analyzer::SpecSchema,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
 ) -> Result<Vec<verus_transpiler::modelcheck::value::RuntimeValue>> {
-    expand_type_domain_candidates_internal(label, var_name, ty, schema, model_config, 0)
+    verus_transpiler::modelcheck::domain::expand_type_domain_candidates(
+        label,
+        var_name,
+        ty,
+        schema,
+        model_config,
+    )
+    .map_err(|e| miette::miette!("{}", e))
 }
 
-fn expand_type_domain_candidates_internal(
-    label: &str,
-    var_name: &str,
-    ty: &verus_transpiler::ast::Type,
-    schema: &verus_transpiler::spec_analyzer::SpecSchema,
-    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
-    recursion_depth: usize,
-) -> Result<Vec<verus_transpiler::modelcheck::value::RuntimeValue>> {
-    use std::collections::BTreeSet;
-    use verus_transpiler::ast::Type;
-    use verus_transpiler::modelcheck::domain::expand_branch_existentials;
-    use verus_transpiler::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
-    use verus_transpiler::modelcheck::value::RuntimeValue;
-
-    if recursion_depth > 16 {
-        return Err(miette::miette!(
-            "Model-check candidate expansion exceeded recursion depth limit (16) for `{}`.",
-            label
-        ));
-    }
-
-    match ty {
-        Type::Reference { ty, .. } => {
-            return expand_type_domain_candidates_internal(
-                label,
-                var_name,
-                ty,
-                schema,
-                model_config,
-                recursion_depth + 1,
-            );
-        }
-        Type::Named(path) => {
-            if let Some(struct_def) = find_struct_definition(schema, path) {
-                let expansion_limit = model_config.search.max_states;
-                let mut combinations: Vec<Vec<(String, RuntimeValue)>> = vec![Vec::new()];
-
-                for field in &struct_def.fields {
-                    let field_values = expand_type_domain_candidates_internal(
-                        &format!("{}_{}", label, field.name),
-                        &field.name,
-                        &field.ty,
-                        schema,
-                        model_config,
-                        recursion_depth + 1,
-                    )?;
-                    if field_values.is_empty() {
-                        return Err(miette::miette!(
-                            "Model-check candidate expansion for struct `{}` produced an empty domain for field `{}`.",
-                            struct_def.name,
-                            field.name
-                        ));
-                    }
-
-                    let mut next = Vec::new();
-                    for partial in &combinations {
-                        for value in &field_values {
-                            let mut candidate = partial.clone();
-                            candidate.push((field.name.clone(), value.clone()));
-                            next.push(candidate);
-                            if next.len() > expansion_limit {
-                                return Err(miette::miette!(
-                                    "Model-check candidate expansion for struct `{}` exceeded limit ({}). \
-                                     Narrow domains or increase `search.max_states`.",
-                                    struct_def.name,
-                                    expansion_limit
-                                ));
-                            }
-                        }
-                    }
-                    combinations = next;
-                }
-
-                let mut seen = BTreeSet::new();
-                let mut values = Vec::new();
-                for fields in combinations {
-                    let value = RuntimeValue::struct_value(struct_def.name.clone(), fields)
-                        .map_err(|e| {
-                            miette::miette!(
-                                "Failed to build runtime struct candidate `{}`: {}",
-                                struct_def.name,
-                                e
-                            )
-                        })?;
-                    if seen.insert(value.canonical_key()) {
-                        values.push(value);
-                    }
-                }
-                return Ok(values);
-            }
-        }
-        _ => {}
-    }
-
-    let branch = TransitionBranchIr {
-        label: label.to_string(),
-        existential_vars: vec![ExistentialVarIr {
-            name: var_name.to_string(),
-            ty: Some(ty.clone()),
-        }],
-        constraints: vec![],
-    };
-    let assignments = expand_branch_existentials(&branch, schema, model_config)
-        .map_err(|e| miette::miette!("{}", e))?;
-
-    let mut seen = BTreeSet::new();
-    let mut values = Vec::new();
-    for assignment in assignments {
-        let value = assignment
-            .get(var_name)
-            .ok_or_else(|| {
-                miette::miette!(
-                    "Internal model-check error: existential expansion for `{}` \
-                     in `{}` missing expected binding.",
-                    var_name,
-                    label
-                )
-            })?
-            .clone();
-        if seen.insert(value.canonical_key()) {
-            values.push(value);
-        }
-    }
-    Ok(values)
-}
-
-fn find_struct_definition<'a>(
-    schema: &'a verus_transpiler::spec_analyzer::SpecSchema,
-    path: &verus_transpiler::ast::Path,
-) -> Option<&'a verus_transpiler::types::StructDef> {
-    let joined = path.segments.join("::");
-    if let Some(found) = schema.structs.get(&joined) {
-        return Some(found);
-    }
-    if let Some(last) = path.last() {
-        if let Some(found) = schema.structs.get(last) {
-            return Some(found);
-        }
-    }
-    None
-}
+// expand_type_domain_candidates_internal and find_struct_definition
+// removed — now in verus_transpiler::modelcheck::domain (Phase 38.8.2.c)
 
 fn infer_init_state_param_name(init_fn: &verus_transpiler::ast::SpecFunction) -> Option<&str> {
     use verus_transpiler::ast::Type;
@@ -2496,7 +2366,9 @@ fn state_struct_definition_from_type<'a>(
 
     match ty {
         Type::Reference { ty, .. } => state_struct_definition_from_type(ty, schema),
-        Type::Named(path) => find_struct_definition(schema, path),
+        Type::Named(path) => {
+            verus_transpiler::modelcheck::domain::find_struct_definition(schema, path)
+        }
         _ => None,
     }
 }
