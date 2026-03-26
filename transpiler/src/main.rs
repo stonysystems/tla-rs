@@ -3405,11 +3405,45 @@ fn execute_model_check(
         .saturating_add(constants_candidates_started.elapsed().as_millis());
     let constants_valuations_total = constants_values.len();
 
+    // Expand extra LNext params (beyond state/state_/constants) as transition-level existentials
+    let extra_param_assignments = verus_transpiler::modelcheck::domain::expand_extra_params(
+        &transition.extra_params,
+        &bundle.schema,
+        model_config,
+    )
+    .map_err(|e| miette::miette!("{}", e))?;
+
     let mut assignments_by_branch = BTreeMap::new();
     for branch in &transition.branches {
         let assignments_started = Instant::now();
-        let assignments = expand_branch_existentials(branch, &bundle.schema, model_config)
+        let branch_assignments = expand_branch_existentials(branch, &bundle.schema, model_config)
             .map_err(|e| miette::miette!("{}", e))?;
+        // Cross-product branch existentials with extra param assignments
+        let assignments = if extra_param_assignments.len() <= 1 {
+            // No extra params or single valuation — merge directly
+            let extra = extra_param_assignments.first().cloned().unwrap_or_default();
+            branch_assignments
+                .into_iter()
+                .map(|mut a| {
+                    a.extend(extra.clone());
+                    a
+                })
+                .collect()
+        } else {
+            let mut merged = Vec::new();
+            for ba in &branch_assignments {
+                for ea in &extra_param_assignments {
+                    let mut combined = ba.clone();
+                    combined.extend(ea.clone());
+                    merged.push(combined);
+                }
+            }
+            if merged.is_empty() {
+                extra_param_assignments.clone()
+            } else {
+                merged
+            }
+        };
         timing_summary.candidate_generation_evaluation_ms = timing_summary
             .candidate_generation_evaluation_ms
             .saturating_add(assignments_started.elapsed().as_millis());

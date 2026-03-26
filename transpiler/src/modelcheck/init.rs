@@ -121,16 +121,18 @@ fn validate_init_signature<'a>(
             constants_param = Some(param.name.as_str());
             continue;
         }
-        if state_param.is_none() {
+        let is_lstate = matches!(
+            &param.ty,
+            Type::Named(path) if path.last() == Some("LState")
+        );
+        if is_lstate && state_param.is_none() {
             state_param = Some(param.name.as_str());
-        } else {
-            return Err(TranspileError::Config {
-                message: format!(
-                    "Cannot construct initial states from `{}`: could not infer a unique state parameter.",
-                    init_fn.name
-                ),
-            });
+        } else if state_param.is_none() {
+            // First non-LConstants, non-LState param: treat as state
+            state_param = Some(param.name.as_str());
         }
+        // Extra params beyond state and constants are silently ignored
+        // (treated as existentials at the transition level)
     }
 
     // Backward-compatible fallback for non-`LConstants` second parameter signatures.

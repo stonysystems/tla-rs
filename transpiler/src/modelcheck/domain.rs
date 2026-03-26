@@ -1,7 +1,7 @@
 use crate::ast::{Path, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{DomainSpec, ModelConfig, ModelValue};
-use crate::modelcheck::ir::TransitionBranchIr;
+use crate::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use crate::spec_analyzer::SpecSchema;
 use crate::types::{EnumDef, StructDef, VariantFields};
@@ -54,6 +54,44 @@ pub fn expand_branch_existentials(
         var_domains.push((var.name.clone(), domain));
     }
 
+    cartesian_assignments(&var_domains, expansion_limit)
+}
+
+/// Expand extra LNext parameters (beyond state/state_/constants) into assignments.
+///
+/// These extra params (e.g., `c: int` in generated protocol specs) are treated as
+/// transition-level existential variables. Their assignments are cross-producted
+/// with each branch's existential assignments during solving.
+pub fn expand_extra_params(
+    extra_params: &[ExistentialVarIr],
+    schema: &SpecSchema,
+    model: &ModelConfig,
+) -> TranspileResult<Vec<ExistentialAssignment>> {
+    if extra_params.is_empty() {
+        return Ok(vec![BTreeMap::new()]);
+    }
+    let expansion_limit = model.search.max_states;
+    let bounds = RuntimeCollectionBounds::from(&model.collections);
+    let mut var_domains = Vec::new();
+    for var in extra_params {
+        let ty = var.ty.as_ref().ok_or_else(|| TranspileError::Config {
+            message: format!(
+                "Extra LNext parameter `{}` is missing a type annotation.",
+                var.name
+            ),
+        })?;
+        let domain = expand_type_domain(ty, schema, model, &bounds, expansion_limit, 0)?;
+        if domain.is_empty() {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Extra LNext parameter `{}` expanded to an empty domain for type `{}`.",
+                    var.name,
+                    format_type_name(ty)
+                ),
+            });
+        }
+        var_domains.push((var.name.clone(), domain));
+    }
     cartesian_assignments(&var_domains, expansion_limit)
 }
 
@@ -165,6 +203,11 @@ fn expand_type_domain(
             Ok(tuples)
         }
         Type::Seq(elem_ty) => {
+            // Special case: Seq<char> maps to TLA+ strings.
+            // Instead of enumerating char combinations, use string constants from config.
+            if is_char_type(elem_ty) {
+                return expand_seq_char_domain(model);
+            }
             let elem_domain = unique_sorted(expand_type_domain(
                 elem_ty,
                 schema,
@@ -619,6 +662,58 @@ fn runtime_from_model_value(
             ),
         }),
     }
+}
+
+/// Check if a type is `char` (Named path with single segment "char").
+fn is_char_type(ty: &Type) -> bool {
+    matches!(ty, Type::Named(path) if path.segments.len() == 1 && path.segments[0] == "char")
+}
+
+/// Expand `Seq<char>` domain using string constants from model config.
+///
+/// TLA+ strings become `Seq<char>` in Verus. Instead of enumerating all
+/// char combinations (combinatorial explosion), this uses explicit string
+/// constants from `quantifiers.types.Seq_char` in the model config.
+fn expand_seq_char_domain(model: &ModelConfig) -> TranspileResult<Vec<RuntimeValue>> {
+    // Look for explicit string constants in quantifiers.types.Seq_char
+    if let Some(domain) = model.quantifiers.types.get("Seq_char") {
+        match domain {
+            DomainSpec::Values { values } => {
+                let mut result = vec![RuntimeValue::String(String::new())]; // empty string
+                for v in values {
+                    match v {
+                        ModelValue::String(s) => {
+                            result.push(RuntimeValue::String(s.clone()));
+                        }
+                        _ => {
+                            return Err(TranspileError::Config {
+                                message: format!(
+                                    "Seq_char domain values must be strings, found: {:?}",
+                                    v
+                                ),
+                            });
+                        }
+                    }
+                }
+                result.sort();
+                result.dedup();
+                return Ok(result);
+            }
+            _ => {
+                return Err(TranspileError::Config {
+                    message: "Seq_char domain must use `values` form with string constants."
+                        .to_string(),
+                });
+            }
+        }
+    }
+
+    Err(TranspileError::Config {
+        message: "Missing domain for named type `char`. \
+                  Provide `quantifiers.types.Seq_char` with string constant values in model.toml. \
+                  Example: `[quantifiers.types.Seq_char]\nvalues = [\"idle\", \"waiting\", \"critical\"]`"
+            .to_string(),
+    })
 }
 
 fn generate_seq_domain(

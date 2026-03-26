@@ -10,6 +10,9 @@ pub struct TransitionIr {
     pub next_state_param: String,
     /// Optional constants parameter name (typically `c`).
     pub constants_param: Option<String>,
+    /// Extra parameters beyond state/state_/constants (e.g., `c: int` in generated protocol specs).
+    /// These are treated as existential variables enumerated during solving.
+    pub extra_params: Vec<ExistentialVarIr>,
     /// Disjunctive transition branches.
     pub branches: Vec<TransitionBranchIr>,
 }
@@ -81,12 +84,23 @@ pub fn build_transition_ir(next_fn: &SpecFunction) -> TranspileResult<Transition
     let next_state_param = next_fn.params[1].name.clone();
     let constants_param = next_fn.params.get(2).map(|p| p.name.clone());
 
+    // Capture extra params beyond state/state_/constants as existential variables
+    let extra_start = if constants_param.is_some() { 3 } else { 2 };
+    let extra_params: Vec<ExistentialVarIr> = next_fn.params[extra_start..]
+        .iter()
+        .map(|p| ExistentialVarIr {
+            name: p.name.clone(),
+            ty: Some(p.ty.clone()),
+        })
+        .collect();
+
     let branches = discover_lnext_branches(next_fn)?;
 
     Ok(TransitionIr {
         current_state_param,
         next_state_param,
         constants_param,
+        extra_params,
         branches,
     })
 }

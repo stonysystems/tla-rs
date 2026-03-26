@@ -1169,6 +1169,7 @@ mod tests {
             current_state_param: "s".to_string(),
             next_state_param: "s_".to_string(),
             constants_param: Some("c".to_string()),
+            extra_params: vec![],
             branches: vec![],
         }
     }
@@ -2212,6 +2213,7 @@ mod tests {
             current_state_param: "s".to_string(),
             next_state_param: "s_".to_string(),
             constants_param: Some("c".to_string()),
+            extra_params: vec![],
             branches: vec![branch.clone()],
         };
 
@@ -2304,6 +2306,7 @@ mod tests {
             current_state_param: "s".to_string(),
             next_state_param: "s_".to_string(),
             constants_param: Some("c".to_string()),
+            extra_params: vec![],
             branches: vec![branch],
         };
 

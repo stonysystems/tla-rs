@@ -361,9 +361,9 @@ fn validate_lnext_signature<'a>(
     expected_name: &str,
 ) -> TranspileResult<&'a Type> {
     let mut issues = Vec::new();
-    if lnext.params.len() != 2 && lnext.params.len() != 3 {
+    if lnext.params.len() < 2 {
         issues.push(format!(
-            "expected 2 or 3 parameters, found {}",
+            "expected at least 2 parameters (state, state_), found {}",
             lnext.params.len()
         ));
     }

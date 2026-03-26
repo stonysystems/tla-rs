@@ -4099,21 +4099,46 @@ impl ModuleTranslator {
         operator_info: &std::collections::HashMap<String, OperatorKind>,
         _op_names: &[String],
     ) -> bool {
+        let r = |e: &TlaExpr| self.expr_refs_action_operators(e, operator_info, _op_names);
         match expr {
             TlaExpr::Ident(name) => operator_info.get(name) == Some(&OperatorKind::Action),
-            TlaExpr::BinOp { left, right, .. } => {
-                self.expr_refs_action_operators(left, operator_info, _op_names)
-                    || self.expr_refs_action_operators(right, operator_info, _op_names)
-            }
-            TlaExpr::UnaryOp { operand, .. } => {
-                self.expr_refs_action_operators(operand, operator_info, _op_names)
-            }
+            TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
+            TlaExpr::BinOp { left, right, .. } => r(left) || r(right),
+            TlaExpr::UnaryOp { operand, .. } => r(operand),
             TlaExpr::OpApply { op, args } => {
-                self.expr_refs_action_operators(op, operator_info, _op_names)
-                    || args
-                        .iter()
-                        .any(|a| self.expr_refs_action_operators(a, operator_info, _op_names))
+                r(op) || args.iter().any(|a| r(a))
             }
+            TlaExpr::Prime(inner) => r(inner),
+            TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
+                vars.iter().any(|qb| qb.set.as_ref().is_some_and(|s| r(s))) || r(body)
+            }
+            TlaExpr::IfThenElse { cond, then_expr, else_expr } => {
+                r(cond) || r(then_expr) || r(else_expr)
+            }
+            TlaExpr::Case { arms, other } => {
+                arms.iter().any(|(c, b)| r(c) || r(b))
+                    || other.as_ref().is_some_and(|e| r(e))
+            }
+            TlaExpr::SetEnum(elems) | TlaExpr::Tuple(elems) => elems.iter().any(|e| r(e)),
+            TlaExpr::SetFilter { set, filter, .. } => r(set) || r(filter),
+            TlaExpr::SetMap { expr: e, set, .. } => r(set) || r(e),
+            TlaExpr::FnApply { func, arg } => r(func) || r(arg),
+            TlaExpr::FnConstruct { domain, body, .. } => r(domain) || r(body),
+            TlaExpr::FnExcept { func, updates } => {
+                r(func) || updates.iter().any(|u| r(&u.value))
+            }
+            TlaExpr::Record(fields) => fields.iter().any(|(_, v)| r(v)),
+            TlaExpr::RecordAccess { record, .. } => r(record),
+            TlaExpr::Choose { set, body, .. } => {
+                set.as_ref().is_some_and(|s| r(s)) || r(body)
+            }
+            TlaExpr::LetIn { defs, body } => {
+                defs.iter().any(|d| r(&d.body)) || r(body)
+            }
+            TlaExpr::Unchanged(_) => false,
+            TlaExpr::Enabled(inner) | TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => r(inner),
+            TlaExpr::LeadsTo { left, right } => r(left) || r(right),
+            TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => r(action),
             _ => false,
         }
     }
@@ -4125,24 +4150,49 @@ impl ModuleTranslator {
         operator_info: &std::collections::HashMap<String, OperatorKind>,
         _op_names: &[String],
     ) -> bool {
+        let r = |e: &TlaExpr| self.expr_refs_predicate_operators(e, operator_info, _op_names);
         match expr {
             TlaExpr::Ident(name) => matches!(
                 operator_info.get(name),
                 Some(&OperatorKind::Predicate) | Some(&OperatorKind::Action)
             ),
-            TlaExpr::BinOp { left, right, .. } => {
-                self.expr_refs_predicate_operators(left, operator_info, _op_names)
-                    || self.expr_refs_predicate_operators(right, operator_info, _op_names)
-            }
-            TlaExpr::UnaryOp { operand, .. } => {
-                self.expr_refs_predicate_operators(operand, operator_info, _op_names)
-            }
+            TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
+            TlaExpr::BinOp { left, right, .. } => r(left) || r(right),
+            TlaExpr::UnaryOp { operand, .. } => r(operand),
             TlaExpr::OpApply { op, args } => {
-                self.expr_refs_predicate_operators(op, operator_info, _op_names)
-                    || args
-                        .iter()
-                        .any(|a| self.expr_refs_predicate_operators(a, operator_info, _op_names))
+                r(op) || args.iter().any(|a| r(a))
             }
+            TlaExpr::Prime(inner) => r(inner),
+            TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
+                vars.iter().any(|qb| qb.set.as_ref().is_some_and(|s| r(s))) || r(body)
+            }
+            TlaExpr::IfThenElse { cond, then_expr, else_expr } => {
+                r(cond) || r(then_expr) || r(else_expr)
+            }
+            TlaExpr::Case { arms, other } => {
+                arms.iter().any(|(c, b)| r(c) || r(b))
+                    || other.as_ref().is_some_and(|e| r(e))
+            }
+            TlaExpr::SetEnum(elems) | TlaExpr::Tuple(elems) => elems.iter().any(|e| r(e)),
+            TlaExpr::SetFilter { set, filter, .. } => r(set) || r(filter),
+            TlaExpr::SetMap { expr: e, set, .. } => r(set) || r(e),
+            TlaExpr::FnApply { func, arg } => r(func) || r(arg),
+            TlaExpr::FnConstruct { domain, body, .. } => r(domain) || r(body),
+            TlaExpr::FnExcept { func, updates } => {
+                r(func) || updates.iter().any(|u| r(&u.value))
+            }
+            TlaExpr::Record(fields) => fields.iter().any(|(_, v)| r(v)),
+            TlaExpr::RecordAccess { record, .. } => r(record),
+            TlaExpr::Choose { set, body, .. } => {
+                set.as_ref().is_some_and(|s| r(s)) || r(body)
+            }
+            TlaExpr::LetIn { defs, body } => {
+                defs.iter().any(|d| r(&d.body)) || r(body)
+            }
+            TlaExpr::Unchanged(_) => false,
+            TlaExpr::Enabled(inner) | TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => r(inner),
+            TlaExpr::LeadsTo { left, right } => r(left) || r(right),
+            TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => r(action),
             _ => false,
         }
     }
