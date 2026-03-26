@@ -11584,8 +11584,8 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - [x] **38.9.1.b**: **DONE** (commit `be333ab`). `17_paxos_small` moved to explicit blocker: **domain explosion** — `Set<LRecord>` with 4-field records causes struct expansion within Set to exceed limit even at minimal bounds. Documented in blocker ledger. Fix surface: `transpiler/src/modelcheck/domain.rs`.
   - [x] **38.9.1.c**: **DONE** (commit `be333ab`). `20_raft_small` graduated from `known_unimplemented` to **PASS** (ok, 31 states, 10ms). Model config: Server=2, int 0..2, 3 string constants. Direct-assignment solver handles all branches efficiently.
 - [ ] **38.9.2**: Cases `13` through `20` must remain in every full-suite run from the beginning, even if some begin as `known_unimplemented` or `known_timeout` under the initial milestone.
-  - [ ] **38.9.2.a**: Make the full-suite runner fail loudly if any manifest case `13`-`20` is missing from the generated report.
-  - [ ] **38.9.2.b**: Keep a per-case status column in the scoreboard for `13`-`20` even when the result is still blocked; the goal is visible pressure, not a clean-looking table.
+  - [x] **38.9.2.a**: **DONE**. Added validation check to `run_full_suite.sh` that verifies all 8 protocol cases (13-20) are present in the generated JSON report. Exits with error code 1 if any are missing. Checks `RESULTS_JSON` for each required case_id.
+  - [x] **38.9.2.b**: **DONE** (via `latest.md` and `hard_case_blocker_ledger.md`). Per-case status column maintained in scoreboard for all cases 13-20, including blocked cases with explicit blocker categories.
 - [ ] **38.9.3**: For the harder protocol cases, document the first blocker precisely:
   - translation gap,
   - missing action/process extraction,
@@ -11594,7 +11594,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - deadlock semantics gap,
   - or another concrete reason.
   "Too hard" is not an acceptable status label.
-  - [ ] **38.9.3.a**: Add a hard-case blocker ledger under `tests/reports/` (or extend `latest.md`) with one row per case `13`-`20`, including current result, first blocker, and the next code task.
+  - [x] **38.9.3.a**: **DONE** (commits `be333ab`, `e17ef39`). Created `tests/reports/hard_case_blocker_ledger.md` with one row per case 13-20. Each entry has: current result, first concrete blocker, blocker surface (file/function), and next code task. Updated after translator fix to reflect new blocker categories.
   - [ ] **38.9.3.b**: Every blocker entry must point to a concrete surface:
     - parser/translator gap,
     - spec-analyzer / entrypoint mismatch,

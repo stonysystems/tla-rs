@@ -246,3 +246,21 @@ echo "  Known unimplemented:  $KNOWN_UNIMPL"
 echo "  Errors:               $ERRORS"
 echo "========================================"
 echo "Results written to: tests/reports/latest.json"
+
+# Phase 38.9.2.a: Validate that all protocol cases (13-20) are present in the report.
+# These cases must remain in every full-suite run, even if they are blocked or failing.
+REQUIRED_PROTOCOL_CASES="13_twophase_small 14_leader_election_small 15_chain_replication_small 16_primarybackup_small 17_paxos_small 18_pbft_small 19_epaxos_small 20_raft_small"
+MISSING_CASES=""
+for required_case in $REQUIRED_PROTOCOL_CASES; do
+    if ! echo "$RESULTS_JSON" | grep -q "\"case_id\": \"$required_case\""; then
+        MISSING_CASES="$MISSING_CASES $required_case"
+    fi
+done
+
+if [[ -n "$MISSING_CASES" ]]; then
+    echo ""
+    echo "ERROR: Protocol cases missing from report:$MISSING_CASES"
+    echo "All cases 13-20 must be present in every full-suite run (Phase 38.9.2.a)."
+    echo "Check manifest.toml and tests/tla/ for missing case definitions."
+    exit 1
+fi
