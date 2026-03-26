@@ -1,0 +1,18 @@
+# Model config for case 17: Paxos (small bounds)
+# The default int 0..5 causes candidate expansion to exceed 10K.
+# Narrow to 0..2 for a tractable state space.
+
+[search]
+max_depth = 30
+max_states = 10000
+timeout_ms = 30000
+
+[properties]
+invariants = []
+check_deadlock = false
+successor_semantics = "deadlock"
+
+[quantifiers]
+int = { min = 0, max = 2 }
+max_set_len = 3
+max_seq_len = 3

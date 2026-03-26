@@ -19,6 +19,7 @@ REPO_ROOT="$(cd "$WORKFOLDER/../.." && pwd)"
 TRANSPILER_DIR="$REPO_ROOT/transpiler"
 TLA_DIR="$WORKFOLDER/tests/tla"
 TLARS_DIR="$WORKFOLDER/tests/tla-rs"
+MODEL_CONFIGS_DIR="$WORKFOLDER/tests/model_configs"
 MANIFEST="$WORKFOLDER/tests/manifest.toml"
 REPORTS_DIR="$WORKFOLDER/tests/reports"
 
@@ -107,9 +108,13 @@ for case_dir in "$TLA_DIR"/*/; do
             states=0
             elapsed_ms=0
         else
-            # Create minimal model config with finite int domain
-            model_toml=$(mktemp /tmp/dpor_model_${case_id}_XXXXXX.toml)
-            cat > "$model_toml" <<MODELEOF
+            # Use per-case model config if available, otherwise create default
+            per_case_config="$MODEL_CONFIGS_DIR/${case_id}.toml"
+            if [[ -f "$per_case_config" ]]; then
+                model_toml="$per_case_config"
+            else
+                model_toml=$(mktemp /tmp/dpor_model_${case_id}_XXXXXX.toml)
+                cat > "$model_toml" <<MODELEOF
 [search]
 max_depth = 50
 max_states = 10000
@@ -125,6 +130,7 @@ int = { min = 0, max = 5 }
 max_set_len = 4
 max_seq_len = 4
 MODELEOF
+            fi
 
             # Build invariant args
             inv_args=""
@@ -193,8 +199,11 @@ except:
                     FAILED=$((FAILED + 1))
                 fi
             fi
-            # Clean up temp files
-            rm -f "$model_toml" "$mc_allout"
+            # Clean up temp files (don't delete per-case configs)
+            if [[ "$model_toml" == /tmp/* ]]; then
+                rm -f "$model_toml"
+            fi
+            rm -f "$mc_allout"
         fi
     fi
 
