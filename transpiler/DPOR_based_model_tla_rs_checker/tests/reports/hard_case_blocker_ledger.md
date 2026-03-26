@@ -5,35 +5,32 @@ Protocol cases 13-20: current result, first concrete blocker, and next code task
 | # | Case | Result | First Blocker | Blocker Surface | Next Task |
 |---|------|--------|--------------|-----------------|-----------|
 | 13 | TwoPhase | **PASS** (ok, 3 states) | -- | -- | -- |
-| 14 | LeaderElection | checker_error | **Degenerate translation**: `LInit(c_consts: LConstants, s: int, c: int)` — state param `s` typed as `int` instead of `LState`. TLA+ CONSTANT `State` name collides with state variable inference in `translate-tla --gen-modes`. | `transpiler/src/tla/translator.rs` — mode classification when TLA+ CONSTANTS include `State` | Fix translator to not confuse CONSTANT names with state variable types |
-| 15 | ChainReplication | checker_error | **Degenerate translation**: Same as case 14. `LInit(c_consts: LConstants, s: int, c: int)`. TLA+ CONSTANT `State` causes `s` to be typed as `int`. | Same as case 14 | Same fix as case 14 |
-| 16 | PrimaryBackup | checker_error | **Degenerate translation**: Same as case 14. `LInit(c_consts: LConstants, s: int, c: int)`. TLA+ CONSTANT `State` causes `s` to be typed as `int`. | Same as case 14 | Same fix as case 14 |
-| 17 | Paxos | checker_error | **Domain explosion**: `Set<LRecord>` where LRecord has 4 fields (acc:int, bal:int, type:Seq<char>, val:int). With int 0..1 and 4 strings: 32 possible records. Set expansion with max_set_len=1 should be 33, but nested struct expansion within Set domain exceeds limit. Appears to be a bug in `expand_type_domain` for `Set<NamedStruct>` — the limit is applied to the intermediate LRecord domain, not the final Set. | `transpiler/src/modelcheck/domain.rs` — `expand_type_domain` for Set<NamedStruct> applies expansion_limit to inner type | Fix domain expansion to handle nested struct-in-set correctly, or add demand-driven expansion |
-| 18 | PBFT | checker_error | **Domain explosion**: `Set<LRecord>` where LRecord has 5 fields (digest:int, replica:int, seq:int, type:Seq<char>, view:int). Even with int 0..1 and max_set_len=1: 64 records × set size = 65, but actual expansion exceeds 200K — same nested struct expansion issue as case 17. | Same as case 17 | Same fix as case 17 |
-| 19 | EPaxos | checker_error | **Degenerate translation**: Same as cases 14-16. `LInit(c_consts: LConstants, s: int, c: int)`. | Same as case 14 | Same fix as case 14 |
+| 14 | LeaderElection | checker_error | **Existential expansion**: LInit signature fixed (`s: LState`), but LNext has nested existentials with `Seq<int>` domains. With 11 nested `exists` blocks × `Seq<int>` domain: combinatorial explosion exceeds 100K limit. Spec bodies use `arbitrary()` and `s.s.field` deep access patterns. | `transpiler/src/modelcheck/domain.rs` — existential domain expansion for `Seq<int>` | Reduce Seq<int> expansion or fix verus2tla to emit simpler TLA+ |
+| 15 | ChainReplication | checker_error | **Existential expansion**: Same as case 14. Nested existentials with `Seq<int>` exceed limit. | Same as case 14 | Same fix |
+| 16 | PrimaryBackup | checker_error | **Existential expansion**: Same as case 14. Nested existentials with `Seq<int>` exceed limit. Spec bodies additionally use hash-encoded enum tags (`6049598361int`). | Same as case 14 | Same fix |
+| 17 | Paxos | checker_error | **Domain explosion**: `Set<LRecord>` where LRecord has 4 fields. Struct expansion within Set exceeds limit even with max_set_len=1 and int 0..1. | `transpiler/src/modelcheck/domain.rs` — `expand_type_domain` for Set<NamedStruct> | Fix domain expansion or add demand-driven expansion |
+| 18 | PBFT | checker_error | **Domain explosion**: `Set<LRecord>` with 5-field records. Same nested struct expansion issue as case 17. | Same as case 17 | Same fix |
+| 19 | EPaxos | checker_error | **Existential expansion**: LInit signature fixed (`s: LState`), but same nested existential issue as cases 14-16. | Same as case 14 | Same fix |
 | 20 | Raft | **PASS** (ok, 31 states) | -- | -- | -- |
 
 ## Blocker Categories
 
-### Degenerate Translation (cases 14-16, 19)
+### Existential Expansion (cases 14-16, 19) — UPDATED
 
-**Root cause**: The `verus2tla` converter produces TLA+ with `CONSTANTS State, <Protocol>Message, Constants`. When the `translate-tla --gen-modes` command processes these TLA+ specs, the CONSTANT name `State` confuses the mode classification system. Instead of recognizing `s` in `Init(s, c)` as the state variable (of type `LState`), it types `s` as `int` and generates `LInit(c_consts: LConstants, s: int, c: int)`.
+**Root cause** (updated after commit `ded3b81`): The LInit signature issue was fixed — `s` is now correctly typed as `LState`. However, LNext uses deeply nested existentials with `Seq<int>` parameters (`sent_packets: Seq<int>`). Each existential over `Seq<int>` expands to all possible sequences, and 7-11 nested existentials create combinatorial explosion beyond 100K.
 
-**Fix location**: `transpiler/src/tla/translator.rs` — the operator classification / parameter type inference in `--gen-modes`.
+The spec bodies are also degenerate: they use `arbitrary<T>()` calls, deep field access patterns (`s.s.role.tag`), and hash-encoded enum tag values. Even if existential expansion were solved, the predicate solver would likely fail on these bodies.
 
-**Estimated fix**: MEDIUM difficulty. Need to recognize that when a TLA+ CONSTANT is named `State`, it should not override the state variable type inference. All 4 cases share the exact same fix.
+**Previous blocker** (before `ded3b81`): Wrong LInit signature — `LInit(c_consts: LConstants, s: int, c: int)` instead of `LInit(s: LState, ...)`. Fixed by inferring state variable from Init's first parameter in variable-less specs.
 
-### Domain Explosion (cases 17, 18)
+### Domain Explosion (cases 10, 17, 18)
 
-**Root cause**: `expand_type_domain` in `domain.rs` applies the `expansion_limit` (from `max_states`) to intermediate type expansions. For `Set<LRecord>`, it first expands all possible `LRecord` values (32-64), then tries to build all possible sets. But the intermediate LRecord expansion itself may trigger the limit before the Set expansion even begins.
+**Root cause**: `expand_type_domain` in `domain.rs` applies the expansion limit to intermediate type expansions. For `Set<LRecord>` or `Map<int, T>`, the cross-product of record fields or map entries exceeds limits even with minimal domain bounds.
 
-**Fix location**: `transpiler/src/modelcheck/domain.rs` — the `expand_type_domain` function for Set/Map types.
-
-**Fix approaches**:
-1. **Separate limits**: Use a different (higher) limit for intermediate type expansion vs. final state expansion
-2. **Demand-driven**: Don't pre-enumerate all possible states; instead, evaluate `LInit`/`LNext` on demand
-3. **Init-template**: Extract initial state directly from `LInit` assignments (baseline already has `derive_fully_pinned_state_template_from_init`)
+- Case 10 (BakeryMutex): 3 Map fields with bool/int/string values → exceeds 500K guardrail
+- Case 17 (Paxos): Set<LRecord> with 4-field records → exceeds limit during struct expansion
+- Case 18 (PBFT): Set<LRecord> with 5-field records → same issue
 
 ## Date
 
-Generated: 2026-03-26 (Milestone M8, 13/20 pass)
+Updated: 2026-03-26 (after commit `ded3b81`, 13/20 pass)

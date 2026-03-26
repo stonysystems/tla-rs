@@ -11580,9 +11580,9 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
   - `17_paxos_small`
   - `20_raft_small`
   These three are mandatory because the user explicitly called them out.
-  - [ ] **38.9.1.a**: `16_primarybackup_small` must move out of generic `checker_error` status into one explicit blocker or a real verdict. Record the first blocking layer precisely: entrypoint compatibility, invariant plumbing, action/process extraction, dependence, or state explosion.
-  - [ ] **38.9.1.b**: `17_paxos_small` must likewise move out of generic `checker_error` status into one explicit blocker or a real verdict. Keep the blocker tied to a concrete file/module/algorithm surface, not just "consensus is hard".
-  - [ ] **38.9.1.c**: `20_raft_small` must be present in the suite and graduate from placeholder status to a concrete bounded plan, even if the first result is still `translation_failed`, `known_unimplemented`, or `known_timeout`.
+  - [x] **38.9.1.a**: **DONE** (commits `be333ab`, `ded3b81`). `16_primarybackup_small` moved from generic `checker_error` to explicit blocker: **existential expansion** — nested existentials with `Seq<int>` parameters exceed 100K limit. LInit signature fixed (`s: LState`), but spec bodies are degenerate (`arbitrary()`, hash-encoded enum tags). Documented in `tests/reports/hard_case_blocker_ledger.md`.
+  - [x] **38.9.1.b**: **DONE** (commit `be333ab`). `17_paxos_small` moved to explicit blocker: **domain explosion** — `Set<LRecord>` with 4-field records causes struct expansion within Set to exceed limit even at minimal bounds. Documented in blocker ledger. Fix surface: `transpiler/src/modelcheck/domain.rs`.
+  - [x] **38.9.1.c**: **DONE** (commit `be333ab`). `20_raft_small` graduated from `known_unimplemented` to **PASS** (ok, 31 states, 10ms). Model config: Server=2, int 0..2, 3 string constants. Direct-assignment solver handles all branches efficiently.
 - [ ] **38.9.2**: Cases `13` through `20` must remain in every full-suite run from the beginning, even if some begin as `known_unimplemented` or `known_timeout` under the initial milestone.
   - [ ] **38.9.2.a**: Make the full-suite runner fail loudly if any manifest case `13`-`20` is missing from the generated report.
   - [ ] **38.9.2.b**: Keep a per-case status column in the scoreboard for `13`-`20` even when the result is still blocked; the goal is visible pressure, not a clean-looking table.
