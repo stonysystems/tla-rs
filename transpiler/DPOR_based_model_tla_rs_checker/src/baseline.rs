@@ -80,17 +80,15 @@ pub fn run_baseline(
     // Try to parse JSON from output
     match serde_json::from_str::<serde_json::Value>(&stdout) {
         Ok(json) => {
-            let result = json["result"]
-                .as_str()
-                .unwrap_or("parse_error")
-                .to_string();
+            let result = json["result"].as_str().unwrap_or("parse_error").to_string();
             let stop_reason = json["stop_reason"]
                 .as_str()
                 .unwrap_or("unknown")
                 .to_string();
             let summary = &json["summary"];
             let states = summary["states"].as_u64().unwrap_or(0) as usize;
-            let distinct_states = summary["distinct_states"].as_u64().unwrap_or(states as u64) as usize;
+            let distinct_states =
+                summary["distinct_states"].as_u64().unwrap_or(states as u64) as usize;
             let elapsed_ms = summary["elapsed_ms"].as_u64().unwrap_or(0);
 
             BaselineResult {
@@ -235,11 +233,7 @@ mod tests {
             30,
         );
 
-        assert_eq!(
-            result.result, "ok",
-            "Expected ok, got: {:?}",
-            result
-        );
+        assert_eq!(result.result, "ok", "Expected ok, got: {:?}", result);
         assert!(result.distinct_states > 0);
         eprintln!(
             "ProducerConsumer baseline: {} states, {}ms",

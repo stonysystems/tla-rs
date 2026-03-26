@@ -11,7 +11,7 @@
 //! the export infrastructure from Phase 36.1.7.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use crate::types::*;
@@ -85,7 +85,9 @@ pub fn run_baseline_with_export(
         cmd.arg("--invariant").arg(inv);
     }
 
-    let output = cmd.output().map_err(|e| format!("Failed to run transpiler: {}", e))?;
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run transpiler: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -119,10 +121,7 @@ fn parse_exported_graph(export_dir: &Path) -> Result<ExportedGraph, String> {
         let entry: serde_json::Value =
             serde_json::from_str(line).map_err(|e| format!("JSON parse error: {}", e))?;
 
-        let state_id = entry["state_id"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
+        let state_id = entry["state_id"].as_str().unwrap_or_default().to_string();
         let depth = entry["depth"].as_u64().unwrap_or(0) as usize;
         let initial = entry["initial"].as_bool().unwrap_or(false);
 
@@ -343,15 +342,46 @@ mod tests {
         // Linear graph: s0 → s1 → s2 (no alternatives → no backtrack points)
         let graph = ExportedGraph {
             states: [
-                ("s0".to_string(), StateInfo { state_id: "s0".to_string(), depth: 0, initial: true }),
-                ("s1".to_string(), StateInfo { state_id: "s1".to_string(), depth: 1, initial: false }),
-                ("s2".to_string(), StateInfo { state_id: "s2".to_string(), depth: 2, initial: false }),
+                (
+                    "s0".to_string(),
+                    StateInfo {
+                        state_id: "s0".to_string(),
+                        depth: 0,
+                        initial: true,
+                    },
+                ),
+                (
+                    "s1".to_string(),
+                    StateInfo {
+                        state_id: "s1".to_string(),
+                        depth: 1,
+                        initial: false,
+                    },
+                ),
+                (
+                    "s2".to_string(),
+                    StateInfo {
+                        state_id: "s2".to_string(),
+                        depth: 2,
+                        initial: false,
+                    },
+                ),
             ]
             .into_iter()
             .collect(),
             edges: vec![
-                EdgeInfo { src: "s0".to_string(), dst: "s1".to_string(), branch_label: "A".to_string(), depth: 1 },
-                EdgeInfo { src: "s1".to_string(), dst: "s2".to_string(), branch_label: "A".to_string(), depth: 2 },
+                EdgeInfo {
+                    src: "s0".to_string(),
+                    dst: "s1".to_string(),
+                    branch_label: "A".to_string(),
+                    depth: 1,
+                },
+                EdgeInfo {
+                    src: "s1".to_string(),
+                    dst: "s2".to_string(),
+                    branch_label: "A".to_string(),
+                    depth: 2,
+                },
             ],
             initial_states: vec!["s0".to_string()],
         };
@@ -367,15 +397,46 @@ mod tests {
         // At s0, choosing A means B is a backtrack candidate
         let graph = ExportedGraph {
             states: [
-                ("s0".to_string(), StateInfo { state_id: "s0".to_string(), depth: 0, initial: true }),
-                ("s1".to_string(), StateInfo { state_id: "s1".to_string(), depth: 1, initial: false }),
-                ("s2".to_string(), StateInfo { state_id: "s2".to_string(), depth: 1, initial: false }),
+                (
+                    "s0".to_string(),
+                    StateInfo {
+                        state_id: "s0".to_string(),
+                        depth: 0,
+                        initial: true,
+                    },
+                ),
+                (
+                    "s1".to_string(),
+                    StateInfo {
+                        state_id: "s1".to_string(),
+                        depth: 1,
+                        initial: false,
+                    },
+                ),
+                (
+                    "s2".to_string(),
+                    StateInfo {
+                        state_id: "s2".to_string(),
+                        depth: 1,
+                        initial: false,
+                    },
+                ),
             ]
             .into_iter()
             .collect(),
             edges: vec![
-                EdgeInfo { src: "s0".to_string(), dst: "s1".to_string(), branch_label: "A".to_string(), depth: 1 },
-                EdgeInfo { src: "s0".to_string(), dst: "s2".to_string(), branch_label: "B".to_string(), depth: 1 },
+                EdgeInfo {
+                    src: "s0".to_string(),
+                    dst: "s1".to_string(),
+                    branch_label: "A".to_string(),
+                    depth: 1,
+                },
+                EdgeInfo {
+                    src: "s0".to_string(),
+                    dst: "s2".to_string(),
+                    branch_label: "B".to_string(),
+                    depth: 1,
+                },
             ],
             initial_states: vec!["s0".to_string()],
         };
@@ -388,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_run_baseline_with_export_aplusb() {
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/01_aplusb/APlusB.rs");
         if !spec_file.exists() {
             eprintln!("Skipping: APlusB.rs not found (run regenerate_corpus.sh first)");

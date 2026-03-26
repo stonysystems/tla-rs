@@ -3000,116 +3000,20 @@ fn resolve_constants_values(
     Ok(filtered)
 }
 
-fn normalize_call_path(path: &verus_transpiler::ast::Path) -> String {
-    path.segments
-        .iter()
-        .flat_map(|segment| segment.split("::"))
-        .map(|segment| {
-            if let Some(idx) = segment.find("::<") {
-                segment[..idx].to_string()
-            } else {
-                segment.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("::")
-}
-
+// normalize_call_path, expand_quantifier_domain_for_binding,
+// resolve_called_spec_function, eval_spec_function_call_recursive
+// extracted to verus_transpiler::modelcheck::helpers (Phase 38.8.2.c)
 fn expand_quantifier_domain_for_binding(
     binding: &verus_transpiler::ast::Binding,
     schema: &verus_transpiler::spec_analyzer::SpecSchema,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
 ) -> verus_transpiler::error::TranspileResult<Vec<verus_transpiler::modelcheck::value::RuntimeValue>>
 {
-    use std::collections::BTreeSet;
-    use verus_transpiler::error::TranspileError;
-    use verus_transpiler::modelcheck::domain::expand_branch_existentials;
-    use verus_transpiler::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
-
-    let var_name = binding.name().ok_or_else(|| TranspileError::Config {
-        message: "Model-check quantifier evaluation requires identifier bindings.".to_string(),
-    })?;
-    let branch = TransitionBranchIr {
-        label: "__quantifier_domain__".to_string(),
-        existential_vars: vec![ExistentialVarIr {
-            name: var_name.to_string(),
-            ty: binding.ty.clone(),
-        }],
-        constraints: vec![],
-    };
-    let assignments = expand_branch_existentials(&branch, schema, model_config)?;
-
-    let mut seen = BTreeSet::new();
-    let mut out = Vec::new();
-    for assignment in assignments {
-        let value = assignment
-            .get(var_name)
-            .ok_or_else(|| TranspileError::Config {
-                message: format!(
-                    "Internal model-check error: quantifier domain assignment missing `{}`.",
-                    var_name
-                ),
-            })?;
-        if seen.insert(value.canonical_key()) {
-            out.push(value.clone());
-        }
-    }
-
-    Ok(out)
-}
-
-fn resolve_called_spec_function<'a>(
-    functions: &'a [verus_transpiler::ast::SpecFunction],
-    path: &verus_transpiler::ast::Path,
-) -> verus_transpiler::error::TranspileResult<&'a verus_transpiler::ast::SpecFunction> {
-    use verus_transpiler::error::TranspileError;
-
-    let normalized = normalize_call_path(path);
-    let short_name = normalized
-        .rsplit("::")
-        .next()
-        .unwrap_or(normalized.as_str());
-
-    let exact_matches: Vec<&verus_transpiler::ast::SpecFunction> =
-        functions.iter().filter(|f| f.name == normalized).collect();
-    if exact_matches.len() == 1 {
-        return Ok(exact_matches[0]);
-    }
-    if exact_matches.len() > 1 {
-        return Err(TranspileError::Config {
-            message: format!(
-                "Ambiguous model-check helper call `{}`: multiple exact function matches found.",
-                normalized
-            ),
-        });
-    }
-
-    let short_matches: Vec<&verus_transpiler::ast::SpecFunction> =
-        functions.iter().filter(|f| f.name == short_name).collect();
-    if short_matches.len() == 1 {
-        return Ok(short_matches[0]);
-    }
-    if short_matches.len() > 1 {
-        return Err(TranspileError::Config {
-            message: format!(
-                "Ambiguous model-check helper call `{}`: short name `{}` matches multiple functions. \
-                 Use uniquely named helper predicates.",
-                normalized, short_name
-            ),
-        });
-    }
-
-    Err(TranspileError::UnsupportedPattern {
-        message: format!(
-            "Model-check evaluator could not resolve helper call `{}` to a parsed spec function.",
-            normalized
-        ),
-        span: None,
-        help: Some(
-            "Ensure helper predicates are in the ingested protocol sources and have unique names."
-                .to_string(),
-        ),
-    })
+    verus_transpiler::modelcheck::helpers::expand_quantifier_domain_for_binding(
+        binding,
+        schema,
+        model_config,
+    )
 }
 
 fn eval_spec_function_call_recursive(
@@ -3121,68 +3025,15 @@ fn eval_spec_function_call_recursive(
     bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds,
     depth: usize,
 ) -> verus_transpiler::error::TranspileResult<verus_transpiler::modelcheck::value::RuntimeValue> {
-    use verus_transpiler::error::TranspileError;
-    use verus_transpiler::modelcheck::evaluator::{eval_expr, EvalContext};
-
-    if depth > 32 {
-        return Err(TranspileError::UnsupportedPattern {
-            message: format!(
-                "Model-check helper-call recursion exceeded depth limit while evaluating `{}`.",
-                normalize_call_path(func_path)
-            ),
-            span: None,
-            help: Some(
-                "Add a finite non-recursive helper subset for model checking or increase evaluator support."
-                    .to_string(),
-            ),
-        });
-    }
-
-    let function = resolve_called_spec_function(functions, func_path)?;
-    if function.params.len() != args.len() {
-        return Err(TranspileError::Config {
-            message: format!(
-                "Model-check helper call `{}` arity mismatch: expected {} args, got {}.",
-                function.name,
-                function.params.len(),
-                args.len()
-            ),
-        });
-    }
-
-    let mut ctx = EvalContext::new(bounds);
-    for (param, value) in function.params.iter().zip(args.iter()) {
-        ctx = ctx.with_binding(param.name.clone(), value.clone());
-    }
-    let recursive_call = |inner_path: &verus_transpiler::ast::Path,
-                          inner_args: &[verus_transpiler::modelcheck::value::RuntimeValue]|
-     -> verus_transpiler::error::TranspileResult<
-        verus_transpiler::modelcheck::value::RuntimeValue,
-    > {
-        eval_spec_function_call_recursive(
-            functions,
-            schema,
-            model_config,
-            inner_path,
-            inner_args,
-            bounds,
-            depth + 1,
-        )
-    };
-    let quantifier_domain = |binding: &verus_transpiler::ast::Binding| {
-        expand_quantifier_domain_for_binding(binding, schema, model_config)
-    };
-    ctx = ctx.with_call_evaluator(&recursive_call);
-    ctx = ctx.with_quantifier_domain_evaluator(&quantifier_domain);
-
-    eval_expr(&function.body, &ctx).map_err(|err| TranspileError::Config {
-        message: format!(
-            "Failed to evaluate helper call `{}` via `{}`: {}",
-            normalize_call_path(func_path),
-            function.name,
-            err
-        ),
-    })
+    verus_transpiler::modelcheck::helpers::eval_spec_function_call_recursive(
+        functions,
+        schema,
+        model_config,
+        func_path,
+        args,
+        bounds,
+        depth,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3248,7 +3099,7 @@ fn try_solve_predicate_only_helper_branch(
         }
     }
 
-    let helper_fn = match resolve_called_spec_function(&bundle.spec_functions, func) {
+    let helper_fn = match verus_transpiler::modelcheck::helpers::resolve_called_spec_function(&bundle.spec_functions, func) {
         Ok(function) => function,
         Err(_) => return Ok(None),
     };

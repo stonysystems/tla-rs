@@ -50,9 +50,10 @@ impl VectorClock {
     /// Check if this clock happens-before another (strict partial order).
     pub fn happens_before(&self, other: &VectorClock) -> bool {
         // self <= other (pointwise) AND self != other
-        let leq = self.clocks.iter().all(|(&pid, &ts)| {
-            ts <= *other.clocks.get(&pid).unwrap_or(&0)
-        });
+        let leq = self
+            .clocks
+            .iter()
+            .all(|(&pid, &ts)| ts <= *other.clocks.get(&pid).unwrap_or(&0));
         leq && self != other
     }
 

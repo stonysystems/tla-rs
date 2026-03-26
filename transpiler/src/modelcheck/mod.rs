@@ -20,6 +20,7 @@ pub mod domain;
 pub mod evaluator;
 pub mod explorer;
 pub mod graph;
+pub mod helpers;
 pub mod init;
 pub mod invariant;
 pub mod ir;

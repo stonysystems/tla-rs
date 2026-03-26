@@ -11540,7 +11540,12 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
     - missing invariant discoverability on `13` and `17`,
     - and entrypoint/signature compatibility on `14`-`16`.
   - [x] **38.8.2.b**: Defined DPOR stepping contract in `src/types.rs`: `EnabledTransition{process_id, branch_label, successor_fingerprint, ordering_key, footprint}`, `TransitionFootprint{reads, writes}` with `independent_of()` method, `ScheduledStep{transition, enabled, pre_state, depth}`. 5 new unit tests (footprint independence/dependence, construction). 22 total tests in DPOR crate. Previously required fields:
-  - [x] **38.8.2.c**: Extracted `expand_type_domain_candidates` and `find_struct_definition` from `main.rs` to `modelcheck/domain.rs` as public library functions. This enables the DPOR crate to call domain expansion without subprocess overhead. `main.rs` now delegates to the library versions. `eval_spec_function_call_recursive` extraction deferred — it depends on 3+ other private helpers (`resolve_called_spec_function`, `normalize_call_path`, `expand_quantifier_domain_for_binding`); the DPOR prototype uses the subprocess oracle for full evaluation. The minimum library surface needed to drive DPOR is:
+  - [x] **38.8.2.c**: **FULLY EXTRACTED.** All 4 key functions moved to library:
+    - `expand_type_domain_candidates` + `find_struct_definition` → `modelcheck/domain.rs` (Phase 38.8.2.c first pass)
+    - `eval_spec_function_call_recursive` + `resolve_called_spec_function` + `normalize_call_path` + `expand_quantifier_domain_for_binding` → new `modelcheck/helpers.rs` (this commit)
+    - `main.rs` now delegates to library versions via thin wrappers.
+    - The DPOR crate can now call `verus_transpiler::modelcheck::helpers::eval_spec_function_call_recursive()` directly for in-process evaluation.
+    The minimum library surface needed to drive DPOR is:
   - [ ] **38.8.2.d**: Implement deterministic enabled-set enumeration for one state. For a fixed input state and bounds, repeated runs must return the same ordered transition list; add regression tests for stable ordering on at least `01_aplusb`, `07_producer_consumer_1slot`, and one multi-branch protocol case.
   - [ ] **38.8.2.e**: Implement a real DPOR search stack / node stack in the workfolder rather than reusing one exported baseline trace. Each depth/frame should store:
     - chosen transition,
