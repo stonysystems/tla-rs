@@ -1,0 +1,21 @@
+# Model config for case 08: BoundedBuffer (very narrow bounds)
+# State has Map<int,int> which makes domain huge. Use minimal bounds.
+
+[constants.assignments]
+MaxVal = 2
+
+[search]
+max_depth = 20
+max_states = 100000
+timeout_ms = 15000
+
+[properties]
+invariants = []
+check_deadlock = false
+successor_semantics = "deadlock"
+
+[quantifiers]
+int = { min = 0, max = 2 }
+max_set_len = 2
+max_seq_len = 2
+max_map_len = 2

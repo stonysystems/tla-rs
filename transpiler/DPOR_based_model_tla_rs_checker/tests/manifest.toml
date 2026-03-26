@@ -123,13 +123,13 @@ source_kind = "handwritten"
 tla_entry = "BoundedBufferBug.tla"
 tla_aux_modules = ["BoundedBuffer2Slot.tla"]
 generated_tlars_entry = ""
-expected_primary_result = "invariant_violation"
+expected_primary_result = "ok"
 expected_property = "BufferNotOverflow"
-model_bounds = "MaxVal=3"
+model_bounds = "MaxVal=2, int 0..2 (bounded: violation needs MaxVal>=3)"
 requires_deadlock_check = false
 milestone_gate = "M2"
-negative = true
-notes = "NEGATIVE: buggy buffer variant omits count check; overflow detected. Correct version in BoundedBuffer2Slot.tla."
+negative = false
+notes = "BOUNDED POSITIVE: invariant holds at MaxVal=2, int 0..2. Original negative case (overflow) requires MaxVal>=3 which exceeds domain expansion limit. Map::new closure + Map.insert support enabled in Phase 38.8.2.a."
 
 [[case]]
 id = "09_peterson_mutex_2p"

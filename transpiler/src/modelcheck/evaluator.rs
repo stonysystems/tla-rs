@@ -230,6 +230,14 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         Expr::SetEmpty => RuntimeValue::set_bounded(Vec::new(), &ctx.bounds),
         Expr::MapEmpty => RuntimeValue::map_bounded(Vec::new(), &ctx.bounds),
         Expr::Call { func, args } => {
+            // Special case: Map::new(domain, |key| value) — evaluate closure per domain element
+            if path_name(func) == "Map::new" && args.len() == 2 {
+                if let Expr::Closure { params, body } = &args[1] {
+                    let domain = eval_expr(&args[0], ctx)?;
+                    return eval_map_new_with_closure(&domain, params, body, ctx);
+                }
+            }
+
             let args = args
                 .iter()
                 .map(|arg| eval_expr(arg, ctx))
@@ -826,18 +834,26 @@ fn eval_builtin_method(
             }
         }
         "insert" => {
-            if args.len() != 1 {
-                return Err(type_error("`.insert(...)` expects one argument."));
-            }
             match receiver {
                 RuntimeValue::Set(items) => {
+                    if args.len() != 1 {
+                        return Err(type_error("Set `.insert(...)` expects one argument."));
+                    }
                     let mut next = items.clone();
                     next.insert(args[0].clone());
                     Ok(Some(RuntimeValue::Set(next)))
                 }
+                RuntimeValue::Map(entries) => {
+                    if args.len() != 2 {
+                        return Err(type_error("Map `.insert(key, value)` expects two arguments."));
+                    }
+                    let mut next = entries.clone();
+                    next.insert(args[0].clone(), args[1].clone());
+                    Ok(Some(RuntimeValue::Map(next)))
+                }
                 other => Err(type_error(
                     format!(
-                        "`.insert(...)` currently expects Set receiver, got `{}`.",
+                        "`.insert(...)` expects Set or Map receiver, got `{}`.",
                         other.canonical_key()
                     )
                     .as_str(),
@@ -885,6 +901,42 @@ fn eval_builtin_static_call(
         ("Map", "empty") => Ok(Some(RuntimeValue::map_bounded(Vec::new(), &bounds)?)),
         _ => Ok(None),
     }
+}
+
+/// Evaluate Map::new(domain_set, |key| value) by applying the closure to each domain element.
+fn eval_map_new_with_closure(
+    domain: &RuntimeValue,
+    params: &[crate::ast::Binding],
+    body: &Expr,
+    ctx: &EvalContext<'_>,
+) -> TranspileResult<RuntimeValue> {
+    // Domain should be a Set
+    let keys = match domain {
+        RuntimeValue::Set(elements) => elements.iter().cloned().collect::<Vec<_>>(),
+        _ => {
+            return Err(type_error(
+                "Map::new first argument must be a Set (domain).",
+            ));
+        }
+    };
+
+    if params.is_empty() {
+        return Err(type_error("Map::new closure must have at least one parameter."));
+    }
+
+    let param_name = params[0].name().ok_or_else(|| {
+        type_error("Map::new closure parameter must be a named identifier.")
+    })?;
+
+    let mut entries = Vec::new();
+    for key in &keys {
+        let mut inner_ctx = ctx.clone();
+        inner_ctx.bindings.insert(param_name.to_string(), key.clone());
+        let value = eval_expr(body, &inner_ctx)?;
+        entries.push((key.clone(), value));
+    }
+
+    RuntimeValue::map_bounded(entries, &ctx.bounds)
 }
 
 fn cast_value(value: RuntimeValue, ty: &Type) -> TranspileResult<RuntimeValue> {
