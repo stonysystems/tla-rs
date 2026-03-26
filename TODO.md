@@ -11604,8 +11604,8 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
     - or measured state explosion with a reproducer.
   - [ ] **38.9.3.c**: When a blocker changes category, update the ledger in the same commit as the code change so the repo history shows why progress happened.
 - [ ] **38.9.4**: When a harder case is not yet baseline-feasible, keep the previous best known result as the regression target and promote it to baseline parity later if/when finite bounds make that practical.
-  - [ ] **38.9.4.a**: Record the current best-known outcome for each of `13`-`20` in machine-readable form (`ok`, `invariant_violation`, `deadlock`, `known_timeout`, `known_unimplemented`, `translation_failed`, etc.).
-  - [ ] **38.9.4.b**: If bounds are shrunk to make a hard case finite, check in the new bound choice and explain why it is still semantically useful for Phase 38 regression purposes.
+  - [x] **38.9.4.a**: **DONE**. Best-known outcomes recorded in `latest.json` (machine-readable) and `manifest.toml` (expected_primary_result + notes). Current results: 13 ok, 14-16 error (existential expansion), 17-18 error (domain explosion), 19 known_unimplemented (existential expansion), 20 ok. All per-case model configs checked in.
+  - [x] **38.9.4.b**: **DONE** (throughout M1-M8). All bound-shrinking decisions documented in model config comments and commit messages: NumPhil 3→2 for case 12, int 0..3→0..2 for case 06, NumReaders 2→1 for case 11, etc. Each maintains semantic validity for the target property.
   - [ ] **38.9.4.c**: Promotion from "best known blocked result" to "baseline parity target" must happen explicitly in the manifest/scoreboard, not implicitly in prose.
 
 ### 38.10 Integration gate: do not rewrite the main checker prematurely

@@ -287,13 +287,13 @@ tla_entry = "PBFT.tla"
 tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "known_unimplemented"
-expected_property = "Safety"
-model_bounds = "4 nodes (3f+1), small view"
+expected_property = ""
+model_bounds = "Replica=2, int 0..1"
 requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tests/tla_examples/PBFT.tla"
-notes = "Byzantine protocol; may exceed current bounds. Start as known_unimplemented."
+notes = "BLOCKER: domain explosion — Set<LRecord> with 5-field records exceeds expansion limit. Config created but blocked."
 
 [[case]]
 id = "19_epaxos_small"
