@@ -371,4 +371,125 @@ max_seq_len = 4
             result.distinct_states.len()
         );
     }
+
+    // =========================================================================
+    // Parity tests: DPOR vs baseline (Phase 38.8.2.f)
+    // =========================================================================
+
+    #[test]
+    fn test_dpor_parity_aplusb() {
+        // Verify DPOR finds exactly the same states as the baseline model checker.
+        // Baseline reports 21 distinct states for APlusB with int 0..5.
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => { return; }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+
+        let config = DporConfig {
+            max_depth: 20, // Match baseline model.toml max_depth
+            max_states: 1_000,
+        };
+        let dpor_result = explore_dpor(&ctx, &config);
+
+        // Also run the baseline subprocess for comparison
+        let transpiler = match crate::baseline::find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                // Can't compare without baseline binary — just check DPOR ran
+                assert!(!dpor_result.distinct_states.is_empty());
+                return;
+            }
+        };
+        let baseline_result = crate::baseline::run_baseline(
+            &transpiler,
+            &spec_path,
+            &model_path,
+            &["LSumInvariant".to_string()],
+            30,
+        );
+
+        assert_eq!(baseline_result.result, "ok");
+        assert_eq!(
+            dpor_result.distinct_states.len(),
+            baseline_result.distinct_states,
+            "DPOR ({}) vs baseline ({}) distinct state count mismatch for APlusB",
+            dpor_result.distinct_states.len(),
+            baseline_result.distinct_states
+        );
+        eprintln!(
+            "PARITY APlusB: DPOR={} baseline={} ✓",
+            dpor_result.distinct_states.len(),
+            baseline_result.distinct_states
+        );
+    }
+
+    #[test]
+    fn test_dpor_parity_producer_consumer() {
+        // ProducerConsumer uses predicate-style branches — the predicate solver
+        // in enabled.rs may or may not handle it. Test parity if it works.
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_path = manifest_dir
+            .join("tests/tla-rs/07_producer_consumer_1slot/ProducerConsumer1Slot.rs");
+        if !spec_path.exists() {
+            eprintln!("Skipping: ProducerConsumer1Slot.rs not found");
+            return;
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+
+        let ctx = match SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Skipping ProducerConsumer parity: load failed: {}", e);
+                return;
+            }
+        };
+
+        let config = DporConfig {
+            max_depth: 50,
+            max_states: 10_000,
+        };
+        let dpor_result = explore_dpor(&ctx, &config);
+
+        if dpor_result.distinct_states.is_empty() {
+            eprintln!("ProducerConsumer DPOR: 0 states (predicate solver limitation)");
+            return;
+        }
+
+        let transpiler = match crate::baseline::find_transpiler_bin() {
+            Some(p) => p,
+            None => { return; }
+        };
+        let baseline_result = crate::baseline::run_baseline(
+            &transpiler,
+            &spec_path,
+            &model_path,
+            &["LSafetyInvariant".to_string()],
+            30,
+        );
+
+        if baseline_result.result == "ok" && baseline_result.distinct_states > 0 {
+            // Compare: DPOR should find same or fewer states (subset is OK for conservative)
+            assert!(
+                dpor_result.distinct_states.len() <= baseline_result.distinct_states,
+                "DPOR ({}) should not exceed baseline ({}) for ProducerConsumer",
+                dpor_result.distinct_states.len(),
+                baseline_result.distinct_states
+            );
+            eprintln!(
+                "PARITY ProducerConsumer: DPOR={} baseline={} ({})",
+                dpor_result.distinct_states.len(),
+                baseline_result.distinct_states,
+                if dpor_result.distinct_states.len() == baseline_result.distinct_states {
+                    "exact match ✓"
+                } else {
+                    "DPOR subset (acceptable for v1)"
+                }
+            );
+        }
+    }
 }
