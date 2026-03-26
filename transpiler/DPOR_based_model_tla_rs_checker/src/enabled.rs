@@ -207,8 +207,9 @@ impl SpecContext {
                     Err(_) => continue,
                 }
             }
-            if all_succs.is_empty() { Ok(None) }
-            else { Ok(Some(verus_transpiler::modelcheck::solver::deduplicate_successors(all_succs))) }
+            // Return Some even when empty — means "I handled this, zero successors"
+            // (None means "I can't handle this branch" and triggers fallback)
+            Ok(Some(verus_transpiler::modelcheck::solver::deduplicate_successors(all_succs)))
         };
 
         let hooks = SolverHooks {
