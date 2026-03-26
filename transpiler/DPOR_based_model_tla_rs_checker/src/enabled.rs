@@ -166,16 +166,20 @@ impl SpecContext {
         let mut field_domains: Vec<(String, Vec<RuntimeValue>)> = Vec::new();
 
         for field in &struct_def.fields {
-            let domain = match &field.ty {
-                Type::Set(_) | Type::Generic(path, _) if path.last() == Some("Set") => {
-                    vec![RuntimeValue::Set(BTreeSet::new())]
-                }
-                Type::Map(_, _) | Type::Generic(path, _) if path.last() == Some("Map") => {
-                    vec![RuntimeValue::Map(BTreeMap::new())]
-                }
-                Type::Seq(_) | Type::Generic(path, _) if path.last() == Some("Seq") => {
-                    vec![RuntimeValue::Seq(Vec::new())]
-                }
+            let is_set = matches!(&field.ty, Type::Set(_))
+                || matches!(&field.ty, Type::Generic(p, _) if p.last() == Some("Set"));
+            let is_map = matches!(&field.ty, Type::Map(_, _))
+                || matches!(&field.ty, Type::Generic(p, _) if p.last() == Some("Map"));
+            let is_seq = matches!(&field.ty, Type::Seq(_))
+                || matches!(&field.ty, Type::Generic(p, _) if p.last() == Some("Seq"));
+
+            let domain = if is_set {
+                vec![RuntimeValue::Set(BTreeSet::new())]
+            } else if is_map {
+                vec![RuntimeValue::Map(BTreeMap::new())]
+            } else if is_seq {
+                vec![RuntimeValue::Seq(Vec::new())]
+            } else { match &field.ty {
                 _ => {
                     // For scalar types, use normal domain expansion
                     match verus_transpiler::modelcheck::domain::expand_type_domain(
@@ -190,7 +194,7 @@ impl SpecContext {
                         Err(_) => return Ok(vec![]),
                     }
                 }
-            };
+            }};
             field_domains.push((field.name.clone(), domain));
         }
 

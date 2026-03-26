@@ -1009,6 +1009,9 @@ max_seq_len = 4
             ("08_bounded_buffer_2slot", "BoundedBuffer2Slot.rs"),
             ("09_peterson_mutex_2p", "PetersonMutex.rs"),
             ("13_twophase_small", "TwoPhase.rs"),
+            ("17_paxos_small", "Paxos.rs"),
+            ("18_pbft_small", "PBFT.rs"),
+            ("20_raft_small", "Raft.rs"),
         ];
 
         let mut all_match = true;
@@ -1531,7 +1534,7 @@ max_seq_len = 4
         // and verify no verdict regressions.
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-        // All 12 baseline-passing cases with their spec files and invariants
+        // All 15 baseline-passing cases with their spec files and invariants
         let cases: Vec<(&str, &str, Vec<String>)> = vec![
             ("01_aplusb", "APlusB.rs", vec!["LSumInvariant".to_string()]),
             ("02_counter_incdec", "CounterIncDec.rs", vec!["LTypeOK".to_string()]),
@@ -1545,6 +1548,9 @@ max_seq_len = 4
             ("11_readers_writers_small", "ReadersWritersBug.rs", vec!["LSafety".to_string()]),
             ("12_dining_philosophers_3", "DiningPhilosophers.rs", vec![]),
             ("13_twophase_small", "TwoPhase.rs", vec![]),
+            ("17_paxos_small", "Paxos.rs", vec![]),
+            ("18_pbft_small", "PBFT.rs", vec![]),
+            ("20_raft_small", "Raft.rs", vec![]),
         ];
 
         let mut results = Vec::new();
