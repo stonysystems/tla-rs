@@ -135,12 +135,25 @@ pub fn discover_lnext_branches(next_fn: &SpecFunction) -> TranspileResult<Vec<Tr
             .into_iter()
             .chain(extra_existentials.into_iter())
             .collect::<Vec<_>>();
-        let existential_vars = existential_bindings
+        // Deduplicate existential variables by name: nested existentials produce
+        // duplicate names when inner scopes shadow outer ones (e.g., `exists |node|
+        // (A || exists |node| B)` produces [outer_node, inner_node] for branch B).
+        // Keep only the LAST occurrence of each name (the innermost/shadowing one).
+        let mut seen = std::collections::HashSet::new();
+        let existential_vars: Vec<ExistentialVarIr> = existential_bindings
             .into_iter()
-            .map(|binding| ExistentialVarIr {
-                name: binding.name().unwrap_or("_").to_string(),
-                ty: binding.ty,
+            .rev() // reverse to prefer inner (later) bindings
+            .filter_map(|binding| {
+                let name = binding.name().unwrap_or("_").to_string();
+                if seen.insert(name.clone()) {
+                    Some(ExistentialVarIr { name, ty: binding.ty })
+                } else {
+                    None // duplicate name — skip outer binding
+                }
             })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev() // restore original order
             .collect();
 
         let constraints = constraint_exprs
