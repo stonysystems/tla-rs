@@ -10173,6 +10173,18 @@ impl Translator {
                 };
                 Ok(ExecExpr::Cast(Box::new(inner), exec_type.to_rust_string()))
             }
+
+            Expr::Closure { params, body: _ } => {
+                // Closures in spec mode are rare; pass through as-is
+                Err(TranspileError::UnsupportedPattern {
+                    message: format!(
+                        "Closure expression with {} params not supported in exec translation",
+                        params.len()
+                    ),
+                    span: None,
+                    help: None,
+                })
+            }
         }
     }
 

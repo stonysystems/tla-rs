@@ -1045,6 +1045,11 @@ impl<'a> VerusBlockParser<'a> {
             return self.parse_postfix_ops(expr);
         }
 
+        // Check for closure expression: |params| body
+        if self.peek() == Some('|') {
+            return self.parse_closure_expr();
+        }
+
         // Parse identifier or path, then handle postfix operations
         let ident = self.parse_identifier()?;
         let mut expr = Expr::Ident(ident);
@@ -1719,6 +1724,23 @@ impl<'a> VerusBlockParser<'a> {
 
         Ok(Expr::Exists {
             vars,
+            body: Box::new(body),
+        })
+    }
+
+    /// Parse a closure expression: |params| body
+    /// Used for Map::new(domain, |x| expr) and similar patterns.
+    fn parse_closure_expr(&mut self) -> TranspileResult<Expr> {
+        self.expect('|')?;
+        let params = self.parse_binding_list()?;
+        self.expect('|')?;
+        self.skip_whitespace();
+
+        // Parse the closure body — a single expression
+        let body = self.parse_expression()?;
+
+        Ok(Expr::Closure {
+            params,
             body: Box::new(body),
         })
     }

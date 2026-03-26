@@ -20,8 +20,10 @@ impl Footprint {
     /// Two footprints are independent if their read/write sets don't conflict.
     /// Returns true only if neither reads/writes a field the other writes.
     pub fn independent_of(&self, other: &Footprint) -> bool {
-        if self.writes_whole_state || other.writes_whole_state
-            || self.reads_whole_state || other.reads_whole_state
+        if self.writes_whole_state
+            || other.writes_whole_state
+            || self.reads_whole_state
+            || other.reads_whole_state
         {
             return false;
         }
@@ -279,7 +281,7 @@ fn collect_expr_state_reads(
                 out_reads_whole_state,
             );
         }
-        Expr::Exists { body, .. } => {
+        Expr::Exists { body, .. } | Expr::Closure { body, .. } => {
             collect_expr_state_reads(
                 body,
                 current_state_param,

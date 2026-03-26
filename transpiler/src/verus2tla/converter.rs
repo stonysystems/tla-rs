@@ -323,6 +323,12 @@ impl Verus2TlaConverter {
                 })
             }
 
+            VerusExpr::Closure { params: _, body: _ } => {
+                Err(ConversionError::UnsupportedConstruct(
+                    "Closure expressions not supported in TLA+ conversion".to_string(),
+                ))
+            }
+
             // Control flow
             VerusExpr::If {
                 cond,
@@ -944,9 +950,9 @@ impl Verus2TlaConverter {
             | VerusExpr::View(inner)
             | VerusExpr::Cast(inner, _)
             | VerusExpr::Unary(_, inner) => self.expr_contains_call(inner, func_name),
-            VerusExpr::Forall { body, .. } | VerusExpr::Exists { body, .. } => {
-                self.expr_contains_call(body, func_name)
-            }
+            VerusExpr::Forall { body, .. }
+            | VerusExpr::Exists { body, .. }
+            | VerusExpr::Closure { body, .. } => self.expr_contains_call(body, func_name),
             VerusExpr::If {
                 cond,
                 then_branch,

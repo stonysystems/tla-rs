@@ -203,6 +203,12 @@ pub enum Expr {
     /// Existential quantifier
     Exists { vars: Vec<Binding>, body: Box<Expr> },
 
+    /// Closure / lambda expression: |params| body
+    Closure {
+        params: Vec<Binding>,
+        body: Box<Expr>,
+    },
+
     // Control flow
     /// Conditional expression
     If {

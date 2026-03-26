@@ -587,7 +587,9 @@ fn collect_called_functions_from_expr(expr: &verus_transpiler::Expr, out: &mut H
             }
             collect_called_functions_from_expr(body, out);
         }
-        Expr::Exists { body, .. } => collect_called_functions_from_expr(body, out),
+        Expr::Exists { body, .. } | Expr::Closure { body, .. } => {
+            collect_called_functions_from_expr(body, out);
+        }
         Expr::Struct { fields, .. } => {
             for (_, value) in fields {
                 collect_called_functions_from_expr(value, out);
@@ -2582,6 +2584,10 @@ fn expr_mentions_identifier(expr: &verus_transpiler::ast::Expr, ident: &str) -> 
             let shadowed = vars.iter().any(|var| var.name() == Some(ident));
             !shadowed && expr_mentions_identifier(body, ident)
         }
+        Expr::Closure { params, body } => {
+            let shadowed = params.iter().any(|p| p.name() == Some(ident));
+            !shadowed && expr_mentions_identifier(body, ident)
+        }
         Expr::Struct { fields, .. } => fields
             .iter()
             .any(|(_, value)| expr_mentions_identifier(value, ident)),
@@ -3099,7 +3105,10 @@ fn try_solve_predicate_only_helper_branch(
         }
     }
 
-    let helper_fn = match verus_transpiler::modelcheck::helpers::resolve_called_spec_function(&bundle.spec_functions, func) {
+    let helper_fn = match verus_transpiler::modelcheck::helpers::resolve_called_spec_function(
+        &bundle.spec_functions,
+        func,
+    ) {
         Ok(function) => function,
         Err(_) => return Ok(None),
     };

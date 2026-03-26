@@ -295,6 +295,14 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         Expr::Forall { vars, body, .. } => eval_quantifier(vars, body, ctx, QuantifierKind::Forall),
         Expr::Exists { vars, body } => eval_quantifier(vars, body, ctx, QuantifierKind::Exists),
         Expr::Match { scrutinee, arms } => eval_match_expr(scrutinee, arms, ctx),
+        Expr::Closure { params: _, body: _ } => {
+            // Closures are used in Map::new(domain, |x| val) style expressions.
+            // For model checking, closures should be handled at the call site.
+            Err(type_error(
+                "Closure expressions (|...| ...) are not directly evaluable in model-check mode. \
+                 They should be used only in Map::new or similar collection constructors.",
+            ))
+        }
     }
 }
 
