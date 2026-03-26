@@ -11539,12 +11539,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
     - translated-spec parse failures on `08`-`09`,
     - missing invariant discoverability on `13` and `17`,
     - and entrypoint/signature compatibility on `14`-`16`.
-  - [ ] **38.8.2.b**: Define the in-process DPOR stepping contract in the workfolder. Add a concrete `EnabledTransition` / `ScheduledStep` style struct carrying at minimum:
-    - `process_id`,
-    - `branch_label`,
-    - successor state / fingerprint,
-    - deterministic ordering key,
-    - and the branch read/write footprint used by dependence checking.
+  - [x] **38.8.2.b**: Defined DPOR stepping contract in `src/types.rs`: `EnabledTransition{process_id, branch_label, successor_fingerprint, ordering_key, footprint}`, `TransitionFootprint{reads, writes}` with `independent_of()` method, `ScheduledStep{transition, enabled, pre_state, depth}`. 5 new unit tests (footprint independence/dependence, construction). 22 total tests in DPOR crate. Previously required fields:
   - [ ] **38.8.2.c**: Extract or expose the minimum model-checker library surface needed to drive DPOR without shelling out per step. The prototype may keep the subprocess baseline oracle, but the DPOR inner loop itself must be able to:
     - enumerate enabled transitions from one concrete state,
     - compute successor states deterministically,

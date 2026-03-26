@@ -104,6 +104,64 @@ pub struct BacktrackInfo {
 /// Per-event sleep set (v2+, initially empty).
 pub type SleepSet = BTreeSet<ActionId>;
 
+// =====================================================================
+// DPOR Stepping Contract (Phase 38.8.2.b)
+// =====================================================================
+
+/// A transition that is enabled in a given state.
+/// Represents one concrete choice the explorer can make.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnabledTransition {
+    /// Which process would take this step.
+    pub process_id: ProcessId,
+    /// Which action branch this transition belongs to.
+    pub branch_label: String,
+    /// Fingerprint of the successor state produced by this transition.
+    pub successor_fingerprint: StateFingerprint,
+    /// Deterministic ordering key — transitions are sorted by this
+    /// to ensure reproducible exploration order.
+    pub ordering_key: String,
+    /// Read/write footprint: which state fields this branch reads and writes.
+    /// Used by the dependence checker to determine independence.
+    /// Format: (read_fields, write_fields) where each is a sorted set of field paths.
+    pub footprint: TransitionFootprint,
+}
+
+/// Read/write footprint for a transition, used for dependence checking.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TransitionFootprint {
+    /// State fields read by this transition (sorted).
+    pub reads: BTreeSet<String>,
+    /// State fields written by this transition (sorted).
+    pub writes: BTreeSet<String>,
+}
+
+impl TransitionFootprint {
+    /// Two transitions are independent if their read/write sets don't conflict.
+    /// Conflict = one writes a field the other reads or writes.
+    pub fn independent_of(&self, other: &TransitionFootprint) -> bool {
+        // Check: self.writes ∩ other.reads == ∅
+        //    AND self.writes ∩ other.writes == ∅
+        //    AND self.reads ∩ other.writes == ∅
+        self.writes.is_disjoint(&other.reads)
+            && self.writes.is_disjoint(&other.writes)
+            && self.reads.is_disjoint(&other.writes)
+    }
+}
+
+/// A scheduled step: records which transition was actually taken at a depth.
+#[derive(Clone, Debug)]
+pub struct ScheduledStep {
+    /// The transition that was chosen.
+    pub transition: EnabledTransition,
+    /// All transitions that were enabled at this state (including the chosen one).
+    pub enabled: Vec<EnabledTransition>,
+    /// Fingerprint of the state before this step.
+    pub pre_state: StateFingerprint,
+    /// Depth in the exploration (0-indexed).
+    pub depth: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,5 +300,84 @@ mod tests {
         set.insert(a1.clone());
         set.insert(a3.clone());
         assert_eq!(set.len(), 3);
+    }
+
+    #[test]
+    fn test_transition_footprint_independent() {
+        let fp1 = TransitionFootprint {
+            reads: ["x".to_string()].into(),
+            writes: ["y".to_string()].into(),
+        };
+        let fp2 = TransitionFootprint {
+            reads: ["z".to_string()].into(),
+            writes: ["w".to_string()].into(),
+        };
+        assert!(fp1.independent_of(&fp2));
+        assert!(fp2.independent_of(&fp1));
+    }
+
+    #[test]
+    fn test_transition_footprint_dependent_write_read() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: ["x".to_string()].into(),
+        };
+        let fp2 = TransitionFootprint {
+            reads: ["x".to_string()].into(),
+            writes: BTreeSet::new(),
+        };
+        // fp1 writes x, fp2 reads x → dependent
+        assert!(!fp1.independent_of(&fp2));
+        assert!(!fp2.independent_of(&fp1));
+    }
+
+    #[test]
+    fn test_transition_footprint_dependent_write_write() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: ["x".to_string()].into(),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: ["x".to_string()].into(),
+        };
+        // Both write x → dependent
+        assert!(!fp1.independent_of(&fp2));
+    }
+
+    #[test]
+    fn test_enabled_transition_construction() {
+        let t = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "LAdd".to_string(),
+            successor_fingerprint: StateFingerprint(42),
+            ordering_key: "0:LAdd".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["a".to_string()].into(),
+                writes: ["a".to_string(), "b".to_string()].into(),
+            },
+        };
+        assert_eq!(t.process_id, ProcessId(0));
+        assert_eq!(t.branch_label, "LAdd");
+        assert_eq!(t.footprint.writes.len(), 2);
+    }
+
+    #[test]
+    fn test_scheduled_step_construction() {
+        let transition = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "LAdd".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0:LAdd".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let step = ScheduledStep {
+            transition: transition.clone(),
+            enabled: vec![transition],
+            pre_state: StateFingerprint(0),
+            depth: 0,
+        };
+        assert_eq!(step.depth, 0);
+        assert_eq!(step.enabled.len(), 1);
     }
 }
