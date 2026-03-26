@@ -993,6 +993,69 @@ max_seq_len = 4
     }
 
     #[test]
+    fn test_sleep_set_parity_all_passing_cases() {
+        // Phase 38.8.3.b: Gate sleep-set pruning behind parity checks.
+        // For every baseline-passing case, verify that DPOR with sleep sets
+        // finds at least as many states as DPOR without (no lost states).
+        // With current single-process specs and empty footprints, sleep sets
+        // should produce identical results (no reduction, no loss).
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+        let cases: Vec<(&str, &str)> = vec![
+            ("01_aplusb", "APlusB.rs"),
+            ("02_counter_incdec", "CounterIncDec.rs"),
+            ("04_lock_basic", "LockBasic.rs"),
+            ("07_producer_consumer_1slot", "ProducerConsumer1Slot.rs"),
+            ("08_bounded_buffer_2slot", "BoundedBuffer2Slot.rs"),
+            ("09_peterson_mutex_2p", "PetersonMutex.rs"),
+            ("13_twophase_small", "TwoPhase.rs"),
+        ];
+
+        let mut all_match = true;
+        for (case_id, filename) in &cases {
+            let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
+            if !spec_file.exists() { continue; }
+            let model_path = case_model_config(case_id);
+            let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let without_sleep = DporConfig {
+                max_depth: 20,
+                max_states: 10_000,
+                use_independence: false,
+                use_sleep_sets: false,
+                invariants: vec![],
+                check_deadlock: false,
+            };
+            let with_sleep = DporConfig {
+                max_depth: 20,
+                max_states: 10_000,
+                use_independence: true,
+                use_sleep_sets: true,
+                invariants: vec![],
+                check_deadlock: false,
+            };
+
+            let result_no_sleep = explore_dpor(&ctx, &without_sleep);
+            let result_sleep = explore_dpor(&ctx, &with_sleep);
+
+            let ns = result_no_sleep.distinct_states.len();
+            let ws = result_sleep.distinct_states.len();
+            let match_status = if ns == ws { "exact" } else if ws >= ns { "sleep_superset" } else { "SLEEP_LOST_STATES" };
+
+            if match_status == "SLEEP_LOST_STATES" {
+                all_match = false;
+            }
+            eprintln!("  {} no_sleep={} with_sleep={} → {}", case_id, ns, ws, match_status);
+        }
+
+        assert!(all_match, "Sleep sets must not lose states on any passing case");
+        eprintln!("Sleep-set parity: all cases verified ✓");
+    }
+
+    #[test]
     fn test_compute_child_sleep_set_empty_footprints() {
         // When footprints are empty, all transitions are dependent,
         // so child sleep set should always be empty.
@@ -1410,10 +1473,10 @@ max_seq_len = 4
             Err(_) => return (0, 0, "load_failed"),
         };
 
-        // Run DPOR
+        // Run DPOR (use enough states for all baseline-passing cases)
         let config = DporConfig {
             max_depth: 20,
-            max_states: 1_000,
+            max_states: 10_000,
             ..Default::default()
         };
         let dpor_result = explore_dpor(&ctx, &config);
@@ -1430,7 +1493,7 @@ max_seq_len = 4
         let bl_states = baseline.distinct_states;
         let dp_states = dpor_result.distinct_states.len();
 
-        let status = if baseline.result != "ok" && baseline.result != "invariant_violated" {
+        let status = if baseline.result != "ok" && baseline.result != "invariant_violated" && baseline.result != "deadlock_detected" {
             "baseline_error"
         } else if dp_states == bl_states {
             "exact_match"
@@ -1468,17 +1531,19 @@ max_seq_len = 4
         // and verify no verdict regressions.
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-        // All 10 baseline-passing cases with their spec files and invariants
+        // All 12 baseline-passing cases with their spec files and invariants
         let cases: Vec<(&str, &str, Vec<String>)> = vec![
             ("01_aplusb", "APlusB.rs", vec!["LSumInvariant".to_string()]),
             ("02_counter_incdec", "CounterIncDec.rs", vec!["LTypeOK".to_string()]),
             ("03_counter_race_bug", "CounterRaceBug.rs", vec!["LTotalCorrect".to_string()]),
             ("04_lock_basic", "LockBasic.rs", vec!["LMutualExclusion".to_string()]),
             ("05_broken_lock_bug", "BrokenLockBug.rs", vec!["LMutualExclusion".to_string()]),
+            ("06_ticket_lock", "TicketLock.rs", vec!["LMutualExclusion".to_string()]),
             ("07_producer_consumer_1slot", "ProducerConsumer1Slot.rs", vec!["LSafetyInvariant".to_string()]),
             ("08_bounded_buffer_2slot", "BoundedBuffer2Slot.rs", vec![]),
             ("09_peterson_mutex_2p", "PetersonMutex.rs", vec!["LMutualExclusion".to_string()]),
             ("11_readers_writers_small", "ReadersWritersBug.rs", vec!["LSafety".to_string()]),
+            ("12_dining_philosophers_3", "DiningPhilosophers.rs", vec![]),
             ("13_twophase_small", "TwoPhase.rs", vec![]),
         ];
 
