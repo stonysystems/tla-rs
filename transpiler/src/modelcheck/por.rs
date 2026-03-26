@@ -2,12 +2,33 @@ use crate::ast::{Expr, SpecFunction};
 use crate::modelcheck::ir::{BranchConstraintIr, ConstraintRoot, TransitionBranchIr, TransitionIr};
 use std::collections::BTreeSet;
 
+/// Read/write footprint for a transition branch.
+/// Used for POR invisible-branch pruning and DPOR independence checking.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Footprint {
-    read_fields: BTreeSet<String>,
-    write_fields: BTreeSet<String>,
-    reads_whole_state: bool,
-    writes_whole_state: bool,
+pub struct Footprint {
+    /// State fields read by this branch.
+    pub read_fields: BTreeSet<String>,
+    /// State fields written by this branch.
+    pub write_fields: BTreeSet<String>,
+    /// Whether the branch reads the entire state (conservative).
+    pub reads_whole_state: bool,
+    /// Whether the branch writes the entire state (conservative).
+    pub writes_whole_state: bool,
+}
+
+impl Footprint {
+    /// Two footprints are independent if their read/write sets don't conflict.
+    /// Returns true only if neither reads/writes a field the other writes.
+    pub fn independent_of(&self, other: &Footprint) -> bool {
+        if self.writes_whole_state || other.writes_whole_state
+            || self.reads_whole_state || other.reads_whole_state
+        {
+            return false;
+        }
+        self.write_fields.is_disjoint(&other.read_fields)
+            && self.write_fields.is_disjoint(&other.write_fields)
+            && self.read_fields.is_disjoint(&other.write_fields)
+    }
 }
 
 pub fn infer_invisible_branch_pruning(
@@ -61,7 +82,9 @@ pub fn infer_invisible_branch_pruning(
     prunable
 }
 
-fn branch_footprint(transition: &TransitionIr, branch: &TransitionBranchIr) -> Footprint {
+/// Extract the read/write footprint for a single branch.
+/// Used by DPOR for independence-based backtrack pruning.
+pub fn branch_footprint(transition: &TransitionIr, branch: &TransitionBranchIr) -> Footprint {
     let mut footprint = Footprint::default();
     for constraint in &branch.constraints {
         match constraint {

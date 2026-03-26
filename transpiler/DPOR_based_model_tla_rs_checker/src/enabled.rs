@@ -346,6 +346,22 @@ impl SpecContext {
         )
     }
 
+    /// Compute per-branch read/write footprints using the POR analysis.
+    /// Returns a map from branch_label to Footprint.
+    pub fn branch_footprints(
+        &self,
+    ) -> TranspileResult<std::collections::BTreeMap<String, verus_transpiler::modelcheck::por::Footprint>>
+    {
+        let transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
+        let mut footprints = std::collections::BTreeMap::new();
+        for branch in &transition.branches {
+            let fp =
+                verus_transpiler::modelcheck::por::branch_footprint(&transition, branch);
+            footprints.insert(branch.label.clone(), fp);
+        }
+        Ok(footprints)
+    }
+
     /// Create solver hooks with a call evaluator bound to this context.
     /// Must be called inline where the returned hooks are used, to satisfy lifetimes.
     pub fn make_solver_hooks_inline<'a>(
@@ -597,5 +613,28 @@ max_seq_len = 4
             visited.len(),
             depth
         );
+    }
+
+    #[test]
+    fn test_branch_footprints_aplusb() {
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => { return; }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+
+        let footprints = ctx.branch_footprints().unwrap();
+        assert!(
+            !footprints.is_empty(),
+            "APlusB should have at least one branch with footprint"
+        );
+        for (label, fp) in &footprints {
+            eprintln!(
+                "Footprint {}: reads={:?} writes={:?} reads_whole={} writes_whole={}",
+                label, fp.read_fields, fp.write_fields, fp.reads_whole_state, fp.writes_whole_state
+            );
+        }
     }
 }
