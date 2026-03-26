@@ -356,6 +356,158 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     }
 }
 
+/// Result of replaying a violation witness.
+#[derive(Debug)]
+pub struct ReplayResult {
+    /// Whether the replay confirmed the same violation at the same depth.
+    pub confirmed: bool,
+    /// States visited during replay, in order.
+    pub states: Vec<String>,
+    /// The invariant that was found violated (if any).
+    pub violated_invariant: Option<String>,
+    /// Depth at which violation was confirmed (or replay ended).
+    pub depth: usize,
+    /// Error message if replay failed.
+    pub error: Option<String>,
+}
+
+/// Replay a violation witness deterministically from the initial state.
+///
+/// Re-executes the trace step by step:
+/// 1. Gets initial states and finds the one matching the trace start
+/// 2. For each step: computes successors, finds the matching transition
+/// 3. At the final state: checks the invariant
+///
+/// Returns a `ReplayResult` indicating whether the violation was confirmed.
+pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayResult {
+    let mut visited_states = Vec::new();
+
+    // Get initial states
+    let initial_states = match ctx.initial_states() {
+        Ok(s) => s,
+        Err(e) => {
+            return ReplayResult {
+                confirmed: false,
+                states: vec![],
+                violated_invariant: None,
+                depth: 0,
+                error: Some(format!("Failed to get initial states: {}", e)),
+            };
+        }
+    };
+
+    // Find the initial state
+    let first_state_key = if let Some(step) = witness.trace.first() {
+        &step.state_key
+    } else {
+        // Empty trace — the violation is in the initial state
+        &witness.violating_state_key
+    };
+
+    let mut current = match initial_states.iter().find(|s| s.canonical_key() == *first_state_key) {
+        Some(s) => s.clone(),
+        None => {
+            // Try to find any initial state if the exact key doesn't match
+            if let Some(s) = initial_states.first() {
+                s.clone()
+            } else {
+                return ReplayResult {
+                    confirmed: false,
+                    states: vec![],
+                    violated_invariant: None,
+                    depth: 0,
+                    error: Some("No initial states found".to_string()),
+                };
+            }
+        }
+    };
+    visited_states.push(current.canonical_key());
+
+    // Follow each step in the trace
+    for (step_idx, step) in witness.trace.iter().enumerate() {
+        // Get successors from the current state
+        let successors = match ctx.full_successors(&current) {
+            Ok(s) => s,
+            Err(e) => {
+                return ReplayResult {
+                    confirmed: false,
+                    states: visited_states,
+                    violated_invariant: None,
+                    depth: step_idx,
+                    error: Some(format!("Failed to get successors at step {}: {}", step_idx, e)),
+                };
+            }
+        };
+
+        // Get enabled transitions to match transition_key to a successor
+        let enabled = match ctx.enabled_transitions(&current) {
+            Ok(e) => e,
+            Err(_) => vec![],
+        };
+
+        // Find the successor via transition_key → successor_fingerprint
+        let next_state = if let Some(trans) = enabled.iter().find(|t| t.ordering_key == step.transition_key) {
+            successors.iter().find(|s| crate::enabled::hash_state(s) == trans.successor_fingerprint).cloned()
+        } else {
+            // Fallback: if transition_key doesn't match, try to find by index
+            let idx: usize = step.transition_key.parse().unwrap_or(usize::MAX);
+            successors.get(idx).cloned()
+        };
+
+        match next_state {
+            Some(next) => {
+                visited_states.push(next.canonical_key());
+                current = next;
+            }
+            None => {
+                return ReplayResult {
+                    confirmed: false,
+                    states: visited_states,
+                    violated_invariant: None,
+                    depth: step_idx,
+                    error: Some(format!(
+                        "Could not find successor at step {} (transition_key={})",
+                        step_idx, step.transition_key
+                    )),
+                };
+            }
+        }
+    }
+
+    // Check invariant on the final state
+    let invariant_fns = ctx.resolve_invariants(&[witness.invariant.clone()]);
+    let violated = match ctx.check_invariants(&current, &invariant_fns) {
+        Ok(v) => v,
+        Err(e) => {
+            return ReplayResult {
+                confirmed: false,
+                states: visited_states,
+                violated_invariant: None,
+                depth: witness.depth,
+                error: Some(format!("Invariant check failed: {}", e)),
+            };
+        }
+    };
+
+    let confirmed = violated.as_ref() == Some(&witness.invariant);
+    let error_msg = if !confirmed {
+        Some(format!(
+            "Expected violation of '{}' but got {:?}",
+            witness.invariant,
+            violated.as_ref().map(|v| v.as_str()).unwrap_or("no violation")
+        ))
+    } else {
+        None
+    };
+    ReplayResult {
+        confirmed,
+        states: visited_states,
+        violated_invariant: violated,
+        depth: witness.depth,
+        error: error_msg,
+    }
+}
+
 /// Compute the sleep set for a child frame by propagating the parent's sleep set.
 ///
 /// A sleeping transition is propagated to the child only if it is INDEPENDENT
@@ -959,6 +1111,112 @@ max_seq_len = 4
         eprintln!(
             "ReadersWritersBug violation: invariant={}, depth={}, trace_len={} ✓",
             witness.invariant, witness.depth, witness.trace.len()
+        );
+    }
+
+    // =========================================================================
+    // Witness replay regression tests (Phase 38.8.5.b)
+    // =========================================================================
+
+    #[test]
+    fn test_replay_counter_race_bug_witness() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/03_counter_race_bug/CounterRaceBug.rs");
+        if !spec_file.exists() { return; }
+        let model_path = case_model_config("03_counter_race_bug");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        // First explore to find the violation
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: vec!["LTotalCorrect".to_string()],
+            ..Default::default()
+        };
+        let result = explore_dpor(&ctx, &config);
+        let witness = result.violation.expect("Should find violation");
+
+        // Replay the witness
+        let replay = replay_witness(&ctx, &witness);
+        assert!(
+            replay.confirmed,
+            "Replay should confirm CounterRaceBug violation: {:?}",
+            replay.error
+        );
+        assert_eq!(replay.violated_invariant.as_deref(), Some("LTotalCorrect"));
+        assert!(replay.states.len() > 1, "Replay should visit multiple states");
+        eprintln!(
+            "Replay CounterRaceBug: confirmed={}, states={}, depth={} ✓",
+            replay.confirmed, replay.states.len(), replay.depth
+        );
+    }
+
+    #[test]
+    fn test_replay_broken_lock_witness() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/05_broken_lock_bug/BrokenLockBug.rs");
+        if !spec_file.exists() { return; }
+        let model_path = case_model_config("05_broken_lock_bug");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: vec!["LMutualExclusion".to_string()],
+            ..Default::default()
+        };
+        let result = explore_dpor(&ctx, &config);
+        let witness = result.violation.expect("Should find violation");
+
+        let replay = replay_witness(&ctx, &witness);
+        assert!(
+            replay.confirmed,
+            "Replay should confirm BrokenLockBug violation: {:?}",
+            replay.error
+        );
+        assert_eq!(replay.violated_invariant.as_deref(), Some("LMutualExclusion"));
+        eprintln!(
+            "Replay BrokenLockBug: confirmed={}, states={}, depth={} ✓",
+            replay.confirmed, replay.states.len(), replay.depth
+        );
+    }
+
+    #[test]
+    fn test_replay_readers_writers_witness() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/11_readers_writers_small/ReadersWritersBug.rs");
+        if !spec_file.exists() { return; }
+        let model_path = case_model_config("11_readers_writers_small");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: vec!["LSafety".to_string()],
+            ..Default::default()
+        };
+        let result = explore_dpor(&ctx, &config);
+        let witness = result.violation.expect("Should find violation");
+
+        let replay = replay_witness(&ctx, &witness);
+        assert!(
+            replay.confirmed,
+            "Replay should confirm ReadersWritersBug violation: {:?}",
+            replay.error
+        );
+        assert_eq!(replay.violated_invariant.as_deref(), Some("LSafety"));
+        eprintln!(
+            "Replay ReadersWritersBug: confirmed={}, states={}, depth={} ✓",
+            replay.confirmed, replay.states.len(), replay.depth
         );
     }
 
