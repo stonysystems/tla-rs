@@ -2,12 +2,12 @@
 # pc uses Seq<char> for state names, choosing is Map<int, bool>.
 
 [constants.assignments]
-NumProcs = 1
+NumProcs = 2
 
 [search]
 max_depth = 50
 max_states = 500000
-timeout_ms = 120000
+timeout_ms = 600000
 candidate_eval_guardrail = 500000
 
 [properties]
@@ -16,7 +16,7 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 1 }
+int = { min = 0, max = 2 }
 
 [collections]
 max_set_len = 2

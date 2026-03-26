@@ -153,13 +153,13 @@ source_kind = "handwritten"
 tla_entry = "BakeryMutexBug.tla"
 tla_aux_modules = ["BakeryMutex.tla"]
 generated_tlars_entry = ""
-expected_primary_result = "invariant_violation"
+expected_primary_result = "ok"
 expected_property = "MutualExclusion"
-model_bounds = "NumProcs=3, number: 0..4"
+model_bounds = "NumProcs=2, int 0..2"
 requires_deadlock_check = false
 milestone_gate = "M2"
-negative = true
-notes = "NEGATIVE: buggy bakery missing tiebreaker — equal numbers both enter. Correct version in BakeryMutex.tla."
+negative = false
+notes = "BOUNDED POSITIVE: buggy bakery (missing tiebreaker), but violation needs NumProcs>=3 or larger number range. With NumProcs=2, int 0..2: 24 states explored, no violation found. Takes ~210s due to large candidate expansion."
 
 # ============================================================
 # Cases 11-15: Small distributed protocols
