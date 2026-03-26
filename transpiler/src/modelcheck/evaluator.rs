@@ -263,6 +263,14 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
             method,
             args,
         } => {
+            // Special case: Set.map(|x| expr) — evaluate closure per element
+            if method == "map" && args.len() == 1 {
+                if let Expr::Closure { params, body } = &args[0] {
+                    let receiver = eval_expr(receiver, ctx)?;
+                    return eval_set_map_with_closure(&receiver, params, body, ctx);
+                }
+            }
+
             let receiver = eval_expr(receiver, ctx)?;
             let args = args
                 .iter()
@@ -443,7 +451,23 @@ fn eval_choose(
         unsupported_construct("CHOOSE quantifier without domain resolver hook")
     })?;
 
-    eval_choose_bindings(vars, 0, body, ctx, domain_evaluator)
+    // Default untyped choose bindings to `int` (same as quantifier default)
+    let vars_with_types: Vec<Binding> = vars
+        .iter()
+        .map(|b| {
+            if b.ty.is_none() {
+                Binding {
+                    pattern: b.pattern.clone(),
+                    ty: Some(crate::ast::Type::Int),
+                    variable_mode: b.variable_mode.clone(),
+                }
+            } else {
+                b.clone()
+            }
+        })
+        .collect();
+
+    eval_choose_bindings(&vars_with_types, 0, body, ctx, domain_evaluator)
 }
 
 fn eval_choose_bindings(
@@ -961,6 +985,42 @@ fn eval_builtin_method(
                 )),
             }
         }
+        "union" => {
+            if args.len() != 1 {
+                return Err(type_error("`.union(...)` expects one argument."));
+            }
+            match (receiver, &args[0]) {
+                (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
+                    let result: std::collections::BTreeSet<_> = a.union(b).cloned().collect();
+                    Ok(Some(RuntimeValue::Set(result)))
+                }
+                _ => Err(type_error("`.union(...)` expects Set receiver and Set argument.")),
+            }
+        }
+        "difference" => {
+            if args.len() != 1 {
+                return Err(type_error("`.difference(...)` expects one argument."));
+            }
+            match (receiver, &args[0]) {
+                (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
+                    let result: std::collections::BTreeSet<_> = a.difference(b).cloned().collect();
+                    Ok(Some(RuntimeValue::Set(result)))
+                }
+                _ => Err(type_error("`.difference(...)` expects Set receiver and Set argument.")),
+            }
+        }
+        "intersect" | "intersection" => {
+            if args.len() != 1 {
+                return Err(type_error("`.intersect(...)` expects one argument."));
+            }
+            match (receiver, &args[0]) {
+                (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
+                    let result: std::collections::BTreeSet<_> = a.intersection(b).cloned().collect();
+                    Ok(Some(RuntimeValue::Set(result)))
+                }
+                _ => Err(type_error("`.intersect(...)` expects Set receiver and Set argument.")),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -1095,6 +1155,41 @@ fn eval_to_int(expr: &Expr, ctx: &EvalContext<'_>) -> Option<i128> {
         Ok(RuntimeValue::Nat(v)) => Some(v as i128),
         _ => None,
     }
+}
+
+/// Evaluate `set.map(|x| expr)` — applies closure to each element, returns new Set.
+fn eval_set_map_with_closure(
+    receiver: &RuntimeValue,
+    params: &[crate::ast::Binding],
+    body: &Expr,
+    ctx: &EvalContext<'_>,
+) -> TranspileResult<RuntimeValue> {
+    let elements = match receiver {
+        RuntimeValue::Set(items) => items.iter().cloned().collect::<Vec<_>>(),
+        _ => {
+            return Err(type_error(
+                "`.map(|x| ...)` receiver must be a Set.",
+            ));
+        }
+    };
+
+    if params.is_empty() {
+        return Err(type_error("`.map(|x| ...)` closure must have at least one parameter."));
+    }
+
+    let param_name = params[0].name().ok_or_else(|| {
+        type_error("`.map(|x| ...)` closure parameter must be a named identifier.")
+    })?;
+
+    let mut result = std::collections::BTreeSet::new();
+    for elem in &elements {
+        let mut inner_ctx = ctx.clone();
+        inner_ctx.bindings.insert(param_name.to_string(), elem.clone());
+        let value = eval_expr(body, &inner_ctx)?;
+        result.insert(value);
+    }
+
+    Ok(RuntimeValue::Set(result))
 }
 
 fn eval_map_new_with_closure(
