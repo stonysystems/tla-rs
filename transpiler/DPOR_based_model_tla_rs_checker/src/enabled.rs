@@ -109,138 +109,13 @@ impl SpecContext {
     /// Enumerate all enabled transitions from a given state.
     ///
     /// Returns a deterministically-ordered list of `EnabledTransition`s.
-    /// The ordering key is `"{branch_index}:{branch_label}:{successor_index}"`,
-    /// ensuring stable ordering across runs.
+    /// Uses `full_successors` (which includes candidate-enumeration fallback)
+    /// to ensure completeness.
     pub fn enabled_transitions(
         &self,
         state: &RuntimeValue,
     ) -> TranspileResult<Vec<EnabledTransition>> {
-        let transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
-
-        // Build existential assignments per branch
-        let mut assignments_by_branch = std::collections::BTreeMap::new();
-        for branch in &transition.branches {
-            let assignments =
-                expand_branch_existentials(branch, &self.bundle.schema, &self.model_config)?;
-            assignments_by_branch.insert(branch.label.clone(), assignments);
-        }
-
-        // Create call evaluator for the solver hooks
-        let call_eval = |func_path: &verus_transpiler::ast::Path,
-                         args: &[RuntimeValue]|
-         -> TranspileResult<RuntimeValue> {
-            eval_spec_function_call_recursive(
-                &self.bundle.spec_functions,
-                &self.bundle.schema,
-                &self.model_config,
-                func_path,
-                args,
-                self.bounds,
-                0,
-            )
-        };
-
-        // Create quantifier domain evaluator
-        let quant_eval =
-            |binding: &verus_transpiler::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                verus_transpiler::modelcheck::helpers::expand_quantifier_domain_for_binding(
-                    binding,
-                    &self.bundle.schema,
-                    &self.model_config,
-                )
-            };
-
-        // Create predicate-only branch solver for translated specs
-        // (these use predicate-style constraints like `LAdd(s, s_)`)
-        let predicate_solver = |
-            trans: &verus_transpiler::modelcheck::ir::TransitionIr,
-            branch: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
-            cur_state: &RuntimeValue,
-            constants: Option<&RuntimeValue>,
-            exist_assignments: &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
-            bounds: RuntimeCollectionBounds,
-        | -> TranspileResult<Option<Vec<RuntimeValue>>> {
-            // Check if branch has a single predicate-style constraint
-            use verus_transpiler::modelcheck::ir::BranchConstraintIr;
-            use verus_transpiler::ast::Expr;
-
-            if branch.constraints.len() != 1 {
-                return Ok(None);
-            }
-            let BranchConstraintIr::Predicate { expr } = &branch.constraints[0] else {
-                return Ok(None);
-            };
-            let Expr::Call { func, args } = expr else {
-                return Ok(None);
-            };
-
-            // Resolve the called helper function
-            let helper_fn = match verus_transpiler::modelcheck::helpers::resolve_called_spec_function(
-                &self.bundle.spec_functions, func,
-            ) {
-                Ok(f) => f,
-                Err(_) => return Ok(None),
-            };
-
-            // Build transition IR for the helper
-            let helper_transition = match build_transition_ir(helper_fn) {
-                Ok(t) => t,
-                Err(_) => return Ok(None),
-            };
-
-            // Solve each helper branch with the call evaluator
-            let mut all_succs = Vec::new();
-            for helper_branch in &helper_transition.branches {
-                let helper_assigns = expand_branch_existentials(
-                    helper_branch, &self.bundle.schema, &self.model_config,
-                )?;
-
-                let hooks = SolverHooks {
-                    call_evaluator: Some(&call_eval),
-                    method_evaluator: None,
-                    quantifier_domain_evaluator: Some(&quant_eval),
-                    predicate_only_branch_solver: None,
-                };
-
-                let result = solve_branch_successors(
-                    &helper_transition,
-                    helper_branch,
-                    cur_state,
-                    constants,
-                    &helper_assigns,
-                    bounds,
-                    hooks,
-                );
-
-                match result {
-                    Ok(succs) => all_succs.extend(succs),
-                    Err(_) => continue, // Skip branches that fail
-                }
-            }
-
-            if all_succs.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(verus_transpiler::modelcheck::solver::deduplicate_successors(all_succs)))
-            }
-        };
-
-        let hooks = SolverHooks {
-            call_evaluator: Some(&call_eval),
-            method_evaluator: None,
-            quantifier_domain_evaluator: Some(&quant_eval),
-            predicate_only_branch_solver: Some(&predicate_solver),
-        };
-
-        // Use solve_transition_successors with the predicate-only solver
-        let successors = solve_transition_successors(
-            &transition,
-            state,
-            self.constants.as_ref(),
-            Some(&assignments_by_branch),
-            self.bounds,
-            hooks,
-        )?;
+        let successors = self.full_successors(state)?;
 
         let mut all_enabled = Vec::new();
         for (succ_idx, successor) in successors.iter().enumerate() {
@@ -343,14 +218,97 @@ impl SpecContext {
             predicate_only_branch_solver: Some(&predicate_solver),
         };
 
-        solve_transition_successors(
+        let result = solve_transition_successors(
             &transition,
             state,
             self.constants.as_ref(),
             Some(&assignments_by_branch),
             self.bounds,
             hooks,
-        )
+        );
+
+        match result {
+            Ok(successors) if !successors.is_empty() => return Ok(successors),
+            _ => {}
+        }
+
+        // Fallback: candidate enumeration. Expand state candidates and evaluate
+        // the full LNext predicate for each. This is expensive but correct.
+        self.enumerate_successors_by_predicate(state)
+    }
+
+    /// Fallback successor enumeration by evaluating LNext(s, s_, c) on each candidate s_.
+    fn enumerate_successors_by_predicate(
+        &self,
+        state: &RuntimeValue,
+    ) -> TranspileResult<Vec<RuntimeValue>> {
+        use verus_transpiler::modelcheck::evaluator::{eval_expr, EvalContext};
+
+        let state_ty = &self.bundle.entrypoints.lnext.params[0].ty;
+        let candidates = expand_type_domain_candidates(
+            "successor_candidates",
+            "successor_candidate",
+            state_ty,
+            &self.bundle.schema,
+            &self.model_config,
+        )?;
+
+        let call_eval = |func_path: &verus_transpiler::ast::Path,
+                         args: &[RuntimeValue]|
+         -> TranspileResult<RuntimeValue> {
+            eval_spec_function_call_recursive(
+                &self.bundle.spec_functions,
+                &self.bundle.schema,
+                &self.model_config,
+                func_path,
+                args,
+                self.bounds,
+                0,
+            )
+        };
+        let quant_eval =
+            |binding: &verus_transpiler::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
+                verus_transpiler::modelcheck::helpers::expand_quantifier_domain_for_binding(
+                    binding,
+                    &self.bundle.schema,
+                    &self.model_config,
+                )
+            };
+
+        let next_fn = &self.bundle.entrypoints.lnext;
+        let mut successors = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+
+        for candidate in &candidates {
+            // Build evaluation context with s=state, s_=candidate, c=constants
+            let mut ctx = EvalContext::new(self.bounds)
+                .with_binding(next_fn.params[0].name.clone(), state.clone())
+                .with_binding(next_fn.params[1].name.clone(), candidate.clone());
+            if let Some(constants) = &self.constants {
+                if let Some(p) = next_fn.params.get(2) {
+                    ctx = ctx.with_binding(p.name.clone(), constants.clone());
+                }
+            }
+            // Bind extra params from the transition IR
+            let extra_start = if self.constants.is_some() { 3 } else { 2 };
+            for extra in &next_fn.params[extra_start..] {
+                ctx = ctx.with_binding(extra.name.clone(), RuntimeValue::Int(0));
+            }
+            ctx = ctx.with_call_evaluator(&call_eval)
+                .with_quantifier_domain_evaluator(&quant_eval);
+
+            match eval_expr(&next_fn.body, &ctx) {
+                Ok(RuntimeValue::Bool(true)) => {
+                    let key = candidate.canonical_key();
+                    if seen.insert(key) {
+                        successors.push(candidate.clone());
+                    }
+                }
+                _ => {} // Not a successor
+            }
+        }
+
+        Ok(successors)
     }
 
     /// Compute per-branch read/write footprints using the POR analysis.

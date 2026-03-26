@@ -618,8 +618,11 @@ max_seq_len = 4
             "exact_match"
         } else if dp_states < bl_states {
             "dpor_subset"
+        } else if baseline.result == "invariant_violated" {
+            // Baseline stopped early at violation; DPOR explored more — acceptable
+            "dpor_superset_violation"
         } else {
-            "dpor_exceeded_baseline"  // This would be a bug!
+            "dpor_exceeded_baseline"  // This would be a bug for positive cases!
         };
 
         (bl_states, dp_states, status)
