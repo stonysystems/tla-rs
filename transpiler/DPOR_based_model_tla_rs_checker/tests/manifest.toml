@@ -318,11 +318,11 @@ source_kind = "repo_example"
 tla_entry = "Raft.tla"
 tla_aux_modules = []
 generated_tlars_entry = ""
-expected_primary_result = "known_unimplemented"
-expected_property = "ElectionSafety"
-model_bounds = "2 servers, 1 term"
+expected_primary_result = "ok"
+expected_property = ""
+model_bounds = "Server=2, int 0..2"
 requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tests/tla_examples/Raft.tla"
-notes = "Final hard case. Must stay in suite from day one even if not initially green."
+notes = "Protocol-level case. Passes with Server=2, no invariant configured. Direct-assignment solver finds 31 states in 10ms."
