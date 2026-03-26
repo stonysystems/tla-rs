@@ -3550,12 +3550,23 @@ impl ModuleTranslator {
     fn generate_spec_functions(&mut self, module: &TlaModule) -> String {
         let mut output = String::new();
         let state_name = self.config.spec_state_name();
-        let module_var_names: std::collections::HashSet<String> =
+        let mut module_var_names: std::collections::HashSet<String> =
             module.variables.iter().cloned().collect();
+
+        // When no explicit VARIABLE declarations exist (common for verus2tla-generated specs),
+        // infer the state variable from Init's first parameter. This enables correct operator
+        // classification (Action/Predicate vs ConstantOp) and state type assignment.
+        if module.variables.is_empty() {
+            if let Some(init_op) = module.operators.iter().find(|o| o.name.eq_ignore_ascii_case("init")) {
+                if let Some(first_param) = init_op.params.first() {
+                    module_var_names.insert(first_param.name.clone());
+                }
+            }
+        }
 
         // Build module-aware expression translator config
         let mut config = self.expr_config.clone();
-        config.variable_names = module.variables.iter().cloned().collect();
+        config.variable_names = module_var_names.clone();
         config.constant_names = module.constants.iter().map(|c| c.name.clone()).collect();
         config.spec_prefix = self.config.spec_prefix.clone();
         // Classify operators as actions vs predicates vs constants (multi-pass)
@@ -3765,8 +3776,14 @@ impl ModuleTranslator {
         let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
         let refs_vars =
             self.operator_refs_declared_variables(&op.body, &op_param_names, module_var_names);
-        // Actions always get s and s_ params (they transitively reference state through sub-operators)
-        if refs_vars || is_action {
+        // Actions always get s and s_ params (they transitively reference state through sub-operators).
+        // For Init operators in variable-less specs (verus2tla-generated), the first parameter
+        // is the state variable even if refs_vars is false (because the parameter shadows the
+        // inferred module variable name, making operator_refs_declared_variables return false).
+        let init_inferred_state = is_strict_init
+            && module.variables.is_empty()
+            && op.params.first().is_some_and(|p| module_var_names.contains(&p.name));
+        if refs_vars || is_action || init_inferred_state {
             params.push(format!("s: {}", state_name));
             used_param_names.insert("s".to_string());
             identifier_type_hints.insert("s".to_string(), state_name.to_string());
@@ -3774,6 +3791,15 @@ impl ModuleTranslator {
                 params.push(format!("s_: {}", state_name));
                 used_param_names.insert("s_".to_string());
                 identifier_type_hints.insert("s_".to_string(), state_name.to_string());
+            }
+            // Also add the Init's first param name to used_params so it's treated
+            // as the same as implicit "s" and skipped in explicit param processing
+            if init_inferred_state {
+                if let Some(first_param) = op.params.first() {
+                    if first_param.name != "s" {
+                        used_param_names.insert(first_param.name.clone());
+                    }
+                }
             }
         }
 

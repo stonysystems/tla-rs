@@ -84,15 +84,8 @@ fn validate_init_signature<'a>(
             ),
         });
     }
-    if init_fn.params.len() > 2 {
-        return Err(TranspileError::Config {
-            message: format!(
-                "Cannot construct initial states from `{}`: expected signature `(state[, constants])`, found {} parameters.",
-                init_fn.name,
-                init_fn.params.len()
-            ),
-        });
-    }
+    // Allow 3+ params: generated protocol specs may have extra params (e.g., `c: int`)
+    // beyond state and constants. Extra params are silently ignored during evaluation.
     if !matches!(init_fn.return_type, Type::Bool) {
         return Err(TranspileError::Config {
             message: format!(

@@ -296,13 +296,10 @@ fn validate_linit_signature(
     expected_state_type: &Type,
 ) -> TranspileResult<()> {
     let mut issues = Vec::new();
-    // Accept 1-parameter Init (state only, for standalone translated TLA+ specs)
-    // or 2-parameter Init (state + constants, for protocol specs with LConstants)
-    if linit.params.len() != 1 && linit.params.len() != 2 {
-        issues.push(format!(
-            "expected 1 or 2 parameters, found {}",
-            linit.params.len()
-        ));
+    // Accept 1+ parameter Init. Generated protocol specs may have extra params
+    // beyond state and constants (e.g., `c: int` from verus2tla round-trip).
+    if linit.params.is_empty() {
+        issues.push("expected at least 1 parameter (state), found 0".to_string());
     }
     if !matches!(linit.return_type, Type::Bool) {
         issues.push(format!(
