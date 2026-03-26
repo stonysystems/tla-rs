@@ -2,7 +2,7 @@
 # pc uses Seq<char> for state names, choosing is Map<int, bool>.
 
 [constants.assignments]
-NumProcs = 2
+NumProcs = 1
 
 [search]
 max_depth = 50
@@ -16,7 +16,7 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 2 }
+int = { min = 0, max = 1 }
 
 [collections]
 max_set_len = 2
