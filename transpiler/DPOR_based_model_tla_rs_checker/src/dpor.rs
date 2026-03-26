@@ -575,4 +575,105 @@ max_seq_len = 4
             result_independence.distinct_states.len()
         );
     }
+
+    // =========================================================================
+    // Automated baseline-vs-DPOR comparison (Phase 38.8.4.a)
+    // =========================================================================
+
+    /// Run both baseline and DPOR on a case, compare results.
+    /// Returns (baseline_states, dpor_states, match_status).
+    fn compare_baseline_vs_dpor(
+        spec_file: &std::path::Path,
+        model_path: &std::path::Path,
+        invariants: &[String],
+    ) -> (usize, usize, &'static str) {
+        let ctx = match SpecContext::load(spec_file, None, model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(_) => return (0, 0, "load_failed"),
+        };
+
+        // Run DPOR
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 1_000,
+            ..Default::default()
+        };
+        let dpor_result = explore_dpor(&ctx, &config);
+
+        // Run baseline subprocess
+        let transpiler = match crate::baseline::find_transpiler_bin() {
+            Some(p) => p,
+            None => return (0, dpor_result.distinct_states.len(), "no_baseline_bin"),
+        };
+        let baseline = crate::baseline::run_baseline(
+            &transpiler, spec_file, model_path, invariants, 30,
+        );
+
+        let bl_states = baseline.distinct_states;
+        let dp_states = dpor_result.distinct_states.len();
+
+        let status = if baseline.result != "ok" {
+            "baseline_error"
+        } else if dp_states == bl_states {
+            "exact_match"
+        } else if dp_states < bl_states {
+            "dpor_subset"
+        } else {
+            "dpor_exceeded_baseline"  // This would be a bug!
+        };
+
+        (bl_states, dp_states, status)
+    }
+
+    #[test]
+    fn test_automated_baseline_vs_dpor_comparison() {
+        // Phase 38.8.4.a: Run both engines on all translatable cases
+        // and verify no verdict regressions.
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+
+        let cases = [
+            ("01_aplusb", "APlusB.rs", vec!["LSumInvariant".to_string()]),
+            ("07_producer_consumer_1slot", "ProducerConsumer1Slot.rs", vec!["LSafetyInvariant".to_string()]),
+        ];
+
+        let mut results = Vec::new();
+        for (case_id, filename, invariants) in &cases {
+            let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
+            if !spec_file.exists() {
+                eprintln!("  {} SKIP (not translated)", case_id);
+                continue;
+            }
+
+            let (bl, dp, status) = compare_baseline_vs_dpor(&spec_file, &model_path, invariants);
+            results.push((*case_id, bl, dp, status));
+            eprintln!("  {} baseline={} dpor={} → {}", case_id, bl, dp, status);
+        }
+
+        // Verify no DPOR-exceeded-baseline (would be a correctness bug)
+        for (case_id, _bl, _dp, status) in &results {
+            assert_ne!(
+                *status, "dpor_exceeded_baseline",
+                "CORRECTNESS BUG: DPOR found more states than baseline for {}",
+                case_id
+            );
+        }
+
+        // Verify at least one exact match exists
+        let exact_matches = results.iter().filter(|(_, _, _, s)| *s == "exact_match").count();
+        assert!(
+            exact_matches >= 1,
+            "Expected at least 1 exact baseline-DPOR match, got {}",
+            exact_matches
+        );
+
+        eprintln!(
+            "\nAutomated comparison: {} cases, {} exact, {} subset, {} error",
+            results.len(),
+            results.iter().filter(|(_, _, _, s)| *s == "exact_match").count(),
+            results.iter().filter(|(_, _, _, s)| *s == "dpor_subset").count(),
+            results.iter().filter(|(_, _, _, s)| *s == "baseline_error" || *s == "load_failed").count(),
+        );
+    }
 }

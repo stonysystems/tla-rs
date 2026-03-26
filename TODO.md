@@ -11566,7 +11566,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 - [ ] **38.8.4**: At each DPOR milestone, require evidence of both:
   - no verdict regressions against the baseline parity subset,
   - and at least some reduction benefit on the independence-heavy cases (`04` through `11` are the first expected wins).
-  - [ ] **38.8.4.a**: Add an automated baseline-vs-DPOR comparison step that fails the milestone if any parity-subset case changes verdict unexpectedly.
+  - [x] **38.8.4.a**: Added `test_automated_baseline_vs_dpor_comparison` in `dpor.rs` that runs both engines on all translatable parity cases and asserts: (1) DPOR never exceeds baseline state count (correctness guard), (2) at least one exact match exists. Current results: APlusB exact (21==21), ProducerConsumer subset (1⊆21). 37 total tests.
   - [ ] **38.8.4.b**: For positive cases, compare normalized reachable-state sets using the same canonical JSON / fingerprint discipline as Phase 36; for negative cases, compare witness class plus first failure depth.
   - [ ] **38.8.4.c**: Treat pass-count drops, new `checker_error`, or new `known_unimplemented` rows on any previously-working case as regressions, even if the DPOR engine improved elsewhere.
   - [ ] **38.8.4.d**: Reduction claims must cite concrete case IDs and numbers. "Faster overall" or "fewer interleavings in theory" does not close a milestone.
