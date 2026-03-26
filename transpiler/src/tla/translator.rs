@@ -146,6 +146,9 @@ pub struct TranslatorConfig {
     pub rename_map: std::collections::HashMap<String, String>,
     /// Module variable names (for qualifying as `s.field` / `s_.field`)
     pub variable_names: std::collections::HashSet<String>,
+    /// When true, LState is a flat alias (LState = LRecord), so variable
+    /// identifiers should NOT be prefixed with `s.` / `s_.` in translated output.
+    pub state_is_flat_alias: bool,
     /// Module constant names (for qualifying as `c.field`)
     pub constant_names: std::collections::HashSet<String>,
     /// Module operator names mapped to whether they are actions (use primed vars)
@@ -204,6 +207,7 @@ impl Default for TranslatorConfig {
             is_spec: true,
             rename_map: std::collections::HashMap::new(),
             variable_names: std::collections::HashSet::new(),
+            state_is_flat_alias: false,
             constant_names: std::collections::HashSet::new(),
             operator_info: std::collections::HashMap::new(),
             operator_arity: std::collections::HashMap::new(),
@@ -1351,8 +1355,8 @@ impl<'a> ExprTranslator<'a> {
             "TRUE" => "true".to_string(),
             "FALSE" => "false".to_string(),
             _ => {
-                // Qualify module variables with s.
-                if self.config.variable_names.contains(name) {
+                // Qualify module variables with s. (skip for flat aliases where s IS the record)
+                if self.config.variable_names.contains(name) && !self.config.state_is_flat_alias {
                     return format!("s.{}", name);
                 }
                 // Qualify module constants with c.
@@ -1406,8 +1410,10 @@ impl<'a> ExprTranslator<'a> {
         // Primed variables reference the next-state struct field
         match inner {
             TlaExpr::Ident(name) => {
-                if self.config.variable_names.contains(name.as_str()) {
+                if self.config.variable_names.contains(name.as_str()) && !self.config.state_is_flat_alias {
                     format!("s_.{}", name)
+                } else if self.config.state_is_flat_alias && self.config.variable_names.contains(name.as_str()) {
+                    "s_".to_string()
                 } else {
                     format!("{}_", name)
                 }
@@ -2583,7 +2589,11 @@ impl<'a> ExprTranslator<'a> {
             .iter()
             .map(|v| match v {
                 TlaExpr::Ident(name) if self.config.variable_names.contains(name.as_str()) => {
-                    format!("s_.{} == s.{}", name, name)
+                    if self.config.state_is_flat_alias {
+                        "s_ == s".to_string()
+                    } else {
+                        format!("s_.{} == s.{}", name, name)
+                    }
                 }
                 _ => {
                     let v_str = self.translate(v);
@@ -3568,6 +3578,12 @@ impl ModuleTranslator {
         let mut config = self.expr_config.clone();
         config.variable_names = module_var_names.clone();
         config.constant_names = module.constants.iter().map(|c| c.name.clone()).collect();
+
+        // When LState is a flat alias (LState = LRecord, no wrapping struct),
+        // skip the s./s_. prefix rewriting in translate_ident/translate_prime.
+        let unique_record_names: std::collections::HashSet<&String> =
+            self.expr_config.record_structs.values().collect();
+        config.state_is_flat_alias = module.variables.is_empty() && unique_record_names.len() == 1;
         config.spec_prefix = self.config.spec_prefix.clone();
         // Classify operators as actions vs predicates vs constants (multi-pass)
         // Pass 1: direct prime usage + variable reference check
