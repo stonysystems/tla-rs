@@ -17,6 +17,8 @@ successor_semantics = "deadlock"
 
 [quantifiers]
 int = { min = 0, max = 2 }
+
+[collections]
 max_set_len = 2
 max_seq_len = 2
 max_map_len = 2
