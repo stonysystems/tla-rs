@@ -572,7 +572,9 @@ impl<'a> ExprTranslator<'a> {
         if let Some(hint) = self.generated_quantifier_var_type_hint(var, body) {
             format!("{}: {}", var.var, hint)
         } else {
-            var.var.clone()
+            // Default to `int` when no type can be inferred — TLA+ values are
+            // predominantly integers, and the model checker requires typed quantifier vars.
+            format!("{}: int", var.var)
         }
     }
 
@@ -5541,7 +5543,7 @@ mod tests {
             }),
         };
         let result = translator.translate(&expr);
-        assert!(result.contains("forall |x|"));
+        assert!(result.contains("forall |x"));
         assert!(result.contains("S.contains(x)"));
         assert!(result.contains("==>"));
     }
@@ -5560,7 +5562,7 @@ mod tests {
             }),
         };
         let result = translator.translate(&expr);
-        assert!(result.contains("exists |x|"));
+        assert!(result.contains("exists |x"));
         assert!(result.contains("S.contains(x)"));
         assert!(result.contains("&&"));
     }
@@ -5723,7 +5725,8 @@ mod tests {
             body: Box::new(TlaExpr::ident("P")),
         };
         let out_forall_int = translator.translate(&forall_int);
-        assert!(out_forall_int.contains("forall |x| P"));
+        assert!(out_forall_int.contains("forall |x"));
+        assert!(out_forall_int.contains("P"));
         assert!(!out_forall_int.contains("int.contains"));
 
         let exists_nat = TlaExpr::Exists {
@@ -5731,7 +5734,8 @@ mod tests {
             body: Box::new(TlaExpr::ident("Q")),
         };
         let out_exists_nat = translator.translate(&exists_nat);
-        assert!(out_exists_nat.contains("exists |x| (x >= 0) && Q"));
+        assert!(out_exists_nat.contains("exists |x"));
+        assert!(out_exists_nat.contains("(x >= 0) && Q"));
 
         let exists_seq = TlaExpr::Exists {
             vars: vec![TlaQuantBound::new(
@@ -5744,7 +5748,7 @@ mod tests {
             body: Box::new(TlaExpr::ident("R")),
         };
         let out_exists_seq = translator.translate(&exists_seq);
-        assert!(out_exists_seq.contains("exists |p| R"));
+        assert!(out_exists_seq.contains("exists |p"));
         assert!(!out_exists_seq.contains("Seq(Packet).contains"));
     }
 

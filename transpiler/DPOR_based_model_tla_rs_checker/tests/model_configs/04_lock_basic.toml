@@ -1,0 +1,25 @@
+# Model config for case 04: LockBasic
+# pc uses Seq<char> for state names.
+
+[constants.assignments]
+NumProcs = 2
+
+[search]
+max_depth = 50
+max_states = 100000
+timeout_ms = 30000
+
+[properties]
+invariants = ["LMutualExclusion"]
+check_deadlock = false
+successor_semantics = "deadlock"
+
+[quantifiers]
+int = { min = 0, max = 2 }
+max_set_len = 2
+max_seq_len = 2
+max_map_len = 2
+
+[quantifiers.types.Seq_char]
+kind = "values"
+values = ["idle", "critical"]

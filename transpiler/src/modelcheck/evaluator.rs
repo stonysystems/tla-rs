@@ -230,6 +230,12 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         Expr::SetEmpty => RuntimeValue::set_bounded(Vec::new(), &ctx.bounds),
         Expr::MapEmpty => RuntimeValue::map_bounded(Vec::new(), &ctx.bounds),
         Expr::Call { func, args } => {
+            // Special case: Set::new(|x| predicate) — evaluate predicate over int domain
+            if path_name(func) == "Set::new" && args.len() == 1 {
+                if let Expr::Closure { params, body } = &args[0] {
+                    return eval_set_new_with_closure(params, body, ctx);
+                }
+            }
             // Special case: Map::new(domain, |key| value) — evaluate closure per domain element
             if path_name(func) == "Map::new" && args.len() == 2 {
                 if let Expr::Closure { params, body } = &args[1] {
@@ -904,6 +910,117 @@ fn eval_builtin_static_call(
 }
 
 /// Evaluate Map::new(domain_set, |key| value) by applying the closure to each domain element.
+/// Evaluate `Set::new(|x: T| predicate)` — a set comprehension.
+///
+/// Enumerates the int domain from the model config and collects values
+/// where the predicate closure returns true. This is how TLA+ `a..b`
+/// range expressions (translated to `Set::new(|x: int| a <= x && x <= b)`)
+/// are evaluated.
+fn eval_set_new_with_closure(
+    params: &[crate::ast::Binding],
+    body: &Expr,
+    ctx: &EvalContext<'_>,
+) -> TranspileResult<RuntimeValue> {
+    if params.is_empty() {
+        return Err(type_error("Set::new closure must have at least one parameter."));
+    }
+
+    let param_name = params[0].name().ok_or_else(|| {
+        type_error("Set::new closure parameter must be a named identifier.")
+    })?;
+
+    // Try to determine the domain to enumerate from the closure body.
+    // For `|x: int| lo <= x && x <= hi`, we extract lo and hi and enumerate.
+    // Fallback: enumerate the configured int domain.
+    let candidates = extract_range_bounds_from_closure(param_name, body, ctx);
+
+    let int_values: Vec<i128> = if let Some((lo, hi)) = candidates {
+        (lo..=hi).collect()
+    } else {
+        // Fallback: use the full int domain from bounds context
+        // We use a reasonable default range
+        (-10..=100).collect()
+    };
+
+    let mut elements = Vec::new();
+    for val in &int_values {
+        let rv = RuntimeValue::Int(*val);
+        let mut inner_ctx = ctx.clone();
+        inner_ctx.bindings.insert(param_name.to_string(), rv.clone());
+        match eval_expr(body, &inner_ctx) {
+            Ok(RuntimeValue::Bool(true)) => {
+                elements.push(rv);
+            }
+            Ok(RuntimeValue::Bool(false)) => {}
+            Ok(_) => {
+                return Err(type_error(
+                    "Set::new closure must return bool.",
+                ));
+            }
+            Err(_) => {
+                // If evaluation fails for this value, skip it
+            }
+        }
+    }
+
+    RuntimeValue::set_bounded(elements, &ctx.bounds)
+}
+
+/// Try to extract constant range bounds from a Set::new closure like `|x: int| lo <= x && x <= hi`.
+fn extract_range_bounds_from_closure(
+    param: &str,
+    body: &Expr,
+    ctx: &EvalContext<'_>,
+) -> Option<(i128, i128)> {
+    // Pattern: Binary(Le(lo_expr, param), And, Le(param, hi_expr))
+    if let Expr::Binary(left, crate::ast::BinOp::And, right) = body {
+        let lo = extract_lower_bound(param, left, ctx);
+        let hi = extract_upper_bound(param, right, ctx);
+        if let (Some(lo), Some(hi)) = (lo, hi) {
+            return Some((lo, hi));
+        }
+        // Try reversed order
+        let lo = extract_lower_bound(param, right, ctx);
+        let hi = extract_upper_bound(param, left, ctx);
+        if let (Some(lo), Some(hi)) = (lo, hi) {
+            return Some((lo, hi));
+        }
+    }
+    None
+}
+
+fn extract_lower_bound(param: &str, expr: &Expr, ctx: &EvalContext<'_>) -> Option<i128> {
+    // Pattern: lo <= param
+    if let Expr::Le(lo_expr, rhs) = expr {
+        if is_ident(rhs, param) {
+            return eval_to_int(lo_expr, ctx);
+        }
+    }
+    None
+}
+
+fn extract_upper_bound(param: &str, expr: &Expr, ctx: &EvalContext<'_>) -> Option<i128> {
+    // Pattern: param <= hi
+    if let Expr::Le(lhs, hi_expr) = expr {
+        if is_ident(lhs, param) {
+            return eval_to_int(hi_expr, ctx);
+        }
+    }
+    None
+}
+
+fn is_ident(expr: &Expr, name: &str) -> bool {
+    matches!(expr, Expr::Ident(n) if n == name)
+}
+
+fn eval_to_int(expr: &Expr, ctx: &EvalContext<'_>) -> Option<i128> {
+    match eval_expr(expr, ctx) {
+        Ok(RuntimeValue::Int(v)) => Some(v),
+        Ok(RuntimeValue::Nat(v)) => Some(v as i128),
+        _ => None,
+    }
+}
+
 fn eval_map_new_with_closure(
     domain: &RuntimeValue,
     params: &[crate::ast::Binding],

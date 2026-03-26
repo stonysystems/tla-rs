@@ -527,7 +527,7 @@ impl TlaParser {
         Ok(left)
     }
 
-    /// Parse additive expressions
+    /// Parse additive expressions (including `..` range operator)
     fn parse_additive_expr(&mut self) -> ParseResult<TlaExpr> {
         let mut left = self.parse_multiplicative_expr()?;
 
@@ -535,6 +535,7 @@ impl TlaParser {
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Plus) => TlaBinOp::Plus,
                 Some(TlaTokenKind::Minus) => TlaBinOp::Minus,
+                Some(TlaTokenKind::DotDot) => TlaBinOp::DotDot,
                 _ => break,
             };
             self.advance();
@@ -1124,28 +1125,54 @@ impl TlaParser {
     /// Parse quantifier bounds
     fn parse_quant_bounds(&mut self) -> ParseResult<Vec<TlaQuantBound>> {
         let mut bounds = Vec::new();
-        bounds.push(self.parse_quant_bound()?);
+        // TLA+ allows `x1, x2, ..., xn \in S` where all variables share the same set.
+        // Also allows multiple groups: `x \in S1, y \in S2` or mixed `x, y \in S, z \in T`.
+        // We collect comma-separated identifiers, then when we see `\in`, assign the set to all.
+        loop {
+            let mut group_vars: Vec<String> = vec![self.expect_ident()?];
+            // Collect comma-separated variable names until we hit `\in` or `:`
+            while self.check(TlaTokenKind::Comma) {
+                // Peek ahead: if the token after comma and ident is `\in`, it's still same group.
+                // But if we see `:`, the group is done. We need to be careful.
+                // In TLA+, `\A x, y \in S : P` means both x,y in S.
+                // `\A x \in S, y \in T : P` means separate bindings.
+                // So we greedily collect idents until we see `\in`.
+                let saved_pos = self.pos;
+                self.advance(); // consume comma
+                if self.peek_kind() == Some(TlaTokenKind::Colon) {
+                    // No more variables — the colon starts the body
+                    self.pos = saved_pos;
+                    break;
+                }
+                let next_var = self.expect_ident()?;
+                group_vars.push(next_var);
+            }
 
-        while self.check(TlaTokenKind::Comma) {
-            self.advance();
-            bounds.push(self.parse_quant_bound()?);
+            if self.check(TlaTokenKind::SetIn) {
+                self.advance();
+                let set = self.parse_set_expr()?;
+                for var in group_vars {
+                    bounds.push(TlaQuantBound {
+                        var,
+                        set: Some(set.clone()),
+                    });
+                }
+            } else {
+                // No set binding for this group
+                for var in group_vars {
+                    bounds.push(TlaQuantBound { var, set: None });
+                }
+            }
+
+            // Check if there's another binding group after comma
+            if self.check(TlaTokenKind::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
         }
 
         Ok(bounds)
-    }
-
-    /// Parse a single quantifier bound
-    fn parse_quant_bound(&mut self) -> ParseResult<TlaQuantBound> {
-        let var = self.expect_ident()?;
-
-        let set = if self.check(TlaTokenKind::SetIn) {
-            self.advance();
-            Some(self.parse_set_expr()?)
-        } else {
-            None
-        };
-
-        Ok(TlaQuantBound { var, set })
     }
 
     /// Parse UNCHANGED expression
