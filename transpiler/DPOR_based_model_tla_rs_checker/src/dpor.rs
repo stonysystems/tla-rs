@@ -27,6 +27,10 @@ pub struct StackFrame {
     /// Which transitions should still be explored (backtrack set).
     /// In v1 (conservative), this starts as all enabled transitions.
     pub backtrack: BTreeSet<String>,
+    /// Sleep set: transitions that should NOT be explored because an
+    /// equivalent interleaving will be explored from a sibling path.
+    /// Keyed by ordering_key (same key space as backtrack/done).
+    pub sleep: BTreeSet<String>,
     /// The transition that was chosen to proceed deeper (if any).
     pub chosen: Option<EnabledTransition>,
     /// Depth in the search (0 = initial state).
@@ -58,6 +62,10 @@ pub struct DporConfig {
     /// If true, use branch footprints for independence-based backtrack pruning.
     /// If false, all transitions are treated as dependent (conservative/exhaustive).
     pub use_independence: bool,
+    /// If true, use sleep sets to prune redundant interleavings.
+    /// Requires `use_independence` to be true (sleep sets need the independence relation).
+    /// When footprints are empty (reads_whole_state), sleep sets provide no benefit.
+    pub use_sleep_sets: bool,
 }
 
 impl Default for DporConfig {
@@ -66,6 +74,7 @@ impl Default for DporConfig {
             max_depth: 100,
             max_states: 100_000,
             use_independence: false,
+            use_sleep_sets: false,
         }
     }
 }
@@ -136,6 +145,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
             enabled,
             done: BTreeSet::new(),
             backtrack,
+            sleep: BTreeSet::new(),
             chosen: None,
             depth: 0,
         };
@@ -149,17 +159,20 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 break;
             }
 
-            // Find a transition in backtrack that isn't in done
+            // Find a transition in backtrack that isn't in done or sleep
             let next_transition = frame
                 .backtrack
                 .iter()
-                .find(|key| !frame.done.contains(*key))
+                .find(|key| !frame.done.contains(*key) && !frame.sleep.contains(*key))
                 .cloned();
 
             match next_transition {
                 Some(key) => {
-                    // Mark as done
+                    // Mark as done, and add to sleep set for future siblings
                     frame.done.insert(key.clone());
+                    if config.use_sleep_sets {
+                        frame.sleep.insert(key.clone());
+                    }
 
                     // Find the transition object
                     let transition = frame
@@ -230,17 +243,35 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                             enabled.iter().map(|t| t.ordering_key.clone()).collect()
                         };
 
+                        // Compute child sleep set: inherit parent's sleep entries
+                        // that are independent of the chosen transition.
+                        let child_sleep = if config.use_sleep_sets {
+                            compute_child_sleep_set(
+                                &frame.sleep,
+                                &transition,
+                                &frame.enabled,
+                            )
+                        } else {
+                            BTreeSet::new()
+                        };
+
                         stack.push(StackFrame {
                             state: successor,
                             state_fingerprint: transition.successor_fingerprint,
                             enabled,
                             done: BTreeSet::new(),
                             backtrack,
+                            sleep: child_sleep,
                             chosen: None,
                             depth,
                         });
                     }
-                    // If state already visited, we don't push (pruning via dedup)
+
+                    // Note: the chosen transition is added to this frame's sleep set
+                    // BEFORE pushing the child. This way, when the child eventually
+                    // pops and control returns to this frame, subsequent sibling
+                    // transitions will see the explored transition in the sleep set
+                    // and propagate it to their children.
                 }
                 None => {
                     // All backtrack alternatives explored at this depth — pop
@@ -258,6 +289,50 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         transitions_fired,
         violation: None,
     }
+}
+
+/// Compute the sleep set for a child frame by propagating the parent's sleep set.
+///
+/// A sleeping transition is propagated to the child only if it is INDEPENDENT
+/// of the chosen transition. Dependent transitions are "woken up" because
+/// taking the chosen transition may have changed the state in a relevant way.
+///
+/// When footprints are empty (reads_whole_state), all transitions are treated
+/// as dependent, so the child sleep set is always empty (correct but no benefit).
+fn compute_child_sleep_set(
+    parent_sleep: &BTreeSet<String>,
+    chosen: &EnabledTransition,
+    parent_enabled: &[EnabledTransition],
+) -> BTreeSet<String> {
+    let mut child_sleep = BTreeSet::new();
+
+    // Look up chosen transition's footprint
+    let chosen_fp = &chosen.footprint;
+
+    // If chosen has empty footprint, treat as dependent with everything (conservative)
+    if chosen_fp.reads.is_empty() && chosen_fp.writes.is_empty() {
+        return child_sleep; // Empty — all sleeping transitions are woken up
+    }
+
+    for sleeping_key in parent_sleep {
+        // Look up the sleeping transition's footprint from the parent's enabled list
+        if let Some(sleeping_trans) = parent_enabled.iter().find(|t| t.ordering_key == *sleeping_key) {
+            let sleeping_fp = &sleeping_trans.footprint;
+
+            // If sleeping transition has empty footprint, treat as dependent (wake up)
+            if sleeping_fp.reads.is_empty() && sleeping_fp.writes.is_empty() {
+                continue;
+            }
+
+            // If independent of chosen, keep asleep
+            if sleeping_fp.independent_of(chosen_fp) {
+                child_sleep.insert(sleeping_key.clone());
+            }
+            // If dependent, don't propagate (woken up)
+        }
+    }
+
+    child_sleep
 }
 
 #[cfg(test)]
@@ -553,11 +628,13 @@ max_seq_len = 4
             max_depth: 20,
             max_states: 1_000,
             use_independence: false,
+            use_sleep_sets: false,
         };
         let with_independence = DporConfig {
             max_depth: 20,
             max_states: 1_000,
             use_independence: true,
+            use_sleep_sets: false,
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -573,6 +650,121 @@ max_seq_len = 4
             result_conservative.distinct_states.len(),
             result_independence.distinct_states.len()
         );
+    }
+
+    #[test]
+    fn test_dpor_sleep_set_parity_aplusb() {
+        // Verify that sleep-set-enabled DPOR finds the same states as conservative DPOR.
+        // For APlusB (single-process, empty footprints), sleep sets should have no effect
+        // because all transitions have empty footprints and are treated as dependent.
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => { return; }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+
+        let conservative = DporConfig {
+            max_depth: 20,
+            max_states: 1_000,
+            use_independence: false,
+            use_sleep_sets: false,
+        };
+        let with_sleep = DporConfig {
+            max_depth: 20,
+            max_states: 1_000,
+            use_independence: true,
+            use_sleep_sets: true,
+        };
+
+        let result_conservative = explore_dpor(&ctx, &conservative);
+        let result_sleep = explore_dpor(&ctx, &with_sleep);
+
+        // Sleep sets must not LOSE states (correctness)
+        assert_eq!(
+            result_conservative.distinct_states,
+            result_sleep.distinct_states,
+            "Sleep-set DPOR should find same states as conservative for APlusB (single-process)"
+        );
+        eprintln!(
+            "Sleep-set parity APlusB: conservative={} sleep={} ✓",
+            result_conservative.distinct_states.len(),
+            result_sleep.distinct_states.len()
+        );
+    }
+
+    #[test]
+    fn test_compute_child_sleep_set_empty_footprints() {
+        // When footprints are empty, all transitions are dependent,
+        // so child sleep set should always be empty.
+        let parent_sleep: BTreeSet<String> = ["0000".to_string(), "0001".to_string()].into();
+        let chosen = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "t0".to_string(),
+            successor_fingerprint: StateFingerprint(0),
+            ordering_key: "0002".to_string(),
+            footprint: TransitionFootprint::default(), // empty
+        };
+        let parent_enabled = vec![
+            EnabledTransition {
+                process_id: ProcessId(0),
+                branch_label: "t1".to_string(),
+                successor_fingerprint: StateFingerprint(1),
+                ordering_key: "0000".to_string(),
+                footprint: TransitionFootprint::default(),
+            },
+            EnabledTransition {
+                process_id: ProcessId(0),
+                branch_label: "t2".to_string(),
+                successor_fingerprint: StateFingerprint(2),
+                ordering_key: "0001".to_string(),
+                footprint: TransitionFootprint::default(),
+            },
+        ];
+        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled);
+        assert!(child_sleep.is_empty(), "Empty footprints → all dependent → empty child sleep");
+    }
+
+    #[test]
+    fn test_compute_child_sleep_set_independent_transitions() {
+        // When transitions have disjoint footprints, independent ones stay asleep.
+        let parent_sleep: BTreeSet<String> = ["0000".to_string(), "0001".to_string()].into();
+        let chosen = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "t_chosen".to_string(),
+            successor_fingerprint: StateFingerprint(0),
+            ordering_key: "0002".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(),
+                writes: ["x".to_string()].into(),
+            },
+        };
+        let parent_enabled = vec![
+            EnabledTransition {
+                process_id: ProcessId(0),
+                branch_label: "t_indep".to_string(),
+                successor_fingerprint: StateFingerprint(1),
+                ordering_key: "0000".to_string(),
+                footprint: TransitionFootprint {
+                    reads: ["y".to_string()].into(),
+                    writes: ["y".to_string()].into(),
+                }, // disjoint from chosen → independent
+            },
+            EnabledTransition {
+                process_id: ProcessId(0),
+                branch_label: "t_dep".to_string(),
+                successor_fingerprint: StateFingerprint(2),
+                ordering_key: "0001".to_string(),
+                footprint: TransitionFootprint {
+                    reads: ["x".to_string()].into(), // reads x → dependent on chosen
+                    writes: BTreeSet::new(),
+                },
+            },
+        ];
+        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled);
+        assert!(child_sleep.contains("0000"), "Independent transition stays asleep");
+        assert!(!child_sleep.contains("0001"), "Dependent transition is woken up");
     }
 
     // =========================================================================
