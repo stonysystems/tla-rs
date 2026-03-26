@@ -612,7 +612,7 @@ max_seq_len = 4
         let bl_states = baseline.distinct_states;
         let dp_states = dpor_result.distinct_states.len();
 
-        let status = if baseline.result != "ok" {
+        let status = if baseline.result != "ok" && baseline.result != "invariant_violated" {
             "baseline_error"
         } else if dp_states == bl_states {
             "exact_match"
@@ -625,17 +625,40 @@ max_seq_len = 4
         (bl_states, dp_states, status)
     }
 
+    /// Get the per-case model config path, falling back to default.
+    fn case_model_config(case_id: &str) -> std::path::PathBuf {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let per_case = manifest_dir.join(format!("tests/model_configs/{}.toml", case_id));
+        if per_case.exists() {
+            per_case
+        } else {
+            // Fallback: create a temporary default config
+            let tmp = tempfile::tempdir().unwrap();
+            let p = create_model_toml(tmp.path());
+            // Leak the tempdir to keep the file alive
+            std::mem::forget(tmp);
+            p
+        }
+    }
+
     #[test]
     fn test_automated_baseline_vs_dpor_comparison() {
-        // Phase 38.8.4.a: Run both engines on all translatable cases
+        // Phase 38.8.4.a: Run both engines on all baseline-passing cases
         // and verify no verdict regressions.
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let tmp = tempfile::tempdir().unwrap();
-        let model_path = create_model_toml(tmp.path());
 
-        let cases = [
+        // All 10 baseline-passing cases with their spec files and invariants
+        let cases: Vec<(&str, &str, Vec<String>)> = vec![
             ("01_aplusb", "APlusB.rs", vec!["LSumInvariant".to_string()]),
+            ("02_counter_incdec", "CounterIncDec.rs", vec!["LTypeOK".to_string()]),
+            ("03_counter_race_bug", "CounterRaceBug.rs", vec!["LTotalCorrect".to_string()]),
+            ("04_lock_basic", "LockBasic.rs", vec!["LMutualExclusion".to_string()]),
+            ("05_broken_lock_bug", "BrokenLockBug.rs", vec!["LMutualExclusion".to_string()]),
             ("07_producer_consumer_1slot", "ProducerConsumer1Slot.rs", vec!["LSafetyInvariant".to_string()]),
+            ("08_bounded_buffer_2slot", "BoundedBuffer2Slot.rs", vec![]),
+            ("09_peterson_mutex_2p", "PetersonMutex.rs", vec!["LMutualExclusion".to_string()]),
+            ("11_readers_writers_small", "ReadersWritersBug.rs", vec!["LSafety".to_string()]),
+            ("13_twophase_small", "TwoPhase.rs", vec![]),
         ];
 
         let mut results = Vec::new();
@@ -646,6 +669,7 @@ max_seq_len = 4
                 continue;
             }
 
+            let model_path = case_model_config(case_id);
             let (bl, dp, status) = compare_baseline_vs_dpor(&spec_file, &model_path, invariants);
             results.push((*case_id, bl, dp, status));
             eprintln!("  {} baseline={} dpor={} → {}", case_id, bl, dp, status);
@@ -669,11 +693,12 @@ max_seq_len = 4
         );
 
         eprintln!(
-            "\nAutomated comparison: {} cases, {} exact, {} subset, {} error",
+            "\nAutomated comparison: {} cases, {} exact, {} subset, {} baseline_error, {} load_failed",
             results.len(),
             results.iter().filter(|(_, _, _, s)| *s == "exact_match").count(),
             results.iter().filter(|(_, _, _, s)| *s == "dpor_subset").count(),
-            results.iter().filter(|(_, _, _, s)| *s == "baseline_error" || *s == "load_failed").count(),
+            results.iter().filter(|(_, _, _, s)| *s == "baseline_error").count(),
+            results.iter().filter(|(_, _, _, s)| *s == "load_failed").count(),
         );
     }
 }

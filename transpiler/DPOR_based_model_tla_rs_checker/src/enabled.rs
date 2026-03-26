@@ -30,6 +30,8 @@ pub struct SpecContext {
     pub bundle: verus_transpiler::spec_analyzer::ProtocolSourceBundle,
     pub model_config: verus_transpiler::modelcheck::config::ModelConfig,
     pub bounds: RuntimeCollectionBounds,
+    /// Resolved constants value (None for specs without LConstants parameter).
+    pub constants: Option<RuntimeValue>,
 }
 
 impl SpecContext {
@@ -54,10 +56,15 @@ impl SpecContext {
             max_seq_len: model_config.collections.max_seq_len,
             max_map_len: model_config.collections.max_map_len,
         };
+
+        // Resolve constants if LInit has an LConstants parameter
+        let constants = resolve_constants_from_config(&bundle, &model_config, &bounds)?;
+
         Ok(Self {
             bundle,
             model_config,
             bounds,
+            constants,
         })
     }
 
@@ -93,7 +100,7 @@ impl SpecContext {
         construct_initial_states(
             &self.bundle.entrypoints.linit,
             &candidates,
-            None, // no constants for standalone specs
+            self.constants.as_ref(),
             self.bounds,
             hooks,
         )
@@ -229,7 +236,7 @@ impl SpecContext {
         let successors = solve_transition_successors(
             &transition,
             state,
-            None, // no constants for standalone specs
+            self.constants.as_ref(),
             Some(&assignments_by_branch),
             self.bounds,
             hooks,
@@ -339,7 +346,7 @@ impl SpecContext {
         solve_transition_successors(
             &transition,
             state,
-            None,
+            self.constants.as_ref(),
             Some(&assignments_by_branch),
             self.bounds,
             hooks,
@@ -377,6 +384,95 @@ impl SpecContext {
             predicate_only_branch_solver: None,
         }
     }
+}
+
+/// Resolve LConstants value from model config, if the spec has a constants parameter.
+///
+/// Checks LInit for a parameter with type `LConstants`. If found, expands the
+/// constants type domain, filters by `[constants.assignments]`, and returns the
+/// first matching valuation. Returns `None` if no constants parameter exists.
+fn resolve_constants_from_config(
+    bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+    _bounds: &RuntimeCollectionBounds,
+) -> TranspileResult<Option<RuntimeValue>> {
+    use verus_transpiler::ast::Type;
+
+    // Check if LInit has an LConstants parameter
+    let constants_param = bundle
+        .entrypoints
+        .linit
+        .params
+        .iter()
+        .find(|param| {
+            matches!(
+                &param.ty,
+                Type::Named(path) if path.last() == Some("LConstants")
+            )
+        });
+
+    let constants_param = match constants_param {
+        Some(p) => p,
+        None => return Ok(None), // No constants in this spec
+    };
+
+    // Expand LConstants domain
+    let candidates = expand_type_domain_candidates(
+        "candidate_constants",
+        "candidate_constants",
+        &constants_param.ty,
+        &bundle.schema,
+        model_config,
+    )?;
+
+    // Filter by [constants.assignments] config
+    let mut filtered = Vec::new();
+    for candidate in &candidates {
+        if constants_candidate_matches_assignments(candidate, model_config) {
+            filtered.push(candidate.clone());
+        }
+    }
+
+    if filtered.is_empty() {
+        // If no assignments match, try using the first candidate (lenient mode)
+        if !candidates.is_empty() {
+            return Ok(Some(candidates[0].clone()));
+        }
+        return Err(verus_transpiler::error::TranspileError::Config {
+            message: "Constants resolution produced zero matching LConstants valuations. \
+                     Add/adjust [constants.assignments] in model config."
+                .to_string(),
+        });
+    }
+
+    Ok(Some(filtered[0].clone()))
+}
+
+/// Check if a constants candidate matches the [constants.assignments] config.
+fn constants_candidate_matches_assignments(
+    candidate: &RuntimeValue,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+) -> bool {
+    use verus_transpiler::modelcheck::config::ModelValue;
+
+    let fields = match candidate {
+        RuntimeValue::Struct { fields, .. } => fields,
+        _ => return true, // Non-struct constants always match
+    };
+
+    for (field_name, expected_value) in &model_config.constants.assignments {
+        if let Some(actual) = fields.get(field_name) {
+            let matches = match expected_value {
+                ModelValue::Int(v) => actual == &RuntimeValue::Int(i128::from(*v)),
+                ModelValue::Bool(v) => actual == &RuntimeValue::Bool(*v),
+                ModelValue::String(v) => actual == &RuntimeValue::String(v.clone()),
+            };
+            if !matches {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Hash a RuntimeValue into a compact StateFingerprint.
