@@ -159,16 +159,23 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         }
         Expr::Field(base, field) | Expr::Arrow(base, field) => {
             let base = eval_expr(base, ctx)?;
-            base.field(field).cloned().ok_or_else(|| {
-                type_error(
+            match base.field(field).cloned() {
+                Some(value) => Ok(value),
+                None if field == "tag" => {
+                    // Enum discriminator pattern: s.role.tag where role is an int
+                    // (from TLA+ `s.role.tag = Primary` with hash-encoded enums).
+                    // Treat .tag as identity — the int IS the tag value.
+                    Ok(base)
+                }
+                None => Err(type_error(
                     format!(
                         "Field access `.{}` is not valid for `{}`.",
                         field,
                         base.canonical_key()
                     )
                     .as_str(),
-                )
-            })
+                )),
+            }
         }
         Expr::Index(base, idx) => {
             let base = eval_expr(base, ctx)?;

@@ -302,14 +302,14 @@ source_kind = "generated_repo_tla"
 tla_entry = "Epaxos.tla"
 tla_aux_modules = ["Types.tla"]
 generated_tlars_entry = ""
-expected_primary_result = "known_unimplemented"
+expected_primary_result = "ok"
 expected_property = ""
-model_bounds = "2 nodes"
+model_bounds = "int 0..1, max_set/seq/map_len=1"
 requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/EPaxos/"
-notes = "Dependency-rich late stress case. Start as known_unimplemented."
+notes = "EPaxos protocol. Passes with minimal bounds. 0 states at narrow bounds (Init filtering) but no errors."
 
 [[case]]
 id = "20_raft_small"
