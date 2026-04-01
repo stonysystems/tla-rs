@@ -2057,16 +2057,20 @@ impl<'a> ExprTranslator<'a> {
             // frequently become scalar placeholders. Emit an untyped placeholder directly to avoid
             // field-on-scalar compile failures while preserving known module state/constant roots.
             if let TlaExpr::Ident(name) = record {
+                // Resolve rename_map first (e.g., c → c_consts for aliased constants)
+                let resolved_name = self.config.rename_map.get(name.as_str())
+                    .map(|s| s.as_str())
+                    .unwrap_or(name.as_str());
                 if self.config.variable_names.is_empty()
-                    && (name == "s" || name == "s_" || name == &self.config.constants_param_name)
+                    && (resolved_name == "s" || resolved_name == "s_" || resolved_name == &self.config.constants_param_name)
                 {
                     return "arbitrary()".to_string();
                 }
-                let is_known_module_root = self.config.variable_names.contains(name.as_str())
-                    || self.config.constant_names.contains(name.as_str())
-                    || name == "s"
-                    || name == "s_"
-                    || name == &self.config.constants_param_name;
+                let is_known_module_root = self.config.variable_names.contains(resolved_name)
+                    || self.config.constant_names.contains(resolved_name)
+                    || resolved_name == "s"
+                    || resolved_name == "s_"
+                    || resolved_name == self.config.constants_param_name;
                 if !is_known_module_root {
                     return "arbitrary()".to_string();
                 }
@@ -3583,7 +3587,8 @@ impl ModuleTranslator {
         // skip the s./s_. prefix rewriting in translate_ident/translate_prime.
         let unique_record_names: std::collections::HashSet<&String> =
             self.expr_config.record_structs.values().collect();
-        config.state_is_flat_alias = module.variables.is_empty() && unique_record_names.len() == 1;
+        config.state_is_flat_alias = module.variables.is_empty() && unique_record_names.len() == 1
+            && !module_var_names.is_empty(); // Need inferred state variable for alias to matter
         config.spec_prefix = self.config.spec_prefix.clone();
         // Classify operators as actions vs predicates vs constants (multi-pass)
         // Pass 1: direct prime usage + variable reference check
@@ -3829,6 +3834,25 @@ impl ModuleTranslator {
             identifier_type_hints.insert(const_param_name.clone(), const_struct.clone());
         }
 
+        // When constants param was renamed (e.g., c → c_consts), add a rename mapping
+        // so body references to the original param name resolve to the constants param.
+        // E.g., Init(s, c) with c_consts: `c.nodes` → `c_consts.nodes`.
+        let mut operator_rename_map = std::collections::HashMap::new();
+        if let Some(const_name) = &const_param_name {
+            for p in &op.params {
+                if p.name != *const_name && !used_param_names.contains(&p.name) {
+                    // Only absorb the Init's explicit second param as constants alias.
+                    // Don't absorb params named "c" in regular functions — they're just params.
+                    let is_likely_constants_alias = is_strict_init
+                        && (p.name == "c" || op.params.iter().position(|pp| pp.name == p.name) == Some(1));
+                    if is_likely_constants_alias {
+                        used_param_names.insert(p.name.clone());
+                        operator_rename_map.insert(p.name.clone(), const_name.clone());
+                    }
+                }
+            }
+        }
+
         // Add operator parameters
         for (param_idx, param) in op.params.iter().enumerate() {
             let param_type = self.get_param_type(
@@ -3894,6 +3918,8 @@ impl ModuleTranslator {
         function_expr_config
             .constant_field_type_hints
             .extend(constant_field_type_hints);
+        // Apply operator-specific renames (e.g., c → c_consts for constants param aliasing)
+        function_expr_config.rename_map.extend(operator_rename_map);
         let function_expr_translator = ExprTranslator::new(&function_expr_config);
         let body = function_expr_translator.translate(&op.body);
         output.push_str(&format!("    {}\n", body));
