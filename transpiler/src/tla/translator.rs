@@ -2999,7 +2999,25 @@ impl ModuleTranslator {
             }
         }
 
-        // Walk all operator bodies to find Record expressions
+        // Compute state variable names so we can collect fields from RecordAccess
+        // on state parameters (e.g., s.field, s_.field). Without this, only fields
+        // from record constructors ([field |-> val]) are discovered, missing state
+        // fields that are only accessed but never constructed.
+        let mut state_var_names: std::collections::HashSet<String> =
+            module.variables.iter().cloned().collect();
+        if state_var_names.is_empty() {
+            if let Some(init_op) = module.operators.iter().find(|o| o.name.eq_ignore_ascii_case("init")) {
+                if let Some(first_param) = init_op.params.first() {
+                    state_var_names.insert(first_param.name.clone());
+                }
+            }
+        }
+        // Also include "s_" (next-state parameter convention) if "s" is a state var
+        for name in state_var_names.clone() {
+            state_var_names.insert(format!("{}_", name));
+        }
+
+        // Walk all operator bodies to find Record expressions and RecordAccess on state vars
         for op in &module.operators {
             self.collect_records_from_expr_fields(
                 &op.body,
@@ -3007,6 +3025,7 @@ impl ModuleTranslator {
                 &mut per_record_keys,
                 &mut string_fields,
                 &string_ops,
+                &state_var_names,
             );
         }
 
@@ -3084,7 +3103,8 @@ impl ModuleTranslator {
         }
     }
 
-    /// Walk an expression tree to collect record field names, per-record keys, and field types
+    /// Walk an expression tree to collect record field names, per-record keys, and field types.
+    /// Also collects field names from RecordAccess on state variables (state_var_names).
     fn collect_records_from_expr_fields(
         &self,
         expr: &TlaExpr,
@@ -3092,6 +3112,7 @@ impl ModuleTranslator {
         keys: &mut Vec<String>,
         string_fields: &mut std::collections::HashSet<String>,
         string_ops: &std::collections::HashSet<String>,
+        state_var_names: &std::collections::HashSet<String>,
     ) {
         match expr {
             TlaExpr::Record(fields) => {
@@ -3115,6 +3136,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                 }
             }
@@ -3129,6 +3151,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
@@ -3138,6 +3161,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     right,
@@ -3145,6 +3169,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::OpApply { op, args } => {
@@ -3154,6 +3179,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 for arg in args {
                     self.collect_records_from_expr_fields(
@@ -3162,6 +3188,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                 }
             }
@@ -3172,6 +3199,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     arg,
@@ -3179,6 +3207,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::IfThenElse {
@@ -3192,6 +3221,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     then_expr,
@@ -3199,6 +3229,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     else_expr,
@@ -3206,6 +3237,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::SetEnum(elements)
@@ -3218,6 +3250,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                 }
             }
@@ -3228,6 +3261,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     filter,
@@ -3235,6 +3269,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::SetMap { expr, set, .. } => {
@@ -3244,6 +3279,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     set,
@@ -3251,6 +3287,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::FnConstruct { domain, body, .. } => {
@@ -3260,6 +3297,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     body,
@@ -3267,6 +3305,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::FnExcept { func, updates } => {
@@ -3276,6 +3315,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 for update in updates {
                     for path in &update.path {
@@ -3286,6 +3326,7 @@ impl ModuleTranslator {
                                 keys,
                                 string_fields,
                                 string_ops,
+                                state_var_names,
                             );
                         }
                     }
@@ -3295,6 +3336,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                 }
             }
@@ -3305,6 +3347,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     range,
@@ -3312,15 +3355,26 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
-            TlaExpr::RecordAccess { record, .. } => {
+            TlaExpr::RecordAccess { record, field } => {
+                // When the record base is a state variable (e.g., s.field, s_.field),
+                // also collect the field name into all_fields. This ensures that state
+                // fields accessed via dot notation (not just record constructors) are
+                // included in the generated LRecord struct.
+                if let TlaExpr::Ident(name) = record.as_ref() {
+                    if state_var_names.contains(name) {
+                        all_fields.insert(field.clone());
+                    }
+                }
                 self.collect_records_from_expr_fields(
                     record,
                     all_fields,
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
@@ -3332,6 +3386,7 @@ impl ModuleTranslator {
                             keys,
                             string_fields,
                             string_ops,
+                            state_var_names,
                         );
                     }
                 }
@@ -3341,6 +3396,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::Choose { set, body, .. } => {
@@ -3351,6 +3407,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                 }
                 self.collect_records_from_expr_fields(
@@ -3359,6 +3416,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::Case { arms, other } => {
@@ -3369,6 +3427,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                     self.collect_records_from_expr_fields(
                         body,
@@ -3376,6 +3435,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                 }
                 if let Some(other_expr) = other {
@@ -3385,6 +3445,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                 }
             }
@@ -3396,6 +3457,7 @@ impl ModuleTranslator {
                         keys,
                         string_fields,
                         string_ops,
+                        state_var_names,
                     );
                 }
                 self.collect_records_from_expr_fields(
@@ -3404,6 +3466,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
@@ -3413,6 +3476,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
                 self.collect_records_from_expr_fields(
                     action,
@@ -3420,6 +3484,7 @@ impl ModuleTranslator {
                     keys,
                     string_fields,
                     string_ops,
+                    state_var_names,
                 );
             }
             _ => {}
