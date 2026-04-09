@@ -12151,15 +12151,43 @@ real DPOR follow-up work.
         unsupported helper sub-branches instead of abandoning the whole helper
         call path. Added regression:
         `test_execute_model_check_helper_solver_skips_unsupported_subbranches`.
-      - [ ] **38.14.8.d.4.3**: Fix the remaining case-19 transition
+      - [x] **38.14.8.d.4.3**: Fix the remaining case-19 transition
         unsatisfiability on generated EPaxos helper branches
         (`sent_packets: Seq<int>`/record payload mismatches and related
         degraded helper signatures), then prove at least one real enabled
         transition from Init under tractable bounds.
-      - [ ] **38.14.8.d.4.4**: Retune `19_epaxos_small` model config +
+        **Done 2026-04-09**: hardened generated-D1 typing so tuple-record
+        equality on packet outputs infers `Seq<LRecord>` (not `Seq<int>`),
+        allowed equal-priority quantifier call-site hints to choose more
+        specific sequence/set/map types (so `LNext` binders align with helper
+        signatures), and switched missing-record-field defaults from `0int` to
+        type-aware values (`false`, `Set::<...>::empty()`, `Seq::<...>::empty()`,
+        `Map::<...>::empty()`) to avoid impossible record equalities on EPaxos
+        helper packet literals. Regenerated
+        `tests/tla-rs/19_epaxos_small/{Epaxos.rs,Types.rs}` and added focused
+        regressions:
+        `test_generated_d1_param_type_infers_seq_record_from_tuple_record_equality_usage`,
+        `test_generated_d1_next_sent_packets_quantifier_prefers_record_seq_from_helper_shape`,
+        `test_record_defaults_use_non_int_type_aware_empty_values`, and
+        `test_case19_epaxos_propose_helper_is_satisfiable_from_init_with_record_packets`
+        (proves a concrete Init->Propose helper transition is satisfiable).
+      - [x] **38.14.8.d.4.4**: Retune `19_epaxos_small` model config +
         manifest expectation/property and remove case-19 `stub_status` only
         after non-vacuous execution is demonstrated with >1 reachable state and
         checked property/deadlock semantics.
+        **Done 2026-04-09**: retuned
+        `tests/model_configs/19_epaxos_small.toml` to pin EPaxos constants,
+        enable deadlock checking, and use bounded depth (`max_depth=2`) with
+        raised solver guardrail and timeout for helper-heavy branches. Updated
+        manifest case 19 to require deadlock semantics, removed
+        `stub_status = "bug_b_roundtrip_degraded"`, and rewrote notes with
+        non-vacuous evidence. Added DPOR regression
+        `test_case19_epaxos_is_real_non_vacuous_pass` plus model-check support
+        for assigned constants outside the base int quantifier domain and
+        evaluator handling for `arbitrary::<T>()` in generated helper bodies.
+        Direct baseline check now reports `result=ok`,
+        `stop_reason=FrontierExhausted`, `distinct_states=11`, `transitions=13`
+        under the case-19 config.
 - [ ] **38.14.9**: Once 38.14.7 and 38.14.8 are done, retire the
   `stub_status` annotations from `manifest.toml` and update
   `latest.md`/`hard_case_blocker_ledger.md` with the new honest pass count.

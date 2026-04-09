@@ -17,7 +17,14 @@ pub fn expand_branch_existentials(
     schema: &SpecSchema,
     model: &ModelConfig,
 ) -> TranspileResult<Vec<ExistentialAssignment>> {
-    let expansion_limit = model.search.max_states;
+    // Existential-domain expansion is a per-branch candidate concern; keep it
+    // aligned with the candidate-evaluation guardrail rather than strict global
+    // visited-state cap so pinned-state fallback can still run with small
+    // search.max_states.
+    let expansion_limit = model
+        .search
+        .max_states
+        .max(model.search.candidate_eval_guardrail);
     let bounds = RuntimeCollectionBounds::from(&model.collections);
     let mut var_domains = Vec::new();
 
@@ -70,7 +77,10 @@ pub fn expand_extra_params(
     if extra_params.is_empty() {
         return Ok(vec![BTreeMap::new()]);
     }
-    let expansion_limit = model.search.max_states;
+    let expansion_limit = model
+        .search
+        .max_states
+        .max(model.search.candidate_eval_guardrail);
     let bounds = RuntimeCollectionBounds::from(&model.collections);
     let mut var_domains = Vec::new();
     for var in extra_params {
@@ -1436,6 +1446,7 @@ mod tests {
     fn test_expand_branch_existentials_enforces_assignment_limit() {
         let mut model = base_model();
         model.search.max_states = 3;
+        model.search.candidate_eval_guardrail = 3;
         model.quantifiers.int = Some(IntDomain { min: 0, max: 3 });
 
         let branch = mk_branch(vec![ExistentialVarIr {

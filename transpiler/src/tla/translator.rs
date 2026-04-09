@@ -573,6 +573,45 @@ impl<'a> ExprTranslator<'a> {
         normalized.ends_with("Record") || normalized.ends_with("State")
     }
 
+    fn default_value_for_type_hint(expected_ty: &str) -> String {
+        let normalized = expected_ty
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>();
+        if normalized == "Seq<char>" {
+            return "\"\"@".to_string();
+        }
+        if normalized == "bool" {
+            return "false".to_string();
+        }
+        if normalized.starts_with("Set<") && normalized.ends_with('>') {
+            let inner = &normalized["Set<".len()..normalized.len() - 1];
+            return format!("Set::<{}>::empty()", inner);
+        }
+        if normalized.starts_with("Seq<") && normalized.ends_with('>') {
+            let inner = &normalized["Seq<".len()..normalized.len() - 1];
+            return format!("Seq::<{}>::empty()", inner);
+        }
+        if normalized.starts_with("Map<") && normalized.ends_with('>') {
+            let inner = &normalized["Map<".len()..normalized.len() - 1];
+            if let Some((key, value)) = inner.split_once(',') {
+                return format!("Map::<{},{}>::empty()", key, value);
+            }
+            return "Map::<int,int>::empty()".to_string();
+        }
+        if normalized == "int"
+            || normalized == "nat"
+            || normalized.ends_with("*/int")
+            || normalized.ends_with("*/nat")
+        {
+            return "0int".to_string();
+        }
+        if !normalized.is_empty() {
+            return format!("arbitrary::<{}>()", expected_ty.trim());
+        }
+        "0int".to_string()
+    }
+
     fn record_struct_hint_from_expr(&self, expr: &TlaExpr) -> Option<String> {
         let TlaExpr::Record(fields) = expr else {
             return None;
@@ -764,15 +803,41 @@ impl<'a> ExprTranslator<'a> {
         }
     }
 
+    fn quantifier_hint_is_more_specific(candidate: &str, current: &str) -> bool {
+        let candidate_norm = candidate
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>();
+        let current_norm = current
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>();
+        if candidate_norm == current_norm {
+            return false;
+        }
+        if Self::type_hint_is_seq(&candidate_norm) && Self::type_hint_is_seq(&current_norm) {
+            return current_norm == "Seq<int>" && candidate_norm != "Seq<int>";
+        }
+        if Self::type_hint_is_set(&candidate_norm) && Self::type_hint_is_set(&current_norm) {
+            return current_norm == "Set<int>" && candidate_norm != "Set<int>";
+        }
+        if Self::type_hint_is_map(&candidate_norm) && Self::type_hint_is_map(&current_norm) {
+            return current_norm == "Map<int,int>" && candidate_norm != "Map<int,int>";
+        }
+        Self::type_hint_is_record_like(&candidate_norm) && !Self::type_hint_is_record_like(&current_norm)
+    }
+
     fn update_quantifier_var_hint(&self, best: &mut Option<String>, candidate: &str) {
         let candidate_priority = Self::quantifier_var_hint_priority(candidate);
         if candidate_priority == 0 {
             return;
         }
-        if best
-            .as_ref()
-            .is_none_or(|current| Self::quantifier_var_hint_priority(current) < candidate_priority)
-        {
+        if best.as_ref().is_none_or(|current| {
+            let current_priority = Self::quantifier_var_hint_priority(current);
+            current_priority < candidate_priority
+                || (current_priority == candidate_priority
+                    && Self::quantifier_hint_is_more_specific(candidate, current))
+        }) {
             *best = Some(candidate.to_string());
         }
     }
@@ -2100,15 +2165,13 @@ impl<'a> ExprTranslator<'a> {
                     all_field_strs.push(format!("{}: {}", safe_name, rendered_value));
                 } else if !present.contains(all_field.as_str()) {
                     // Default value for missing fields (type-aware)
-                    let default_val = match self
-                        .config
-                        .record_field_types
-                        .get(all_field)
-                        .map(|s| s.as_str())
-                    {
-                        Some("Seq<char>") => "\"\"@",
-                        _ => "0int",
-                    };
+                    let default_val = Self::default_value_for_type_hint(
+                        self.config
+                            .record_field_types
+                            .get(all_field)
+                            .map(|s| s.as_str())
+                            .unwrap_or("int"),
+                    );
                     all_field_strs.push(format!("{}: {}", safe_name, default_val));
                 }
             }
@@ -6090,6 +6153,90 @@ impl ModuleTranslator {
             .to_hint()
     }
 
+    fn expr_contains_record_literal(expr: &TlaExpr) -> bool {
+        match expr {
+            TlaExpr::Record(_) => true,
+            TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
+                Self::expr_contains_record_literal(left) || Self::expr_contains_record_literal(right)
+            }
+            TlaExpr::UnaryOp { operand, .. }
+            | TlaExpr::Prime(operand)
+            | TlaExpr::Enabled(operand)
+            | TlaExpr::Always(operand)
+            | TlaExpr::Eventually(operand) => Self::expr_contains_record_literal(operand),
+            TlaExpr::OpApply { op, args } => {
+                Self::expr_contains_record_literal(op)
+                    || args.iter().any(Self::expr_contains_record_literal)
+            }
+            TlaExpr::FnApply { func, arg } => {
+                Self::expr_contains_record_literal(func) || Self::expr_contains_record_literal(arg)
+            }
+            TlaExpr::SetEnum(elements)
+            | TlaExpr::Tuple(elements)
+            | TlaExpr::Unchanged(elements) => {
+                elements.iter().any(Self::expr_contains_record_literal)
+            }
+            TlaExpr::SetFilter { set, filter, .. } => {
+                Self::expr_contains_record_literal(set)
+                    || Self::expr_contains_record_literal(filter)
+            }
+            TlaExpr::SetMap { expr, set, .. } => {
+                Self::expr_contains_record_literal(expr) || Self::expr_contains_record_literal(set)
+            }
+            TlaExpr::FnConstruct { domain, body, .. } => {
+                Self::expr_contains_record_literal(domain)
+                    || Self::expr_contains_record_literal(body)
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                Self::expr_contains_record_literal(func)
+                    || updates
+                        .iter()
+                        .any(|update| Self::expr_contains_record_literal(&update.value))
+            }
+            TlaExpr::RecordAccess { record, .. } => Self::expr_contains_record_literal(record),
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                vars.iter().any(|bound| {
+                    bound
+                        .set
+                        .as_ref()
+                        .is_some_and(Self::expr_contains_record_literal)
+                }) || Self::expr_contains_record_literal(body)
+            }
+            TlaExpr::Choose { set, body, .. } => {
+                set.as_ref()
+                    .is_some_and(|expr| Self::expr_contains_record_literal(expr))
+                    || Self::expr_contains_record_literal(body)
+            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::expr_contains_record_literal(cond)
+                    || Self::expr_contains_record_literal(then_expr)
+                    || Self::expr_contains_record_literal(else_expr)
+            }
+            TlaExpr::Case { arms, other } => {
+                arms.iter().any(|(cond, arm_body)| {
+                    Self::expr_contains_record_literal(cond)
+                        || Self::expr_contains_record_literal(arm_body)
+                }) || other
+                    .as_ref()
+                    .is_some_and(|expr| Self::expr_contains_record_literal(expr))
+            }
+            TlaExpr::LetIn { defs, body } => {
+                defs.iter()
+                    .any(|def| Self::expr_contains_record_literal(&def.body))
+                    || Self::expr_contains_record_literal(body)
+            }
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+                Self::expr_contains_record_literal(vars)
+                    || Self::expr_contains_record_literal(action)
+            }
+            _ => false,
+        }
+    }
+
     fn collect_identifier_usage_evidence(
         &self,
         expr: &TlaExpr,
@@ -6164,9 +6311,12 @@ impl ModuleTranslator {
                                 evidence.bool_usage = true;
                             } else if matches!(other, TlaExpr::Number(_) | TlaExpr::String(_)) {
                                 evidence.scalar_usage = true;
-                            } else if matches!(other, TlaExpr::Tuple(_)) {
+                            } else if let TlaExpr::Tuple(elements) = other {
                                 evidence.seq_len = true;
                                 evidence.seq_index_like = true;
+                                if elements.iter().any(Self::expr_contains_record_literal) {
+                                    evidence.seq_record_element_usage = true;
+                                }
                             } else if let TlaExpr::OpApply { op, .. } = other {
                                 if let TlaExpr::Ident(callee_name) = op.as_ref() {
                                     let hint = self.get_operator_return_type(callee_name);
@@ -10547,6 +10697,34 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_param_type_infers_seq_record_from_tuple_record_equality_usage() {
+        let op = TlaOperator::new(
+            "Foo",
+            TlaExpr::binop(
+                TlaBinOp::Eq,
+                TlaExpr::ident("sent_packets"),
+                TlaExpr::Tuple(vec![TlaExpr::Record(vec![(
+                    "sender".to_string(),
+                    TlaExpr::number(0),
+                )])]),
+            ),
+        )
+        .with_params(vec![crate::tla::ast::TlaParam::new("sent_packets")]);
+        let mut translator = ModuleTranslator::new();
+        let mut env = TypeEnv::new();
+        env.set_operator(
+            "Foo",
+            TlaType::function(TlaType::tuple(vec![TlaType::Int]), TlaType::Bool),
+        );
+        translator.type_env = Some(env);
+
+        assert_eq!(
+            translator.get_param_type(&op, 0, "sent_packets", true, "c"),
+            "Seq<LRecord>"
+        );
+    }
+
+    #[test]
     fn test_generated_d1_sent_packets_prefers_seq_over_inferred_int_without_hints() {
         let op = TlaOperator::new("Foo", TlaExpr::bool(true))
             .with_params(vec![crate::tla::ast::TlaParam::new("sent_packets")]);
@@ -10806,6 +10984,36 @@ mod tests {
     }
 
     #[test]
+    fn test_generated_d1_next_sent_packets_quantifier_prefers_record_seq_from_helper_shape() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANTS EPaxosMessage, State, Constants
+            Init(s, c) == TRUE
+            Propose(s, s_, c, sent_packets) == sent_packets = <<[sender |-> 0]>>
+            Next(s, s_, c) == \E sent_packets \in Seq(EPaxosMessage) : Propose(s, s_, c, sent_packets)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let output = translator.translate(&module);
+
+        assert!(
+            output.contains(
+                "pub open spec fn LPropose(s: LState, s_: LState, c_consts: LConstants, sent_packets: Seq<LRecord>) -> bool",
+            ),
+            "Expected helper signature to use Seq<LRecord> from tuple-record equality, got:\n{}",
+            output
+        );
+        assert!(
+            output.contains(
+                "exists |sent_packets: Seq<LRecord>| LPropose(s, s_, c_consts, sent_packets)"
+            ),
+            "Expected LNext quantifier to align with helper record-seq parameter type, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
     fn test_record_int_field_normalizes_c_field_value_with_variables_present() {
         let source = r"
             ---- MODULE Test ----
@@ -10863,6 +11071,65 @@ mod tests {
         assert!(
             out.contains("log_truncation_point: arbitrary::<int>()"),
             "Expected dotted c.ident to normalize for int record field, got:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_record_defaults_use_non_int_type_aware_empty_values() {
+        let mut config = TranslatorConfig::spec();
+        config
+            .record_structs
+            .insert("sender".to_string(), "LRecord".to_string());
+        config.record_all_fields = vec![
+            "sender".to_string(),
+            "is_leader".to_string(),
+            "accept_senders".to_string(),
+            "payloads".to_string(),
+            "meta".to_string(),
+        ];
+        config
+            .record_field_types
+            .insert("sender".to_string(), "int".to_string());
+        config
+            .record_field_types
+            .insert("is_leader".to_string(), "bool".to_string());
+        config
+            .record_field_types
+            .insert("accept_senders".to_string(), "Set<int>".to_string());
+        config
+            .record_field_types
+            .insert("payloads".to_string(), "Seq<int>".to_string());
+        config
+            .record_field_types
+            .insert("meta".to_string(), "Map<int, int>".to_string());
+        let translator = ExprTranslator::new(&config);
+        let expr = TlaExpr::Record(vec![("sender".to_string(), TlaExpr::number(1))]);
+
+        let out = translator.translate(&expr);
+        assert!(
+            out.contains("sender: 1"),
+            "Expected explicit int field value to be preserved, got:\n{}",
+            out
+        );
+        assert!(
+            out.contains("is_leader: false"),
+            "Expected bool default for missing bool field, got:\n{}",
+            out
+        );
+        assert!(
+            out.contains("accept_senders: Set::<int>::empty()"),
+            "Expected set default for missing set field, got:\n{}",
+            out
+        );
+        assert!(
+            out.contains("payloads: Seq::<int>::empty()"),
+            "Expected seq default for missing seq field, got:\n{}",
+            out
+        );
+        assert!(
+            out.contains("meta: Map::<int,int>::empty()"),
+            "Expected map default for missing map field, got:\n{}",
             out
         );
     }

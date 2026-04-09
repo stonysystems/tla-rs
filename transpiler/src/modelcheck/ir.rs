@@ -156,10 +156,23 @@ pub fn discover_lnext_branches(next_fn: &SpecFunction) -> TranspileResult<Vec<Tr
             .rev() // restore original order
             .collect();
 
-        let constraints = constraint_exprs
+        let constraints: Vec<BranchConstraintIr> = constraint_exprs
             .into_iter()
             .map(|expr| {
                 normalize_constraint(expr, current_state_param, next_state_param, constants_param)
+            })
+            .collect();
+        // Existentials are gathered by syntactic scope while flattening disjunctions.
+        // In generated-D1 shapes this can over-approximate branch-local variables
+        // (outer existentials remain in scope for right-hand disjuncts even when the
+        // branch body does not reference them). Prune truly-unused vars here so
+        // branch assignment expansion does not explode on irrelevant domains.
+        let existential_vars: Vec<ExistentialVarIr> = existential_vars
+            .into_iter()
+            .filter(|var| {
+                constraints
+                    .iter()
+                    .any(|constraint| constraint_mentions_identifier(constraint, &var.name))
             })
             .collect();
 
@@ -201,6 +214,114 @@ fn normalize_constraint(
         };
     }
     BranchConstraintIr::Predicate { expr }
+}
+
+fn constraint_mentions_identifier(constraint: &BranchConstraintIr, ident: &str) -> bool {
+    match constraint {
+        BranchConstraintIr::Eq { target, value } => {
+            matches!(&target.root, ConstraintRoot::Other(root) if root == ident)
+                || expr_mentions_identifier(value, ident)
+        }
+        BranchConstraintIr::Predicate { expr } => expr_mentions_identifier(expr, ident),
+    }
+}
+
+fn expr_mentions_identifier(expr: &Expr, ident: &str) -> bool {
+    match expr {
+        Expr::Ident(name) => name == ident,
+        Expr::Conjunction(items) | Expr::Disjunction(items) => items
+            .iter()
+            .any(|item| expr_mentions_identifier(item, ident)),
+        Expr::Implies(lhs, rhs)
+        | Expr::Iff(lhs, rhs)
+        | Expr::Eq(lhs, rhs)
+        | Expr::Ne(lhs, rhs)
+        | Expr::Lt(lhs, rhs)
+        | Expr::Le(lhs, rhs)
+        | Expr::Gt(lhs, rhs)
+        | Expr::Ge(lhs, rhs)
+        | Expr::Binary(lhs, _, rhs)
+        | Expr::Index(lhs, rhs) => {
+            expr_mentions_identifier(lhs, ident) || expr_mentions_identifier(rhs, ident)
+        }
+        Expr::Not(inner)
+        | Expr::View(inner)
+        | Expr::Cast(inner, _)
+        | Expr::Unary(_, inner)
+        | Expr::Field(inner, _)
+        | Expr::Arrow(inner, _)
+        | Expr::Is(inner, _) => expr_mentions_identifier(inner, ident),
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            expr_mentions_identifier(cond, ident)
+                || expr_mentions_identifier(then_branch, ident)
+                || else_branch
+                    .as_deref()
+                    .is_some_and(|branch| expr_mentions_identifier(branch, ident))
+        }
+        Expr::Match { scrutinee, arms } => {
+            expr_mentions_identifier(scrutinee, ident)
+                || arms.iter().any(|arm| {
+                    arm.guard
+                        .as_ref()
+                        .is_some_and(|guard| expr_mentions_identifier(guard, ident))
+                        || expr_mentions_identifier(&arm.body, ident)
+                })
+        }
+        Expr::Let {
+            binding,
+            value,
+            body,
+        } => {
+            expr_mentions_identifier(value, ident)
+                || (binding.name() != Some(ident) && expr_mentions_identifier(body, ident))
+        }
+        Expr::Forall {
+            vars,
+            triggers,
+            body,
+        } => {
+            let shadowed = vars.iter().any(|var| var.name() == Some(ident));
+            triggers.iter().any(|trigger| {
+                trigger
+                    .exprs
+                    .iter()
+                    .any(|expr| expr_mentions_identifier(expr, ident))
+            }) || (!shadowed && expr_mentions_identifier(body, ident))
+        }
+        Expr::Exists { vars, body } | Expr::Choose { vars, body } => {
+            let shadowed = vars.iter().any(|var| var.name() == Some(ident));
+            !shadowed && expr_mentions_identifier(body, ident)
+        }
+        Expr::Closure { params, body } => {
+            let shadowed = params.iter().any(|param| param.name() == Some(ident));
+            !shadowed && expr_mentions_identifier(body, ident)
+        }
+        Expr::Struct { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_mentions_identifier(value, ident)),
+        Expr::StructUpdate { base, fields, .. } => {
+            expr_mentions_identifier(base, ident)
+                || fields
+                    .iter()
+                    .any(|(_, value)| expr_mentions_identifier(value, ident))
+        }
+        Expr::SeqLit(items) | Expr::SetLit(items) => items
+            .iter()
+            .any(|item| expr_mentions_identifier(item, ident)),
+        Expr::MapLit(entries) => entries.iter().any(|(key, value)| {
+            expr_mentions_identifier(key, ident) || expr_mentions_identifier(value, ident)
+        }),
+        Expr::Call { args, .. } => args.iter().any(|arg| expr_mentions_identifier(arg, ident)),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_mentions_identifier(receiver, ident)
+                || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
+        }
+        Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty => false,
+    }
 }
 
 fn discover_disjunctive_branches(expr: &Expr) -> Vec<DiscoveredBranch> {
@@ -492,9 +613,11 @@ mod tests {
         let branches = discover_lnext_branches(&mk_lnext(body)).unwrap();
         assert_eq!(branches.len(), 2);
 
+        assert_eq!(branches[0].existential_vars.len(), 1);
+        assert_eq!(branches[0].existential_vars[0].name, "i");
+        assert_eq!(branches[1].existential_vars.len(), 0);
+
         for branch in &branches {
-            assert_eq!(branch.existential_vars.len(), 1);
-            assert_eq!(branch.existential_vars[0].name, "i");
             assert_eq!(branch.constraints.len(), 1);
             match &branch.constraints[0] {
                 BranchConstraintIr::Eq { target, .. } => {

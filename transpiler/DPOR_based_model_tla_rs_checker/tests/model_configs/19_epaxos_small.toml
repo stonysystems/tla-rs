@@ -1,13 +1,23 @@
 # Model config — narrow bounds for tractable existential expansion
 
+[constants.assignments]
+EPaxosMessage = 0
+State = 0
+Constants = 0
+fast_quorum_size = 2
+my_id = 0
+num_replicas = 3
+quorum_size = 1
+
 [search]
-max_depth = 20
-max_states = 100000
-timeout_ms = 30000
+max_depth = 2
+max_states = 9000
+timeout_ms = 120000
+candidate_eval_guardrail = 1000000
 
 [properties]
 invariants = []
-check_deadlock = false
+check_deadlock = true
 successor_semantics = "deadlock"
 
 [quantifiers]

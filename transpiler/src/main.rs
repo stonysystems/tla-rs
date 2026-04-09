@@ -2995,28 +2995,114 @@ fn constants_candidate_matches_config(
     Ok(true)
 }
 
+fn assignment_value_for_constant_field(
+    assigned: &verus_transpiler::modelcheck::config::ModelValue,
+    existing_field: &verus_transpiler::modelcheck::value::RuntimeValue,
+    field_name: &str,
+) -> Result<verus_transpiler::modelcheck::value::RuntimeValue> {
+    use verus_transpiler::modelcheck::value::RuntimeValue;
+
+    let converted = RuntimeValue::from(assigned);
+    match (existing_field, converted) {
+        (RuntimeValue::Nat(_), RuntimeValue::Int(v)) if v >= 0 => Ok(RuntimeValue::Nat(v as u64)),
+        (RuntimeValue::Nat(_), RuntimeValue::Int(v)) => Err(miette::miette!(
+            "Invalid constants assignment: field `{}` expects nat-compatible values, got `{}`.",
+            field_name,
+            v
+        )),
+        (_, value) => Ok(value),
+    }
+}
+
+fn synthesize_constants_candidates_from_assignments(
+    candidates: &[verus_transpiler::modelcheck::value::RuntimeValue],
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+) -> Result<Vec<verus_transpiler::modelcheck::value::RuntimeValue>> {
+    use std::collections::BTreeSet;
+    use verus_transpiler::modelcheck::value::RuntimeValue;
+
+    if model_config.constants.assignments.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut synthesized = Vec::new();
+    for candidate in candidates {
+        let RuntimeValue::Struct { ty, fields } = candidate else {
+            continue;
+        };
+        let mut rewritten_fields = fields.clone();
+        for (field, assigned) in &model_config.constants.assignments {
+            let existing_field = rewritten_fields.get(field).ok_or_else(|| {
+                miette::miette!(
+                    "Invalid constants assignment: field `{}` does not exist on candidate constants value `{}`.",
+                    field,
+                    candidate.canonical_key()
+                )
+            })?;
+            let replacement = assignment_value_for_constant_field(assigned, existing_field, field)?;
+            rewritten_fields.insert(field.clone(), replacement);
+        }
+
+        let candidate = RuntimeValue::Struct {
+            ty: ty.clone(),
+            fields: rewritten_fields,
+        };
+        if constants_candidate_matches_config(&candidate, model_config)? {
+            let key = candidate.canonical_key();
+            if seen.insert(key) {
+                synthesized.push(candidate);
+            }
+        }
+    }
+
+    Ok(synthesized)
+}
+
 fn resolve_constants_values(
     candidates: Vec<verus_transpiler::modelcheck::value::RuntimeValue>,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
 ) -> Result<Vec<verus_transpiler::modelcheck::value::RuntimeValue>> {
     use std::collections::BTreeSet;
 
+    let mut unique_candidates = Vec::new();
     let mut seen = BTreeSet::new();
-    let mut filtered = Vec::new();
     for candidate in candidates {
         let key = candidate.canonical_key();
         if !seen.insert(key) {
             continue;
         }
-        if constants_candidate_matches_config(&candidate, model_config)? {
-            filtered.push(candidate);
+        unique_candidates.push(candidate);
+    }
+
+    let mut filtered = Vec::new();
+    for candidate in &unique_candidates {
+        if constants_candidate_matches_config(candidate, model_config)? {
+            filtered.push(candidate.clone());
         }
+    }
+
+    if filtered.is_empty() {
+        filtered = synthesize_constants_candidates_from_assignments(
+            unique_candidates.as_slice(),
+            model_config,
+        )?;
     }
 
     if filtered.is_empty() {
         return Err(miette::miette!(
             "Model-check constants resolution produced zero matching `LConstants` valuations. \
              Add/adjust `[constants.assignments]`, `[constants.domains]`, and quantifier domains."
+        ));
+    }
+
+    if filtered.len() > model_config.search.max_states {
+        return Err(miette::miette!(
+            "Model-check constants resolution produced {} `LConstants` valuations, \
+             exceeding configured search.max_states ({}). Narrow constants assignments/domains \
+             or increase max_states.",
+            filtered.len(),
+            model_config.search.max_states
         ));
     }
 
@@ -7811,6 +7897,89 @@ max = 2
     }
 
     #[test]
+    fn test_execute_model_check_constants_assignments_can_synthesize_out_of_domain_values() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 3 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 0 && s_.value == 1 && c.limit == 3)
+        || (s.value == 1 && s_.value == 1 && c.limit == 3)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 3
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[search]
+max_depth = 3
+max_states = 50
+
+[properties]
+check_deadlock = true
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(execution.summary.constants_valuations_total, 1);
+        assert_eq!(execution.summary.constants_valuations_explored, 1);
+        assert!(execution.summary.states >= 2);
+        assert!(execution.summary.transitions >= 1);
+    }
+
+    #[test]
     fn test_execute_model_check_reports_leads_to_violation_on_avoidable_cycle() {
         use verus_transpiler::modelcheck::config::parse_model_config_file;
         use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
@@ -8406,6 +8575,145 @@ max = 1
 
         assert_eq!(execution.summary.result, "ok");
         assert!(execution.summary.states >= 1);
+    }
+
+    #[test]
+    fn test_case19_epaxos_propose_helper_is_satisfiable_from_init_with_record_packets() {
+        use std::collections::BTreeSet;
+        use std::path::PathBuf;
+        use verus_transpiler::ast::Path;
+        use verus_transpiler::modelcheck::config::parse_model_config_str;
+        use verus_transpiler::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let protocol_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            "DPOR_based_model_tla_rs_checker/tests/tla-rs/19_epaxos_small/Epaxos.rs",
+        );
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            protocol_path.as_path(),
+            None,
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_str(
+            r#"
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
+        let bounds = RuntimeCollectionBounds::from(&model_config.collections);
+
+        let empty_set = || RuntimeValue::Set(BTreeSet::new());
+        let singleton_set =
+            |v: i128| RuntimeValue::Set(BTreeSet::from([RuntimeValue::Int(v)]));
+
+        let init_state = RuntimeValue::struct_value(
+            "LState",
+            vec![
+                ("accept_senders".to_string(), empty_set()),
+                ("ballot".to_string(), RuntimeValue::Int(0)),
+                ("cmd".to_string(), RuntimeValue::Int(0)),
+                ("committed_count".to_string(), RuntimeValue::Int(0)),
+                ("dep_count".to_string(), RuntimeValue::Int(0)),
+                ("executed_count".to_string(), RuntimeValue::Int(0)),
+                ("has_conflict".to_string(), RuntimeValue::Bool(false)),
+                ("is_leader".to_string(), RuntimeValue::Bool(false)),
+                ("max_resp_seq".to_string(), RuntimeValue::Int(0)),
+                ("phase".to_string(), RuntimeValue::Int(1)),
+                ("preaccept_senders".to_string(), empty_set()),
+                ("seq".to_string(), RuntimeValue::Int(0)),
+            ],
+        )
+        .unwrap();
+
+        let constants = RuntimeValue::struct_value(
+            "LConstants",
+            vec![
+                ("EPaxosMessage".to_string(), RuntimeValue::Int(0)),
+                ("State".to_string(), RuntimeValue::Int(0)),
+                ("Constants".to_string(), RuntimeValue::Int(0)),
+                ("fast_quorum_size".to_string(), RuntimeValue::Int(2)),
+                ("my_id".to_string(), RuntimeValue::Int(0)),
+                ("num_replicas".to_string(), RuntimeValue::Int(3)),
+                ("quorum_size".to_string(), RuntimeValue::Int(1)),
+            ],
+        )
+        .unwrap();
+
+        let init_result = eval_spec_function_call_recursive(
+            &bundle.spec_functions,
+            &bundle.schema,
+            &model_config,
+            &Path::single("LInit".to_string()),
+            &[init_state.clone(), constants.clone()],
+            bounds,
+            0,
+        )
+        .unwrap();
+        assert_eq!(init_result, RuntimeValue::Bool(true));
+
+        let next_state = RuntimeValue::struct_value(
+            "LState",
+            vec![
+                ("accept_senders".to_string(), empty_set()),
+                ("ballot".to_string(), RuntimeValue::Int(0)),
+                ("cmd".to_string(), RuntimeValue::Int(0)),
+                ("committed_count".to_string(), RuntimeValue::Int(0)),
+                ("dep_count".to_string(), RuntimeValue::Int(0)),
+                ("executed_count".to_string(), RuntimeValue::Int(0)),
+                ("has_conflict".to_string(), RuntimeValue::Bool(false)),
+                ("is_leader".to_string(), RuntimeValue::Bool(true)),
+                ("max_resp_seq".to_string(), RuntimeValue::Int(0)),
+                ("phase".to_string(), RuntimeValue::Int(2)),
+                ("preaccept_senders".to_string(), singleton_set(0)),
+                ("seq".to_string(), RuntimeValue::Int(1)),
+            ],
+        )
+        .unwrap();
+
+        let sent_packets = RuntimeValue::Seq(vec![
+            RuntimeValue::struct_value(
+                "LRecord",
+                vec![
+                    ("accept_senders".to_string(), empty_set()),
+                    ("ballot".to_string(), RuntimeValue::Int(0)),
+                    ("cmd".to_string(), RuntimeValue::Int(0)),
+                    ("committed_count".to_string(), RuntimeValue::Int(0)),
+                    ("conflict".to_string(), RuntimeValue::Int(0)),
+                    ("dep_count".to_string(), RuntimeValue::Int(0)),
+                    ("executed_count".to_string(), RuntimeValue::Int(0)),
+                    ("has_conflict".to_string(), RuntimeValue::Bool(false)),
+                    ("is_leader".to_string(), RuntimeValue::Bool(false)),
+                    ("max_resp_seq".to_string(), RuntimeValue::Int(0)),
+                    ("phase".to_string(), RuntimeValue::Int(0)),
+                    ("preaccept_senders".to_string(), empty_set()),
+                    ("sender".to_string(), RuntimeValue::Int(0)),
+                    ("seq".to_string(), RuntimeValue::Int(1)),
+                ],
+            )
+            .unwrap(),
+        ]);
+
+        let propose_result = eval_spec_function_call_recursive(
+            &bundle.spec_functions,
+            &bundle.schema,
+            &model_config,
+            &Path::single("LPropose".to_string()),
+            &[
+                init_state,
+                next_state,
+                constants,
+                RuntimeValue::Int(0),
+                sent_packets,
+            ],
+            bounds,
+            0,
+        )
+        .unwrap();
+        assert_eq!(propose_result, RuntimeValue::Bool(true));
     }
 
     #[test]

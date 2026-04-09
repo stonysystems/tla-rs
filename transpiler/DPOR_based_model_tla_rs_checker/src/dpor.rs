@@ -1757,6 +1757,38 @@ max_seq_len = 4
     }
 
     #[test]
+    fn test_case19_epaxos_is_real_non_vacuous_pass() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/19_epaxos_small/Epaxos.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: case 19 translated spec not found");
+            return;
+        }
+
+        let transpiler = match crate::baseline::find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: transpiler binary not found");
+                return;
+            }
+        };
+
+        let model_path = case_model_config("19_epaxos_small");
+        let result = crate::baseline::run_baseline(&transpiler, &spec_file, &model_path, &[], 180);
+
+        assert_eq!(
+            result.result, "ok",
+            "Case 19 must be a real pass with deadlock semantics enabled: {:?}",
+            result
+        );
+        assert!(
+            result.distinct_states > 1,
+            "Case 19 must explore >1 states to be non-vacuous; got {}",
+            result.distinct_states
+        );
+    }
+
+    #[test]
     fn test_case20_raft_is_real_non_vacuous_pass() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/20_raft_small/Raft.rs");

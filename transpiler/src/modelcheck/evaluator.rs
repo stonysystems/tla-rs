@@ -1050,6 +1050,12 @@ fn eval_builtin_static_call(
     args: &[RuntimeValue],
     bounds: RuntimeCollectionBounds,
 ) -> TranspileResult<Option<RuntimeValue>> {
+    if args.is_empty() {
+        if let Some(value) = eval_arbitrary_call(path_name(func).as_str(), bounds)? {
+            return Ok(Some(value));
+        }
+    }
+
     let segments = normalized_path_segments(func);
     if segments.len() != 2 {
         return Ok(None);
@@ -1063,6 +1069,47 @@ fn eval_builtin_static_call(
         ("Map", "empty") => Ok(Some(RuntimeValue::map_bounded(Vec::new(), &bounds)?)),
         _ => Ok(None),
     }
+}
+
+fn eval_arbitrary_call(
+    raw_path: &str,
+    bounds: RuntimeCollectionBounds,
+) -> TranspileResult<Option<RuntimeValue>> {
+    let has_arbitrary = raw_path.contains("arbitrary::<")
+        || raw_path
+            .split("::")
+            .last()
+            .map(|segment| segment.trim() == "arbitrary")
+            .unwrap_or(false);
+    if !has_arbitrary {
+        return Ok(None);
+    }
+
+    let ty_hint = raw_path.find("arbitrary::<").and_then(|idx| {
+        let rest = &raw_path[idx + "arbitrary::<".len()..];
+        rest.rfind('>').map(|end| rest[..end].trim().to_string())
+    });
+
+    let value = match ty_hint.as_deref() {
+        Some("bool") => RuntimeValue::Bool(false),
+        Some("nat") | Some("u64") | Some("u32") | Some("u16") | Some("u8") | Some("usize") => {
+            RuntimeValue::Nat(0)
+        }
+        Some("Seq<char>") | Some("vstd::seq::Seq<char>") => RuntimeValue::String(String::new()),
+        Some(ty) if ty.starts_with("Seq<") || ty.contains("::Seq<") => {
+            RuntimeValue::seq_bounded(Vec::new(), &bounds)?
+        }
+        Some(ty) if ty.starts_with("Set<") || ty.contains("::Set<") => {
+            RuntimeValue::set_bounded(Vec::new(), &bounds)?
+        }
+        Some(ty) if ty.starts_with("Map<") || ty.contains("::Map<") => {
+            RuntimeValue::map_bounded(Vec::new(), &bounds)?
+        }
+        // Unknown/opaque type arguments default to `0int` to keep
+        // generated helper predicates evaluable under bounded search.
+        _ => RuntimeValue::Int(0),
+    };
+    Ok(Some(value))
 }
 
 /// Evaluate Map::new(domain_set, |key| value) by applying the closure to each domain element.
@@ -1472,6 +1519,30 @@ mod tests {
         };
         let out = eval_expr(&expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(out, RuntimeValue::Int(20));
+    }
+
+    #[test]
+    fn test_eval_arbitrary_call_defaults_by_type_hint() {
+        let int_expr = Expr::Call {
+            func: Path::single("arbitrary::<int>".to_string()),
+            args: vec![],
+        };
+        let int_out = eval_expr(&int_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(int_out, RuntimeValue::Int(0));
+
+        let bool_expr = Expr::Call {
+            func: Path::single("arbitrary::<bool>".to_string()),
+            args: vec![],
+        };
+        let bool_out = eval_expr(&bool_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(bool_out, RuntimeValue::Bool(false));
+
+        let seq_expr = Expr::Call {
+            func: Path::single("arbitrary::<Seq<int>>".to_string()),
+            args: vec![],
+        };
+        let seq_out = eval_expr(&seq_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(seq_out, RuntimeValue::Seq(Vec::new()));
     }
 
     #[test]
