@@ -10,15 +10,15 @@ Protocol cases 13-20: honest status after Phase 38.14 audit.
 | 15 | ChainReplication | ok, 0 states | **VACUOUS** | B: same fingerprint as case 14 |
 | 16 | PrimaryBackup | ok, 0 states | **VACUOUS** | B: same fingerprint as case 14 (LSafetyInactiveStateIsQuiescent also collapses to arbitrary soup) |
 | 17 | Paxos | ok, 40 states | **REAL PASS** | Fixed in 38.14.7.b: replaced stuttering source stub with a bounded 2-acceptor/2-value model, included all `Send1a/Send1b/Send2a/Send2b` parameter combinations in `Next`, wired `expected_property = "ChosenValueAgreement"`, and removed stub status |
-| 18 | PBFT | ok, 31 states | **VACUOUS** | A: `Next == EnterCommit \/ ExecuteAndReply \/ ViewChange` drops the three parameterized `Send*` actions, so prepareCount/commitCount stay 0 forever and EnterCommit/ExecuteAndReply are unreachable. With `Replica = 1` even if Send actions worked there would be no BFT scenario. CommitSafety is real but never checked at runtime |
+| 18 | PBFT | ok, 50 states | **REAL PASS** | Fixed in 38.14.7.c: replaced the vacuous stub with a bounded PBFT model where `Next` includes `SendPrePrepare`/`SendPrepare`/`SendCommit` plus phase transitions, wired `expected_property = "PBFTSafety"`, set model constants `replica=4, f=1`, and removed stub status |
 | 19 | EPaxos | ok, 0 states | **VACUOUS** | B: same fingerprint as case 14 (12 arbitrary-soup operator bodies) |
 | 20 | Raft | ok, 31 states | **VACUOUS** | A: Source `Raft.tla` is a single-node role automaton (no log, no AppendEntries, no commitIndex, no quorums). `Next == BecomeCandidate \/ BecomeLeader \/ StepDown` drops `GrantVote(voter)`. `AtMostOneLeader == state = Leader => votesGranted = votesGranted` is a literal `X => X` tautology. The CONSTANT `Server` is never referenced anywhere in the spec, so `Server = 2` in the model config is dead |
 
-**Real protocol coverage: 2/8**
+**Real protocol coverage: 3/8**
 
 ## Bug Taxonomy
 
-- **Bug A — Hand-written stub TLA+** (remaining cases 18, 20): the source
+- **Bug A — Hand-written stub TLA+** (remaining case 20): the source
   `tests/tla/<case>/*.tla` file is itself a degenerate stub. The translator
   is faithful; the input is broken. Common pattern: `Next` drops every action
   with extra parameters beyond `(s, s_, c)` (probably to avoid setting up
@@ -48,4 +48,4 @@ real actions, that invariants were non-tautological, or that the runtime
 `--invariant` flag was wired through. The 16/20 → 20/20 jump was a clean-exit
 jump, not a model-checking-correctness jump.
 
-## Updated: 2026-04-09 — 14 real / 6 vacuous baseline (after 38.14.7.b)
+## Updated: 2026-04-09 — 15 real / 5 vacuous baseline (after 38.14.7.c)

@@ -290,14 +290,13 @@ tla_entry = "PBFT.tla"
 tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "ok"
-expected_property = ""
-model_bounds = "Replica=1, int 0..1"
+expected_property = "PBFTSafety"
+model_bounds = "replica=4, f=1, int 0..4, max_set/seq/map_len=1"
 requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tests/tla_examples/PBFT.tla"
-stub_status = "bug_a_incomplete_next"
-notes = "VACUOUS PASS. Source PBFT.tla declares Next == EnterCommit \\/ ExecuteAndReply \\/ ViewChange and drops the existentially-parameterized SendPrePrepare(v,n,d), SendPrepare(r,v,n,d), and SendCommit(r,v,n,d) actions. With Replica=1 (no real BFT replication possible) and the message-sending actions unreachable, prepareCount/commitCount stay at 0, so the Prepared/Committed predicates and EnterCommit/ExecuteAndReply transitions are dead. CommitSafety and TypeOK are real (non-tautological) predicates but the manifest passes no --invariant, so they are never checked. The 31 reachable states are just the ViewChange self-loop reset cycle."
+notes = "REAL PASS candidate for Bug A: Next now includes SendPrePrepare/SendPrepare/SendCommit (plus EnterCommit/ExecuteAndReply/ViewChange), model constants enforce replica=4 and f=1, and PBFTSafety is a non-tautological safety invariant checked at runtime."
 
 [[case]]
 id = "19_epaxos_small"

@@ -1,11 +1,11 @@
 # DPOR Checker Suite Scoreboard
 
-## Phase 38.14 Follow-Up (2026-04-09): 14/20 honest, 6/20 vacuous
+## Phase 38.14 Follow-Up (2026-04-09): 15/20 honest, 5/20 vacuous
 
 The previous "Milestone M9: 20/20 ALL GREEN" claim from 2026-04-01 has been
-audited and rejected. After `38.14.7.a` (real TwoPhase case 13) and
-`38.14.7.b` (real Paxos case 17), the honest baseline-checker score is
-**14 real passes + 6 vacuous passes**. See `design.md`
+audited and rejected. After `38.14.7.a` (real TwoPhase case 13),
+`38.14.7.b` (real Paxos case 17), and `38.14.7.c` (real PBFT case 18),
+the honest baseline-checker score is **15 real passes + 5 vacuous passes**. See `design.md`
 §"Phase 38.14 Honest Postmortem" for the full root-cause analysis
 (Bug A: hand-written stub TLA+; Bug B: Verus → TLA+ → spec roundtrip
 degradation).
@@ -13,8 +13,8 @@ degradation).
 | Metric | Count |
 |--------|-------|
 | Total cases | 20 |
-| **Real passes** | **14** |
-| **Vacuous passes** | **6** |
+| **Real passes** | **15** |
+| **Vacuous passes** | **5** |
 | Translation failed | 0 |
 | Checker error | 0 |
 
@@ -44,7 +44,7 @@ returned but no property was checked, OR the explorer never reached any state.
 | 15 | `15_chain_repl` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
 | 16 | `16_primarybackup` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
 | 17 | `17_paxos` | ok | **REAL PASS** | 40 | — |
-| 18 | `18_pbft` | ok | **VACUOUS** (Replica=1, drops 3 Send actions, no inv) | 31 | bug_a_incomplete_next |
+| 18 | `18_pbft` | ok | **REAL PASS** | 50 | — |
 | 19 | `19_epaxos` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
 | 20 | `20_raft` | ok | **VACUOUS** (single-node toy, AtMostOneLeader is `X⇒X`) | 31 | bug_a_stub_source |
 
@@ -54,7 +54,7 @@ returned but no property was checked, OR the explorer never reached any state.
 |----------|--------------|-------|
 | Micro-models (01–05) | 5/5 | Real invariants, real verdicts |
 | Concurrency primitives (06–12) | 7/7 | Real invariants, including ticket lock, Peterson, bakery, R/W, dining phil |
-| **Protocols (13–20)** | **2/8** | Cases 13 and 17 are real; 14/15/16/18/19/20 remain vacuous or blocked |
+| **Protocols (13–20)** | **3/8** | Cases 13, 17, and 18 are real; 14/15/16/19/20 remain vacuous or blocked |
 
 ### Reproducing the Audit
 
@@ -72,17 +72,18 @@ returned but no property was checked, OR the explorer never reached any state.
 - **Phase 38.14 (2026-04-09): retracted M9 → 12 real / 8 vacuous**
 - **Phase 38.14.7.a (2026-04-09): case 13 fixed → 13 real / 7 vacuous**
 - **Phase 38.14.7.b (2026-04-09): case 17 fixed → 14 real / 6 vacuous**
+- **Phase 38.14.7.c (2026-04-09): case 18 fixed → 15 real / 5 vacuous**
 
 The growth from M8 (13 real) to the claimed M9 (20) consisted of vacuous
-passes. Post-audit protocol gains are now cases 13 and 17 moving to real
-passes under 38.14.7.a/38.14.7.b.
+passes. Post-audit protocol gains are now cases 13, 17, and 18 moving to real
+passes under 38.14.7.a/38.14.7.b/38.14.7.c.
 
 ### What's actually next
 
-To honestly raise the protocol score above 2/8:
+To honestly raise the protocol score above 3/8:
 
-1. **Bug A track** — replace the remaining hand-written stub TLA+ files for
-   cases 18 and 20 with real specifications that include all actions in `Next`,
+1. **Bug A track** — replace the remaining hand-written stub TLA+ file for
+   case 20 with a real specification that includes all actions in `Next`,
    non-tautological invariants, and meaningful constants. Keep
    `expected_property` wired in the manifest so `--invariant` is actually
    passed.
@@ -92,4 +93,4 @@ To honestly raise the protocol score above 2/8:
    and whose Init parameter is typed as the state struct, not `int`.
 3. Then re-run `./scripts/run_full_suite.sh --timeout 600` and
    `./scripts/detect_stub_specs.py` together; both must come back clean
-   before any pass count above 14 is trustworthy.
+   before any pass count above 15 is trustworthy.

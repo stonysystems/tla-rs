@@ -1,8 +1,9 @@
 # Model config for case 18: PBFT (small bounds)
-# phase uses Seq<char> for phase names.
+# Keep Replica >= 4 meaningful with explicit constant assignments.
 
 [constants.assignments]
-Replica = 1
+replica = 4
+f = 1
 
 [search]
 max_depth = 30
@@ -11,12 +12,12 @@ timeout_ms = 60000
 candidate_eval_guardrail = 200000
 
 [properties]
-invariants = []
+invariants = ["LPBFTSafety"]
 check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 1 }
+int = { min = 0, max = 4 }
 
 [collections]
 max_set_len = 1
