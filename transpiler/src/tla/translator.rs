@@ -3642,6 +3642,8 @@ impl ModuleTranslator {
                 }
             }
         }
+        let inferred_generated_d1_state_param_name =
+            self.inferred_generated_d1_state_param_name(module);
 
         // Build module-aware expression translator config
         let mut config = self.expr_config.clone();
@@ -3662,6 +3664,11 @@ impl ModuleTranslator {
                 .operator_arity
                 .insert(op.name.clone(), op.params.len());
             let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
+            let inferred_generated_d1_state_ref = self
+                .operator_uses_inferred_generated_d1_state_param(
+                    op,
+                    inferred_generated_d1_state_param_name.as_deref(),
+                );
             let kind = if op.name.eq_ignore_ascii_case("init") {
                 OperatorKind::Predicate
             } else if self.operator_uses_primes(&op.body)
@@ -3672,7 +3679,7 @@ impl ModuleTranslator {
                 &op.body,
                 &op_param_names,
                 &module_var_names,
-            ) {
+            ) && !inferred_generated_d1_state_ref {
                 OperatorKind::ConstantOp
             } else {
                 OperatorKind::Predicate
@@ -3739,18 +3746,30 @@ impl ModuleTranslator {
             let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
             let refs_vars =
                 self.operator_refs_declared_variables(&op.body, &op_param_names, &module_var_names);
+            let inferred_generated_d1_state_ref = self
+                .operator_uses_inferred_generated_d1_state_param(
+                    op,
+                    inferred_generated_d1_state_param_name.as_deref(),
+                );
             config
                 .operator_source_param_names
                 .insert(op.name.clone(), op_param_names.clone());
 
             let mut used_param_names = std::collections::HashSet::<String>::new();
             let mut generated_param_names = Vec::<String>::new();
-            if refs_vars || is_action {
+            if refs_vars || inferred_generated_d1_state_ref || is_action {
                 used_param_names.insert("s".to_string());
                 generated_param_names.push("s".to_string());
                 if is_action && !is_strict_init {
                     used_param_names.insert("s_".to_string());
                     generated_param_names.push("s_".to_string());
+                }
+                if inferred_generated_d1_state_ref {
+                    if let Some(first_param) = op.params.first() {
+                        if first_param.name != "s" {
+                            used_param_names.insert(first_param.name.clone());
+                        }
+                    }
                 }
             }
             let const_param_name = self.constants_param_name_for_operator(op, module);
@@ -3862,14 +3881,15 @@ impl ModuleTranslator {
         let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
         let refs_vars =
             self.operator_refs_declared_variables(&op.body, &op_param_names, module_var_names);
-        // Actions always get s and s_ params (they transitively reference state through sub-operators).
-        // For Init operators in variable-less specs (verus2tla-generated), the first parameter
-        // is the state variable even if refs_vars is false (because the parameter shadows the
-        // inferred module variable name, making operator_refs_declared_variables return false).
-        let init_inferred_state = is_strict_init
-            && module.variables.is_empty()
-            && op.params.first().is_some_and(|p| module_var_names.contains(&p.name));
-        if refs_vars || is_action || init_inferred_state {
+        // Actions always get s and s_ params (they transitively reference state through
+        // sub-operators). For variable-less generated modules, non-Init predicates may also
+        // shadow the inferred state parameter name; recover that state parameter explicitly.
+        let inferred_generated_d1_state_ref = self
+            .operator_uses_inferred_generated_d1_state_param(
+                op,
+                self.inferred_generated_d1_state_param_name(module).as_deref(),
+            );
+        if refs_vars || is_action || inferred_generated_d1_state_ref {
             params.push(format!("s: {}", state_name));
             used_param_names.insert("s".to_string());
             identifier_type_hints.insert("s".to_string(), state_name.to_string());
@@ -3878,9 +3898,9 @@ impl ModuleTranslator {
                 used_param_names.insert("s_".to_string());
                 identifier_type_hints.insert("s_".to_string(), state_name.to_string());
             }
-            // Also add the Init's first param name to used_params so it's treated
-            // as the same as implicit "s" and skipped in explicit param processing
-            if init_inferred_state {
+            // Also add the inferred source state param name to used params so it maps
+            // to implicit `s` and does not get emitted again as `int`.
+            if inferred_generated_d1_state_ref {
                 if let Some(first_param) = op.params.first() {
                     if first_param.name != "s" {
                         used_param_names.insert(first_param.name.clone());
@@ -4329,6 +4349,150 @@ impl ModuleTranslator {
             TlaExpr::LeadsTo { left, right } => r(left) || r(right),
             TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => r(action),
             _ => false,
+        }
+    }
+
+    /// For variable-less generated modules, infer the source-level state parameter
+    /// name from Init's first parameter.
+    fn inferred_generated_d1_state_param_name(&self, module: &TlaModule) -> Option<String> {
+        if !module.variables.is_empty() {
+            return None;
+        }
+        module
+            .operators
+            .iter()
+            .find(|op| op.name.eq_ignore_ascii_case("init"))
+            .and_then(|op| op.params.first())
+            .map(|p| p.name.clone())
+    }
+
+    /// Determine whether this operator should treat the inferred source parameter as
+    /// the implicit state parameter (`s`) in generated D1 modules.
+    fn operator_uses_inferred_generated_d1_state_param(
+        &self,
+        op: &TlaOperator,
+        inferred_state_param_name: Option<&str>,
+    ) -> bool {
+        let Some(state_param_name) = inferred_state_param_name else {
+            return false;
+        };
+        if op
+            .params
+            .first()
+            .is_none_or(|p| p.name != state_param_name)
+        {
+            return false;
+        }
+        if op.name.eq_ignore_ascii_case("init") {
+            return true;
+        }
+        Self::expr_has_record_access_root_ident(&op.body, state_param_name)
+            || self.operator_uses_primes(&op.body)
+    }
+
+    /// Whether an expression contains a record access rooted at `ident`
+    /// (e.g., `ident.field` or `ident.field.subfield`).
+    fn expr_has_record_access_root_ident(expr: &TlaExpr, ident: &str) -> bool {
+        match expr {
+            TlaExpr::RecordAccess { record, .. } => {
+                matches!(record.as_ref(), TlaExpr::Ident(name) if name == ident)
+                    || Self::expr_has_record_access_root_ident(record, ident)
+            }
+            TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
+                Self::expr_has_record_access_root_ident(left, ident)
+                    || Self::expr_has_record_access_root_ident(right, ident)
+            }
+            TlaExpr::UnaryOp { operand, .. }
+            | TlaExpr::Prime(operand)
+            | TlaExpr::Enabled(operand)
+            | TlaExpr::Always(operand)
+            | TlaExpr::Eventually(operand) => {
+                Self::expr_has_record_access_root_ident(operand, ident)
+            }
+            TlaExpr::OpApply { op, args } => {
+                Self::expr_has_record_access_root_ident(op, ident)
+                    || args
+                        .iter()
+                        .any(|arg| Self::expr_has_record_access_root_ident(arg, ident))
+            }
+            TlaExpr::FnApply { func, arg } => {
+                Self::expr_has_record_access_root_ident(func, ident)
+                    || Self::expr_has_record_access_root_ident(arg, ident)
+            }
+            TlaExpr::SetEnum(elements)
+            | TlaExpr::Tuple(elements)
+            | TlaExpr::Unchanged(elements) => elements
+                .iter()
+                .any(|element| Self::expr_has_record_access_root_ident(element, ident)),
+            TlaExpr::SetFilter { set, filter, .. } => {
+                Self::expr_has_record_access_root_ident(set, ident)
+                    || Self::expr_has_record_access_root_ident(filter, ident)
+            }
+            TlaExpr::SetMap { expr, set, .. } => {
+                Self::expr_has_record_access_root_ident(expr, ident)
+                    || Self::expr_has_record_access_root_ident(set, ident)
+            }
+            TlaExpr::FnConstruct { domain, body, .. } => {
+                Self::expr_has_record_access_root_ident(domain, ident)
+                    || Self::expr_has_record_access_root_ident(body, ident)
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                Self::expr_has_record_access_root_ident(func, ident)
+                    || updates.iter().any(|update| {
+                        update.path.iter().any(|path| {
+                            matches!(path, TlaExceptPath::Index(index)
+                                if Self::expr_has_record_access_root_ident(index, ident))
+                        }) || Self::expr_has_record_access_root_ident(&update.value, ident)
+                    })
+            }
+            TlaExpr::FnSet { domain, range } => {
+                Self::expr_has_record_access_root_ident(domain, ident)
+                    || Self::expr_has_record_access_root_ident(range, ident)
+            }
+            TlaExpr::Record(fields) => fields
+                .iter()
+                .any(|(_, value)| Self::expr_has_record_access_root_ident(value, ident)),
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::expr_has_record_access_root_ident(cond, ident)
+                    || Self::expr_has_record_access_root_ident(then_expr, ident)
+                    || Self::expr_has_record_access_root_ident(else_expr, ident)
+            }
+            TlaExpr::Case { arms, other } => {
+                arms.iter().any(|(cond, body)| {
+                    Self::expr_has_record_access_root_ident(cond, ident)
+                        || Self::expr_has_record_access_root_ident(body, ident)
+                }) || other.as_ref().is_some_and(|expr| {
+                    Self::expr_has_record_access_root_ident(expr, ident)
+                })
+            }
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                vars.iter().any(|bound| {
+                    bound.set.as_ref().is_some_and(|set| {
+                        Self::expr_has_record_access_root_ident(set, ident)
+                    })
+                }) || Self::expr_has_record_access_root_ident(body, ident)
+            }
+            TlaExpr::Choose { set, body, .. } => {
+                set.as_ref().is_some_and(|expr| {
+                    Self::expr_has_record_access_root_ident(expr, ident)
+                }) || Self::expr_has_record_access_root_ident(body, ident)
+            }
+            TlaExpr::LetIn { defs, body } => {
+                defs.iter().any(|def| {
+                    Self::expr_has_record_access_root_ident(&def.body, ident)
+                }) || Self::expr_has_record_access_root_ident(body, ident)
+            }
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+                Self::expr_has_record_access_root_ident(vars, ident)
+                    || Self::expr_has_record_access_root_ident(action, ident)
+            }
+            TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {
+                false
+            }
         }
     }
 
@@ -7927,6 +8091,52 @@ mod tests {
         assert!(
             !result.contains("pub open spec fn LInit(s: LState, s_: LState, c: LConstants)"),
             "Init must remain non-action signature, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_invariant_param_uses_lstate_not_int() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT State, Constants
+            Init(s, c) == s.x = 0
+            Safety(s, c) == s.x = 0
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("pub open spec fn LSafety(s: LState, c_consts: LConstants, c: int) -> bool"),
+            "Generated D1 safety predicate should use s: LState, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("pub open spec fn LSafety(s: int"),
+            "Generated D1 safety predicate should not keep s as int, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_scalar_first_param_not_forced_to_lstate() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT State, Constants
+            Init(s, c) == TRUE
+            Foo(s) == s + 1
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("pub open spec fn LFoo(c: LConstants, s: int)")
+                || result.contains("pub open spec fn LFoo(s: int)"),
+            "Scalar helper should keep s: int (not forced to LState), got:\n{}",
             result
         );
     }

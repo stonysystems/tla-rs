@@ -12061,6 +12061,34 @@ real DPOR follow-up work.
   TLA+ → spec Init parameter type inference must force `s` to be the
   state struct type, not `int`. Re-run the stub detector — it should
   report 0 findings on cases 14/15/16/19.
+  - [x] **38.14.8.a**: Translator-side state-parameter inference hardening
+    for variable-less generated modules: treat the inferred first state
+    parameter as `LState` for predicates/invariants (not only `Init`), while
+    avoiding false positives for helpers that use scalar `s` parameters.
+    Add focused translator regression tests for both the positive and
+    negative cases. Scope target: < 300 LOC touched.
+    **Done 2026-04-09**: hardened `transpiler/src/tla/translator.rs` so
+    generated D1 modules infer and reuse the `Init`-derived state parameter
+    name across operator classification and signature generation, map that
+    parameter to implicit `s: LState` when state-shaped usage is detected,
+    and avoid forcing scalar helpers to `LState`. Added focused regressions:
+    `test_generated_d1_invariant_param_uses_lstate_not_int` (positive) and
+    `test_generated_d1_scalar_first_param_not_forced_to_lstate` (negative).
+    Verified with full `cargo test` in `transpiler`, full DPOR suite
+    (`./scripts/run_full_suite.sh --timeout 600`), and full `cargo test` in
+    `DPOR_based_model_tla_rs_checker` (all green).
+  - [ ] **38.14.8.b**: Field-source precedence fix: when building `LState` for
+    generated modules, prefer explicit VARIABLE/state-struct fields and avoid
+    state-shape contamination from non-state record literals (message records).
+    Add regression tests proving `sender`/`responder`-style message fields do
+    not leak into state structs. Scope target: < 500 LOC touched.
+  - [ ] **38.14.8.c**: End-to-end Bug B regeneration for case 14 only
+    (leader election): regenerate corpus, confirm non-degenerate translated
+    signatures/bodies, and add a DPOR regression that case 14 is non-vacuous.
+    Scope target: < 500 LOC touched.
+  - [ ] **38.14.8.d**: Apply the repaired path to cases 15/16/19, rerun full
+    suite + stub detector, then resync reports/manifest for honest protocol
+    counts.
 - [ ] **38.14.9**: Once 38.14.7 and 38.14.8 are done, retire the
   `stub_status` annotations from `manifest.toml` and update
   `latest.md`/`hard_case_blocker_ledger.md` with the new honest pass count.
