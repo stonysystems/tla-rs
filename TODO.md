@@ -12218,6 +12218,34 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
   10_bakery_mutex_3p). **Do this only after 38.14.7 and 38.14.8 are
   closed** — there is no point reducing the exploration of vacuous state
   spaces.
+  **Decomposition (2026-04-09 follow-up, keep each leaf < ~500 LOC):**
+  - [x] **38.14.10.a**: Enabled-transition metadata plumbing: stop emitting
+    synthetic `transition_N` labels with always-empty footprints; instead
+    preserve branch labels from `LNext` branch solving and attach branch-level
+    read/write footprints to each emitted `EnabledTransition` (with
+    conservative empty-footprint fallback when a branch is whole-state).
+    Add focused `enabled.rs` regressions for deterministic labels/footprints.
+    **Done 2026-04-09**: `enabled_transitions()` now consumes
+    branch-attributed successor solving (`solve_successors_with_branch_labels`)
+    and emits real `branch_*` labels with converted POR footprints for solved
+    branches; enumeration fallback still uses synthetic labels conservatively.
+    Added regressions
+    `test_enabled_transitions_use_branch_footprints_when_available` and updated
+    `test_enabled_transitions_aplusb` expectations.
+  - [ ] **38.14.10.b**: Process identity extraction v1: derive non-trivial
+    `ProcessId` values from existential binder assignments on common process
+    variable names (`p`, `i`, `j`, `proc`, `node`, `replica`, `server`),
+    with stable hashing fallback only when no process-like binder is present.
+    Add regressions proving multi-process cases no longer collapse to only
+    `ProcessId(0)`.
+  - [ ] **38.14.10.c**: DPOR dependence integration pass: make sleep/backtrack
+    logic consume the new process IDs plus branch footprints in a conservative,
+    parity-safe way (no lost states), and add explicit parity tests on the
+    baseline passing corpus.
+  - [ ] **38.14.10.d**: Evidence pass: regenerate
+    `tests/reports/sleep_set_reduction_table.md` from measured runs and require
+    >10% explored-state reduction on at least 3 multi-process cases before
+    declaring 38.14.10 done.
 - [ ] **38.14.11**: **Re-evaluate the Phase 38.10 integration gate against
   the audited score.** The integration gate's preconditions ("the parity
   subset is exact under DPOR", "the required hard protocol gates are no

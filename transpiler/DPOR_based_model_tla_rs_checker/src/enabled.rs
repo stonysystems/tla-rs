@@ -18,7 +18,7 @@ use verus_transpiler::modelcheck::helpers::eval_spec_function_call_recursive;
 use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
 use verus_transpiler::modelcheck::ir::build_transition_ir;
 use verus_transpiler::modelcheck::solver::{
-    solve_branch_successors, solve_transition_successors, SolverHooks,
+    solve_branch_successors, SolverHooks,
 };
 use verus_transpiler::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
@@ -240,28 +240,67 @@ impl SpecContext {
         &self,
         state: &RuntimeValue,
     ) -> TranspileResult<Vec<EnabledTransition>> {
-        let successors = self.full_successors(state)?;
+        let solved = self.solve_successors_with_branch_labels(state)?;
+        if !solved.is_empty() {
+            let branch_footprints = self.branch_footprints().unwrap_or_default();
+            let mut enabled = Vec::with_capacity(solved.len());
+            for (succ_idx, (branch_label, successor)) in solved.iter().enumerate() {
+                let fingerprint = hash_state(successor);
+                let ordering_key = format!("{:04}", succ_idx);
+                let footprint = branch_footprints
+                    .get(branch_label)
+                    .map(convert_por_footprint)
+                    .unwrap_or_default();
+                enabled.push(EnabledTransition {
+                    process_id: ProcessId(0), // 38.14.10.b will replace with real process IDs
+                    branch_label: branch_label.clone(),
+                    successor_fingerprint: fingerprint,
+                    ordering_key,
+                    footprint,
+                });
+            }
+            return Ok(enabled);
+        }
 
+        // Fallback path: predicate enumeration cannot attribute a successor to a
+        // specific branch, so keep synthetic labels and conservative footprints.
+        let successors = self.enumerate_successors_by_predicate(state)?;
         let mut all_enabled = Vec::new();
         for (succ_idx, successor) in successors.iter().enumerate() {
             let fingerprint = hash_state(successor);
             let ordering_key = format!("{:04}", succ_idx);
-
             all_enabled.push(EnabledTransition {
-                process_id: ProcessId(0), // v1: single process
+                process_id: ProcessId(0),
                 branch_label: format!("transition_{}", succ_idx),
                 successor_fingerprint: fingerprint,
                 ordering_key,
-                footprint: TransitionFootprint::default(), // v1: no footprint yet
+                footprint: TransitionFootprint::default(),
             });
         }
-
         Ok(all_enabled)
     }
 
     /// Get all successor states from a given state (full RuntimeValue, not just fingerprints).
     /// Uses the same solver pipeline as `enabled_transitions`, including the predicate-only solver.
     pub fn full_successors(&self, state: &RuntimeValue) -> TranspileResult<Vec<RuntimeValue>> {
+        let solved = self.solve_successors_with_branch_labels(state)?;
+        if !solved.is_empty() {
+            return Ok(solved.into_iter().map(|(_, successor)| successor).collect());
+        }
+
+        // Fallback: candidate enumeration. Expand state candidates and evaluate
+        // the full LNext predicate for each. This is expensive but correct.
+        self.enumerate_successors_by_predicate(state)
+    }
+
+    /// Solve branch-by-branch and keep source branch labels for each successor.
+    ///
+    /// The returned vector is globally deduplicated by canonical successor key,
+    /// preserving the first branch-local discovery order.
+    fn solve_successors_with_branch_labels(
+        &self,
+        state: &RuntimeValue,
+    ) -> TranspileResult<Vec<(String, RuntimeValue)>> {
         let transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
 
         let mut assignments_by_branch = std::collections::BTreeMap::new();
@@ -344,23 +383,39 @@ impl SpecContext {
             predicate_only_branch_solver: Some(&predicate_solver),
         };
 
-        let result = solve_transition_successors(
-            &transition,
-            state,
-            self.constants.as_ref(),
-            Some(&assignments_by_branch),
-            self.bounds,
-            hooks,
-        );
+        let mut solved = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for branch in &transition.branches {
+            let branch_assignments: &[verus_transpiler::modelcheck::domain::ExistentialAssignment] =
+                assignments_by_branch
+                    .get(&branch.label)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
 
-        match result {
-            Ok(successors) if !successors.is_empty() => return Ok(successors),
-            _ => {}
+            let branch_successors = match solve_branch_successors(
+                &transition,
+                branch,
+                state,
+                self.constants.as_ref(),
+                branch_assignments,
+                self.bounds,
+                hooks,
+            ) {
+                Ok(successors) => successors,
+                // Keep parity with the old aggregated solver path: unsupported
+                // branch-solve shapes are handled by the predicate-enumeration
+                // fallback in `full_successors` / `enabled_transitions`.
+                Err(_) => continue,
+            };
+
+            for successor in branch_successors {
+                let key = successor.canonical_key();
+                if seen.insert(key) {
+                    solved.push((branch.label.clone(), successor));
+                }
+            }
         }
-
-        // Fallback: candidate enumeration. Expand state candidates and evaluate
-        // the full LNext predicate for each. This is expensive but correct.
-        self.enumerate_successors_by_predicate(state)
+        Ok(solved)
     }
 
     /// Fallback successor enumeration by evaluating LNext(s, s_, c) on each candidate s_.
@@ -618,6 +673,20 @@ pub fn hash_state(state: &RuntimeValue) -> StateFingerprint {
     StateFingerprint(hasher.finish())
 }
 
+fn convert_por_footprint(
+    footprint: &verus_transpiler::modelcheck::por::Footprint,
+) -> TransitionFootprint {
+    if footprint.reads_whole_state || footprint.writes_whole_state {
+        // Keep whole-state branches conservative: empty footprint means
+        // "treat as dependent with everything" in DPOR sleep-set propagation.
+        return TransitionFootprint::default();
+    }
+    TransitionFootprint {
+        reads: footprint.read_fields.clone(),
+        writes: footprint.write_fields.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -720,8 +789,8 @@ max_seq_len = 4
         // APlusB has 1 action (LAdd) producing 1 successor
         assert_eq!(enabled.len(), 1, "APlusB should have 1 enabled transition");
         assert!(
-            enabled[0].branch_label.starts_with("transition_"),
-            "Branch label should start with 'transition_', got: {}",
+            enabled[0].branch_label.starts_with("branch_"),
+            "Branch label should come from transition IR branch labels, got: {}",
             enabled[0].branch_label
         );
     }
@@ -748,6 +817,40 @@ max_seq_len = 4
             assert_eq!(t1.ordering_key, t2.ordering_key);
             assert_eq!(t1.successor_fingerprint, t2.successor_fingerprint);
             assert_eq!(t1.branch_label, t2.branch_label);
+        }
+    }
+
+    #[test]
+    fn test_enabled_transitions_use_branch_footprints_when_available() {
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => {
+                return;
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+
+        let initials = ctx.initial_states().unwrap();
+        let enabled = ctx.enabled_transitions(&initials[0]).unwrap();
+        let footprints = ctx.branch_footprints().unwrap();
+        assert!(!enabled.is_empty(), "Expected at least one enabled transition");
+
+        for transition in &enabled {
+            assert!(
+                transition.branch_label.starts_with("branch_"),
+                "Expected non-synthetic branch label, got {}",
+                transition.branch_label
+            );
+            let source = footprints
+                .get(&transition.branch_label)
+                .expect("enabled transition branch label missing in footprint map");
+            let expected = convert_por_footprint(source);
+            assert_eq!(
+                transition.footprint, expected,
+                "Enabled transition footprint should match converted POR branch footprint"
+            );
         }
     }
 
