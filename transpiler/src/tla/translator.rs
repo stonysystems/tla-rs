@@ -194,6 +194,8 @@ pub struct TranslatorConfig {
     pub operator_return_type_hints: std::collections::HashMap<String, String>,
     /// Name of the constants parameter in the current generated function scope.
     pub constants_param_name: String,
+    /// Optional module-local lowering for symbolic atoms to stable integer literals.
+    pub symbolic_atom_literals: std::collections::HashMap<String, String>,
 }
 
 /// Classification of a TLA+ operator for code generation
@@ -235,6 +237,7 @@ impl Default for TranslatorConfig {
             operator_generated_param_names: std::collections::HashMap::new(),
             operator_return_type_hints: std::collections::HashMap::new(),
             constants_param_name: "c".to_string(),
+            symbolic_atom_literals: std::collections::HashMap::new(),
         }
     }
 }
@@ -1041,6 +1044,61 @@ impl<'a> ExprTranslator<'a> {
             .map(|s| s.as_str())
     }
 
+    fn state_field_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
+        let field_name = match expr {
+            TlaExpr::RecordAccess { record, field } => {
+                if matches!(
+                    record.as_ref(),
+                    TlaExpr::Ident(name)
+                        if self.config.variable_names.contains(name) || name == "s" || name == "s_"
+                ) {
+                    field.as_str()
+                } else {
+                    return None;
+                }
+            }
+            TlaExpr::Ident(name) => {
+                for root in &self.config.variable_names {
+                    let prefix = format!("{}.", root);
+                    if let Some(rest) = name.strip_prefix(&prefix) {
+                        let field = rest.split('.').next().unwrap_or(rest);
+                        if !field.is_empty() {
+                            return self
+                                .config
+                                .record_field_types
+                                .get(field)
+                                .map(|s| s.as_str());
+                        }
+                    }
+                }
+                for root in ["s", "s_"] {
+                    let prefix = format!("{}.", root);
+                    if let Some(rest) = name.strip_prefix(&prefix) {
+                        let field = rest.split('.').next().unwrap_or(rest);
+                        if !field.is_empty() {
+                            return self
+                                .config
+                                .record_field_types
+                                .get(field)
+                                .map(|s| s.as_str());
+                        }
+                    }
+                }
+                return None;
+            }
+            _ => return None,
+        };
+        self.config
+            .record_field_types
+            .get(field_name)
+            .map(|s| s.as_str())
+    }
+
+    fn root_record_field_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
+        self.state_field_type_hint(expr)
+            .or_else(|| self.constant_field_type_hint(expr))
+    }
+
     fn expr_type_hint<'b>(&'b self, expr: &TlaExpr) -> Option<&'b str> {
         match expr {
             TlaExpr::Ident(name) => self
@@ -1345,6 +1403,14 @@ impl<'a> ExprTranslator<'a> {
         }
     }
 
+    fn symbolic_atom_literal(&self, name: &str) -> String {
+        self.config
+            .symbolic_atom_literals
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| symbolic_atom_to_int_literal(name))
+    }
+
     // =========================================================================
     // Identifier and literal translation
     // =========================================================================
@@ -1380,7 +1446,7 @@ impl<'a> ExprTranslator<'a> {
                         if self.config.normalize_unknown_external_refs
                             && is_symbolic_atom_name(name)
                         {
-                            return symbolic_atom_to_int_literal(name);
+                            return self.symbolic_atom_literal(name);
                         }
                         return format!("{}{}", self.config.spec_prefix, name);
                     }
@@ -1407,7 +1473,7 @@ impl<'a> ExprTranslator<'a> {
                     return "arbitrary()".to_string();
                 }
                 if is_symbolic_atom_name(name) {
-                    return symbolic_atom_to_int_literal(name);
+                    return self.symbolic_atom_literal(name);
                 }
                 name.to_string()
             }
@@ -1418,9 +1484,13 @@ impl<'a> ExprTranslator<'a> {
         // Primed variables reference the next-state struct field
         match inner {
             TlaExpr::Ident(name) => {
-                if self.config.variable_names.contains(name.as_str()) && !self.config.state_is_flat_alias {
+                if self.config.variable_names.contains(name.as_str())
+                    && !self.config.state_is_flat_alias
+                {
                     format!("s_.{}", name)
-                } else if self.config.state_is_flat_alias && self.config.variable_names.contains(name.as_str()) {
+                } else if self.config.state_is_flat_alias
+                    && self.config.variable_names.contains(name.as_str())
+                {
                     "s_".to_string()
                 } else {
                     format!("{}_", name)
@@ -2060,17 +2130,37 @@ impl<'a> ExprTranslator<'a> {
     }
 
     fn translate_record_access(&self, record: &TlaExpr, field: &str) -> String {
+        if self.config.normalize_unknown_external_refs && field == "tag" {
+            if let Some(base_hint) = self.root_record_field_type_hint(record) {
+                let normalized = base_hint
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .collect::<String>();
+                let base_is_scalar =
+                    Self::type_hint_is_numeric(&normalized) || Self::type_hint_is_bool(&normalized);
+                if base_is_scalar {
+                    // Generated enum-like values often round-trip as scalar atoms.
+                    // Normalize `<scalar>.tag` back to the scalar itself.
+                    return self.translate(record);
+                }
+            }
+        }
         if self.config.normalize_unknown_external_refs {
             // For generated D1 specs, unknown/local record roots (e.g. request.client, ps.replicas)
             // frequently become scalar placeholders. Emit an untyped placeholder directly to avoid
             // field-on-scalar compile failures while preserving known module state/constant roots.
             if let TlaExpr::Ident(name) = record {
                 // Resolve rename_map first (e.g., c → c_consts for aliased constants)
-                let resolved_name = self.config.rename_map.get(name.as_str())
+                let resolved_name = self
+                    .config
+                    .rename_map
+                    .get(name.as_str())
                     .map(|s| s.as_str())
                     .unwrap_or(name.as_str());
                 if self.config.variable_names.is_empty()
-                    && (resolved_name == "s" || resolved_name == "s_" || resolved_name == &self.config.constants_param_name)
+                    && (resolved_name == "s"
+                        || resolved_name == "s_"
+                        || resolved_name == &self.config.constants_param_name)
                 {
                     return "arbitrary()".to_string();
                 }
@@ -2297,7 +2387,7 @@ impl<'a> ExprTranslator<'a> {
                 if args.is_empty() && declared_arity > 0 {
                     if self.config.normalize_unknown_external_refs && is_symbolic_atom_name(op_name)
                     {
-                        return symbolic_atom_to_int_literal(op_name);
+                        return self.symbolic_atom_literal(op_name);
                     }
                     return format!("{}{}", self.config.spec_prefix, op_name);
                 }
@@ -3006,6 +3096,8 @@ impl ModuleTranslator {
 
     /// Translate a TLA+ module to Verus code
     pub fn translate(&mut self, module: &TlaModule) -> String {
+        self.expr_config.symbolic_atom_literals = Self::generated_symbolic_atom_literals(module);
+
         // Pre-pass: collect record shapes and set up struct mappings
         self.collect_record_shapes(module);
 
@@ -3027,6 +3119,164 @@ impl ModuleTranslator {
         output.push_str(&self.generate_spec_functions(module));
 
         output
+    }
+
+    fn collect_symbolic_atoms_from_expr(
+        expr: &TlaExpr,
+        blocked_names: &std::collections::HashSet<String>,
+        seen: &mut std::collections::HashSet<String>,
+        atoms: &mut Vec<String>,
+    ) {
+        match expr {
+            TlaExpr::Ident(name) => {
+                if is_symbolic_atom_name(name)
+                    && !blocked_names.contains(name)
+                    && seen.insert(name.clone())
+                {
+                    atoms.push(name.clone());
+                }
+            }
+            TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
+                Self::collect_symbolic_atoms_from_expr(left, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(right, blocked_names, seen, atoms);
+            }
+            TlaExpr::UnaryOp { operand, .. }
+            | TlaExpr::Prime(operand)
+            | TlaExpr::Enabled(operand)
+            | TlaExpr::Always(operand)
+            | TlaExpr::Eventually(operand) => {
+                Self::collect_symbolic_atoms_from_expr(operand, blocked_names, seen, atoms);
+            }
+            TlaExpr::OpApply { op: _, args } => {
+                for arg in args {
+                    Self::collect_symbolic_atoms_from_expr(arg, blocked_names, seen, atoms);
+                }
+            }
+            TlaExpr::FnApply { func, arg } => {
+                Self::collect_symbolic_atoms_from_expr(func, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(arg, blocked_names, seen, atoms);
+            }
+            TlaExpr::SetEnum(elements)
+            | TlaExpr::Tuple(elements)
+            | TlaExpr::Unchanged(elements) => {
+                for element in elements {
+                    Self::collect_symbolic_atoms_from_expr(element, blocked_names, seen, atoms);
+                }
+            }
+            TlaExpr::SetFilter { set, filter, .. } => {
+                Self::collect_symbolic_atoms_from_expr(set, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(filter, blocked_names, seen, atoms);
+            }
+            TlaExpr::SetMap { expr, set, .. } => {
+                Self::collect_symbolic_atoms_from_expr(expr, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(set, blocked_names, seen, atoms);
+            }
+            TlaExpr::FnConstruct { domain, body, .. } => {
+                Self::collect_symbolic_atoms_from_expr(domain, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(body, blocked_names, seen, atoms);
+            }
+            TlaExpr::FnSet { domain, range } => {
+                Self::collect_symbolic_atoms_from_expr(domain, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(range, blocked_names, seen, atoms);
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                Self::collect_symbolic_atoms_from_expr(func, blocked_names, seen, atoms);
+                for update in updates {
+                    for path in &update.path {
+                        if let TlaExceptPath::Index(index) = path {
+                            Self::collect_symbolic_atoms_from_expr(
+                                index,
+                                blocked_names,
+                                seen,
+                                atoms,
+                            );
+                        }
+                    }
+                    Self::collect_symbolic_atoms_from_expr(
+                        &update.value,
+                        blocked_names,
+                        seen,
+                        atoms,
+                    );
+                }
+            }
+            TlaExpr::Record(fields) => {
+                for (_, value) in fields {
+                    Self::collect_symbolic_atoms_from_expr(value, blocked_names, seen, atoms);
+                }
+            }
+            TlaExpr::RecordAccess { record, .. } => {
+                Self::collect_symbolic_atoms_from_expr(record, blocked_names, seen, atoms);
+            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::collect_symbolic_atoms_from_expr(cond, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(then_expr, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(else_expr, blocked_names, seen, atoms);
+            }
+            TlaExpr::Case { arms, other } => {
+                for (cond, body) in arms {
+                    Self::collect_symbolic_atoms_from_expr(cond, blocked_names, seen, atoms);
+                    Self::collect_symbolic_atoms_from_expr(body, blocked_names, seen, atoms);
+                }
+                if let Some(other_expr) = other {
+                    Self::collect_symbolic_atoms_from_expr(other_expr, blocked_names, seen, atoms);
+                }
+            }
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                for bound in vars {
+                    if let Some(set) = &bound.set {
+                        Self::collect_symbolic_atoms_from_expr(set, blocked_names, seen, atoms);
+                    }
+                }
+                Self::collect_symbolic_atoms_from_expr(body, blocked_names, seen, atoms);
+            }
+            TlaExpr::Choose { set, body, .. } => {
+                if let Some(set_expr) = set {
+                    Self::collect_symbolic_atoms_from_expr(set_expr, blocked_names, seen, atoms);
+                }
+                Self::collect_symbolic_atoms_from_expr(body, blocked_names, seen, atoms);
+            }
+            TlaExpr::LetIn { defs, body } => {
+                for def in defs {
+                    Self::collect_symbolic_atoms_from_expr(&def.body, blocked_names, seen, atoms);
+                }
+                Self::collect_symbolic_atoms_from_expr(body, blocked_names, seen, atoms);
+            }
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+                Self::collect_symbolic_atoms_from_expr(vars, blocked_names, seen, atoms);
+                Self::collect_symbolic_atoms_from_expr(action, blocked_names, seen, atoms);
+            }
+            TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {}
+        }
+    }
+
+    fn generated_symbolic_atom_literals(
+        module: &TlaModule,
+    ) -> std::collections::HashMap<String, String> {
+        let mut blocked_names = std::collections::HashSet::<String>::new();
+        blocked_names.extend(module.constants.iter().map(|c| c.name.clone()));
+        blocked_names.extend(module.operators.iter().map(|op| op.name.clone()));
+        for builtin in [
+            "Int", "Nat", "BOOLEAN", "TRUE", "FALSE", "Seq", "Set", "Map", "SUBSET", "DOMAIN",
+            "UNION",
+        ] {
+            blocked_names.insert(builtin.to_string());
+        }
+
+        let mut atoms = Vec::<String>::new();
+        let mut seen = std::collections::HashSet::<String>::new();
+        for op in &module.operators {
+            Self::collect_symbolic_atoms_from_expr(&op.body, &blocked_names, &mut seen, &mut atoms);
+        }
+        atoms
+            .into_iter()
+            .enumerate()
+            .map(|(idx, atom)| (atom, format!("{}int", idx as i64 + 1)))
+            .collect()
     }
 
     /// Collect all record shapes from the module and assign struct names.
@@ -3053,7 +3303,11 @@ impl ModuleTranslator {
         let mut state_var_names: std::collections::HashSet<String> =
             module.variables.iter().cloned().collect();
         if state_var_names.is_empty() {
-            if let Some(init_op) = module.operators.iter().find(|o| o.name.eq_ignore_ascii_case("init")) {
+            if let Some(init_op) = module
+                .operators
+                .iter()
+                .find(|o| o.name.eq_ignore_ascii_case("init"))
+            {
                 if let Some(first_param) = init_op.params.first() {
                     state_var_names.insert(first_param.name.clone());
                 }
@@ -3084,7 +3338,21 @@ impl ModuleTranslator {
         let inferred_constant_field_types = if let Some(root_name) = &inferred_constant_param_name {
             let mut roots = std::collections::HashSet::new();
             roots.insert(root_name.clone());
-            self.infer_record_root_field_types(module, &roots, Some(&inferred_state_field_types))
+            let mut inferred = self.infer_record_root_field_types(
+                module,
+                &roots,
+                Some(&inferred_state_field_types),
+            );
+            let mut root_fields = std::collections::BTreeSet::<String>::new();
+            for op in &module.operators {
+                Self::collect_record_root_field_names_from_expr(&op.body, &roots, &mut root_fields);
+            }
+            for field_name in root_fields {
+                inferred
+                    .entry(field_name)
+                    .or_insert_with(|| "int".to_string());
+            }
+            inferred
         } else {
             std::collections::BTreeMap::new()
         };
@@ -3341,14 +3609,12 @@ impl ModuleTranslator {
                         Some(RecordFieldHint::Int)
                     }
                 }
-                TlaBinOp::Minus
-                | TlaBinOp::Times
-                | TlaBinOp::Div
-                | TlaBinOp::Mod
-                | TlaBinOp::Lt
-                | TlaBinOp::Leq
-                | TlaBinOp::Gt
-                | TlaBinOp::Geq => Some(RecordFieldHint::Int),
+                TlaBinOp::Minus | TlaBinOp::Times | TlaBinOp::Div | TlaBinOp::Mod => {
+                    Some(RecordFieldHint::Int)
+                }
+                TlaBinOp::Lt | TlaBinOp::Leq | TlaBinOp::Gt | TlaBinOp::Geq => {
+                    Some(RecordFieldHint::Bool)
+                }
                 _ => None,
             },
             TlaExpr::IfThenElse {
@@ -3360,7 +3626,11 @@ impl ModuleTranslator {
                     Self::infer_expr_record_field_hint(then_expr, root_names, hints, peer_hints);
                 let rhs =
                     Self::infer_expr_record_field_hint(else_expr, root_names, hints, peer_hints);
-                if lhs == rhs { lhs } else { lhs.or(rhs) }
+                if lhs == rhs {
+                    lhs
+                } else {
+                    lhs.or(rhs)
+                }
             }
             TlaExpr::LetIn { body, .. } => {
                 Self::infer_expr_record_field_hint(body, root_names, hints, peer_hints)
@@ -3406,16 +3676,19 @@ impl ModuleTranslator {
                             changed |=
                                 Self::merge_record_field_hint(hints, field, RecordFieldHint::Int);
                         }
-                        TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus | TlaBinOp::CrossProd => {
-                            changed |=
-                                Self::merge_record_field_hint(hints, field, RecordFieldHint::SetInt);
+                        TlaBinOp::Cup
+                        | TlaBinOp::Cap
+                        | TlaBinOp::Setminus
+                        | TlaBinOp::CrossProd => {
+                            changed |= Self::merge_record_field_hint(
+                                hints,
+                                field,
+                                RecordFieldHint::SetInt,
+                            );
                         }
                         TlaBinOp::Eq | TlaBinOp::Neq => {
                             if let Some(inferred) = Self::infer_expr_record_field_hint(
-                                right,
-                                root_names,
-                                hints,
-                                peer_hints,
+                                right, root_names, hints, peer_hints,
                             ) {
                                 changed |= Self::merge_record_field_hint(hints, field, inferred);
                             }
@@ -3460,16 +3733,19 @@ impl ModuleTranslator {
                                 RecordFieldHint::SetInt,
                             );
                         }
-                        TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus | TlaBinOp::CrossProd => {
-                            changed |=
-                                Self::merge_record_field_hint(hints, field, RecordFieldHint::SetInt);
+                        TlaBinOp::Cup
+                        | TlaBinOp::Cap
+                        | TlaBinOp::Setminus
+                        | TlaBinOp::CrossProd => {
+                            changed |= Self::merge_record_field_hint(
+                                hints,
+                                field,
+                                RecordFieldHint::SetInt,
+                            );
                         }
                         TlaBinOp::Eq | TlaBinOp::Neq => {
                             if let Some(inferred) = Self::infer_expr_record_field_hint(
-                                left,
-                                root_names,
-                                hints,
-                                peer_hints,
+                                left, root_names, hints, peer_hints,
                             ) {
                                 changed |= Self::merge_record_field_hint(hints, field, inferred);
                             }
@@ -3505,8 +3781,9 @@ impl ModuleTranslator {
                         _ => {}
                     }
                 }
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(left, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    left, root_names, hints, peer_hints,
+                );
                 changed |= Self::collect_record_root_field_hints_from_expr(
                     right, root_names, hints, peer_hints,
                 );
@@ -3516,10 +3793,7 @@ impl ModuleTranslator {
                     left, root_names, hints, peer_hints,
                 );
                 changed |= Self::collect_record_root_field_hints_from_expr(
-                    right,
-                    root_names,
-                    hints,
-                    peer_hints,
+                    right, root_names, hints, peer_hints,
                 );
             }
             TlaExpr::UnaryOp { op, operand } => {
@@ -3543,12 +3817,14 @@ impl ModuleTranslator {
             | TlaExpr::Enabled(inner)
             | TlaExpr::Always(inner)
             | TlaExpr::Eventually(inner) => {
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(inner, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    inner, root_names, hints, peer_hints,
+                );
             }
             TlaExpr::OpApply { op, args } => {
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(op, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    op, root_names, hints, peer_hints,
+                );
                 for arg in args {
                     changed |= Self::collect_record_root_field_hints_from_expr(
                         arg, root_names, hints, peer_hints,
@@ -3563,8 +3839,9 @@ impl ModuleTranslator {
                 changed |= Self::collect_record_root_field_hints_from_expr(
                     func, root_names, hints, peer_hints,
                 );
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(arg, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    arg, root_names, hints, peer_hints,
+                );
             }
             TlaExpr::SetEnum(elements)
             | TlaExpr::Tuple(elements)
@@ -3576,8 +3853,9 @@ impl ModuleTranslator {
                 }
             }
             TlaExpr::SetFilter { set, filter, .. } => {
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(set, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    set, root_names, hints, peer_hints,
+                );
                 changed |= Self::collect_record_root_field_hints_from_expr(
                     filter, root_names, hints, peer_hints,
                 );
@@ -3586,15 +3864,17 @@ impl ModuleTranslator {
                 changed |= Self::collect_record_root_field_hints_from_expr(
                     expr, root_names, hints, peer_hints,
                 );
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(set, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    set, root_names, hints, peer_hints,
+                );
             }
             TlaExpr::FnConstruct { domain, body, .. } => {
                 changed |= Self::collect_record_root_field_hints_from_expr(
                     domain, root_names, hints, peer_hints,
                 );
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(body, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    body, root_names, hints, peer_hints,
+                );
             }
             TlaExpr::FnExcept { func, updates } => {
                 changed |= Self::collect_record_root_field_hints_from_expr(
@@ -3648,33 +3928,21 @@ impl ModuleTranslator {
                     then_expr, root_names, hints, peer_hints,
                 );
                 changed |= Self::collect_record_root_field_hints_from_expr(
-                    else_expr,
-                    root_names,
-                    hints,
-                    peer_hints,
+                    else_expr, root_names, hints, peer_hints,
                 );
             }
             TlaExpr::Case { arms, other } => {
                 for (condition, body) in arms {
                     changed |= Self::collect_record_root_field_hints_from_expr(
-                        condition,
-                        root_names,
-                        hints,
-                        peer_hints,
+                        condition, root_names, hints, peer_hints,
                     );
                     changed |= Self::collect_record_root_field_hints_from_expr(
-                        body,
-                        root_names,
-                        hints,
-                        peer_hints,
+                        body, root_names, hints, peer_hints,
                     );
                 }
                 if let Some(other_expr) = other {
                     changed |= Self::collect_record_root_field_hints_from_expr(
-                        other_expr,
-                        root_names,
-                        hints,
-                        peer_hints,
+                        other_expr, root_names, hints, peer_hints,
                     );
                 }
             }
@@ -3686,42 +3954,36 @@ impl ModuleTranslator {
                         );
                     }
                 }
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(body, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    body, root_names, hints, peer_hints,
+                );
             }
             TlaExpr::Choose { set, body, .. } => {
                 if let Some(set_expr) = set {
                     changed |= Self::collect_record_root_field_hints_from_expr(
-                        set_expr,
-                        root_names,
-                        hints,
-                        peer_hints,
+                        set_expr, root_names, hints, peer_hints,
                     );
                 }
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(body, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    body, root_names, hints, peer_hints,
+                );
             }
             TlaExpr::LetIn { defs, body } => {
                 for def in defs {
                     changed |= Self::collect_record_root_field_hints_from_expr(
-                        &def.body,
-                        root_names,
-                        hints,
-                        peer_hints,
+                        &def.body, root_names, hints, peer_hints,
                     );
                 }
-                changed |=
-                    Self::collect_record_root_field_hints_from_expr(body, root_names, hints, peer_hints);
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    body, root_names, hints, peer_hints,
+                );
             }
             TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
                 changed |= Self::collect_record_root_field_hints_from_expr(
                     vars, root_names, hints, peer_hints,
                 );
                 changed |= Self::collect_record_root_field_hints_from_expr(
-                    action,
-                    root_names,
-                    hints,
-                    peer_hints,
+                    action, root_names, hints, peer_hints,
                 );
             }
             TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {}
@@ -3740,10 +4002,7 @@ impl ModuleTranslator {
             let mut changed = false;
             for op in &module.operators {
                 changed |= Self::collect_record_root_field_hints_from_expr(
-                    &op.body,
-                    root_names,
-                    &mut hints,
-                    peer_hints,
+                    &op.body, root_names, &mut hints, peer_hints,
                 );
             }
             if !changed {
@@ -3754,6 +4013,130 @@ impl ModuleTranslator {
             .into_iter()
             .map(|(field, hint)| (field, hint.as_type_str().to_string()))
             .collect()
+    }
+
+    fn collect_record_root_field_names_from_expr(
+        expr: &TlaExpr,
+        root_names: &std::collections::HashSet<String>,
+        fields: &mut std::collections::BTreeSet<String>,
+    ) {
+        if let Some(field_name) = Self::record_access_root_field_name(expr, root_names) {
+            fields.insert(field_name.to_string());
+        }
+        match expr {
+            TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
+                Self::collect_record_root_field_names_from_expr(left, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(right, root_names, fields);
+            }
+            TlaExpr::UnaryOp { operand, .. }
+            | TlaExpr::Prime(operand)
+            | TlaExpr::Enabled(operand)
+            | TlaExpr::Always(operand)
+            | TlaExpr::Eventually(operand) => {
+                Self::collect_record_root_field_names_from_expr(operand, root_names, fields);
+            }
+            TlaExpr::OpApply { op, args } => {
+                Self::collect_record_root_field_names_from_expr(op, root_names, fields);
+                for arg in args {
+                    Self::collect_record_root_field_names_from_expr(arg, root_names, fields);
+                }
+            }
+            TlaExpr::FnApply { func, arg } => {
+                Self::collect_record_root_field_names_from_expr(func, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(arg, root_names, fields);
+            }
+            TlaExpr::SetEnum(elements)
+            | TlaExpr::Tuple(elements)
+            | TlaExpr::Unchanged(elements) => {
+                for element in elements {
+                    Self::collect_record_root_field_names_from_expr(element, root_names, fields);
+                }
+            }
+            TlaExpr::SetFilter { set, filter, .. } => {
+                Self::collect_record_root_field_names_from_expr(set, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(filter, root_names, fields);
+            }
+            TlaExpr::SetMap { expr, set, .. } => {
+                Self::collect_record_root_field_names_from_expr(expr, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(set, root_names, fields);
+            }
+            TlaExpr::FnConstruct { domain, body, .. } => {
+                Self::collect_record_root_field_names_from_expr(domain, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(body, root_names, fields);
+            }
+            TlaExpr::FnSet { domain, range } => {
+                Self::collect_record_root_field_names_from_expr(domain, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(range, root_names, fields);
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                Self::collect_record_root_field_names_from_expr(func, root_names, fields);
+                for update in updates {
+                    for path in &update.path {
+                        if let TlaExceptPath::Index(index) = path {
+                            Self::collect_record_root_field_names_from_expr(
+                                index, root_names, fields,
+                            );
+                        }
+                    }
+                    Self::collect_record_root_field_names_from_expr(
+                        &update.value,
+                        root_names,
+                        fields,
+                    );
+                }
+            }
+            TlaExpr::Record(entries) => {
+                for (_, value) in entries {
+                    Self::collect_record_root_field_names_from_expr(value, root_names, fields);
+                }
+            }
+            TlaExpr::RecordAccess { record, .. } => {
+                Self::collect_record_root_field_names_from_expr(record, root_names, fields);
+            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::collect_record_root_field_names_from_expr(cond, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(then_expr, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(else_expr, root_names, fields);
+            }
+            TlaExpr::Case { arms, other } => {
+                for (cond, body) in arms {
+                    Self::collect_record_root_field_names_from_expr(cond, root_names, fields);
+                    Self::collect_record_root_field_names_from_expr(body, root_names, fields);
+                }
+                if let Some(other_expr) = other {
+                    Self::collect_record_root_field_names_from_expr(other_expr, root_names, fields);
+                }
+            }
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                for bound in vars {
+                    if let Some(set) = &bound.set {
+                        Self::collect_record_root_field_names_from_expr(set, root_names, fields);
+                    }
+                }
+                Self::collect_record_root_field_names_from_expr(body, root_names, fields);
+            }
+            TlaExpr::Choose { set, body, .. } => {
+                if let Some(set_expr) = set {
+                    Self::collect_record_root_field_names_from_expr(set_expr, root_names, fields);
+                }
+                Self::collect_record_root_field_names_from_expr(body, root_names, fields);
+            }
+            TlaExpr::LetIn { defs, body } => {
+                for def in defs {
+                    Self::collect_record_root_field_names_from_expr(&def.body, root_names, fields);
+                }
+                Self::collect_record_root_field_names_from_expr(body, root_names, fields);
+            }
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+                Self::collect_record_root_field_names_from_expr(vars, root_names, fields);
+                Self::collect_record_root_field_names_from_expr(action, root_names, fields);
+            }
+            TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {}
+        }
     }
 
     fn collect_state_assignment_record_fields(
@@ -4510,7 +4893,11 @@ impl ModuleTranslator {
         // infer the state variable from Init's first parameter. This enables correct operator
         // classification (Action/Predicate vs ConstantOp) and state type assignment.
         if module.variables.is_empty() {
-            if let Some(init_op) = module.operators.iter().find(|o| o.name.eq_ignore_ascii_case("init")) {
+            if let Some(init_op) = module
+                .operators
+                .iter()
+                .find(|o| o.name.eq_ignore_ascii_case("init"))
+            {
                 if let Some(first_param) = init_op.params.first() {
                     module_var_names.insert(first_param.name.clone());
                 }
@@ -4530,7 +4917,8 @@ impl ModuleTranslator {
         // skip the s./s_. prefix rewriting in translate_ident/translate_prime.
         let unique_record_names: std::collections::HashSet<&String> =
             self.expr_config.record_structs.values().collect();
-        config.state_is_flat_alias = module.variables.is_empty() && unique_record_names.len() == 1
+        config.state_is_flat_alias = module.variables.is_empty()
+            && unique_record_names.len() == 1
             && !module_var_names.is_empty(); // Need inferred state variable for alias to matter
         config.spec_prefix = self.config.spec_prefix.clone();
         // Classify operators as actions vs predicates vs constants (multi-pass)
@@ -4555,7 +4943,8 @@ impl ModuleTranslator {
                 &op.body,
                 &op_param_names,
                 &module_var_names,
-            ) && !inferred_generated_d1_state_ref {
+            ) && !inferred_generated_d1_state_ref
+            {
                 OperatorKind::ConstantOp
             } else {
                 OperatorKind::Predicate
@@ -4778,11 +5167,11 @@ impl ModuleTranslator {
         // Actions always get s and s_ params (they transitively reference state through
         // sub-operators). For variable-less generated modules, non-Init predicates may also
         // shadow the inferred state parameter name; recover that state parameter explicitly.
-        let inferred_generated_d1_state_ref = self
-            .operator_uses_inferred_generated_d1_state_param(
-                op,
-                self.inferred_generated_d1_state_param_name(module).as_deref(),
-            );
+        let inferred_generated_d1_state_ref = self.operator_uses_inferred_generated_d1_state_param(
+            op,
+            self.inferred_generated_d1_state_param_name(module)
+                .as_deref(),
+        );
         if refs_vars || is_action || inferred_generated_d1_state_ref {
             params.push(format!("s: {}", state_name));
             used_param_names.insert("s".to_string());
@@ -4823,10 +5212,8 @@ impl ModuleTranslator {
             {
                 if source_constants_param_name != const_name {
                     used_param_names.insert(source_constants_param_name.to_string());
-                    operator_rename_map.insert(
-                        source_constants_param_name.to_string(),
-                        const_name.clone(),
-                    );
+                    operator_rename_map
+                        .insert(source_constants_param_name.to_string(), const_name.clone());
                 }
             } else {
                 for p in &op.params {
@@ -5167,40 +5554,37 @@ impl ModuleTranslator {
             TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
             TlaExpr::BinOp { left, right, .. } => r(left) || r(right),
             TlaExpr::UnaryOp { operand, .. } => r(operand),
-            TlaExpr::OpApply { op, args } => {
-                r(op) || args.iter().any(|a| r(a))
-            }
+            TlaExpr::OpApply { op, args } => r(op) || args.iter().any(|a| r(a)),
             TlaExpr::Prime(inner) => r(inner),
             TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
                 vars.iter().any(|qb| qb.set.as_ref().is_some_and(|s| r(s))) || r(body)
             }
-            TlaExpr::IfThenElse { cond, then_expr, else_expr } => {
-                r(cond) || r(then_expr) || r(else_expr)
-            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => r(cond) || r(then_expr) || r(else_expr),
             TlaExpr::Case { arms, other } => {
-                arms.iter().any(|(c, b)| r(c) || r(b))
-                    || other.as_ref().is_some_and(|e| r(e))
+                arms.iter().any(|(c, b)| r(c) || r(b)) || other.as_ref().is_some_and(|e| r(e))
             }
             TlaExpr::SetEnum(elems) | TlaExpr::Tuple(elems) => elems.iter().any(|e| r(e)),
             TlaExpr::SetFilter { set, filter, .. } => r(set) || r(filter),
             TlaExpr::SetMap { expr: e, set, .. } => r(set) || r(e),
             TlaExpr::FnApply { func, arg } => r(func) || r(arg),
             TlaExpr::FnConstruct { domain, body, .. } => r(domain) || r(body),
-            TlaExpr::FnExcept { func, updates } => {
-                r(func) || updates.iter().any(|u| r(&u.value))
-            }
+            TlaExpr::FnExcept { func, updates } => r(func) || updates.iter().any(|u| r(&u.value)),
             TlaExpr::Record(fields) => fields.iter().any(|(_, v)| r(v)),
             TlaExpr::RecordAccess { record, .. } => r(record),
-            TlaExpr::Choose { set, body, .. } => {
-                set.as_ref().is_some_and(|s| r(s)) || r(body)
-            }
-            TlaExpr::LetIn { defs, body } => {
-                defs.iter().any(|d| r(&d.body)) || r(body)
-            }
+            TlaExpr::Choose { set, body, .. } => set.as_ref().is_some_and(|s| r(s)) || r(body),
+            TlaExpr::LetIn { defs, body } => defs.iter().any(|d| r(&d.body)) || r(body),
             TlaExpr::Unchanged(_) => false,
-            TlaExpr::Enabled(inner) | TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => r(inner),
+            TlaExpr::Enabled(inner) | TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => {
+                r(inner)
+            }
             TlaExpr::LeadsTo { left, right } => r(left) || r(right),
-            TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => r(action),
+            TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => {
+                r(action)
+            }
             _ => false,
         }
     }
@@ -5221,40 +5605,37 @@ impl ModuleTranslator {
             TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
             TlaExpr::BinOp { left, right, .. } => r(left) || r(right),
             TlaExpr::UnaryOp { operand, .. } => r(operand),
-            TlaExpr::OpApply { op, args } => {
-                r(op) || args.iter().any(|a| r(a))
-            }
+            TlaExpr::OpApply { op, args } => r(op) || args.iter().any(|a| r(a)),
             TlaExpr::Prime(inner) => r(inner),
             TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
                 vars.iter().any(|qb| qb.set.as_ref().is_some_and(|s| r(s))) || r(body)
             }
-            TlaExpr::IfThenElse { cond, then_expr, else_expr } => {
-                r(cond) || r(then_expr) || r(else_expr)
-            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => r(cond) || r(then_expr) || r(else_expr),
             TlaExpr::Case { arms, other } => {
-                arms.iter().any(|(c, b)| r(c) || r(b))
-                    || other.as_ref().is_some_and(|e| r(e))
+                arms.iter().any(|(c, b)| r(c) || r(b)) || other.as_ref().is_some_and(|e| r(e))
             }
             TlaExpr::SetEnum(elems) | TlaExpr::Tuple(elems) => elems.iter().any(|e| r(e)),
             TlaExpr::SetFilter { set, filter, .. } => r(set) || r(filter),
             TlaExpr::SetMap { expr: e, set, .. } => r(set) || r(e),
             TlaExpr::FnApply { func, arg } => r(func) || r(arg),
             TlaExpr::FnConstruct { domain, body, .. } => r(domain) || r(body),
-            TlaExpr::FnExcept { func, updates } => {
-                r(func) || updates.iter().any(|u| r(&u.value))
-            }
+            TlaExpr::FnExcept { func, updates } => r(func) || updates.iter().any(|u| r(&u.value)),
             TlaExpr::Record(fields) => fields.iter().any(|(_, v)| r(v)),
             TlaExpr::RecordAccess { record, .. } => r(record),
-            TlaExpr::Choose { set, body, .. } => {
-                set.as_ref().is_some_and(|s| r(s)) || r(body)
-            }
-            TlaExpr::LetIn { defs, body } => {
-                defs.iter().any(|d| r(&d.body)) || r(body)
-            }
+            TlaExpr::Choose { set, body, .. } => set.as_ref().is_some_and(|s| r(s)) || r(body),
+            TlaExpr::LetIn { defs, body } => defs.iter().any(|d| r(&d.body)) || r(body),
             TlaExpr::Unchanged(_) => false,
-            TlaExpr::Enabled(inner) | TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => r(inner),
+            TlaExpr::Enabled(inner) | TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => {
+                r(inner)
+            }
             TlaExpr::LeadsTo { left, right } => r(left) || r(right),
-            TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => r(action),
+            TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => {
+                r(action)
+            }
             _ => false,
         }
     }
@@ -5283,11 +5664,7 @@ impl ModuleTranslator {
         let Some(state_param_name) = inferred_state_param_name else {
             return false;
         };
-        if op
-            .params
-            .first()
-            .is_none_or(|p| p.name != state_param_name)
-        {
+        if op.params.first().is_none_or(|p| p.name != state_param_name) {
             return false;
         }
         if op.name.eq_ignore_ascii_case("init") {
@@ -5372,34 +5749,33 @@ impl ModuleTranslator {
                 arms.iter().any(|(cond, body)| {
                     Self::expr_has_record_access_root_ident(cond, ident)
                         || Self::expr_has_record_access_root_ident(body, ident)
-                }) || other.as_ref().is_some_and(|expr| {
-                    Self::expr_has_record_access_root_ident(expr, ident)
-                })
+                }) || other
+                    .as_ref()
+                    .is_some_and(|expr| Self::expr_has_record_access_root_ident(expr, ident))
             }
             TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
                 vars.iter().any(|bound| {
-                    bound.set.as_ref().is_some_and(|set| {
-                        Self::expr_has_record_access_root_ident(set, ident)
-                    })
+                    bound
+                        .set
+                        .as_ref()
+                        .is_some_and(|set| Self::expr_has_record_access_root_ident(set, ident))
                 }) || Self::expr_has_record_access_root_ident(body, ident)
             }
             TlaExpr::Choose { set, body, .. } => {
-                set.as_ref().is_some_and(|expr| {
-                    Self::expr_has_record_access_root_ident(expr, ident)
-                }) || Self::expr_has_record_access_root_ident(body, ident)
+                set.as_ref()
+                    .is_some_and(|expr| Self::expr_has_record_access_root_ident(expr, ident))
+                    || Self::expr_has_record_access_root_ident(body, ident)
             }
             TlaExpr::LetIn { defs, body } => {
-                defs.iter().any(|def| {
-                    Self::expr_has_record_access_root_ident(&def.body, ident)
-                }) || Self::expr_has_record_access_root_ident(body, ident)
+                defs.iter()
+                    .any(|def| Self::expr_has_record_access_root_ident(&def.body, ident))
+                    || Self::expr_has_record_access_root_ident(body, ident)
             }
             TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
                 Self::expr_has_record_access_root_ident(vars, ident)
                     || Self::expr_has_record_access_root_ident(action, ident)
             }
-            TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {
-                false
-            }
+            TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
         }
     }
 
@@ -9181,6 +9557,115 @@ mod tests {
             lconstants.contains("pub nodes: Set<int>"),
             "Expected inferred constants-record field nodes: Set<int> in LConstants, got:\n{}",
             lconstants
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_scalar_tag_projection_collapses_to_scalar_field() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT State, Constants
+            Init(s, c) ==
+                /\ s.role.tag = Primary
+                /\ s.ok = TRUE
+            Step(s, s_, c) ==
+                /\ s.role.tag = Primary
+                /\ s_.role = s.role
+                /\ s_.ok = s.ok
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("s.role =="),
+            "Expected scalar tag projection to normalize to s.role equality, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("s.role.tag"),
+            "Scalar enum-like field access should not keep .tag projection, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_symbolic_atom_mapping_ignores_operator_and_constant_names() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT State, Constants, Msg
+            Init(s, c) ==
+                /\ s.role.tag = Head
+                /\ s.phase.tag = Tail
+            Step(s, s_, c) ==
+                /\ s.role.tag = Head
+                /\ s_.role = s.role
+                /\ s_.phase = s.phase
+                /\ s_.sent = <<Msg>>
+            Next(s, s_, c) == Step(s, s_, c)
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("(s.role == 1int)") && result.contains("(s.phase == 2int)"),
+            "Expected dense symbolic atom lowering from first-use atoms only, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("5int") && !result.contains("6int"),
+            "Operator/constant names should not inflate symbolic atom literals, got:\n{}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_constants_collect_untyped_record_root_fields() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT State, Constants
+            Init(s, c) ==
+                /\ s.preaccept_senders = {}
+                /\ s.phase = 0
+            Step(s, s_, c) ==
+                /\ s_.preaccept_senders = {} \cup {c.my_id}
+                /\ s_.phase = s.phase
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        let lconstants = extract_struct_block(&result, "LConstants").unwrap();
+        assert!(
+            lconstants.contains("pub my_id: int"),
+            "Expected c.my_id usage to be harvested into LConstants, got:\n{}",
+            lconstants
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_state_bool_field_infers_from_comparison_rhs() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT State, Constants
+            Init(s, c) ==
+                /\ s.has_predecessor = (c.node_id > 0)
+                /\ s.node_id = c.node_id
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        let lstate = extract_struct_block(&result, "LState").unwrap();
+        assert!(
+            lstate.contains("pub has_predecessor: bool"),
+            "Expected comparison-backed state field to infer bool, got:\n{}",
+            lstate
         );
     }
 

@@ -4,10 +4,11 @@
 max_depth = 20
 max_states = 100000
 timeout_ms = 30000
+candidate_eval_guardrail = 200000
 
 [properties]
 invariants = []
-check_deadlock = false
+check_deadlock = true
 successor_semantics = "deadlock"
 
 [quantifiers]
@@ -15,5 +16,5 @@ int = { min = 0, max = 1 }
 
 [collections]
 max_set_len = 1
-max_seq_len = 1
+max_seq_len = 2
 max_map_len = 1

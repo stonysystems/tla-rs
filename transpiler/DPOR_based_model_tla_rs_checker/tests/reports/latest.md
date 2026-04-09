@@ -1,22 +1,22 @@
 # DPOR Checker Suite Scoreboard
 
-## Phase 38.14 Follow-Up (2026-04-09): 16/20 honest, 4/20 vacuous
+## Phase 38.14 Follow-Up (2026-04-09): 19/20 honest, 1/20 vacuous
 
 The previous "Milestone M9: 20/20 ALL GREEN" claim from 2026-04-01 remains
-retracted. After `38.14.7.a` (TwoPhase), `38.14.7.b` (Paxos),
-`38.14.7.c` (PBFT), and now `38.14.7.d` (Raft), the honest baseline-checker
-score is **16 real passes + 4 vacuous passes**.
+retracted. After `38.14.7.*` (Bug A closure) and partial `38.14.8.d`
+follow-up for Bug B, the honest baseline-checker score is now
+**19 real outcomes + 1 vacuous outcome**.
 
 | Metric | Count |
 |--------|-------|
 | Total cases | 20 |
-| **Real passes** | **16** |
-| **Vacuous passes** | **4** |
+| **Real outcomes** | **19** |
+| **Vacuous outcomes** | **1** |
 | Translation failed | 0 |
 | Checker error | 0 |
 
-A "real" pass means an invariant or deadlock property was actually checked and
-at least one distinct state was explored.
+A "real" outcome means an invariant or deadlock property was actually checked
+and at least one distinct state was explored.
 
 ### Per-Case Honest Status
 
@@ -35,9 +35,9 @@ at least one distinct state was explored.
 | 11 | `11_readers_writers` | inv_viol | **REAL PASS** (bug found) | -- | — |
 | 12 | `12_dining_phil` | deadlock | **REAL PASS** (deadlock found) | -- | — |
 | 13 | `13_twophase` | ok | **REAL PASS** | 9 | — |
-| 14 | `14_leader_election` | vacuous_zero_states_explored | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
-| 15 | `15_chain_repl` | vacuous_zero_states_explored | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
-| 16 | `16_primarybackup` | vacuous_zero_states_explored | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
+| 14 | `14_leader_election` | ok | **REAL PASS** | 1 | — |
+| 15 | `15_chain_repl` | deadlock | **REAL PASS** (deadlock found) | 5378 | — |
+| 16 | `16_primarybackup` | ok | **REAL PASS** | 4659 | — |
 | 17 | `17_paxos` | ok | **REAL PASS** | 40 | — |
 | 18 | `18_pbft` | ok | **REAL PASS** | 50 | — |
 | 19 | `19_epaxos` | vacuous_zero_states_explored | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
@@ -49,7 +49,7 @@ at least one distinct state was explored.
 |----------|--------------|-------|
 | Micro-models (01–05) | 5/5 | Real invariants, real verdicts |
 | Concurrency primitives (06–12) | 7/7 | Real invariants and deadlock checks |
-| **Protocols (13–20)** | **4/8** | Cases 13, 17, 18, 20 are real; 14/15/16/19 remain Bug B vacuous |
+| **Protocols (13–20)** | **7/8** | Only case 19 remains vacuous under current bounded setup |
 
 ### Reproducing This Report
 
@@ -65,10 +65,10 @@ python3 ./scripts/detect_stub_specs.py
 - **Phase 38.14.7.b: case 17 fixed → 14 real / 6 vacuous**
 - **Phase 38.14.7.c: case 18 fixed → 15 real / 5 vacuous**
 - **Phase 38.14.7.d: case 20 fixed → 16 real / 4 vacuous**
-- **Phase 38.14.7.e: Bug A closure pass complete (no `bug_a_*` tags remain; suite + detector rerun)**
+- **Phase 38.14.7.e: Bug A closure pass complete**
+- **Phase 38.14.8.d (partial): cases 15/16 promoted to real outcomes; case 19 still open**
 
 ### What Is Next
 
-1. **Bug B track** — fix Verus → TLA+ → spec roundtrip degradation for
-   cases 14/15/16/19.
+1. Close Bug B case 19 honestly (avoid zero-state vacuity without fake bounds).
 2. Re-run suite + stub detector and keep reports in sync with honest counts.

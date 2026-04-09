@@ -864,7 +864,7 @@ fn eval_builtin_method(
     receiver: &RuntimeValue,
     method: &str,
     args: &[RuntimeValue],
-    _bounds: RuntimeCollectionBounds,
+    bounds: RuntimeCollectionBounds,
 ) -> TranspileResult<Option<RuntimeValue>> {
     match method {
         "len" => {
@@ -1026,6 +1026,19 @@ fn eval_builtin_method(
                     Ok(Some(RuntimeValue::Set(result)))
                 }
                 _ => Err(type_error("`.intersect(...)` expects Set receiver and Set argument.")),
+            }
+        }
+        "push" => {
+            if args.len() != 1 {
+                return Err(type_error("`.push(...)` expects one argument."));
+            }
+            match receiver {
+                RuntimeValue::Seq(items) => {
+                    let mut next = items.clone();
+                    next.push(args[0].clone());
+                    Ok(Some(RuntimeValue::seq_bounded(next, &bounds)?))
+                }
+                _ => Err(type_error("`.push(...)` expects Seq receiver.")),
             }
         }
         _ => Ok(None),
@@ -1522,6 +1535,17 @@ mod tests {
         assert_eq!(
             remove_out,
             RuntimeValue::Set([RuntimeValue::Int(4)].into_iter().collect())
+        );
+
+        let push_expr = Expr::MethodCall {
+            receiver: Box::new(Expr::SeqLit(vec![Expr::Literal(Literal::Int(3))])),
+            method: "push".to_string(),
+            args: vec![Expr::Literal(Literal::Int(4))],
+        };
+        let push_out = eval_expr(&push_expr, &EvalContext::new(test_bounds())).unwrap();
+        assert_eq!(
+            push_out,
+            RuntimeValue::Seq(vec![RuntimeValue::Int(3), RuntimeValue::Int(4)])
         );
     }
 

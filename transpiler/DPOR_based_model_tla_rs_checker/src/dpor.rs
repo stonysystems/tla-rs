@@ -1605,6 +1605,82 @@ max_seq_len = 4
     }
 
     #[test]
+    fn test_case15_chain_replication_is_real_non_vacuous_deadlock() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/15_chain_replication_small/Chain.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: case 15 translated spec not found");
+            return;
+        }
+
+        let transpiler = match crate::baseline::find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: transpiler binary not found");
+                return;
+            }
+        };
+
+        let model_path = case_model_config("15_chain_replication_small");
+        let result = crate::baseline::run_baseline(
+            &transpiler,
+            &spec_file,
+            &model_path,
+            &[],
+            120,
+        );
+
+        assert_eq!(
+            result.result, "deadlock_detected",
+            "Case 15 should be a real deadlock-detection outcome under bounded config: {:?}",
+            result
+        );
+        assert!(
+            result.distinct_states > 0,
+            "Case 15 must explore at least one state; got {}",
+            result.distinct_states
+        );
+    }
+
+    #[test]
+    fn test_case16_primarybackup_is_real_non_vacuous_pass() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/16_primarybackup_small/Primarybackup.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: case 16 translated spec not found");
+            return;
+        }
+
+        let transpiler = match crate::baseline::find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: transpiler binary not found");
+                return;
+            }
+        };
+
+        let model_path = case_model_config("16_primarybackup_small");
+        let result = crate::baseline::run_baseline(
+            &transpiler,
+            &spec_file,
+            &model_path,
+            &["LSafetyInactiveStateIsQuiescent".to_string()],
+            120,
+        );
+
+        assert_eq!(
+            result.result, "ok",
+            "Case 16 should be a real invariant-checked pass: {:?}",
+            result
+        );
+        assert!(
+            result.distinct_states > 0,
+            "Case 16 must explore at least one state; got {}",
+            result.distinct_states
+        );
+    }
+
+    #[test]
     fn test_case17_paxos_is_real_non_vacuous_pass() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/17_paxos_small/Paxos.rs");

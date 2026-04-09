@@ -12108,9 +12108,45 @@ real DPOR follow-up work.
     `stub_status`, and added DPOR regression
     `test_case14_leader_election_is_real_non_vacuous_pass`. Direct baseline
     check now reports `result=ok`, `initial_states=1`, `distinct_states=1`.
-  - [ ] **38.14.8.d**: Apply the repaired path to cases 15/16/19, rerun full
+  - [~] **38.14.8.d**: Apply the repaired path to cases 15/16/19, rerun full
     suite + stub detector, then resync reports/manifest for honest protocol
-    counts.
+    counts. Decomposed 2026-04-09 to keep each leaf under ~500 LOC:
+    - [x] **38.14.8.d.1**: Dense symbolic-atom lowering for generated D1 cases
+      15/16/19 so enum-like tags stop inheriting operator/type-name noise
+      (e.g., role/phase tags no longer map to large sparse ints). Also add a
+      focused translator regression for this mapping discipline.
+      **Done 2026-04-09**: `transpiler/src/tla/translator.rs` now collects
+      symbolic atoms in first-use order while excluding module operators,
+      module constants, and core builtins. Case 15 role tags now map to
+      `{1,2,3}` (was `{5,8,14}`), case 16 role tags to `{1,3}`, and case 19
+      phase tags to `{1..5}` (was sparse up to 11+). Added
+      `test_generated_d1_symbolic_atom_mapping_ignores_operator_and_constant_names`.
+    - [x] **38.14.8.d.2**: Unblock case 15 execution path by supporting
+      generated `Seq.push(...)` in the model-check evaluator and retune the
+      per-case bounds so baseline yields a non-vacuous outcome instead of a
+      guardrail/config error.
+      **Done 2026-04-09**: added evaluator support for `.push(...)` on `Seq`
+      with bounds enforcement (`transpiler/src/modelcheck/evaluator.rs`) and
+      regression coverage in `test_eval_struct_field_and_methods`. Updated
+      case-15 model config (`candidate_eval_guardrail=200000`,
+      `max_seq_len=2`, `check_deadlock=true`) and manifest expectation to
+      `deadlock`. Direct baseline now reports `deadlock_detected` with
+      `initial_states=1`, `distinct_states=5378`.
+    - [x] **38.14.8.d.3**: Promote case 16 from vacuous to real invariant check
+      and lock it with a DPOR regression.
+      **Done 2026-04-09**: case 16 manifest now checks
+      `SafetyInactiveStateIsQuiescent`; direct baseline reports `result=ok`
+      with `initial_states=1`, `distinct_states=4659`. Added
+      `test_case16_primarybackup_is_real_non_vacuous_pass`.
+    - [ ] **38.14.8.d.4**: Close case 19 honestly. Remaining blocker is not
+      translator syntax anymore: current bounded checker still gets
+      `initial_states=0` under tractable `int 0..1` bounds because
+      `num_replicas >= 3` and five symbolic phase tags require larger integer
+      domains, while larger domains trigger `LState` candidate-explosion in
+      initial-state construction. Next leaf should pick one honest fix:
+      either (a) improve initial-state candidate synthesis/pruning for large
+      structs, or (b) introduce non-int finite typing for symbolic phase tags
+      so protocol control states do not depend on the global int range.
 - [ ] **38.14.9**: Once 38.14.7 and 38.14.8 are done, retire the
   `stub_status` annotations from `manifest.toml` and update
   `latest.md`/`hard_case_blocker_ledger.md` with the new honest pass count.

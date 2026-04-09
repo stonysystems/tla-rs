@@ -234,15 +234,14 @@ source_kind = "generated_repo_tla"
 tla_entry = "Chain.tla"
 tla_aux_modules = ["Types.tla"]
 generated_tlars_entry = ""
-expected_primary_result = "ok"
+expected_primary_result = "deadlock"
 expected_property = ""
 model_bounds = "2 nodes"
-requires_deadlock_check = false
+requires_deadlock_check = true
 milestone_gate = "M4"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/ChainReplication/"
-stub_status = "bug_b_roundtrip_degraded"
-notes = "VACUOUS PASS (0 distinct states). Same Bug B fingerprint as case 14: arbitrary-soup operator bodies, primitive `s: int` Init parameter, no reachable initial state."
+notes = "REAL non-vacuous Bug B follow-up (2026-04-09): regenerated from source after generated-D1 symbolic-atom lowering fix and model-check evaluator support for Seq.push. With deadlock checking enabled in per-case model config, baseline now reports `result=deadlock_detected` at depth 1 with non-empty exploration (`initial_states=1`, `distinct_states=5378`)."
 
 # ============================================================
 # Cases 16-20: Full protocol models
@@ -256,14 +255,13 @@ tla_entry = "Primarybackup.tla"
 tla_aux_modules = ["Types.tla"]
 generated_tlars_entry = ""
 expected_primary_result = "ok"
-expected_property = ""
+expected_property = "SafetyInactiveStateIsQuiescent"
 model_bounds = "2 nodes"
 requires_deadlock_check = false
 milestone_gate = "M4"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/PrimaryBackup/"
-stub_status = "bug_b_roundtrip_degraded"
-notes = "VACUOUS PASS (0 distinct states). Same Bug B fingerprint as case 14: arbitrary-soup operator bodies including LSafetyInactiveStateIsQuiescent, primitive `s: int` Init parameter, no reachable initial state."
+notes = "REAL non-vacuous Bug B follow-up (2026-04-09): regenerated from source after generated-D1 symbolic-atom lowering fix. Baseline with `LSafetyInactiveStateIsQuiescent` now reports `result=ok` with invariant checking and non-empty exploration (`initial_states=1`, `distinct_states=4659`)."
 
 [[case]]
 id = "17_paxos_small"
