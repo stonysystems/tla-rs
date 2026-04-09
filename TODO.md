@@ -12249,7 +12249,7 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
     `test_enabled_transitions_peterson_not_collapsed_to_process_zero` and
     `test_infer_process_id_fallback_is_stable_non_zero` plus
     `test_infer_process_id_from_state_delta_map_key`.
-  - [ ] **38.14.10.c**: DPOR dependence integration pass: make sleep/backtrack
+  - [x] **38.14.10.c**: DPOR dependence integration pass: make sleep/backtrack
     logic consume the new process IDs plus branch footprints in a conservative,
     parity-safe way (no lost states), and add explicit parity tests on the
     baseline passing corpus.
@@ -12270,9 +12270,18 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
       process-aware sleep propagation: `test_compute_child_sleep_set_same_process_is_dependent`
       plus updated sleep-set tests that keep unknown-footprint transitions
       dependent and verify cross-process disjoint-footprint independence.
-    - [ ] **38.14.10.c.c**: Add/refresh corpus-level parity tests for
+    - [x] **38.14.10.c.c**: Add/refresh corpus-level parity tests for
       `use_independence` and `use_sleep_sets` on baseline-passing cases to
       assert no lost states.
+      **Done 2026-04-09**: Expanded corpus parity regression
+      `test_sleep_set_parity_all_passing_cases` to run all three modes
+      (conservative, independence-only, independence+sleep) across the
+      baseline-passing corpus and assert subset-based no-lost-state invariants
+      (`conservative ⊆ independence`, `conservative ⊆ sleep`) per case.
+    **Done 2026-04-09**: `38.14.10.c.a-c` are complete. DPOR now applies
+    process-aware conservative dependence in sleep propagation/backtrack seeding
+    and has focused + corpus-level regressions proving no state-loss relative
+    to conservative mode on baseline-passing cases.
   - [ ] **38.14.10.d**: Evidence pass: regenerate
     `tests/reports/sleep_set_reduction_table.md` from measured runs and require
     >10% explored-state reduction on at least 3 multi-process cases before

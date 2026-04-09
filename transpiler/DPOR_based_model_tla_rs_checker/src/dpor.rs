@@ -1008,11 +1008,11 @@ max_seq_len = 4
 
     #[test]
     fn test_sleep_set_parity_all_passing_cases() {
-        // Phase 38.8.3.b: Gate sleep-set pruning behind parity checks.
-        // For every baseline-passing case, verify that DPOR with sleep sets
-        // finds at least as many states as DPOR without (no lost states).
-        // With current single-process specs and empty footprints, sleep sets
-        // should produce identical results (no reduction, no loss).
+        // Phase 38.14.10.c.c: Corpus-level parity checks for both
+        // independence-only and independence+sleep-set modes.
+        //
+        // Correctness bar: optimized modes must not lose any states reached by
+        // conservative mode on baseline-passing cases.
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
         let cases: Vec<(&str, &str)> = vec![
@@ -1028,7 +1028,7 @@ max_seq_len = 4
             ("20_raft_small", "Raft.rs"),
         ];
 
-        let mut all_match = true;
+        let mut all_ok = true;
         for (case_id, filename) in &cases {
             let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
             if !spec_file.exists() { continue; }
@@ -1046,6 +1046,14 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
             };
+            let with_independence = DporConfig {
+                max_depth: 20,
+                max_states: 10_000,
+                use_independence: true,
+                use_sleep_sets: false,
+                invariants: vec![],
+                check_deadlock: false,
+            };
             let with_sleep = DporConfig {
                 max_depth: 20,
                 max_states: 10_000,
@@ -1055,21 +1063,50 @@ max_seq_len = 4
                 check_deadlock: false,
             };
 
-            let result_no_sleep = explore_dpor(&ctx, &without_sleep);
+            let result_conservative = explore_dpor(&ctx, &without_sleep);
+            let result_independence = explore_dpor(&ctx, &with_independence);
             let result_sleep = explore_dpor(&ctx, &with_sleep);
 
-            let ns = result_no_sleep.distinct_states.len();
-            let ws = result_sleep.distinct_states.len();
-            let match_status = if ns == ws { "exact" } else if ws >= ns { "sleep_superset" } else { "SLEEP_LOST_STATES" };
+            let conservative_states = &result_conservative.distinct_states;
+            let independence_states = &result_independence.distinct_states;
+            let sleep_states = &result_sleep.distinct_states;
 
-            if match_status == "SLEEP_LOST_STATES" {
-                all_match = false;
+            let independence_ok = conservative_states.is_subset(independence_states);
+            let sleep_ok = conservative_states.is_subset(sleep_states);
+            if !independence_ok || !sleep_ok {
+                all_ok = false;
             }
-            eprintln!("  {} no_sleep={} with_sleep={} → {}", case_id, ns, ws, match_status);
+
+            let independence_status = if conservative_states == independence_states {
+                "exact"
+            } else if independence_ok {
+                "independence_superset"
+            } else {
+                "INDEPENDENCE_LOST_STATES"
+            };
+            let sleep_status = if conservative_states == sleep_states {
+                "exact"
+            } else if sleep_ok {
+                "sleep_superset"
+            } else {
+                "SLEEP_LOST_STATES"
+            };
+            eprintln!(
+                "  {} conservative={} independence={} ({}) sleep={} ({})",
+                case_id,
+                conservative_states.len(),
+                independence_states.len(),
+                independence_status,
+                sleep_states.len(),
+                sleep_status
+            );
         }
 
-        assert!(all_match, "Sleep sets must not lose states on any passing case");
-        eprintln!("Sleep-set parity: all cases verified ✓");
+        assert!(
+            all_ok,
+            "Independence/sleep-set modes must not lose conservative states on any passing case"
+        );
+        eprintln!("Independence + sleep-set parity: all cases verified ✓");
     }
 
     #[test]
