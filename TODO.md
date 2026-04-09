@@ -12330,6 +12330,33 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
       - [ ] **38.14.10.d.b.c**: Re-tune DPOR backtrack/sleep interaction for
         measurable explored-state reduction while preserving conservative
         no-lost-state parity checks.
+        **Decomposition (2026-04-09):**
+      - [x] **38.14.10.d.b.c.a**: Seed child sleep sets from already-explored
+        independent sibling alternatives at the parent decision point
+        (`done`-set aware), not only propagated parent sleep entries.
+        **Done 2026-04-09**: `compute_child_sleep_set()` now takes parent
+        `done` transitions and seeds child sleep with independent explored
+        siblings (excluding chosen), while preserving same-process/unknown
+        footprint conservative dependence.
+      - [x] **38.14.10.d.b.c.b**: Add focused tests for done-set-based sleep
+        seeding and wakeup behavior (same-process dependence, dependent
+        cross-process accesses, and independent keyed cross-process accesses).
+        **Done 2026-04-09**: Added
+        `test_compute_child_sleep_set_seeds_from_done_independent_alternatives`
+        and refreshed child-sleep tests under the new signature.
+      - [x] **38.14.10.d.b.c.c**: Re-run reduction harness after c.a/c.b,
+        record measured impact in TODO/report notes, and decide whether further
+        tuning is required before 38.14.10.d.c evidence refresh.
+        **Done 2026-04-09**: Re-ran reduction harness (`02/09/17`) and full
+        suites. Gate remains **NOT MET** (`0/3`; distinct and transition
+        counts unchanged on all measured cases), so additional tuning is needed.
+      - [ ] **38.14.10.d.b.c.d**: Add sleep-set candidate seeding from
+        deterministic pre-chosen enabled alternatives (not only `done`) with
+        conservative guards; verify no-lost-state parity checks still pass.
+      - [ ] **38.14.10.d.b.c.e**: If c.d still yields `0/3`, add focused
+        telemetry for sleep-prune hits and per-depth sleep cardinality to
+        isolate whether dependence, candidate seeding, or replay order is the
+        remaining blocker.
     - [ ] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.

@@ -270,6 +270,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 let parent_state = frame.state.clone();
                                 let parent_depth = frame.depth;
                                 let parent_sleep = frame.sleep.clone();
+                                let parent_done = frame.done.clone();
                                 let parent_enabled = frame.enabled.clone();
                                 Some((
                                     key,
@@ -277,6 +278,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                     parent_state,
                                     parent_depth,
                                     parent_sleep,
+                                    parent_done,
                                     parent_enabled,
                                 ))
                             }
@@ -295,6 +297,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                     parent_state,
                     parent_depth,
                     parent_sleep,
+                    parent_done,
                     parent_enabled,
                 )) => {
                     // Get the actual successor state
@@ -386,6 +389,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                         let child_sleep = if config.use_sleep_sets {
                             compute_child_sleep_set(
                                 &parent_sleep,
+                                &parent_done,
                                 &transition,
                                 &parent_enabled,
                                 config.use_independence,
@@ -669,6 +673,7 @@ fn transitions_independent(
 
 fn compute_child_sleep_set(
     parent_sleep: &BTreeSet<String>,
+    parent_done: &BTreeSet<String>,
     chosen: &EnabledTransition,
     parent_enabled: &[EnabledTransition],
     use_independence: bool,
@@ -690,6 +695,20 @@ fn compute_child_sleep_set(
                 child_sleep.insert(sleeping_key.clone());
             }
             // If dependent, don't propagate (woken up)
+        }
+    }
+
+    // Also seed child sleep from already-explored alternatives at the parent.
+    // This mirrors sleep-set DFS behavior where previously explored independent
+    // siblings can be slept in the descendant branch.
+    for done_key in parent_done {
+        if *done_key == chosen.ordering_key {
+            continue;
+        }
+        if let Some(done_trans) = parent_enabled.iter().find(|t| t.ordering_key == *done_key) {
+            if transitions_independent(done_trans, chosen, use_independence) {
+                child_sleep.insert(transition_sleep_key(done_trans));
+            }
         }
     }
 
@@ -1349,7 +1368,13 @@ max_seq_len = 4
             footprint: TransitionFootprint::default(), // empty
         };
         let parent_enabled = vec![sleeping_one, sleeping_two];
-        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
+        let child_sleep = compute_child_sleep_set(
+            &parent_sleep,
+            &BTreeSet::new(),
+            &chosen,
+            &parent_enabled,
+            true,
+        );
         assert!(
             child_sleep.is_empty(),
             "Empty footprints → all dependent → empty child sleep"
@@ -1392,7 +1417,13 @@ max_seq_len = 4
             },
         };
         let parent_enabled = vec![indep.clone(), dep.clone()];
-        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
+        let child_sleep = compute_child_sleep_set(
+            &parent_sleep,
+            &BTreeSet::new(),
+            &chosen,
+            &parent_enabled,
+            true,
+        );
         assert!(
             child_sleep.contains(&transition_sleep_key(&indep)),
             "Independent transition stays asleep"
@@ -1428,10 +1459,81 @@ max_seq_len = 4
         };
         let parent_enabled = vec![sleeping];
 
-        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
+        let child_sleep = compute_child_sleep_set(
+            &parent_sleep,
+            &BTreeSet::new(),
+            &chosen,
+            &parent_enabled,
+            true,
+        );
         assert!(
             child_sleep.is_empty(),
             "Same-process transitions are treated as dependent in conservative DPOR"
+        );
+    }
+
+    #[test]
+    fn test_compute_child_sleep_set_seeds_from_done_independent_alternatives() {
+        let done_independent = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "t_done_indep".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["y".to_string()].into(),
+                writes: ["y".to_string()].into(),
+            },
+        };
+        let done_dependent = EnabledTransition {
+            process_id: ProcessId(2),
+            branch_label: "t_done_dep".to_string(),
+            successor_fingerprint: StateFingerprint(2),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(),
+                writes: BTreeSet::new(),
+            },
+        };
+        let chosen = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "t_chosen".to_string(),
+            successor_fingerprint: StateFingerprint(3),
+            ordering_key: "0002".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(),
+                writes: ["x".to_string()].into(),
+            },
+        };
+        let parent_done: BTreeSet<String> = [
+            done_independent.ordering_key.clone(),
+            done_dependent.ordering_key.clone(),
+            chosen.ordering_key.clone(),
+        ]
+        .into();
+        let parent_enabled = vec![
+            done_independent.clone(),
+            done_dependent.clone(),
+            chosen.clone(),
+        ];
+
+        let child_sleep = compute_child_sleep_set(
+            &BTreeSet::new(),
+            &parent_done,
+            &chosen,
+            &parent_enabled,
+            true,
+        );
+        assert!(
+            child_sleep.contains(&transition_sleep_key(&done_independent)),
+            "independent done alternative should be seeded into child sleep"
+        );
+        assert!(
+            !child_sleep.contains(&transition_sleep_key(&done_dependent)),
+            "dependent done alternative should not be seeded into child sleep"
+        );
+        assert!(
+            !child_sleep.contains(&transition_sleep_key(&chosen)),
+            "chosen transition itself should not be seeded into child sleep from done-set"
         );
     }
 
