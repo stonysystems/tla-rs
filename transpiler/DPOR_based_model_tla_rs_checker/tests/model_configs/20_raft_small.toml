@@ -2,7 +2,7 @@
 # state uses Seq<char> for role names.
 
 [constants.assignments]
-Server = 2
+server = 3
 
 [search]
 max_depth = 30
@@ -11,15 +11,15 @@ timeout_ms = 60000
 candidate_eval_guardrail = 200000
 
 [properties]
-invariants = []
+invariants = ["ElectionSafety"]
 check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 2 }
+int = { min = 0, max = 3 }
 
 [collections]
-max_set_len = 2
+max_set_len = 3
 max_seq_len = 2
 max_map_len = 2
 

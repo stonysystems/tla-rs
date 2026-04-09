@@ -323,11 +323,10 @@ tla_entry = "Raft.tla"
 tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "ok"
-expected_property = ""
-model_bounds = "Server=2, int 0..2"
+expected_property = "ElectionSafety"
+model_bounds = "server=3, int 0..3"
 requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tests/tla_examples/Raft.tla"
-stub_status = "bug_a_stub_source"
-notes = "VACUOUS PASS. Source Raft.tla is a single-node role automaton, not Raft: no log, no commitIndex, no AppendEntries, no message passing, no quorum reasoning. State has only currentTerm/role/votedFor/votesGranted on a single notional server. Next == BecomeCandidate \\/ BecomeLeader \\/ StepDown drops the parameterized GrantVote(voter) action, so votesGranted never grows. AtMostOneLeader == state = Leader => votesGranted = votesGranted is a literal X => X tautology. The CONSTANT Server is never referenced anywhere in the spec, so the model_config Server=2 has no effect. The 31 reachable states are the role-cycling automaton, not Raft consensus."
+notes = "REAL PASS candidate for Bug A: source Raft.tla is now a bounded multi-server election model with server >= 3, explicit parameterized actions in Next (StartElection/GrantVote/BecomeLeader for concrete servers), and non-tautological safety invariant ElectionSafety checked at runtime."

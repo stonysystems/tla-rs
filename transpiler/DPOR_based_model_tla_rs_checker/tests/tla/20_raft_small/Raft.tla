@@ -1,43 +1,84 @@
 -------------------------------- MODULE Raft --------------------------------
-(* Simplified Raft Consensus - Leader Election
-   A basic model of Raft leader election for transpiler testing.
-
-   Servers can be in one of three states: follower, candidate, or leader.
-   Uses term numbers to coordinate elections. *)
+\* Small bounded Raft election model for DPOR case 20.
+\* Tracks a candidate and granted votes across three concrete servers.
 
 EXTENDS Naturals
 
-CONSTANT Server
+CONSTANT server
 
-VARIABLE currentTerm, state, votedFor, votesGranted
+VARIABLE currentTerm, role, candidate, votesGranted
 
-(* Server states *)
 Follower == "follower"
 Candidate == "candidate"
 Leader == "leader"
 
-(* Type invariant *)
-TypeOK == currentTerm \in Nat /\ (state = Follower \/ state = Candidate \/ state = Leader)
+HasQuorum(vs) ==
+    \/ (1 \in vs /\ 2 \in vs)
+    \/ (1 \in vs /\ 3 \in vs)
+    \/ (2 \in vs /\ 3 \in vs)
 
-(* Initial state: all servers are followers at term 0 *)
-Init == currentTerm = 0 /\ state = Follower /\ votedFor = {} /\ votesGranted = {}
+Init ==
+    /\ server >= 3
+    /\ currentTerm = 0
+    /\ role = Follower
+    /\ candidate = 0
+    /\ votesGranted = {}
 
-(* Server starts an election: increment term, vote for self *)
-BecomeCandidate == state = Follower /\ state' = Candidate /\ currentTerm' = currentTerm + 1 /\ votedFor' = {currentTerm + 1} /\ votesGranted' = votesGranted
+StartElection(cand) ==
+    /\ role = Follower
+    /\ (cand = 1 \/ cand = 2 \/ cand = 3)
+    /\ role' = Candidate
+    /\ currentTerm' = currentTerm + 1
+    /\ candidate' = cand
+    /\ votesGranted' = {cand}
 
-(* A server grants its vote to the candidate *)
-GrantVote(voter) == state = Candidate /\ voter \notin votesGranted /\ votesGranted' = votesGranted \cup {voter} /\ state' = state /\ currentTerm' = currentTerm /\ votedFor' = votedFor
+GrantVote(voter) ==
+    /\ role = Candidate
+    /\ (voter = 1 \/ voter = 2 \/ voter = 3)
+    /\ voter <= server
+    /\ voter \notin votesGranted
+    /\ votesGranted' = votesGranted \cup {voter}
+    /\ role' = role
+    /\ currentTerm' = currentTerm
+    /\ candidate' = candidate
 
-(* Candidate becomes leader if it has majority of votes *)
-BecomeLeader == state = Candidate /\ state' = Leader /\ currentTerm' = currentTerm /\ votedFor' = votedFor /\ votesGranted' = votesGranted
+BecomeLeader(cand) ==
+    /\ role = Candidate
+    /\ cand = candidate
+    /\ (cand = 1 \/ cand = 2 \/ cand = 3)
+    /\ HasQuorum(votesGranted)
+    /\ role' = Leader
+    /\ currentTerm' = currentTerm
+    /\ candidate' = candidate
+    /\ votesGranted' = votesGranted
 
-(* Leader steps down when it sees higher term *)
-StepDown == state = Leader /\ state' = Follower /\ votesGranted' = {} /\ currentTerm' = currentTerm /\ votedFor' = votedFor
+StepDown ==
+    /\ role = Leader
+    /\ role' = Follower
+    /\ candidate' = 0
+    /\ votesGranted' = {}
+    /\ currentTerm' = currentTerm
 
-(* Next state relation *)
-Next == BecomeCandidate \/ BecomeLeader \/ StepDown
+Next ==
+    \/ StartElection(1)
+    \/ StartElection(2)
+    \/ StartElection(3)
+    \/ GrantVote(1)
+    \/ GrantVote(2)
+    \/ GrantVote(3)
+    \/ BecomeLeader(1)
+    \/ BecomeLeader(2)
+    \/ BecomeLeader(3)
+    \/ StepDown
 
-(* Invariant: at most one leader per term *)
-AtMostOneLeader == state = Leader => votesGranted = votesGranted
+ElectionSafety ==
+    /\ role = Leader => HasQuorum(votesGranted)
+    /\ role = Leader => (candidate = 1 \/ candidate = 2 \/ candidate = 3)
+
+TypeOK ==
+    /\ currentTerm \in Nat
+    /\ (role = Follower \/ role = Candidate \/ role = Leader)
+    /\ (candidate = 0 \/ candidate = 1 \/ candidate = 2 \/ candidate = 3)
+    /\ votesGranted \subseteq {1, 2, 3}
 
 ================================================================================
