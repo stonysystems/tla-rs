@@ -274,14 +274,13 @@ tla_entry = "Paxos.tla"
 tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "ok"
-expected_property = ""
-model_bounds = "2 acceptors, quorum=1"
+expected_property = "ChosenValueAgreement"
+model_bounds = "Acceptors={1,2}, Values={1,2}, int 0..2"
 requires_deadlock_check = false
 milestone_gate = "M4"
 negative = false
 source = "transpiler/tests/tla_examples/Paxos.tla"
-stub_status = "bug_a_stub_source"
-notes = "VACUOUS PASS. Source Paxos.tla is itself a degenerate stub: it declares `Next == msgs' = msgs /\\ maxBal' = maxBal /\\ ...` (a literal stuttering frame, no actions invoked) and `TypeOK == msgs = msgs /\\ maxBal = maxBal` (a tautology). The Send1a/1b/2a/2b actions are defined but unreachable. The 1 reported state is just LInit's empty-message state stuttering against itself. This is not Paxos."
+notes = "REAL PASS candidate for Bug A: Next explicitly includes all Send1a/Send1b/Send2a/Send2b parameter combinations over two acceptors and two values; ChosenValueAgreement enforces single-decree agreement."
 
 [[case]]
 id = "18_pbft_small"

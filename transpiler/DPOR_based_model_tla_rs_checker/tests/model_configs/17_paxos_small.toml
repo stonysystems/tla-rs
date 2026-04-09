@@ -1,6 +1,5 @@
 # Model config for case 17: Paxos (small bounds)
-# The default int 0..5 causes candidate expansion to exceed 10K.
-# Narrow to 0..2 for a tractable state space.
+# Fixed 2-acceptor/2-value model in Paxos.tla (no LConstants).
 
 [search]
 max_depth = 30
@@ -8,17 +7,17 @@ max_states = 100000
 timeout_ms = 30000
 
 [properties]
-invariants = []
+invariants = ["LChosenValueAgreement"]
 check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 1 }
+int = { min = 0, max = 2 }
 
 [collections]
-max_set_len = 1
-max_seq_len = 1
-max_map_len = 1
+max_set_len = 2
+max_seq_len = 2
+max_map_len = 2
 
 [quantifiers.types.Seq_char]
 kind = "values"

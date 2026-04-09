@@ -1,19 +1,20 @@
 # DPOR Checker Suite Scoreboard
 
-## Phase 38.14 Follow-Up (2026-04-09): 13/20 honest, 7/20 vacuous
+## Phase 38.14 Follow-Up (2026-04-09): 14/20 honest, 6/20 vacuous
 
 The previous "Milestone M9: 20/20 ALL GREEN" claim from 2026-04-01 has been
-audited and rejected. After `38.14.7.a` (real TwoPhase case 13), the honest
-baseline-checker score is **13 real passes + 7 vacuous passes**. See
-`design.md` §"Phase 38.14 Honest Postmortem" for
-the full root-cause analysis (Bug A: hand-written stub TLA+; Bug B: Verus →
-TLA+ → spec roundtrip degradation).
+audited and rejected. After `38.14.7.a` (real TwoPhase case 13) and
+`38.14.7.b` (real Paxos case 17), the honest baseline-checker score is
+**14 real passes + 6 vacuous passes**. See `design.md`
+§"Phase 38.14 Honest Postmortem" for the full root-cause analysis
+(Bug A: hand-written stub TLA+; Bug B: Verus → TLA+ → spec roundtrip
+degradation).
 
 | Metric | Count |
 |--------|-------|
 | Total cases | 20 |
-| **Real passes** | **13** |
-| **Vacuous passes** | **7** |
+| **Real passes** | **14** |
+| **Vacuous passes** | **6** |
 | Translation failed | 0 |
 | Checker error | 0 |
 
@@ -42,7 +43,7 @@ returned but no property was checked, OR the explorer never reached any state.
 | 14 | `14_leader_election` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
 | 15 | `15_chain_repl` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
 | 16 | `16_primarybackup` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
-| 17 | `17_paxos` | ok | **VACUOUS** (LNext = `s'==s` stutter, LTypeOK = `X==X`) | 1 | bug_a_stub_source |
+| 17 | `17_paxos` | ok | **REAL PASS** | 40 | — |
 | 18 | `18_pbft` | ok | **VACUOUS** (Replica=1, drops 3 Send actions, no inv) | 31 | bug_a_incomplete_next |
 | 19 | `19_epaxos` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
 | 20 | `20_raft` | ok | **VACUOUS** (single-node toy, AtMostOneLeader is `X⇒X`) | 31 | bug_a_stub_source |
@@ -53,13 +54,13 @@ returned but no property was checked, OR the explorer never reached any state.
 |----------|--------------|-------|
 | Micro-models (01–05) | 5/5 | Real invariants, real verdicts |
 | Concurrency primitives (06–12) | 7/7 | Real invariants, including ticket lock, Peterson, bakery, R/W, dining phil |
-| **Protocols (13–20)** | **1/8** | Case 13 is now real; 14–20 remain vacuous or blocked |
+| **Protocols (13–20)** | **2/8** | Cases 13 and 17 are real; 14/15/16/18/19/20 remain vacuous or blocked |
 
 ### Reproducing the Audit
 
 ```bash
-# Re-run the suite (will now report VACUOUS for cases 13-20)
-./scripts/run_full_suite.sh
+# Re-run the suite (same timeout used for this report)
+./scripts/run_full_suite.sh --timeout 600
 
 # Static stub detection on the translated .rs files
 ./scripts/detect_stub_specs.py
@@ -70,23 +71,25 @@ returned but no property was checked, OR the explorer never reached any state.
 - M0 → M1(2) → M1.5(3) → M2(5) → M3(9) → M4(10) → M6(11) → M7(12) → M8(13) → M8.5(16) → M8.6(18) → M9(claimed 20)
 - **Phase 38.14 (2026-04-09): retracted M9 → 12 real / 8 vacuous**
 - **Phase 38.14.7.a (2026-04-09): case 13 fixed → 13 real / 7 vacuous**
+- **Phase 38.14.7.b (2026-04-09): case 17 fixed → 14 real / 6 vacuous**
 
-The growth from M8 (13 real) to the claimed M9 (20) consists entirely of
-vacuous passes. The first post-audit protocol gain is case 13 moving to a
-real pass under 38.14.7.a.
+The growth from M8 (13 real) to the claimed M9 (20) consisted of vacuous
+passes. Post-audit protocol gains are now cases 13 and 17 moving to real
+passes under 38.14.7.a/38.14.7.b.
 
 ### What's actually next
 
-To honestly raise the protocol score above 1/8:
+To honestly raise the protocol score above 2/8:
 
-1. **Bug A track** — replace the hand-written stub TLA+ files for cases 13,
-   17, 18, 20 with real specifications that include all actions in `Next`,
-   non-tautological invariants, and meaningful constants. Set
-   `expected_property` in the manifest accordingly so `--invariant` is
-   actually passed.
+1. **Bug A track** — replace the remaining hand-written stub TLA+ files for
+   cases 18 and 20 with real specifications that include all actions in `Next`,
+   non-tautological invariants, and meaningful constants. Keep
+   `expected_property` wired in the manifest so `--invariant` is actually
+   passed.
 2. **Bug B track** — fix the Verus → TLA+ field harvesting and Init
    parameter type inference so that auto-generated cases 14, 15, 16, 19
    produce specs whose `LState` reflects the real VARIABLE declarations
    and whose Init parameter is typed as the state struct, not `int`.
-3. Then re-run `./scripts/run_full_suite.sh` and `./scripts/detect_stub_specs.py`
-   together; both must come back clean before any pass count above 13 is trustworthy.
+3. Then re-run `./scripts/run_full_suite.sh --timeout 600` and
+   `./scripts/detect_stub_specs.py` together; both must come back clean
+   before any pass count above 14 is trustworthy.

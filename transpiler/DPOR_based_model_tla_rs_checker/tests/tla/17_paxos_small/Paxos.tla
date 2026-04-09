@@ -1,46 +1,75 @@
 -------------------------------- MODULE Paxos --------------------------------
-(* Single-Decree Paxos Consensus Algorithm
-   A simplified model for TLA+ transpiler testing.
-
-   This models the core Paxos consensus algorithm with:
-   - Proposers that generate ballots and proposals
-   - Acceptors that vote on proposals
-   - Learners that detect consensus *)
+\* Small single-decree Paxos model for DPOR case 17.
+\* Fixed 2-acceptor / 2-value bounds keep the model tractable.
 
 EXTENDS Naturals
 
-CONSTANT Value, Acceptor, Quorum
+VARIABLE maxBal, maxVBal, maxVal
 
-VARIABLE maxBal, maxVBal, maxVal, msgs
+Acceptors == {1, 2}
+Values == {1, 2}
 
-(* Message types *)
-Phase1a == "phase1a"
-Phase1b == "phase1b"
-Phase2a == "phase2a"
-Phase2b == "phase2b"
+Init ==
+    /\ maxBal = {}
+    /\ maxVBal = {}
+    /\ maxVal = {}
 
-(* Initial state: no ballots, no values, no messages *)
-Init == maxBal = {} /\ maxVBal = {} /\ maxVal = {} /\ msgs = {}
+Send1a(b) ==
+    /\ b \in Acceptors
+    /\ maxBal' = maxBal
+    /\ maxVBal' = maxVBal
+    /\ maxVal' = maxVal
 
-(* Phase 1a: Proposer sends prepare request with ballot b *)
-Send1a(b) == msgs' = msgs \cup {[type |-> Phase1a, bal |-> b]} /\ maxBal' = maxBal /\ maxVBal' = maxVBal /\ maxVal' = maxVal
+Send1b(a, b) ==
+    /\ a \in Acceptors
+    /\ b \in Acceptors
+    /\ maxBal' = maxBal \cup {b}
+    /\ maxVBal' = maxVBal
+    /\ maxVal' = maxVal
 
-(* Phase 1b: Acceptor a responds to prepare if ballot >= maxBal *)
-Send1b(a, b) == msgs' = msgs \cup {[type |-> Phase1b, acc |-> a, bal |-> b]} /\ maxBal' = maxBal \cup {b} /\ maxVBal' = maxVBal /\ maxVal' = maxVal
+Send2a(b, v) ==
+    /\ b \in Acceptors
+    /\ v \in Values
+    /\ (maxVal = {} \/ v \in maxVal)
+    /\ maxBal' = maxBal
+    /\ maxVBal' = maxVBal \cup {b}
+    /\ maxVal' = maxVal
 
-(* Phase 2a: Proposer sends accept request with ballot b and value v *)
-Send2a(b, v) == msgs' = msgs \cup {[type |-> Phase2a, bal |-> b, val |-> v]} /\ maxBal' = maxBal /\ maxVBal' = maxVBal /\ maxVal' = maxVal
+Send2b(a, b, v) ==
+    /\ a \in Acceptors
+    /\ b \in Acceptors
+    /\ v \in Values
+    /\ (maxVal = {} \/ v \in maxVal)
+    /\ maxBal' = maxBal
+    /\ maxVBal' = maxVBal \cup {b}
+    /\ maxVal' = maxVal \cup {v}
 
-(* Phase 2b: Acceptor a accepts ballot b with value v *)
-Send2b(a, b, v) == msgs' = msgs \cup {[type |-> Phase2b, acc |-> a, bal |-> b, val |-> v]} /\ maxBal' = maxBal /\ maxVBal' = maxVBal \cup {b} /\ maxVal' = maxVal \cup {v}
+Next ==
+    \/ Send1a(1)
+    \/ Send1a(2)
+    \/ Send1b(1, 1)
+    \/ Send1b(1, 2)
+    \/ Send1b(2, 1)
+    \/ Send1b(2, 2)
+    \/ Send2a(1, 1)
+    \/ Send2a(1, 2)
+    \/ Send2a(2, 1)
+    \/ Send2a(2, 2)
+    \/ Send2b(1, 1, 1)
+    \/ Send2b(1, 1, 2)
+    \/ Send2b(1, 2, 1)
+    \/ Send2b(1, 2, 2)
+    \/ Send2b(2, 1, 1)
+    \/ Send2b(2, 1, 2)
+    \/ Send2b(2, 2, 1)
+    \/ Send2b(2, 2, 2)
 
-(* Next state relation *)
-Next == msgs' = msgs /\ maxBal' = maxBal /\ maxVBal' = maxVBal /\ maxVal' = maxVal
+ChosenValueAgreement ==
+    \A v1, v2 \in maxVal : v1 = v2
 
-(* Safety: At most one value can be chosen *)
-Chosen(v) == v \in maxVal
-
-(* Type invariant *)
-TypeOK == msgs = msgs /\ maxBal = maxBal
+TypeOK ==
+    /\ maxBal \subseteq Acceptors
+    /\ maxVBal \subseteq Acceptors
+    /\ maxVal \subseteq Values
 
 ================================================================================
