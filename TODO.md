@@ -12253,6 +12253,26 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
     logic consume the new process IDs plus branch footprints in a conservative,
     parity-safe way (no lost states), and add explicit parity tests on the
     baseline passing corpus.
+    - [x] **38.14.10.c.a**: Introduce a process-aware dependence predicate in
+      `src/dpor.rs` and wire sleep-set propagation/backtrack initialization to
+      use it conservatively (same-process transitions are dependent; unknown
+      footprints remain dependent).
+      **Done 2026-04-09**: Added a conservative dependence predicate that only
+      treats transitions as independent when they are cross-process and have
+      non-empty disjoint footprints; same-process and unknown-footprint pairs
+      remain dependent. Wired this predicate into child sleep-set propagation
+      and backtrack-key initialization (sleep-filtered key seed).
+    - [x] **38.14.10.c.b**: Add focused DPOR unit tests proving the new
+      dependence relation is conservative (e.g., same-process disjoint
+      footprints do not get treated as independent; unknown footprints wake
+      sleeping transitions).
+      **Done 2026-04-09**: Added `dpor.rs` regressions for
+      process-aware sleep propagation: `test_compute_child_sleep_set_same_process_is_dependent`
+      plus updated sleep-set tests that keep unknown-footprint transitions
+      dependent and verify cross-process disjoint-footprint independence.
+    - [ ] **38.14.10.c.c**: Add/refresh corpus-level parity tests for
+      `use_independence` and `use_sleep_sets` on baseline-passing cases to
+      assert no lost states.
   - [ ] **38.14.10.d**: Evidence pass: regenerate
     `tests/reports/sleep_set_reduction_table.md` from measured runs and require
     >10% explored-state reduction on at least 3 multi-process cases before

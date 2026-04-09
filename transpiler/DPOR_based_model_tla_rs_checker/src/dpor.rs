@@ -119,26 +119,15 @@ impl Default for DporConfig {
 /// (all transitions dependent). Equivalent to exhaustive DFS.
 ///
 /// When `config.use_independence` is true: uses branch footprints from
-/// `por.rs` to determine independence. Only dependent transitions are
-/// added to backtrack sets, potentially reducing exploration.
+/// enabled transitions to determine independence conservatively:
+/// same-process transitions and unknown-footprint transitions remain
+/// dependent; only cross-process transitions with disjoint footprints
+/// are treated as independent for sleep-set propagation.
 pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     let mut distinct_states: BTreeSet<String> = BTreeSet::new();
     let mut traces_explored: usize = 0;
     let mut max_depth: usize = 0;
     let mut transitions_fired: usize = 0;
-
-    // Load branch footprints for independence checking (if enabled)
-    let footprints = if config.use_independence {
-        match ctx.branch_footprints() {
-            Ok(fps) => Some(fps),
-            Err(e) => {
-                eprintln!("DPOR: failed to compute branch footprints: {}; falling back to conservative", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
 
     // Get initial states
     let initial_states = match ctx.initial_states() {
@@ -219,7 +208,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         }
 
         // Initialize backtrack set with all enabled transitions (conservative)
-        let backtrack: BTreeSet<String> = enabled.iter().map(|t| t.ordering_key.clone()).collect();
+        let backtrack = initialize_backtrack_keys(&enabled, &BTreeSet::new());
 
         let initial_frame = StackFrame {
             state: initial.clone(),
@@ -280,7 +269,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
             // Mutable borrow of `frame` is released here
 
             match action {
-                Some((key, transition, parent_state, parent_depth, parent_sleep, parent_enabled)) => {
+                Some((_key, transition, parent_state, parent_depth, parent_sleep, parent_enabled)) => {
                     // Get the actual successor state
                     let successors = match ctx.full_successors(&parent_state) {
                         Ok(s) => s,
@@ -363,17 +352,17 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                             };
                         }
 
-                        let backtrack: BTreeSet<String> = if let Some(ref _fps) = footprints {
-                            enabled.iter().map(|t| t.ordering_key.clone()).collect()
-                        } else {
-                            enabled.iter().map(|t| t.ordering_key.clone()).collect()
-                        };
-
                         let child_sleep = if config.use_sleep_sets {
-                            compute_child_sleep_set(&parent_sleep, &transition, &parent_enabled)
+                            compute_child_sleep_set(
+                                &parent_sleep,
+                                &transition,
+                                &parent_enabled,
+                                config.use_independence,
+                            )
                         } else {
                             BTreeSet::new()
                         };
+                        let backtrack = initialize_backtrack_keys(&enabled, &child_sleep);
 
                         stack.push(StackFrame {
                             state: successor,
@@ -589,33 +578,58 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
 ///
 /// When footprints are empty (reads_whole_state), all transitions are treated
 /// as dependent, so the child sleep set is always empty (correct but no benefit).
+fn initialize_backtrack_keys(
+    enabled: &[EnabledTransition],
+    sleep: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    enabled
+        .iter()
+        .filter(|transition| !sleep.contains(&transition.ordering_key))
+        .map(|transition| transition.ordering_key.clone())
+        .collect()
+}
+
+fn transition_has_unknown_footprint(transition: &EnabledTransition) -> bool {
+    transition.footprint.reads.is_empty() && transition.footprint.writes.is_empty()
+}
+
+fn transitions_independent(
+    left: &EnabledTransition,
+    right: &EnabledTransition,
+    use_independence: bool,
+) -> bool {
+    if !use_independence {
+        return false;
+    }
+    // Same-process transitions are always dependent to preserve per-process
+    // program-order semantics in this conservative DPOR prototype.
+    if left.process_id == right.process_id {
+        return false;
+    }
+    // Unknown footprints (including whole-state accesses) remain dependent.
+    if transition_has_unknown_footprint(left) || transition_has_unknown_footprint(right) {
+        return false;
+    }
+    left.footprint.independent_of(&right.footprint)
+}
+
 fn compute_child_sleep_set(
     parent_sleep: &BTreeSet<String>,
     chosen: &EnabledTransition,
     parent_enabled: &[EnabledTransition],
+    use_independence: bool,
 ) -> BTreeSet<String> {
     let mut child_sleep = BTreeSet::new();
 
-    // Look up chosen transition's footprint
-    let chosen_fp = &chosen.footprint;
-
-    // If chosen has empty footprint, treat as dependent with everything (conservative)
-    if chosen_fp.reads.is_empty() && chosen_fp.writes.is_empty() {
-        return child_sleep; // Empty — all sleeping transitions are woken up
+    if !use_independence || transition_has_unknown_footprint(chosen) {
+        return child_sleep;
     }
 
     for sleeping_key in parent_sleep {
         // Look up the sleeping transition's footprint from the parent's enabled list
         if let Some(sleeping_trans) = parent_enabled.iter().find(|t| t.ordering_key == *sleeping_key) {
-            let sleeping_fp = &sleeping_trans.footprint;
-
-            // If sleeping transition has empty footprint, treat as dependent (wake up)
-            if sleeping_fp.reads.is_empty() && sleeping_fp.writes.is_empty() {
-                continue;
-            }
-
             // If independent of chosen, keep asleep
-            if sleeping_fp.independent_of(chosen_fp) {
+            if transitions_independent(sleeping_trans, chosen, use_independence) {
                 child_sleep.insert(sleeping_key.clone());
             }
             // If dependent, don't propagate (woken up)
@@ -1086,7 +1100,7 @@ max_seq_len = 4
                 footprint: TransitionFootprint::default(),
             },
         ];
-        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled);
+        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
         assert!(child_sleep.is_empty(), "Empty footprints → all dependent → empty child sleep");
     }
 
@@ -1106,7 +1120,7 @@ max_seq_len = 4
         };
         let parent_enabled = vec![
             EnabledTransition {
-                process_id: ProcessId(0),
+                process_id: ProcessId(1),
                 branch_label: "t_indep".to_string(),
                 successor_fingerprint: StateFingerprint(1),
                 ordering_key: "0000".to_string(),
@@ -1116,7 +1130,7 @@ max_seq_len = 4
                 }, // disjoint from chosen → independent
             },
             EnabledTransition {
-                process_id: ProcessId(0),
+                process_id: ProcessId(2),
                 branch_label: "t_dep".to_string(),
                 successor_fingerprint: StateFingerprint(2),
                 ordering_key: "0001".to_string(),
@@ -1126,9 +1140,40 @@ max_seq_len = 4
                 },
             },
         ];
-        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled);
+        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
         assert!(child_sleep.contains("0000"), "Independent transition stays asleep");
         assert!(!child_sleep.contains("0001"), "Dependent transition is woken up");
+    }
+
+    #[test]
+    fn test_compute_child_sleep_set_same_process_is_dependent() {
+        let parent_sleep: BTreeSet<String> = ["0000".to_string()].into();
+        let chosen = EnabledTransition {
+            process_id: ProcessId(7),
+            branch_label: "t_chosen".to_string(),
+            successor_fingerprint: StateFingerprint(0),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(),
+                writes: ["x".to_string()].into(),
+            },
+        };
+        let parent_enabled = vec![EnabledTransition {
+            process_id: ProcessId(7), // same process as chosen
+            branch_label: "t_same_proc".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["y".to_string()].into(),
+                writes: ["y".to_string()].into(),
+            },
+        }];
+
+        let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
+        assert!(
+            child_sleep.is_empty(),
+            "Same-process transitions are treated as dependent in conservative DPOR"
+        );
     }
 
     // =========================================================================
