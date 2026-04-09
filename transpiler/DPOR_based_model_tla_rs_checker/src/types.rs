@@ -141,12 +141,54 @@ impl TransitionFootprint {
     /// Two transitions are independent if their read/write sets don't conflict.
     /// Conflict = one writes a field the other reads or writes.
     pub fn independent_of(&self, other: &TransitionFootprint) -> bool {
-        // Check: self.writes ∩ other.reads == ∅
-        //    AND self.writes ∩ other.writes == ∅
-        //    AND self.reads ∩ other.writes == ∅
-        self.writes.is_disjoint(&other.reads)
-            && self.writes.is_disjoint(&other.writes)
-            && self.reads.is_disjoint(&other.writes)
+        // Path-aware conflict checking:
+        // - "pc" conflicts with "pc[0]" (coarse field overlaps all keyed entries)
+        // - "pc[0]" conflicts with "pc[0]"
+        // - "pc[0]" is independent of "pc[1]"
+        for left in &self.writes {
+            if other
+                .reads
+                .iter()
+                .any(|right| field_paths_conflict(left, right))
+                || other
+                    .writes
+                    .iter()
+                    .any(|right| field_paths_conflict(left, right))
+            {
+                return false;
+            }
+        }
+        for left in &self.reads {
+            if other
+                .writes
+                .iter()
+                .any(|right| field_paths_conflict(left, right))
+            {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn split_field_selector(path: &str) -> (&str, Option<&str>) {
+    match path.rfind('[') {
+        Some(open_idx) if path.ends_with(']') && open_idx > 0 => {
+            (&path[..open_idx], Some(&path[open_idx + 1..path.len() - 1]))
+        }
+        _ => (path, None),
+    }
+}
+
+fn field_paths_conflict(left: &str, right: &str) -> bool {
+    let (left_root, left_selector) = split_field_selector(left);
+    let (right_root, right_selector) = split_field_selector(right);
+    if left_root != right_root {
+        return false;
+    }
+    match (left_selector, right_selector) {
+        (Some(lhs), Some(rhs)) => lhs == rhs,
+        _ => true,
     }
 }
 
@@ -344,6 +386,46 @@ mod tests {
         };
         // Both write x → dependent
         assert!(!fp1.independent_of(&fp2));
+    }
+
+    #[test]
+    fn test_transition_footprint_coarse_and_keyed_conflict() {
+        let coarse = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: ["pc".to_string()].into(),
+        };
+        let keyed = TransitionFootprint {
+            reads: ["pc[0]".to_string()].into(),
+            writes: BTreeSet::new(),
+        };
+        assert!(
+            !coarse.independent_of(&keyed),
+            "coarse field access should conflict with keyed access on same field root"
+        );
+        assert!(
+            !keyed.independent_of(&coarse),
+            "conflict should be symmetric"
+        );
+    }
+
+    #[test]
+    fn test_transition_footprint_disjoint_keyed_paths_are_independent() {
+        let left = TransitionFootprint {
+            reads: ["pc[0]".to_string()].into(),
+            writes: ["pc[0]".to_string()].into(),
+        };
+        let right = TransitionFootprint {
+            reads: ["pc[1]".to_string()].into(),
+            writes: ["pc[1]".to_string()].into(),
+        };
+        assert!(
+            left.independent_of(&right),
+            "disjoint keyed accesses should be independent"
+        );
+        assert!(
+            right.independent_of(&left),
+            "independence should be symmetric"
+        );
     }
 
     #[test]

@@ -17,9 +17,7 @@ use verus_transpiler::modelcheck::domain::{
 use verus_transpiler::modelcheck::helpers::eval_spec_function_call_recursive;
 use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
 use verus_transpiler::modelcheck::ir::build_transition_ir;
-use verus_transpiler::modelcheck::solver::{
-    solve_branch_successors, SolverHooks,
-};
+use verus_transpiler::modelcheck::solver::{solve_branch_successors, SolverHooks};
 use verus_transpiler::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
 
@@ -148,9 +146,9 @@ impl SpecContext {
         &self,
         state_ty: &verus_transpiler::ast::Type,
     ) -> TranspileResult<Vec<RuntimeValue>> {
+        use std::collections::{BTreeMap, BTreeSet};
         use verus_transpiler::ast::Type;
         use verus_transpiler::modelcheck::domain::find_struct_definition;
-        use std::collections::{BTreeMap, BTreeSet};
 
         let struct_def = match state_ty {
             Type::Named(path) => find_struct_definition(&self.bundle.schema, path),
@@ -179,22 +177,24 @@ impl SpecContext {
                 vec![RuntimeValue::Map(BTreeMap::new())]
             } else if is_seq {
                 vec![RuntimeValue::Seq(Vec::new())]
-            } else { match &field.ty {
-                _ => {
-                    // For scalar types, use normal domain expansion
-                    match verus_transpiler::modelcheck::domain::expand_type_domain(
-                        &field.ty,
-                        &self.bundle.schema,
-                        &self.model_config,
-                        &self.bounds,
-                        expansion_limit,
-                        0,
-                    ) {
-                        Ok(values) => values,
-                        Err(_) => return Ok(vec![]),
+            } else {
+                match &field.ty {
+                    _ => {
+                        // For scalar types, use normal domain expansion
+                        match verus_transpiler::modelcheck::domain::expand_type_domain(
+                            &field.ty,
+                            &self.bundle.schema,
+                            &self.model_config,
+                            &self.bounds,
+                            expansion_limit,
+                            0,
+                        ) {
+                            Ok(values) => values,
+                            Err(_) => return Ok(vec![]),
+                        }
                     }
                 }
-            }};
+            };
             field_domains.push((field.name.clone(), domain));
         }
 
@@ -247,10 +247,16 @@ impl SpecContext {
             for (succ_idx, (branch_label, process_id, successor)) in solved.iter().enumerate() {
                 let fingerprint = hash_state(successor);
                 let ordering_key = format!("{:04}", succ_idx);
-                let footprint = branch_footprints
+                let base_footprint = branch_footprints
                     .get(branch_label)
                     .map(convert_por_footprint)
                     .unwrap_or_default();
+                let footprint = refine_transition_footprint_for_process_update(
+                    base_footprint,
+                    state,
+                    successor,
+                    *process_id,
+                );
                 enabled.push(EnabledTransition {
                     process_id: *process_id,
                     branch_label: branch_label.clone(),
@@ -500,12 +506,13 @@ impl SpecContext {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
 
-            let assignment_variants: Vec<verus_transpiler::modelcheck::domain::ExistentialAssignment> =
-                if branch_assignments.is_empty() {
-                    vec![std::collections::BTreeMap::new()]
-                } else {
-                    branch_assignments.to_vec()
-                };
+            let assignment_variants: Vec<
+                verus_transpiler::modelcheck::domain::ExistentialAssignment,
+            > = if branch_assignments.is_empty() {
+                vec![std::collections::BTreeMap::new()]
+            } else {
+                branch_assignments.to_vec()
+            };
 
             for assignment in assignment_variants {
                 let process_id = infer_process_id(&branch.label, &assignment);
@@ -594,7 +601,8 @@ impl SpecContext {
             for extra in &next_fn.params[extra_start..] {
                 ctx = ctx.with_binding(extra.name.clone(), RuntimeValue::Int(0));
             }
-            ctx = ctx.with_call_evaluator(&call_eval)
+            ctx = ctx
+                .with_call_evaluator(&call_eval)
                 .with_quantifier_domain_evaluator(&quant_eval);
 
             match eval_expr(&next_fn.body, &ctx) {
@@ -615,13 +623,13 @@ impl SpecContext {
     /// Returns a map from branch_label to Footprint.
     pub fn branch_footprints(
         &self,
-    ) -> TranspileResult<std::collections::BTreeMap<String, verus_transpiler::modelcheck::por::Footprint>>
-    {
+    ) -> TranspileResult<
+        std::collections::BTreeMap<String, verus_transpiler::modelcheck::por::Footprint>,
+    > {
         let transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
         let mut footprints = std::collections::BTreeMap::new();
         for branch in &transition.branches {
-            let fp =
-                verus_transpiler::modelcheck::por::branch_footprint(&transition, branch);
+            let fp = verus_transpiler::modelcheck::por::branch_footprint(&transition, branch);
             footprints.insert(branch.label.clone(), fp);
         }
         Ok(footprints)
@@ -648,7 +656,11 @@ impl SpecContext {
         names
             .iter()
             .filter_map(|name| {
-                self.bundle.spec_functions.iter().find(|f| f.name == *name).cloned()
+                self.bundle
+                    .spec_functions
+                    .iter()
+                    .find(|f| f.name == *name)
+                    .cloned()
             })
             .collect()
     }
@@ -690,7 +702,13 @@ impl SpecContext {
             quantifier_domain_evaluator: Some(&quant_eval),
         };
 
-        first_invariant_violation(invariants, state, self.constants.as_ref(), self.bounds, hooks)
+        first_invariant_violation(
+            invariants,
+            state,
+            self.constants.as_ref(),
+            self.bounds,
+            hooks,
+        )
     }
 }
 
@@ -707,17 +725,12 @@ fn resolve_constants_from_config(
     use verus_transpiler::ast::Type;
 
     // Check if LInit has an LConstants parameter
-    let constants_param = bundle
-        .entrypoints
-        .linit
-        .params
-        .iter()
-        .find(|param| {
-            matches!(
-                &param.ty,
-                Type::Named(path) if path.last() == Some("LConstants")
-            )
-        });
+    let constants_param = bundle.entrypoints.linit.params.iter().find(|param| {
+        matches!(
+            &param.ty,
+            Type::Named(path) if path.last() == Some("LConstants")
+        )
+    });
 
     let constants_param = match constants_param {
         Some(p) => p,
@@ -804,6 +817,145 @@ fn convert_por_footprint(
         reads: footprint.read_fields.clone(),
         writes: footprint.write_fields.clone(),
     }
+}
+
+fn refine_transition_footprint_for_process_update(
+    footprint: TransitionFootprint,
+    current_state: &RuntimeValue,
+    successor_state: &RuntimeValue,
+    process_id: ProcessId,
+) -> TransitionFootprint {
+    if footprint.reads.is_empty() && footprint.writes.is_empty() {
+        return footprint;
+    }
+
+    // Only rewrite fields that this transition writes and that show a clear,
+    // single process-indexed map/seq update in the concrete state delta.
+    let mut refined_fields = std::collections::BTreeMap::new();
+    for field in &footprint.writes {
+        if field.contains('[') {
+            continue;
+        }
+        if let Some(pid_key) =
+            detect_process_scoped_update_field(current_state, successor_state, field, process_id.0)
+        {
+            refined_fields.insert(field.clone(), format!("{}[{}]", field, pid_key));
+        }
+    }
+    if refined_fields.is_empty() {
+        return footprint;
+    }
+
+    let rewrite =
+        |fields: &std::collections::BTreeSet<String>| -> std::collections::BTreeSet<String> {
+            fields
+                .iter()
+                .map(|field| {
+                    refined_fields
+                        .get(field)
+                        .cloned()
+                        .unwrap_or_else(|| field.clone())
+                })
+                .collect()
+        };
+
+    TransitionFootprint {
+        reads: rewrite(&footprint.reads),
+        writes: rewrite(&footprint.writes),
+    }
+}
+
+fn top_level_state_field<'a>(state: &'a RuntimeValue, field: &str) -> Option<&'a RuntimeValue> {
+    match state {
+        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
+            fields.get(field)
+        }
+        _ => None,
+    }
+}
+
+fn detect_process_scoped_update_field(
+    current_state: &RuntimeValue,
+    successor_state: &RuntimeValue,
+    field: &str,
+    process_id: u32,
+) -> Option<u32> {
+    let current_value = top_level_state_field(current_state, field)?;
+    let successor_value = top_level_state_field(successor_state, field)?;
+    match (current_value, successor_value) {
+        (RuntimeValue::Map(current_entries), RuntimeValue::Map(successor_entries)) => {
+            let changed_pid = single_changed_map_process_key(current_entries, successor_entries)?;
+            if changed_pid == process_id {
+                Some(changed_pid)
+            } else {
+                None
+            }
+        }
+        (RuntimeValue::Seq(current_items), RuntimeValue::Seq(successor_items))
+        | (RuntimeValue::Tuple(current_items), RuntimeValue::Tuple(successor_items)) => {
+            let changed_pid = single_changed_sequence_index(current_items, successor_items)?;
+            if changed_pid == process_id {
+                Some(changed_pid)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn single_changed_map_process_key(
+    current_entries: &std::collections::BTreeMap<RuntimeValue, RuntimeValue>,
+    successor_entries: &std::collections::BTreeMap<RuntimeValue, RuntimeValue>,
+) -> Option<u32> {
+    let mut changed_count: usize = 0;
+    let mut changed_pid: Option<u32> = None;
+
+    let mut record_changed_key = |key: &RuntimeValue| -> Option<()> {
+        let pid = explicit_process_id_value(key)?;
+        changed_count += 1;
+        if changed_count > 1 {
+            return None;
+        }
+        changed_pid = Some(pid);
+        Some(())
+    };
+
+    for (key, current_value) in current_entries {
+        match successor_entries.get(key) {
+            Some(successor_value) if successor_value == current_value => {}
+            Some(_) | None => {
+                record_changed_key(key)?;
+            }
+        }
+    }
+    for key in successor_entries.keys() {
+        if !current_entries.contains_key(key) {
+            record_changed_key(key)?;
+        }
+    }
+
+    if changed_count == 1 {
+        changed_pid
+    } else {
+        None
+    }
+}
+
+fn single_changed_sequence_index(
+    current_items: &[RuntimeValue],
+    successor_items: &[RuntimeValue],
+) -> Option<u32> {
+    let mut changed_idx: Option<usize> = None;
+    for idx in 0..current_items.len().max(successor_items.len()) {
+        if current_items.get(idx) != successor_items.get(idx) {
+            if changed_idx.is_some() {
+                return None;
+            }
+            changed_idx = Some(idx);
+        }
+    }
+    changed_idx.and_then(|idx| u32::try_from(idx).ok())
 }
 
 fn infer_process_id(
@@ -1166,7 +1318,10 @@ max_seq_len = 4
         let initials = ctx.initial_states().unwrap();
         let enabled = ctx.enabled_transitions(&initials[0]).unwrap();
         let footprints = ctx.branch_footprints().unwrap();
-        assert!(!enabled.is_empty(), "Expected at least one enabled transition");
+        assert!(
+            !enabled.is_empty(),
+            "Expected at least one enabled transition"
+        );
 
         for transition in &enabled {
             assert!(
@@ -1241,8 +1396,14 @@ max_seq_len = 4
         before_fields.insert(
             "pc".to_string(),
             RuntimeValue::Map(std::collections::BTreeMap::from([
-                (RuntimeValue::Int(0), RuntimeValue::String("idle".to_string())),
-                (RuntimeValue::Int(1), RuntimeValue::String("idle".to_string())),
+                (
+                    RuntimeValue::Int(0),
+                    RuntimeValue::String("idle".to_string()),
+                ),
+                (
+                    RuntimeValue::Int(1),
+                    RuntimeValue::String("idle".to_string()),
+                ),
             ])),
         );
         let before = RuntimeValue::Struct {
@@ -1254,8 +1415,14 @@ max_seq_len = 4
         after_fields.insert(
             "pc".to_string(),
             RuntimeValue::Map(std::collections::BTreeMap::from([
-                (RuntimeValue::Int(0), RuntimeValue::String("wait".to_string())),
-                (RuntimeValue::Int(1), RuntimeValue::String("idle".to_string())),
+                (
+                    RuntimeValue::Int(0),
+                    RuntimeValue::String("wait".to_string()),
+                ),
+                (
+                    RuntimeValue::Int(1),
+                    RuntimeValue::String("idle".to_string()),
+                ),
             ])),
         );
         let after = RuntimeValue::Struct {
@@ -1265,6 +1432,125 @@ max_seq_len = 4
 
         let inferred = infer_process_id_from_state_delta(&before, &after, "fallback");
         assert_eq!(inferred, ProcessId(0));
+    }
+
+    #[test]
+    fn test_refine_transition_footprint_process_scoped_map_update() {
+        let before = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "pc".to_string(),
+                RuntimeValue::Map(std::collections::BTreeMap::from([
+                    (
+                        RuntimeValue::Int(0),
+                        RuntimeValue::String("idle".to_string()),
+                    ),
+                    (
+                        RuntimeValue::Int(1),
+                        RuntimeValue::String("idle".to_string()),
+                    ),
+                ])),
+            )]),
+        };
+        let after = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "pc".to_string(),
+                RuntimeValue::Map(std::collections::BTreeMap::from([
+                    (
+                        RuntimeValue::Int(0),
+                        RuntimeValue::String("wait".to_string()),
+                    ),
+                    (
+                        RuntimeValue::Int(1),
+                        RuntimeValue::String("idle".to_string()),
+                    ),
+                ])),
+            )]),
+        };
+
+        let base = TransitionFootprint {
+            reads: ["pc".to_string()].into(),
+            writes: ["pc".to_string()].into(),
+        };
+        let refined =
+            refine_transition_footprint_for_process_update(base, &before, &after, ProcessId(0));
+        assert!(refined.reads.contains("pc[0]"));
+        assert!(refined.writes.contains("pc[0]"));
+        assert!(!refined.reads.contains("pc"));
+        assert!(!refined.writes.contains("pc"));
+    }
+
+    #[test]
+    fn test_refine_transition_footprint_process_scoped_seq_update() {
+        let before = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "tickets".to_string(),
+                RuntimeValue::Seq(vec![
+                    RuntimeValue::Int(0),
+                    RuntimeValue::Int(0),
+                    RuntimeValue::Int(0),
+                ]),
+            )]),
+        };
+        let after = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "tickets".to_string(),
+                RuntimeValue::Seq(vec![
+                    RuntimeValue::Int(0),
+                    RuntimeValue::Int(1),
+                    RuntimeValue::Int(0),
+                ]),
+            )]),
+        };
+
+        let base = TransitionFootprint {
+            reads: ["tickets".to_string()].into(),
+            writes: ["tickets".to_string()].into(),
+        };
+        let refined =
+            refine_transition_footprint_for_process_update(base, &before, &after, ProcessId(1));
+        assert!(refined.reads.contains("tickets[1]"));
+        assert!(refined.writes.contains("tickets[1]"));
+        assert!(!refined.reads.contains("tickets"));
+        assert!(!refined.writes.contains("tickets"));
+    }
+
+    #[test]
+    fn test_refine_transition_footprint_keeps_coarse_for_ambiguous_map_delta() {
+        let before = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "flag".to_string(),
+                RuntimeValue::Map(std::collections::BTreeMap::from([
+                    (RuntimeValue::Int(0), RuntimeValue::Bool(false)),
+                    (RuntimeValue::Int(1), RuntimeValue::Bool(false)),
+                ])),
+            )]),
+        };
+        let after = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "flag".to_string(),
+                RuntimeValue::Map(std::collections::BTreeMap::from([
+                    (RuntimeValue::Int(0), RuntimeValue::Bool(true)),
+                    (RuntimeValue::Int(1), RuntimeValue::Bool(true)),
+                ])),
+            )]),
+        };
+
+        let base = TransitionFootprint {
+            reads: ["flag".to_string()].into(),
+            writes: ["flag".to_string()].into(),
+        };
+        let refined =
+            refine_transition_footprint_for_process_update(base, &before, &after, ProcessId(0));
+        assert!(refined.reads.contains("flag"));
+        assert!(refined.writes.contains("flag"));
+        assert!(!refined.reads.iter().any(|path| path.starts_with("flag[")));
+        assert!(!refined.writes.iter().any(|path| path.starts_with("flag[")));
     }
 
     #[test]
@@ -1365,7 +1651,9 @@ max_seq_len = 4
     fn test_branch_footprints_aplusb() {
         let spec_path = match aplusb_spec_path() {
             Some(p) => p,
-            None => { return; }
+            None => {
+                return;
+            }
         };
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_model_toml(tmp.path());

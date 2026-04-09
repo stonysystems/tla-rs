@@ -12298,6 +12298,38 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
     - [ ] **38.14.10.d.b**: Implement reduction-enabling DPOR changes needed
       to actually exceed the gate (>10% explored-state reduction on at least 3
       multi-process cases) without parity regressions.
+      **Decomposition (2026-04-09):**
+      - [x] **38.14.10.d.b.a**: Fix sleep-set keying to use stable action
+        identity (`process_id + branch_label`) instead of per-state
+        `ordering_key`, and add focused unit tests proving propagation/filtering
+        semantics are action-based.
+        **Done 2026-04-09**: Sleep sets now store action keys (`pid::branch`)
+        instead of local ordering indexes, and both transition selection and
+        child/backtrack sleep filtering use action identity. Added focused tests
+        `test_initialize_backtrack_filters_by_action_sleep_key` and updated
+        `test_compute_child_sleep_set_*` coverage. Reduction harness re-run:
+        gate remains **NOT MET** (`0/3`), so follow-up work continues in
+        `38.14.10.d.b.b` and `38.14.10.d.b.c`.
+      - [x] **38.14.10.d.b.b**: Improve transition footprints for
+        process-indexed map/seq updates so independent same-branch cross-process
+        steps are no longer forced dependent by coarse top-level field names.
+        **Done 2026-04-09**: Added per-transition footprint refinement in
+        `enabled.rs` that rewrites coarse branch footprints into keyed paths
+        (`field[pid]`) when a transition's concrete state delta shows a
+        single process-indexed map/seq write. Dependence checking is now
+        path-aware (`field` conflicts with `field[idx]`; `field[i]` and
+        `field[j]` are independent for `i != j`) to keep mixed coarse/fine
+        footprints conservative. Added focused tests:
+        `test_refine_transition_footprint_process_scoped_map_update`,
+        `test_refine_transition_footprint_process_scoped_seq_update`,
+        `test_refine_transition_footprint_keeps_coarse_for_ambiguous_map_delta`,
+        `test_transition_footprint_coarse_and_keyed_conflict`, and
+        `test_transition_footprint_disjoint_keyed_paths_are_independent`.
+        Re-ran reduction harness + full suites; gate still **NOT MET** (`0/3`),
+        so follow-up remains in `38.14.10.d.b.c`.
+      - [ ] **38.14.10.d.b.c**: Re-tune DPOR backtrack/sleep interaction for
+        measurable explored-state reduction while preserving conservative
+        no-lost-state parity checks.
     - [ ] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.

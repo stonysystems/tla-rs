@@ -29,7 +29,7 @@ pub struct StackFrame {
     pub backtrack: BTreeSet<String>,
     /// Sleep set: transitions that should NOT be explored because an
     /// equivalent interleaving will be explored from a sibling path.
-    /// Keyed by ordering_key (same key space as backtrack/done).
+    /// Keyed by stable action identity (`process_id + branch_label`).
     pub sleep: BTreeSet<String>,
     /// The transition that was chosen to proceed deeper (if any).
     pub chosen: Option<EnabledTransition>,
@@ -148,21 +148,22 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     let invariant_fns = ctx.resolve_invariants(&config.invariants);
 
     // Helper: check invariants and return violation witness if found
-    let check_state = |state: &RuntimeValue, depth: usize, trace: &[WitnessStep]| -> Option<ViolationWitness> {
-        if invariant_fns.is_empty() {
-            return None;
-        }
-        match ctx.check_invariants(state, &invariant_fns) {
-            Ok(Some(violated)) => Some(ViolationWitness {
-                invariant: violated,
-                violating_state_key: state.canonical_key(),
-                violating_state_fingerprint: crate::enabled::hash_state(state),
-                depth,
-                trace: trace.to_vec(),
-            }),
-            _ => None,
-        }
-    };
+    let check_state =
+        |state: &RuntimeValue, depth: usize, trace: &[WitnessStep]| -> Option<ViolationWitness> {
+            if invariant_fns.is_empty() {
+                return None;
+            }
+            match ctx.check_invariants(state, &invariant_fns) {
+                Ok(Some(violated)) => Some(ViolationWitness {
+                    invariant: violated,
+                    violating_state_key: state.canonical_key(),
+                    violating_state_fingerprint: crate::enabled::hash_state(state),
+                    depth,
+                    trace: trace.to_vec(),
+                }),
+                _ => None,
+            }
+        };
 
     // Explore from each initial state
     for initial in &initial_states {
@@ -236,15 +237,23 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 let next_transition = frame
                     .backtrack
                     .iter()
-                    .find(|key| !frame.done.contains(*key) && !frame.sleep.contains(*key))
+                    .find(|key| {
+                        if frame.done.contains(*key) {
+                            return false;
+                        }
+                        if !config.use_sleep_sets {
+                            return true;
+                        }
+                        let transition = frame.enabled.iter().find(|t| t.ordering_key == **key);
+                        match transition {
+                            Some(t) => !frame.sleep.contains(&transition_sleep_key(t)),
+                            None => false,
+                        }
+                    })
                     .cloned();
 
                 match next_transition {
                     Some(key) => {
-                        frame.done.insert(key.clone());
-                        if config.use_sleep_sets {
-                            frame.sleep.insert(key.clone());
-                        }
                         let transition = frame
                             .enabled
                             .iter()
@@ -252,13 +261,24 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                             .cloned();
                         match transition {
                             Some(t) => {
+                                frame.done.insert(key.clone());
+                                if config.use_sleep_sets {
+                                    frame.sleep.insert(transition_sleep_key(&t));
+                                }
                                 frame.chosen = Some(t.clone());
                                 transitions_fired += 1;
                                 let parent_state = frame.state.clone();
                                 let parent_depth = frame.depth;
                                 let parent_sleep = frame.sleep.clone();
                                 let parent_enabled = frame.enabled.clone();
-                                Some((key, t, parent_state, parent_depth, parent_sleep, parent_enabled))
+                                Some((
+                                    key,
+                                    t,
+                                    parent_state,
+                                    parent_depth,
+                                    parent_sleep,
+                                    parent_enabled,
+                                ))
                             }
                             None => continue,
                         }
@@ -269,7 +289,14 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
             // Mutable borrow of `frame` is released here
 
             match action {
-                Some((_key, transition, parent_state, parent_depth, parent_sleep, parent_enabled)) => {
+                Some((
+                    _key,
+                    transition,
+                    parent_state,
+                    parent_depth,
+                    parent_sleep,
+                    parent_enabled,
+                )) => {
                     // Get the actual successor state
                     let successors = match ctx.full_successors(&parent_state) {
                         Ok(s) => s,
@@ -281,7 +308,9 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                         .find(|s| crate::enabled::hash_state(s) == transition.successor_fingerprint)
                         .cloned();
 
-                    let Some(successor) = successor else { continue; };
+                    let Some(successor) = successor else {
+                        continue;
+                    };
 
                     let succ_key = successor.canonical_key();
                     let is_new = distinct_states.insert(succ_key);
@@ -345,7 +374,9 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 violation: Some(ViolationWitness {
                                     invariant: "__deadlock__".to_string(),
                                     violating_state_key: successor.canonical_key(),
-                                    violating_state_fingerprint: crate::enabled::hash_state(&successor),
+                                    violating_state_fingerprint: crate::enabled::hash_state(
+                                        &successor,
+                                    ),
                                     depth,
                                     trace,
                                 }),
@@ -442,7 +473,10 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
         &witness.violating_state_key
     };
 
-    let mut current = match initial_states.iter().find(|s| s.canonical_key() == *first_state_key) {
+    let mut current = match initial_states
+        .iter()
+        .find(|s| s.canonical_key() == *first_state_key)
+    {
         Some(s) => s.clone(),
         None => {
             // Try to find any initial state if the exact key doesn't match
@@ -472,7 +506,10 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
                     states: visited_states,
                     violated_invariant: None,
                     depth: step_idx,
-                    error: Some(format!("Failed to get successors at step {}: {}", step_idx, e)),
+                    error: Some(format!(
+                        "Failed to get successors at step {}: {}",
+                        step_idx, e
+                    )),
                 };
             }
         };
@@ -484,8 +521,14 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
         };
 
         // Find the successor via transition_key → successor_fingerprint
-        let next_state = if let Some(trans) = enabled.iter().find(|t| t.ordering_key == step.transition_key) {
-            successors.iter().find(|s| crate::enabled::hash_state(s) == trans.successor_fingerprint).cloned()
+        let next_state = if let Some(trans) = enabled
+            .iter()
+            .find(|t| t.ordering_key == step.transition_key)
+        {
+            successors
+                .iter()
+                .find(|s| crate::enabled::hash_state(s) == trans.successor_fingerprint)
+                .cloned()
         } else {
             // Fallback: if transition_key doesn't match, try to find by index
             let idx: usize = step.transition_key.parse().unwrap_or(usize::MAX);
@@ -523,7 +566,11 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
         return ReplayResult {
             confirmed: is_deadlocked,
             states: visited_states,
-            violated_invariant: if is_deadlocked { Some("__deadlock__".to_string()) } else { None },
+            violated_invariant: if is_deadlocked {
+                Some("__deadlock__".to_string())
+            } else {
+                None
+            },
             depth: witness.depth,
             error: if !is_deadlocked {
                 Some(format!(
@@ -556,7 +603,10 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
         Some(format!(
             "Expected violation of '{}' but got {:?}",
             witness.invariant,
-            violated.as_ref().map(|v| v.as_str()).unwrap_or("no violation")
+            violated
+                .as_ref()
+                .map(|v| v.as_str())
+                .unwrap_or("no violation")
         ))
     } else {
         None
@@ -584,9 +634,13 @@ fn initialize_backtrack_keys(
 ) -> BTreeSet<String> {
     enabled
         .iter()
-        .filter(|transition| !sleep.contains(&transition.ordering_key))
+        .filter(|transition| !sleep.contains(&transition_sleep_key(transition)))
         .map(|transition| transition.ordering_key.clone())
         .collect()
+}
+
+fn transition_sleep_key(transition: &EnabledTransition) -> String {
+    format!("{}::{}", transition.process_id.0, transition.branch_label)
 }
 
 fn transition_has_unknown_footprint(transition: &EnabledTransition) -> bool {
@@ -627,7 +681,10 @@ fn compute_child_sleep_set(
 
     for sleeping_key in parent_sleep {
         // Look up the sleeping transition's footprint from the parent's enabled list
-        if let Some(sleeping_trans) = parent_enabled.iter().find(|t| t.ordering_key == *sleeping_key) {
+        if let Some(sleeping_trans) = parent_enabled
+            .iter()
+            .find(|t| transition_sleep_key(t) == *sleeping_key)
+        {
             // If independent of chosen, keep asleep
             if transitions_independent(sleeping_trans, chosen, use_independence) {
                 child_sleep.insert(sleeping_key.clone());
@@ -725,7 +782,9 @@ max_seq_len = 4
     fn test_dpor_deterministic() {
         let spec_path = match aplusb_spec_path() {
             Some(p) => p,
-            None => { return; }
+            None => {
+                return;
+            }
         };
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_model_toml(tmp.path());
@@ -750,7 +809,9 @@ max_seq_len = 4
     fn test_dpor_max_depth_respected() {
         let spec_path = match aplusb_spec_path() {
             Some(p) => p,
-            None => { return; }
+            None => {
+                return;
+            }
         };
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_model_toml(tmp.path());
@@ -774,7 +835,9 @@ max_seq_len = 4
     fn test_dpor_max_states_respected() {
         let spec_path = match aplusb_spec_path() {
             Some(p) => p,
-            None => { return; }
+            None => {
+                return;
+            }
         };
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_model_toml(tmp.path());
@@ -804,7 +867,9 @@ max_seq_len = 4
         // Baseline reports 21 distinct states for APlusB with int 0..5.
         let spec_path = match aplusb_spec_path() {
             Some(p) => p,
-            None => { return; }
+            None => {
+                return;
+            }
         };
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_model_toml(tmp.path());
@@ -854,8 +919,8 @@ max_seq_len = 4
         // ProducerConsumer uses predicate-style branches — the predicate solver
         // in enabled.rs may or may not handle it. Test parity if it works.
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let spec_path = manifest_dir
-            .join("tests/tla-rs/07_producer_consumer_1slot/ProducerConsumer1Slot.rs");
+        let spec_path =
+            manifest_dir.join("tests/tla-rs/07_producer_consumer_1slot/ProducerConsumer1Slot.rs");
         if !spec_path.exists() {
             eprintln!("Skipping: ProducerConsumer1Slot.rs not found");
             return;
@@ -886,7 +951,9 @@ max_seq_len = 4
 
         let transpiler = match crate::baseline::find_transpiler_bin() {
             Some(p) => p,
-            None => { return; }
+            None => {
+                return;
+            }
         };
         let baseline_result = crate::baseline::run_baseline(
             &transpiler,
@@ -903,10 +970,17 @@ max_seq_len = 4
             // Both are correct — they just have different truncation behavior.
             let dp = dpor_result.distinct_states.len();
             let bl = baseline_result.distinct_states;
-            let status = if dp == bl { "exact match ✓" }
-                else if dp < bl { "DPOR subset" }
-                else { "DPOR superset (unbounded predicate solver)" };
-            eprintln!("PARITY ProducerConsumer: DPOR={} baseline={} ({})", dp, bl, status);
+            let status = if dp == bl {
+                "exact match ✓"
+            } else if dp < bl {
+                "DPOR subset"
+            } else {
+                "DPOR superset (unbounded predicate solver)"
+            };
+            eprintln!(
+                "PARITY ProducerConsumer: DPOR={} baseline={} ({})",
+                dp, bl, status
+            );
             // Baseline states should be a subset of DPOR states (DPOR is at least as complete)
             assert!(
                 dp >= bl,
@@ -922,7 +996,9 @@ max_seq_len = 4
         // For APlusB (single process), independence shouldn't change the result.
         let spec_path = match aplusb_spec_path() {
             Some(p) => p,
-            None => { return; }
+            None => {
+                return;
+            }
         };
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_model_toml(tmp.path());
@@ -949,8 +1025,7 @@ max_seq_len = 4
         let result_independence = explore_dpor(&ctx, &with_independence);
 
         assert_eq!(
-            result_conservative.distinct_states,
-            result_independence.distinct_states,
+            result_conservative.distinct_states, result_independence.distinct_states,
             "Independence-enabled DPOR should produce same states as conservative for APlusB"
         );
         eprintln!(
@@ -967,7 +1042,9 @@ max_seq_len = 4
         // because all transitions have empty footprints and are treated as dependent.
         let spec_path = match aplusb_spec_path() {
             Some(p) => p,
-            None => { return; }
+            None => {
+                return;
+            }
         };
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_model_toml(tmp.path());
@@ -995,8 +1072,7 @@ max_seq_len = 4
 
         // Sleep sets must not LOSE states (correctness)
         assert_eq!(
-            result_conservative.distinct_states,
-            result_sleep.distinct_states,
+            result_conservative.distinct_states, result_sleep.distinct_states,
             "Sleep-set DPOR should find same states as conservative for APlusB (single-process)"
         );
         eprintln!(
@@ -1031,7 +1107,9 @@ max_seq_len = 4
         let mut all_ok = true;
         for (case_id, filename) in &cases {
             let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
-            if !spec_file.exists() { continue; }
+            if !spec_file.exists() {
+                continue;
+            }
             let model_path = case_model_config(case_id);
             let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
                 Ok(c) => c,
@@ -1133,10 +1211,7 @@ max_seq_len = 4
         for (case_id, filename) in &cases {
             let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
             if !spec_file.exists() {
-                println!(
-                    "| {} | -- | -- | -- | -- | -- | -- | -- | -- |",
-                    case_id
-                );
+                println!("| {} | -- | -- | -- | -- | -- | -- | -- | -- |", case_id);
                 continue;
             }
             let model_path = case_model_config(case_id);
@@ -1194,7 +1269,9 @@ max_seq_len = 4
                 case_id
             );
             assert!(
-                conservative.distinct_states.is_subset(&sleep.distinct_states),
+                conservative
+                    .distinct_states
+                    .is_subset(&sleep.distinct_states),
                 "sleep mode lost conservative states for {}",
                 case_id
             );
@@ -1245,7 +1322,25 @@ max_seq_len = 4
     fn test_compute_child_sleep_set_empty_footprints() {
         // When footprints are empty, all transitions are dependent,
         // so child sleep set should always be empty.
-        let parent_sleep: BTreeSet<String> = ["0000".to_string(), "0001".to_string()].into();
+        let sleeping_one = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "t1".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let sleeping_two = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "t2".to_string(),
+            successor_fingerprint: StateFingerprint(2),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let parent_sleep: BTreeSet<String> = [
+            transition_sleep_key(&sleeping_one),
+            transition_sleep_key(&sleeping_two),
+        ]
+        .into();
         let chosen = EnabledTransition {
             process_id: ProcessId(0),
             branch_label: "t0".to_string(),
@@ -1253,30 +1348,39 @@ max_seq_len = 4
             ordering_key: "0002".to_string(),
             footprint: TransitionFootprint::default(), // empty
         };
-        let parent_enabled = vec![
-            EnabledTransition {
-                process_id: ProcessId(0),
-                branch_label: "t1".to_string(),
-                successor_fingerprint: StateFingerprint(1),
-                ordering_key: "0000".to_string(),
-                footprint: TransitionFootprint::default(),
-            },
-            EnabledTransition {
-                process_id: ProcessId(0),
-                branch_label: "t2".to_string(),
-                successor_fingerprint: StateFingerprint(2),
-                ordering_key: "0001".to_string(),
-                footprint: TransitionFootprint::default(),
-            },
-        ];
+        let parent_enabled = vec![sleeping_one, sleeping_two];
         let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
-        assert!(child_sleep.is_empty(), "Empty footprints → all dependent → empty child sleep");
+        assert!(
+            child_sleep.is_empty(),
+            "Empty footprints → all dependent → empty child sleep"
+        );
     }
 
     #[test]
     fn test_compute_child_sleep_set_independent_transitions() {
         // When transitions have disjoint footprints, independent ones stay asleep.
-        let parent_sleep: BTreeSet<String> = ["0000".to_string(), "0001".to_string()].into();
+        let indep = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "t_indep".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["y".to_string()].into(),
+                writes: ["y".to_string()].into(),
+            }, // disjoint from chosen → independent
+        };
+        let dep = EnabledTransition {
+            process_id: ProcessId(2),
+            branch_label: "t_dep".to_string(),
+            successor_fingerprint: StateFingerprint(2),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(), // reads x → dependent on chosen
+                writes: BTreeSet::new(),
+            },
+        };
+        let parent_sleep: BTreeSet<String> =
+            [transition_sleep_key(&indep), transition_sleep_key(&dep)].into();
         let chosen = EnabledTransition {
             process_id: ProcessId(0),
             branch_label: "t_chosen".to_string(),
@@ -1287,36 +1391,31 @@ max_seq_len = 4
                 writes: ["x".to_string()].into(),
             },
         };
-        let parent_enabled = vec![
-            EnabledTransition {
-                process_id: ProcessId(1),
-                branch_label: "t_indep".to_string(),
-                successor_fingerprint: StateFingerprint(1),
-                ordering_key: "0000".to_string(),
-                footprint: TransitionFootprint {
-                    reads: ["y".to_string()].into(),
-                    writes: ["y".to_string()].into(),
-                }, // disjoint from chosen → independent
-            },
-            EnabledTransition {
-                process_id: ProcessId(2),
-                branch_label: "t_dep".to_string(),
-                successor_fingerprint: StateFingerprint(2),
-                ordering_key: "0001".to_string(),
-                footprint: TransitionFootprint {
-                    reads: ["x".to_string()].into(), // reads x → dependent on chosen
-                    writes: BTreeSet::new(),
-                },
-            },
-        ];
+        let parent_enabled = vec![indep.clone(), dep.clone()];
         let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
-        assert!(child_sleep.contains("0000"), "Independent transition stays asleep");
-        assert!(!child_sleep.contains("0001"), "Dependent transition is woken up");
+        assert!(
+            child_sleep.contains(&transition_sleep_key(&indep)),
+            "Independent transition stays asleep"
+        );
+        assert!(
+            !child_sleep.contains(&transition_sleep_key(&dep)),
+            "Dependent transition is woken up"
+        );
     }
 
     #[test]
     fn test_compute_child_sleep_set_same_process_is_dependent() {
-        let parent_sleep: BTreeSet<String> = ["0000".to_string()].into();
+        let sleeping = EnabledTransition {
+            process_id: ProcessId(7), // same process as chosen
+            branch_label: "t_same_proc".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["y".to_string()].into(),
+                writes: ["y".to_string()].into(),
+            },
+        };
+        let parent_sleep: BTreeSet<String> = [transition_sleep_key(&sleeping)].into();
         let chosen = EnabledTransition {
             process_id: ProcessId(7),
             branch_label: "t_chosen".to_string(),
@@ -1327,21 +1426,41 @@ max_seq_len = 4
                 writes: ["x".to_string()].into(),
             },
         };
-        let parent_enabled = vec![EnabledTransition {
-            process_id: ProcessId(7), // same process as chosen
-            branch_label: "t_same_proc".to_string(),
-            successor_fingerprint: StateFingerprint(1),
-            ordering_key: "0000".to_string(),
-            footprint: TransitionFootprint {
-                reads: ["y".to_string()].into(),
-                writes: ["y".to_string()].into(),
-            },
-        }];
+        let parent_enabled = vec![sleeping];
 
         let child_sleep = compute_child_sleep_set(&parent_sleep, &chosen, &parent_enabled, true);
         assert!(
             child_sleep.is_empty(),
             "Same-process transitions are treated as dependent in conservative DPOR"
+        );
+    }
+
+    #[test]
+    fn test_initialize_backtrack_filters_by_action_sleep_key() {
+        let transition_a = EnabledTransition {
+            process_id: ProcessId(9),
+            branch_label: "branch_alpha".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0099".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let transition_b = EnabledTransition {
+            process_id: ProcessId(10),
+            branch_label: "branch_beta".to_string(),
+            successor_fingerprint: StateFingerprint(2),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let sleep: BTreeSet<String> = [transition_sleep_key(&transition_a)].into();
+        let backtrack =
+            initialize_backtrack_keys(&[transition_a.clone(), transition_b.clone()], &sleep);
+        assert!(
+            !backtrack.contains(&transition_a.ordering_key),
+            "sleep-filtering should use action identity, not ordering_key equality"
+        );
+        assert!(
+            backtrack.contains(&transition_b.ordering_key),
+            "non-sleeping transition should remain in backtrack"
         );
     }
 
@@ -1372,7 +1491,10 @@ max_seq_len = 4
             "APlusB should pass LSumInvariant — no violation expected"
         );
         assert!(result.distinct_states.len() > 1, "Should explore states");
-        eprintln!("APlusB invariant check: {} states, no violation ✓", result.distinct_states.len());
+        eprintln!(
+            "APlusB invariant check: {} states, no violation ✓",
+            result.distinct_states.len()
+        );
     }
 
     #[test]
@@ -1380,11 +1502,16 @@ max_seq_len = 4
         // CounterRaceBug with LTotalCorrect — should find violation
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/03_counter_race_bug/CounterRaceBug.rs");
-        if !spec_file.exists() { return; }
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = case_model_config("03_counter_race_bug");
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
-            Err(e) => { eprintln!("Skip: {}", e); return; }
+            Err(e) => {
+                eprintln!("Skip: {}", e);
+                return;
+            }
         };
 
         let config = DporConfig {
@@ -1401,10 +1528,15 @@ max_seq_len = 4
         let witness = result.violation.unwrap();
         assert_eq!(witness.invariant, "LTotalCorrect");
         assert!(witness.depth > 0, "Violation should be at depth > 0");
-        assert!(!witness.trace.is_empty(), "Witness trace should not be empty");
+        assert!(
+            !witness.trace.is_empty(),
+            "Witness trace should not be empty"
+        );
         eprintln!(
             "CounterRaceBug violation: invariant={}, depth={}, trace_len={} ✓",
-            witness.invariant, witness.depth, witness.trace.len()
+            witness.invariant,
+            witness.depth,
+            witness.trace.len()
         );
     }
 
@@ -1413,11 +1545,16 @@ max_seq_len = 4
         // BrokenLockBug with LMutualExclusion — should find violation
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/05_broken_lock_bug/BrokenLockBug.rs");
-        if !spec_file.exists() { return; }
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = case_model_config("05_broken_lock_bug");
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
-            Err(e) => { eprintln!("Skip: {}", e); return; }
+            Err(e) => {
+                eprintln!("Skip: {}", e);
+                return;
+            }
         };
 
         let config = DporConfig {
@@ -1433,10 +1570,15 @@ max_seq_len = 4
         );
         let witness = result.violation.unwrap();
         assert_eq!(witness.invariant, "LMutualExclusion");
-        assert!(!witness.trace.is_empty(), "Witness trace should not be empty");
+        assert!(
+            !witness.trace.is_empty(),
+            "Witness trace should not be empty"
+        );
         eprintln!(
             "BrokenLockBug violation: invariant={}, depth={}, trace_len={} ✓",
-            witness.invariant, witness.depth, witness.trace.len()
+            witness.invariant,
+            witness.depth,
+            witness.trace.len()
         );
     }
 
@@ -1444,12 +1586,18 @@ max_seq_len = 4
     fn test_dpor_invariant_check_readers_writers() {
         // ReadersWritersBug with LSafety — should find violation
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let spec_file = manifest_dir.join("tests/tla-rs/11_readers_writers_small/ReadersWritersBug.rs");
-        if !spec_file.exists() { return; }
+        let spec_file =
+            manifest_dir.join("tests/tla-rs/11_readers_writers_small/ReadersWritersBug.rs");
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = case_model_config("11_readers_writers_small");
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
-            Err(e) => { eprintln!("Skip: {}", e); return; }
+            Err(e) => {
+                eprintln!("Skip: {}", e);
+                return;
+            }
         };
 
         let config = DporConfig {
@@ -1467,7 +1615,9 @@ max_seq_len = 4
         assert_eq!(witness.invariant, "LSafety");
         eprintln!(
             "ReadersWritersBug violation: invariant={}, depth={}, trace_len={} ✓",
-            witness.invariant, witness.depth, witness.trace.len()
+            witness.invariant,
+            witness.depth,
+            witness.trace.len()
         );
     }
 
@@ -1475,12 +1625,18 @@ max_seq_len = 4
     fn test_dpor_deadlock_detection_dining_philosophers() {
         // DiningPhilosophers with check_deadlock — should find deadlock
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let spec_file = manifest_dir.join("tests/tla-rs/12_dining_philosophers_3/DiningPhilosophers.rs");
-        if !spec_file.exists() { return; }
+        let spec_file =
+            manifest_dir.join("tests/tla-rs/12_dining_philosophers_3/DiningPhilosophers.rs");
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = case_model_config("12_dining_philosophers_3");
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
-            Err(e) => { eprintln!("Skip: {}", e); return; }
+            Err(e) => {
+                eprintln!("Skip: {}", e);
+                return;
+            }
         };
 
         let config = DporConfig {
@@ -1499,7 +1655,9 @@ max_seq_len = 4
         assert!(witness.depth > 0, "Deadlock should be at depth > 0");
         eprintln!(
             "DiningPhilosophers deadlock: depth={}, trace_len={}, states={} ✓",
-            witness.depth, witness.trace.len(), result.distinct_states.len()
+            witness.depth,
+            witness.trace.len(),
+            result.distinct_states.len()
         );
     }
 
@@ -1538,7 +1696,9 @@ max_seq_len = 4
     fn test_replay_counter_race_bug_witness() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/03_counter_race_bug/CounterRaceBug.rs");
-        if !spec_file.exists() { return; }
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = case_model_config("03_counter_race_bug");
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
@@ -1563,10 +1723,15 @@ max_seq_len = 4
             replay.error
         );
         assert_eq!(replay.violated_invariant.as_deref(), Some("LTotalCorrect"));
-        assert!(replay.states.len() > 1, "Replay should visit multiple states");
+        assert!(
+            replay.states.len() > 1,
+            "Replay should visit multiple states"
+        );
         eprintln!(
             "Replay CounterRaceBug: confirmed={}, states={}, depth={} ✓",
-            replay.confirmed, replay.states.len(), replay.depth
+            replay.confirmed,
+            replay.states.len(),
+            replay.depth
         );
     }
 
@@ -1574,7 +1739,9 @@ max_seq_len = 4
     fn test_replay_broken_lock_witness() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/05_broken_lock_bug/BrokenLockBug.rs");
-        if !spec_file.exists() { return; }
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = case_model_config("05_broken_lock_bug");
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
@@ -1596,18 +1763,26 @@ max_seq_len = 4
             "Replay should confirm BrokenLockBug violation: {:?}",
             replay.error
         );
-        assert_eq!(replay.violated_invariant.as_deref(), Some("LMutualExclusion"));
+        assert_eq!(
+            replay.violated_invariant.as_deref(),
+            Some("LMutualExclusion")
+        );
         eprintln!(
             "Replay BrokenLockBug: confirmed={}, states={}, depth={} ✓",
-            replay.confirmed, replay.states.len(), replay.depth
+            replay.confirmed,
+            replay.states.len(),
+            replay.depth
         );
     }
 
     #[test]
     fn test_replay_readers_writers_witness() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let spec_file = manifest_dir.join("tests/tla-rs/11_readers_writers_small/ReadersWritersBug.rs");
-        if !spec_file.exists() { return; }
+        let spec_file =
+            manifest_dir.join("tests/tla-rs/11_readers_writers_small/ReadersWritersBug.rs");
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = case_model_config("11_readers_writers_small");
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
@@ -1632,7 +1807,9 @@ max_seq_len = 4
         assert_eq!(replay.violated_invariant.as_deref(), Some("LSafety"));
         eprintln!(
             "Replay ReadersWritersBug: confirmed={}, states={}, depth={} ✓",
-            replay.confirmed, replay.states.len(), replay.depth
+            replay.confirmed,
+            replay.states.len(),
+            replay.depth
         );
     }
 
@@ -1640,8 +1817,11 @@ max_seq_len = 4
     fn test_replay_dining_philosophers_deadlock() {
         // DiningPhilosophers deadlock — explore, record witness, replay
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let spec_file = manifest_dir.join("tests/tla-rs/12_dining_philosophers_3/DiningPhilosophers.rs");
-        if !spec_file.exists() { return; }
+        let spec_file =
+            manifest_dir.join("tests/tla-rs/12_dining_philosophers_3/DiningPhilosophers.rs");
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = case_model_config("12_dining_philosophers_3");
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
@@ -1667,10 +1847,15 @@ max_seq_len = 4
             replay.error
         );
         assert_eq!(replay.violated_invariant.as_deref(), Some("__deadlock__"));
-        assert!(replay.states.len() > 1, "Replay should visit multiple states");
+        assert!(
+            replay.states.len() > 1,
+            "Replay should visit multiple states"
+        );
         eprintln!(
             "Replay DiningPhilosophers deadlock: confirmed={}, states={}, depth={} ✓",
-            replay.confirmed, replay.states.len(), replay.depth
+            replay.confirmed,
+            replay.states.len(),
+            replay.depth
         );
     }
 
@@ -1703,14 +1888,16 @@ max_seq_len = 4
             Some(p) => p,
             None => return (0, dpor_result.distinct_states.len(), "no_baseline_bin"),
         };
-        let baseline = crate::baseline::run_baseline(
-            &transpiler, spec_file, model_path, invariants, 30,
-        );
+        let baseline =
+            crate::baseline::run_baseline(&transpiler, spec_file, model_path, invariants, 30);
 
         let bl_states = baseline.distinct_states;
         let dp_states = dpor_result.distinct_states.len();
 
-        let status = if baseline.result != "ok" && baseline.result != "invariant_violated" && baseline.result != "deadlock_detected" {
+        let status = if baseline.result != "ok"
+            && baseline.result != "invariant_violated"
+            && baseline.result != "deadlock_detected"
+        {
             "baseline_error"
         } else if dp_states == bl_states {
             "exact_match"
@@ -1720,7 +1907,7 @@ max_seq_len = 4
             // Baseline stopped early at violation; DPOR explored more — acceptable
             "dpor_superset_violation"
         } else {
-            "dpor_exceeded_baseline"  // This would be a bug for positive cases!
+            "dpor_exceeded_baseline" // This would be a bug for positive cases!
         };
 
         (bl_states, dp_states, status)
@@ -1836,13 +2023,7 @@ max_seq_len = 4
         };
 
         let model_path = case_model_config("15_chain_replication_small");
-        let result = crate::baseline::run_baseline(
-            &transpiler,
-            &spec_file,
-            &model_path,
-            &[],
-            120,
-        );
+        let result = crate::baseline::run_baseline(&transpiler, &spec_file, &model_path, &[], 120);
 
         assert_eq!(
             result.result, "deadlock_detected",
@@ -2064,15 +2245,47 @@ max_seq_len = 4
         // Representative baseline-passing subset with invariants.
         let cases: Vec<(&str, &str, Vec<String>)> = vec![
             ("01_aplusb", "APlusB.rs", vec!["LSumInvariant".to_string()]),
-            ("02_counter_incdec", "CounterIncDec.rs", vec!["LTypeOK".to_string()]),
-            ("03_counter_race_bug", "CounterRaceBug.rs", vec!["LTotalCorrect".to_string()]),
-            ("04_lock_basic", "LockBasic.rs", vec!["LMutualExclusion".to_string()]),
-            ("05_broken_lock_bug", "BrokenLockBug.rs", vec!["LMutualExclusion".to_string()]),
-            ("06_ticket_lock", "TicketLock.rs", vec!["LMutualExclusion".to_string()]),
-            ("07_producer_consumer_1slot", "ProducerConsumer1Slot.rs", vec!["LSafetyInvariant".to_string()]),
+            (
+                "02_counter_incdec",
+                "CounterIncDec.rs",
+                vec!["LTypeOK".to_string()],
+            ),
+            (
+                "03_counter_race_bug",
+                "CounterRaceBug.rs",
+                vec!["LTotalCorrect".to_string()],
+            ),
+            (
+                "04_lock_basic",
+                "LockBasic.rs",
+                vec!["LMutualExclusion".to_string()],
+            ),
+            (
+                "05_broken_lock_bug",
+                "BrokenLockBug.rs",
+                vec!["LMutualExclusion".to_string()],
+            ),
+            (
+                "06_ticket_lock",
+                "TicketLock.rs",
+                vec!["LMutualExclusion".to_string()],
+            ),
+            (
+                "07_producer_consumer_1slot",
+                "ProducerConsumer1Slot.rs",
+                vec!["LSafetyInvariant".to_string()],
+            ),
             ("08_bounded_buffer_2slot", "BoundedBuffer2Slot.rs", vec![]),
-            ("09_peterson_mutex_2p", "PetersonMutex.rs", vec!["LMutualExclusion".to_string()]),
-            ("11_readers_writers_small", "ReadersWritersBug.rs", vec!["LSafety".to_string()]),
+            (
+                "09_peterson_mutex_2p",
+                "PetersonMutex.rs",
+                vec!["LMutualExclusion".to_string()],
+            ),
+            (
+                "11_readers_writers_small",
+                "ReadersWritersBug.rs",
+                vec!["LSafety".to_string()],
+            ),
             ("12_dining_philosophers_3", "DiningPhilosophers.rs", vec![]),
             (
                 "13_twophase_small",
@@ -2105,7 +2318,10 @@ max_seq_len = 4
         }
 
         // Verify at least one exact match exists
-        let exact_matches = results.iter().filter(|(_, _, _, s)| *s == "exact_match").count();
+        let exact_matches = results
+            .iter()
+            .filter(|(_, _, _, s)| *s == "exact_match")
+            .count();
         assert!(
             exact_matches >= 1,
             "Expected at least 1 exact baseline-DPOR match, got {}",
