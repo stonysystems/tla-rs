@@ -12077,11 +12077,24 @@ real DPOR follow-up work.
     Verified with full `cargo test` in `transpiler`, full DPOR suite
     (`./scripts/run_full_suite.sh --timeout 600`), and full `cargo test` in
     `DPOR_based_model_tla_rs_checker` (all green).
-  - [ ] **38.14.8.b**: Field-source precedence fix: when building `LState` for
+  - [x] **38.14.8.b**: Field-source precedence fix: when building `LState` for
     generated modules, prefer explicit VARIABLE/state-struct fields and avoid
     state-shape contamination from non-state record literals (message records).
     Add regression tests proving `sender`/`responder`-style message fields do
     not leak into state structs. Scope target: < 500 LOC touched.
+    **Done 2026-04-09**: updated `transpiler/src/tla/translator.rs` to track
+    preferred state fields separately from merged record fields
+    (`state_record_fields`), infer state fields from explicit `State == [..]`
+    operators or state-rooted usage (`s.field`, `s_.field`, and direct
+    `s_ = [..]` assignments), and for generated D1 modules emit a dedicated
+    `LState` struct from those state fields instead of aliasing `LState` to the
+    merged `LRecord`. This prevents message-only fields from contaminating
+    `LState` while preserving `LRecord` for packet/message records. Added
+    regressions `test_generated_d1_state_struct_ignores_message_record_fields`
+    and `test_generated_d1_state_fields_can_come_from_state_record_assignment`.
+    Verified with full `cargo test` in `transpiler`, full DPOR suite
+    (`./scripts/run_full_suite.sh --timeout 600`), and full `cargo test` in
+    `DPOR_based_model_tla_rs_checker` (all green).
   - [ ] **38.14.8.c**: End-to-end Bug B regeneration for case 14 only
     (leader election): regenerate corpus, confirm non-degenerate translated
     signatures/bodies, and add a DPOR regression that case 14 is non-vacuous.

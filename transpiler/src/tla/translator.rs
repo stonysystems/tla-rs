@@ -162,6 +162,9 @@ pub struct TranslatorConfig {
     pub record_structs: std::collections::HashMap<String, String>,
     /// All field names in the merged record struct (sorted), empty if no records
     pub record_all_fields: Vec<String>,
+    /// Preferred state fields for variable-less generated modules.
+    /// When set, these fields define `LState` instead of aliasing to merged `LRecord`.
+    pub state_record_fields: Vec<String>,
     /// Variable names whose type is Set<Record> (need record-typed empty set)
     pub record_set_vars: std::collections::HashSet<String>,
     /// Field name → Verus type for record struct fields (inferred from AST)
@@ -214,6 +217,7 @@ impl Default for TranslatorConfig {
             spec_prefix: String::new(),
             record_structs: std::collections::HashMap::new(),
             record_all_fields: Vec::new(),
+            state_record_fields: Vec::new(),
             record_set_vars: std::collections::HashSet::new(),
             record_field_types: std::collections::HashMap::new(),
             normalize_unknown_external_refs: false,
@@ -3017,6 +3021,20 @@ impl ModuleTranslator {
             state_var_names.insert(format!("{}_", name));
         }
 
+        // Prefer explicit state-shape information when available; otherwise infer state fields
+        // from state-rooted accesses and direct state-record assignments.
+        let mut inferred_state_field_names = self.explicit_state_struct_fields(module);
+        if inferred_state_field_names.is_empty() {
+            for op in &module.operators {
+                Self::collect_state_fields_from_expr(
+                    &op.body,
+                    &state_var_names,
+                    &mut inferred_state_field_names,
+                );
+            }
+        }
+        self.expr_config.state_record_fields = inferred_state_field_names.iter().cloned().collect();
+
         // Walk all operator bodies to find Record expressions and RecordAccess on state vars
         for op in &module.operators {
             self.collect_records_from_expr_fields(
@@ -3071,6 +3089,213 @@ impl ModuleTranslator {
                     self.expr_config.record_set_vars.insert(var_name.clone());
                 }
             }
+        }
+    }
+
+    /// Whether this module matches the generated-D1 shape (`CONSTANT State, Constants`,
+    /// inferred state param from `Init`, and no explicit VARIABLE declarations).
+    fn is_generated_d1_module(&self, module: &TlaModule) -> bool {
+        if !module.variables.is_empty()
+            || self
+                .inferred_generated_d1_state_param_name(module)
+                .is_none()
+        {
+            return false;
+        }
+        let has_state_constant = module
+            .constants
+            .iter()
+            .any(|c| c.name.eq_ignore_ascii_case(&self.config.state_name));
+        let has_constants_constant = module
+            .constants
+            .iter()
+            .any(|c| c.name.eq_ignore_ascii_case("constants"));
+        has_state_constant && has_constants_constant
+    }
+
+    /// Extract explicit state-field names from a `State == [..]` operator, when present.
+    fn explicit_state_struct_fields(
+        &self,
+        module: &TlaModule,
+    ) -> std::collections::BTreeSet<String> {
+        let mut fields = std::collections::BTreeSet::new();
+        let Some(state_op) = module
+            .operators
+            .iter()
+            .find(|op| op.name.eq_ignore_ascii_case(&self.config.state_name))
+        else {
+            return fields;
+        };
+        if let TlaExpr::Record(record_fields) = &state_op.body {
+            for (field_name, _) in record_fields {
+                fields.insert(field_name.clone());
+            }
+        }
+        fields
+    }
+
+    fn collect_state_assignment_record_fields(
+        lhs: &TlaExpr,
+        rhs: &TlaExpr,
+        state_var_names: &std::collections::HashSet<String>,
+        state_fields: &mut std::collections::BTreeSet<String>,
+    ) {
+        match (lhs, rhs) {
+            (TlaExpr::Ident(name), TlaExpr::Record(fields))
+            | (TlaExpr::Record(fields), TlaExpr::Ident(name))
+                if state_var_names.contains(name) =>
+            {
+                for (field_name, _) in fields {
+                    state_fields.insert(field_name.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Collect state-field names from state-rooted record accesses (`s.x`) and direct
+    /// state record assignments (`s = [x |-> ...]` / `s_ = [x |-> ...]`).
+    fn collect_state_fields_from_expr(
+        expr: &TlaExpr,
+        state_var_names: &std::collections::HashSet<String>,
+        state_fields: &mut std::collections::BTreeSet<String>,
+    ) {
+        match expr {
+            TlaExpr::RecordAccess { record, field } => {
+                if let TlaExpr::Ident(name) = record.as_ref() {
+                    if state_var_names.contains(name) {
+                        state_fields.insert(field.clone());
+                    }
+                }
+                Self::collect_state_fields_from_expr(record, state_var_names, state_fields);
+            }
+            TlaExpr::BinOp { op, left, right } => {
+                if *op == TlaBinOp::Eq {
+                    Self::collect_state_assignment_record_fields(
+                        left,
+                        right,
+                        state_var_names,
+                        state_fields,
+                    );
+                }
+                Self::collect_state_fields_from_expr(left, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(right, state_var_names, state_fields);
+            }
+            TlaExpr::LeadsTo { left, right } => {
+                Self::collect_state_fields_from_expr(left, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(right, state_var_names, state_fields);
+            }
+            TlaExpr::UnaryOp { operand, .. }
+            | TlaExpr::Prime(operand)
+            | TlaExpr::Enabled(operand)
+            | TlaExpr::Always(operand)
+            | TlaExpr::Eventually(operand) => {
+                Self::collect_state_fields_from_expr(operand, state_var_names, state_fields);
+            }
+            TlaExpr::OpApply { op, args } => {
+                Self::collect_state_fields_from_expr(op, state_var_names, state_fields);
+                for arg in args {
+                    Self::collect_state_fields_from_expr(arg, state_var_names, state_fields);
+                }
+            }
+            TlaExpr::FnApply { func, arg } => {
+                Self::collect_state_fields_from_expr(func, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(arg, state_var_names, state_fields);
+            }
+            TlaExpr::SetEnum(elements)
+            | TlaExpr::Tuple(elements)
+            | TlaExpr::Unchanged(elements) => {
+                for element in elements {
+                    Self::collect_state_fields_from_expr(element, state_var_names, state_fields);
+                }
+            }
+            TlaExpr::SetFilter { set, filter, .. } => {
+                Self::collect_state_fields_from_expr(set, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(filter, state_var_names, state_fields);
+            }
+            TlaExpr::SetMap { expr, set, .. } => {
+                Self::collect_state_fields_from_expr(expr, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(set, state_var_names, state_fields);
+            }
+            TlaExpr::FnConstruct { domain, body, .. } => {
+                Self::collect_state_fields_from_expr(domain, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(body, state_var_names, state_fields);
+            }
+            TlaExpr::FnExcept { func, updates } => {
+                Self::collect_state_fields_from_expr(func, state_var_names, state_fields);
+                for update in updates {
+                    for path in &update.path {
+                        if let TlaExceptPath::Index(index) = path {
+                            Self::collect_state_fields_from_expr(
+                                index,
+                                state_var_names,
+                                state_fields,
+                            );
+                        }
+                    }
+                    Self::collect_state_fields_from_expr(
+                        &update.value,
+                        state_var_names,
+                        state_fields,
+                    );
+                }
+            }
+            TlaExpr::FnSet { domain, range } => {
+                Self::collect_state_fields_from_expr(domain, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(range, state_var_names, state_fields);
+            }
+            TlaExpr::Record(fields) => {
+                for (_, value) in fields {
+                    Self::collect_state_fields_from_expr(value, state_var_names, state_fields);
+                }
+            }
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::collect_state_fields_from_expr(cond, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(then_expr, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(else_expr, state_var_names, state_fields);
+            }
+            TlaExpr::Case { arms, other } => {
+                for (condition, body) in arms {
+                    Self::collect_state_fields_from_expr(condition, state_var_names, state_fields);
+                    Self::collect_state_fields_from_expr(body, state_var_names, state_fields);
+                }
+                if let Some(other_expr) = other {
+                    Self::collect_state_fields_from_expr(other_expr, state_var_names, state_fields);
+                }
+            }
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+                for quant_bound in vars {
+                    if let Some(set_expr) = &quant_bound.set {
+                        Self::collect_state_fields_from_expr(
+                            set_expr,
+                            state_var_names,
+                            state_fields,
+                        );
+                    }
+                }
+                Self::collect_state_fields_from_expr(body, state_var_names, state_fields);
+            }
+            TlaExpr::Choose { set, body, .. } => {
+                if let Some(set_expr) = set {
+                    Self::collect_state_fields_from_expr(set_expr, state_var_names, state_fields);
+                }
+                Self::collect_state_fields_from_expr(body, state_var_names, state_fields);
+            }
+            TlaExpr::LetIn { defs, body } => {
+                for def in defs {
+                    Self::collect_state_fields_from_expr(&def.body, state_var_names, state_fields);
+                }
+                Self::collect_state_fields_from_expr(body, state_var_names, state_fields);
+            }
+            TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+                Self::collect_state_fields_from_expr(vars, state_var_names, state_fields);
+                Self::collect_state_fields_from_expr(action, state_var_names, state_fields);
+            }
+            TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {}
         }
     }
 
@@ -3548,8 +3773,24 @@ impl ModuleTranslator {
         let unique_record_names: std::collections::BTreeSet<String> =
             self.expr_config.record_structs.values().cloned().collect();
         let aliased_record_state = module.variables.is_empty() && unique_record_names.len() == 1;
+        let generated_d1_struct_state =
+            self.is_generated_d1_module(module) && !self.expr_config.state_record_fields.is_empty();
 
-        if aliased_record_state {
+        if generated_d1_struct_state {
+            output.push_str(&format!("/// State for {} module\n", module.name));
+            output.push_str(&format!("pub struct {} {{\n", state_name));
+            for field_name in &self.expr_config.state_record_fields {
+                let safe_name = safe_field_name(field_name);
+                let field_type = self
+                    .expr_config
+                    .record_field_types
+                    .get(field_name)
+                    .map(|s| s.as_str())
+                    .unwrap_or("int");
+                output.push_str(&format!("    pub {}: {},\n", safe_name, field_type));
+            }
+            output.push_str("}\n\n");
+        } else if aliased_record_state {
             let record_name = unique_record_names
                 .iter()
                 .next()
@@ -5661,6 +5902,14 @@ mod tests {
         TlaBinOp, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaQuantBound, TlaUnaryOp,
     };
     use crate::tla::parser::parse_module;
+
+    fn extract_struct_block<'a>(source: &'a str, struct_name: &str) -> Option<&'a str> {
+        let needle = format!("pub struct {} {{", struct_name);
+        let start = source.find(&needle)?;
+        let tail = &source[start..];
+        let end = tail.find("\n}\n")?;
+        Some(&tail[..end + 2])
+    }
 
     #[test]
     fn test_translate_identifiers() {
@@ -8138,6 +8387,85 @@ mod tests {
                 || result.contains("pub open spec fn LFoo(s: int)"),
             "Scalar helper should keep s: int (not forced to LState), got:\n{}",
             result
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_state_struct_ignores_message_record_fields() {
+        let source = r"
+            ---- MODULE Election ----
+            CONSTANT State, Constants, ElectionMessage
+            Init(s, c) ==
+                /\ s.alive = c.nodes
+                /\ s.waiting_answer = FALSE
+                /\ s.leader = 0
+            SendAnswer(s, s_, c, node, sent_packets) ==
+                /\ s_.alive = s.alive
+                /\ s_.waiting_answer = s.waiting_answer
+                /\ s_.leader = s.leader
+                /\ sent_packets = <<[sender |-> node, responder |-> 0]>>
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+
+        assert!(
+            result.contains("pub struct LState {"),
+            "Generated D1 modules should emit dedicated LState struct, got:\n{}",
+            result
+        );
+        assert!(
+            !result.contains("pub type LState = LRecord;"),
+            "Generated D1 modules should avoid aliasing state to merged record, got:\n{}",
+            result
+        );
+
+        let lstate = extract_struct_block(&result, "LState").unwrap();
+        assert!(
+            lstate.contains("pub alive:") && lstate.contains("pub waiting_answer:"),
+            "LState should keep real state fields, got:\n{}",
+            lstate
+        );
+        assert!(
+            !lstate.contains("pub sender:") && !lstate.contains("pub responder:"),
+            "Message-only fields must not leak into LState, got:\n{}",
+            lstate
+        );
+
+        let lrecord = extract_struct_block(&result, "LRecord").unwrap();
+        assert!(
+            lrecord.contains("pub sender:") && lrecord.contains("pub responder:"),
+            "LRecord should still keep message shape fields for packet records, got:\n{}",
+            lrecord
+        );
+    }
+
+    #[test]
+    fn test_generated_d1_state_fields_can_come_from_state_record_assignment() {
+        let source = r"
+            ---- MODULE Test ----
+            CONSTANT State, Constants
+            Init(s, c) == s = [x |-> 0, y |-> 0]
+            Step(s, s_, c, node, sent_packets) ==
+                /\ s_ = [x |-> s.x, y |-> s.y]
+                /\ sent_packets = <<[sender |-> node]>>
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let mut translator = ModuleTranslator::new();
+        let result = translator.translate(&module);
+        let lstate = extract_struct_block(&result, "LState").unwrap();
+
+        assert!(
+            lstate.contains("pub x:") && lstate.contains("pub y:"),
+            "State-record assignment fields should be captured for LState, got:\n{}",
+            lstate
+        );
+        assert!(
+            !lstate.contains("pub sender:"),
+            "Message-only record fields should not leak into LState, got:\n{}",
+            lstate
         );
     }
 
