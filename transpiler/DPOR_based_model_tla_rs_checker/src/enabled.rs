@@ -244,7 +244,7 @@ impl SpecContext {
         if !solved.is_empty() {
             let branch_footprints = self.branch_footprints().unwrap_or_default();
             let mut enabled = Vec::with_capacity(solved.len());
-            for (succ_idx, (branch_label, successor)) in solved.iter().enumerate() {
+            for (succ_idx, (branch_label, process_id, successor)) in solved.iter().enumerate() {
                 let fingerprint = hash_state(successor);
                 let ordering_key = format!("{:04}", succ_idx);
                 let footprint = branch_footprints
@@ -252,7 +252,7 @@ impl SpecContext {
                     .map(convert_por_footprint)
                     .unwrap_or_default();
                 enabled.push(EnabledTransition {
-                    process_id: ProcessId(0), // 38.14.10.b will replace with real process IDs
+                    process_id: *process_id,
                     branch_label: branch_label.clone(),
                     successor_fingerprint: fingerprint,
                     ordering_key,
@@ -269,8 +269,10 @@ impl SpecContext {
         for (succ_idx, successor) in successors.iter().enumerate() {
             let fingerprint = hash_state(successor);
             let ordering_key = format!("{:04}", succ_idx);
+            let process_id =
+                infer_process_id_from_state_delta(state, successor, &successor.canonical_key());
             all_enabled.push(EnabledTransition {
-                process_id: ProcessId(0),
+                process_id,
                 branch_label: format!("transition_{}", succ_idx),
                 successor_fingerprint: fingerprint,
                 ordering_key,
@@ -285,7 +287,10 @@ impl SpecContext {
     pub fn full_successors(&self, state: &RuntimeValue) -> TranspileResult<Vec<RuntimeValue>> {
         let solved = self.solve_successors_with_branch_labels(state)?;
         if !solved.is_empty() {
-            return Ok(solved.into_iter().map(|(_, successor)| successor).collect());
+            return Ok(solved
+                .into_iter()
+                .map(|(_, _, successor)| successor)
+                .collect());
         }
 
         // Fallback: candidate enumeration. Expand state candidates and evaluate
@@ -300,7 +305,7 @@ impl SpecContext {
     fn solve_successors_with_branch_labels(
         &self,
         state: &RuntimeValue,
-    ) -> TranspileResult<Vec<(String, RuntimeValue)>> {
+    ) -> TranspileResult<Vec<(String, ProcessId, RuntimeValue)>> {
         let transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
 
         let mut assignments_by_branch = std::collections::BTreeMap::new();
@@ -333,30 +338,133 @@ impl SpecContext {
             };
         // Build the same predicate solver as enabled_transitions
         let predicate_solver = |
-            _trans: &verus_transpiler::modelcheck::ir::TransitionIr,
+            transition_ir: &verus_transpiler::modelcheck::ir::TransitionIr,
             branch: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
             cur_state: &RuntimeValue,
             constants: Option<&RuntimeValue>,
-            _exist_assignments: &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
+            exist_assignments: &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
             bounds: RuntimeCollectionBounds,
         | -> TranspileResult<Option<Vec<RuntimeValue>>> {
             use verus_transpiler::modelcheck::ir::BranchConstraintIr;
             use verus_transpiler::ast::Expr;
+            use verus_transpiler::modelcheck::domain::ExistentialAssignment;
+
+            fn assignment_key(assignment: &ExistentialAssignment) -> String {
+                assignment
+                    .iter()
+                    .map(|(name, value)| format!("{}={}", name, value.canonical_key()))
+                    .collect::<Vec<_>>()
+                    .join("|")
+            }
 
             if branch.constraints.len() != 1 { return Ok(None); }
             let BranchConstraintIr::Predicate { expr } = &branch.constraints[0] else { return Ok(None); };
-            let Expr::Call { func, args: _ } = expr else { return Ok(None); };
+            let Expr::Call { func, args } = expr else { return Ok(None); };
+
+            let transition_param_arity = if transition_ir.constants_param.is_some() { 3 } else { 2 };
+            if args.len() < transition_param_arity {
+                return Ok(None);
+            }
+            if !matches!(&args[0], Expr::Ident(name) if name == &transition_ir.current_state_param) {
+                return Ok(None);
+            }
+            if !matches!(&args[1], Expr::Ident(name) if name == &transition_ir.next_state_param) {
+                return Ok(None);
+            }
+            if let Some(constants_param_name) = transition_ir.constants_param.as_ref() {
+                if !matches!(&args[2], Expr::Ident(name) if name == constants_param_name) {
+                    return Ok(None);
+                }
+                if constants.is_none() {
+                    return Ok(None);
+                }
+            }
 
             let helper_fn = match verus_transpiler::modelcheck::helpers::resolve_called_spec_function(
                 &self.bundle.spec_functions, func,
             ) { Ok(f) => f, Err(_) => return Ok(None) };
+            if helper_fn.params.len() != args.len() {
+                return Ok(None);
+            }
             let helper_transition = match build_transition_ir(helper_fn) { Ok(t) => t, Err(_) => return Ok(None) };
+
+            let source_assignments: Vec<ExistentialAssignment> = if exist_assignments.is_empty() {
+                vec![std::collections::BTreeMap::new()]
+            } else {
+                exist_assignments.to_vec()
+            };
+
+            // Bind helper extra parameters from the outer branch's existential assignment.
+            let mut call_site_assignments = Vec::<ExistentialAssignment>::new();
+            let extra_params = helper_fn.params.iter().skip(transition_param_arity);
+            let extra_args = args.iter().skip(transition_param_arity);
+            for source_assignment in &source_assignments {
+                let mut call_assignment = std::collections::BTreeMap::new();
+                let mut unsupported = false;
+                for (helper_param, arg_expr) in extra_params.clone().zip(extra_args.clone()) {
+                    match arg_expr {
+                        Expr::Ident(name) => {
+                            let Some(value) = source_assignment.get(name).cloned() else {
+                                unsupported = true;
+                                break;
+                            };
+                            call_assignment.insert(helper_param.name.clone(), value);
+                        }
+                        _ => {
+                            unsupported = true;
+                            break;
+                        }
+                    }
+                }
+                if !unsupported {
+                    call_site_assignments.push(call_assignment);
+                }
+            }
+            if call_site_assignments.is_empty() {
+                return Ok(None);
+            }
+            let mut seen_call_assignments = std::collections::BTreeSet::new();
+            call_site_assignments
+                .retain(|assignment| seen_call_assignments.insert(assignment_key(assignment)));
 
             let mut all_succs = Vec::new();
             for helper_branch in &helper_transition.branches {
                 let helper_assigns = expand_branch_existentials(
                     helper_branch, &self.bundle.schema, &self.model_config,
                 )?;
+                let helper_assigns: Vec<ExistentialAssignment> = if helper_assigns.is_empty() {
+                    vec![std::collections::BTreeMap::new()]
+                } else {
+                    helper_assigns
+                };
+
+                let mut merged_assignments = Vec::<ExistentialAssignment>::new();
+                for call_assignment in &call_site_assignments {
+                    for helper_assignment in &helper_assigns {
+                        let mut merged = call_assignment.clone();
+                        let mut conflict = false;
+                        for (name, value) in helper_assignment {
+                            if let Some(existing) = merged.get(name) {
+                                if existing != value {
+                                    conflict = true;
+                                    break;
+                                }
+                            } else {
+                                merged.insert(name.clone(), value.clone());
+                            }
+                        }
+                        if !conflict {
+                            merged_assignments.push(merged);
+                        }
+                    }
+                }
+                if merged_assignments.is_empty() {
+                    continue;
+                }
+                let mut seen_merged = std::collections::BTreeSet::new();
+                merged_assignments
+                    .retain(|assignment| seen_merged.insert(assignment_key(assignment)));
+
                 let hooks = SolverHooks {
                     call_evaluator: Some(&call_eval),
                     method_evaluator: None,
@@ -365,7 +473,7 @@ impl SpecContext {
                 };
                 match solve_branch_successors(
                     &helper_transition, helper_branch, cur_state, constants,
-                    &helper_assigns, bounds, hooks,
+                    &merged_assignments, bounds, hooks,
                 ) {
                     Ok(succs) => all_succs.extend(succs),
                     Err(_) => continue,
@@ -392,26 +500,37 @@ impl SpecContext {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
 
-            let branch_successors = match solve_branch_successors(
-                &transition,
-                branch,
-                state,
-                self.constants.as_ref(),
-                branch_assignments,
-                self.bounds,
-                hooks,
-            ) {
-                Ok(successors) => successors,
-                // Keep parity with the old aggregated solver path: unsupported
-                // branch-solve shapes are handled by the predicate-enumeration
-                // fallback in `full_successors` / `enabled_transitions`.
-                Err(_) => continue,
-            };
+            let assignment_variants: Vec<verus_transpiler::modelcheck::domain::ExistentialAssignment> =
+                if branch_assignments.is_empty() {
+                    vec![std::collections::BTreeMap::new()]
+                } else {
+                    branch_assignments.to_vec()
+                };
 
-            for successor in branch_successors {
-                let key = successor.canonical_key();
-                if seen.insert(key) {
-                    solved.push((branch.label.clone(), successor));
+            for assignment in assignment_variants {
+                let process_id = infer_process_id(&branch.label, &assignment);
+                let single_assignment = [assignment];
+                let branch_successors = match solve_branch_successors(
+                    &transition,
+                    branch,
+                    state,
+                    self.constants.as_ref(),
+                    &single_assignment,
+                    self.bounds,
+                    hooks,
+                ) {
+                    Ok(successors) => successors,
+                    // Keep parity with the old aggregated solver path: unsupported
+                    // branch-solve shapes are handled by the predicate-enumeration
+                    // fallback in `full_successors` / `enabled_transitions`.
+                    Err(_) => continue,
+                };
+
+                for successor in branch_successors {
+                    let key = successor.canonical_key();
+                    if seen.insert(key) {
+                        solved.push((branch.label.clone(), process_id, successor));
+                    }
                 }
             }
         }
@@ -687,6 +806,198 @@ fn convert_por_footprint(
     }
 }
 
+fn infer_process_id(
+    branch_label: &str,
+    assignment: &verus_transpiler::modelcheck::domain::ExistentialAssignment,
+) -> ProcessId {
+    // Prefer common process-binder names first.
+    const PROCESS_BINDER_NAMES: &[&str] = &[
+        "p", "i", "j", "proc", "process", "node", "replica", "server",
+    ];
+    for name in PROCESS_BINDER_NAMES {
+        if let Some(value) = assignment.get(*name) {
+            return ProcessId(process_id_from_runtime_value(value));
+        }
+    }
+
+    // Then accept process-like names by heuristic.
+    for (name, value) in assignment {
+        let lower = name.to_ascii_lowercase();
+        if lower == "pid"
+            || lower.ends_with("_pid")
+            || lower.ends_with("_id")
+            || lower.contains("proc")
+            || lower.contains("process")
+            || lower.contains("node")
+            || lower.contains("replica")
+            || lower.contains("server")
+        {
+            return ProcessId(process_id_from_runtime_value(value));
+        }
+    }
+
+    // No process-like binder available: deterministic hash fallback.
+    ProcessId(stable_nonzero_process_hash(branch_label))
+}
+
+fn infer_process_id_from_state_delta(
+    current_state: &RuntimeValue,
+    successor_state: &RuntimeValue,
+    fallback_seed: &str,
+) -> ProcessId {
+    let mut candidates = std::collections::BTreeSet::new();
+    collect_process_id_candidates_from_delta(current_state, successor_state, &mut candidates);
+    if let Some(pid) = candidates.into_iter().next() {
+        return ProcessId(pid);
+    }
+    ProcessId(stable_nonzero_process_hash(fallback_seed))
+}
+
+fn collect_process_id_candidates_from_delta(
+    current: &RuntimeValue,
+    successor: &RuntimeValue,
+    candidates: &mut std::collections::BTreeSet<u32>,
+) {
+    if current == successor {
+        return;
+    }
+    match (current, successor) {
+        (
+            RuntimeValue::Struct {
+                fields: current_fields,
+                ..
+            },
+            RuntimeValue::Struct {
+                fields: successor_fields,
+                ..
+            },
+        )
+        | (
+            RuntimeValue::Enum {
+                fields: current_fields,
+                ..
+            },
+            RuntimeValue::Enum {
+                fields: successor_fields,
+                ..
+            },
+        ) => {
+            for (field, current_value) in current_fields {
+                match successor_fields.get(field) {
+                    Some(successor_value) => collect_process_id_candidates_from_delta(
+                        current_value,
+                        successor_value,
+                        candidates,
+                    ),
+                    None => {}
+                }
+            }
+        }
+        (RuntimeValue::Tuple(current_items), RuntimeValue::Tuple(successor_items))
+        | (RuntimeValue::Seq(current_items), RuntimeValue::Seq(successor_items)) => {
+            for idx in 0..current_items.len().max(successor_items.len()) {
+                match (current_items.get(idx), successor_items.get(idx)) {
+                    (Some(current_item), Some(successor_item)) => {
+                        if current_item != successor_item {
+                            if let Ok(pid) = u32::try_from(idx) {
+                                candidates.insert(pid);
+                            }
+                            collect_process_id_candidates_from_delta(
+                                current_item,
+                                successor_item,
+                                candidates,
+                            );
+                        }
+                    }
+                    (Some(_), None) | (None, Some(_)) => {
+                        if let Ok(pid) = u32::try_from(idx) {
+                            candidates.insert(pid);
+                        }
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+        (RuntimeValue::Map(current_entries), RuntimeValue::Map(successor_entries)) => {
+            for (key, current_value) in current_entries {
+                match successor_entries.get(key) {
+                    Some(successor_value) => {
+                        if current_value != successor_value {
+                            if let Some(pid) = explicit_process_id_value(key) {
+                                candidates.insert(pid);
+                            }
+                            collect_process_id_candidates_from_delta(
+                                current_value,
+                                successor_value,
+                                candidates,
+                            );
+                        }
+                    }
+                    None => {
+                        if let Some(pid) = explicit_process_id_value(key) {
+                            candidates.insert(pid);
+                        }
+                    }
+                }
+            }
+            for key in successor_entries.keys() {
+                if !current_entries.contains_key(key) {
+                    if let Some(pid) = explicit_process_id_value(key) {
+                        candidates.insert(pid);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn explicit_process_id_value(value: &RuntimeValue) -> Option<u32> {
+    match value {
+        RuntimeValue::Int(i) if *i >= 0 && *i <= u32::MAX as i128 => Some(*i as u32),
+        RuntimeValue::Nat(n) => Some((*n).min(u32::MAX as u64) as u32),
+        RuntimeValue::Bool(v) => Some(if *v { 1 } else { 0 }),
+        RuntimeValue::String(s) => s.parse::<u32>().ok(),
+        _ => None,
+    }
+}
+
+fn process_id_from_runtime_value(value: &RuntimeValue) -> u32 {
+    match value {
+        RuntimeValue::Int(i) => {
+            if *i >= 0 && *i <= u32::MAX as i128 {
+                *i as u32
+            } else {
+                stable_nonzero_process_hash(&value.canonical_key())
+            }
+        }
+        RuntimeValue::Nat(n) => (*n).min(u32::MAX as u64) as u32,
+        RuntimeValue::Bool(v) => {
+            if *v {
+                1
+            } else {
+                0
+            }
+        }
+        RuntimeValue::String(s) => s
+            .parse::<u32>()
+            .unwrap_or_else(|_| stable_nonzero_process_hash(s)),
+        _ => stable_nonzero_process_hash(&value.canonical_key()),
+    }
+}
+
+fn stable_nonzero_process_hash(seed: &str) -> u32 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    seed.hash(&mut hasher);
+    let hashed = (hasher.finish() & 0xFFFF_FFFF) as u32;
+    if hashed == 0 {
+        1
+    } else {
+        hashed
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -732,6 +1043,26 @@ max_seq_len = 4
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let path =
             manifest_dir.join("tests/tla-rs/07_producer_consumer_1slot/ProducerConsumer1Slot.rs");
+        if path.exists() {
+            Some(path)
+        } else {
+            None
+        }
+    }
+
+    fn peterson_spec_path() -> Option<std::path::PathBuf> {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let path = manifest_dir.join("tests/tla-rs/09_peterson_mutex_2p/PetersonMutex.rs");
+        if path.exists() {
+            Some(path)
+        } else {
+            None
+        }
+    }
+
+    fn peterson_model_config_path() -> Option<std::path::PathBuf> {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let path = manifest_dir.join("tests/model_configs/09_peterson_mutex_2p.toml");
         if path.exists() {
             Some(path)
         } else {
@@ -852,6 +1183,88 @@ max_seq_len = 4
                 "Enabled transition footprint should match converted POR branch footprint"
             );
         }
+    }
+
+    #[test]
+    fn test_enabled_transitions_peterson_not_collapsed_to_process_zero() {
+        let spec_path = match peterson_spec_path() {
+            Some(p) => p,
+            None => {
+                return;
+            }
+        };
+        let model_path = match peterson_model_config_path() {
+            Some(p) => p,
+            None => {
+                return;
+            }
+        };
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+
+        let initials = ctx.initial_states().unwrap();
+        assert!(
+            !initials.is_empty(),
+            "Peterson should have at least one initial state with checked-in model config"
+        );
+        let enabled = ctx.enabled_transitions(&initials[0]).unwrap();
+        assert!(
+            !enabled.is_empty(),
+            "Peterson initial state should have enabled transitions"
+        );
+
+        let process_ids: std::collections::BTreeSet<u32> =
+            enabled.iter().map(|t| t.process_id.0).collect();
+        assert!(
+            process_ids.len() >= 2,
+            "Expected at least two distinct process ids, got {:?}",
+            process_ids
+        );
+        assert!(
+            process_ids.iter().any(|pid| *pid != 0),
+            "Expected at least one non-zero process id, got {:?}",
+            process_ids
+        );
+    }
+
+    #[test]
+    fn test_infer_process_id_fallback_is_stable_non_zero() {
+        let assignment = std::collections::BTreeMap::new();
+        let a = infer_process_id("branch_42", &assignment);
+        let b = infer_process_id("branch_42", &assignment);
+        assert_eq!(a, b, "fallback process-id hashing should be deterministic");
+        assert_ne!(a.0, 0, "fallback process-id hashing should avoid zero");
+    }
+
+    #[test]
+    fn test_infer_process_id_from_state_delta_map_key() {
+        let mut before_fields = std::collections::BTreeMap::new();
+        before_fields.insert(
+            "pc".to_string(),
+            RuntimeValue::Map(std::collections::BTreeMap::from([
+                (RuntimeValue::Int(0), RuntimeValue::String("idle".to_string())),
+                (RuntimeValue::Int(1), RuntimeValue::String("idle".to_string())),
+            ])),
+        );
+        let before = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: before_fields,
+        };
+
+        let mut after_fields = std::collections::BTreeMap::new();
+        after_fields.insert(
+            "pc".to_string(),
+            RuntimeValue::Map(std::collections::BTreeMap::from([
+                (RuntimeValue::Int(0), RuntimeValue::String("wait".to_string())),
+                (RuntimeValue::Int(1), RuntimeValue::String("idle".to_string())),
+            ])),
+        );
+        let after = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: after_fields,
+        };
+
+        let inferred = infer_process_id_from_state_delta(&before, &after, "fallback");
+        assert_eq!(inferred, ProcessId(0));
     }
 
     #[test]

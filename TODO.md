@@ -12232,12 +12232,23 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
     Added regressions
     `test_enabled_transitions_use_branch_footprints_when_available` and updated
     `test_enabled_transitions_aplusb` expectations.
-  - [ ] **38.14.10.b**: Process identity extraction v1: derive non-trivial
+  - [x] **38.14.10.b**: Process identity extraction v1: derive non-trivial
     `ProcessId` values from existential binder assignments on common process
     variable names (`p`, `i`, `j`, `proc`, `node`, `replica`, `server`),
     with stable hashing fallback only when no process-like binder is present.
     Add regressions proving multi-process cases no longer collapse to only
     `ProcessId(0)`.
+    **Done 2026-04-09**: `enabled_transitions()` now assigns per-transition
+    `process_id` via existential-assignment extraction. Preferred binders
+    (`p/i/j/proc/process/node/replica/server`) are used first, then
+    process-like heuristic names, then deterministic non-zero hash fallback
+    when no process-like binder exists. For enumeration fallback successors
+    (synthetic `transition_N` labels), process IDs are now inferred from
+    state deltas (map/seq key changes) before hashing fallback, so multi-process
+    fallback paths do not collapse to `ProcessId(0)`. Added regressions
+    `test_enabled_transitions_peterson_not_collapsed_to_process_zero` and
+    `test_infer_process_id_fallback_is_stable_non_zero` plus
+    `test_infer_process_id_from_state_delta_map_key`.
   - [ ] **38.14.10.c**: DPOR dependence integration pass: make sleep/backtrack
     logic consume the new process IDs plus branch footprints in a conservative,
     parity-safe way (no lost states), and add explicit parity tests on the
