@@ -1,44 +1,43 @@
-# Sleep-Set Reduction Table (Phase 38.8.3.c)
+# Sleep-Set Reduction Table (Phase 38.14.10.d)
 
-## Cases 04-11: Before/After Sleep-Set Comparison
+This report is generated from the evidence harness:
 
-All measurements from DPOR engine with `max_depth=20, max_states=10000`.
+```bash
+cargo test --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml \
+  dpor::tests::print_sleep_set_reduction_multi_process_markdown \
+  -- --ignored --exact --nocapture
+```
 
-| # | Case | States (no sleep) | States (with sleep) | Transitions (no sleep) | Transitions (with sleep) | Reduction | Notes |
-|---|------|-------------------|--------------------|-----------------------|-------------------------|-----------|-------|
-| 04 | LockBasic | 3 | 3 | 2 | 2 | 0% | Single-process, empty footprints |
-| 05 | BrokenLockBug | 7 | 7 | 6 | 6 | 0% | Violation stops early |
-| 06 | TicketLock | 7 | 7 | 6 | 6 | 0% | Single-process, empty footprints |
-| 07 | ProducerConsumer | 21 | 21 | 20 | 20 | 0% | Single-process, empty footprints |
-| 08 | BoundedBuffer | 6 | 6 | 5 | 5 | 0% | Single-process, empty footprints |
-| 09 | PetersonMutex | 10 | 10 | 9 | 9 | 0% | Single-process, empty footprints |
-| 10 | BakeryMutex | -- | -- | -- | -- | N/A | Blocked: domain expansion |
-| 11 | ReadersWriters | 4 | 4 | 3 | 3 | 0% | Violation stops early |
+Measurement bounds:
 
-## Analysis
+- `max_depth=20`
+- `max_states=10000`
+- modes compared: conservative (`no ind/no sleep`), independence-only, independence+sleep
 
-**Zero reduction observed.** This is expected and correct because:
+## Multi-Process Focused Measurements
 
-1. **Single-process model**: All translated TLA+ specs currently use `ProcessId(0)` for all transitions. In source-DPOR, same-process transitions are always dependent — independence only applies across different processes.
+| Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons |
+|------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|
+| 02_counter_incdec | 5 | 5 | 5 | 0.0% | 6 | 6 | 6 | 0.0% |
+| 09_peterson_mutex_2p | 10 | 10 | 10 | 0.0% | 16 | 16 | 16 | 0.0% |
+| 17_paxos_small | 40 | 40 | 40 | 0.0% | 168 | 168 | 168 | 0.0% |
 
-2. **Empty footprints**: The `TransitionFootprint` on each `EnabledTransition` is default (empty reads/writes). The `compute_child_sleep_set()` function treats empty footprints as dependent with everything (conservative), so no transitions stay asleep during propagation.
+## Gate Status (Phase 38.14.10.d)
 
-3. **Why footprints are empty**: The DPOR engine's `enabled_transitions()` delegates to `full_successors()` which uses a flat candidate-enumeration fallback. This fallback evaluates the full `LNext` predicate without decomposing by branch, so it can't attribute individual successors to specific branches. Since branch footprints can't be mapped to transitions, all footprints remain empty.
+Required gate to close `38.14.10`:
 
-## When will reduction appear?
+- `>10%` distinct-state reduction on at least `3` multi-process cases.
 
-Sleep sets will provide measurable reduction when either:
+Observed from measured runs above:
 
-1. **Multi-process specs**: TLA+ specs with multiple distinct process types (e.g., `\E p \in Procs : Action(p)` with per-process state) where the translator assigns distinct `ProcessId` values.
+- `0 / 3` cases above 10%.
 
-2. **Per-transition footprints**: The enabled_transitions path successfully decomposes LNext into branches with direct `s_.field == ...` assignments (not predicate-only), allowing branch-level footprints to be assigned to individual transitions.
+Status:
 
-3. **Both conditions**: Independence requires both that transitions touch disjoint state fields AND belong to different processes. In the current single-process model, all transitions are trivially dependent regardless of footprints.
+- **NOT MET**.
 
-## Correctness Verification
+## Notes
 
-The `test_sleep_set_parity_all_passing_cases` test (Phase 38.8.3.b) verifies on every commit that sleep sets never lose states across all 7 positive baseline-passing cases. This gate ensures that even when reduction starts appearing, it never causes verdict regressions.
-
-## Date
-
-Generated: 2026-03-26 (Milestone M7, 12/20 pass)
+- The harness enforces parity-safety during measurement by asserting:
+  `conservative ⊆ independence` and `conservative ⊆ sleep` for distinct states.
+- Because the gate is not met, `38.14.10` remains open pending algorithmic reduction work (`38.14.10.d.b` / `38.14.10.d.c`).

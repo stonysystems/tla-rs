@@ -12286,6 +12286,21 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
     `tests/reports/sleep_set_reduction_table.md` from measured runs and require
     >10% explored-state reduction on at least 3 multi-process cases before
     declaring 38.14.10 done.
+    - [x] **38.14.10.d.a**: Add a reproducible reduction-measurement harness
+      (multi-process focus) and regenerate
+      `tests/reports/sleep_set_reduction_table.md` from current measurements,
+      including an explicit gate-status section.
+      **Done 2026-04-09**: Added ignored evidence harness
+      `dpor::tests::print_sleep_set_reduction_multi_process_markdown` and
+      regenerated `tests/reports/sleep_set_reduction_table.md` from measured
+      runs (cases 02/09/17). Current gate status is explicitly recorded as
+      **NOT MET** (`0/3` cases above 10% distinct-state reduction).
+    - [ ] **38.14.10.d.b**: Implement reduction-enabling DPOR changes needed
+      to actually exceed the gate (>10% explored-state reduction on at least 3
+      multi-process cases) without parity regressions.
+    - [ ] **38.14.10.d.c**: Re-run the measurement harness, update
+      `sleep_set_reduction_table.md` with post-change numbers, and close
+      38.14.10 only if the gate is met.
 - [ ] **38.14.11**: **Re-evaluate the Phase 38.10 integration gate against
   the audited score.** The integration gate's preconditions ("the parity
   subset is exact under DPOR", "the required hard protocol gates are no

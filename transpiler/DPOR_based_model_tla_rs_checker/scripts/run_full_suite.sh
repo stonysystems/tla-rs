@@ -109,10 +109,34 @@ for case_dir in "$TLA_DIR"/*/; do
             states=0
             elapsed_ms=0
         else
-            # Use per-case model config if available, otherwise create default
+            # Use per-case model config if available, otherwise create default.
+            # IMPORTANT: always enforce CLI --timeout onto timeout_ms so all
+            # cases honor the current run budget (including per-case configs).
             per_case_config="$MODEL_CONFIGS_DIR/${case_id}.toml"
             if [[ -f "$per_case_config" ]]; then
-                model_toml="$per_case_config"
+                model_toml=$(mktemp /tmp/dpor_model_${case_id}_XXXXXX.toml)
+                cp "$per_case_config" "$model_toml"
+                timeout_ms_override=$((TIMEOUT_SEC * 1000))
+                if grep -qE '^[[:space:]]*timeout_ms[[:space:]]*=' "$model_toml"; then
+                    sed -i -E "s/^[[:space:]]*timeout_ms[[:space:]]*=.*/timeout_ms = ${timeout_ms_override}/" "$model_toml"
+                elif grep -qE '^\[search\]' "$model_toml"; then
+                    awk -v timeout_ms="$timeout_ms_override" '
+                        /^\[search\]$/ && !injected {
+                            print;
+                            print "timeout_ms = " timeout_ms;
+                            injected = 1;
+                            next;
+                        }
+                        { print; }
+                    ' "$model_toml" > "${model_toml}.tmp" && mv "${model_toml}.tmp" "$model_toml"
+                else
+                    {
+                        cat "$model_toml"
+                        echo ""
+                        echo "[search]"
+                        echo "timeout_ms = ${timeout_ms_override}"
+                    } > "${model_toml}.tmp" && mv "${model_toml}.tmp" "$model_toml"
+                fi
             else
                 model_toml=$(mktemp /tmp/dpor_model_${case_id}_XXXXXX.toml)
                 cat > "$model_toml" <<MODELEOF
