@@ -1,18 +1,19 @@
 # DPOR Checker Suite Scoreboard
 
-## Phase 38.14 Audit (2026-04-09): 12/20 honest, 8/20 vacuous
+## Phase 38.14 Follow-Up (2026-04-09): 13/20 honest, 7/20 vacuous
 
 The previous "Milestone M9: 20/20 ALL GREEN" claim from 2026-04-01 has been
-audited and rejected. The honest baseline-checker score is **12 real passes
-+ 8 vacuous passes**. See `design.md` §"Phase 38.14 Honest Postmortem" for
+audited and rejected. After `38.14.7.a` (real TwoPhase case 13), the honest
+baseline-checker score is **13 real passes + 7 vacuous passes**. See
+`design.md` §"Phase 38.14 Honest Postmortem" for
 the full root-cause analysis (Bug A: hand-written stub TLA+; Bug B: Verus →
 TLA+ → spec roundtrip degradation).
 
 | Metric | Count |
 |--------|-------|
 | Total cases | 20 |
-| **Real passes** | **12** |
-| **Vacuous passes** | **8** |
+| **Real passes** | **13** |
+| **Vacuous passes** | **7** |
 | Translation failed | 0 |
 | Checker error | 0 |
 
@@ -37,7 +38,7 @@ returned but no property was checked, OR the explorer never reached any state.
 | 10 | `10_bakery_mutex` | ok | **REAL PASS** | 24 | — |
 | 11 | `11_readers_writers` | inv_viol | **REAL PASS** (bug found) | -- | — |
 | 12 | `12_dining_phil` | deadlock | **REAL PASS** (deadlock found) | -- | — |
-| 13 | `13_twophase` | ok | **VACUOUS** (no inv, dropped LTMRcvPrepared) | 3 | bug_a_incomplete_next |
+| 13 | `13_twophase` | ok | **REAL PASS** | 9 | — |
 | 14 | `14_leader_election` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
 | 15 | `15_chain_repl` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
 | 16 | `16_primarybackup` | ok | **VACUOUS** (0 states) | 0 | bug_b_roundtrip_degraded |
@@ -52,7 +53,7 @@ returned but no property was checked, OR the explorer never reached any state.
 |----------|--------------|-------|
 | Micro-models (01–05) | 5/5 | Real invariants, real verdicts |
 | Concurrency primitives (06–12) | 7/7 | Real invariants, including ticket lock, Peterson, bakery, R/W, dining phil |
-| **Protocols (13–20)** | **0/8** | Every protocol case is vacuous; see `design.md` Phase 38.14 |
+| **Protocols (13–20)** | **1/8** | Case 13 is now real; 14–20 remain vacuous or blocked |
 
 ### Reproducing the Audit
 
@@ -68,14 +69,15 @@ returned but no property was checked, OR the explorer never reached any state.
 
 - M0 → M1(2) → M1.5(3) → M2(5) → M3(9) → M4(10) → M6(11) → M7(12) → M8(13) → M8.5(16) → M8.6(18) → M9(claimed 20)
 - **Phase 38.14 (2026-04-09): retracted M9 → 12 real / 8 vacuous**
+- **Phase 38.14.7.a (2026-04-09): case 13 fixed → 13 real / 7 vacuous**
 
 The growth from M8 (13 real) to the claimed M9 (20) consists entirely of
-vacuous passes. The honest score has not actually moved past M7/M8 since
-real protocol model-checking landed for case 12 (dining philosophers).
+vacuous passes. The first post-audit protocol gain is case 13 moving to a
+real pass under 38.14.7.a.
 
 ### What's actually next
 
-To honestly raise the protocol score above 0/8:
+To honestly raise the protocol score above 1/8:
 
 1. **Bug A track** — replace the hand-written stub TLA+ files for cases 13,
    17, 18, 20 with real specifications that include all actions in `Next`,
@@ -87,4 +89,4 @@ To honestly raise the protocol score above 0/8:
    produce specs whose `LState` reflects the real VARIABLE declarations
    and whose Init parameter is typed as the state struct, not `int`.
 3. Then re-run `./scripts/run_full_suite.sh` and `./scripts/detect_stub_specs.py`
-   together; both must come back clean before any pass count above 12 is trustworthy.
+   together; both must come back clean before any pass count above 13 is trustworthy.

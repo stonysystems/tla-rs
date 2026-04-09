@@ -203,14 +203,13 @@ tla_entry = "TwoPhase.tla"
 tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "ok"
-expected_property = ""
-model_bounds = "RM={r1,r2}, small finite"
+expected_property = "TCConsistent"
+model_bounds = "NumRM=2, int 0..2"
 requires_deadlock_check = false
 milestone_gate = "M3"
 negative = false
 source = "transpiler/tests/tla_examples/TwoPhase.tla"
-stub_status = "bug_a_incomplete_next"
-notes = "VACUOUS PASS. Source TLA+ TwoPhase.tla declares Next == TMCommit \\/ TMAbort and drops the existentially-parameterized TMRcvPrepared(r) action. The translated LNext therefore only fires TMCommit/TMAbort, the spec has no real safety invariant (no TCConsistent), and no --invariant is passed at runtime. The 3-state result is the trivial init→commit/abort fan-out, not a 2-phase commit model check."
+notes = "REAL PASS candidate for Bug A: Next includes \\E r \\in RM : TMRcvPrepared(r), plus TMCommit/TMAbort; TCConsistent checks prepared-set consistency and requires all RMs prepared before commit."
 
 [[case]]
 id = "14_leader_election_small"

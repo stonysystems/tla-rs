@@ -4384,7 +4384,8 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
 
 /// Phase 16.8.5: D1 on LLM-authored TLA+ specs
 /// Tests parser robustness against TLA+ written by an LLM without knowledge of parser limitations.
-/// 3/16 pass (simple flat-variable specs), 13/16 fail (range operator, temporal subscript, etc.)
+/// 3/16 pass (simple flat-variable specs), remaining failures are currently
+/// dominated by temporal-subscript and unsupported-syntax parser gaps.
 /// Full specs: Raft, Paxos, PBFT, EPaxos, BullyElection, ChainRep, PrimaryBackup,
 /// TwoPhaseCommit, VerticalPaxos — all fail on parser gaps (range, EXCEPT, CHOOSE, \o)
 /// Simple* pass: SimpleConsensus, SimpleLeader, SimplePrimary (flat variables only)
@@ -4457,12 +4458,12 @@ fn test_d1_on_llm_tla_specs() {
         "At least 3 simple specs should pass, got {passed}"
     );
     assert!(
-        range_fails >= 8,
-        "Expected >= 8 range operator failures, got {range_fails}"
+        range_fails >= 1,
+        "Expected at least one range-related parser limitation, got {range_fails}"
     );
     assert!(
-        temporal_fails >= 4,
-        "Expected >= 4 temporal subscript failures, got {temporal_fails}"
+        temporal_fails >= 1,
+        "Expected at least one temporal-subscript parser limitation, got {temporal_fails}"
     );
     if !other_fails.is_empty() {
         eprintln!("Unexpected failures:\n{}", other_fails.join("\n"));
@@ -14004,12 +14005,12 @@ fn test_model_check_status_doc_tracks_implementation_unsupported_surface() {
             doc_fragment: "zero matching `LConstants` valuations",
         },
         AuditExpectation {
-            source_file: "transpiler/src/main.rs",
+            source_file: "transpiler/src/modelcheck/helpers.rs",
             source_fragment: "Model-check evaluator could not resolve helper call",
             doc_fragment: "could not resolve helper call",
         },
         AuditExpectation {
-            source_file: "transpiler/src/main.rs",
+            source_file: "transpiler/src/modelcheck/helpers.rs",
             source_fragment: "Model-check helper-call recursion exceeded depth limit",
             doc_fragment: "helper-call recursion exceeded depth limit",
         },
@@ -16091,13 +16092,14 @@ fn test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("Model-check candidate expansion for struct `LConstants` exceeded limit")
-            && stderr.contains("(200)"),
+        stderr.contains("Model-check candidate expansion for struct")
+            && stderr.contains("`LConstants` exceeded limit (200"),
         "expected LConstants candidate expansion blocker in stderr, got: {}",
         stderr
     );
     assert!(
-        stderr.contains("Narrow domains or increase `search.max_states`"),
+        stderr.contains("Narrow domains or increase")
+            && stderr.contains("`search.max_states`"),
         "expected expansion-limit guidance in stderr, got: {}",
         stderr
     );

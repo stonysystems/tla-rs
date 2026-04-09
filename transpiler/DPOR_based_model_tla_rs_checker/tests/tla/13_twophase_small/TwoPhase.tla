@@ -1,21 +1,51 @@
 ------------------------------ MODULE TwoPhase ------------------------------
-(* A simplified Two-Phase Commit protocol.
-   This version uses simpler syntax for parser compatibility. *)
+\* Small Two-Phase Commit model for DPOR protocol case 13.
 
 EXTENDS Naturals
 
-CONSTANT RM
+CONSTANT NumRM
 
 VARIABLE rmState, tmState, tmPrepared
 
-Init == rmState = {} /\ tmState = "init" /\ tmPrepared = {}
+RM == 1..NumRM
 
-TMRcvPrepared(r) == tmState = "init" /\ tmPrepared' = tmPrepared \cup {r} /\ rmState' = rmState /\ tmState' = tmState
+Init ==
+    /\ rmState = {}
+    /\ tmState = "init"
+    /\ tmPrepared = {}
 
-TMCommit == tmState = "init" /\ tmPrepared = RM /\ tmState' = "committed" /\ rmState' = rmState /\ tmPrepared' = tmPrepared
+TMRcvPrepared(r) ==
+    /\ tmState = "init"
+    /\ r \in RM
+    /\ r \notin tmPrepared
+    /\ tmPrepared' = tmPrepared \cup {r}
+    /\ rmState' = rmState \cup {r}
+    /\ tmState' = tmState
 
-TMAbort == tmState = "init" /\ tmState' = "aborted" /\ rmState' = rmState /\ tmPrepared' = tmPrepared
+TMCommit ==
+    /\ tmState = "init"
+    /\ tmPrepared = RM
+    /\ tmState' = "committed"
+    /\ rmState' = rmState
+    /\ tmPrepared' = tmPrepared
 
-Next == TMCommit \/ TMAbort
+TMAbort ==
+    /\ tmState = "init"
+    /\ tmState' = "aborted"
+    /\ rmState' = rmState
+    /\ tmPrepared' = tmPrepared
+
+Next ==
+    \/ \E r \in RM : TMRcvPrepared(r)
+    \/ TMCommit
+    \/ TMAbort
+
+PreparedWithinRM ==
+    \A r \in tmPrepared : r \in RM
+
+TCConsistent ==
+    /\ rmState = tmPrepared
+    /\ PreparedWithinRM
+    /\ tmState = "committed" => tmPrepared = RM
 
 ================================================================================

@@ -63,7 +63,7 @@ This is the canonical status page for `verus-transpile model-check`. Keep this s
 - `transpiler/src/main.rs` now explores all resolved `LConstants` valuations; model-check preflight still fails on zero matching `LConstants` valuations after applying assignments/domains.
 - `transpiler/src/modelcheck/solver.rs` now supports a predicate-only direct-solver hook path (used by source-first model check for direct helper-call branches such as `LStep(s, s_, c)`), and otherwise falls back to candidate-state enumeration for unresolved predicate-only/helper branches; fallback runs are bounded by a hard guardrail (`candidate_evaluation_guardrail_per_state_branch = 10000`) and expose telemetry in JSON/CLI summaries. Enumeration fallback also performs static-guard pruning before candidate loops and reports skipped work as `guard_pruned_candidate_evaluations`.
 - `transpiler/src/modelcheck/solver.rs` rejects predicate-only branches without candidate states using `no direct next-state equality constraints` errors.
-- `transpiler/src/main.rs` helper-call execution still errors when it could not resolve helper call names or when helper-call recursion exceeded depth limit.
+- `transpiler/src/modelcheck/helpers.rs` helper-call execution still errors when it could not resolve helper call names or when helper-call recursion exceeded depth limit.
 
 ### 2.3 Temporal/fairness/timeout limitations
 
@@ -78,6 +78,7 @@ This section is synchronized against these implementation files via
 - `transpiler/src/modelcheck/evaluator.rs`
 - `transpiler/src/modelcheck/domain.rs`
 - `transpiler/src/modelcheck/solver.rs`
+- `transpiler/src/modelcheck/helpers.rs`
 - `transpiler/src/main.rs`
 
 ### 2.5 Real-protocol blocker triage priority

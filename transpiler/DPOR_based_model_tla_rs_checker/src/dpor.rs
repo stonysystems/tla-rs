@@ -1529,6 +1529,44 @@ max_seq_len = 4
     }
 
     #[test]
+    fn test_case13_twophase_is_real_non_vacuous_pass() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/13_twophase_small/TwoPhase.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: case 13 translated spec not found");
+            return;
+        }
+
+        let transpiler = match crate::baseline::find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: transpiler binary not found");
+                return;
+            }
+        };
+
+        let model_path = case_model_config("13_twophase_small");
+        let result = crate::baseline::run_baseline(
+            &transpiler,
+            &spec_file,
+            &model_path,
+            &["LTCConsistent".to_string()],
+            60,
+        );
+
+        assert_eq!(
+            result.result, "ok",
+            "Case 13 must remain a real pass (not vacuous or error): {:?}",
+            result
+        );
+        assert!(
+            result.distinct_states > 0,
+            "Case 13 must explore at least one state; got {}",
+            result.distinct_states
+        );
+    }
+
+    #[test]
     fn test_automated_baseline_vs_dpor_comparison() {
         // Phase 38.8.4.a: Run both engines on all baseline-passing cases
         // and verify no verdict regressions.
@@ -1547,7 +1585,11 @@ max_seq_len = 4
             ("09_peterson_mutex_2p", "PetersonMutex.rs", vec!["LMutualExclusion".to_string()]),
             ("11_readers_writers_small", "ReadersWritersBug.rs", vec!["LSafety".to_string()]),
             ("12_dining_philosophers_3", "DiningPhilosophers.rs", vec![]),
-            ("13_twophase_small", "TwoPhase.rs", vec![]),
+            (
+                "13_twophase_small",
+                "TwoPhase.rs",
+                vec!["LTCConsistent".to_string()],
+            ),
             ("17_paxos_small", "Paxos.rs", vec![]),
             ("18_pbft_small", "PBFT.rs", vec![]),
             ("20_raft_small", "Raft.rs", vec![]),
