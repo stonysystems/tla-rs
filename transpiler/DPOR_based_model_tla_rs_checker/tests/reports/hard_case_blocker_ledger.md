@@ -1,6 +1,6 @@
 # Hard-Case Blocker Ledger (Phase 38.14)
 
-Protocol cases 13-20 honest status after `38.14.7.d` (2026-04-09).
+Protocol cases 13-20 honest status after `38.14.7.e` (2026-04-09).
 
 | # | Case | Reported | Honest verdict | Bug |
 |---|------|----------|----------------|-----|
@@ -20,4 +20,4 @@ Protocol cases 13-20 honest status after `38.14.7.d` (2026-04-09).
 - **Bug A — hand-written stub TLA+**: fixed for cases 13/17/18/20.
 - **Bug B — Verus → TLA+ → spec roundtrip degradation**: still open for cases 14/15/16/19.
 
-## Updated: 2026-04-09 — 16 real / 4 vacuous baseline
+## Updated: 2026-04-09 — 16 real / 4 vacuous baseline (Bug A closed, Bug B remaining)

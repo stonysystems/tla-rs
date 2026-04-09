@@ -65,6 +65,7 @@ python3 ./scripts/detect_stub_specs.py
 - **Phase 38.14.7.b: case 17 fixed → 14 real / 6 vacuous**
 - **Phase 38.14.7.c: case 18 fixed → 15 real / 5 vacuous**
 - **Phase 38.14.7.d: case 20 fixed → 16 real / 4 vacuous**
+- **Phase 38.14.7.e: Bug A closure pass complete (no `bug_a_*` tags remain; suite + detector rerun)**
 
 ### What Is Next
 

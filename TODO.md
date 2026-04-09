@@ -11989,7 +11989,7 @@ real DPOR follow-up work.
   `transpiler/DPOR_based_model_tla_rs_checker/design.md` §"Phase 38.14
   Honest Postmortem" including the script-level enablers, the bug
   taxonomy, what was shipped in this phase, and what is explicitly NOT fixed.
-- [ ] **38.14.7**: **Bug A track (NOT YET DONE)** — replace the hand-written
+- [x] **38.14.7**: **Bug A track (DONE 2026-04-09)** — replaced the hand-written
   stub TLA+ files for cases 13, 17, 18, 20 with real specifications that
   include all actions in `Next` (including the parameterized ones), define
   meaningful constants (PBFT must support `Replica >= 4`, Raft must have
@@ -12044,9 +12044,15 @@ real DPOR follow-up work.
     `run_full_suite.sh --timeout 600` + `cargo test` + stub detector. Case 20
     now reports `result=ok`, `distinct_states=67`; overall honest score is
     `16 real / 4 vacuous`.
-  - [ ] **38.14.7.e**: Bug A closure pass — remove `bug_a_*` `stub_status`
+  - [x] **38.14.7.e**: Bug A closure pass — remove `bug_a_*` `stub_status`
     tags for fixed cases, run `detect_stub_specs.py` + full suite, and
     resync `latest.json` / `latest.md` / blocker ledger with honest counts.
+    **Done 2026-04-09**: verified no `bug_a_*` tags remain in
+    `tests/manifest.toml` or current reports, re-ran
+    `python3 scripts/detect_stub_specs.py --json` (only Bug B findings on
+    cases 14/15/16/19), re-ran `./scripts/run_full_suite.sh --timeout 600`
+    (`2026-04-09T09:47:48Z`: `16 real / 4 vacuous / 0 failed`), and re-ran
+    `cargo test` (`55 passed, 0 failed`) to keep regression evidence honest.
 - [ ] **38.14.8**: **Bug B track (NOT YET DONE)** — fix the Verus → TLA+
   roundtrip degradation. The `verus2tla` field harvesting must take state
   fields from VARIABLE declarations (or from the Verus state struct
@@ -12090,15 +12096,13 @@ to do for DPOR"**, this is the canonical answer:
 
 | Priority | Task | What it unblocks |
 |---|---|---|
-| **1** | 38.14.7 — Bug A: real Paxos/Raft/PBFT/TwoPhase TLA+ specs with all actions and non-tautological invariants | Honest pass count moves from 12 → up to 16 |
-| **2** | 38.14.8 — Bug B: fix verus2tla field harvesting and Init parameter type inference | Honest pass count moves from 16 → up to 20 |
-| **3** | 38.14.9 — Retire `stub_status` annotations and resync reports | Documentation truth |
-| **4** | 38.14.10 — Make DPOR independence/sleep-set pruning actually reduce state counts | Real DPOR algorithm value, not just exhaustive DFS |
-| **5** | 38.14.11 — Re-evaluate the 38.10 integration gate | Path to mainline integration |
-| 6 | 38.10 — Mainline integration once gate is honestly satisfied | DPOR replaces or augments `transpiler/src/modelcheck` |
+| **1** | 38.14.8 — Bug B: fix verus2tla field harvesting and Init parameter type inference | Honest pass count moves from 16 → up to 20 |
+| **2** | 38.14.9 — Retire `stub_status` annotations and resync reports | Documentation truth |
+| **3** | 38.14.10 — Make DPOR independence/sleep-set pruning actually reduce state counts | Real DPOR algorithm value, not just exhaustive DFS |
+| **4** | 38.14.11 — Re-evaluate the 38.10 integration gate | Path to mainline integration |
+| 5 | 38.10 — Mainline integration once gate is honestly satisfied | DPOR replaces or augments `transpiler/src/modelcheck` |
 
-Tasks 1 and 2 are **independent of each other** — they touch different
-cases and different code paths. They can be done in parallel by different
-agents if the team has the bandwidth, but **task 4 (DPOR independence
-pruning) must wait for both 1 and 2 to land**, because it can only be
-validated against state spaces that are non-vacuous.
+Bug A is now closed. Bug B and the follow-on tasks remain. **Task 3 (DPOR
+independence pruning) must wait until tasks 1 and 2 land**, because it can
+only be validated against state spaces that are non-vacuous and honestly
+classified.
