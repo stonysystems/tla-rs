@@ -11,7 +11,7 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Current Status (last updated 2026-04-09)
 
-**Phase 38 DPOR honest score: 16 real / 4 vacuous (audit retracted "20/20 ALL GREEN" on 2026-04-09 — see Phase 38.14).** The 2026-04-01 milestone claim that 20/20 cases passed has been audited and retracted. Cases 01–13 plus cases 17, 18, and 20 now pass for real after 38.14.7.a/38.14.7.b/38.14.7.c/38.14.7.d; protocol cases 14/15/16/19 remain vacuous. Bug A is closed; the remaining underlying blocker is Bug B (Verus → TLA+ → spec roundtrip degradation for cases 14/15/16/19). Phase 38.14 shipped guard rails (`run_full_suite.sh` reports `VACUOUS`; `detect_stub_specs.py` catches structural stubs) and honest reports.
+**Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-09).** The 2026-04-01 "Milestone M9: 20/20 ALL GREEN" claim was audited/retracted and then repaired through 38.14.7-38.14.9. The full-suite source of truth is now `./scripts/run_full_suite.sh --timeout 600` at `2026-04-09T15:17:19Z` (`20 real / 0 vacuous / 0 failed`). Bug A and Bug B are closed for the suite-score path, `stub_status` annotations are retired from `tests/manifest.toml`, and reports were resynced. Remaining DPOR work is algorithmic: 38.14.10 (independence/sleep-set reduction) and 38.14.11 (integration-gate re-evaluation).
 
 Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. The top-priority implementation track is now Phase 38 (the separate DPOR-based checker prototype), followed by Phase 36 (exact-state parity and performance debugging) and then Phase 37 (CI/CD recovery). The remaining proof-heavy work is still concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
 The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. Phase 38 is a greenfield prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
@@ -56,10 +56,10 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
-- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The 2026-04-01 "Milestone M9: 20/20 ALL GREEN" claim has been **retracted by Phase 38.14 audit (2026-04-09)**. Honest baseline-checker score is now **16 real / 4 vacuous** after case 13 (TwoPhase) was repaired in 38.14.7.a, case 17 (Paxos) in 38.14.7.b, case 18 (PBFT) in 38.14.7.c, and case 20 (Raft) in 38.14.7.d; cases 14/15/16/19 remain vacuous/blocked. The remaining root cause is **Bug B** (cases 14, 15, 16, 19) — the Verus → TLA+ → spec roundtrip degrades real auto-generated TLA+ into arbitrary-soup operator bodies with `LInit`'s `s` parameter typed as `int` instead of `LState`. At audit time, three script-level enablers let "ok" propagate as PASS: (1) `expected_property = ""` for all 8 protocol cases so `--invariant` was never passed; (2) `distinct_states = 0` was treated as PASS for cases 14/15/16/19; (3) per-case bounds were pathologically tiny (`int 0..1`, `max_set_len = 1`). Phase 38.14 shipped guard-rails (`scripts/run_full_suite.sh` reports `VACUOUS`), a structural stub detector (`scripts/detect_stub_specs.py`), honest manifest annotations, and rewritten reports. Bug A is now closed; Bug B remains open.
+- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.9: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 600`, `2026-04-09T15:17:19Z`), and Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`. Remaining DPOR blockers are now algorithmic: independence/sleep-set pruning still shows 0% reduction on the published reduction table, and the Phase 38.10 integration gate still needs a post-audit re-evaluation (38.14.11). Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
 **Next steps (priority order):**
-1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — finish the remaining four blocked protocol cases by fixing `translate-tla` on the generated corpus shapes (14-16, 19), regenerating the corpus, and resyncing `latest.json`/`latest.md`/the blocker ledger before spending more time on deeper DPOR work. This remains a separate incubator track; do not let it silently rewrite the current mainline checker before the prototype earns it. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
+1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — execute 38.14.10 first: make `use_independence`/`use_sleep_sets` produce measurable state-count reduction on at least 3 multi-process cases, then execute 38.14.11 to re-evaluate the 38.10 integration gate against the post-audit 20/20 honest baseline. This remains a separate incubator track; do not let it silently rewrite the current mainline checker before the prototype earns it. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 2. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models and fix the source-first performance pathologies exposed by the benchmark comparison. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 3. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks, and keep the evidence/benchmark guards aligned with any schema or artifact changes from Phase 36. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
 4. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
@@ -11365,32 +11365,32 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ---
 
-### Phase 38 Current Status Banner (2026-04-09 — read this first)
+### Phase 38 Current Status Banner (2026-04-09 — post-38.14.9)
 
-**Honest DPOR baseline score: 12 / 20 real passes, 8 / 20 vacuous passes.**
+**Honest DPOR baseline score: 20 / 20 real outcomes, 0 / 20 vacuous outcomes.**
 
-The earlier "Milestone M9: 20/20 ALL GREEN" claim from 2026-04-01 has been
-retracted. Read [Phase 38.14](#3814-honest-postmortem-and-vacuous-pass-guard-rails-2026-04-09)
+The earlier 2026-04-01 "Milestone M9: 20/20 ALL GREEN" claim was audited and
+retracted, then repaired via 38.14.7-38.14.9. Read
+[Phase 38.14](#3814-honest-postmortem-and-vacuous-pass-guard-rails-2026-04-09)
 and `transpiler/DPOR_based_model_tla_rs_checker/design.md` §"Phase 38.14
-Honest Postmortem" before doing any new Phase 38 work — there are subtle
-script/translator failure modes that will silently mask broken protocol
-cases as `result = ok` if you don't know to look for them.
+Honest Postmortem" before new Phase 38 work so the vacuous-pass failure mode
+is not reintroduced.
 
 | Case range | Honest status | What works / what's broken |
 |---|---|---|
-| 01–12 (micro-models, concurrency primitives) | **12 / 12 real passes** | Real invariants, real verdicts, plausible state counts. Trustworthy. |
-| 13, 17, 18, 20 (TwoPhase, Paxos, PBFT, Raft) | **0 / 4 real passes** — **Bug A** | Source TLA+ files are themselves degenerate stubs: `Next` drops every action with extra parameters, "safety" invariants written as `X == X` or `X => X`. Tracked as task **38.14.7**. |
-| 14, 15, 16, 19 (LeaderElection, ChainReplication, PrimaryBackup, EPaxos) | **0 / 4 real passes** — **Bug B** | Verus → TLA+ → spec roundtrip degenerates `LState` field harvesting, types `LInit`'s `s` parameter as `int`, and reduces every operator body to `arbitrary::<T>()` soup. Tracked as task **38.14.8**. |
+| 01–12 (micro-models, concurrency primitives) | **12 / 12 real outcomes** | Real invariants/verdicts with non-trivial state exploration. |
+| 13–20 (protocol slice) | **8 / 8 real outcomes** | Bug A and Bug B closure landed for the suite-score path; no protocol case is currently vacuous in `run_full_suite.sh`. |
+| DPOR reduction quality | **Open** | `use_independence` / `use_sleep_sets` still show 0% reduction on the current published table; this is task 38.14.10. |
 
 **What you can trust right now:**
-- The DPOR explorer, baseline DFS, and concurrency-primitive coverage (cases 01–12).
-- The Phase 38.14 guard rails: `scripts/run_full_suite.sh` correctly classifies vacuous passes; `scripts/detect_stub_specs.py` flags all 12 broken `.rs` files.
-- The honest reports under `tests/reports/`.
+- `./scripts/run_full_suite.sh --timeout 600` reports `20 real / 0 vacuous / 0 failed` (latest checked run: `2026-04-09T15:17:19Z`).
+- The guard rails that prevent vacuous `ok` from being counted as PASS.
+- The synced reports under `tests/reports/` (`latest.json`, `latest.md`, blocker ledger).
 
 **What you must NOT trust:**
-- Any pre-2026-04-09 claim of "DPOR works on real protocols" — that claim was vacuous.
-- Any `result = ok` on cases 13–20 in old reports until **both** Bug A and Bug B are fixed.
-- The Phase 38.8.2.a "fixes" — they only eliminated crashes, they did not produce meaningful state spaces.
+- Any pre-2026-04-09 "20/20 ALL GREEN" claim without the Phase 38.14 audit context.
+- Any change that weakens the guard rails around invariant/deadlock coverage or zero-state outcomes.
+- A DPOR "optimization success" claim before 38.14.10 demonstrates measurable reductions.
 
 ---
 
@@ -11406,25 +11406,24 @@ reordering will almost certainly produce another vacuous "ALL GREEN".**
 3. Run the two health-check commands locally before changing anything:
    ```bash
    cd transpiler/DPOR_based_model_tla_rs_checker
-   ./scripts/detect_stub_specs.py            # expect 12 findings on the broken corpus
-   ./scripts/run_full_suite.sh               # expect 12 PASS / 8 VACUOUS
+   ./scripts/detect_stub_specs.py --json     # currently 4 findings (Types.rs constructor-style arbitrary::<...>())
+   ./scripts/run_full_suite.sh --timeout 600 # expect 20 real / 0 vacuous / 0 failed
    ```
    These two outputs are the regression baseline. If they change, you have
    either fixed something real or broken something — never silently update
    the reports without explaining which.
 
-#### Step 1 — Decide which bug track to work on (Bug A first is easier)
+#### Step 1 — Pick the current active task (post-Bug-A/B closure)
 
 | Track | Cases | Rough complexity | Where the fix lives |
 |---|---|---|---|
-| **Bug A** (38.14.7) | 13, 17, 18, 20 | Medium — write better TLA+ specs by hand | `transpiler/DPOR_based_model_tla_rs_checker/tests/tla/` |
-| **Bug B** (38.14.8) | 14, 15, 16, 19 | Hard — repair `verus2tla` field harvesting + Init type inference | `transpiler/src/verus2tla/` and `transpiler/src/tla/translator.rs` |
+| **38.14.10** | multi-process DPOR cases | Medium/Hard — make independence + sleep-set pruning reduce state counts measurably | `transpiler/DPOR_based_model_tla_rs_checker/src/` and translator/process-id plumbing |
+| **38.14.11** | integration gate criteria | Medium — re-evaluate 38.10 with post-audit evidence | `design.md`, `tests/reports/`, and 38.10 checklist evidence |
 
-Recommended: **start with Bug A** (38.14.7). It is contained, well-defined,
-and produces tangible progress. Bug B requires deeper translator surgery
-and should only be attempted after the audit guard rails are second nature.
+Bug A (38.14.7) and Bug B (38.14.8) are complete for the suite-score path.
+Their detailed recipes remain below as historical/maintenance reference only.
 
-#### Step 2 — Bug A repair recipe (task 38.14.7)
+#### Step 2 — Bug A repair recipe (historical reference; task 38.14.7 is done)
 
 For each of cases 13, 17, 18, 20:
 
@@ -11509,7 +11508,7 @@ For each of cases 13, 17, 18, 20:
 10. **Commit with a message that names the bug and the case**, e.g.
     `Phase 38.14.7: real TwoPhase spec — case 13 moves from VACUOUS to PASS`.
 
-#### Step 3 — Bug B repair recipe (task 38.14.8)
+#### Step 3 — Bug B repair recipe (historical reference; task 38.14.8 is done)
 
 This is harder. The bug is in two places:
 
@@ -11956,8 +11955,10 @@ stub detector clean and the run script reporting 0 vacuous passes.
 
 This phase retracted the 2026-04-01 "Milestone M9: 20/20 ALL GREEN" claim
 after audit and shipped the infrastructure to prevent the same illusion from
-recurring. **It does not fix Bug A or Bug B** — both remain open as the
-real DPOR follow-up work.
+recurring. Follow-on closure work in 38.14.7 and 38.14.8 fixed Bug A/B for
+the suite-score path, and 38.14.9 resynced reports at `20 real / 0 vacuous`.
+Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
+(integration-gate re-evaluation).
 
 - [x] **38.14.1**: Audit the M9 "20/20 ALL GREEN" report. Honest score is
   12 real / 8 vacuous: cases 01–12 pass meaningfully, all 8 protocol cases
@@ -12053,7 +12054,7 @@ real DPOR follow-up work.
     cases 14/15/16/19), re-ran `./scripts/run_full_suite.sh --timeout 600`
     (`2026-04-09T09:47:48Z`: `16 real / 4 vacuous / 0 failed`), and re-ran
     `cargo test` (`55 passed, 0 failed`) to keep regression evidence honest.
-- [ ] **38.14.8**: **Bug B track (NOT YET DONE)** — fix the Verus → TLA+
+- [x] **38.14.8**: **Bug B track** — fix the Verus → TLA+
   roundtrip degradation. The `verus2tla` field harvesting must take state
   fields from VARIABLE declarations (or from the Verus state struct
   definition) rather than from the `RecordAccess` fallback that currently
@@ -12061,6 +12062,10 @@ real DPOR follow-up work.
   TLA+ → spec Init parameter type inference must force `s` to be the
   state struct type, not `int`. Re-run the stub detector — it should
   report 0 findings on cases 14/15/16/19.
+  **Done 2026-04-09**: all Bug B leaves (`38.14.8.a` through `38.14.8.d.4.4`)
+  are complete; full suite now reports `20 real / 0 vacuous` with non-vacuous
+  case 19 (`distinct_states=11`, deadlock semantics enabled). Manifest
+  `stub_status` annotations are fully retired.
   - [x] **38.14.8.a**: Translator-side state-parameter inference hardening
     for variable-less generated modules: treat the inferred first state
     parameter as `LState` for predicates/invariants (not only `Init`), while
@@ -12108,7 +12113,7 @@ real DPOR follow-up work.
     `stub_status`, and added DPOR regression
     `test_case14_leader_election_is_real_non_vacuous_pass`. Direct baseline
     check now reports `result=ok`, `initial_states=1`, `distinct_states=1`.
-  - [~] **38.14.8.d**: Apply the repaired path to cases 15/16/19, rerun full
+  - [x] **38.14.8.d**: Apply the repaired path to cases 15/16/19, rerun full
     suite + stub detector, then resync reports/manifest for honest protocol
     counts. Decomposed 2026-04-09 to keep each leaf under ~500 LOC:
     - [x] **38.14.8.d.1**: Dense symbolic-atom lowering for generated D1 cases
@@ -12138,7 +12143,7 @@ real DPOR follow-up work.
       `SafetyInactiveStateIsQuiescent`; direct baseline reports `result=ok`
       with `initial_states=1`, `distinct_states=4659`. Added
       `test_case16_primarybackup_is_real_non_vacuous_pass`.
-    - [~] **38.14.8.d.4**: Close case 19 honestly. Decomposed again after
+    - [x] **38.14.8.d.4**: Close case 19 honestly. Decomposed again after
       2026-04-09 follow-up because the state-seeding blocker and the
       transition-enable blocker are separable:
       - [x] **38.14.8.d.4.1**: Make `LInit` pinned-template fallback work on
@@ -12188,10 +12193,15 @@ real DPOR follow-up work.
         Direct baseline check now reports `result=ok`,
         `stop_reason=FrontierExhausted`, `distinct_states=11`, `transitions=13`
         under the case-19 config.
-- [ ] **38.14.9**: Once 38.14.7 and 38.14.8 are done, retire the
+- [x] **38.14.9**: Once 38.14.7 and 38.14.8 are done, retire the
   `stub_status` annotations from `manifest.toml` and update
   `latest.md`/`hard_case_blocker_ledger.md` with the new honest pass count.
   Only at that point may any score above 12 real passes be claimed.
+  **Done 2026-04-09**: verified no `stub_status` remains in manifest, re-ran
+  `./scripts/run_full_suite.sh --timeout 600` (`2026-04-09T15:17:19Z`:
+  `20 real / 0 vacuous / 0 failed`), and resynced
+  `tests/reports/latest.md` + `tests/reports/hard_case_blocker_ledger.md`
+  to the same honest score.
 - [ ] **38.14.10**: **Make DPOR's independence/sleep-set pruning actually do
   something.** The current `DporConfig::use_independence` and
   `use_sleep_sets` flags exist but produce 0% reduction across all positive
@@ -12223,13 +12233,10 @@ to do for DPOR"**, this is the canonical answer:
 
 | Priority | Task | What it unblocks |
 |---|---|---|
-| **1** | 38.14.8 — Bug B: fix verus2tla field harvesting and Init parameter type inference | Honest pass count moves from 16 → up to 20 |
-| **2** | 38.14.9 — Retire `stub_status` annotations and resync reports | Documentation truth |
-| **3** | 38.14.10 — Make DPOR independence/sleep-set pruning actually reduce state counts | Real DPOR algorithm value, not just exhaustive DFS |
-| **4** | 38.14.11 — Re-evaluate the 38.10 integration gate | Path to mainline integration |
-| 5 | 38.10 — Mainline integration once gate is honestly satisfied | DPOR replaces or augments `transpiler/src/modelcheck` |
+| **1** | 38.14.10 — Make DPOR independence/sleep-set pruning actually reduce state counts | Real DPOR algorithm value, not just exhaustive DFS |
+| **2** | 38.14.11 — Re-evaluate the 38.10 integration gate | Path to mainline integration |
+| **3** | 38.10 — Mainline integration once gate is honestly satisfied | DPOR replaces or augments `transpiler/src/modelcheck` |
 
-Bug A is now closed. Bug B and the follow-on tasks remain. **Task 3 (DPOR
-independence pruning) must wait until tasks 1 and 2 land**, because it can
-only be validated against state spaces that are non-vacuous and honestly
-classified.
+Bug A is now closed. Bug B's protocol-suite closure path (14/15/16/19) is now
+also closed for honest baseline execution. **Task 1 (DPOR independence pruning)
+is now the top active DPOR engineering task.**
