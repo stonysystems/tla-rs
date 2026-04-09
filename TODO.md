@@ -12095,10 +12095,19 @@ real DPOR follow-up work.
     Verified with full `cargo test` in `transpiler`, full DPOR suite
     (`./scripts/run_full_suite.sh --timeout 600`), and full `cargo test` in
     `DPOR_based_model_tla_rs_checker` (all green).
-  - [ ] **38.14.8.c**: End-to-end Bug B regeneration for case 14 only
+  - [x] **38.14.8.c**: End-to-end Bug B regeneration for case 14 only
     (leader election): regenerate corpus, confirm non-degenerate translated
     signatures/bodies, and add a DPOR regression that case 14 is non-vacuous.
     Scope target: < 500 LOC touched.
+    **Done 2026-04-09**: finished the remaining generated-D1 constants alias
+    shadowing in `generate_spec_function` (`c` no longer re-emits alongside
+    `c_consts`), fixed parser precedence so `IF ... ELSE ...` does not absorb
+    following `/\` bullet conjuncts, regenerated
+    `tests/tla-rs/14_leader_election_small/{Election.rs,Types.rs}`, set case 14
+    `expected_property = "SafetyElectingSubsetAlive"` and removed case-14
+    `stub_status`, and added DPOR regression
+    `test_case14_leader_election_is_real_non_vacuous_pass`. Direct baseline
+    check now reports `result=ok`, `initial_states=1`, `distinct_states=1`.
   - [ ] **38.14.8.d**: Apply the repaired path to cases 15/16/19, rerun full
     suite + stub detector, then resync reports/manifest for honest protocol
     counts.

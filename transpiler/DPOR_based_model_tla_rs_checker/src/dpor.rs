@@ -1567,6 +1567,44 @@ max_seq_len = 4
     }
 
     #[test]
+    fn test_case14_leader_election_is_real_non_vacuous_pass() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/14_leader_election_small/Election.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: case 14 translated spec not found");
+            return;
+        }
+
+        let transpiler = match crate::baseline::find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: transpiler binary not found");
+                return;
+            }
+        };
+
+        let model_path = case_model_config("14_leader_election_small");
+        let result = crate::baseline::run_baseline(
+            &transpiler,
+            &spec_file,
+            &model_path,
+            &["LSafetyElectingSubsetAlive".to_string()],
+            60,
+        );
+
+        assert_eq!(
+            result.result, "ok",
+            "Case 14 must become a real pass (not vacuous or error): {:?}",
+            result
+        );
+        assert!(
+            result.distinct_states > 0,
+            "Case 14 must explore at least one state; got {}",
+            result.distinct_states
+        );
+    }
+
+    #[test]
     fn test_case17_paxos_is_real_non_vacuous_pass() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/17_paxos_small/Paxos.rs");

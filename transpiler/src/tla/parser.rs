@@ -1006,7 +1006,9 @@ impl TlaParser {
         self.expect(TlaTokenKind::Then)?;
         let then_expr = self.parse_expr()?;
         self.expect(TlaTokenKind::Else)?;
-        let else_expr = self.parse_expr()?;
+        // Parse ELSE with implication-level precedence so top-level conjunction/disjunction
+        // outside the IF expression is not absorbed into the ELSE branch.
+        let else_expr = self.parse_implies_expr()?;
 
         Ok(TlaExpr::IfThenElse {
             cond: Box::new(cond),
@@ -1395,6 +1397,63 @@ mod tests {
         let module = parse_module(source).unwrap();
         let op = &module.operators[0];
         assert!(matches!(op.body, TlaExpr::IfThenElse { .. }));
+    }
+
+    #[test]
+    fn test_parse_if_else_does_not_absorb_following_bullet_conjunct() {
+        let source = r"
+            ---- MODULE Test ----
+            Foo(s, s_) ==
+                /\ s_.x = IF s.x = 0 THEN 1 ELSE s.x
+                /\ s_.y = s.y
+            ====
+        ";
+        let module = parse_module(source).unwrap();
+        let op = &module.operators[0];
+
+        let TlaExpr::BinOp {
+            op: TlaBinOp::And,
+            left,
+            right,
+        } = &op.body
+        else {
+            panic!("Expected top-level conjunction, got {:?}", op.body);
+        };
+
+        let TlaExpr::BinOp {
+            op: TlaBinOp::Eq,
+            right: first_rhs,
+            ..
+        } = left.as_ref()
+        else {
+            panic!("Expected first conjunct to be assignment, got {:?}", left);
+        };
+        let TlaExpr::IfThenElse { else_expr, .. } = first_rhs.as_ref() else {
+            panic!("Expected IF expression on first conjunct rhs, got {:?}", first_rhs);
+        };
+        assert!(
+            !matches!(
+                else_expr.as_ref(),
+                TlaExpr::BinOp {
+                    op: TlaBinOp::And,
+                    ..
+                }
+            ),
+            "ELSE branch should not absorb following /\\ conjunct: {:?}",
+            else_expr
+        );
+
+        assert!(
+            matches!(
+                right.as_ref(),
+                TlaExpr::BinOp {
+                    op: TlaBinOp::Eq,
+                    ..
+                }
+            ),
+            "Expected second conjunct to remain separate assignment, got {:?}",
+            right
+        );
     }
 
     #[test]

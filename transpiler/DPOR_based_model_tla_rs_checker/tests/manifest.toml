@@ -219,14 +219,13 @@ tla_entry = "Election.tla"
 tla_aux_modules = ["Types.tla"]
 generated_tlars_entry = ""
 expected_primary_result = "ok"
-expected_property = ""
+expected_property = "SafetyElectingSubsetAlive"
 model_bounds = "2 nodes"
 requires_deadlock_check = false
 milestone_gate = "M3"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/LeaderElection/"
-stub_status = "bug_b_roundtrip_degraded"
-notes = "VACUOUS PASS (0 distinct states explored). Source Election.tla is a real auto-generated bully election spec with proper actions and 3 safety invariants, but the Verus→TLA+→spec roundtrip collapses field harvesting: LState becomes a flat LRecord of message fields {leader,responder,sender}, the real state fields (electing, has_leader, alive, ...) are missing, every operator body becomes a soup of `arbitrary::<T>()` calls, LInit's `s` parameter is typed as `int` instead of LState, and the safety invariants degenerate to `Set::empty().contains(x) ==> Set::empty().contains(x)`. The model checker cannot construct a single initial state."
+notes = "REAL PASS for Bug B case 14 (2026-04-09): regenerated from source Election.tla after translator fixes for generated-D1 state/constant field harvesting, constants-parameter alias shadowing, and IF/ELSE bullet-conjunction parsing. Baseline with `LSafetyElectingSubsetAlive` now reports `result=ok` with non-vacuous exploration (`initial_states=1`, `distinct_states=1`)."
 
 [[case]]
 id = "15_chain_replication_small"
