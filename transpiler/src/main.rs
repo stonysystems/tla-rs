@@ -2672,6 +2672,23 @@ fn collect_state_field_assignments(
                 assignments,
             )
         }),
+        Expr::Binary(lhs, op, rhs) if *op == verus_transpiler::ast::BinOp::And => {
+            collect_state_field_assignments(
+                lhs,
+                state_param,
+                constants_param,
+                field_types,
+                condition,
+                assignments,
+            ) && collect_state_field_assignments(
+                rhs,
+                state_param,
+                constants_param,
+                field_types,
+                condition,
+                assignments,
+            )
+        }
         Expr::Implies(antecedent, consequent) => {
             if expr_mentions_identifier(antecedent, state_param) {
                 return false;
@@ -3052,6 +3069,7 @@ fn try_solve_predicate_only_helper_branch(
     bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
     bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds,
+    allow_partial_helper_solve: bool,
 ) -> verus_transpiler::error::TranspileResult<
     Option<Vec<verus_transpiler::modelcheck::value::RuntimeValue>>,
 > {
@@ -3234,7 +3252,12 @@ fn try_solve_predicate_only_helper_branch(
             None,
         ) {
             Ok(solved) => solved,
-            Err(TranspileError::UnsupportedPattern { .. }) => return Ok(None),
+            Err(TranspileError::UnsupportedPattern { .. }) => {
+                if allow_partial_helper_solve {
+                    continue;
+                }
+                return Ok(None);
+            }
             Err(err) => return Err(err),
         };
         successors.extend(solved.successors);
@@ -3488,6 +3511,14 @@ fn execute_model_check(
                 Cow::Owned(instantiated.into_iter().collect())
             }
         };
+        let solver_candidate_states = match &state_candidates_source {
+            StateCandidatesSource::Expanded(_) => Some(run_state_candidates.as_ref()),
+            // Fully pinned init fallback is only for seeding initial states.
+            // Do not filter transition solving to those pinned seeds.
+            StateCandidatesSource::PinnedTemplate(_) => None,
+        };
+        let solver_candidate_state_count = solver_candidate_states.map_or(0, |c| c.len());
+        let allow_partial_helper_solve = solver_candidate_states.is_none();
 
         let initial_states_started = Instant::now();
         let initial_states = construct_initial_states(
@@ -3581,6 +3612,7 @@ fn execute_model_check(
                                 bundle,
                                 model_config,
                                 bounds,
+                                allow_partial_helper_solve,
                             )
                         };
                     let branch_solve_started = Instant::now();
@@ -3590,7 +3622,7 @@ fn execute_model_check(
                         state,
                         Some(constants_value),
                         branch_assignments,
-                        Some(run_state_candidates.as_ref()),
+                        solver_candidate_states,
                         Some(candidate_eval_guardrail),
                         bounds,
                         SolverHooks {
@@ -3627,7 +3659,7 @@ fn execute_model_check(
                                 branch_label: branch.label.clone(),
                                 invocations: 0,
                                 existential_assignment_count: branch_assignments.len().max(1),
-                                candidate_state_count: run_state_candidates.len(),
+                                candidate_state_count: solver_candidate_state_count,
                                 direct_solver_hits: 0,
                                 enumeration_fallback_hits: 0,
                                 guard_pruned_candidate_evaluations: 0,
@@ -3643,7 +3675,7 @@ fn execute_model_check(
                             .existential_assignment_count
                             .max(branch_assignments.len().max(1));
                         entry.candidate_state_count =
-                            entry.candidate_state_count.max(run_state_candidates.len());
+                            entry.candidate_state_count.max(solver_candidate_state_count);
                         entry.direct_solver_hits = entry
                             .direct_solver_hits
                             .saturating_add(solved.telemetry.direct_assignment_branch_solves);
@@ -6653,6 +6685,9 @@ limit = 1
 [quantifiers.int]
 min = 0
 max = 1
+
+[search]
+max_states = 1
 "#,
         )
         .unwrap();
@@ -7246,6 +7281,118 @@ max_states = 50
 
         assert_eq!(execution.summary.result, "ok");
         assert_eq!(execution.summary.states, 1);
+        assert_eq!(execution.summary.transitions, 1);
+    }
+
+    #[test]
+    fn test_execute_model_check_linit_fallback_supports_binary_and_and_unfiltered_successors() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState {
+        pub a: int,
+        pub b: int,
+        pub c: int,
+        pub d: int,
+        pub e: int,
+        pub f: int,
+        pub g: int,
+        pub h: int,
+        pub tags: Set<int>,
+    }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        (s.a == 0)
+            && (s.b == 0)
+            && (s.c == 0)
+            && (s.d == 0)
+            && (s.e == 0)
+            && (s.f == 0)
+            && (s.g == 0)
+            && (s.h == 0)
+            && (s.tags == Set::<int>::empty())
+            && (c.limit >= 0)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        (s_.a == s.a + 1)
+            && (s_.b == s.b)
+            && (s_.c == s.c)
+            && (s_.d == s.d)
+            && (s_.e == s.e)
+            && (s_.f == s.f)
+            && (s_.g == s.g)
+            && (s_.h == s.h)
+            && (s_.tags == s.tags)
+            && (s.a < c.limit)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+
+[collections]
+max_set_len = 1
+max_seq_len = 1
+max_map_len = 1
+
+[search]
+max_depth = 3
+max_states = 50
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert_eq!(execution.summary.states, 2);
         assert_eq!(execution.summary.transitions, 1);
     }
 
@@ -7879,12 +8026,8 @@ verus! {
             &proto_path,
             r#"
 verus! {
-    pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit
-    }
-
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        LStep(s, s_, c)
+        s_.value <= c.limit
     }
 }
 "#,
@@ -8189,6 +8332,83 @@ max = 1
     }
 
     #[test]
+    fn test_execute_model_check_helper_solver_skips_unsupported_subbranches() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 0)
+            || ((s_.value == s.value + 1) && (s_.value <= c.limit))
+    }
+
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        LStep(s, s_, c)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert!(execution.summary.states >= 1);
+    }
+
+    #[test]
     fn test_execute_model_check_helper_direct_solver_supports_next_state_is_constraints() {
         use verus_transpiler::modelcheck::config::parse_model_config_file;
         use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
@@ -8452,12 +8672,8 @@ verus! {
             &proto_path,
             r#"
 verus! {
-    pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
-        s_.value <= c.limit
-    }
-
     pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
-        LStep(s, s_, c)
+        s_.value <= c.limit
     }
 }
 "#,

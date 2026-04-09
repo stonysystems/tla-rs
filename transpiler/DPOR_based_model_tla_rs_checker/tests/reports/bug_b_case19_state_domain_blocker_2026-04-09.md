@@ -48,3 +48,28 @@ Examples:
    the global int range.
 
 Either option should be landed before claiming Bug B fully closed.
+
+## Follow-Up (2026-04-09, evening pass)
+
+We landed two checker-side improvements in `transpiler/src/main.rs`:
+
+1. The `LInit` pinned-template fallback now recognizes generated binary `&&`
+   conjunctions (not just `&&&`).
+2. When pinned-template seeding is active, transition solving is no longer
+   forcibly filtered to the pinned seed candidate set.
+
+Additionally, helper-call solving now skips unsupported helper sub-branches
+instead of discarding the whole helper call path when pinned-fallback mode is
+active (while preserving prior fallback behavior for normal expanded runs).
+
+With temporary widened bounds (`int 0..3`, deadlock checking enabled), case 19
+now reaches a real initial state:
+
+- `initial_states = 1`
+- `distinct_states = 1`
+- `result = deadlock_detected`
+
+This is progress over the previous `initial_states=0`, but still not honest
+closure. Current branch telemetry shows zero successful successors on every
+`LNext` branch, so the remaining blocker moved from pure init seeding to
+transition enablement on the degraded EPaxos helper signatures/bodies.

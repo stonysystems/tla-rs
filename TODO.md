@@ -12138,15 +12138,28 @@ real DPOR follow-up work.
       `SafetyInactiveStateIsQuiescent`; direct baseline reports `result=ok`
       with `initial_states=1`, `distinct_states=4659`. Added
       `test_case16_primarybackup_is_real_non_vacuous_pass`.
-    - [ ] **38.14.8.d.4**: Close case 19 honestly. Remaining blocker is not
-      translator syntax anymore: current bounded checker still gets
-      `initial_states=0` under tractable `int 0..1` bounds because
-      `num_replicas >= 3` and five symbolic phase tags require larger integer
-      domains, while larger domains trigger `LState` candidate-explosion in
-      initial-state construction. Next leaf should pick one honest fix:
-      either (a) improve initial-state candidate synthesis/pruning for large
-      structs, or (b) introduce non-int finite typing for symbolic phase tags
-      so protocol control states do not depend on the global int range.
+    - [~] **38.14.8.d.4**: Close case 19 honestly. Decomposed again after
+      2026-04-09 follow-up because the state-seeding blocker and the
+      transition-enable blocker are separable:
+      - [x] **38.14.8.d.4.1**: Make `LInit` pinned-template fallback work on
+        generated `&&` (binary-and) init predicates, not only `&&&`; and when
+        this fallback is active, stop filtering direct-assignment transition
+        solving to the pinned seed candidates. Added regressions in
+        `transpiler/src/main.rs`:
+        `test_execute_model_check_linit_fallback_supports_binary_and_and_unfiltered_successors`.
+      - [x] **38.14.8.d.4.2**: In helper-call predicate solving, skip
+        unsupported helper sub-branches instead of abandoning the whole helper
+        call path. Added regression:
+        `test_execute_model_check_helper_solver_skips_unsupported_subbranches`.
+      - [ ] **38.14.8.d.4.3**: Fix the remaining case-19 transition
+        unsatisfiability on generated EPaxos helper branches
+        (`sent_packets: Seq<int>`/record payload mismatches and related
+        degraded helper signatures), then prove at least one real enabled
+        transition from Init under tractable bounds.
+      - [ ] **38.14.8.d.4.4**: Retune `19_epaxos_small` model config +
+        manifest expectation/property and remove case-19 `stub_status` only
+        after non-vacuous execution is demonstrated with >1 reachable state and
+        checked property/deadlock semantics.
 - [ ] **38.14.9**: Once 38.14.7 and 38.14.8 are done, retire the
   `stub_status` annotations from `manifest.toml` and update
   `latest.md`/`hard_case_blocker_ledger.md` with the new honest pass count.
