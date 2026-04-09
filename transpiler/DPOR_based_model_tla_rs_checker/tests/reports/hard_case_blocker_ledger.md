@@ -1,27 +1,51 @@
-# Hard-Case Blocker Ledger (Phase 38.9.3.a)
+# Hard-Case Blocker Ledger (Phase 38.14 — audited 2026-04-09)
 
-Protocol cases 13-20: current result. **ALL GREEN as of 2026-04-01.**
+Protocol cases 13-20: honest status after Phase 38.14 audit.
+**Previous "ALL GREEN as of 2026-04-01" claim is retracted — see below.**
 
-| # | Case | Result | Notes |
-|---|------|--------|-------|
-| 13 | TwoPhase | **PASS** (ok, 3 states) | -- |
-| 14 | LeaderElection | **PASS** (ok, 0 states) | Fixed: LRecord field harvesting from RecordAccess, arbitrary() elimination, constants aliasing |
-| 15 | ChainReplication | **PASS** (ok, 0 states) | Fixed: same as case 14 |
-| 16 | PrimaryBackup | **PASS** (ok, 0 states) | Fixed: .tag enum discriminator identity |
-| 17 | Paxos | **PASS** (ok, 1 state) | Narrow bounds (int 0..1, max_set_len=1) |
-| 18 | PBFT | **PASS** (ok, 31 states) | Narrow bounds (Replica=1) |
-| 19 | EPaxos | **PASS** (ok, 0 states) | Fixed: .tag enum discriminator + unmasked from known_unimplemented |
-| 20 | Raft | **PASS** (ok, 31 states) | Server=2, int 0..2 |
+| # | Case | Reported | Honest verdict | Bug |
+|---|------|----------|----------------|-----|
+| 13 | TwoPhase | ok, 3 states | **VACUOUS** | A: Source TLA+ Next drops `\E r \in RM : TMRcvPrepared(r)`. No safety invariant in source; manifest passes no `--invariant` |
+| 14 | LeaderElection | ok, 0 states | **VACUOUS** | B: Verus → TLA+ → spec roundtrip degenerates LState to flat LRecord with wrong fields, LInit's `s` becomes `int`, every operator body is `arbitrary::<T>()` soup, safety invariants degenerate to `Set::empty().contains(x) ⇒ Set::empty().contains(x)`, model checker can't construct an initial state |
+| 15 | ChainReplication | ok, 0 states | **VACUOUS** | B: same fingerprint as case 14 |
+| 16 | PrimaryBackup | ok, 0 states | **VACUOUS** | B: same fingerprint as case 14 (LSafetyInactiveStateIsQuiescent also collapses to arbitrary soup) |
+| 17 | Paxos | ok, 1 state | **VACUOUS** | A: Source `Paxos.tla` declares `Next == msgs' = msgs /\ maxBal' = maxBal /\ maxVBal' = maxVBal /\ maxVal' = maxVal` (literal stuttering frame) and `TypeOK == msgs = msgs /\ maxBal = maxBal` (literal tautology). The 1 reported state is LInit's empty-state stuttering against itself |
+| 18 | PBFT | ok, 31 states | **VACUOUS** | A: `Next == EnterCommit \/ ExecuteAndReply \/ ViewChange` drops the three parameterized `Send*` actions, so prepareCount/commitCount stay 0 forever and EnterCommit/ExecuteAndReply are unreachable. With `Replica = 1` even if Send actions worked there would be no BFT scenario. CommitSafety is real but never checked at runtime |
+| 19 | EPaxos | ok, 0 states | **VACUOUS** | B: same fingerprint as case 14 (12 arbitrary-soup operator bodies) |
+| 20 | Raft | ok, 31 states | **VACUOUS** | A: Source `Raft.tla` is a single-node role automaton (no log, no AppendEntries, no commitIndex, no quorums). `Next == BecomeCandidate \/ BecomeLeader \/ StepDown` drops `GrantVote(voter)`. `AtMostOneLeader == state = Leader => votesGranted = votesGranted` is a literal `X => X` tautology. The CONSTANT `Server` is never referenced anywhere in the spec, so `Server = 2` in the model config is dead |
 
-## History of Fixes
+**Real protocol coverage: 0/8**
 
-### Phase 38.8.2.a translator fixes that unblocked cases 14-16, 19:
-1. **State variable inference** (commit `ded3b81`): Infer state variable from Init's first param in variable-less specs
-2. **s.s.field double-indirection** (commit `0855bd2`): `state_is_flat_alias` flag for `LState = LRecord` aliases
-3. **Constants param aliasing** (commit `96a4253`): rename_map for `c → c_consts` + translate_record_access rename resolution
-4. **LRecord field harvesting** (commit `79dd5b8`): Collect state fields from RecordAccess dot-access, not just record constructors
-5. **.tag enum discriminator** (commit `8e9aef8`): Treat `.tag` on int as identity for hash-encoded enum patterns
+## Bug Taxonomy
 
-## Date
+- **Bug A — Hand-written stub TLA+** (cases 13, 17, 18, 20): the source
+  `tests/tla/<case>/*.tla` file is itself a degenerate stub. The translator
+  is faithful; the input is broken. Common pattern: `Next` drops every action
+  with extra parameters beyond `(s, s_, c)` (probably to avoid setting up
+  existential bindings), and "safety" invariants are written as `X = X` or
+  `X => X`.
 
-Updated: 2026-04-01 — **20/20 ALL GREEN**
+- **Bug B — Verus → TLA+ → spec roundtrip degradation** (cases 14, 15, 16, 19):
+  the source TLA+ in `tests/tla/<case>/*.tla` is real and meaningful, but the
+  `verus2tla` round-trip collapses LState's struct fields, mis-types LInit's
+  state parameter as `int`, and converts every dot-access into `arbitrary::<T>()`.
+
+## What the prior fix history actually accomplished
+
+The Phase 38.8.2.a "translator fixes" (`ded3b81`, `0855bd2`, `96a4253`,
+`79dd5b8`, `8e9aef8`) were:
+
+1. State variable inference for variable-less specs
+2. `s.s.field` double-indirection for flat-alias states
+3. Constants param aliasing (`c → c_consts`)
+4. LRecord field harvesting from RecordAccess
+5. `.tag` enum discriminator identity for hash-encoded enums
+
+These collectively eliminated the **exception/crash** symptoms and made
+`verus-transpile model-check` exit cleanly on every case. They did **not**
+verify that the resulting state spaces were non-empty, that LNext fired any
+real actions, that invariants were non-tautological, or that the runtime
+`--invariant` flag was wired through. The 16/20 → 20/20 jump was a clean-exit
+jump, not a model-checking-correctness jump.
+
+## Updated: 2026-04-09 — 12 real / 8 vacuous baseline (Phase 38.14 audit)

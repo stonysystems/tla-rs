@@ -209,7 +209,8 @@ requires_deadlock_check = false
 milestone_gate = "M3"
 negative = false
 source = "transpiler/tests/tla_examples/TwoPhase.tla"
-notes = "First real protocol. 2-RM two-phase commit. BLOCKER: translated spec uses Seq<char> for TLA+ strings — model checker has no char domain. Invariant TCConsistent not in translated output."
+stub_status = "bug_a_incomplete_next"
+notes = "VACUOUS PASS. Source TLA+ TwoPhase.tla declares Next == TMCommit \\/ TMAbort and drops the existentially-parameterized TMRcvPrepared(r) action. The translated LNext therefore only fires TMCommit/TMAbort, the spec has no real safety invariant (no TCConsistent), and no --invariant is passed at runtime. The 3-state result is the trivial init→commit/abort fan-out, not a 2-phase commit model check."
 
 [[case]]
 id = "14_leader_election_small"
@@ -225,7 +226,8 @@ requires_deadlock_check = false
 milestone_gate = "M3"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/LeaderElection/"
-notes = "Bully leader election; per-node state. No invariant configured — spec bodies are degenerate (arbitrary<T>())."
+stub_status = "bug_b_roundtrip_degraded"
+notes = "VACUOUS PASS (0 distinct states explored). Source Election.tla is a real auto-generated bully election spec with proper actions and 3 safety invariants, but the Verus→TLA+→spec roundtrip collapses field harvesting: LState becomes a flat LRecord of message fields {leader,responder,sender}, the real state fields (electing, has_leader, alive, ...) are missing, every operator body becomes a soup of `arbitrary::<T>()` calls, LInit's `s` parameter is typed as `int` instead of LState, and the safety invariants degenerate to `Set::empty().contains(x) ==> Set::empty().contains(x)`. The model checker cannot construct a single initial state."
 
 [[case]]
 id = "15_chain_replication_small"
@@ -241,7 +243,8 @@ requires_deadlock_check = false
 milestone_gate = "M4"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/ChainReplication/"
-notes = "Pipeline/message-flow case. No invariant — degenerate spec bodies."
+stub_status = "bug_b_roundtrip_degraded"
+notes = "VACUOUS PASS (0 distinct states). Same Bug B fingerprint as case 14: arbitrary-soup operator bodies, primitive `s: int` Init parameter, no reachable initial state."
 
 # ============================================================
 # Cases 16-20: Full protocol models
@@ -261,7 +264,8 @@ requires_deadlock_check = false
 milestone_gate = "M4"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/PrimaryBackup/"
-notes = "Mid/high-complexity protocol gate. No invariant — degenerate spec bodies."
+stub_status = "bug_b_roundtrip_degraded"
+notes = "VACUOUS PASS (0 distinct states). Same Bug B fingerprint as case 14: arbitrary-soup operator bodies including LSafetyInactiveStateIsQuiescent, primitive `s: int` Init parameter, no reachable initial state."
 
 [[case]]
 id = "17_paxos_small"
@@ -277,7 +281,8 @@ requires_deadlock_check = false
 milestone_gate = "M4"
 negative = false
 source = "transpiler/tests/tla_examples/Paxos.tla"
-notes = "Consensus protocol. Passes with int 0..1, max_set_len=1 (via [collections] section fix). 1 state found (single-step Paxos at minimal bounds)."
+stub_status = "bug_a_stub_source"
+notes = "VACUOUS PASS. Source Paxos.tla is itself a degenerate stub: it declares `Next == msgs' = msgs /\\ maxBal' = maxBal /\\ ...` (a literal stuttering frame, no actions invoked) and `TypeOK == msgs = msgs /\\ maxBal = maxBal` (a tautology). The Send1a/1b/2a/2b actions are defined but unreachable. The 1 reported state is just LInit's empty-message state stuttering against itself. This is not Paxos."
 
 [[case]]
 id = "18_pbft_small"
@@ -293,7 +298,8 @@ requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tests/tla_examples/PBFT.tla"
-notes = "Byzantine protocol. Passes with Replica=1, int 0..1, max_set_len=1 (via [collections] section fix). 124 states at depth 30."
+stub_status = "bug_a_incomplete_next"
+notes = "VACUOUS PASS. Source PBFT.tla declares Next == EnterCommit \\/ ExecuteAndReply \\/ ViewChange and drops the existentially-parameterized SendPrePrepare(v,n,d), SendPrepare(r,v,n,d), and SendCommit(r,v,n,d) actions. With Replica=1 (no real BFT replication possible) and the message-sending actions unreachable, prepareCount/commitCount stay at 0, so the Prepared/Committed predicates and EnterCommit/ExecuteAndReply transitions are dead. CommitSafety and TypeOK are real (non-tautological) predicates but the manifest passes no --invariant, so they are never checked. The 31 reachable states are just the ViewChange self-loop reset cycle."
 
 [[case]]
 id = "19_epaxos_small"
@@ -309,7 +315,8 @@ requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/EPaxos/"
-notes = "EPaxos protocol. Passes with minimal bounds. 0 states at narrow bounds (Init filtering) but no errors."
+stub_status = "bug_b_roundtrip_degraded"
+notes = "VACUOUS PASS (0 distinct states). Same Bug B fingerprint as case 14: 12 arbitrary-soup operator bodies, primitive `s: int` Init parameter, no reachable initial state. The phrase `0 states at narrow bounds (Init filtering) but no errors` from the prior notes was a euphemism for `the model checker cannot construct a state to start from`."
 
 [[case]]
 id = "20_raft_small"
@@ -325,4 +332,5 @@ requires_deadlock_check = false
 milestone_gate = "M5"
 negative = false
 source = "transpiler/tests/tla_examples/Raft.tla"
-notes = "Protocol-level case. Passes with Server=2, no invariant configured. Direct-assignment solver finds 31 states in 10ms."
+stub_status = "bug_a_stub_source"
+notes = "VACUOUS PASS. Source Raft.tla is a single-node role automaton, not Raft: no log, no commitIndex, no AppendEntries, no message passing, no quorum reasoning. State has only currentTerm/role/votedFor/votesGranted on a single notional server. Next == BecomeCandidate \\/ BecomeLeader \\/ StepDown drops the parameterized GrantVote(voter) action, so votesGranted never grows. AtMostOneLeader == state = Leader => votesGranted = votesGranted is a literal X => X tautology. The CONSTANT Server is never referenced anywhere in the spec, so the model_config Server=2 has no effect. The 31 reachable states are the role-cycling automaton, not Raft consensus."

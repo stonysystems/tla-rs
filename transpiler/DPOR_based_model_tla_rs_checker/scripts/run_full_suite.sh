@@ -53,6 +53,7 @@ FAILED=0
 KNOWN_UNIMPL=0
 TRANSLATION_FAILED=0
 ERRORS=0
+VACUOUS=0
 
 # Results array for JSON
 RESULTS_JSON="["
@@ -184,8 +185,31 @@ except:
                 states=$(echo "$mc_output" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); s=d.get('summary',{}); print(s.get('distinct_states', s.get('states', 0)))" 2>/dev/null || echo "0")
                 stop_reason=$(echo "$mc_output" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('stop_reason','unknown'))" 2>/dev/null || echo "unknown")
 
-                # Determine pass/fail
-                if [[ "$expected_result" == "ok" && "$result_status" == "ok" ]]; then
+                # Vacuous-pass detection (Phase 38.14):
+                # An "ok" verdict only counts as a real PASS when at least one of:
+                #   (a) the case actually checked an invariant (inv_args was passed)
+                #   (b) the case asked the checker to detect deadlocks
+                # AND the explorer reached >= 1 distinct state.
+                # Otherwise the "ok" is theatre: empty state space or no property checked.
+                vacuous_reason=""
+                if [[ "$result_status" == "ok" ]]; then
+                    if [[ "$states" == "0" ]]; then
+                        vacuous_reason="zero_states_explored"
+                    elif [[ -z "$inv_args" ]]; then
+                        # Check whether the model config enables deadlock checking.
+                        # If neither --invariant nor check_deadlock is on, "ok" is vacuous.
+                        if ! grep -qE '^[[:space:]]*check_deadlock[[:space:]]*=[[:space:]]*true' "$model_toml" 2>/dev/null; then
+                            vacuous_reason="no_property_checked"
+                        fi
+                    fi
+                fi
+
+                # Determine pass/fail/vacuous
+                if [[ -n "$vacuous_reason" ]]; then
+                    echo "  [$case_id] VACUOUS (ok but $vacuous_reason, $states states, ${elapsed_ms}ms)"
+                    VACUOUS=$((VACUOUS + 1))
+                    result_status="vacuous_${vacuous_reason}"
+                elif [[ "$expected_result" == "ok" && "$result_status" == "ok" ]]; then
                     echo "  [$case_id] PASS (ok, $states states, ${elapsed_ms}ms)"
                     PASSED=$((PASSED + 1))
                 elif [[ "$expected_result" == "invariant_violation" && "$result_status" == "invariant_violated" ]]; then
@@ -227,6 +251,7 @@ cat > "$REPORTS_DIR/latest.json" <<JSONEOF
   "total": $TOTAL,
   "passed": $PASSED,
   "failed": $FAILED,
+  "vacuous": $VACUOUS,
   "translation_failed": $TRANSLATION_FAILED,
   "known_unimplemented": $KNOWN_UNIMPL,
   "errors": $ERRORS,
@@ -239,13 +264,18 @@ echo "========================================"
 echo "Full Suite Summary ($TIMESTAMP)"
 echo "========================================"
 echo "  Total cases:          $TOTAL"
-echo "  Passed:               $PASSED"
+echo "  Passed (real):        $PASSED"
+echo "  Vacuous (theatre):    $VACUOUS"
 echo "  Failed:               $FAILED"
 echo "  Translation failed:   $TRANSLATION_FAILED"
 echo "  Known unimplemented:  $KNOWN_UNIMPL"
 echo "  Errors:               $ERRORS"
 echo "========================================"
 echo "Results written to: tests/reports/latest.json"
+echo ""
+echo "NOTE: 'Vacuous' = result=ok with either zero states explored OR no"
+echo "      property checked (no --invariant flag, check_deadlock=false)."
+echo "      A vacuous result is NOT a real pass — see Phase 38.14."
 
 # Phase 38.9.2.a: Validate that all protocol cases (13-20) are present in the report.
 # These cases must remain in every full-suite run, even if they are blocked or failing.
@@ -263,4 +293,17 @@ if [[ -n "$MISSING_CASES" ]]; then
     echo "All cases 13-20 must be present in every full-suite run (Phase 38.9.2.a)."
     echo "Check manifest.toml and tests/tla/ for missing case definitions."
     exit 1
+fi
+
+# Phase 38.14: structural stub detector — print warnings for any translated
+# spec that is structurally degenerate (stuttering Next, tautological invariants,
+# arbitrary-soup bodies, primitive state param, or incomplete Next disjunctions).
+# Findings here mean the corresponding `result = ok` cases above are vacuous,
+# even if the run script counted them as PASS.
+if [[ -x "$SCRIPT_DIR/detect_stub_specs.py" ]]; then
+    echo ""
+    echo "========================================"
+    echo "Stub-spec detector (Phase 38.14)"
+    echo "========================================"
+    "$SCRIPT_DIR/detect_stub_specs.py" || true
 fi

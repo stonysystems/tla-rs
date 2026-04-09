@@ -422,6 +422,151 @@ v1 is correct by construction; v1.1 must be validated against v1 on all small ca
 
 ---
 
+## Phase 38.14 — "20/20 ALL GREEN" Honest Postmortem (2026-04-09)
+
+### Summary
+
+The Milestone M9 "20/20 ALL GREEN" claim from 2026-04-01 (commits `4a232ed`,
+`8e9aef8`, `79dd5b8`, `96a4253`, `0855bd2`, `ded3b81`) **does not survive
+audit**. After running the new structural stub detector
+(`scripts/detect_stub_specs.py`) and re-reading the source TLA+ files,
+**8 of the 20 cases — every single protocol case (13–20) — pass vacuously**.
+The honest baseline-checker score is **12/20**, not 20/20:
+
+| Case range | Status | Notes |
+|---|---|---|
+| 01–12 | **Real pass** (12/12) | Micro-models and concurrency primitives. Honest invariants, honest verdicts, plausible state counts. |
+| 13–20 | **Vacuous pass** (8/8) | All 8 protocol cases either explore 0 states, have stuttering Next, drop actions, have tautological invariants, check no invariant at runtime, or all of the above. |
+
+The Phase 38.8.2.a translator fixes that flipped 16/20 → 20/20 only achieved
+clean exit codes from `verus-transpile model-check`. They did **not** verify
+that the translated specs were semantically meaningful, that invariants were
+non-tautological, that state spaces were non-empty, or that runtime invariant
+checking was actually wired through.
+
+### Two distinct root causes
+
+#### Bug A — degenerate hand-written source TLA+ stubs
+
+Cases 13, 17, 18, 20 use hand-authored "small" TLA+ files that are themselves
+stubs. The translator faithfully translates them; the translation is correct,
+the **input is broken**.
+
+- **17_paxos_small** ([Paxos.tla:38](../tests/tla/17_paxos_small/Paxos.tla)):
+  ```tla
+  Next == msgs' = msgs /\ maxBal' = maxBal /\ maxVBal' = maxVBal /\ maxVal' = maxVal
+  TypeOK == msgs = msgs /\ maxBal = maxBal
+  ```
+  Literal stuttering frame as Next, literal `X = X` as TypeOK. The Send1a/1b/2a/2b
+  actions are defined but never invoked. `Acceptor`, `Quorum`, `Value` constants
+  are declared but never referenced.
+
+- **20_raft_small** ([Raft.tla:38-41](../tests/tla/20_raft_small/Raft.tla)):
+  ```tla
+  Next == BecomeCandidate \/ BecomeLeader \/ StepDown
+  AtMostOneLeader == state = Leader => votesGranted = votesGranted
+  ```
+  Single-node role automaton. `GrantVote(voter)` is defined but dropped from
+  Next (it has an extra parameter). The "safety" invariant is `X => X`. The
+  `Server` constant is declared but never referenced. There is no log, no
+  AppendEntries, no commitIndex — none of Raft is modeled.
+
+- **13_twophase_small** ([TwoPhase.tla:19](../tests/tla/13_twophase_small/TwoPhase.tla)):
+  `Next == TMCommit \/ TMAbort` — drops `TMRcvPrepared(r)`. No safety invariant.
+
+- **18_pbft_small** ([PBFT.tla:54](../tests/tla/18_pbft_small/PBFT.tla)):
+  `Next == EnterCommit \/ ExecuteAndReply \/ ViewChange` — drops the three
+  parameterized `Send*` actions, leaving prepareCount/commitCount permanently
+  zero, which makes Prepared/Committed/EnterCommit/ExecuteAndReply unreachable.
+  `CommitSafety` is non-tautological but never checked at runtime.
+
+The structural pattern is consistent: **the test author dropped every action
+that takes parameters beyond `(s, s_, c)` from the Next disjunction**, probably
+to avoid setting up existential bindings. This makes the resulting specs
+trivially small — and trivially uninteresting.
+
+#### Bug B — Verus → TLA+ → spec roundtrip degradation
+
+Cases 14, 15, 16, 19 use auto-generated TLA+ from `verus2tla`. The source TLA+
+files are real and meaningful (e.g., [Election.tla:111-127](../tests/tla/14_leader_election_small/Election.tla)
+has 7 actions and 3 honest safety invariants), but the **TLA+ → spec
+roundtrip** then collapses them into garbage. Diagnostic fingerprint of every
+Bug B case (verified by `detect_stub_specs.py`):
+
+1. `LState = LRecord` flat alias whose fields are scraped from message records
+   (`leader`, `responder`, `sender`) instead of the real state fields
+   (`electing`, `alive`, `has_leader`, ...).
+2. `LInit` parameter `s` typed as `int` rather than `LState`, so the
+   model checker cannot construct an initial state object.
+3. Every operator body is a soup of `arbitrary::<T>()` calls (15+ per body)
+   because every dot-access on the wrong-typed `s` falls back to nondet.
+4. Predicates degenerate to `Set::empty().contains(x) ==> Set::empty().contains(x)`,
+   `arbitrary::<bool>() == false`, and `arbitrary::<int>() == arbitrary::<int>()`.
+5. `distinct_states = 0` at runtime — the explorer can't even start.
+6. `result = "ok"` because no exception was raised, no invariant was checked,
+   and the empty frontier was "exhausted" trivially.
+
+The Phase 38.8.2.a "translator fixes" (state-variable inference, flat-alias
+double-indirection, constants param aliasing, RecordAccess field harvesting,
+`.tag` enum discriminator) fixed the symptom (no exception) but not the
+underlying field-harvesting collapse.
+
+### Three latent script-level enablers
+
+Even given Bugs A and B, the suite would have caught the vacuous passes if
+the run script had been honest. Three enablers let "ok" propagate as PASS:
+
+1. **No invariant flag for protocol cases.** All 8 protocol cases have
+   `expected_property = ""` in `manifest.toml`, so [run_full_suite.sh:137-139](../scripts/run_full_suite.sh)
+   never adds `--invariant` to the model-check invocation. Combined with
+   `[properties] invariants = []` and `check_deadlock = false` in every
+   per-case `model_configs/*.toml`, **the model checker is asked to check
+   nothing**.
+
+2. **`distinct_states = 0` was treated as PASS.** Cases 14, 15, 16, 19 all
+   reported zero distinct states explored. The script's pass logic
+   (`expected_result == "ok" && result_status == "ok"`) rubber-stamped them.
+
+3. **Per-case bounds are pathologically tiny.** PBFT with `Replica = 1` is
+   not a Byzantine fault-tolerance check; LE/CR/PB/EPaxos with `int 0..1` and
+   `max_set_len = 1` cannot represent any real distributed scenario.
+
+### Fixes shipped in Phase 38.14
+
+- **`scripts/run_full_suite.sh`**: detect vacuous passes (zero states OR no
+  property checked) and report them as `VACUOUS` instead of `PASS`. New
+  `vacuous` field in `latest.json`. Summary now distinguishes "Passed (real)"
+  from "Vacuous (theatre)".
+- **`scripts/detect_stub_specs.py`**: structural detector for the five
+  degeneracy patterns (stuttering Next, tautological invariants, arbitrary
+  soup, primitive state param, incomplete Next). Wired into
+  `run_full_suite.sh` as a final gate so it warns on every run.
+- **`tests/manifest.toml`**: every protocol case now carries a `stub_status`
+  field (`bug_a_stub_source`, `bug_a_incomplete_next`, or
+  `bug_b_roundtrip_degraded`) and an honest, detailed `notes` entry.
+- **Reports**: `latest.md`, `latest.json`, `hard_case_blocker_ledger.md`
+  rewritten to reflect the 12/20 honest baseline.
+
+### What is **NOT** fixed in Phase 38.14
+
+- **Bug A's broken stub specs** (cases 13, 17, 20 — and the `Replica = 1`
+  problem in 18). Fixing these requires writing real Paxos / Raft / PBFT /
+  TwoPhase TLA+ specs from scratch with proper existential action bindings
+  and non-tautological invariants. Out of scope for this audit.
+- **Bug B's Verus → TLA+ → spec roundtrip rot** (cases 14, 15, 16, 19).
+  Fixing this requires repair work in the `verus2tla` field harvesting and
+  the `tla → spec` Init parameter type inference, ideally so that LState's
+  struct fields are taken from VARIABLE declarations rather than from
+  RecordAccess fallback, and so the Init parameter type is forced to be the
+  state struct, not `int`. Out of scope for this audit.
+
+Until at least one of those two tracks lands, the protocol half of the corpus
+should be considered an open work item and the M9 milestone should be read
+as **"the explorer no longer crashes on the corpus"**, not as
+**"the explorer correctly model-checks 20 protocols"**.
+
+---
+
 ## Prototype-to-Mainline Integration Gate (Phase 38.2.5)
 
 **No rewrite of `transpiler/src/modelcheck` is allowed** until ALL of the
