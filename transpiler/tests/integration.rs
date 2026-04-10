@@ -22151,6 +22151,125 @@ fn test_phase_38_11_6_full_suite_command_and_scoreboard_acceptance_criterion() {
 }
 
 #[test]
+fn test_phase_38_11_7_a_negative_case_coverage_gap_audit_is_documented() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "7. [ ] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.",
+        "- [x] **38.11.7.a**: Audit current negative-case coverage",
+        "acceptance_38_11_7_negative_case_gap.md",
+        "- [ ] **38.11.7.b**: Promote one additional case to a real negative outcome",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.7.a decomposition fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let manifest_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/manifest.toml");
+    let manifest_src = std::fs::read_to_string(&manifest_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read manifest {}: {}",
+            manifest_path.display(),
+            err
+        )
+    });
+    let negative_count = manifest_src
+        .lines()
+        .filter(|line| line.trim() == "negative = true")
+        .count();
+    assert_eq!(
+        negative_count, 5,
+        "38.11.7.a audit expects current manifest negative count to be 5 before promotion leaf; manifest {}",
+        manifest_path.display()
+    );
+
+    for required_negative_case in [
+        "id = \"03_counter_race_bug\"",
+        "id = \"05_broken_lock_bug\"",
+        "id = \"11_readers_writers_small\"",
+        "id = \"12_dining_philosophers_3\"",
+        "id = \"15_chain_replication_small\"",
+    ] {
+        assert!(
+            manifest_src.contains(required_negative_case),
+            "manifest {} missing audited negative case fragment `{}`",
+            manifest_path.display(),
+            required_negative_case
+        );
+    }
+
+    let report_json_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/reports/latest.json");
+    let report_json_src = std::fs::read_to_string(&report_json_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read report json {}: {}",
+            report_json_path.display(),
+            err
+        )
+    });
+    let report_json: serde_json::Value =
+        serde_json::from_str(&report_json_src).unwrap_or_else(|err| {
+            panic!(
+                "failed to parse report json {}: {}",
+                report_json_path.display(),
+                err
+            )
+        });
+    let cases = report_json
+        .get("cases")
+        .and_then(|v| v.as_array())
+        .unwrap_or_else(|| panic!("report json {} missing `cases` array", report_json_path.display()));
+    let exercised_negative_count = cases
+        .iter()
+        .filter(|row| {
+            row.get("result")
+                .and_then(|v| v.as_str())
+                .is_some_and(|r| r == "invariant_violated" || r == "deadlock_detected")
+        })
+        .count();
+    assert_eq!(
+        exercised_negative_count, 5,
+        "38.11.7.a audit expects current exercised negative outcomes to be 5; report {}",
+        report_json_path.display()
+    );
+
+    let audit_doc_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/acceptance_38_11_7_negative_case_gap.md",
+    );
+    let audit_doc_src = std::fs::read_to_string(&audit_doc_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read 38.11.7 audit doc {}: {}",
+            audit_doc_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "Count: **5** negative cases (gap to criterion: **1**).",
+        "2026-04-10T18:18:11Z",
+        "03_counter_race_bug",
+        "12_dining_philosophers_3",
+        "15_chain_replication_small",
+        "MaxVal = 3",
+        "exceeded limit (200000)",
+        "38.11.7.b",
+    ] {
+        assert!(
+            audit_doc_src.contains(required_fragment),
+            "38.11.7 audit doc {} must include fragment `{}`",
+            audit_doc_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
     let repo_root = resolve_repo_root_for_integration();
 

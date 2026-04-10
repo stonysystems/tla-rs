@@ -12009,6 +12009,24 @@ stub detector clean and the run script reporting 0 vacuous passes.
    (`tests/reports/latest.md` with metric table + per-case status + reproduction
    command), tied to the documented workflow in `README.md`.
 7. [ ] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.
+   Scope check (2026-04-10): honest closure is likely >500 LOC because it
+   requires promoting at least one currently bounded-positive/blocked case to a
+   real negative under the full-suite runtime budget, then revalidating parity
+   and suite evidence. Decomposed into focused leaves:
+   - [x] **38.11.7.a**: Audit current negative-case coverage and document the
+     concrete gap/blockers in
+     `transpiler/DPOR_based_model_tla_rs_checker/docs/acceptance_38_11_7_negative_case_gap.md`.
+     **Done 2026-04-10**: manifest currently has 5 negative rows
+     (`03/05/11/12/15`), full-suite snapshot remains 5 exercised negative
+     outcomes, and the first promotion candidate (`08_bounded_buffer_2slot`
+     with `MaxVal=3`) currently hits candidate-expansion guardrails
+     (`LState exceeded limit 200000`).
+   - [ ] **38.11.7.b**: Promote one additional case to a real negative outcome
+     under bounded runtime (target: case 08 first; fallback to another
+     bounded-positive case if 08 remains guardrail-blocked), keeping changes
+     scoped and reproducible.
+   - [ ] **38.11.7.c**: Re-run full suites and resync acceptance evidence once
+     negative-case coverage reaches >=6 real exercised negatives.
 8. [ ] DPOR and the baseline agree on verdict plus normalized state set or first witness for the small parity subset.
 9. [ ] `PrimaryBackup`, `Paxos`, and `Raft` are present as required hard cases and are never silently removed from the suite.
 10. [ ] No mainline rewrite of `transpiler/src/modelcheck` happens before the prototype earns the integration gate in `38.10`.
