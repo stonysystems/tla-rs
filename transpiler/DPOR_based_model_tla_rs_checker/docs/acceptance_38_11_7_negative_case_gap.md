@@ -1,58 +1,71 @@
-# Phase 38.11.7 Negative-Case Coverage Gap Audit (2026-04-10)
+# Phase 38.11.7 Negative-Case Coverage Audit and Closure (2026-04-10)
 
 ## Goal
 
 `38.11.7` requires at least 6/20 negative cases that actually exercise
-invariant-violation or deadlock detection. This note records the current gap
-and first promotion probe.
+invariant-violation or deadlock detection.
 
-## Current audited coverage
+## 38.11.7.a baseline audit (recorded gap)
 
-- Manifest negative rows (`negative = true`) are currently:
+Baseline audit snapshot from
+`./scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T18:18:11Z`:
+
+- Manifest negative rows were:
   - `03_counter_race_bug`
   - `05_broken_lock_bug`
   - `11_readers_writers_small`
   - `12_dining_philosophers_3`
   - `15_chain_replication_small`
-- Count: **5** negative cases (gap to criterion: **1**).
+- Count at that point: **5** negative cases (gap to criterion: **1**).
+- Exercised negative outcomes at that point: **5**.
 
-Full-suite snapshot from
-`./scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T18:18:11Z`:
+First widening probe for case 08 used `MaxVal = 3`, `int = 0..3`,
+`max_set/seq/map_len = 3`, `max_states = 200000`, and hit:
 
-- `Passed (real): 19`
-- `Known unimplemented: 1` (`19_epaxos_small`)
-- Exercised negative outcomes in results:
-  - invariant violations: cases `03`, `05`, `11`
-  - deadlocks: cases `12`, `15`
-- Exercised negative outcome count: **5**.
+- `Model-check candidate expansion for struct 'LState' exceeded limit (200000).`
 
-## First promotion probe (candidate case 08)
+## 38.11.7.b promotion execution (case 08)
 
-Candidate: `08_bounded_buffer_2slot` (currently bounded-positive).
+Promoted case: `08_bounded_buffer_2slot`.
 
-Probe command (manual direct run):
+Checked-in model profile (`tests/model_configs/08_bounded_buffer_2slot.toml`):
+
+- `MaxVal = 3`
+- `int = 0..3`
+- `max_set_len = 2`
+- `max_seq_len = 2`
+- `max_map_len = 2`
+- `max_states = 300000`
+
+Focused confirmation command:
 
 ```bash
-timeout 130s ./transpiler/target/release/verus-transpile model-check \
-  --input transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/08_bounded_buffer_2slot/BoundedBuffer2Slot.rs \
+timeout 30s ./transpiler/target/release/verus-transpile model-check \
+  --input transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/08_bounded_buffer_2slot/BoundedBufferBug.rs \
   --init LInit --next LNext \
-  --model /tmp/case08_test.toml \
+  --model transpiler/DPOR_based_model_tla_rs_checker/tests/model_configs/08_bounded_buffer_2slot.toml \
   --invariant LBufferNotOverflow \
   --json-report
 ```
 
-Probe config summary: `MaxVal = 3`, `int = 0..3`, `max_set/seq/map_len = 3`,
-`max_states = 200000`, `timeout_ms = 120000`.
+Observed outcome: `result = invariant_violated` at depth `3`.
 
-Observed outcome:
+Manifest sync for case 08:
 
-- checker exits with configuration error before verdict:
-  - `Model-check candidate expansion for struct 'LState' exceeded limit (200000).`
+- `expected_primary_result = "invariant_violation"`
+- `negative = true`
 
-Conclusion: case 08 is still blocked at this first widened profile and needs
-focused bounded tuning before it can be promoted to a real negative case.
+## 38.11.7.c suite re-run and evidence sync
 
-## Next leaves
+Full-suite snapshot from
+`./scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T19:22:27Z`:
 
-- `38.11.7.b`: promote one additional real negative case under bounded runtime.
-- `38.11.7.c`: rerun full suites and close criterion with synced evidence.
+- `Passed (real): 19`
+- `Known unimplemented: 1` (`19_epaxos_small`)
+- `Failed: 0`
+- `Vacuous: 0`
+- Exercised negative outcomes in results:
+  - invariant violations: `03`, `05`, `08`, `11`
+  - deadlocks: `12`, `15`
+- Exercised negative outcome count: **6**.
+- Count: **6** negative cases (criterion met).

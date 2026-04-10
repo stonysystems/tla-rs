@@ -22151,21 +22151,21 @@ fn test_phase_38_11_6_full_suite_command_and_scoreboard_acceptance_criterion() {
 }
 
 #[test]
-fn test_phase_38_11_7_a_negative_case_coverage_gap_audit_is_documented() {
+fn test_phase_38_11_7_b_negative_case_coverage_reaches_six_with_case08_promotion() {
     let repo_root = resolve_repo_root_for_integration();
 
     let todo_path = repo_root.join("TODO.md");
     let todo_src = std::fs::read_to_string(&todo_path)
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     for required_fragment in [
-        "7. [ ] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.",
+        "7. [x] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.",
         "- [x] **38.11.7.a**: Audit current negative-case coverage",
-        "acceptance_38_11_7_negative_case_gap.md",
-        "- [ ] **38.11.7.b**: Promote one additional case to a real negative outcome",
+        "- [x] **38.11.7.b**: Promote one additional case to a real negative outcome",
+        "- [x] **38.11.7.c**: Re-run full suites and resync acceptance evidence once",
     ] {
         assert!(
             todo_src.contains(required_fragment),
-            "TODO {} must include 38.11.7.a decomposition fragment `{}`",
+            "TODO {} must include 38.11.7 completion fragment `{}`",
             todo_path.display(),
             required_fragment
         );
@@ -22185,13 +22185,14 @@ fn test_phase_38_11_7_a_negative_case_coverage_gap_audit_is_documented() {
         .filter(|line| line.trim() == "negative = true")
         .count();
     assert_eq!(
-        negative_count, 5,
-        "38.11.7.a audit expects current manifest negative count to be 5 before promotion leaf; manifest {}",
+        negative_count, 6,
+        "38.11.7.b expects manifest negative count to be exactly 6 after case-08 promotion; manifest {}",
         manifest_path.display()
     );
 
     for required_negative_case in [
         "id = \"03_counter_race_bug\"",
+        "id = \"08_bounded_buffer_2slot\"",
         "id = \"05_broken_lock_bug\"",
         "id = \"11_readers_writers_small\"",
         "id = \"12_dining_philosophers_3\"",
@@ -22202,6 +22203,42 @@ fn test_phase_38_11_7_a_negative_case_coverage_gap_audit_is_documented() {
             "manifest {} missing audited negative case fragment `{}`",
             manifest_path.display(),
             required_negative_case
+        );
+    }
+    for required_case08_fragment in [
+        "id = \"08_bounded_buffer_2slot\"",
+        "expected_primary_result = \"invariant_violation\"",
+        "expected_property = \"BufferNotOverflow\"",
+        "negative = true",
+    ] {
+        assert!(
+            manifest_src.contains(required_case08_fragment),
+            "manifest {} must include case-08 promotion fragment `{}`",
+            manifest_path.display(),
+            required_case08_fragment
+        );
+    }
+
+    let case08_model_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/model_configs/08_bounded_buffer_2slot.toml");
+    let case08_model_src = std::fs::read_to_string(&case08_model_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read case-08 model config {}: {}",
+            case08_model_path.display(),
+            err
+        )
+    });
+    for required_case08_model_fragment in [
+        "MaxVal = 3",
+        "max_states = 300000",
+        "int = { min = 0, max = 3 }",
+        "max_map_len = 2",
+    ] {
+        assert!(
+            case08_model_src.contains(required_case08_model_fragment),
+            "case-08 model config {} must include promotion fragment `{}`",
+            case08_model_path.display(),
+            required_case08_model_fragment
         );
     }
 
@@ -22235,8 +22272,22 @@ fn test_phase_38_11_7_a_negative_case_coverage_gap_audit_is_documented() {
         })
         .count();
     assert_eq!(
-        exercised_negative_count, 5,
-        "38.11.7.a audit expects current exercised negative outcomes to be 5; report {}",
+        exercised_negative_count, 6,
+        "38.11.7.b expects current exercised negative outcomes to be 6; report {}",
+        report_json_path.display()
+    );
+    let case08_row = cases
+        .iter()
+        .find(|row| {
+            row.get("case_id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|id| id == "08_bounded_buffer_2slot")
+        })
+        .unwrap_or_else(|| panic!("report {} must contain case 08 row", report_json_path.display()));
+    assert_eq!(
+        case08_row.get("result").and_then(|v| v.as_str()),
+        Some("invariant_violated"),
+        "report {} case 08 must be invariant_violated",
         report_json_path.display()
     );
 
@@ -22251,14 +22302,14 @@ fn test_phase_38_11_7_a_negative_case_coverage_gap_audit_is_documented() {
         )
     });
     for required_fragment in [
-        "Count: **5** negative cases (gap to criterion: **1**).",
-        "2026-04-10T18:18:11Z",
-        "03_counter_race_bug",
-        "12_dining_philosophers_3",
-        "15_chain_replication_small",
-        "MaxVal = 3",
+        "Count: **6** negative cases (criterion met).",
+        "08_bounded_buffer_2slot",
+        "max_states = 300000",
+        "invariant_violated",
+        "2026-04-10T",
+        "38.11.7.c",
         "exceeded limit (200000)",
-        "38.11.7.b",
+        "03_counter_race_bug",
     ] {
         assert!(
             audit_doc_src.contains(required_fragment),

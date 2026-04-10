@@ -12008,11 +12008,14 @@ stub detector clean and the run script reporting 0 vacuous passes.
    `total=20`), and human-readable scoreboard contract
    (`tests/reports/latest.md` with metric table + per-case status + reproduction
    command), tied to the documented workflow in `README.md`.
-7. [ ] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.
-   Scope check (2026-04-10): honest closure is likely >500 LOC because it
-   requires promoting at least one currently bounded-positive/blocked case to a
-   real negative under the full-suite runtime budget, then revalidating parity
-   and suite evidence. Decomposed into focused leaves:
+7. [x] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.
+   **Done 2026-04-10**: case `08_bounded_buffer_2slot` is now promoted back to
+   a real negative under bounded runtime (`expected_primary_result =
+   invariant_violation`, `negative = true`) with model profile
+   `MaxVal=3, int 0..3, max_states=300000, max_set/seq/map_len=2`. Full-suite
+   snapshot `2026-04-10T19:22:27Z` now shows 6 exercised negatives
+   (`03/05/08/11/12/15`) with `19 real / 0 vacuous / 0 failed / 1 known_unimplemented`.
+   Decomposed leaves:
    - [x] **38.11.7.a**: Audit current negative-case coverage and document the
      concrete gap/blockers in
      `transpiler/DPOR_based_model_tla_rs_checker/docs/acceptance_38_11_7_negative_case_gap.md`.
@@ -12021,12 +12024,19 @@ stub detector clean and the run script reporting 0 vacuous passes.
      outcomes, and the first promotion candidate (`08_bounded_buffer_2slot`
      with `MaxVal=3`) currently hits candidate-expansion guardrails
      (`LState exceeded limit 200000`).
-   - [ ] **38.11.7.b**: Promote one additional case to a real negative outcome
+   - [x] **38.11.7.b**: Promote one additional case to a real negative outcome
      under bounded runtime (target: case 08 first; fallback to another
-     bounded-positive case if 08 remains guardrail-blocked), keeping changes
-     scoped and reproducible.
-   - [ ] **38.11.7.c**: Re-run full suites and resync acceptance evidence once
+     bounded-positive case if 08 remains guardrail-blocked), keeping changes scoped
+     and reproducible.
+     **Done 2026-04-10**: case 08 now reproduces
+     `result=invariant_violated` at depth 3 under the checked-in profile in
+     `tests/model_configs/08_bounded_buffer_2slot.toml`.
+   - [x] **38.11.7.c**: Re-run full suites and resync acceptance evidence once
      negative-case coverage reaches >=6 real exercised negatives.
+     **Done 2026-04-10**: ran
+     `./transpiler/DPOR_based_model_tla_rs_checker/scripts/run_full_suite.sh --timeout 1200`;
+     refreshed `tests/reports/latest.json` (`timestamp=2026-04-10T19:22:27Z`)
+     with exercised negative outcomes count = 6.
 8. [ ] DPOR and the baseline agree on verdict plus normalized state set or first witness for the small parity subset.
 9. [ ] `PrimaryBackup`, `Paxos`, and `Raft` are present as required hard cases and are never silently removed from the suite.
 10. [ ] No mainline rewrite of `transpiler/src/modelcheck` happens before the prototype earns the integration gate in `38.10`.

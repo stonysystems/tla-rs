@@ -123,13 +123,13 @@ source_kind = "handwritten"
 tla_entry = "BoundedBufferBug.tla"
 tla_aux_modules = ["BoundedBuffer2Slot.tla"]
 generated_tlars_entry = ""
-expected_primary_result = "ok"
+expected_primary_result = "invariant_violation"
 expected_property = "BufferNotOverflow"
-model_bounds = "MaxVal=2, int 0..2 (bounded: violation needs MaxVal>=3)"
+model_bounds = "MaxVal=3, int 0..3, max_set/seq/map_len=2"
 requires_deadlock_check = false
 milestone_gate = "M2"
-negative = false
-notes = "BOUNDED POSITIVE: invariant holds at MaxVal=2, int 0..2. Original negative case (overflow) requires MaxVal>=3 which exceeds domain expansion limit. Map::new closure + Map.insert support enabled in Phase 38.8.2.a."
+negative = true
+notes = "NEGATIVE (re-promoted 2026-04-10): bounded profile now reproduces BufferNotOverflow violation (depth 3) with MaxVal=3 and int 0..3, using max_states=300000 to clear candidate-expansion guardrails while keeping max collection lengths at 2."
 
 [[case]]
 id = "09_peterson_mutex_2p"
