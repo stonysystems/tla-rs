@@ -595,7 +595,7 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 
 | 38.10.1 precondition | Current evidence (2026-04-10) | Status |
 |---|---|---|
-| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T04:33:14Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
+| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T04:47:49Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
 | `design.md` has pinned reference notes | Upstream-reference and concept-selection sections remain populated with pinned commits and mapping notes. | MET |
 | Baseline oracle exists | Baseline runner and baseline-vs-DPOR comparison path are present (`src/baseline.rs`, `dpor.rs` comparison harness). | MET |
 | Full-suite harness exists | `scripts/run_full_suite.sh` is checked in and used as the authoritative suite gate. | MET |
@@ -626,3 +626,14 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 
 - The exact-parity wording in 38.10.1 is not yet met under the current
   subset-parity contract.
+
+### 38.14.11.c.b parity-gap measurement snapshot
+
+- Added `docs/exact_parity_gap_analysis_38_10_1.md` with explicit
+  measurement for the declared comparison subset from
+  `test_automated_baseline_vs_dpor_comparison`.
+- Current measured status: `12` compared cases, `11` exact, `1` non-exact.
+- Current non-exact case: `05_broken_lock_bug`
+  (`baseline=5`, `dpor=7`, status `dpor_superset_violation`), which points to
+  negative-case parity policy mismatch (baseline early-stop semantics vs DPOR
+  continued exploration) as the current exact-parity blocker.

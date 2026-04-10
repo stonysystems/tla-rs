@@ -20464,11 +20464,18 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "**38.14.11.c.a**",
         "[x] **38.14.11.c.a**",
         "**38.14.11.c.b**",
+        "[x] **38.14.11.c.b**",
+        "**38.14.11.c.b.a**",
+        "[x] **38.14.11.c.b.a**",
+        "**38.14.11.c.b.b**",
+        "**38.14.11.c.b.c**",
         "**38.14.11.c.c**",
         "38.14.10 is now closed (`3/3` transition-gate hits)",
         "38.14.11.b status (2026-04-10): `NOT MET` overall (5/6 preconditions met).",
         "38.14.11.c.a status (2026-04-10): `MET` via",
         "docs/integration_migration_plan.md",
+        "12 cases / 11 exact / 1 non-exact",
+        "05_broken_lock_bug",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -20498,6 +20505,9 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "`38.10.1` remains open: the matrix is `5/6` MET",
         "`38.10.2` is now **MET** via",
         "docs/integration_migration_plan.md",
+        "### 38.14.11.c.b parity-gap measurement snapshot",
+        "Current measured status: `12` compared cases, `11` exact, `1` non-exact.",
+        "05_broken_lock_bug",
     ] {
         assert!(
             design_src.contains(required_fragment),
@@ -20530,6 +20540,35 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
             plan_src.contains(required_fragment),
             "DPOR migration plan {} must include 38.10.2 fragment `{}`",
             plan_path.display(),
+            required_fragment
+        );
+    }
+
+    let gap_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/exact_parity_gap_analysis_38_10_1.md",
+    );
+    let gap_src = std::fs::read_to_string(&gap_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR exact-parity gap note {}: {}",
+            gap_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "# Exact-Parity Gap Analysis for Phase 38.10.1 (38.14.11.c.b)",
+        "test_automated_baseline_vs_dpor_comparison",
+        "Compared cases: `12`",
+        "Exact matches: `11`",
+        "Non-exact cases: `1`",
+        "`05_broken_lock_bug`",
+        "dpor_superset_violation",
+        "38.14.11.c.b.b",
+        "38.14.11.c.b.c",
+    ] {
+        assert!(
+            gap_src.contains(required_fragment),
+            "DPOR parity-gap note {} must include 38.10.1 fragment `{}`",
+            gap_path.display(),
             required_fragment
         );
     }
