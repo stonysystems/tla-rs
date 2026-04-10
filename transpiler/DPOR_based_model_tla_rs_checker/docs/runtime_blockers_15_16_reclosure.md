@@ -192,6 +192,85 @@ Conclusion:
   domain expansion and (ii) satisfiable helper disjuncts that retain huge
   candidate spaces. `38.15.2.d` remains pending real deadlock closure.
 
+## 38.15.2.d preflight (restore-known-unimplemented removal) — blocked
+
+Goal: satisfy the precondition for `38.15.2.d` by producing one real,
+non-vacuous `deadlock_detected` case-15 row under bounded budget, then restore
+manifest/test expectations.
+
+Focused probes (`2026-04-10`) after `38.15.2.c`:
+
+1. Pinned constants (`chain_len=2`, `node_id=1`), `int=0..1`,
+   `max_seq_len=1`:
+   all runs complete as vacuous `ok` (`initial_states=0`, `distinct_states=0`)
+   because this constant profile requires `role=2` while `2` is outside
+   `int=0..1`.
+2. Same constants, `int=0..2`, `max_seq_len=1`:
+   non-vacuous precondition is reachable, but runs fail on a concrete bound
+   error while exploring:
+   `Failed to evaluate next-state assignment in branch 'branch_1' at s_.history:
+   Seq value length 2 exceeds configured max_seq_len 1.`
+3. Same constants, `int=0..2`, `max_seq_len=2`:
+   sequence-domain expansion still aborts before a deadlock verdict; observed
+   repeatedly at limits `500000`, `1000000`, `2000000`, and `5000000`.
+4. Alternate tail constants (`chain_len=3`, `node_id=2`, `int=0..3`,
+   `max_seq_len=1`) did not close either; probe hit
+   `Struct domain expansion for LRecord exceeded limit 300000`.
+
+Conclusion:
+
+- `38.15.2.d` precondition is not met yet; no reproducible non-vacuous
+  deadlock row exists in checked-in evidence.
+- Case 15 remains `known_unimplemented` for now. TODO decomposition now tracks
+  the next subleaves (`38.15.2.d.a/b/c`) required to restore it honestly.
+
+## 38.15.2.d.a.i bounded-assignment rejection step + 38.15.2.d.a.ii reruns
+
+Goal: reduce one blocking failure mode from `38.15.2.d` and re-check whether a
+real deadlock row becomes reproducible under valid 2-node constants.
+
+Implemented step (`38.15.2.d.a.i`, done 2026-04-10):
+
+- File: `transpiler/src/modelcheck/solver.rs`
+- Change: when evaluating a next-state assignment (`s_.field == ...`), bounded
+  collection overflow (`max_seq_len`, `max_set_len`, `max_map_len`) now rejects
+  that assignment as `ConstraintFailed` instead of aborting the entire run.
+- Unit coverage:
+  `test_solve_branch_successors_treats_assignment_collection_overflow_as_constraint_failure`.
+
+Post-fix focused sweep (`38.15.2.d.a.ii`, 2026-04-10):
+
+- Input: `tests/tla-rs/15_chain_replication_small/Chain.rs`
+- Shared bounds:
+  `max_seq_len=1`, `max_set_len=1`, `max_map_len=1`, `max_depth=2`
+- Constants/profile families:
+  valid 2-node constants (`chain_len=2`, `node_id in {0,1}`) and nearby
+  3-node tails (`chain_len=3`, `node_id in {0,2}`), matching role-feasible int
+  ranges.
+- Guardrails tested: `200000`, `300000`, `500000`
+- Wrapper: `timeout 30s`
+
+Observed outcomes:
+
+| constants + int profile | guardrail 200000 | guardrail 300000 | guardrail 500000 |
+|---|---|---|---|
+| `chain_len=2,node_id=1,int=0..2` | existential expansion limit | timeout (no JSON in 30s) | timeout (no JSON in 30s) |
+| `chain_len=2,node_id=0,int=0..1` | branch guardrail exceeded | branch guardrail exceeded | branch guardrail exceeded |
+| `chain_len=3,node_id=2,int=0..2` | existential expansion limit | timeout (no JSON in 30s) | timeout (no JSON in 30s) |
+| `chain_len=3,node_id=0,int=0..1` | branch guardrail exceeded | branch guardrail exceeded | branch guardrail exceeded |
+| `chain_len=3,node_id=1,int=0..3` | struct expansion limit (`LRecord`) | struct expansion limit (`LRecord`) | struct expansion limit (`LRecord`) |
+
+Additional long-wrapper probes for the most promising profile
+(`chain_len=2,node_id=1,int=0..2,guardrail=300000`) did not close either:
+`timeout 120s` and `timeout 180s` runs exited `124` with no JSON report.
+
+Conclusion:
+
+- The bounded-assignment rejection step removes one fatal failure class, but
+  case 15 still does not have a reproducible non-vacuous deadlock row under
+  valid 2-node constants and suite-feasible runtime.
+- `38.15.2.d.a` remains open and decomposed (`.ii/.iii` pending).
+
 ## Runtime note discovered during 38.15.2.a reruns (case 19)
 
 While re-running mandatory full suites for this phase, case

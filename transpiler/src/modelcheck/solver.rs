@@ -692,17 +692,25 @@ fn solve_one_assignment(
                     constants,
                     existential_assignment,
                 );
-                let evaluated =
-                    eval_with_environment(value, &env, bounds, hooks).map_err(|err| {
-                        TranspileError::Config {
+                let evaluated = match eval_with_environment(value, &env, bounds, hooks) {
+                    Ok(value) => value,
+                    Err(err) if is_collection_bound_overflow_error(&err) => {
+                        // Treat bounded-domain overflow while constructing one candidate
+                        // next-state assignment as a rejected assignment, not a run-fatal
+                        // configuration error.
+                        return Ok(AssignmentOutcome::ConstraintFailed);
+                    }
+                    Err(err) => {
+                        return Err(TranspileError::Config {
                             message: format!(
                                 "Failed to evaluate next-state assignment in branch `{}` at `s_.{}`: {}",
                                 branch.label,
                                 join_path(path),
                                 err
                             ),
-                        }
-                    })?;
+                        });
+                    }
+                };
 
                 if let Some(existing) = next_state_targets.get(path) {
                     if existing != &evaluated {
@@ -750,6 +758,17 @@ fn solve_one_assignment(
     }
 
     Ok(AssignmentOutcome::Successor(next_state))
+}
+
+fn is_collection_bound_overflow_error(err: &TranspileError) -> bool {
+    match err {
+        TranspileError::Config { message } => {
+            message.contains("Model-check Seq value length")
+                || message.contains("Model-check Set value size")
+                || message.contains("Model-check Map value size")
+        }
+        _ => false,
+    }
 }
 
 fn evaluate_constraint(
@@ -1204,6 +1223,17 @@ mod tests {
         .unwrap()
     }
 
+    fn history_state(values: Vec<i128>) -> RuntimeValue {
+        RuntimeValue::struct_value(
+            "LState",
+            vec![(
+                "history".to_string(),
+                RuntimeValue::Seq(values.into_iter().map(RuntimeValue::Int).collect()),
+            )],
+        )
+        .unwrap()
+    }
+
     fn constants(limit: i128) -> RuntimeValue {
         RuntimeValue::struct_value(
             "LConstants",
@@ -1321,6 +1351,44 @@ mod tests {
         assert_eq!(
             read_value_at_path(&successors[0], &[String::from("value")]).unwrap(),
             RuntimeValue::Int(1)
+        );
+    }
+
+    #[test]
+    fn test_solve_branch_successors_treats_assignment_collection_overflow_as_constraint_failure() {
+        let branch = TransitionBranchIr {
+            label: "branch_0".to_string(),
+            existential_vars: vec![],
+            constraints: vec![BranchConstraintIr::Eq {
+                target: ConstraintTarget {
+                    root: ConstraintRoot::NextState,
+                    path: vec!["history".to_string()],
+                },
+                value: Expr::SeqLit(vec![
+                    Expr::Literal(crate::ast::Literal::Int(0)),
+                    Expr::Literal(crate::ast::Literal::Int(1)),
+                ]),
+            }],
+        };
+
+        let overflow_bounds = RuntimeCollectionBounds {
+            max_seq_len: 1,
+            max_set_len: 4,
+            max_map_len: 4,
+        };
+        let successors = solve_branch_successors(
+            &transition(),
+            &branch,
+            &history_state(vec![0]),
+            None,
+            &[],
+            overflow_bounds,
+            SolverHooks::default(),
+        )
+        .unwrap();
+        assert!(
+            successors.is_empty(),
+            "overflowing assignment should reject this candidate instead of aborting the run"
         );
     }
 

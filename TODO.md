@@ -12744,6 +12744,46 @@ re-closed with explicit evidence.
     - [ ] **38.15.2.d**: Once deadlock closure is real, restore case-15
       manifest expectation from `known_unimplemented` to `deadlock` and sync
       focused protocol regression coverage (`src/dpor.rs`) plus suite evidence.
+      Preflight status (2026-04-10): still **BLOCKED** — focused closure probes
+      in `docs/runtime_blockers_15_16_reclosure.md` (`38.15.2.d preflight`)
+      did not produce a non-vacuous deadlock row. Current probe outcomes:
+      pinned `chain_len=2,node_id=1` with `int=0..1` stays vacuous
+      (`initial_states=0` due `role=2` unsatisfied in range), `int=0..2` with
+      `max_seq_len=1` fails on concrete next-state bound
+      (`s_.history` length 2 > `max_seq_len` 1), and `int=0..2` with
+      `max_seq_len=2` still hits sequence-domain expansion (observed through
+      limit 5,000,000). Keep case 15 as `known_unimplemented` until closure is
+      real; decomposed below.
+      - [ ] **38.15.2.d.a**: Produce one checked-in non-vacuous
+        `deadlock_detected` baseline row for case 15 (distinct states > 0)
+        under a reproducible model config and command line.
+        Scope/decomposition update (2026-04-10): closure is still blocked after
+        one bounded solver correction step and post-fix focused sweeps; keep
+        this leaf decomposed until a reproducible deadlock row is checked in.
+        - [x] **38.15.2.d.a.i**: Treat collection-bound overflow during
+          next-state assignment evaluation as per-assignment rejection
+          (`ConstraintFailed`) instead of run-fatal abort in
+          `transpiler/src/modelcheck/solver.rs`; add focused unit coverage.
+          **Done 2026-04-10**:
+          `test_solve_branch_successors_treats_assignment_collection_overflow_as_constraint_failure`.
+        - [ ] **38.15.2.d.a.ii**: Re-run focused case-15 sweeps on the patched
+          solver using valid 2-node constants to find one reproducible
+          deadlock row under suite-feasible budget.
+          Post-fix sweep snapshot (`docs/runtime_blockers_15_16_reclosure.md`,
+          `38.15.2.d.a.ii`): with `max_seq_len=1`, `max_set_len=1`,
+          `max_map_len=1`, depth 2, and guardrails `200000/300000/500000`,
+          valid 2-node profiles still failed by
+          existential/guardrail limits or timed out in focused wrappers; no
+          reproducible deadlock row yet.
+        - [ ] **38.15.2.d.a.iii**: Once 38.15.2.d.a.ii finds a stable row,
+          check in the selected case-15 model config and evidence command lines
+          (including runtime/distinct-state numbers) in
+          `docs/runtime_blockers_15_16_reclosure.md`.
+      - [ ] **38.15.2.d.b**: Once 38.15.2.d.a is met, restore case-15 manifest
+        expectation to `deadlock` and remove temporary known-unimplemented note.
+      - [ ] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression in
+        `src/dpor.rs` (remove temporary ignore reason) and verify focused/full
+        suite behavior remains green.
   - [ ] **38.15.3**: Case 16 closure leaf — tune runtime/model bounds for
     `16_primarybackup_small` so bounded baseline completes with a real `ok`
     invariant-checked outcome under full-suite budget, then remove temporary
