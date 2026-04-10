@@ -20459,8 +20459,11 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "**38.14.11.a**",
         "[x] **38.14.11.a**",
         "**38.14.11.b**",
+        "[x] **38.14.11.b**",
         "**38.14.11.c**",
         "38.14.10 is now closed (`3/3` transition-gate hits)",
+        "38.14.11.b status (2026-04-10): `NOT MET` overall (5/6 preconditions met).",
+        "38.14.11.b status (2026-04-10): `NOT MET` (no explicit migration-plan",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -20485,6 +20488,10 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "3 / 3",
         "Parity subset is exact under DPOR",
         "NOT MET",
+        "### Explicit integration-gate decision (38.14.11.b)",
+        "**Decision: NOT MET**.",
+        "`38.10.1` remains open: the matrix is `5/6` MET",
+        "`38.10.2` remains open: no explicit migration-plan artifact is checked in",
     ] {
         assert!(
             design_src.contains(required_fragment),

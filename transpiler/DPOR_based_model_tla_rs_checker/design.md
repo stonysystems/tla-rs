@@ -595,12 +595,23 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 
 | 38.10.1 precondition | Current evidence (2026-04-10) | Status |
 |---|---|---|
-| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T03:35:45Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
+| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T04:09:57Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
 | `design.md` has pinned reference notes | Upstream-reference and concept-selection sections remain populated with pinned commits and mapping notes. | MET |
 | Baseline oracle exists | Baseline runner and baseline-vs-DPOR comparison path are present (`src/baseline.rs`, `dpor.rs` comparison harness). | MET |
 | Full-suite harness exists | `scripts/run_full_suite.sh` is checked in and used as the authoritative suite gate. | MET |
 | Parity subset is exact under DPOR | Current enforced safety contract is subset parity (`conservative ⊆ independence`, `conservative ⊆ sleep`), not exact-set parity; automated comparison still allows subset/superset statuses. | NOT MET |
 | Required hard protocol gates are no longer hand-waved | Protocol cases are non-vacuous in suite scoring (`20 real / 0 vacuous`) with audited reports synced. | MET |
+
+### Explicit integration-gate decision (38.14.11.b)
+
+- **Decision: NOT MET**.
+- `38.10.1` remains open: the matrix is `5/6` MET and the unmet row is
+  "Parity subset is exact under DPOR".
+- `38.10.2` remains open: no explicit migration-plan artifact is checked in
+  yet (module move map, shadow-mode comparison plan, rollback plan, and
+  report-schema compatibility plan).
+- Therefore the prototype remains an incubator and does not yet clear the
+  Phase 38.10 gate for mainline integration.
 
 ### Post-38.14.10 optimization evidence snapshot
 
