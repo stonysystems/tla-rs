@@ -12444,6 +12444,20 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         longer a hard gate after `i.b`, so no weaker parity contract is
         introduced. Keep conservative subset parity
         (`conservative ⊆ independence`, `conservative ⊆ sleep`) unchanged.
+      - [x] **38.14.10.d.b.c.j**: Probe broader child-sleep sibling seeding
+        (all enabled alternatives, not only ordered-before) and keep it only if
+        conservative subset parity remains intact on the baseline-passing
+        corpus.
+        **Done 2026-04-10**: Tried all-enabled sibling seeding and observed
+        parity regression on `09_peterson_mutex_2p` (`sleep` dropped from
+        `10` to `7` distinct states), so the change was rejected and reverted.
+        Added focused guardrail
+        `test_sleep_set_parity_peterson_mutex_no_lost_states` to prevent
+        reintroducing this unsafe behavior.
+      - [ ] **38.14.10.d.b.c.k**: Identify parity-safe transition-reduction
+        opportunities from measured blocker telemetry (same-process/footprint
+        conflict-heavy cases), then implement one small conservative step and
+        re-run the reduction harness.
     - [x] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.

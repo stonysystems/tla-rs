@@ -1422,6 +1422,56 @@ max_seq_len = 4
     }
 
     #[test]
+    fn test_sleep_set_parity_peterson_mutex_no_lost_states() {
+        // Focused guardrail for case 09: this case has shown real transition
+        // reduction while preserving state parity, and also catches
+        // over-aggressive sibling-seeding changes that can lose states.
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/09_peterson_mutex_2p/PetersonMutex.rs");
+        if !spec_file.exists() {
+            return;
+        }
+        let model_path = case_model_config("09_peterson_mutex_2p");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        let conservative = explore_dpor(
+            &ctx,
+            &DporConfig {
+                max_depth: 20,
+                max_states: 10_000,
+                use_independence: false,
+                use_sleep_sets: false,
+                invariants: vec![],
+                check_deadlock: false,
+            },
+        );
+        let sleep = explore_dpor(
+            &ctx,
+            &DporConfig {
+                max_depth: 20,
+                max_states: 10_000,
+                use_independence: true,
+                use_sleep_sets: true,
+                invariants: vec![],
+                check_deadlock: false,
+            },
+        );
+
+        assert!(
+            conservative.distinct_states.is_subset(&sleep.distinct_states),
+            "sleep mode must not lose conservative states on Peterson"
+        );
+        assert_eq!(
+            conservative.distinct_states.len(),
+            sleep.distinct_states.len(),
+            "Peterson should preserve exact distinct-state count under sleep mode"
+        );
+    }
+
+    #[test]
     #[ignore = "evidence-generation harness for sleep-set reduction report"]
     fn print_sleep_set_reduction_multi_process_markdown() {
         // Evidence harness for Phase 38.14.10.d: prints a markdown table for

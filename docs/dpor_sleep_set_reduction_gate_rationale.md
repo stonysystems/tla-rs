@@ -66,3 +66,19 @@ Decision: do **not** weaken subset parity.
 - Distinct-state reduction is not a hard gate anymore.
 - Keep `conservative ⊆ independence` and `conservative ⊆ sleep` as-is.
 - Do not introduce a weaker projection-level parity contract at this stage.
+
+## Rejected experiment (`38.14.10.d.b.c.j`)
+
+Tried broadening child-sleep seeding to all enabled sibling alternatives
+(instead of only deterministic ordered-before candidates).
+
+Result on 2026-04-10:
+
+- Broke parity on `09_peterson_mutex_2p`: sleep-mode distinct states dropped
+  from `10` to `7` (lost conservative states).
+
+Decision:
+
+- Reject and revert this widening under the current conservative parity model.
+- Keep the focused guardrail test
+  `test_sleep_set_parity_peterson_mutex_no_lost_states`.
