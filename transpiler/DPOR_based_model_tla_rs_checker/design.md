@@ -627,8 +627,8 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
   - full-suite evidence remains green (`20 real / 0 vacuous / 0 failed`,
     `2026-04-10T05:34:44Z`).
 - `38.10.3` staged-discipline leaves are now closed (`38.10.3.a`,
-  `38.10.3.b`); remaining work is deliberate `38.10` migration execution, not
-  parity.
+  `38.10.3.b`); remaining work is deliberate `38.10` migration execution
+  (`38.10.4.*`), not parity.
 
 ### 38.10.3.a commit-scope guardrail (2026-04-10)
 
@@ -644,8 +644,8 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
     `PHASE38_ALLOW_MIXED_COMMIT=1` plus non-empty
     `PHASE38_MIXED_COMMIT_JUSTIFICATION`.
   - successful explicit override emits `phase38-scope: mixed scope override accepted`.
-- This closes `38.10.3.a` without authorizing early migration; `38.10.3.b`
-  remains open.
+- `38.10.3.a` and `38.10.3.b` are now both closed; this guard remains part of
+  the mandatory migration-execution discipline.
 
 ### 38.10.3.b separate-justification guardrail (2026-04-10)
 
@@ -662,6 +662,25 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 - This closes `38.10.3.b` and therefore closes the staged-discipline leaf set
   under `38.10.3`.
 
+### 38.10.4.a shadow-mode CLI execution primitive (2026-04-10)
+
+- Replaced the placeholder DPOR CLI with a minimal
+  `dpor-checker shadow-compare` command in `src/main.rs`.
+- Command contract:
+  - takes the same `{spec, model}` fixture inputs for both engines;
+  - runs baseline (`verus-transpile model-check`) and DPOR (`explore_dpor`)
+    on that shared input;
+  - emits JSON containing classification plus verdict/state/witness parity
+    metadata for migration evidence consumers.
+- Initial classification values include:
+  - `positive_exact`, `positive_state_mismatch`,
+  - `negative_witness_match`, `negative_witness_mismatch`,
+  - `verdict_mismatch`.
+- Coverage includes parser/unit tests and smoke execution on APlusB:
+  `test_run_shadow_compare_aplusb_smoke`.
+- Follow-on migration work is to scale this command into a checked-in subset
+  report workflow (`38.10.4.b`) plus schema drift guard (`38.10.4.c`).
+
 ### Post-38.14.10 optimization evidence snapshot
 
 - Sleep-set reduction gate (Phase 38.14.10) is now closed:
@@ -674,7 +693,7 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 ### Remaining blockers for 38.10 gate re-evaluation
 
 - No parity blocker remains for `38.10.1` after `38.14.11.c.c`; follow-on work
-  is deliberate `38.10` migration execution.
+  is deliberate `38.10` migration execution (`38.10.4.b`, `38.10.4.c`).
 
 ### 38.14.11.c.b parity-gap measurement snapshot
 

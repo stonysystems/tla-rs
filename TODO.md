@@ -11,7 +11,7 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Current Status (last updated 2026-04-10)
 
-**Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-10).** The 2026-04-01 "Milestone M9: 20/20 ALL GREEN" claim was audited/retracted and then repaired through 38.14.7-38.14.9. The full-suite source of truth is now `./scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T05:34:44Z` (`20 real / 0 vacuous / 0 failed`). Bug A and Bug B are closed for the suite-score path, `stub_status` annotations are retired from `tests/manifest.toml`, and reports were resynced. DPOR reduction gate 38.14.10 is now closed (`3/3` transition-gate hits); 38.14.11 gate re-evaluation is complete, `38.10.3` staged-discipline leaves are complete, and remaining DPOR work is deliberate `38.10` migration execution.
+**Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-10).** The 2026-04-01 "Milestone M9: 20/20 ALL GREEN" claim was audited/retracted and then repaired through 38.14.7-38.14.9. The full-suite source of truth is now `./scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T05:34:44Z` (`20 real / 0 vacuous / 0 failed`). Bug A and Bug B are closed for the suite-score path, `stub_status` annotations are retired from `tests/manifest.toml`, and reports were resynced. DPOR reduction gate 38.14.10 is now closed (`3/3` transition-gate hits); 38.14.11 gate re-evaluation is complete, `38.10.3` staged-discipline leaves are complete, and remaining DPOR work is deliberate `38.10` migration execution (active leaf `38.10.4.b`).
 
 Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. The top-priority implementation track is now Phase 38 (the separate DPOR-based checker prototype), followed by Phase 36 (exact-state parity and performance debugging) and then Phase 37 (CI/CD recovery). The remaining proof-heavy work is still concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
 The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. Phase 38 is a greenfield prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
@@ -56,10 +56,10 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
-- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete; remaining DPOR work is deliberate `38.10` migration execution. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
+- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, and `38.10.4.a` shadow-mode CLI wiring is now in place; remaining DPOR work is deliberate `38.10` migration execution (`38.10.4.b` and `38.10.4.c`). Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
 **Next steps (priority order):**
-1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — with 38.14.10 closed (`3/3` transition/work gate), 38.14.11 integration-gate re-evaluation completed, and `38.10.3.a`/`38.10.3.b` landed, execute deliberate `38.10` migration work next under the documented shadow-mode and rollback discipline. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
+1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — with 38.14.10 closed (`3/3` transition/work gate), 38.14.11 integration-gate re-evaluation completed, and `38.10.3.a`/`38.10.3.b` landed, execute deliberate `38.10` migration work next under the documented shadow-mode and rollback discipline. Current next leaf is `38.10.4.b`. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 2. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models and fix the source-first performance pathologies exposed by the benchmark comparison. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 3. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks, and keep the evidence/benchmark guards aligned with any schema or artifact changes from Phase 36. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
 4. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
@@ -11922,6 +11922,24 @@ stub detector clean and the run script reporting 0 vacuous passes.
     fails with an explicit `38.10.3.b` error. This enforces "separate commit +
     explicit reason" for prototype-era mainline bug fixes. Coverage includes
     `test_phase_38_10_3_b_mainline_fix_justification_guard_behavior`.
+- [ ] **38.10.4**: Deliberate migration execution track (post-gate) — run
+  shadow-mode baseline-vs-DPOR comparisons through stable, reviewable command
+  surfaces before any production cutover.
+  - [x] **38.10.4.a**: Implement a minimal `dpor-checker shadow-compare` CLI
+    command that runs baseline and DPOR on the same `{spec, model}` input and
+    emits a machine-readable JSON summary (`classification`, verdict parity,
+    state/witness parity metadata) for migration evidence.
+    **Done 2026-04-10**: Replaced the placeholder DPOR CLI with
+    `shadow-compare` support in
+    `transpiler/DPOR_based_model_tla_rs_checker/src/main.rs` and added smoke
+    coverage (`test_run_shadow_compare_aplusb_smoke`) plus repository-level
+    contract coverage
+    (`test_phase_38_10_4_a_shadow_compare_cli_contract`).
+  - [ ] **38.10.4.b**: Add a checked-in script that runs `shadow-compare` over
+    the declared parity subset and writes a reproducible report artifact under
+    `tests/reports/` for migration reviews.
+  - [ ] **38.10.4.c**: Add a drift guard that verifies the shadow-mode report
+    schema/fields consumed by migration docs/tests remain stable.
 
 ### 38.11 Acceptance criteria
 
@@ -12606,11 +12624,12 @@ to do for DPOR"**, this is the canonical answer:
 
 | Priority | Task | What it unblocks |
 |---|---|---|
-| **1** | 38.10 — Mainline integration once discipline + migration execution are complete | DPOR replaces or augments `transpiler/src/modelcheck` |
-| **2** | 38.11 acceptance criteria closure | Keeps prototype claims honest while migration proceeds |
+| **1** | 38.10.4.b — Shadow-mode subset report script | Makes migration evidence reproducible and reviewable |
+| **2** | 38.10.4.c — Shadow-mode report-schema drift guard | Keeps migration evidence consumers stable |
+| **3** | 38.11 acceptance criteria closure | Keeps prototype claims honest while migration proceeds |
 
 Bug A is now closed. Bug B's protocol-suite closure path (14/15/16/19) is now
 also closed for honest baseline execution. `38.14.10` is now closed after
 meeting the transition/work gate (`3/3`), and `38.14.11` integration-gate
-re-evaluation is complete; `38.10` migration execution is now the top active
-DPOR engineering track.
+re-evaluation is complete; `38.10.4.b` is now the top active DPOR engineering
+leaf task.

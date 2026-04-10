@@ -32,6 +32,16 @@ Run all 20 test cases (baseline exhaustive + DPOR when available):
 ./scripts/run_full_suite.sh
 ```
 
+Run one shadow-mode baseline-vs-DPOR comparison on the same fixture:
+
+```bash
+cargo run --manifest-path Cargo.toml --bin dpor-checker -- \
+  shadow-compare \
+  --spec tests/tla-rs/01_aplusb/APlusB.rs \
+  --model /tmp/model.toml \
+  --invariant LSumInvariant
+```
+
 ## Design references
 
 See `design.md` for structured notes on:

@@ -142,3 +142,27 @@ transpiler/DPOR_based_model_tla_rs_checker/scripts/check_phase38_commit_scope.sh
 This guard does not replace review; it enforces that mixed-scope commits and
 prototype-era mainline fixes are explicit, justified exceptions rather than
 implicit side effects.
+
+## 8. Migration execution leaves (`38.10.4`)
+
+`38.10.4.a` is now implemented: the prototype CLI supports a minimal
+shadow-mode primitive:
+
+```bash
+cargo run --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml --bin dpor-checker -- \
+  shadow-compare \
+  --spec transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/01_aplusb/APlusB.rs \
+  --model /tmp/model.toml \
+  --invariant LSumInvariant
+```
+
+Current behavior:
+
+- runs baseline and DPOR on the same fixture,
+- emits JSON classification (`positive_exact`, `negative_witness_match`, etc.),
+- surfaces verdict/state/witness-depth parity metadata for review.
+
+Remaining execution leaves:
+
+- `38.10.4.b`: script the parity-subset shadow run into a checked-in report.
+- `38.10.4.c`: add report-schema drift guard for shadow-mode consumers.

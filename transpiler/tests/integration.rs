@@ -20941,3 +20941,201 @@ fn test_phase_38_10_3_b_mainline_fix_justification_guard_behavior() {
         output_text(&prototype_only)
     );
 }
+
+#[test]
+fn test_phase_38_10_4_a_shadow_compare_cli_contract() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "[x] **38.10.4.a**",
+        "dpor-checker shadow-compare",
+        "test_phase_38_10_4_a_shadow_compare_cli_contract",
+        "[ ] **38.10.4.b**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.10.4.a shadow-mode fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let design_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/design.md");
+    let design_src = std::fs::read_to_string(&design_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR design note {}: {}",
+            design_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "### 38.10.4.a shadow-mode CLI execution primitive (2026-04-10)",
+        "dpor-checker shadow-compare",
+        "positive_exact",
+        "38.10.4.b",
+        "38.10.4.c",
+    ] {
+        assert!(
+            design_src.contains(required_fragment),
+            "DPOR design note {} must include 38.10.4.a fragment `{}`",
+            design_path.display(),
+            required_fragment
+        );
+    }
+
+    let plan_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
+    );
+    let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR integration migration plan {}: {}",
+            plan_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## 8. Migration execution leaves (`38.10.4`)",
+        "shadow-compare",
+        "runs baseline and DPOR on the same fixture",
+        "38.10.4.b",
+        "38.10.4.c",
+    ] {
+        assert!(
+            plan_src.contains(required_fragment),
+            "DPOR migration plan {} must include 38.10.4 fragment `{}`",
+            plan_path.display(),
+            required_fragment
+        );
+    }
+
+    let dpor_manifest =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml");
+    let spec_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/01_aplusb/APlusB.rs");
+    assert!(
+        spec_path.exists(),
+        "expected APlusB shadow-compare fixture at {}",
+        spec_path.display()
+    );
+
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let model_path = tmp.path().join("shadow_compare.model.toml");
+    std::fs::write(
+        &model_path,
+        r#"[search]
+max_depth = 30
+max_states = 10000
+timeout_ms = 30000
+
+[properties]
+invariants = []
+check_deadlock = false
+successor_semantics = "deadlock"
+
+[quantifiers]
+int = { min = 0, max = 5 }
+max_set_len = 4
+max_seq_len = 4
+"#,
+    )
+    .unwrap_or_else(|err| {
+        panic!(
+            "failed to write shadow-compare model {}: {}",
+            model_path.display(),
+            err
+        )
+    });
+
+    let output = std::process::Command::new("cargo")
+        .args([
+            "run",
+            "--quiet",
+            "--manifest-path",
+            dpor_manifest.to_str().expect("manifest utf-8 path"),
+            "--bin",
+            "dpor-checker",
+            "--",
+            "shadow-compare",
+            "--spec",
+            spec_path.to_str().expect("spec utf-8 path"),
+            "--model",
+            model_path.to_str().expect("model utf-8 path"),
+            "--invariant",
+            "LSumInvariant",
+            "--max-depth",
+            "30",
+            "--max-states",
+            "10000",
+            "--timeout-sec",
+            "30",
+        ])
+        .current_dir(&repo_root)
+        .output()
+        .expect("failed to run dpor-checker shadow-compare");
+    assert!(
+        output.status.success(),
+        "shadow-compare command failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
+        panic!(
+            "failed to parse shadow-compare JSON report:\nstdout:\n{}\nstderr:\n{}\nerror: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+            err
+        )
+    });
+
+    assert_eq!(
+        report
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>"),
+        "shadow-compare",
+        "shadow-compare report must record command identity"
+    );
+
+    let classification = report
+        .get("classification")
+        .and_then(|v| v.as_str())
+        .unwrap_or("<missing>");
+    assert_ne!(
+        classification, "verdict_mismatch",
+        "APlusB shadow-compare should not produce verdict_mismatch; report={}",
+        report
+    );
+
+    let verdict_match = report
+        .get("verdict_match")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(
+        verdict_match,
+        "APlusB shadow-compare should report verdict_match=true; report={}",
+        report
+    );
+
+    assert_eq!(
+        report
+            .pointer("/baseline/verdict")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>"),
+        "ok",
+        "APlusB baseline verdict should be ok; report={}",
+        report
+    );
+    assert_eq!(
+        report
+            .pointer("/dpor/verdict")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>"),
+        "ok",
+        "APlusB DPOR verdict should be ok; report={}",
+        report
+    );
+}
