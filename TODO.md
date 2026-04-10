@@ -12711,9 +12711,18 @@ re-closed with explicit evidence.
       `20000000` avoid immediate guardrail but hit timeout-window exits
       (`timeout 300s`, no JSON report). Conclusion: case-15 closure needs more
       than scalar guardrail increases.
-    - [ ] **38.15.2.b**: Probe case-15 low-domain bounded configs that remain
+    - [x] **38.15.2.b**: Probe case-15 low-domain bounded configs that remain
       non-vacuous (distinct states > 0) and can still reach deadlock under
       full-suite budget; if found, check in the minimal feasible config.
+      **Done 2026-04-10**: Exhaustive low-domain probe evidence is recorded in
+      `docs/runtime_blockers_15_16_reclosure.md` (`38.15.2.b`): accepted
+      `int=0` profiles are vacuous (`initial_states=0`, `distinct_states=0`),
+      while the minimal non-vacuous profile (`int=0..1`, `max_seq_len=1`,
+      `max_map_len=1`) still hits candidate-enumeration guardrails across
+      `max_depth` 8/12/16/20 at guardrail values `300000..2000000`; at
+      guardrail `10000000` it shifts to timeout exits (`timeout 120s`, no
+      JSON). No low-domain real deadlock row was found, so no new case-15
+      model config is checked in here; proceed to `38.15.2.c`.
     - [ ] **38.15.2.c**: If 38.15.2.b fails to produce a real deadlock row,
       implement one targeted candidate-enumeration reduction step (<500 LOC)
       for case-15 helper-heavy branches, then remeasure with focused regressions.

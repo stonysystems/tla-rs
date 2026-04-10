@@ -22051,3 +22051,56 @@ fn test_phase_38_15_2_a_case15_guardrail_timeout_sweep_evidence_is_recorded() {
         );
     }
 }
+
+#[test]
+fn test_phase_38_15_2_b_case15_low_domain_probe_evidence_is_recorded() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "- [x] **38.15.2.b**: Probe case-15 low-domain bounded configs",
+        "`int=0` profiles are vacuous (`initial_states=0`, `distinct_states=0`)",
+        "guardrail values `300000..2000000`",
+        "guardrail `10000000` it shifts to timeout exits",
+        "No low-domain real deadlock row was found",
+        "proceed to `38.15.2.c`",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.15.2.b evidence fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let evidence_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read blocker evidence doc {}: {}",
+            evidence_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## 38.15.2.b low-domain bounded-config probe (case 15)",
+        "Goal: find a smaller case-15 model domain that is still non-vacuous",
+        "| int domain | max_seq_len | max_map_len | outcome |",
+        "| `0..0` | `1` | `1` | completes `result=ok`, but vacuous (`initial_states=0`, `distinct_states=0`) |",
+        "| `0..1` | `1` | `1` | guardrail abort (`Model-check candidate-enumeration guardrail exceeded`) |",
+        "all 20 runs aborted with",
+        "guardrail `10000000` with `max_depth` 8 and 20",
+        "both runs exited `124` with zero-byte output files and no JSON report.",
+        "next leaf",
+        "`38.15.2.c`",
+    ] {
+        assert!(
+            evidence_src.contains(required_fragment),
+            "blocker evidence doc {} must include 38.15.2.b fragment `{}`",
+            evidence_path.display(),
+            required_fragment
+        );
+    }
+}

@@ -109,6 +109,48 @@ Conclusion:
   domain profile (`38.15.2.b`) or reduce candidate-explosion behavior in code
   (`38.15.2.c`).
 
+## 38.15.2.b low-domain bounded-config probe (case 15)
+
+Goal: find a smaller case-15 model domain that is still non-vacuous
+(`distinct_states > 0`) and reaches a real deadlock verdict under suite budget.
+
+Probe A (`2026-04-10`): low-domain structural sweep around the checked-in model
+shape with `candidate_eval_guardrail = 200000`, wrapper `timeout 75s`,
+`timeout_ms = 60000`, and fixed `max_set_len = 1`.
+
+| int domain | max_seq_len | max_map_len | outcome |
+|---|---:|---:|---|
+| `0..0` | `1` | `1` | completes `result=ok`, but vacuous (`initial_states=0`, `distinct_states=0`) |
+| `0..0` | `2` | `1` | completes `result=ok`, but vacuous (`initial_states=0`, `distinct_states=0`) |
+| `0..1` | `1` | `1` | guardrail abort (`Model-check candidate-enumeration guardrail exceeded`) |
+| `0..1` | `2` | `1` | guardrail abort (`Sequence domain expansion exceeded limit 200000`) |
+| any | `0` or `max_map_len=0` | any | rejected by config validation (`collection bounds must be > 0`) |
+
+Probe B (`2026-04-10`): focus on the minimal non-vacuous candidate profile
+(`int=0..1`, `max_seq_len=1`, `max_map_len=1`, `max_set_len=1`) across
+`max_depth` `{8, 12, 16, 20}` and guardrails
+`{300000, 500000, 800000, 1200000, 2000000}` with wrapper `timeout 120s`.
+
+Observed result:
+
+- all 20 runs aborted with
+  `Configuration error: Model-check candidate-enumeration guardrail exceeded`.
+- no run emitted a JSON report; no deadlock row was produced.
+
+Probe C (`2026-04-10`): same minimal non-vacuous profile at elevated
+guardrail `10000000` with `max_depth` 8 and 20 (wrapper `timeout 120s`).
+
+Observed result:
+
+- both runs exited `124` with zero-byte output files and no JSON report.
+
+Conclusion:
+
+- Low-domain tuning did not find a non-vacuous bounded config that reaches a
+  real deadlock verdict for case 15.
+- `38.15.2.b` closes with "no feasible low-domain config found"; the next leaf
+  is `38.15.2.c` (targeted candidate-enumeration reduction step in code).
+
 ## Runtime note discovered during 38.15.2.a reruns (case 19)
 
 While re-running mandatory full suites for this phase, case
