@@ -115,13 +115,16 @@ Evidence snapshot motivating the decision:
 - Remeasurement now reports `0` parity failures on the declared subset under
   the chosen witness-first policy.
 
-## Remaining follow-up leaf
+## 38.14.11.c.c decision sync
 
-- `38.14.11.c.c`: sync the explicit 38.10.1 gate decision based on this
-  updated evidence.
+`38.14.11.c.c` is now complete:
+
+- synced TODO/design gate status from `38.10.1 NOT MET (5/6)` to
+  `38.10.1 MET (6/6)` based on the measured witness-first parity evidence;
+- recorded the explicit c.c re-evaluation outcome alongside the historical
+  38.14.11.b `NOT MET` decision for auditability.
 
 ## Exit criterion for this blocker track
 
-`38.10.1` exact-parity precondition can move toward `MET` only when the
-declared comparison subset no longer reports non-exact rows under the chosen,
-explicit parity policy.
+`38.10.1` exact-parity precondition is now `MET` under the chosen policy
+because the declared comparison subset reports `0` parity failures.

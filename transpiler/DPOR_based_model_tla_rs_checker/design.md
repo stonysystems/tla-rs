@@ -595,11 +595,11 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 
 | 38.10.1 precondition | Current evidence (2026-04-10) | Status |
 |---|---|---|
-| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T04:47:49Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
+| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T05:34:44Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
 | `design.md` has pinned reference notes | Upstream-reference and concept-selection sections remain populated with pinned commits and mapping notes. | MET |
 | Baseline oracle exists | Baseline runner and baseline-vs-DPOR comparison path are present (`src/baseline.rs`, `dpor.rs` comparison harness). | MET |
 | Full-suite harness exists | `scripts/run_full_suite.sh` is checked in and used as the authoritative suite gate. | MET |
-| Parity subset is exact under DPOR | `38.14.11.c.b.c` landed witness-first negative-case parity in `compare_baseline_vs_dpor`; latest comparison result is `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures`. | NOT MET (decision sync pending 38.14.11.c.c) |
+| Parity subset is exact under DPOR | `38.14.11.c.b.c` landed witness-first negative-case parity in `compare_baseline_vs_dpor`; latest comparison result is `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures`. | MET (policy-backed exact parity) |
 | Required hard protocol gates are no longer hand-waved | Protocol cases are non-vacuous in suite scoring (`20 real / 0 vacuous`) with audited reports synced. | MET |
 
 ### Explicit integration-gate decision (38.14.11.b)
@@ -613,6 +613,22 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 - Therefore the prototype remains an incubator and does not yet clear the
   Phase 38.10 gate for mainline integration.
 
+### Integration-gate decision update (38.14.11.c.c)
+
+- **Updated decision: 38.10.1 moves to MET (`6/6`) under the explicit
+  witness-first negative-case parity policy.**
+- `38.10.2` remains **MET** via
+  `docs/integration_migration_plan.md`.
+- Re-evaluation evidence:
+  - automated subset comparison now reports
+    `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures`;
+  - no verdict-class or witness-signature mismatches are reported on the
+    declared subset;
+  - full-suite evidence remains green (`20 real / 0 vacuous / 0 failed`,
+    `2026-04-10T05:34:44Z`).
+- `38.10.3` stays open as staged-integration discipline for future migration
+  execution, not as a parity blocker.
+
 ### Post-38.14.10 optimization evidence snapshot
 
 - Sleep-set reduction gate (Phase 38.14.10) is now closed:
@@ -624,9 +640,8 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 
 ### Remaining blockers for 38.10 gate re-evaluation
 
-- `38.14.11.c.b.c` now provides explicit witness-first parity enforcement and
-  zero parity failures on the declared subset; the remaining step is to sync
-  the explicit 38.10.1 gate decision in `38.14.11.c.c`.
+- No parity blocker remains for `38.10.1` after `38.14.11.c.c`; follow-on work
+  is staged integration discipline (`38.10.3`) and migration execution.
 
 ### 38.14.11.c.b parity-gap measurement snapshot
 
