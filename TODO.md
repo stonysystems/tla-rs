@@ -12670,10 +12670,12 @@ to do for DPOR"**, this is the canonical answer:
 Bug A remains closed, but the regenerated `tests/tla-rs/` corpus replay on
 `2026-04-10` re-opened runtime feasibility blockers on case 15
 (`15_chain_replication_small`: candidate-enumeration guardrail abort) and case
-16 (`16_primarybackup_small`: full-suite timeout-window checker_error). These
-two cases are temporarily reclassified as `known_unimplemented` in
-`tests/manifest.toml` pending follow-up runtime/bounds closure. `38.14.10`
-remains closed after meeting the transition/work gate (`3/3`), and
+16 (`16_primarybackup_small`: full-suite timeout-window checker_error). Case 16
+remains temporarily reclassified as `known_unimplemented` in
+`tests/manifest.toml` pending follow-up runtime/bounds closure. Case 15 was
+temporarily reclassified during preflight, then restored to `deadlock` in
+`38.15.2.d.b` after non-vacuous closure evidence from `38.15.2.d.a`.
+`38.14.10` remains closed after meeting the transition/work gate (`3/3`), and
 `38.14.11` integration-gate re-evaluation remains complete.
 During `38.15.2.a` reruns on `2026-04-10`, case 19 also exhibited sustained
 timeout-window instability in this environment (full-suite timeout-wrapper
@@ -12744,16 +12746,17 @@ re-closed with explicit evidence.
     - [ ] **38.15.2.d**: Once deadlock closure is real, restore case-15
       manifest expectation from `known_unimplemented` to `deadlock` and sync
       focused protocol regression coverage (`src/dpor.rs`) plus suite evidence.
-      Preflight status (2026-04-10): still **BLOCKED** — focused closure probes
-      in `docs/runtime_blockers_15_16_reclosure.md` (`38.15.2.d preflight`)
-      did not produce a non-vacuous deadlock row. Current probe outcomes:
+      Preflight status snapshot (2026-04-10, before `38.15.2.d.a`):
+      **BLOCKED** — focused closure probes in
+      `docs/runtime_blockers_15_16_reclosure.md` (`38.15.2.d preflight`)
+      did not produce a non-vacuous deadlock row. Probe outcomes:
       pinned `chain_len=2,node_id=1` with `int=0..1` stays vacuous
       (`initial_states=0` due `role=2` unsatisfied in range), `int=0..2` with
       `max_seq_len=1` fails on concrete next-state bound
       (`s_.history` length 2 > `max_seq_len` 1), and `int=0..2` with
       `max_seq_len=2` still hits sequence-domain expansion (observed through
-      limit 5,000,000). Keep case 15 as `known_unimplemented` until closure is
-      real; decomposed below.
+      limit 5,000,000). Current status update (2026-04-10 later):
+      `38.15.2.d.a` and `38.15.2.d.b` are complete; `38.15.2.d.c` remains.
       - [x] **38.15.2.d.a**: Produce one checked-in non-vacuous
         `deadlock_detected` baseline row for case 15 (distinct states > 0)
         under a reproducible model config and command line.
@@ -12782,8 +12785,15 @@ re-closed with explicit evidence.
           **Done 2026-04-10**: selected closure config is checked in at
           `tests/model_configs/15_chain_replication_small.toml` with matching
           evidence and command lines documented.
-      - [ ] **38.15.2.d.b**: Once 38.15.2.d.a is met, restore case-15 manifest
+      - [x] **38.15.2.d.b**: Once 38.15.2.d.a is met, restore case-15 manifest
         expectation to `deadlock` and remove temporary known-unimplemented note.
+        **Done 2026-04-10**: `tests/manifest.toml` case 15 now uses
+        `expected_primary_result = "deadlock"` with the temporary
+        known-unimplemented note removed; full-suite run executes case 15 as a
+        real deadlock check instead of skip-as-known-unimplemented. Evidence:
+        `scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T15:37:34Z`
+        reports `[15_chain_replication_small] PASS (deadlock found, 148982ms)`
+        with `Known unimplemented: 2` (cases 16 and 19).
       - [ ] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression in
         `src/dpor.rs` (remove temporary ignore reason) and verify focused/full
         suite behavior remains green.

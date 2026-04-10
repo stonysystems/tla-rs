@@ -21963,8 +21963,9 @@ fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
     for required_fragment in [
         "id = \"15_chain_replication_small\"",
         "id = \"16_primarybackup_small\"",
+        "expected_primary_result = \"deadlock\"",
         "expected_primary_result = \"known_unimplemented\"",
-        "candidate-enumeration guardrails",
+        "Restored from temporary known_unimplemented status (2026-04-10)",
         "full-suite timeout budget",
     ] {
         assert!(
@@ -22168,13 +22169,15 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     for required_fragment in [
         "- [ ] **38.15.2.d**: Once deadlock closure is real, restore case-15",
-        "Preflight status (2026-04-10): still **BLOCKED**",
+        "Preflight status snapshot (2026-04-10, before `38.15.2.d.a`):",
+        "Current status update (2026-04-10 later):",
         "chain_len=2,node_id=1",
         "initial_states=0",
         "s_.history` length 2 > `max_seq_len` 1",
         "limit 5,000,000",
         "- [x] **38.15.2.d.a**: Produce one checked-in non-vacuous",
-        "- [ ] **38.15.2.d.b**: Once 38.15.2.d.a is met, restore case-15 manifest",
+        "- [x] **38.15.2.d.b**: Once 38.15.2.d.a is met, restore case-15 manifest",
+        "expected_primary_result = \"deadlock\"",
         "- [ ] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression",
     ] {
         assert!(
@@ -22204,12 +22207,35 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
         "int=0..2`, `max_seq_len=2`",
         "limits `500000`, `1000000`, `2000000`, and `5000000`",
         "Struct domain expansion for LRecord exceeded limit 300000",
-        "Case 15 remains `known_unimplemented` for now.",
+        "Historical snapshot only: this preflight block was resolved later by",
+        "`38.15.2.d.b`",
     ] {
         assert!(
             evidence_src.contains(required_fragment),
             "blocker evidence doc {} must include 38.15.2.d preflight fragment `{}`",
             evidence_path.display(),
+            required_fragment
+        );
+    }
+
+    let manifest_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/manifest.toml");
+    let manifest_src = std::fs::read_to_string(&manifest_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read manifest {}: {}",
+            manifest_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "id = \"15_chain_replication_small\"",
+        "expected_primary_result = \"deadlock\"",
+        "Restored from temporary known_unimplemented status (2026-04-10)",
+    ] {
+        assert!(
+            manifest_src.contains(required_fragment),
+            "manifest {} must include 38.15.2.d.b restore fragment `{}`",
+            manifest_path.display(),
             required_fragment
         );
     }

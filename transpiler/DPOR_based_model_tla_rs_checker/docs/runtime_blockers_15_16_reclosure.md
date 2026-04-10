@@ -10,8 +10,9 @@ After regenerated-corpus replay, `15_chain_replication_small` and
 `expected_primary_result = "known_unimplemented"` in
 `tests/manifest.toml`.
 
-This document records direct, reproducible baseline runs that confirm the
-current blocker modes before closure work starts.
+This document records direct, reproducible baseline runs that confirmed the
+initial blocker modes, plus later closure steps. Case 15 has since been
+restored to `deadlock` (`38.15.2.d.b`); case 16 remains runtime-blocked.
 
 ## Reproduction commands and observed outcomes
 
@@ -221,8 +222,9 @@ Conclusion:
 
 - `38.15.2.d` precondition is not met yet; no reproducible non-vacuous
   deadlock row exists in checked-in evidence.
-- Case 15 remains `known_unimplemented` for now. TODO decomposition now tracks
-  the next subleaves (`38.15.2.d.a/b/c`) required to restore it honestly.
+- Historical snapshot only: this preflight block was resolved later by
+  `38.15.2.d.a` closure evidence; manifest restoration is tracked in
+  `38.15.2.d.b`.
 
 ## 38.15.2.d.a.i bounded-assignment rejection step + 38.15.2.d.a.ii reruns
 
@@ -294,8 +296,46 @@ Conclusion (updated):
   now confirmed for case 15 under the selected bounded profile.
 - `38.15.2.d.a.iii` is satisfied by checking in that profile at
   `tests/model_configs/15_chain_replication_small.toml`.
-- Follow-up leaves `38.15.2.d.b` (manifest expectation restore) and
-  `38.15.2.d.c` (focused regression re-enable) remain open.
+- Follow-up leaf `38.15.2.d.c` (focused regression re-enable) remains open.
+
+## 38.15.2.d.b manifest expectation restore (done)
+
+Goal: once `38.15.2.d.a` closes with a reproducible non-vacuous deadlock row,
+restore case 15 from temporary `known_unimplemented` to real `deadlock`
+expectation in `tests/manifest.toml`.
+
+Manifest update:
+
+- case `15_chain_replication_small` now uses
+  `expected_primary_result = "deadlock"`.
+- temporary known-unimplemented blocker note for case 15 is removed and
+  replaced with a closure note that points to the checked-in model profile.
+
+Focused verification run (`2026-04-10`), using the checked-in case-15 model:
+
+```bash
+timeout 240s transpiler/target/release/verus-transpile model-check \
+  --input transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/15_chain_replication_small/Chain.rs \
+  --init LInit --next LNext \
+  --model transpiler/DPOR_based_model_tla_rs_checker/tests/model_configs/15_chain_replication_small.toml \
+  --json-report
+```
+
+Observed result:
+
+- `result=deadlock_detected`, `stop_reason=DeadlockDetected`
+- `initial_states=1`, `distinct_states=151`, deadlock depth `1`
+- `elapsed_ms=148357`
+
+Full-suite verification after manifest restore:
+
+- Command:
+  `./transpiler/DPOR_based_model_tla_rs_checker/scripts/run_full_suite.sh --timeout 1200`
+- Timestamp: `2026-04-10T15:37:34Z`
+- Case row:
+  `[15_chain_replication_small] PASS (deadlock found, 148982ms)`
+- Summary:
+  `Passed (real): 18`, `Known unimplemented: 2` (cases 16 and 19), `Failed: 0`.
 
 ## Runtime note discovered during 38.15.2.a reruns (case 19)
 
