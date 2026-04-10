@@ -12372,9 +12372,15 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         with `sleep_prune_hits=0` and `sleep` cardinality `0` at all observed
         depths for each case, indicating no currently-observed sleep-set
         population/pruning effect on this measured subset.
-    - [ ] **38.14.10.d.c**: Re-run the measurement harness, update
+    - [x] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.
+      **Done 2026-04-10**: Re-ran
+      `dpor::tests::print_sleep_set_reduction_multi_process_markdown` and
+      refreshed `tests/reports/sleep_set_reduction_table.md` to include the
+      latest measured rows plus new sleep telemetry columns. Gate remains
+      **NOT MET** (`0/3` cases above 10% distinct-state reduction; all measured
+      rows still unchanged), so `38.14.10` stays open.
 - [ ] **38.14.11**: **Re-evaluate the Phase 38.10 integration gate against
   the audited score.** The integration gate's preconditions ("the parity
   subset is exact under DPOR", "the required hard protocol gates are no
