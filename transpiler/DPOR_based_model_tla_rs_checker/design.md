@@ -681,6 +681,32 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 - Follow-on migration work is to scale this command into a checked-in subset
   report workflow (`38.10.4.b`) plus schema drift guard (`38.10.4.c`).
 
+### 38.10.4.b shadow parity-subset report workflow (2026-04-10)
+
+- Added checked-in script:
+  `scripts/run_shadow_subset_report.sh`.
+- Script contract:
+  - runs `dpor-checker shadow-compare` over the declared 12-case subset from
+    `src/dpor.rs::test_automated_baseline_vs_dpor_comparison`;
+  - uses per-case model configs where present and
+    `tests/model_configs/_shadow_default.toml` for rows without dedicated
+    per-case configs;
+  - writes reproducible migration-review artifacts:
+    - `tests/reports/shadow_parity_subset_latest.json`
+    - `tests/reports/shadow_parity_subset_latest.md`.
+- Current report snapshot (`2026-04-10T07:23:15Z`):
+  - `12` total cases;
+  - `8` `positive_exact`;
+  - `4` `negative_witness_match`;
+  - `0` parity failures.
+- During landing, a real bug in the 38.10.4.a CLI witness extraction was fixed:
+  baseline negative witness metadata lives at top-level
+  (`invariant_violation` / `deadlock`) in baseline JSON, not only in summary
+  fields. `src/main.rs` now extracts baseline witness kind/depth from both
+  locations so negative rows classify correctly.
+- Remaining migration execution leaf after this landing is `38.10.4.c`
+  (schema drift guard).
+
 ### Post-38.14.10 optimization evidence snapshot
 
 - Sleep-set reduction gate (Phase 38.14.10) is now closed:
@@ -693,7 +719,7 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 ### Remaining blockers for 38.10 gate re-evaluation
 
 - No parity blocker remains for `38.10.1` after `38.14.11.c.c`; follow-on work
-  is deliberate `38.10` migration execution (`38.10.4.b`, `38.10.4.c`).
+  is deliberate `38.10` migration execution (`38.10.4.c`).
 
 ### 38.14.11.c.b parity-gap measurement snapshot
 

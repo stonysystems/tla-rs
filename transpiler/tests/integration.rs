@@ -20953,7 +20953,8 @@ fn test_phase_38_10_4_a_shadow_compare_cli_contract() {
         "[x] **38.10.4.a**",
         "dpor-checker shadow-compare",
         "test_phase_38_10_4_a_shadow_compare_cli_contract",
-        "[ ] **38.10.4.b**",
+        "[x] **38.10.4.b**",
+        "[ ] **38.10.4.c**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -21138,4 +21139,279 @@ max_seq_len = 4
         "APlusB DPOR verdict should be ok; report={}",
         report
     );
+}
+
+#[test]
+fn test_phase_38_10_4_b_shadow_subset_report_script_contract() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "[x] **38.10.4.b**",
+        "run_shadow_subset_report.sh",
+        "shadow_parity_subset_latest.{json,md}",
+        "[ ] **38.10.4.c**",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.10.4.b fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let design_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/design.md");
+    let design_src = std::fs::read_to_string(&design_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR design note {}: {}",
+            design_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "### 38.10.4.b shadow parity-subset report workflow (2026-04-10)",
+        "run_shadow_subset_report.sh",
+        "shadow_parity_subset_latest.json",
+        "38.10.4.c",
+    ] {
+        assert!(
+            design_src.contains(required_fragment),
+            "DPOR design note {} must include 38.10.4.b fragment `{}`",
+            design_path.display(),
+            required_fragment
+        );
+    }
+
+    let plan_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
+    );
+    let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR integration migration plan {}: {}",
+            plan_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "run_shadow_subset_report.sh",
+        "shadow_parity_subset_latest.json",
+        "38.10.4.c",
+    ] {
+        assert!(
+            plan_src.contains(required_fragment),
+            "DPOR migration plan {} must include 38.10.4.b fragment `{}`",
+            plan_path.display(),
+            required_fragment
+        );
+    }
+
+    let readme_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR README {}: {}",
+            readme_path.display(),
+            err
+        )
+    });
+    assert!(
+        readme_src.contains("./scripts/run_shadow_subset_report.sh"),
+        "DPOR README {} must document the shadow subset report script",
+        readme_path.display()
+    );
+
+    let script_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/scripts/run_shadow_subset_report.sh");
+    assert!(
+        script_path.exists(),
+        "expected shadow subset report script at {}",
+        script_path.display()
+    );
+
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let json_out = tmp.path().join("shadow_subset_contract.json");
+    let md_out = tmp.path().join("shadow_subset_contract.md");
+
+    let output = std::process::Command::new(
+        script_path
+            .to_str()
+            .expect("script path must be valid UTF-8"),
+    )
+    .args([
+        "--case",
+        "01_aplusb",
+        "--case",
+        "03_counter_race_bug",
+        "--output-json",
+        json_out.to_str().expect("json output path utf-8"),
+        "--output-md",
+        md_out.to_str().expect("md output path utf-8"),
+        "--timeout-sec",
+        "30",
+    ])
+    .current_dir(&repo_root)
+    .output()
+    .expect("failed to run shadow subset report script");
+
+    assert!(
+        output.status.success(),
+        "shadow subset report script failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let report_src = std::fs::read_to_string(&json_out).unwrap_or_else(|err| {
+        panic!(
+            "failed to read generated shadow subset report {}: {}",
+            json_out.display(),
+            err
+        )
+    });
+    let report: serde_json::Value = serde_json::from_str(&report_src).unwrap_or_else(|err| {
+        panic!(
+            "failed to parse generated shadow subset report {}: {}\nreport:\n{}",
+            json_out.display(),
+            err,
+            report_src
+        )
+    });
+
+    assert_eq!(
+        report
+            .get("schema_version")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        1,
+        "shadow subset report schema_version must be 1; report={}",
+        report
+    );
+    assert_eq!(
+        report
+            .get("subset_source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>"),
+        "src/dpor.rs::test_automated_baseline_vs_dpor_comparison",
+        "shadow subset report must record subset source; report={}",
+        report
+    );
+    assert_eq!(
+        report
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>"),
+        "scripts/run_shadow_subset_report.sh",
+        "shadow subset report must record script command identity; report={}",
+        report
+    );
+
+    let summary = report
+        .get("summary")
+        .unwrap_or_else(|| panic!("shadow subset report missing summary: {}", report));
+    assert_eq!(
+        summary
+            .get("total_cases")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        2,
+        "two-case contract run should report total_cases=2; summary={}",
+        summary
+    );
+    assert_eq!(
+        summary
+            .get("positive_exact")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        1,
+        "two-case contract run should include one positive_exact row; summary={}",
+        summary
+    );
+    assert_eq!(
+        summary
+            .get("negative_witness_match")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        1,
+        "two-case contract run should include one negative_witness_match row; summary={}",
+        summary
+    );
+    assert_eq!(
+        summary
+            .get("parity_failures")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(999),
+        0,
+        "two-case contract run should report zero parity_failures; summary={}",
+        summary
+    );
+
+    let cases = report
+        .get("cases")
+        .and_then(|v| v.as_array())
+        .unwrap_or_else(|| panic!("shadow subset report missing cases array: {}", report));
+    assert_eq!(
+        cases.len(),
+        2,
+        "two-case contract run should emit exactly two case rows; report={}",
+        report
+    );
+
+    let mut class_by_case = std::collections::BTreeMap::new();
+    for case in cases {
+        let case_id = case
+            .get("case_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>")
+            .to_string();
+        let classification = case
+            .get("classification")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<missing>")
+            .to_string();
+        class_by_case.insert(case_id, classification);
+
+        assert_eq!(
+            case.pointer("/shadow_report/command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<missing>"),
+            "shadow-compare",
+            "case row must include embedded shadow_report command identity; case={}",
+            case
+        );
+    }
+
+    assert_eq!(
+        class_by_case.get("01_aplusb").map(|s| s.as_str()),
+        Some("positive_exact"),
+        "01_aplusb contract row must be positive_exact; classes={:?}",
+        class_by_case
+    );
+    assert_eq!(
+        class_by_case
+            .get("03_counter_race_bug")
+            .map(|s| s.as_str()),
+        Some("negative_witness_match"),
+        "03_counter_race_bug contract row must be negative_witness_match; classes={:?}",
+        class_by_case
+    );
+
+    let md_src = std::fs::read_to_string(&md_out).unwrap_or_else(|err| {
+        panic!(
+            "failed to read generated shadow subset markdown report {}: {}",
+            md_out.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "# Shadow Parity Subset Report",
+        "| 01_aplusb | positive_exact |",
+        "| 03_counter_race_bug | negative_witness_match |",
+    ] {
+        assert!(
+            md_src.contains(required_fragment),
+            "generated markdown report must contain `{}`; report:\n{}",
+            required_fragment,
+            md_src
+        );
+    }
 }

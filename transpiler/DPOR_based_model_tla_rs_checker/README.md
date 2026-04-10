@@ -42,6 +42,13 @@ cargo run --manifest-path Cargo.toml --bin dpor-checker -- \
   --invariant LSumInvariant
 ```
 
+Run the declared 12-case shadow parity subset and write migration report
+artifacts under `tests/reports/`:
+
+```bash
+./scripts/run_shadow_subset_report.sh
+```
+
 ## Design references
 
 See `design.md` for structured notes on:

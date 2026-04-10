@@ -164,5 +164,14 @@ Current behavior:
 
 Remaining execution leaves:
 
-- `38.10.4.b`: script the parity-subset shadow run into a checked-in report.
-- `38.10.4.c`: add report-schema drift guard for shadow-mode consumers.
+- `38.10.4.b` is now implemented:
+  - command: `scripts/run_shadow_subset_report.sh`
+  - subset source of truth:
+    `src/dpor.rs::test_automated_baseline_vs_dpor_comparison`
+  - artifacts:
+    - `tests/reports/shadow_parity_subset_latest.json`
+    - `tests/reports/shadow_parity_subset_latest.md`
+  - current snapshot (`2026-04-10T07:23:15Z`):
+    `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures`.
+- `38.10.4.c` remains open: add report-schema drift guard for shadow-mode
+  consumers.

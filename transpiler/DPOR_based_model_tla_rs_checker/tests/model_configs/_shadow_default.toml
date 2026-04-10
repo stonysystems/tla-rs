@@ -1,0 +1,17 @@
+# Default model config used by run_shadow_subset_report.sh for parity-subset
+# rows that do not have a dedicated per-case model config.
+
+[search]
+max_depth = 20
+max_states = 1000
+timeout_ms = 30000
+
+[properties]
+invariants = []
+check_deadlock = false
+successor_semantics = "deadlock"
+
+[quantifiers]
+int = { min = 0, max = 5 }
+max_set_len = 4
+max_seq_len = 4

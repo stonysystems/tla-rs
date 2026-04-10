@@ -325,6 +325,22 @@ fn classify_dpor_result(result: &DporResult) -> (String, Option<String>, Option<
 }
 
 fn baseline_first_violation_depth(raw_json: Option<&serde_json::Value>) -> Option<usize> {
+    if let Some(depth) = raw_json
+        .and_then(|v| v.get("invariant_violation"))
+        .and_then(|iv| iv.get("depth"))
+        .and_then(|d| d.as_u64())
+    {
+        return Some(depth as usize);
+    }
+
+    if let Some(depth) = raw_json
+        .and_then(|v| v.get("deadlock"))
+        .and_then(|dl| dl.get("depth"))
+        .and_then(|d| d.as_u64())
+    {
+        return Some(depth as usize);
+    }
+
     raw_json
         .and_then(|v| v.get("summary"))
         .and_then(|s| s.get("first_violation_depth"))
@@ -333,6 +349,26 @@ fn baseline_first_violation_depth(raw_json: Option<&serde_json::Value>) -> Optio
 }
 
 fn baseline_violation_kind(baseline: &dpor_checker::baseline::BaselineResult) -> Option<String> {
+    if let Some(invariant) = baseline
+        .raw_json
+        .as_ref()
+        .and_then(|v| v.get("invariant_violation"))
+        .and_then(|iv| iv.get("invariant"))
+        .and_then(|v| v.as_str())
+    {
+        return Some(invariant.to_string());
+    }
+
+    if baseline
+        .raw_json
+        .as_ref()
+        .and_then(|v| v.get("deadlock"))
+        .filter(|v| !v.is_null())
+        .is_some()
+    {
+        return Some("__deadlock__".to_string());
+    }
+
     let from_summary = baseline
         .raw_json
         .as_ref()
