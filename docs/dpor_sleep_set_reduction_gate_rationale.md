@@ -43,3 +43,18 @@ shows `16 -> 12` transitions (`25%` reduction) with no state-loss regression.
 2. If distinct-state reduction remains mandatory, explicitly replace the current
    safety invariant with a weaker, justified projection-level parity contract,
    then document the soundness risk and required witness checks.
+
+## Resolution applied in `38.14.10.d.b.c.i.b`
+
+The evidence gate is now retargeted to a parity-consistent work metric:
+
+- `>10%` transition reduction (`transitions_fired`) on at least `3`
+  measured multi-process cases.
+
+Distinct-state reduction remains in the table as diagnostics only, not as a
+closure gate, because it is incompatible with the enforced subset safety check.
+
+Current measured status after retargeting (2026-04-10):
+
+- `1 / 3` transition-gate hits (`09_peterson_mutex_2p`), so the gate is
+  still **NOT MET**.

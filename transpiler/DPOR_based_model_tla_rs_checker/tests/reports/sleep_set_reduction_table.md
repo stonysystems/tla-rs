@@ -24,22 +24,19 @@ Measurement bounds:
 
 ## Gate Status (Phase 38.14.10.d)
 
-Current distinct-state gate in TODO:
+Current evidence gate in TODO:
 
-- `>10%` distinct-state reduction on at least `3` multi-process cases.
+- `>10%` transition reduction on at least `3` multi-process cases, with
+  subset parity checks (`conservative ⊆ independence`, `conservative ⊆ sleep`)
+  preserved.
 
 Observed from measured runs above:
-
-- `0 / 3` cases above 10%.
-
-Transition-work signal from the same run:
 
 - `>10%` transition reduction on `1 / 3` measured cases.
 
 Status:
 
-- **Distinct-state gate: NOT MET**.
-- **Transition-reduction signal: PARTIAL (1/3)**.
+- **Transition/work gate: NOT MET (1/3)**.
 
 ## Notes
 
@@ -47,5 +44,6 @@ Status:
   `conservative ⊆ independence` and `conservative ⊆ sleep`.
 - Under that enforced subset contract, positive distinct-state reduction vs
   conservative is mathematically impossible (`|sleep| >= |conservative|`).
+- Distinct-state reduction remains reported as diagnostics only.
 - See `docs/dpor_sleep_set_reduction_gate_rationale.md` for the rationale and
   proposed next decomposition under `38.14.10.d.b.c.i`.

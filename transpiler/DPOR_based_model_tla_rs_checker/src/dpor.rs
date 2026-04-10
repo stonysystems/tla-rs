@@ -558,6 +558,20 @@ fn percent_reduction(baseline: usize, optimized: usize) -> f64 {
     ((baseline as f64 - optimized as f64) / baseline as f64) * 100.0
 }
 
+#[cfg(test)]
+const REDUCTION_GATE_THRESHOLD_PERCENT: f64 = 10.0;
+#[cfg(test)]
+const REDUCTION_GATE_REQUIRED_CASES: usize = 3;
+
+#[cfg(test)]
+fn transition_reduction_gate_hit(
+    conservative_transitions: usize,
+    sleep_transitions: usize,
+) -> bool {
+    percent_reduction(conservative_transitions, sleep_transitions)
+        > REDUCTION_GATE_THRESHOLD_PERCENT
+}
+
 /// Result of replaying a violation witness.
 #[derive(Debug)]
 pub struct ReplayResult {
@@ -1427,7 +1441,6 @@ max_seq_len = 4
             "|------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|---------------------:|---------------------------------------------|----------------------------------------------------------------|"
         );
 
-        let mut multi_process_gate_hits = 0usize;
         let mut transition_gate_hits = 0usize;
         for (case_id, filename) in &cases {
             let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
@@ -1513,10 +1526,7 @@ max_seq_len = 4
 
             let distinct_reduction_pct = percent_reduction(cons_distinct, sleep_distinct);
             let transition_reduction_pct = percent_reduction(cons_transitions, sleep_transitions);
-            if distinct_reduction_pct > 10.0 {
-                multi_process_gate_hits += 1;
-            }
-            if transition_reduction_pct > 10.0 {
+            if transition_reduction_gate_hit(cons_transitions, sleep_transitions) {
                 transition_gate_hits += 1;
             }
 
@@ -1538,15 +1548,13 @@ max_seq_len = 4
         }
 
         println!(
-            "Gate check (>10% distinct-state reduction on at least 3 multi-process cases): {} / 3 hits",
-            multi_process_gate_hits
+            "Gate check (>10% transition reduction on at least {} multi-process cases): {} / {} hits",
+            REDUCTION_GATE_REQUIRED_CASES,
+            transition_gate_hits,
+            cases.len()
         );
         println!(
-            "Gate check (>10% transition reduction on at least 1 multi-process case): {} / 3 hits",
-            transition_gate_hits
-        );
-        println!(
-            "Note: with safety checks `conservative ⊆ sleep`, positive distinct-state reduction is mathematically impossible."
+            "Distinct-state reduction is diagnostic only: with `conservative ⊆ sleep`, positive distinct-state reduction is mathematically impossible."
         );
     }
 
@@ -1562,6 +1570,19 @@ max_seq_len = 4
         assert!(
             reduction <= 0.0,
             "superset cardinality must not report positive reduction"
+        );
+    }
+
+    #[test]
+    fn test_transition_reduction_gate_hit_requires_strictly_more_than_threshold() {
+        // 10% exactly should not pass because the gate is strictly greater-than.
+        assert!(
+            !transition_reduction_gate_hit(10, 9),
+            "10% exact reduction must not pass >10% gate"
+        );
+        assert!(
+            transition_reduction_gate_hit(10, 8),
+            "20% reduction should pass >10% gate"
         );
     }
 
