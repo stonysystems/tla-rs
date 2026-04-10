@@ -1,23 +1,21 @@
 # DPOR Checker Suite Scoreboard
 
-## Phase 38.14 Follow-Up (2026-04-09): 20/20 honest, 0/20 vacuous
+## Runtime-Blocker Re-closure Snapshot (2026-04-10): 19 real / 0 vacuous / 1 known_unimplemented
 
-The prior 2026-04-01 "20/20 ALL GREEN" claim was audited and retracted in
-Phase 38.14. After Bug A closure (`38.14.7.*`) and Bug B closure work
-(`38.14.8.*`), the current honest baseline-checker score is now:
-
-- **20 real outcomes**
-- **0 vacuous outcomes**
-- **0 failed / 0 errors / 0 translation failures**
+Phase 38.14's vacuous-pass audit guard remains active. The current baseline
+suite snapshot keeps cases 15/16 as real non-vacuous outcomes after Phase
+38.15 runtime re-closure, while case 19 remains explicitly
+`known_unimplemented` due timeout-window instability follow-up.
 
 Source of truth: `tests/reports/latest.json` generated at
-`2026-04-09T15:17:19Z`.
+`2026-04-10T17:42:32Z`.
 
 | Metric | Count |
 |---|---:|
 | Total cases | 20 |
-| Real outcomes | 20 |
+| Real outcomes | 19 |
 | Vacuous outcomes | 0 |
+| Known unimplemented | 1 |
 | Failed | 0 |
 | Translation failed | 0 |
 | Errors | 0 |
@@ -43,33 +41,32 @@ A "real" outcome means at least one property class was checked
 | 12 | `12_dining_philosophers_3` | `deadlock_detected` | REAL (deadlock found) | 6 |
 | 13 | `13_twophase_small` | `ok` | REAL PASS | 9 |
 | 14 | `14_leader_election_small` | `ok` | REAL PASS | 1 |
-| 15 | `15_chain_replication_small` | `deadlock_detected` | REAL (deadlock found) | 5378 |
-| 16 | `16_primarybackup_small` | `ok` | REAL PASS | 4659 |
+| 15 | `15_chain_replication_small` | `deadlock_detected` | REAL (deadlock found) | 151 |
+| 16 | `16_primarybackup_small` | `ok` | REAL PASS | 211 |
 | 17 | `17_paxos_small` | `ok` | REAL PASS | 40 |
 | 18 | `18_pbft_small` | `ok` | REAL PASS | 50 |
-| 19 | `19_epaxos_small` | `ok` | REAL PASS | 11 |
+| 19 | `19_epaxos_small` | `known_unimplemented` | KNOWN_UNIMPLEMENTED (runtime instability follow-up) | 0 |
 | 20 | `20_raft_small` | `ok` | REAL PASS | 67 |
 
 ## Protocol Hard-Case Slice (13-20)
 
-| Category | Real / Total |
+| Category | Count |
 |---|---:|
-| Protocol cases (13-20) | 8 / 8 |
-
-Case 19 (`19_epaxos_small`) is now non-vacuous with checked deadlock semantics
-and bounded exploration (`distinct_states = 11`).
+| Real protocol outcomes | 7 / 8 |
+| Known unimplemented protocol cases | 1 / 8 |
 
 ## Reproduction
 
 ```bash
 cd transpiler/DPOR_based_model_tla_rs_checker
-./scripts/run_full_suite.sh --timeout 600
+./scripts/run_full_suite.sh --timeout 1200
 python3 ./scripts/detect_stub_specs.py --json
 ```
 
 ## Notes
 
-- `tests/manifest.toml` no longer carries any per-case `stub_status` fields.
+- `tests/manifest.toml` keeps case 19 as `expected_primary_result = "known_unimplemented"`
+  pending runtime stability follow-up.
 - Structural detector findings currently come from generated `Types.rs`
-  constructor bodies (`arbitrary::<...>()`), not vacuous pass metadata in the
-  20-case suite scoreboard.
+  constructor bodies (`arbitrary::<...>()`), tracked separately from vacuous
+  pass accounting.

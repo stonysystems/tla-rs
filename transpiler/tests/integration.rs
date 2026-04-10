@@ -21905,6 +21905,94 @@ fn test_phase_38_11_4_design_reference_notes_acceptance_criterion() {
 }
 
 #[test]
+fn test_phase_38_11_5_baseline_oracle_is_present_and_permanent_acceptance_criterion() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "5. [x] A simple exhaustive baseline explorer exists and is kept as a permanent oracle for the parity subset.",
+        "test_phase_38_11_5_baseline_oracle_is_present_and_permanent_acceptance_criterion",
+        "- [x] **38.6.3**: Policy acknowledged — the baseline explorer (existing source-first model checker) is permanent.",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.5 fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let baseline_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/src/baseline.rs");
+    let baseline_src = std::fs::read_to_string(&baseline_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read baseline explorer source {}: {}",
+            baseline_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "pub fn run_baseline(",
+        "pub fn create_default_model_toml(",
+        "pub fn find_transpiler_bin()",
+    ] {
+        assert!(
+            baseline_src.contains(required_fragment),
+            "baseline source {} must include fragment `{}`",
+            baseline_path.display(),
+            required_fragment
+        );
+    }
+
+    let lib_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/src/lib.rs");
+    let lib_src = std::fs::read_to_string(&lib_path)
+        .unwrap_or_else(|err| panic!("failed to read lib source {}: {}", lib_path.display(), err));
+    assert!(
+        lib_src.contains("pub mod baseline;"),
+        "DPOR crate lib {} must export baseline module",
+        lib_path.display()
+    );
+
+    let dpor_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/src/dpor.rs");
+    let dpor_src = std::fs::read_to_string(&dpor_path)
+        .unwrap_or_else(|err| panic!("failed to read dpor source {}: {}", dpor_path.display(), err));
+    for required_fragment in [
+        "fn compare_baseline_vs_dpor(",
+        "fn test_automated_baseline_vs_dpor_comparison()",
+    ] {
+        assert!(
+            dpor_src.contains(required_fragment),
+            "dpor source {} must include baseline-oracle parity fragment `{}`",
+            dpor_path.display(),
+            required_fragment
+        );
+    }
+
+    let suite_script_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/scripts/run_full_suite.sh");
+    let suite_script_src = std::fs::read_to_string(&suite_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read full-suite script {}: {}",
+            suite_script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "runs the baseline model checker (verus-transpile model-check)",
+        "\"engine\": \"baseline\"",
+    ] {
+        assert!(
+            suite_script_src.contains(required_fragment),
+            "full-suite script {} must include baseline-oracle fragment `{}`",
+            suite_script_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
     let repo_root = resolve_repo_root_for_integration();
 
@@ -21913,7 +22001,7 @@ fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     for required_fragment in [
         "| **1** | Re-close regenerated-corpus runtime blockers (cases 15/16) |",
-        "- [ ] **38.15**: Re-close regenerated-corpus runtime blockers",
+        "- [x] **38.15**: Re-close regenerated-corpus runtime blockers",
         "- [x] **38.15.1**: Reproduce current blockers with explicit commands",
         "case 15 fails with candidate-enumeration guardrail",
         "timeout-window wrapper exit (`timeout 60s`, no JSON report emitted).",

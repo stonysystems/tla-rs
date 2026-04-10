@@ -11988,7 +11988,16 @@ stub detector clean and the run script reporting 0 vacuous passes.
    verifies pinned upstream commit notes and explicit "borrow / do not copy /
    tla-rs mapping" decisions for `GenMC`, `Nidhugg`, and `CDSChecker` in
    `transpiler/DPOR_based_model_tla_rs_checker/design.md`.
-5. [ ] A simple exhaustive baseline explorer exists and is kept as a permanent oracle for the parity subset.
+5. [x] A simple exhaustive baseline explorer exists and is kept as a permanent oracle for the parity subset.
+   **Done 2026-04-10**: Added explicit acceptance-criterion guard coverage in
+   `transpiler/tests/integration.rs` via
+   `test_phase_38_11_5_baseline_oracle_is_present_and_permanent_acceptance_criterion`,
+   which checks baseline-oracle implementation presence in
+   `src/baseline.rs` (`run_baseline`, `create_default_model_toml`,
+   `find_transpiler_bin`), enforces baseline export wiring from
+   `src/lib.rs`, validates baseline-vs-DPOR parity harness coverage in
+   `src/dpor.rs`, confirms `run_full_suite.sh` baseline engine reporting, and
+   ties permanence policy to `38.6.3`.
 6. [ ] A full-suite command exists and is run on all 20 cases at every milestone, with a machine-readable report plus a human-readable scoreboard.
 7. [ ] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.
 8. [ ] DPOR and the baseline agree on verdict plus normalized state set or first witness for the small parity subset.
@@ -12665,7 +12674,7 @@ to do for DPOR"**, this is the canonical answer:
 
 | Priority | Task | What it unblocks |
 |---|---|---|
-| **1** | Re-close regenerated-corpus runtime blockers (cases 15/16) | Restores honest full-suite protocol closure before remaining acceptance leaves |
+| **1** | Re-close regenerated-corpus runtime blockers (cases 15/16) | **Done 2026-04-10**: restores honest bounded closure for both cases before remaining acceptance leaves |
 
 Bug A remains closed, but the regenerated `tests/tla-rs/` corpus replay on
 `2026-04-10` re-opened runtime feasibility blockers on case 15
@@ -12683,13 +12692,20 @@ timeout-window instability in this environment (full-suite timeout-wrapper
 checker error plus repeated focused timeout exits with no JSON), so it is
 temporarily reclassified as `known_unimplemented` until runtime stability is
 re-closed with explicit evidence.
+Runtime-blocker re-closure for cases 15/16 is now complete: full-suite run
+`./scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T17:15:16Z` reports
+`[15_chain_replication_small] PASS (deadlock found, 148264ms)` and
+`[16_primarybackup_small] PASS (ok, 211 states, 8445ms)` with summary
+`Passed (real): 19`, `Known unimplemented: 1` (case 19), `Failed: 0`,
+`Errors: 0`.
 
-- [ ] **38.15**: Re-close regenerated-corpus runtime blockers for protocol
+- [x] **38.15**: Re-close regenerated-corpus runtime blockers for protocol
   cases 15/16 (restore real bounded outcomes under suite budget, then remove
   temporary `known_unimplemented` classification).
   Scope check (2026-04-10): end-to-end closure for both cases is likely
   >500 LOC across model-config tuning, candidate-enumeration/runtime behavior,
   and evidence/report synchronization; decompose into leaves below.
+  **Done 2026-04-10**: all closure leaves `38.15.1`–`38.15.5` are complete.
   - [x] **38.15.1**: Reproduce current blockers with explicit commands and
     capture evidence in `docs/runtime_blockers_15_16_reclosure.md`, including
     concrete failure mode for each case and bounded-run baseline command lines.
@@ -12827,8 +12843,16 @@ re-closed with explicit evidence.
     `cargo test --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml -q`
     and full-suite `scripts/run_full_suite.sh --timeout 1200` (case 16 row:
     `PASS (ok, 211 states, 9011ms)`).
-  - [ ] **38.15.5**: Re-run full DPOR/transpiler suites plus
+  - [x] **38.15.5**: Re-run full DPOR/transpiler suites plus
     `scripts/run_full_suite.sh --timeout 1200`, then resync
     `tests/reports/latest.{json,md}`, `hard_case_blocker_ledger.md`, and this
     TODO open-task map from "runtime blockers open" to "runtime blockers
     closed" with concrete timestamps/results.
+    **Done 2026-04-10**: executed full verification (`cargo test` in
+    `transpiler`, `cargo test -q` in DPOR workfolder, and full-suite run at
+    `2026-04-10T17:15:16Z`), then resynced
+    `tests/reports/latest.{json,md}` and
+    `tests/reports/hard_case_blocker_ledger.md` to the current honest
+    scoreboard (`19 real`, `0 vacuous`, `1 known_unimplemented`, `0 failed`,
+    `0 errors`) and updated this open-task map to closed status for cases
+    15/16.
