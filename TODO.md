@@ -12547,10 +12547,19 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
       - [x] **38.14.11.c.b.a**: Measure and document the exact-parity gap for
         the declared comparison subset by case ID (exact vs non-exact), using
         current automated baseline-vs-DPOR evidence.
-      - [ ] **38.14.11.c.b.b**: Define the exact-parity policy for negative
+      - [x] **38.14.11.c.b.b**: Define the exact-parity policy for negative
         cases (first-violation-stop parity mode vs witness-first parity
         comparison), and document why that policy satisfies `38.10.1` without
         weakening safety claims.
+        **Done 2026-04-10**: Selected **witness-first negative-case parity**
+        policy for `38.10.1` comparisons: for
+        `invariant_violated` / `deadlock_detected` rows, require exact
+        verdict-class parity plus first-witness signature parity
+        (invariant/deadlock kind + depth), while treating explored-state count
+        as diagnostic-only for negative rows because first-counterexample
+        stop order is traversal-strategy-dependent. Policy and rationale are
+        documented in `docs/exact_parity_gap_analysis_38_10_1.md` and synced in
+        `design.md`.
       - [ ] **38.14.11.c.b.c**: Implement the chosen parity policy in
         baseline-vs-DPOR comparison code and tests (<500 LOC), then remeasure
         the subset and update the gate evidence.

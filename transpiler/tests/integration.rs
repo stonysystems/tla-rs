@@ -20468,6 +20468,7 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "**38.14.11.c.b.a**",
         "[x] **38.14.11.c.b.a**",
         "**38.14.11.c.b.b**",
+        "[x] **38.14.11.c.b.b**",
         "**38.14.11.c.b.c**",
         "**38.14.11.c.c**",
         "38.14.10 is now closed (`3/3` transition-gate hits)",
@@ -20476,6 +20477,7 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "docs/integration_migration_plan.md",
         "12 cases / 11 exact / 1 non-exact",
         "05_broken_lock_bug",
+        "Selected **witness-first negative-case parity**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -20508,6 +20510,10 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "### 38.14.11.c.b parity-gap measurement snapshot",
         "Current measured status: `12` compared cases, `11` exact, `1` non-exact.",
         "05_broken_lock_bug",
+        "### 38.14.11.c.b.b negative-case exact-parity policy decision",
+        "Policy selected",
+        "witness-first parity for negative cases",
+        "same bug class and first witness depth",
     ] {
         assert!(
             design_src.contains(required_fragment),
@@ -20562,6 +20568,10 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "Non-exact cases: `1`",
         "`05_broken_lock_bug`",
         "dpor_superset_violation",
+        "## Policy decision (38.14.11.c.b.b)",
+        "Selected policy: **Option B (witness-first parity for negative rows)**.",
+        "invariant violation: invariant name + witness depth;",
+        "deadlock: deadlock kind + witness depth.",
         "38.14.11.c.b.b",
         "38.14.11.c.b.c",
     ] {

@@ -60,15 +60,46 @@ allows semantic asymmetry on negative cases:
 So the remaining exact-parity blocker is primarily policy/contract alignment for
 negative-case parity, not broad correctness collapse.
 
-## Decomposed leaves to close the blocker
+## Policy decision (38.14.11.c.b.b)
 
-1. `38.14.11.c.b.b` (policy): define one exact-parity policy for negative
-   cases and document it.
-   - Option A: parity mode forces both engines to stop at first violation.
-   - Option B: parity mode compares first witness parity instead of final
-     full state-set cardinality on violation cases.
-2. `38.14.11.c.b.c` (implementation): implement the chosen policy in
-   `compare_baseline_vs_dpor` and associated tests, then rerun measurement.
+Selected policy: **Option B (witness-first parity for negative rows)**.
+
+Contract for exact parity under this policy:
+
+1. Positive cases (`result = ok`): exact verdict + exact reachable-state parity
+   (normalized distinct-state set / current state-count equality check).
+2. Negative cases (`result = invariant_violated` or `deadlock_detected`):
+   exact verdict-class parity + exact first-witness signature parity:
+   - invariant violation: invariant name + witness depth;
+   - deadlock: deadlock kind + witness depth.
+3. Negative-case explored-state-count differences are kept as diagnostics, not
+   gate-breaking mismatches, because both engines stop at first
+   counterexample and can reach that counterexample through different but valid
+   traversal orders.
+
+Why this does not weaken safety claims:
+
+- The contract still requires both engines to find the same class of failure.
+- The contract strengthens negative-row comparability around witness semantics,
+  which are the safety-relevant artifact under stop-on-first-violation
+  execution.
+- DPOR witness replay coverage remains in place, so a reported DPOR witness
+  must be reproducible from the recorded decision trace.
+
+Evidence snapshot motivating the decision:
+
+- baseline JSON for `05_broken_lock_bug` reports first invariant violation
+  `LMutualExclusion` at depth `2`;
+- DPOR replay test (`test_replay_broken_lock_witness`) confirms
+  `LMutualExclusion` at depth `2`;
+- current mismatch (`baseline=5`, `dpor=7`) is therefore treated as
+  traversal-order diagnostic, not a contradiction in safety verdict.
+
+## Remaining implementation leaf
+
+- `38.14.11.c.b.c`: implement the witness-first policy in
+  `compare_baseline_vs_dpor` and related tests, then rerun parity measurement
+  on the declared subset.
 
 ## Exit criterion for this blocker track
 

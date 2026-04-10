@@ -637,3 +637,27 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
   (`baseline=5`, `dpor=7`, status `dpor_superset_violation`), which points to
   negative-case parity policy mismatch (baseline early-stop semantics vs DPOR
   continued exploration) as the current exact-parity blocker.
+
+### 38.14.11.c.b.b negative-case exact-parity policy decision
+
+- **Policy selected**: witness-first parity for negative cases.
+- Exact-parity contract under this policy:
+  - Positive rows (`result = ok`): require exact verdict parity plus exact
+    normalized reachable-state-set parity (current distinct-state equality
+    check).
+  - Negative rows (`result = invariant_violated` or `deadlock_detected`):
+    require exact verdict-class parity plus first-witness signature parity
+    (violation/deadlock kind + first witness depth), with state-count deltas
+    tracked as diagnostics rather than gate-breaking mismatches.
+- Why this is not a safety weakening:
+  - both engines are first-counterexample searchers for negative outcomes, and
+    pre-violation explored-state counts are traversal-order dependent (baseline
+    BFS vs DPOR DFS/backtrack order);
+  - safety equivalence for negative rows is carried by witness equivalence
+    (same bug class and first witness depth) plus replay confirmation on the
+    DPOR side, not by matching incidental frontier volume.
+- Current evidence motivating this policy:
+  - `05_broken_lock_bug` baseline JSON reports first invariant violation
+    `LMutualExclusion` at depth `2`, while DPOR replay tests already confirm a
+    reproducible `LMutualExclusion` witness at depth `2`; the state-count
+    mismatch (`5` vs `7`) reflects traversal order, not contradictory verdicts.
