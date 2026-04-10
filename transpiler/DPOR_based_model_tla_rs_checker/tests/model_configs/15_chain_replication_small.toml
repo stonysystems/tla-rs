@@ -1,10 +1,25 @@
-# Model config — narrow bounds for tractable existential expansion
+# Model config — case 15 deadlock closure profile (38.15.2.d.a)
+#
+# Selected reproducible row (2026-04-10):
+# - result: deadlock_detected
+# - stop_reason: DeadlockDetected
+# - initial_states: 1
+# - distinct_states: 151
+# - deadlock depth: 1
+# - command: verus-transpile model-check ... --model this_file --json-report
+
+[constants.assignments]
+chain_len = 2
+node_id = 1
+State = 0
+CRMessage = 0
+Constants = 0
 
 [search]
-max_depth = 20
+max_depth = 2
 max_states = 100000
-timeout_ms = 30000
-candidate_eval_guardrail = 200000
+timeout_ms = 180000
+candidate_eval_guardrail = 300000
 
 [properties]
 invariants = []
@@ -12,9 +27,9 @@ check_deadlock = true
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 1 }
+int = { min = 0, max = 2 }
 
 [collections]
 max_set_len = 1
-max_seq_len = 2
+max_seq_len = 1
 max_map_len = 1

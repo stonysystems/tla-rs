@@ -22173,7 +22173,7 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
         "initial_states=0",
         "s_.history` length 2 > `max_seq_len` 1",
         "limit 5,000,000",
-        "- [ ] **38.15.2.d.a**: Produce one checked-in non-vacuous",
+        "- [x] **38.15.2.d.a**: Produce one checked-in non-vacuous",
         "- [ ] **38.15.2.d.b**: Once 38.15.2.d.a is met, restore case-15 manifest",
         "- [ ] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression",
     ] {
@@ -22223,11 +22223,12 @@ fn test_phase_38_15_2_d_a_bound_rejection_step_and_postfix_sweep_are_recorded() 
     let todo_src = std::fs::read_to_string(&todo_path)
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     for required_fragment in [
-        "- [ ] **38.15.2.d.a**: Produce one checked-in non-vacuous",
+        "- [x] **38.15.2.d.a**: Produce one checked-in non-vacuous",
         "- [x] **38.15.2.d.a.i**: Treat collection-bound overflow during",
         "test_solve_branch_successors_treats_assignment_collection_overflow_as_constraint_failure",
-        "- [ ] **38.15.2.d.a.ii**: Re-run focused case-15 sweeps on the patched",
-        "- [ ] **38.15.2.d.a.iii**: Once 38.15.2.d.a.ii finds a stable row,",
+        "- [x] **38.15.2.d.a.ii**: Re-run focused case-15 sweeps on the patched",
+        "- [x] **38.15.2.d.a.iii**: Once 38.15.2.d.a.ii finds a stable row,",
+        "distinct_states=151",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -22254,9 +22255,13 @@ fn test_phase_38_15_2_d_a_bound_rejection_step_and_postfix_sweep_are_recorded() 
         "test_solve_branch_successors_treats_assignment_collection_overflow_as_constraint_failure",
         "| constants + int profile | guardrail 200000 | guardrail 300000 | guardrail 500000 |",
         "`chain_len=2,node_id=1,int=0..2`",
-        "timeout 120s",
-        "timeout 180s",
-        "`38.15.2.d.a` remains open and decomposed (`.ii/.iii` pending).",
+        "Extended focused reruns (`38.15.2.d.a.ii`, 2026-04-10 later pass)",
+        "guardrail 300000 (depth 1)",
+        "run 1: `result=deadlock_detected`",
+        "run 2: `result=deadlock_detected`",
+        "timeout 240s",
+        "`38.15.2.d.a.ii` is satisfied",
+        "`38.15.2.d.a.iii` is satisfied by checking in that profile",
     ] {
         assert!(
             evidence_src.contains(required_fragment),
@@ -22280,6 +22285,36 @@ fn test_phase_38_15_2_d_a_bound_rejection_step_and_postfix_sweep_are_recorded() 
             solver_src.contains(required_fragment),
             "solver {} must include bounded-overflow handling fragment `{}`",
             solver_path.display(),
+            required_fragment
+        );
+    }
+
+    let model_config_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/tests/model_configs/15_chain_replication_small.toml");
+    let model_config_src = std::fs::read_to_string(&model_config_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read case-15 model config {}: {}",
+            model_config_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "[constants.assignments]",
+        "chain_len = 2",
+        "node_id = 1",
+        "State = 0",
+        "CRMessage = 0",
+        "Constants = 0",
+        "max_depth = 2",
+        "timeout_ms = 180000",
+        "candidate_eval_guardrail = 300000",
+        "int = { min = 0, max = 2 }",
+        "max_seq_len = 1",
+    ] {
+        assert!(
+            model_config_src.contains(required_fragment),
+            "model config {} must include closure-profile fragment `{}`",
+            model_config_path.display(),
             required_fragment
         );
     }

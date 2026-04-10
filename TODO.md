@@ -12754,31 +12754,34 @@ re-closed with explicit evidence.
       `max_seq_len=2` still hits sequence-domain expansion (observed through
       limit 5,000,000). Keep case 15 as `known_unimplemented` until closure is
       real; decomposed below.
-      - [ ] **38.15.2.d.a**: Produce one checked-in non-vacuous
+      - [x] **38.15.2.d.a**: Produce one checked-in non-vacuous
         `deadlock_detected` baseline row for case 15 (distinct states > 0)
         under a reproducible model config and command line.
-        Scope/decomposition update (2026-04-10): closure is still blocked after
-        one bounded solver correction step and post-fix focused sweeps; keep
-        this leaf decomposed until a reproducible deadlock row is checked in.
+        **Done 2026-04-10** via `38.15.2.d.a.i/.ii/.iii`: selected config
+        `tests/model_configs/15_chain_replication_small.toml` now reproduces
+        non-vacuous deadlock rows (`initial_states=1`, `distinct_states=151`,
+        deadlock depth 1) in repeated focused runs.
         - [x] **38.15.2.d.a.i**: Treat collection-bound overflow during
           next-state assignment evaluation as per-assignment rejection
           (`ConstraintFailed`) instead of run-fatal abort in
           `transpiler/src/modelcheck/solver.rs`; add focused unit coverage.
           **Done 2026-04-10**:
           `test_solve_branch_successors_treats_assignment_collection_overflow_as_constraint_failure`.
-        - [ ] **38.15.2.d.a.ii**: Re-run focused case-15 sweeps on the patched
+        - [x] **38.15.2.d.a.ii**: Re-run focused case-15 sweeps on the patched
           solver using valid 2-node constants to find one reproducible
           deadlock row under suite-feasible budget.
-          Post-fix sweep snapshot (`docs/runtime_blockers_15_16_reclosure.md`,
-          `38.15.2.d.a.ii`): with `max_seq_len=1`, `max_set_len=1`,
-          `max_map_len=1`, depth 2, and guardrails `200000/300000/500000`,
-          valid 2-node profiles still failed by
-          existential/guardrail limits or timed out in focused wrappers; no
-          reproducible deadlock row yet.
-        - [ ] **38.15.2.d.a.iii**: Once 38.15.2.d.a.ii finds a stable row,
+          **Done 2026-04-10**: focused matrix + long-wrapper reruns are in
+          `docs/runtime_blockers_15_16_reclosure.md` (`38.15.2.d.a.ii`), where
+          profile `chain_len=2,node_id=1,int=0..2` with aux constants pinned,
+          `max_seq_len=1`, depth 2, guardrail 300000 reproduces
+          `deadlock_detected` in repeated runs (~147s).
+        - [x] **38.15.2.d.a.iii**: Once 38.15.2.d.a.ii finds a stable row,
           check in the selected case-15 model config and evidence command lines
           (including runtime/distinct-state numbers) in
           `docs/runtime_blockers_15_16_reclosure.md`.
+          **Done 2026-04-10**: selected closure config is checked in at
+          `tests/model_configs/15_chain_replication_small.toml` with matching
+          evidence and command lines documented.
       - [ ] **38.15.2.d.b**: Once 38.15.2.d.a is met, restore case-15 manifest
         expectation to `deadlock` and remove temporary known-unimplemented note.
       - [ ] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression in

@@ -260,16 +260,42 @@ Observed outcomes:
 | `chain_len=3,node_id=0,int=0..1` | branch guardrail exceeded | branch guardrail exceeded | branch guardrail exceeded |
 | `chain_len=3,node_id=1,int=0..3` | struct expansion limit (`LRecord`) | struct expansion limit (`LRecord`) | struct expansion limit (`LRecord`) |
 
-Additional long-wrapper probes for the most promising profile
-(`chain_len=2,node_id=1,int=0..2,guardrail=300000`) did not close either:
-`timeout 120s` and `timeout 180s` runs exited `124` with no JSON report.
+Extended focused reruns (`38.15.2.d.a.ii`, 2026-04-10 later pass) added
+aux-constant pinning to reduce constants-valuation fanout:
+`State=0`, `CRMessage=0`, `Constants=0`.
 
-Conclusion:
+| constants + int profile | guardrail 300000 (depth 1) | guardrail 300000 (depth 2) | guardrail 500000 (depth 1) | guardrail 500000 (depth 2) | guardrail 800000 (depth 1) | guardrail 800000 (depth 2) |
+|---|---|---|---|---|---|---|
+| `chain_len=2,node_id=1,int=0..2` + aux pinned | `ok` (FrontierExhausted, `distinct_states=40`, ~37s) | timeout in 45s wrapper | `ok` (FrontierExhausted, `distinct_states=40`, ~41s) | timeout in 45s wrapper | `ok` (FrontierExhausted, `distinct_states=40`, ~41s) | timeout in 45s wrapper |
 
-- The bounded-assignment rejection step removes one fatal failure class, but
-  case 15 still does not have a reproducible non-vacuous deadlock row under
-  valid 2-node constants and suite-feasible runtime.
-- `38.15.2.d.a` remains open and decomposed (`.ii/.iii` pending).
+Targeted long-wrapper reruns for the same profile at
+`guardrail=300000`, `max_depth=2`, `timeout_ms=180000`:
+
+```bash
+timeout 240s transpiler/target/release/verus-transpile model-check \
+  --input transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/15_chain_replication_small/Chain.rs \
+  --init LInit --next LNext \
+  --model <tmp_case15_deadlock_profile> \
+  --json-report
+```
+
+Observed (two repeated runs):
+
+- run 1: `result=deadlock_detected`, `stop_reason=DeadlockDetected`,
+  `initial_states=1`, `distinct_states=151`, `elapsed_ms=147830`,
+  deadlock depth `1`.
+- run 2: `result=deadlock_detected`, `stop_reason=DeadlockDetected`,
+  `initial_states=1`, `distinct_states=151`, `elapsed_ms=147624`,
+  deadlock depth `1`.
+
+Conclusion (updated):
+
+- `38.15.2.d.a.ii` is satisfied: a reproducible non-vacuous deadlock row is
+  now confirmed for case 15 under the selected bounded profile.
+- `38.15.2.d.a.iii` is satisfied by checking in that profile at
+  `tests/model_configs/15_chain_replication_small.toml`.
+- Follow-up leaves `38.15.2.d.b` (manifest expectation restore) and
+  `38.15.2.d.c` (focused regression re-enable) remain open.
 
 ## Runtime note discovered during 38.15.2.a reruns (case 19)
 
