@@ -8,6 +8,7 @@ check_phase38_commit_scope.sh
 Enforces TODO 38.10.3.a commit-scope discipline:
 - Keep Phase 38 feature work prototype-local when possible.
 - Do not mix incubator changes with mainline modelchecker rewrites in one commit.
+- Require explicit justification for standalone mainline modelchecker bug-fix commits.
 
 Default behavior:
 - Inspect staged paths from `git diff --cached --name-only`.
@@ -18,6 +19,10 @@ Optional explicit paths:
 Override (exception-only):
 - Set `PHASE38_ALLOW_MIXED_COMMIT=1` and
   `PHASE38_MIXED_COMMIT_JUSTIFICATION=<non-empty reason>`.
+
+Mainline-only fix requirement (TODO 38.10.3.b):
+- If paths include `transpiler/src/modelcheck/**` without prototype paths,
+  set `PHASE38_MAINLINE_FIX_JUSTIFICATION=<non-empty reason>`.
 EOF
 }
 
@@ -75,7 +80,8 @@ done
 
 if ((${#prototype_paths[@]} > 0 && ${#mainline_paths[@]} > 0)); then
     if [[ "${PHASE38_ALLOW_MIXED_COMMIT:-0}" == "1" ]]; then
-        if [[ -z "${PHASE38_MIXED_COMMIT_JUSTIFICATION:-}" ]]; then
+        mixed_justification="${PHASE38_MIXED_COMMIT_JUSTIFICATION:-}"
+        if [[ -z "${mixed_justification//[[:space:]]/}" ]]; then
             echo "phase38-scope: override requested but PHASE38_MIXED_COMMIT_JUSTIFICATION is empty" >&2
             exit 1
         fi
@@ -97,6 +103,22 @@ if ((${#prototype_paths[@]} > 0 && ${#mainline_paths[@]} > 0)); then
     echo "phase38-scope: for exceptional cases only:" >&2
     echo "  PHASE38_ALLOW_MIXED_COMMIT=1 PHASE38_MIXED_COMMIT_JUSTIFICATION='reason' $0" >&2
     exit 1
+fi
+
+if ((${#prototype_paths[@]} == 0 && ${#mainline_paths[@]} > 0)); then
+    mainline_fix_justification="${PHASE38_MAINLINE_FIX_JUSTIFICATION:-}"
+    if [[ -z "${mainline_fix_justification//[[:space:]]/}" ]]; then
+        echo "phase38-scope: mainline-only modelcheck change requires explicit justification per TODO 38.10.3.b" >&2
+        echo "phase38-scope: mainline modelcheck paths:" >&2
+        for path in "${mainline_paths[@]}"; do
+            echo "  - $path" >&2
+        done
+        echo "phase38-scope: set PHASE38_MAINLINE_FIX_JUSTIFICATION='reason' when landing a separate mainline bug-fix commit" >&2
+        exit 1
+    fi
+    echo "phase38-scope: mainline-only fix justification accepted"
+    echo "phase38-scope: justification: ${PHASE38_MAINLINE_FIX_JUSTIFICATION}"
+    exit 0
 fi
 
 echo "phase38-scope: OK (prototype_paths=${#prototype_paths[@]}, mainline_paths=${#mainline_paths[@]})"

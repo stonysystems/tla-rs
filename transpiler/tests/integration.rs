@@ -20660,7 +20660,7 @@ fn test_phase_38_10_3_a_commit_scope_guard_behavior() {
         )
     });
     for required_fragment in [
-        "## 7. Post-gate commit-scope guard (`38.10.3.a`)",
+        "## 7. Post-gate commit discipline guards (`38.10.3.a`, `38.10.3.b`)",
         "check_phase38_commit_scope.sh",
         "PHASE38_ALLOW_MIXED_COMMIT=1",
         "PHASE38_MIXED_COMMIT_JUSTIFICATION",
@@ -20715,24 +20715,6 @@ fn test_phase_38_10_3_a_commit_scope_guard_behavior() {
         output_text(&prototype_only).contains("phase38-scope: OK"),
         "prototype-only run should print success marker; {}",
         output_text(&prototype_only)
-    );
-
-    let mainline_only = run_guard(
-        &[
-            "transpiler/src/modelcheck/por.rs",
-            "docs/model_checker_status.md",
-        ],
-        &[],
-    );
-    assert!(
-        mainline_only.status.success(),
-        "scope guard should accept mainline-only changes; {}",
-        output_text(&mainline_only)
-    );
-    assert!(
-        output_text(&mainline_only).contains("phase38-scope: OK"),
-        "mainline-only run should print success marker; {}",
-        output_text(&mainline_only)
     );
 
     let mixed_default = run_guard(
@@ -20800,5 +20782,162 @@ fn test_phase_38_10_3_a_commit_scope_guard_behavior() {
         output_text(&mixed_override_with_reason).contains("mixed scope override accepted"),
         "override success output must include acceptance marker; {}",
         output_text(&mixed_override_with_reason)
+    );
+}
+
+#[test]
+fn test_phase_38_10_3_b_mainline_fix_justification_guard_behavior() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let script_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/scripts/check_phase38_commit_scope.sh");
+    assert!(
+        script_path.exists(),
+        "Phase 38 commit-scope guard script must exist at {}",
+        script_path.display()
+    );
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "[x] **38.10.3.b**",
+        "PHASE38_MAINLINE_FIX_JUSTIFICATION",
+        "test_phase_38_10_3_b_mainline_fix_justification_guard_behavior",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.10.3.b guard fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let design_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/design.md");
+    let design_src = std::fs::read_to_string(&design_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR design note {}: {}",
+            design_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "### 38.10.3.b separate-justification guardrail (2026-04-10)",
+        "PHASE38_MAINLINE_FIX_JUSTIFICATION",
+        "mainline-only changes are blocked unless explicit mainline-fix",
+    ] {
+        assert!(
+            design_src.contains(required_fragment),
+            "DPOR design note {} must include 38.10.3.b fragment `{}`",
+            design_path.display(),
+            required_fragment
+        );
+    }
+
+    let plan_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
+    );
+    let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR integration migration plan {}: {}",
+            plan_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## 7. Post-gate commit discipline guards (`38.10.3.a`, `38.10.3.b`)",
+        "PHASE38_MAINLINE_FIX_JUSTIFICATION",
+        "standalone mainline modelchecker fixes",
+    ] {
+        assert!(
+            plan_src.contains(required_fragment),
+            "DPOR migration plan {} must include 38.10.3.b fragment `{}`",
+            plan_path.display(),
+            required_fragment
+        );
+    }
+
+    let run_guard = |paths: &[&str], envs: &[(&str, &str)]| -> std::process::Output {
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg(&script_path).current_dir(&repo_root);
+        for path in paths {
+            cmd.args(["--path", path]);
+        }
+        for (key, value) in envs {
+            cmd.env(key, value);
+        }
+        cmd.output().unwrap_or_else(|err| {
+            panic!(
+                "failed to execute 38.10.3.b scope guard {}: {}",
+                script_path.display(),
+                err
+            )
+        })
+    };
+
+    let output_text = |output: &std::process::Output| -> String {
+        format!(
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    };
+
+    let mainline_without_reason = run_guard(
+        &[
+            "transpiler/src/modelcheck/por.rs",
+            "docs/model_checker_status.md",
+        ],
+        &[],
+    );
+    assert!(
+        !mainline_without_reason.status.success(),
+        "scope guard must reject mainline-only modelcheck changes without justification; {}",
+        output_text(&mainline_without_reason)
+    );
+    for required_fragment in [
+        "TODO 38.10.3.b",
+        "PHASE38_MAINLINE_FIX_JUSTIFICATION",
+    ] {
+        assert!(
+            output_text(&mainline_without_reason).contains(required_fragment),
+            "mainline-without-reason output must include `{}`; {}",
+            required_fragment,
+            output_text(&mainline_without_reason)
+        );
+    }
+
+    let mainline_with_reason = run_guard(
+        &[
+            "transpiler/src/modelcheck/por.rs",
+            "docs/model_checker_status.md",
+        ],
+        &[(
+            "PHASE38_MAINLINE_FIX_JUSTIFICATION",
+            "fix modelcheck regression in por transition selection",
+        )],
+    );
+    assert!(
+        mainline_with_reason.status.success(),
+        "scope guard should accept mainline-only changes with explicit justification; {}",
+        output_text(&mainline_with_reason)
+    );
+    assert!(
+        output_text(&mainline_with_reason).contains("mainline-only fix justification accepted"),
+        "mainline-with-reason run must print acceptance marker; {}",
+        output_text(&mainline_with_reason)
+    );
+
+    let prototype_only = run_guard(
+        &[
+            "transpiler/DPOR_based_model_tla_rs_checker/src/dpor.rs",
+            "TODO.md",
+        ],
+        &[],
+    );
+    assert!(
+        prototype_only.status.success(),
+        "scope guard should continue accepting prototype-only changes without mainline-fix metadata; {}",
+        output_text(&prototype_only)
     );
 }

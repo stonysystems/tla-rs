@@ -110,7 +110,7 @@ Integration cannot silently break existing report consumers.
 - No direct rewrite of `transpiler/src/modelcheck` in this step.
 - No deletion of prototype modules/corpus/report tooling.
 
-## 7. Post-gate commit-scope guard (`38.10.3.a`)
+## 7. Post-gate commit discipline guards (`38.10.3.a`, `38.10.3.b`)
 
 To keep feature work reviewable while migration is still staged, run:
 
@@ -131,5 +131,14 @@ PHASE38_MIXED_COMMIT_JUSTIFICATION="narrow shared extraction for replay API" \
 transpiler/DPOR_based_model_tla_rs_checker/scripts/check_phase38_commit_scope.sh
 ```
 
-This guard does not replace review; it enforces that mixed-scope commits are an
-explicit exception rather than the default workflow.
+For standalone mainline modelchecker fixes (no prototype paths), add explicit
+mainline-fix justification:
+
+```bash
+PHASE38_MAINLINE_FIX_JUSTIFICATION="fix candidate-enumeration regression in por.rs" \
+transpiler/DPOR_based_model_tla_rs_checker/scripts/check_phase38_commit_scope.sh
+```
+
+This guard does not replace review; it enforces that mixed-scope commits and
+prototype-era mainline fixes are explicit, justified exceptions rather than
+implicit side effects.

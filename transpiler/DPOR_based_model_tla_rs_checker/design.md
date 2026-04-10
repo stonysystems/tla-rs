@@ -626,8 +626,9 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
     declared subset;
   - full-suite evidence remains green (`20 real / 0 vacuous / 0 failed`,
     `2026-04-10T05:34:44Z`).
-- `38.10.3` stays open as staged-integration discipline for future migration
-  execution, not as a parity blocker.
+- `38.10.3` staged-discipline leaves are now closed (`38.10.3.a`,
+  `38.10.3.b`); remaining work is deliberate `38.10` migration execution, not
+  parity.
 
 ### 38.10.3.a commit-scope guardrail (2026-04-10)
 
@@ -646,6 +647,21 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 - This closes `38.10.3.a` without authorizing early migration; `38.10.3.b`
   remains open.
 
+### 38.10.3.b separate-justification guardrail (2026-04-10)
+
+- Extended `scripts/check_phase38_commit_scope.sh` so standalone mainline
+  modelchecker changes (`transpiler/src/modelcheck/**` with no prototype
+  paths) require explicit justification:
+  `PHASE38_MAINLINE_FIX_JUSTIFICATION=<non-empty reason>`.
+- Guard behavior now enforces:
+  - mixed prototype+mainline changes are blocked unless explicit mixed-commit
+    override metadata is supplied (`38.10.3.a`);
+  - mainline-only changes are blocked unless explicit mainline-fix
+    justification is supplied (`38.10.3.b`);
+  - prototype-only changes continue to pass without extra metadata.
+- This closes `38.10.3.b` and therefore closes the staged-discipline leaf set
+  under `38.10.3`.
+
 ### Post-38.14.10 optimization evidence snapshot
 
 - Sleep-set reduction gate (Phase 38.14.10) is now closed:
@@ -658,7 +674,7 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 ### Remaining blockers for 38.10 gate re-evaluation
 
 - No parity blocker remains for `38.10.1` after `38.14.11.c.c`; follow-on work
-  is staged integration discipline (`38.10.3.b`) and migration execution.
+  is deliberate `38.10` migration execution.
 
 ### 38.14.11.c.b parity-gap measurement snapshot
 
