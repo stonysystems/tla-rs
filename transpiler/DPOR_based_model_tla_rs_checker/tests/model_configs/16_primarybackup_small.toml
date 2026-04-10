@@ -1,9 +1,22 @@
-# Model config — narrow bounds for tractable existential expansion
+# Model config — case 16 runtime-closure profile (38.15.3)
+#
+# Selected reproducible row (2026-04-10):
+# - result: ok
+# - stop_reason: FrontierExhausted
+# - initial_states: 1
+# - distinct_states: 211
+# - command: verus-transpile model-check ... --model this_file --invariant LSafetyInactiveStateIsQuiescent --json-report
+
+[constants.assignments]
+State = 0
+PBMessage = 0
+Constants = 0
+max_log_len = 1
 
 [search]
-max_depth = 20
-max_states = 100000
-timeout_ms = 30000
+max_depth = 6
+max_states = 20000
+timeout_ms = 45000
 
 [properties]
 invariants = []

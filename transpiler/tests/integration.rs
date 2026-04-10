@@ -21966,7 +21966,8 @@ fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
         "expected_primary_result = \"deadlock\"",
         "expected_primary_result = \"known_unimplemented\"",
         "Restored from temporary known_unimplemented status (2026-04-10)",
-        "full-suite timeout budget",
+        "after Phase 38.15.3 closure",
+        "distinct_states=211",
     ] {
         assert!(
             manifest_src.contains(required_fragment),
@@ -22155,6 +22156,108 @@ fn test_phase_38_15_2_c_helper_branch_reduction_evidence_is_recorded() {
             evidence_src.contains(required_fragment),
             "blocker evidence doc {} must include 38.15.2.c fragment `{}`",
             evidence_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_38_15_3_case16_timeout_window_closure_is_recorded() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "- [x] **38.15.3**: Case 16 closure leaf",
+        "tests/model_configs/16_primarybackup_small.toml",
+        "State=0`, `PBMessage=0`, `Constants=0`,",
+        "max_depth=6`, `max_states=20000",
+        "result=ok`, `stop_reason=FrontierExhausted`",
+        "distinct_states=211",
+        "expected_primary_result = \"ok\"",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.15.3 closure fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let evidence_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read blocker evidence doc {}: {}",
+            evidence_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## 38.15.3 case-16 timeout-window closure (done)",
+        "tests/model_configs/16_primarybackup_small.toml",
+        "State = 0`, `PBMessage = 0`, `Constants = 0`, `max_log_len = 1`",
+        "max_depth = 6`, `max_states = 20000`, `timeout_ms = 45000`",
+        "result=ok`, `stop_reason=FrontierExhausted`",
+        "initial_states=1`, `distinct_states=211`, `depth=6`",
+        "expected_primary_result = \"ok\"",
+    ] {
+        assert!(
+            evidence_src.contains(required_fragment),
+            "blocker evidence doc {} must include 38.15.3 fragment `{}`",
+            evidence_path.display(),
+            required_fragment
+        );
+    }
+
+    let model_config_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/tests/model_configs/16_primarybackup_small.toml");
+    let model_config_src = std::fs::read_to_string(&model_config_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read case-16 model config {}: {}",
+            model_config_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "[constants.assignments]",
+        "State = 0",
+        "PBMessage = 0",
+        "Constants = 0",
+        "max_log_len = 1",
+        "max_depth = 6",
+        "max_states = 20000",
+        "timeout_ms = 45000",
+        "int = { min = 0, max = 1 }",
+    ] {
+        assert!(
+            model_config_src.contains(required_fragment),
+            "model config {} must include 38.15.3 closure-profile fragment `{}`",
+            model_config_path.display(),
+            required_fragment
+        );
+    }
+
+    let manifest_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/manifest.toml");
+    let manifest_src = std::fs::read_to_string(&manifest_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read manifest {}: {}",
+            manifest_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "id = \"16_primarybackup_small\"",
+        "expected_primary_result = \"ok\"",
+        "Restored from temporary known_unimplemented status (2026-04-10) after Phase 38.15.3 closure",
+        "distinct_states=211",
+    ] {
+        assert!(
+            manifest_src.contains(required_fragment),
+            "manifest {} must include 38.15.3 restore fragment `{}`",
+            manifest_path.display(),
             required_fragment
         );
     }

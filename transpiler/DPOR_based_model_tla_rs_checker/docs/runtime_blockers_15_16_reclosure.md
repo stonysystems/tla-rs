@@ -12,7 +12,8 @@ After regenerated-corpus replay, `15_chain_replication_small` and
 
 This document records direct, reproducible baseline runs that confirmed the
 initial blocker modes, plus later closure steps. Case 15 has since been
-restored to `deadlock` (`38.15.2.d.b`); case 16 remains runtime-blocked.
+restored to `deadlock` (`38.15.2.d.b`); case 16 has now been restored to `ok`
+(`38.15.3`).
 
 ## Reproduction commands and observed outcomes
 
@@ -73,7 +74,7 @@ Interpretation:
 See `TODO.md` `38.15` leaves:
 
 - `38.15.2`: case 15 candidate-enumeration closure
-- `38.15.3`: case 16 timeout-window closure
+- `38.15.3`: case 16 timeout-window closure (done)
 - `38.15.4`: re-enable focused protocol regressions
 - `38.15.5`: full-suite/report resync and open-task-map closure
 
@@ -362,6 +363,44 @@ Verification:
   => case row
   `[15_chain_replication_small] PASS (deadlock found, 152675ms)` and overall
   `Passed (real): 18`, `Known unimplemented: 2`, `Failed: 0`.
+
+## 38.15.3 case-16 timeout-window closure (done)
+
+Goal: restore `16_primarybackup_small` from temporary
+`known_unimplemented` to real invariant-checked `ok` under bounded profile and
+suite budget.
+
+Code/config change (<500 LOC):
+
+- File: `tests/model_configs/16_primarybackup_small.toml`
+- Added pinned constants assignments:
+  `State = 0`, `PBMessage = 0`, `Constants = 0`, `max_log_len = 1`
+- Tuned bounded search profile:
+  `max_depth = 6`, `max_states = 20000`, `timeout_ms = 45000`
+
+Focused verification run (`2026-04-10`):
+
+```bash
+transpiler/target/release/verus-transpile model-check \
+  --input transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/16_primarybackup_small/Primarybackup.rs \
+  --init LInit --next LNext \
+  --model transpiler/DPOR_based_model_tla_rs_checker/tests/model_configs/16_primarybackup_small.toml \
+  --invariant LSafetyInactiveStateIsQuiescent \
+  --json-report
+```
+
+Observed result:
+
+- `result=ok`, `stop_reason=FrontierExhausted`
+- `initial_states=1`, `distinct_states=211`, `depth=6`
+- `elapsed_ms=8539`
+
+Manifest update:
+
+- `tests/manifest.toml` case `16_primarybackup_small` restored to
+  `expected_primary_result = "ok"`
+- closure note now points to the checked-in bounded profile and non-vacuous
+  metrics above.
 
 ## Runtime note discovered during 38.15.2.a reruns (case 19)
 

@@ -254,14 +254,14 @@ source_kind = "generated_repo_tla"
 tla_entry = "Primarybackup.tla"
 tla_aux_modules = ["Types.tla"]
 generated_tlars_entry = ""
-expected_primary_result = "known_unimplemented"
+expected_primary_result = "ok"
 expected_property = "SafetyInactiveStateIsQuiescent"
 model_bounds = "2 nodes"
 requires_deadlock_check = false
 milestone_gate = "M4"
 negative = false
 source = "transpiler/tla_test_workspace/transpiler_generated_tla/PrimaryBackup/"
-notes = "Temporarily reclassified to known_unimplemented (2026-04-10): under the regenerated corpus from `scripts/regenerate_corpus.sh`, bounded baseline runs are currently not completing within the full-suite timeout budget (case exits as checker_error after timeout wrapper). Case remains mandatory/present, but runtime/branch-explosion follow-up is needed before restoring `ok` expectations."
+notes = "Restored from temporary known_unimplemented status (2026-04-10) after Phase 38.15.3 closure: checked-in bounded profile `tests/model_configs/16_primarybackup_small.toml` now reproduces a real invariant-checked `ok` row (`initial_states=1`, `distinct_states=211`, `stop_reason=FrontierExhausted`) under suite budget."
 
 [[case]]
 id = "17_paxos_small"

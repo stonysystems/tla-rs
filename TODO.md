@@ -12671,8 +12671,9 @@ Bug A remains closed, but the regenerated `tests/tla-rs/` corpus replay on
 `2026-04-10` re-opened runtime feasibility blockers on case 15
 (`15_chain_replication_small`: candidate-enumeration guardrail abort) and case
 16 (`16_primarybackup_small`: full-suite timeout-window checker_error). Case 16
-remains temporarily reclassified as `known_unimplemented` in
-`tests/manifest.toml` pending follow-up runtime/bounds closure. Case 15 was
+was temporarily reclassified as `known_unimplemented` in
+`tests/manifest.toml` during blocker reproduction, and is now restored to `ok`
+via `38.15.3` bounded runtime/profile closure. Case 15 was
 temporarily reclassified during preflight, then restored to `deadlock` in
 `38.15.2.d.b` after non-vacuous closure evidence from `38.15.2.d.a`.
 `38.14.10` remains closed after meeting the transition/work gate (`3/3`), and
@@ -12805,10 +12806,17 @@ re-closed with explicit evidence.
         `cargo test --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml -q`
         plus `scripts/run_full_suite.sh --timeout 1200` (case 15:
         `PASS (deadlock found, 152675ms)`).
-  - [ ] **38.15.3**: Case 16 closure leaf — tune runtime/model bounds for
+  - [x] **38.15.3**: Case 16 closure leaf — tune runtime/model bounds for
     `16_primarybackup_small` so bounded baseline completes with a real `ok`
     invariant-checked outcome under full-suite budget, then remove temporary
     `known_unimplemented` for case 16.
+    **Done 2026-04-10** (<500 LOC scope): checked in
+    `tests/model_configs/16_primarybackup_small.toml` runtime-closure profile
+    with pinned constants (`State=0`, `PBMessage=0`, `Constants=0`,
+    `max_log_len=1`) and bounded search (`max_depth=6`, `max_states=20000`);
+    direct baseline now reports `result=ok`, `stop_reason=FrontierExhausted`,
+    `initial_states=1`, `distinct_states=211`, and case 16 manifest
+    expectation is restored to `expected_primary_result = "ok"`.
   - [ ] **38.15.4**: Re-enable/retune focused protocol regression tests for
     cases 15/16 in `src/dpor.rs` once closures in `38.15.2`/`38.15.3` are
     complete; remove temporary ignore reasons tied to these blockers.
