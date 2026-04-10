@@ -12037,7 +12037,15 @@ stub detector clean and the run script reporting 0 vacuous passes.
      `./transpiler/DPOR_based_model_tla_rs_checker/scripts/run_full_suite.sh --timeout 1200`;
      refreshed `tests/reports/latest.json` (`timestamp=2026-04-10T19:22:27Z`)
      with exercised negative outcomes count = 6.
-8. [ ] DPOR and the baseline agree on verdict plus normalized state set or first witness for the small parity subset.
+8. [x] DPOR and the baseline agree on verdict plus normalized state set or first witness for the small parity subset.
+   **Done 2026-04-10**: re-ran
+   `./transpiler/DPOR_based_model_tla_rs_checker/scripts/run_shadow_subset_report.sh --timeout-sec 30`
+   and validated schema with
+   `scripts/verify_shadow_subset_report_schema.sh`. Refreshed
+   `tests/reports/shadow_parity_subset_latest.{json,md}` at
+   `2026-04-10T20:38:19Z` with summary:
+   `total_cases=12`, `positive_exact=8`, `negative_witness_match=4`,
+   `parity_failures=0` (no verdict/state/witness mismatches).
 9. [ ] `PrimaryBackup`, `Paxos`, and `Raft` are present as required hard cases and are never silently removed from the suite.
 10. [ ] No mainline rewrite of `transpiler/src/modelcheck` happens before the prototype earns the integration gate in `38.10`.
 

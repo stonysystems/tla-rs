@@ -22321,6 +22321,263 @@ fn test_phase_38_11_7_b_negative_case_coverage_reaches_six_with_case08_promotion
 }
 
 #[test]
+fn test_phase_38_11_8_shadow_parity_subset_has_no_verdict_state_or_witness_mismatches() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "8. [x] DPOR and the baseline agree on verdict plus normalized state set or first witness for the small parity subset.",
+        "run_shadow_subset_report.sh --timeout-sec 30",
+        "positive_exact=8",
+        "negative_witness_match=4",
+        "parity_failures=0",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.8 closure fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let shadow_json_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/reports/shadow_parity_subset_latest.json",
+    );
+    let shadow_json_src = std::fs::read_to_string(&shadow_json_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read shadow subset json {}: {}",
+            shadow_json_path.display(),
+            err
+        )
+    });
+    let shadow_json: serde_json::Value =
+        serde_json::from_str(&shadow_json_src).unwrap_or_else(|err| {
+            panic!(
+                "failed to parse shadow subset json {}: {}",
+                shadow_json_path.display(),
+                err
+            )
+        });
+    assert_eq!(
+        shadow_json.get("schema_version").and_then(|v| v.as_i64()),
+        Some(1),
+        "shadow subset json {} schema version must be 1",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        shadow_json.get("subset_source").and_then(|v| v.as_str()),
+        Some("src/dpor.rs::test_automated_baseline_vs_dpor_comparison"),
+        "shadow subset json {} must pin subset source to DPOR parity harness",
+        shadow_json_path.display()
+    );
+
+    let summary = shadow_json
+        .get("summary")
+        .and_then(|v| v.as_object())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} missing summary object",
+                shadow_json_path.display()
+            )
+        });
+    let total_cases = summary
+        .get("total_cases")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} summary.total_cases must be integer",
+                shadow_json_path.display()
+            )
+        });
+    let positive_exact = summary
+        .get("positive_exact")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} summary.positive_exact must be integer",
+                shadow_json_path.display()
+            )
+        });
+    let negative_witness_match = summary
+        .get("negative_witness_match")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} summary.negative_witness_match must be integer",
+                shadow_json_path.display()
+            )
+        });
+    let positive_state_mismatch = summary
+        .get("positive_state_mismatch")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} summary.positive_state_mismatch must be integer",
+                shadow_json_path.display()
+            )
+        });
+    let negative_witness_mismatch = summary
+        .get("negative_witness_mismatch")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} summary.negative_witness_mismatch must be integer",
+                shadow_json_path.display()
+            )
+        });
+    let verdict_mismatch = summary
+        .get("verdict_mismatch")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} summary.verdict_mismatch must be integer",
+                shadow_json_path.display()
+            )
+        });
+    let other_classifications = summary
+        .get("other_classifications")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} summary.other_classifications must be integer",
+                shadow_json_path.display()
+            )
+        });
+    let parity_failures = summary
+        .get("parity_failures")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} summary.parity_failures must be integer",
+                shadow_json_path.display()
+            )
+        });
+    assert_eq!(
+        total_cases, 12,
+        "shadow subset json {} must track 12 canonical subset cases",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        positive_exact, 8,
+        "shadow subset json {} expected positive_exact=8 for current subset",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        negative_witness_match, 4,
+        "shadow subset json {} expected negative_witness_match=4 for current subset",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        positive_state_mismatch, 0,
+        "shadow subset json {} must have zero positive_state_mismatch",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        negative_witness_mismatch, 0,
+        "shadow subset json {} must have zero negative_witness_mismatch",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        verdict_mismatch, 0,
+        "shadow subset json {} must have zero verdict_mismatch",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        other_classifications, 0,
+        "shadow subset json {} must have zero other_classifications",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        parity_failures, 0,
+        "shadow subset json {} must have zero parity_failures",
+        shadow_json_path.display()
+    );
+    assert_eq!(
+        positive_exact + negative_witness_match,
+        total_cases,
+        "shadow subset json {} must partition cases into positive_exact + negative_witness_match",
+        shadow_json_path.display()
+    );
+
+    let cases = shadow_json
+        .get("cases")
+        .and_then(|v| v.as_array())
+        .unwrap_or_else(|| panic!("shadow subset json {} missing cases array", shadow_json_path.display()));
+    assert_eq!(
+        cases.len() as u64,
+        total_cases,
+        "shadow subset json {} cases length must equal summary.total_cases",
+        shadow_json_path.display()
+    );
+
+    let mut case_ids = std::collections::BTreeSet::new();
+    for row in cases {
+        let case_id = row
+            .get("case_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("shadow subset row missing string case_id in {}", shadow_json_path.display()));
+        case_ids.insert(case_id.to_string());
+        assert_eq!(
+            row.get("verdict_match").and_then(|v| v.as_bool()),
+            Some(true),
+            "shadow subset row {} must have verdict_match=true",
+            case_id
+        );
+        let classification = row
+            .get("classification")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("shadow subset row {} missing classification", case_id));
+        match classification {
+            "positive_exact" => {
+                assert_eq!(
+                    row.get("state_match").and_then(|v| v.as_bool()),
+                    Some(true),
+                    "positive_exact row {} must have state_match=true",
+                    case_id
+                );
+            }
+            "negative_witness_match" => {
+                assert_eq!(
+                    row.get("witness_depth_match").and_then(|v| v.as_bool()),
+                    Some(true),
+                    "negative_witness_match row {} must have witness_depth_match=true",
+                    case_id
+                );
+            }
+            other => panic!(
+                "shadow subset row {} has unexpected classification `{}`",
+                case_id, other
+            ),
+        }
+    }
+
+    let expected_case_ids: std::collections::BTreeSet<String> = [
+        "01_aplusb",
+        "02_counter_incdec",
+        "03_counter_race_bug",
+        "04_lock_basic",
+        "05_broken_lock_bug",
+        "06_ticket_lock",
+        "07_producer_consumer_1slot",
+        "08_bounded_buffer_2slot",
+        "09_peterson_mutex_2p",
+        "11_readers_writers_small",
+        "12_dining_philosophers_3",
+        "13_twophase_small",
+    ]
+    .into_iter()
+    .map(|s| s.to_string())
+    .collect();
+    assert_eq!(
+        case_ids, expected_case_ids,
+        "shadow subset json {} case ids drifted from canonical parity subset",
+        shadow_json_path.display()
+    );
+}
+
+#[test]
 fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
     let repo_root = resolve_repo_root_for_integration();
 

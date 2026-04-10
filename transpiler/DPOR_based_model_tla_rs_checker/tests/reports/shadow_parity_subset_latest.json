@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "timestamp": "2026-04-10T07:23:15Z",
+  "timestamp": "2026-04-10T20:38:19Z",
   "subset_source": "src/dpor.rs::test_automated_baseline_vs_dpor_comparison",
   "command": "scripts/run_shadow_subset_report.sh",
   "timeout_sec": 30,
@@ -83,7 +83,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 5,
-          "elapsed_ms": 92,
+          "elapsed_ms": 89,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": null,
@@ -96,7 +96,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 5,
-          "elapsed_ms": 1907,
+          "elapsed_ms": 1796,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": 2,
@@ -135,7 +135,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 13,
-          "elapsed_ms": 3381,
+          "elapsed_ms": 3331,
           "first_violation_depth": 4,
           "first_violation_kind": "LTotalCorrect",
           "max_depth": null,
@@ -148,7 +148,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 5,
-          "elapsed_ms": 16943,
+          "elapsed_ms": 16846,
           "first_violation_depth": 4,
           "first_violation_kind": "LTotalCorrect",
           "max_depth": 4,
@@ -187,7 +187,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 3,
-          "elapsed_ms": 12,
+          "elapsed_ms": 13,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": null,
@@ -200,7 +200,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 3,
-          "elapsed_ms": 198,
+          "elapsed_ms": 195,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": 1,
@@ -239,7 +239,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 5,
-          "elapsed_ms": 12,
+          "elapsed_ms": 13,
           "first_violation_depth": 2,
           "first_violation_kind": "LMutualExclusion",
           "max_depth": null,
@@ -252,7 +252,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 3,
-          "elapsed_ms": 138,
+          "elapsed_ms": 142,
           "first_violation_depth": 2,
           "first_violation_kind": "LMutualExclusion",
           "max_depth": 2,
@@ -291,7 +291,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 7,
-          "elapsed_ms": 10095,
+          "elapsed_ms": 10296,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": null,
@@ -304,7 +304,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 7,
-          "elapsed_ms": 103753,
+          "elapsed_ms": 106081,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": 3,
@@ -356,7 +356,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 21,
-          "elapsed_ms": 17,
+          "elapsed_ms": 18,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": 20,
@@ -382,20 +382,20 @@
     {
       "baseline_first_violation_depth": null,
       "baseline_first_violation_kind": null,
-      "baseline_states": 6,
+      "baseline_states": 9,
       "baseline_verdict": "ok",
       "case_id": "08_bounded_buffer_2slot",
       "classification": "positive_exact",
       "dpor_first_violation_depth": null,
       "dpor_first_violation_kind": null,
-      "dpor_states": 6,
+      "dpor_states": 9,
       "dpor_verdict": "ok",
       "model_file": "tests/model_configs/08_bounded_buffer_2slot.toml",
       "model_source": "per_case",
       "shadow_report": {
         "baseline": {
-          "distinct_states": 6,
-          "elapsed_ms": 161,
+          "distinct_states": 9,
+          "elapsed_ms": 2418,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": null,
@@ -407,13 +407,13 @@
         "classification": "positive_exact",
         "command": "shadow-compare",
         "dpor": {
-          "distinct_states": 6,
-          "elapsed_ms": 1352,
+          "distinct_states": 9,
+          "elapsed_ms": 17341,
           "first_violation_depth": null,
           "first_violation_kind": null,
-          "max_depth": 4,
+          "max_depth": 6,
           "stop_reason": null,
-          "transitions_fired": 5,
+          "transitions_fired": 8,
           "verdict": "ok"
         },
         "invariants": [],
@@ -445,7 +445,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 10,
-          "elapsed_ms": 251,
+          "elapsed_ms": 248,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": null,
@@ -458,7 +458,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 10,
-          "elapsed_ms": 2765,
+          "elapsed_ms": 2774,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": 3,
@@ -497,7 +497,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 4,
-          "elapsed_ms": 489,
+          "elapsed_ms": 493,
           "first_violation_depth": 2,
           "first_violation_kind": "LSafety",
           "max_depth": null,
@@ -510,7 +510,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 4,
-          "elapsed_ms": 6930,
+          "elapsed_ms": 6894,
           "first_violation_depth": 2,
           "first_violation_kind": "LSafety",
           "max_depth": 2,
@@ -549,7 +549,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 6,
-          "elapsed_ms": 785,
+          "elapsed_ms": 786,
           "first_violation_depth": 2,
           "first_violation_kind": "__deadlock__",
           "max_depth": null,
@@ -562,7 +562,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 3,
-          "elapsed_ms": 4525,
+          "elapsed_ms": 4583,
           "first_violation_depth": 2,
           "first_violation_kind": "__deadlock__",
           "max_depth": 2,
@@ -599,7 +599,7 @@
       "shadow_report": {
         "baseline": {
           "distinct_states": 9,
-          "elapsed_ms": 178,
+          "elapsed_ms": 180,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": null,
@@ -612,7 +612,7 @@
         "command": "shadow-compare",
         "dpor": {
           "distinct_states": 9,
-          "elapsed_ms": 2416,
+          "elapsed_ms": 2391,
           "first_violation_depth": null,
           "first_violation_kind": null,
           "max_depth": 3,
