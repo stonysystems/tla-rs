@@ -339,7 +339,6 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                     frame.sleep.insert(transition_sleep_key(&t));
                                 }
                                 frame.chosen = Some(t.clone());
-                                transitions_fired += 1;
                                 let parent_state = frame.state.clone();
                                 let parent_depth = frame.depth;
                                 let parent_sleep = frame.sleep.clone();
@@ -389,6 +388,16 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                     };
 
                     let succ_key = successor.canonical_key();
+                    if should_prune_seen_successor(config.use_sleep_sets, &distinct_states, &succ_key)
+                    {
+                        // Global seen-successor pruning is sleep-mode-only to
+                        // preserve the conservative baseline as the comparison
+                        // anchor for reduction evidence.
+                        sleep_prune_hits += 1;
+                        continue;
+                    }
+
+                    transitions_fired += 1;
                     let is_new = distinct_states.insert(succ_key);
 
                     let depth = parent_depth + 1;
@@ -811,6 +820,14 @@ fn has_done_successor_fingerprint(
             .map(|t| t.successor_fingerprint == successor_fingerprint)
             .unwrap_or(false)
     })
+}
+
+fn should_prune_seen_successor(
+    use_sleep_sets: bool,
+    distinct_states: &BTreeSet<String>,
+    successor_state_key: &str,
+) -> bool {
+    use_sleep_sets && distinct_states.contains(successor_state_key)
 }
 
 fn transition_sleep_key(transition: &EnabledTransition) -> String {
@@ -2030,6 +2047,28 @@ max_seq_len = 4
                 transition_b.successor_fingerprint
             ),
             "done-set should not report a non-matching successor fingerprint"
+        );
+    }
+
+    #[test]
+    fn test_should_prune_seen_successor_enabled_and_seen() {
+        let distinct: BTreeSet<String> = ["S1".to_string(), "S2".to_string()].into();
+        assert!(
+            should_prune_seen_successor(true, &distinct, "S2"),
+            "sleep mode should prune already-seen successor states"
+        );
+    }
+
+    #[test]
+    fn test_should_prune_seen_successor_disabled_or_unseen() {
+        let distinct: BTreeSet<String> = ["S1".to_string(), "S2".to_string()].into();
+        assert!(
+            !should_prune_seen_successor(false, &distinct, "S2"),
+            "without sleep mode, seen successors should not be pruned"
+        );
+        assert!(
+            !should_prune_seen_successor(true, &distinct, "S3"),
+            "unseen successors should not be pruned"
         );
     }
 

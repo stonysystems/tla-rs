@@ -18,9 +18,9 @@ Measurement bounds:
 
 | Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons | Sleep Prunes (sleep) | Sleep Cardinality (avg/max by depth, sleep) | Independence Blockers (early_off/chosen_unknown/cand/ind/same/unknown/conflict, sleep) |
 |------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|---------------------:|---------------------------------------------|----------------------------------------------------------------------------------------|
-| 02_counter_incdec | 5 | 5 | 5 | 0.0% | 6 | 6 | 6 | 0.0% | 0 | d0:0.0/0;d1:0.0/0;d2:0.0/0 | early_off=0 chosen_unknown=0 cand=10 ind=0 same=7 unknown=0 conflict=3 |
-| 09_peterson_mutex_2p | 10 | 10 | 10 | 0.0% | 16 | 16 | 12 | 25.0% | 0 | d0:0.0/0;d1:0.5/1;d2:0.5/1;d3:0.7/1 | early_off=0 chosen_unknown=0 cand=24 ind=15 same=9 unknown=0 conflict=0 |
-| 17_paxos_small | 40 | 40 | 40 | 0.0% | 168 | 168 | 168 | 0.0% | 0 | d0:0.0/0;d1:3.0/6;d2:3.0/6;d3:1.6/5;d4:0.7/2;d5:0.0/0 | early_off=0 chosen_unknown=0 cand=423 ind=210 same=39 unknown=0 conflict=174 |
+| 02_counter_incdec | 5 | 5 | 5 | 0.0% | 6 | 6 | 4 | 33.3% | 2 | d0:0.0/0;d1:0.0/0;d2:0.0/0 | early_off=0 chosen_unknown=0 cand=10 ind=0 same=7 unknown=0 conflict=3 |
+| 09_peterson_mutex_2p | 10 | 10 | 10 | 0.0% | 16 | 16 | 9 | 43.8% | 3 | d0:0.0/0;d1:0.5/1;d2:0.5/1;d3:0.7/1 | early_off=0 chosen_unknown=0 cand=24 ind=15 same=9 unknown=0 conflict=0 |
+| 17_paxos_small | 40 | 40 | 40 | 0.0% | 168 | 168 | 39 | 76.8% | 129 | d0:0.0/0;d1:3.0/6;d2:3.0/6;d3:1.6/5;d4:0.7/2;d5:0.0/0 | early_off=0 chosen_unknown=0 cand=423 ind=210 same=39 unknown=0 conflict=174 |
 
 ## Gate Status (Phase 38.14.10.d)
 
@@ -32,11 +32,11 @@ Current evidence gate in TODO:
 
 Observed from measured runs above:
 
-- `>10%` transition reduction on `1 / 3` measured cases.
+- `>10%` transition reduction on `3 / 3` measured cases.
 
 Status:
 
-- **Transition/work gate: NOT MET (1/3)**.
+- **Transition/work gate: MET (3/3)**.
 
 ## Notes
 

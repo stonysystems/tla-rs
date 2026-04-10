@@ -33,8 +33,12 @@ Current sleep-set tuning can still provide real value through:
 - transition reduction (`transitions_fired`), and
 - lower exploration work at equivalent safety results.
 
-Observed example on 2026-04-10 measurements: `09_peterson_mutex_2p`
-shows `16 -> 12` transitions (`25%` reduction) with no state-loss regression.
+Observed examples on 2026-04-10 measurements:
+
+- `09_peterson_mutex_2p`: `16 -> 9` transitions (`43.8%` reduction),
+- `17_paxos_small`: `168 -> 39` transitions (`76.8%` reduction),
+
+with no state-loss regression.
 
 ## Proposed next leaves for `38.14.10.d.b.c.i`
 
@@ -54,7 +58,7 @@ The evidence gate is now retargeted to a parity-consistent work metric:
 Distinct-state reduction remains in the table as diagnostics only, not as a
 closure gate, because it is incompatible with the enforced subset safety check.
 
-Current measured status after retargeting (2026-04-10):
+Initial measured status after retargeting (2026-04-10):
 
 - `1 / 3` transition-gate hits (`09_peterson_mutex_2p`), so the gate is
   still **NOT MET**.
@@ -107,3 +111,26 @@ Validation on 2026-04-10:
   `test_sleep_set_parity_peterson_mutex_no_lost_states` and
   `test_sleep_set_parity_all_passing_cases`.
 - Reduction harness remained unchanged (`1/3` transition-gate hits).
+
+## Resolution applied in `38.14.10.d.b.c.l` / `38.14.10.d.b.c.m`
+
+Implemented sleep-mode global seen-successor pruning in `explore_dpor`:
+
+- When a selected transition's concrete successor key is already present in
+  `distinct_states`, skip re-firing it in sleep mode and continue scanning.
+- Conservative mode remains unchanged to preserve a stable baseline.
+
+Validation on 2026-04-10:
+
+- Added focused tests:
+  `test_should_prune_seen_successor_enabled_and_seen`,
+  `test_should_prune_seen_successor_disabled_or_unseen`.
+- Re-ran parity guards, DPOR/transpiler full test suites, and full suite script
+  (`20 real / 0 vacuous / 0 failed`).
+- Reduction harness now reports **3 / 3 transition-gate hits**:
+  `02: 6 -> 4 (33.3%)`, `09: 16 -> 9 (43.8%)`,
+  `17: 168 -> 39 (76.8%)`.
+
+Result:
+
+- Phase `38.14.10.d` transition/work evidence gate is now **MET (3/3)**.
