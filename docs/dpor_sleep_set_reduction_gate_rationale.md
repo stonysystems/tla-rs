@@ -82,3 +82,28 @@ Decision:
 - Reject and revert this widening under the current conservative parity model.
 - Keep the focused guardrail test
   `test_sleep_set_parity_peterson_mutex_no_lost_states`.
+
+## Resolution applied in `38.14.10.d.b.c.k`
+
+Implemented a small parity-safe transition reduction in `explore_dpor`:
+
+- In sleep mode, while scanning candidates at one frame, skip a candidate if a
+  previously explored sibling in `done` already reaches the same
+  `successor_fingerprint`.
+
+Rationale:
+
+- For this checker's current state-based safety contract, re-firing a sibling
+  that reaches the exact same successor state is redundant work.
+- The step is conservative and frame-local; it does not weaken the existing
+  subset parity requirement.
+
+Validation on 2026-04-10:
+
+- Added focused helper tests:
+  `test_has_done_successor_fingerprint_true_for_matching_done_transition`,
+  `test_has_done_successor_fingerprint_false_without_matching_done_transition`.
+- Parity guard tests passed, including
+  `test_sleep_set_parity_peterson_mutex_no_lost_states` and
+  `test_sleep_set_parity_all_passing_cases`.
+- Reduction harness remained unchanged (`1/3` transition-gate hits).

@@ -300,6 +300,19 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                     let transition = frame.enabled.iter().find(|t| t.ordering_key == *key);
                     match transition {
                         Some(t) => {
+                            if config.use_sleep_sets
+                                && has_done_successor_fingerprint(
+                                    &frame.done,
+                                    &frame.enabled,
+                                    t.successor_fingerprint,
+                                )
+                            {
+                                // If an already explored sibling reaches the same successor
+                                // fingerprint, re-firing this transition is redundant for the
+                                // state-based exploration contract used by this checker.
+                                prunes_this_scan += 1;
+                                continue;
+                            }
                             if frame.sleep.contains(&transition_sleep_key(t)) {
                                 prunes_this_scan += 1;
                                 continue;
@@ -784,6 +797,20 @@ fn initialize_backtrack_keys(
         .filter(|transition| !sleep.contains(&transition_sleep_key(transition)))
         .map(|transition| transition.ordering_key.clone())
         .collect()
+}
+
+fn has_done_successor_fingerprint(
+    done_keys: &BTreeSet<String>,
+    enabled: &[EnabledTransition],
+    successor_fingerprint: StateFingerprint,
+) -> bool {
+    done_keys.iter().any(|done_key| {
+        enabled
+            .iter()
+            .find(|t| t.ordering_key == *done_key)
+            .map(|t| t.successor_fingerprint == successor_fingerprint)
+            .unwrap_or(false)
+    })
 }
 
 fn transition_sleep_key(transition: &EnabledTransition) -> String {
@@ -1945,6 +1972,64 @@ max_seq_len = 4
         assert!(
             backtrack.contains(&transition_b.ordering_key),
             "non-sleeping transition should remain in backtrack"
+        );
+    }
+
+    #[test]
+    fn test_has_done_successor_fingerprint_true_for_matching_done_transition() {
+        let transition_a = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "branch_a".to_string(),
+            successor_fingerprint: StateFingerprint(11),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let transition_b = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "branch_b".to_string(),
+            successor_fingerprint: StateFingerprint(11),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let done: BTreeSet<String> = [transition_a.ordering_key.clone()].into();
+        let enabled = vec![transition_a, transition_b.clone()];
+
+        assert!(
+            has_done_successor_fingerprint(
+                &done,
+                &enabled,
+                transition_b.successor_fingerprint
+            ),
+            "done-set should report a matching successor fingerprint"
+        );
+    }
+
+    #[test]
+    fn test_has_done_successor_fingerprint_false_without_matching_done_transition() {
+        let transition_a = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "branch_a".to_string(),
+            successor_fingerprint: StateFingerprint(11),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let transition_b = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "branch_b".to_string(),
+            successor_fingerprint: StateFingerprint(12),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let done: BTreeSet<String> = [transition_a.ordering_key.clone()].into();
+        let enabled = vec![transition_a, transition_b.clone()];
+
+        assert!(
+            !has_done_successor_fingerprint(
+                &done,
+                &enabled,
+                transition_b.successor_fingerprint
+            ),
+            "done-set should not report a non-matching successor fingerprint"
         );
     }
 

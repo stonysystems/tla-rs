@@ -12454,10 +12454,17 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         Added focused guardrail
         `test_sleep_set_parity_peterson_mutex_no_lost_states` to prevent
         reintroducing this unsafe behavior.
-      - [ ] **38.14.10.d.b.c.k**: Identify parity-safe transition-reduction
+      - [x] **38.14.10.d.b.c.k**: Identify parity-safe transition-reduction
         opportunities from measured blocker telemetry (same-process/footprint
         conflict-heavy cases), then implement one small conservative step and
         re-run the reduction harness.
+        **Done 2026-04-10**: Implemented a conservative frame-local transition
+        skip in sleep mode: if a candidate transition reaches a
+        `successor_fingerprint` already reached by a previously explored
+        sibling (`done`) at the same frame, skip re-firing it. Added focused
+        helper tests (`test_has_done_successor_fingerprint_*`) and re-ran
+        parity + reduction harness. Result: parity remained green, but measured
+        transition gate stayed unchanged at `1/3` hits.
     - [x] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.
