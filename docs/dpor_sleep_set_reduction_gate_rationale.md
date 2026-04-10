@@ -4,7 +4,7 @@ Date: 2026-04-10
 
 ## Context
 
-Phase `38.14.10.d` currently tracks a gate of:
+Phase `38.14.10.d` originally tracked a gate of:
 
 - `>10%` **distinct-state** reduction on at least `3` measured multi-process cases.
 
@@ -58,3 +58,11 @@ Current measured status after retargeting (2026-04-10):
 
 - `1 / 3` transition-gate hits (`09_peterson_mutex_2p`), so the gate is
   still **NOT MET**.
+
+## Resolution applied in `38.14.10.d.b.c.i.c`
+
+Decision: do **not** weaken subset parity.
+
+- Distinct-state reduction is not a hard gate anymore.
+- Keep `conservative ⊆ independence` and `conservative ⊆ sleep` as-is.
+- Do not introduce a weaker projection-level parity contract at this stage.

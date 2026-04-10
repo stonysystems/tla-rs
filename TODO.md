@@ -56,10 +56,10 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
-- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.9: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 600`, `2026-04-09T15:17:19Z`), and Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`. Remaining DPOR blockers are now algorithmic: independence/sleep-set pruning still shows 0% reduction on the published reduction table, and the Phase 38.10 integration gate still needs a post-audit re-evaluation (38.14.11). Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
+- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.9: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 600`, `2026-04-09T15:17:19Z`), and Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`. Remaining DPOR blockers are now algorithmic: independence/sleep-set pruning now shows partial work reduction (`1/3` measured cases above 10% transition reduction), but the Phase 38.14.10 gate is still not met and the Phase 38.10 integration gate still needs a post-audit re-evaluation (38.14.11). Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
 **Next steps (priority order):**
-1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — execute 38.14.10 first: make `use_independence`/`use_sleep_sets` produce measurable state-count reduction on at least 3 multi-process cases, then execute 38.14.11 to re-evaluate the 38.10 integration gate against the post-audit 20/20 honest baseline. This remains a separate incubator track; do not let it silently rewrite the current mainline checker before the prototype earns it. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
+1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — execute 38.14.10 first: make `use_independence`/`use_sleep_sets` produce measurable exploration-work reduction (transitions/pruning) on at least 3 multi-process cases, then execute 38.14.11 to re-evaluate the 38.10 integration gate against the post-audit 20/20 honest baseline. This remains a separate incubator track; do not let it silently rewrite the current mainline checker before the prototype earns it. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 2. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models and fix the source-first performance pathologies exposed by the benchmark comparison. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 3. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks, and keep the evidence/benchmark guards aligned with any schema or artifact changes from Phase 36. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
 4. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
@@ -12214,7 +12214,7 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
   branches). Fix: extract real `ProcessId` from the existential binder and
   populate per-branch field footprints from the solver's
   `direct_assigned_fields` telemetry. **Validate** by re-running the
-  sleep-set reduction table and showing > 10% state-count reduction on at
+  sleep-set reduction table and showing > 10% transition/work reduction on at
   least 3 multi-process cases (e.g., 02_counter_incdec, 09_peterson_mutex_2p,
   10_bakery_mutex_3p). **Do this only after 38.14.7 and 38.14.8 are
   closed** — there is no point reducing the exploration of vacuous state
@@ -12408,9 +12408,13 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         protocol cases (`09`: `ind=15`, `17`: `ind=210`) with no state-loss
         regressions. `09` now shows transition reduction (`16 -> 12`, `25.0%`);
         distinct-state gate remains **NOT MET** (`0/3`).
-      - [ ] **38.14.10.d.b.c.i**: Convert non-zero independence candidates into
+      - [x] **38.14.10.d.b.c.i**: Convert non-zero independence candidates into
         measurable reduction on measured cases under an internally consistent
         gate (state-count vs transition-count) while preserving parity safety.
+        **Done 2026-04-10**: Completed decomposition `i.a/i.b/i.c`. The gate
+        model is now internally consistent: transition/work reduction is the
+        hard evidence gate, distinct-state reduction is diagnostic-only under
+        subset parity, and no weaker parity contract is introduced.
         **Decomposition (2026-04-10):**
       - [x] **38.14.10.d.b.c.i.a**: Document and codify the current gate
         contradiction: with enforced subset safety checks
@@ -12432,10 +12436,14 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         multi-process cases, and leaves distinct-state reduction as diagnostic
         only under `conservative ⊆ sleep`. Refreshed report metrics from the
         harness: current status is `1/3` transition-gate hits (NOT MET).
-      - [ ] **38.14.10.d.b.c.i.c**: If distinct-state reduction is still required
+      - [x] **38.14.10.d.b.c.i.c**: If distinct-state reduction is still required
         as a hard gate, replace the current subset parity contract with an
         explicit weaker contract (and soundness rationale) before claiming
         state-count reduction.
+        **Done 2026-04-10**: Decision recorded: distinct-state reduction is no
+        longer a hard gate after `i.b`, so no weaker parity contract is
+        introduced. Keep conservative subset parity
+        (`conservative ⊆ independence`, `conservative ⊆ sleep`) unchanged.
     - [x] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.
