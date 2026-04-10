@@ -12395,9 +12395,39 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         `4/9/39` to `0/0/0`, and candidate evaluation is now active
         (`cand=10/21/423`). No reduction yet (`ind=0`, `sleep_prunes=0`);
         blocker profile shifted to same-process + footprint-conflict counts.
-      - [ ] **38.14.10.d.b.c.h**: Refine conservative fallback footprints for
+      - [x] **38.14.10.d.b.c.h**: Refine conservative fallback footprints for
         process-indexed updates (keep safety) so measured cases can produce
         non-zero independent candidate counts (`ind>0`) without parity loss.
+        **Done 2026-04-10**: Unknown-footprint fallback in `enabled.rs` now
+        derives footprints from concrete top-level deltas (with keyed
+        `field[pid]` when process-scoped updates are detected), instead of
+        always using all top-level fields. Re-ran reduction harness (`02/09/17`)
+        and parity/full suites: `ind` is now non-zero on measured multi-process
+        protocol cases (`09`: `ind=15`, `17`: `ind=210`) with no state-loss
+        regressions. `09` now shows transition reduction (`16 -> 12`, `25.0%`);
+        distinct-state gate remains **NOT MET** (`0/3`).
+      - [ ] **38.14.10.d.b.c.i**: Convert non-zero independence candidates into
+        measurable reduction on measured cases under an internally consistent
+        gate (state-count vs transition-count) while preserving parity safety.
+        **Decomposition (2026-04-10):**
+      - [x] **38.14.10.d.b.c.i.a**: Document and codify the current gate
+        contradiction: with enforced subset safety checks
+        (`conservative ⊆ sleep`), positive distinct-state reduction vs
+        conservative is mathematically impossible.
+        **Done 2026-04-10**: Added rationale doc
+        `docs/dpor_sleep_set_reduction_gate_rationale.md`, added
+        `percent_reduction()` helper plus regression
+        `test_percent_reduction_is_non_positive_for_superset_sizes`, and
+        updated the reduction harness output with an explicit contradiction note
+        and a parallel transition-reduction gate summary.
+      - [ ] **38.14.10.d.b.c.i.b**: Keep subset parity safety as-is and retarget
+        the evidence gate to a measurable work-reduction metric
+        (`transitions_fired` and related pruning telemetry), then regenerate the
+        reduction report from harness output.
+      - [ ] **38.14.10.d.b.c.i.c**: If distinct-state reduction is still required
+        as a hard gate, replace the current subset parity contract with an
+        explicit weaker contract (and soundness rationale) before claiming
+        state-count reduction.
     - [x] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.

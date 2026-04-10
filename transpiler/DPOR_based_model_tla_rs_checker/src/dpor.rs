@@ -550,6 +550,14 @@ fn format_independence_blockers_summary(stats: &SleepIndependenceBlockers) -> St
     )
 }
 
+#[cfg(test)]
+fn percent_reduction(baseline: usize, optimized: usize) -> f64 {
+    if baseline == 0 {
+        return 0.0;
+    }
+    ((baseline as f64 - optimized as f64) / baseline as f64) * 100.0
+}
+
 /// Result of replaying a violation witness.
 #[derive(Debug)]
 pub struct ReplayResult {
@@ -1420,6 +1428,7 @@ max_seq_len = 4
         );
 
         let mut multi_process_gate_hits = 0usize;
+        let mut transition_gate_hits = 0usize;
         for (case_id, filename) in &cases {
             let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
             if !spec_file.exists() {
@@ -1502,19 +1511,13 @@ max_seq_len = 4
                 format_sleep_cardinality_summary(&sleep.sleep_cardinality_by_depth);
             let blockers = format_independence_blockers_summary(&sleep.sleep_independence_blockers);
 
-            let distinct_reduction_pct = if cons_distinct == 0 {
-                0.0
-            } else {
-                ((cons_distinct as f64 - sleep_distinct as f64) / cons_distinct as f64) * 100.0
-            };
-            let transition_reduction_pct = if cons_transitions == 0 {
-                0.0
-            } else {
-                ((cons_transitions as f64 - sleep_transitions as f64) / cons_transitions as f64)
-                    * 100.0
-            };
+            let distinct_reduction_pct = percent_reduction(cons_distinct, sleep_distinct);
+            let transition_reduction_pct = percent_reduction(cons_transitions, sleep_transitions);
             if distinct_reduction_pct > 10.0 {
                 multi_process_gate_hits += 1;
+            }
+            if transition_reduction_pct > 10.0 {
+                transition_gate_hits += 1;
             }
 
             println!(
@@ -1537,6 +1540,28 @@ max_seq_len = 4
         println!(
             "Gate check (>10% distinct-state reduction on at least 3 multi-process cases): {} / 3 hits",
             multi_process_gate_hits
+        );
+        println!(
+            "Gate check (>10% transition reduction on at least 1 multi-process case): {} / 3 hits",
+            transition_gate_hits
+        );
+        println!(
+            "Note: with safety checks `conservative ⊆ sleep`, positive distinct-state reduction is mathematically impossible."
+        );
+    }
+
+    #[test]
+    fn test_percent_reduction_is_non_positive_for_superset_sizes() {
+        // Under the current safety invariant (`conservative ⊆ sleep`), the
+        // sleep-state set cardinality is always >= conservative cardinality.
+        // Therefore distinct-state "reduction vs conservative" cannot be > 0.
+        let conservative_size = 10usize;
+        let sleep_size = 12usize;
+        assert!(sleep_size >= conservative_size);
+        let reduction = percent_reduction(conservative_size, sleep_size);
+        assert!(
+            reduction <= 0.0,
+            "superset cardinality must not report positive reduction"
         );
     }
 

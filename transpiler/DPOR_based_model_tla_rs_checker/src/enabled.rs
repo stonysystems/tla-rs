@@ -258,7 +258,8 @@ impl SpecContext {
                     *process_id,
                 );
                 if footprint.reads.is_empty() && footprint.writes.is_empty() {
-                    footprint = derive_conservative_unknown_footprint(state, successor);
+                    footprint =
+                        derive_conservative_unknown_footprint(state, successor, *process_id);
                 }
                 enabled.push(EnabledTransition {
                     process_id: *process_id,
@@ -280,7 +281,8 @@ impl SpecContext {
             let ordering_key = format!("{:04}", succ_idx);
             let process_id =
                 infer_process_id_from_state_delta(state, successor, &successor.canonical_key());
-            let footprint = derive_conservative_unknown_footprint(state, successor);
+            let footprint =
+                derive_conservative_unknown_footprint(state, successor, process_id);
             all_enabled.push(EnabledTransition {
                 process_id,
                 branch_label: format!("transition_{}", succ_idx),
@@ -832,21 +834,89 @@ fn top_level_state_fields(state: &RuntimeValue) -> std::collections::BTreeSet<St
     }
 }
 
+fn top_level_changed_fields(
+    current_state: &RuntimeValue,
+    successor_state: &RuntimeValue,
+) -> std::collections::BTreeSet<String> {
+    let mut changed = std::collections::BTreeSet::new();
+    match (current_state, successor_state) {
+        (
+            RuntimeValue::Struct {
+                fields: current_fields,
+                ..
+            },
+            RuntimeValue::Struct {
+                fields: successor_fields,
+                ..
+            },
+        )
+        | (
+            RuntimeValue::Enum {
+                fields: current_fields,
+                ..
+            },
+            RuntimeValue::Enum {
+                fields: successor_fields,
+                ..
+            },
+        ) => {
+            for field in current_fields.keys() {
+                if successor_fields.get(field) != current_fields.get(field) {
+                    changed.insert(field.clone());
+                }
+            }
+            for field in successor_fields.keys() {
+                if !current_fields.contains_key(field) {
+                    changed.insert(field.clone());
+                }
+            }
+        }
+        _ => {}
+    }
+    changed
+}
+
 fn derive_conservative_unknown_footprint(
     current_state: &RuntimeValue,
     successor_state: &RuntimeValue,
+    process_id: ProcessId,
 ) -> TransitionFootprint {
     // Conservative fallback for unknown/whole-state branches:
-    // use all top-level state fields as read/write to keep dependence safe
-    // while avoiding empty-footprint "unknown" telemetry for struct-like states.
+    // derive from concrete top-level state deltas and use keyed paths when a
+    // process-scoped update is detectable.
+    // If no top-level change is observable, fall back to all top-level fields.
     let mut fields = top_level_state_fields(current_state);
     fields.extend(top_level_state_fields(successor_state));
     if fields.is_empty() {
         return TransitionFootprint::default();
     }
+    let changed_fields = top_level_changed_fields(current_state, successor_state);
+    if changed_fields.is_empty() {
+        return TransitionFootprint {
+            reads: fields.clone(),
+            writes: fields,
+        };
+    }
+
+    let mut refined = std::collections::BTreeSet::new();
+    for field in &changed_fields {
+        if let Some(pid_key) =
+            detect_process_scoped_update_field(current_state, successor_state, field, process_id.0)
+        {
+            refined.insert(format!("{}[{}]", field, pid_key));
+        } else {
+            refined.insert(field.clone());
+        }
+    }
+    if refined.is_empty() {
+        return TransitionFootprint {
+            reads: fields.clone(),
+            writes: fields,
+        };
+    }
     TransitionFootprint {
-        reads: fields.clone(),
-        writes: fields,
+        reads: refined.clone(),
+        writes: refined,
     }
 }
 
@@ -1613,17 +1683,98 @@ max_seq_len = 4
             ]),
         };
 
-        let derived = derive_conservative_unknown_footprint(&before, &after);
-        assert_eq!(derived.reads, ["x".to_string(), "y".to_string()].into());
-        assert_eq!(derived.writes, ["x".to_string(), "y".to_string()].into());
+        let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
+        assert_eq!(derived.reads, ["y".to_string()].into());
+        assert_eq!(derived.writes, ["y".to_string()].into());
     }
 
     #[test]
     fn test_derive_conservative_unknown_footprint_non_struct_is_empty() {
-        let derived =
-            derive_conservative_unknown_footprint(&RuntimeValue::Int(1), &RuntimeValue::Int(2));
+        let derived = derive_conservative_unknown_footprint(
+            &RuntimeValue::Int(1),
+            &RuntimeValue::Int(2),
+            ProcessId(0),
+        );
         assert!(derived.reads.is_empty());
         assert!(derived.writes.is_empty());
+    }
+
+    #[test]
+    fn test_derive_conservative_unknown_footprint_process_scoped_update_is_keyed() {
+        let before = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "pc".to_string(),
+                RuntimeValue::Map(std::collections::BTreeMap::from([
+                    (
+                        RuntimeValue::Int(0),
+                        RuntimeValue::String("idle".to_string()),
+                    ),
+                    (
+                        RuntimeValue::Int(1),
+                        RuntimeValue::String("idle".to_string()),
+                    ),
+                ])),
+            )]),
+        };
+        let after = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "pc".to_string(),
+                RuntimeValue::Map(std::collections::BTreeMap::from([
+                    (
+                        RuntimeValue::Int(0),
+                        RuntimeValue::String("wait".to_string()),
+                    ),
+                    (
+                        RuntimeValue::Int(1),
+                        RuntimeValue::String("idle".to_string()),
+                    ),
+                ])),
+            )]),
+        };
+        let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
+        assert_eq!(derived.reads, ["pc[0]".to_string()].into());
+        assert_eq!(derived.writes, ["pc[0]".to_string()].into());
+    }
+
+    #[test]
+    fn test_derive_conservative_unknown_footprint_ambiguous_update_stays_coarse() {
+        let before = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "pc".to_string(),
+                RuntimeValue::Map(std::collections::BTreeMap::from([
+                    (
+                        RuntimeValue::Int(0),
+                        RuntimeValue::String("idle".to_string()),
+                    ),
+                    (
+                        RuntimeValue::Int(1),
+                        RuntimeValue::String("idle".to_string()),
+                    ),
+                ])),
+            )]),
+        };
+        let after = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([(
+                "pc".to_string(),
+                RuntimeValue::Map(std::collections::BTreeMap::from([
+                    (
+                        RuntimeValue::Int(0),
+                        RuntimeValue::String("wait".to_string()),
+                    ),
+                    (
+                        RuntimeValue::Int(1),
+                        RuntimeValue::String("wait".to_string()),
+                    ),
+                ])),
+            )]),
+        };
+        let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
+        assert_eq!(derived.reads, ["pc".to_string()].into());
+        assert_eq!(derived.writes, ["pc".to_string()].into());
     }
 
     #[test]

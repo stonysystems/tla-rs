@@ -19,12 +19,12 @@ Measurement bounds:
 | Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons | Sleep Prunes (sleep) | Sleep Cardinality (avg/max by depth, sleep) | Independence Blockers (early_off/chosen_unknown/cand/ind/same/unknown/conflict, sleep) |
 |------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|---------------------:|---------------------------------------------|----------------------------------------------------------------------------------------|
 | 02_counter_incdec | 5 | 5 | 5 | 0.0% | 6 | 6 | 6 | 0.0% | 0 | d0:0.0/0;d1:0.0/0;d2:0.0/0 | early_off=0 chosen_unknown=0 cand=10 ind=0 same=7 unknown=0 conflict=3 |
-| 09_peterson_mutex_2p | 10 | 10 | 10 | 0.0% | 16 | 16 | 16 | 0.0% | 0 | d0:0.0/0;d1:0.0/0;d2:0.0/0;d3:0.0/0;d4:0.0/0;d5:0.0/0;d6:0.0/0 | early_off=0 chosen_unknown=0 cand=21 ind=0 same=9 unknown=0 conflict=12 |
-| 17_paxos_small | 40 | 40 | 40 | 0.0% | 168 | 168 | 168 | 0.0% | 0 | d0:0.0/0;d1:0.0/0;d2:0.0/0;d3:0.0/0;d4:0.0/0;d5:0.0/0 | early_off=0 chosen_unknown=0 cand=423 ind=0 same=39 unknown=0 conflict=384 |
+| 09_peterson_mutex_2p | 10 | 10 | 10 | 0.0% | 16 | 16 | 12 | 25.0% | 0 | d0:0.0/0;d1:0.5/1;d2:0.5/1;d3:0.7/1 | early_off=0 chosen_unknown=0 cand=24 ind=15 same=9 unknown=0 conflict=0 |
+| 17_paxos_small | 40 | 40 | 40 | 0.0% | 168 | 168 | 168 | 0.0% | 0 | d0:0.0/0;d1:3.0/6;d2:3.0/6;d3:1.6/5;d4:0.7/2;d5:0.0/0 | early_off=0 chosen_unknown=0 cand=423 ind=210 same=39 unknown=0 conflict=174 |
 
 ## Gate Status (Phase 38.14.10.d)
 
-Required gate to close `38.14.10`:
+Current distinct-state gate in TODO:
 
 - `>10%` distinct-state reduction on at least `3` multi-process cases.
 
@@ -32,21 +32,20 @@ Observed from measured runs above:
 
 - `0 / 3` cases above 10%.
 
+Transition-work signal from the same run:
+
+- `>10%` transition reduction on `1 / 3` measured cases.
+
 Status:
 
-- **NOT MET**.
+- **Distinct-state gate: NOT MET**.
+- **Transition-reduction signal: PARTIAL (1/3)**.
 
 ## Notes
 
-- The harness enforces parity-safety during measurement by asserting:
-  `conservative ⊆ independence` and `conservative ⊆ sleep` for distinct states.
-- Telemetry for the measured subset shows `sleep_prunes=0` and zero sleep-set
-  cardinality at all observed depths, so no measurable sleep-set pruning is
-  currently happening on these runs.
-- Independence blocker telemetry now shows `chosen_unknown=0` and non-zero
-  `cand` on every measured case, so candidate evaluation is active.
-- `ind=0` remains the immediate blocker for reduction on this subset:
-  evaluated candidates are currently all blocked by same-process ordering or
-  coarse footprint conflicts.
-- Because the gate is not met, `38.14.10` remains open pending further
-  algorithmic reduction work.
+- The harness enforces parity safety by asserting:
+  `conservative ⊆ independence` and `conservative ⊆ sleep`.
+- Under that enforced subset contract, positive distinct-state reduction vs
+  conservative is mathematically impossible (`|sleep| >= |conservative|`).
+- See `docs/dpor_sleep_set_reduction_gate_rationale.md` for the rationale and
+  proposed next decomposition under `38.14.10.d.b.c.i`.
