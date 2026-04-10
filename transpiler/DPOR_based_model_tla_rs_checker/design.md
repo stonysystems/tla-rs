@@ -707,6 +707,37 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 - Remaining migration execution leaf after this landing is `38.10.4.c`
   (schema drift guard).
 
+### 38.10.4.c shadow report-schema drift guard (2026-04-10)
+
+- Added checked-in guard script:
+  `scripts/verify_shadow_subset_report_schema.sh`.
+- Guard contract:
+  - validates required root fields in
+    `tests/reports/shadow_parity_subset_latest.json`:
+    `schema_version`, `subset_source`, `command`, `timeout_sec`, `summary`,
+    `cases`;
+  - enforces fixed schema identity:
+    - `schema_version == 1`,
+    - `subset_source ==
+      src/dpor.rs::test_automated_baseline_vs_dpor_comparison`,
+    - `command == scripts/run_shadow_subset_report.sh`;
+  - validates required summary fields and consistency equations:
+    - `summary.total_cases == len(cases)`,
+    - `summary.parity_failures ==
+      positive_state_mismatch + negative_witness_mismatch +
+      verdict_mismatch + other_classifications`;
+  - validates required per-case fields and embedded `shadow_report` identity
+    (`shadow_report.command == shadow-compare`);
+  - validates markdown surface contract in
+    `tests/reports/shadow_parity_subset_latest.md` (title/summary/case-table
+    headers and per-case rows).
+- Added integration coverage:
+  `test_phase_38_10_4_c_shadow_report_schema_drift_guard_contract`:
+  - asserts guard passes on checked-in report artifacts;
+  - asserts guard fails on intentional schema drift (missing
+    `summary.parity_failures`).
+- With this landing, `38.10.4` migration-execution leaves are complete.
+
 ### Post-38.14.10 optimization evidence snapshot
 
 - Sleep-set reduction gate (Phase 38.14.10) is now closed:
@@ -719,7 +750,7 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 ### Remaining blockers for 38.10 gate re-evaluation
 
 - No parity blocker remains for `38.10.1` after `38.14.11.c.c`; follow-on work
-  is deliberate `38.10` migration execution (`38.10.4.c`).
+  is acceptance-criteria closure in `38.11`.
 
 ### 38.14.11.c.b parity-gap measurement snapshot
 

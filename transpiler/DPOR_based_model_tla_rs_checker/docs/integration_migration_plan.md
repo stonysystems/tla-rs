@@ -173,5 +173,13 @@ Remaining execution leaves:
     - `tests/reports/shadow_parity_subset_latest.md`
   - current snapshot (`2026-04-10T07:23:15Z`):
     `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures`.
-- `38.10.4.c` remains open: add report-schema drift guard for shadow-mode
-  consumers.
+- `38.10.4.c` is now implemented:
+  - command:
+    `scripts/verify_shadow_subset_report_schema.sh`
+  - validates schema identity/required fields for:
+    - `tests/reports/shadow_parity_subset_latest.json`
+    - `tests/reports/shadow_parity_subset_latest.md`
+  - integrated contract coverage:
+    `test_phase_38_10_4_c_shadow_report_schema_drift_guard_contract`
+  - intentional drift example is covered: removing
+    `summary.parity_failures` causes guard failure.

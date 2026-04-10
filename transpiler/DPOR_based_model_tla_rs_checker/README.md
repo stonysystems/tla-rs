@@ -49,6 +49,12 @@ artifacts under `tests/reports/`:
 ./scripts/run_shadow_subset_report.sh
 ```
 
+Validate shadow-report schema drift guard:
+
+```bash
+./scripts/verify_shadow_subset_report_schema.sh
+```
+
 ## Design references
 
 See `design.md` for structured notes on:

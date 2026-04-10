@@ -20954,7 +20954,7 @@ fn test_phase_38_10_4_a_shadow_compare_cli_contract() {
         "dpor-checker shadow-compare",
         "test_phase_38_10_4_a_shadow_compare_cli_contract",
         "[x] **38.10.4.b**",
-        "[ ] **38.10.4.c**",
+        "[x] **38.10.4.c**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -21152,7 +21152,7 @@ fn test_phase_38_10_4_b_shadow_subset_report_script_contract() {
         "[x] **38.10.4.b**",
         "run_shadow_subset_report.sh",
         "shadow_parity_subset_latest.{json,md}",
-        "[ ] **38.10.4.c**",
+        "[x] **38.10.4.c**",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -21414,4 +21414,172 @@ fn test_phase_38_10_4_b_shadow_subset_report_script_contract() {
             md_src
         );
     }
+}
+
+#[test]
+fn test_phase_38_10_4_c_shadow_report_schema_drift_guard_contract() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "[x] **38.10.4.c**",
+        "verify_shadow_subset_report_schema.sh",
+        "shadow_parity_subset_latest.json",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.10.4.c fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let design_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/design.md");
+    let design_src = std::fs::read_to_string(&design_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR design note {}: {}",
+            design_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "### 38.10.4.c shadow report-schema drift guard (2026-04-10)",
+        "verify_shadow_subset_report_schema.sh",
+        "schema_version",
+    ] {
+        assert!(
+            design_src.contains(required_fragment),
+            "DPOR design note {} must include 38.10.4.c fragment `{}`",
+            design_path.display(),
+            required_fragment
+        );
+    }
+
+    let plan_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
+    );
+    let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR integration migration plan {}: {}",
+            plan_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "38.10.4.c",
+        "verify_shadow_subset_report_schema.sh",
+        "shadow_parity_subset_latest.json",
+    ] {
+        assert!(
+            plan_src.contains(required_fragment),
+            "DPOR migration plan {} must include 38.10.4.c fragment `{}`",
+            plan_path.display(),
+            required_fragment
+        );
+    }
+
+    let script_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/scripts/verify_shadow_subset_report_schema.sh",
+    );
+    assert!(
+        script_path.exists(),
+        "expected shadow schema drift guard script at {}",
+        script_path.display()
+    );
+
+    let ok_output = std::process::Command::new(
+        script_path
+            .to_str()
+            .expect("guard script path must be valid UTF-8"),
+    )
+    .current_dir(&repo_root)
+    .output()
+    .expect("failed to run shadow schema drift guard");
+    assert!(
+        ok_output.status.success(),
+        "shadow schema drift guard should pass on checked-in report:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&ok_output.stdout),
+        String::from_utf8_lossy(&ok_output.stderr)
+    );
+
+    let report_json = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/reports/shadow_parity_subset_latest.json",
+    );
+    let report_md = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/reports/shadow_parity_subset_latest.md",
+    );
+    let report_src = std::fs::read_to_string(&report_json).unwrap_or_else(|err| {
+        panic!(
+            "failed to read checked-in shadow report {}: {}",
+            report_json.display(),
+            err
+        )
+    });
+    let mut report_val: serde_json::Value = serde_json::from_str(&report_src).unwrap_or_else(|err| {
+        panic!(
+            "failed to parse checked-in shadow report {}: {}\nreport:\n{}",
+            report_json.display(),
+            err,
+            report_src
+        )
+    });
+
+    if let Some(summary_obj) = report_val
+        .pointer_mut("/summary")
+        .and_then(|summary| summary.as_object_mut())
+    {
+        summary_obj.remove("parity_failures");
+    } else {
+        panic!("checked-in report missing summary object: {}", report_val);
+    }
+
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let broken_json = tmp.path().join("broken_shadow_report.json");
+    std::fs::write(
+        &broken_json,
+        serde_json::to_string_pretty(&report_val).expect("serialize broken report"),
+    )
+    .unwrap_or_else(|err| {
+        panic!(
+            "failed to write broken shadow report {}: {}",
+            broken_json.display(),
+            err
+        )
+    });
+
+    let bad_output = std::process::Command::new(
+        script_path
+            .to_str()
+            .expect("guard script path must be valid UTF-8"),
+    )
+    .args([
+        "--report-json",
+        broken_json
+            .to_str()
+            .expect("broken json path must be valid UTF-8"),
+        "--report-md",
+        report_md
+            .to_str()
+            .expect("markdown path must be valid UTF-8"),
+        "--expected-total",
+        "12",
+    ])
+    .current_dir(&repo_root)
+    .output()
+    .expect("failed to run shadow schema drift guard on broken report");
+    assert!(
+        !bad_output.status.success(),
+        "shadow schema drift guard must fail when required summary key is removed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&bad_output.stdout),
+        String::from_utf8_lossy(&bad_output.stderr)
+    );
+
+    let bad_stderr = String::from_utf8_lossy(&bad_output.stderr);
+    assert!(
+        bad_stderr.contains("summary missing key `parity_failures`"),
+        "broken-report run must mention missing summary parity_failures key; stderr:\n{}",
+        bad_stderr
+    );
 }
