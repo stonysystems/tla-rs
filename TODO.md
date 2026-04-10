@@ -11998,7 +11998,16 @@ stub detector clean and the run script reporting 0 vacuous passes.
    `src/lib.rs`, validates baseline-vs-DPOR parity harness coverage in
    `src/dpor.rs`, confirms `run_full_suite.sh` baseline engine reporting, and
    ties permanence policy to `38.6.3`.
-6. [ ] A full-suite command exists and is run on all 20 cases at every milestone, with a machine-readable report plus a human-readable scoreboard.
+6. [x] A full-suite command exists and is run on all 20 cases at every milestone, with a machine-readable report plus a human-readable scoreboard.
+   **Done 2026-04-10**: Added explicit acceptance-criterion guard coverage in
+   `transpiler/tests/integration.rs` via
+   `test_phase_38_11_6_full_suite_command_and_scoreboard_acceptance_criterion`,
+   which validates the checked-in full-suite entrypoint
+   (`scripts/run_full_suite.sh`), machine-readable scoreboard contract
+   (`tests/reports/latest.json` with required summary/case fields and
+   `total=20`), and human-readable scoreboard contract
+   (`tests/reports/latest.md` with metric table + per-case status + reproduction
+   command), tied to the documented workflow in `README.md`.
 7. [ ] At least 6 of the 20 cases are negative cases that exercise invariant violation or deadlock detection.
 8. [ ] DPOR and the baseline agree on verdict plus normalized state set or first witness for the small parity subset.
 9. [ ] `PrimaryBackup`, `Paxos`, and `Raft` are present as required hard cases and are never silently removed from the suite.

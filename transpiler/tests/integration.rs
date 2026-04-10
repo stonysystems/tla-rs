@@ -21993,6 +21993,164 @@ fn test_phase_38_11_5_baseline_oracle_is_present_and_permanent_acceptance_criter
 }
 
 #[test]
+fn test_phase_38_11_6_full_suite_command_and_scoreboard_acceptance_criterion() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "6. [x] A full-suite command exists and is run on all 20 cases at every milestone, with a machine-readable report plus a human-readable scoreboard.",
+        "test_phase_38_11_6_full_suite_command_and_scoreboard_acceptance_criterion",
+        "- [x] **38.5.1**: Added `scripts/run_full_suite.sh`",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.6 fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let readme_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path)
+        .unwrap_or_else(|err| panic!("failed to read README {}: {}", readme_path.display(), err));
+    for required_fragment in [
+        "Run all 20 test cases",
+        "./scripts/run_full_suite.sh",
+        "tests/reports/",
+    ] {
+        assert!(
+            readme_src.contains(required_fragment),
+            "README {} must include full-suite/reporting fragment `{}`",
+            readme_path.display(),
+            required_fragment
+        );
+    }
+
+    let script_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/scripts/run_full_suite.sh");
+    assert!(
+        script_path.exists() && script_path.is_file(),
+        "expected full-suite script at {}",
+        script_path.display()
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&script_path)
+            .unwrap_or_else(|err| panic!("failed to stat {}: {}", script_path.display(), err))
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "full-suite script {} must be executable",
+            script_path.display()
+        );
+    }
+
+    let script_src = std::fs::read_to_string(&script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read full-suite script {}: {}",
+            script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "runs the baseline model checker (verus-transpile model-check)",
+        "Full Suite Summary",
+        "Results written to: tests/reports/latest.json",
+        "\"engine\": \"baseline\"",
+    ] {
+        assert!(
+            script_src.contains(required_fragment),
+            "full-suite script {} must include fragment `{}`",
+            script_path.display(),
+            required_fragment
+        );
+    }
+
+    let report_json_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/reports/latest.json");
+    let report_json_src = std::fs::read_to_string(&report_json_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read report json {}: {}",
+            report_json_path.display(),
+            err
+        )
+    });
+    let report_json: serde_json::Value = serde_json::from_str(&report_json_src).unwrap_or_else(|err| {
+        panic!(
+            "failed to parse report json {}: {}",
+            report_json_path.display(),
+            err
+        )
+    });
+
+    for required_key in ["timestamp", "total", "passed", "vacuous", "known_unimplemented", "cases"] {
+        assert!(
+            report_json.get(required_key).is_some(),
+            "report json {} missing required key `{}`",
+            report_json_path.display(),
+            required_key
+        );
+    }
+    assert_eq!(
+        report_json
+            .get("total")
+            .and_then(|v| v.as_u64())
+            .unwrap_or_default(),
+        20,
+        "report json {} must declare total=20",
+        report_json_path.display()
+    );
+    let cases = report_json
+        .get("cases")
+        .and_then(|v| v.as_array())
+        .unwrap_or_else(|| panic!("report json {} missing `cases` array", report_json_path.display()));
+    assert_eq!(
+        cases.len(),
+        20,
+        "report json {} must include exactly 20 case rows",
+        report_json_path.display()
+    );
+    for row in cases {
+        for required_case_key in ["case_id", "engine", "result", "distinct_states"] {
+            assert!(
+                row.get(required_case_key).is_some(),
+                "report json {} case row missing key `{}`: {}",
+                report_json_path.display(),
+                required_case_key,
+                row
+            );
+        }
+    }
+
+    let report_md_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/reports/latest.md");
+    let report_md_src = std::fs::read_to_string(&report_md_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read report markdown {}: {}",
+            report_md_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "# DPOR Checker Suite Scoreboard",
+        "| Metric | Count |",
+        "## Per-Case Honest Status",
+        "## Reproduction",
+    ] {
+        assert!(
+            report_md_src.contains(required_fragment),
+            "report markdown {} must include fragment `{}`",
+            report_md_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
 fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
     let repo_root = resolve_repo_root_for_integration();
 
