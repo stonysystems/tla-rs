@@ -629,6 +629,23 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 - `38.10.3` stays open as staged-integration discipline for future migration
   execution, not as a parity blocker.
 
+### 38.10.3.a commit-scope guardrail (2026-04-10)
+
+- Added
+  `scripts/check_phase38_commit_scope.sh` to enforce reviewable commit
+  boundaries during post-gate incubation.
+- Guard contract:
+  - fail if a change set mixes
+    `transpiler/DPOR_based_model_tla_rs_checker/**` and
+    `transpiler/src/modelcheck/**`;
+  - pass for prototype-only or mainline-only changes;
+  - allow exceptions only with explicit override metadata:
+    `PHASE38_ALLOW_MIXED_COMMIT=1` plus non-empty
+    `PHASE38_MIXED_COMMIT_JUSTIFICATION`.
+  - successful explicit override emits `phase38-scope: mixed scope override accepted`.
+- This closes `38.10.3.a` without authorizing early migration; `38.10.3.b`
+  remains open.
+
 ### Post-38.14.10 optimization evidence snapshot
 
 - Sleep-set reduction gate (Phase 38.14.10) is now closed:
@@ -641,7 +658,7 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 ### Remaining blockers for 38.10 gate re-evaluation
 
 - No parity blocker remains for `38.10.1` after `38.14.11.c.c`; follow-on work
-  is staged integration discipline (`38.10.3`) and migration execution.
+  is staged integration discipline (`38.10.3.b`) and migration execution.
 
 ### 38.14.11.c.b parity-gap measurement snapshot
 

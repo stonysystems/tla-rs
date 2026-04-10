@@ -6,8 +6,9 @@ Owner: Phase 38 DPOR track
 ## Scope and intent
 
 This document is the explicit migration-plan artifact required by `TODO.md` task
-`38.10.2`. It does **not** authorize immediate mainline integration. The current
-`38.10.1` gate remains `NOT MET` until exact parity is addressed.
+`38.10.2`. It does **not** authorize immediate mainline integration. `38.10.1`
+is now policy-backed `MET` (see `38.14.11.c.c`), but post-gate discipline in
+`38.10.3` still applies before deliberate migration.
 
 ## 1. Proposed module move map (`38.10.2.a`)
 
@@ -106,6 +107,29 @@ Integration cannot silently break existing report consumers.
 
 ## 6. Out-of-scope for this artifact
 
-- No claim that `38.10.1` is currently met.
 - No direct rewrite of `transpiler/src/modelcheck` in this step.
 - No deletion of prototype modules/corpus/report tooling.
+
+## 7. Post-gate commit-scope guard (`38.10.3.a`)
+
+To keep feature work reviewable while migration is still staged, run:
+
+```bash
+transpiler/DPOR_based_model_tla_rs_checker/scripts/check_phase38_commit_scope.sh
+```
+
+Default mode inspects staged paths and fails if one commit mixes both:
+
+- `transpiler/DPOR_based_model_tla_rs_checker/**`
+- `transpiler/src/modelcheck/**`
+
+Exceptional mixed commits require explicit override metadata:
+
+```bash
+PHASE38_ALLOW_MIXED_COMMIT=1 \
+PHASE38_MIXED_COMMIT_JUSTIFICATION="narrow shared extraction for replay API" \
+transpiler/DPOR_based_model_tla_rs_checker/scripts/check_phase38_commit_scope.sh
+```
+
+This guard does not replace review; it enforces that mixed-scope commits are an
+explicit exception rather than the default workflow.
