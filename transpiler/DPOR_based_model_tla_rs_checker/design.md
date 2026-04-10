@@ -583,3 +583,37 @@ following conditions are met:
    numbers.
 
 Until these gates are passed, this workfolder is an incubator only.
+
+---
+
+## Phase 38.14.11 — Integration Gate Re-evaluation (2026-04-10)
+
+This section records the first-pass evidence matrix for re-evaluating the
+Phase 38.10 integration gate after 38.14.7-38.14.10.
+
+### 38.10.1 precondition matrix (current evidence)
+
+| 38.10.1 precondition | Current evidence (2026-04-10) | Status |
+|---|---|---|
+| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T03:35:45Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
+| `design.md` has pinned reference notes | Upstream-reference and concept-selection sections remain populated with pinned commits and mapping notes. | MET |
+| Baseline oracle exists | Baseline runner and baseline-vs-DPOR comparison path are present (`src/baseline.rs`, `dpor.rs` comparison harness). | MET |
+| Full-suite harness exists | `scripts/run_full_suite.sh` is checked in and used as the authoritative suite gate. | MET |
+| Parity subset is exact under DPOR | Current enforced safety contract is subset parity (`conservative ⊆ independence`, `conservative ⊆ sleep`), not exact-set parity; automated comparison still allows subset/superset statuses. | NOT MET |
+| Required hard protocol gates are no longer hand-waved | Protocol cases are non-vacuous in suite scoring (`20 real / 0 vacuous`) with audited reports synced. | MET |
+
+### Post-38.14.10 optimization evidence snapshot
+
+- Sleep-set reduction gate (Phase 38.14.10) is now closed:
+  `>10%` transition reduction on `3 / 3` measured multi-process cases.
+- Latest measured transition reductions:
+  - `02_counter_incdec`: `6 -> 4` (`33.3%`)
+  - `09_peterson_mutex_2p`: `16 -> 9` (`43.8%`)
+  - `17_paxos_small`: `168 -> 39` (`76.8%`)
+
+### Remaining blockers for 38.10 gate re-evaluation
+
+- The exact-parity wording in 38.10.1 is not yet met under the current
+  subset-parity contract.
+- Phase 38.10.2 migration-plan artifacts are still missing (module move plan,
+  shadow-mode plan, rollback plan, and report-schema compatibility story).

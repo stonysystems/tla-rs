@@ -20445,3 +20445,52 @@ fn test_phase_31_9_4_7_c_3_c_3_external_removed_and_focused_checks_pass() {
         );
     }
 }
+
+#[test]
+fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "- [ ] **38.14.11**",
+        "**Decomposition (2026-04-10):**",
+        "**38.14.11.a**",
+        "[x] **38.14.11.a**",
+        "**38.14.11.b**",
+        "**38.14.11.c**",
+        "38.14.10 is now closed (`3/3` transition-gate hits)",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include Phase 38.14.11 tracking fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let design_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/design.md");
+    let design_src = std::fs::read_to_string(&design_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR design note {}: {}",
+            design_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## Phase 38.14.11 — Integration Gate Re-evaluation (2026-04-10)",
+        "### 38.10.1 precondition matrix (current evidence)",
+        "20 real / 0 vacuous / 0 failed",
+        "3 / 3",
+        "Parity subset is exact under DPOR",
+        "NOT MET",
+    ] {
+        assert!(
+            design_src.contains(required_fragment),
+            "DPOR design note {} must include 38.14.11 evidence fragment `{}`",
+            design_path.display(),
+            required_fragment
+        );
+    }
+}
