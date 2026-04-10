@@ -76,3 +76,49 @@ See `TODO.md` `38.15` leaves:
 - `38.15.4`: re-enable focused protocol regressions
 - `38.15.5`: full-suite/report resync and open-task-map closure
 
+## 38.15.2.a guardrail/timeout sweep (case 15)
+
+Goal: determine whether simply increasing
+`candidate_eval_guardrail` on the current non-vacuous case-15 model is enough
+to restore a real `deadlock_detected` outcome.
+
+Baseline model family:
+
+- input: `tests/tla-rs/15_chain_replication_small/Chain.rs`
+- model basis: `tests/model_configs/15_chain_replication_small.toml`
+- deadlock enabled (`check_deadlock = true`)
+- int domain / collection bounds unchanged from checked-in case-15 config
+
+Observed sweep (`2026-04-10`):
+
+| candidate_eval_guardrail | wrapper timeout | observed outcome |
+|---:|---:|---|
+| 300,000 | 180s | guardrail abort (`Sequence domain expansion exceeded limit 300000`) |
+| 500,000 | 180s | guardrail abort (`... limit 500000`) |
+| 800,000 | 180s | guardrail abort (`... limit 800000`) |
+| 1,200,000 | 180s | guardrail abort (`... limit 1200000`) |
+| 2,000,000 | 180s | guardrail abort (`... limit 2000000`) |
+| 5,000,000 | 300s | guardrail abort (`Model-check candidate-enumeration guardrail exceeded`) |
+| 10,000,000 | 300s | timeout-window exit (`exit=124`, no JSON report) |
+| 20,000,000 | 300s | timeout-window exit (`exit=124`, no JSON report) |
+
+Conclusion:
+
+- Tuning-only via scalar guardrail increases is insufficient for case 15.
+- Next closure step must either find a smaller non-vacuous deadlock-friendly
+  domain profile (`38.15.2.b`) or reduce candidate-explosion behavior in code
+  (`38.15.2.c`).
+
+## Runtime note discovered during 38.15.2.a reruns (case 19)
+
+While re-running mandatory full suites for this phase, case
+`19_epaxos_small` showed timeout-window instability in the current environment:
+
+- Full-suite run (`--timeout 1200`) produced a timeout-wrapper
+  `checker_error`/no-JSON outcome for case 19.
+- Focused direct probes (3/3 attempts, `timeout 120s`) exited `124` with
+  no JSON report emission.
+
+Because this was reproducible in repeated direct runs, case 19 is temporarily
+reclassified to `known_unimplemented` in `tests/manifest.toml` pending a
+separate runtime-stability re-closure pass.

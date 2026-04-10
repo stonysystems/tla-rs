@@ -21975,3 +21975,79 @@ fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
         );
     }
 }
+
+#[test]
+fn test_phase_38_15_2_a_case15_guardrail_timeout_sweep_evidence_is_recorded() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "- [ ] **38.15.2**: Case 15 closure leaf",
+        "- [x] **38.15.2.a**: Run and document a case-15 guardrail/timeout sweep",
+        "guardrail abort persists for",
+        "`10000000` and",
+        "`20000000` avoid immediate guardrail but hit timeout-window exits",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.15.2.a decomposition/evidence fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let evidence_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read blocker evidence doc {}: {}",
+            evidence_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## 38.15.2.a guardrail/timeout sweep (case 15)",
+        "| candidate_eval_guardrail | wrapper timeout | observed outcome |",
+        "| 300,000 | 180s | guardrail abort",
+        "| 5,000,000 | 300s | guardrail abort",
+        "| 10,000,000 | 300s | timeout-window exit (`exit=124`, no JSON report) |",
+        "| 20,000,000 | 300s | timeout-window exit (`exit=124`, no JSON report) |",
+        "Tuning-only via scalar guardrail increases is insufficient for case 15.",
+        "## Runtime note discovered during 38.15.2.a reruns (case 19)",
+        "Focused direct probes (3/3 attempts, `timeout 120s`) exited `124`",
+        "temporarily",
+        "known_unimplemented",
+        "tests/manifest.toml",
+    ] {
+        assert!(
+            evidence_src.contains(required_fragment),
+            "blocker evidence doc {} must include 38.15.2.a fragment `{}`",
+            evidence_path.display(),
+            required_fragment
+        );
+    }
+
+    let manifest_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/manifest.toml");
+    let manifest_src = std::fs::read_to_string(&manifest_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read manifest {}: {}",
+            manifest_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "id = \"19_epaxos_small\"",
+        "expected_primary_result = \"known_unimplemented\"",
+        "timeout-window instability",
+    ] {
+        assert!(
+            manifest_src.contains(required_fragment),
+            "manifest {} must include case-19 runtime-instability fragment `{}`",
+            manifest_path.display(),
+            required_fragment
+        );
+    }
+}

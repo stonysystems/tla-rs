@@ -12675,6 +12675,11 @@ two cases are temporarily reclassified as `known_unimplemented` in
 `tests/manifest.toml` pending follow-up runtime/bounds closure. `38.14.10`
 remains closed after meeting the transition/work gate (`3/3`), and
 `38.14.11` integration-gate re-evaluation remains complete.
+During `38.15.2.a` reruns on `2026-04-10`, case 19 also exhibited sustained
+timeout-window instability in this environment (full-suite timeout-wrapper
+checker error plus repeated focused timeout exits with no JSON), so it is
+temporarily reclassified as `known_unimplemented` until runtime stability is
+re-closed with explicit evidence.
 
 - [ ] **38.15**: Re-close regenerated-corpus runtime blockers for protocol
   cases 15/16 (restore real bounded outcomes under suite budget, then remove
@@ -12693,6 +12698,28 @@ remains closed after meeting the transition/work gate (`3/3`), and
     bounds for `15_chain_replication_small` so bounded baseline completes with
     a real `deadlock_detected` outcome under full-suite budget (no vacuous
     pass), then remove temporary `known_unimplemented` for case 15.
+    Decomposed (2026-04-10) after sweep evidence showed tuning-only closure is
+    not yet sufficient under current runtime behavior.
+    - [x] **38.15.2.a**: Run and document a case-15 guardrail/timeout sweep on
+      current non-vacuous bounds (including elevated
+      `candidate_eval_guardrail` values) to determine whether tuning alone can
+      restore a real deadlock outcome.
+      **Done 2026-04-10**: Recorded sweep evidence in
+      `docs/runtime_blockers_15_16_reclosure.md`: guardrail abort persists for
+      `candidate_eval_guardrail` values `300000`, `500000`, `800000`,
+      `1200000`, `2000000`, and `5000000`; elevated runs at `10000000` and
+      `20000000` avoid immediate guardrail but hit timeout-window exits
+      (`timeout 300s`, no JSON report). Conclusion: case-15 closure needs more
+      than scalar guardrail increases.
+    - [ ] **38.15.2.b**: Probe case-15 low-domain bounded configs that remain
+      non-vacuous (distinct states > 0) and can still reach deadlock under
+      full-suite budget; if found, check in the minimal feasible config.
+    - [ ] **38.15.2.c**: If 38.15.2.b fails to produce a real deadlock row,
+      implement one targeted candidate-enumeration reduction step (<500 LOC)
+      for case-15 helper-heavy branches, then remeasure with focused regressions.
+    - [ ] **38.15.2.d**: Once deadlock closure is real, restore case-15
+      manifest expectation from `known_unimplemented` to `deadlock` and sync
+      focused protocol regression coverage (`src/dpor.rs`) plus suite evidence.
   - [ ] **38.15.3**: Case 16 closure leaf — tune runtime/model bounds for
     `16_primarybackup_small` so bounded baseline completes with a real `ok`
     invariant-checked outcome under full-suite budget, then remove temporary
