@@ -21711,3 +21711,195 @@ fn test_phase_38_11_2_tla_corpus_case_count_and_order_acceptance_criterion() {
         );
     }
 }
+
+#[test]
+fn test_phase_38_11_3_translated_corpus_and_regeneration_command_acceptance_criterion() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "3. [x] `tests/tla-rs/` contains the translated tla-rs corpus",
+        "test_phase_38_11_3_translated_corpus_and_regeneration_command_acceptance_criterion",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.3 fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let tla_rs_root = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs");
+    assert!(
+        tla_rs_root.exists() && tla_rs_root.is_dir(),
+        "expected DPOR translated corpus directory at {}",
+        tla_rs_root.display()
+    );
+
+    let mut case_dirs: Vec<String> = std::fs::read_dir(&tla_rs_root)
+        .unwrap_or_else(|err| panic!("failed to list {}: {}", tla_rs_root.display(), err))
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect();
+    case_dirs.sort();
+
+    let expected: Vec<&str> = vec![
+        "01_aplusb",
+        "02_counter_incdec",
+        "03_counter_race_bug",
+        "04_lock_basic",
+        "05_broken_lock_bug",
+        "06_ticket_lock",
+        "07_producer_consumer_1slot",
+        "08_bounded_buffer_2slot",
+        "09_peterson_mutex_2p",
+        "10_bakery_mutex_3p",
+        "11_readers_writers_small",
+        "12_dining_philosophers_3",
+        "13_twophase_small",
+        "14_leader_election_small",
+        "15_chain_replication_small",
+        "16_primarybackup_small",
+        "17_paxos_small",
+        "18_pbft_small",
+        "19_epaxos_small",
+        "20_raft_small",
+    ];
+    assert_eq!(
+        case_dirs,
+        expected.iter().map(|s| s.to_string()).collect::<Vec<String>>(),
+        "DPOR translated corpus case directories must match canonical 01..20 ordering",
+    );
+
+    for case_id in expected {
+        let case_path = tla_rs_root.join(case_id);
+        let has_rs = std::fs::read_dir(&case_path)
+            .unwrap_or_else(|err| panic!("failed to list {}: {}", case_path.display(), err))
+            .filter_map(|entry| entry.ok())
+            .any(|entry| entry.file_type().is_ok_and(|t| t.is_file()) && entry.path().extension().is_some_and(|ext| ext == "rs"));
+        assert!(
+            has_rs,
+            "translated case {} must contain at least one generated .rs file",
+            case_path.display()
+        );
+
+        let failure_marker = case_path.join("TRANSLATION_FAILED");
+        assert!(
+            !failure_marker.exists(),
+            "translated case {} must not contain TRANSLATION_FAILED marker",
+            case_path.display()
+        );
+    }
+
+    let script_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/scripts/regenerate_corpus.sh");
+    assert!(
+        script_path.exists() && script_path.is_file(),
+        "expected corpus regeneration script at {}",
+        script_path.display()
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&script_path)
+            .unwrap_or_else(|err| panic!("failed to stat {}: {}", script_path.display(), err))
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "regeneration script {} must be executable",
+            script_path.display()
+        );
+    }
+
+    let script_src = std::fs::read_to_string(&script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read corpus regeneration script {}: {}",
+            script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "Regenerate the entire tla-rs corpus from TLA+ sources.",
+        "rm -rf \"$TLARS_DIR\"",
+        "mkdir -p \"$TLARS_DIR\"",
+    ] {
+        assert!(
+            script_src.contains(required_fragment),
+            "regeneration script {} must include `{}`",
+            script_path.display(),
+            required_fragment
+        );
+    }
+
+    let readme_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/README.md");
+    let readme_src = std::fs::read_to_string(&readme_path)
+        .unwrap_or_else(|err| panic!("failed to read README {}: {}", readme_path.display(), err));
+    for required_fragment in [
+        "**`tests/tla-rs/`** — Generated tla-rs translations (derived, reproducible).",
+        "Regenerate the translated corpus from TLA+ sources:",
+        "./scripts/regenerate_corpus.sh",
+    ] {
+        assert!(
+            readme_src.contains(required_fragment),
+            "README {} must include 38.11.3 fragment `{}`",
+            readme_path.display(),
+            required_fragment
+        );
+    }
+}
+
+#[test]
+fn test_phase_38_11_4_design_reference_notes_acceptance_criterion() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "4. [x] `design.md` contains pinned notes from `GenMC`, `Nidhugg`, and `CDSChecker`",
+        "test_phase_38_11_4_design_reference_notes_acceptance_criterion",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.4 fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let design_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/design.md");
+    let design_src = std::fs::read_to_string(&design_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR design notes {}: {}",
+            design_path.display(),
+            err
+        )
+    });
+
+    for required_fragment in [
+        "### GenMC (`https://github.com/MPI-SWS/genmc`)",
+        "- **Commit**: `22d3d0b44dedb4e8e1aae3330e546465e4664529` (master)",
+        "### Nidhugg (`https://github.com/nidhugg/nidhugg`)",
+        "- **Commit**: `9e86fc0e0e3922e2d21c5bcf7a3d5db42e585056` (master)",
+        "### CDSChecker (`https://github.com/computersforpeace/model-checker`)",
+        "- **Commit**: `5c4efe5cd8bdfe1e85138396109876a121ca61d1`",
+        "- **What to borrow (conceptually)**:",
+        "- **What NOT to copy**:",
+        "- **tla-rs mapping**:",
+        "| Concept | Source | Borrow / Adapt / Reject | tla-rs Mapping | Notes |",
+        "| Execution graph | GenMC | **Adapt** |",
+        "| DPORDriver + TraceBuilder | Nidhugg | **Borrow** |",
+        "| Memory model consistency | GenMC, CDSChecker | **Reject** |",
+    ] {
+        assert!(
+            design_src.contains(required_fragment),
+            "design doc {} must include fragment `{}`",
+            design_path.display(),
+            required_fragment
+        );
+    }
+}
