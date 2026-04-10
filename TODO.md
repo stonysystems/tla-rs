@@ -12360,10 +12360,18 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         `test_compute_child_sleep_set_seeds_from_prechosen_ordered_alternatives`
         and re-ran parity/full-suite checks. No state-loss regressions observed,
         but reduction gate remains **NOT MET** (`0/3`).
-      - [ ] **38.14.10.d.b.c.e**: If c.d still yields `0/3`, add focused
+      - [x] **38.14.10.d.b.c.e**: If c.d still yields `0/3`, add focused
         telemetry for sleep-prune hits and per-depth sleep cardinality to
         isolate whether dependence, candidate seeding, or replay order is the
         remaining blocker.
+        **Done 2026-04-10**: Added telemetry to `DporResult` and evidence
+        harness output: `sleep_prune_hits` plus per-depth sleep cardinality
+        stats (samples/avg/max). Scope check stayed small (`~200 LOC`,
+        comfortably under the 500-LOC guideline). Harness re-run on measured
+        multi-process cases (`02/09/17`) still reports gate **NOT MET** (`0/3`)
+        with `sleep_prune_hits=0` and `sleep` cardinality `0` at all observed
+        depths for each case, indicating no currently-observed sleep-set
+        population/pruning effect on this measured subset.
     - [ ] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.

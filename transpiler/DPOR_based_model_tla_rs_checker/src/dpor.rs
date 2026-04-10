@@ -7,7 +7,7 @@
 //!
 //! Reference: source-DPOR from Nidhugg (DPORDriver + TraceBuilder pattern).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::enabled::SpecContext;
 use crate::types::*;
@@ -48,8 +48,23 @@ pub struct DporResult {
     pub max_depth: usize,
     /// Total transitions fired.
     pub transitions_fired: usize,
+    /// Number of transitions skipped due to sleep-set pruning checks.
+    pub sleep_prune_hits: usize,
+    /// Per-depth sleep-set cardinality telemetry observed when frames are created.
+    pub sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats>,
     /// Violation witness if an invariant violation was found.
     pub violation: Option<ViolationWitness>,
+}
+
+/// Aggregated sleep-set cardinality stats for a depth.
+#[derive(Debug, Clone, Default)]
+pub struct SleepDepthStats {
+    /// Number of observations recorded for this depth.
+    pub samples: usize,
+    /// Sum of observed cardinalities (for average).
+    pub total_cardinality: usize,
+    /// Maximum observed cardinality at this depth.
+    pub max_cardinality: usize,
 }
 
 /// Configuration for the DPOR explorer.
@@ -128,6 +143,8 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     let mut traces_explored: usize = 0;
     let mut max_depth: usize = 0;
     let mut transitions_fired: usize = 0;
+    let mut sleep_prune_hits: usize = 0;
+    let mut sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats> = BTreeMap::new();
 
     // Get initial states
     let initial_states = match ctx.initial_states() {
@@ -139,6 +156,8 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 traces_explored: 0,
                 max_depth: 0,
                 transitions_fired: 0,
+                sleep_prune_hits: 0,
+                sleep_cardinality_by_depth: BTreeMap::new(),
                 violation: None,
             };
         }
@@ -179,6 +198,8 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 traces_explored: 0,
                 max_depth: 0,
                 transitions_fired: 0,
+                sleep_prune_hits: 0,
+                sleep_cardinality_by_depth: BTreeMap::new(),
                 violation: Some(witness),
             };
         }
@@ -198,6 +219,8 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 traces_explored: 0,
                 max_depth: 0,
                 transitions_fired: 0,
+                sleep_prune_hits: 0,
+                sleep_cardinality_by_depth: BTreeMap::new(),
                 violation: Some(ViolationWitness {
                     invariant: "__deadlock__".to_string(),
                     violating_state_key: initial.canonical_key(),
@@ -221,6 +244,11 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
             chosen: None,
             depth: 0,
         };
+        record_sleep_cardinality(
+            &mut sleep_cardinality_by_depth,
+            initial_frame.depth,
+            initial_frame.sleep.len(),
+        );
 
         // DFS with explicit stack
         let mut stack: Vec<StackFrame> = vec![initial_frame];
@@ -234,23 +262,30 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
             // Phase 1: Extract data from the top frame (scoped mutable borrow)
             let action = {
                 let frame = stack.last_mut().unwrap();
-                let next_transition = frame
-                    .backtrack
-                    .iter()
-                    .find(|key| {
-                        if frame.done.contains(*key) {
-                            return false;
+                let mut next_transition: Option<String> = None;
+                let mut prunes_this_scan: usize = 0;
+                for key in &frame.backtrack {
+                    if frame.done.contains(key) {
+                        continue;
+                    }
+                    if !config.use_sleep_sets {
+                        next_transition = Some(key.clone());
+                        break;
+                    }
+                    let transition = frame.enabled.iter().find(|t| t.ordering_key == *key);
+                    match transition {
+                        Some(t) => {
+                            if frame.sleep.contains(&transition_sleep_key(t)) {
+                                prunes_this_scan += 1;
+                                continue;
+                            }
+                            next_transition = Some(key.clone());
+                            break;
                         }
-                        if !config.use_sleep_sets {
-                            return true;
-                        }
-                        let transition = frame.enabled.iter().find(|t| t.ordering_key == **key);
-                        match transition {
-                            Some(t) => !frame.sleep.contains(&transition_sleep_key(t)),
-                            None => false,
-                        }
-                    })
-                    .cloned();
+                        None => {}
+                    }
+                }
+                sleep_prune_hits += prunes_this_scan;
 
                 match next_transition {
                     Some(key) => {
@@ -343,6 +378,8 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 traces_explored,
                                 max_depth,
                                 transitions_fired,
+                                sleep_prune_hits,
+                                sleep_cardinality_by_depth,
                                 violation: Some(witness),
                             };
                         }
@@ -374,6 +411,8 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 traces_explored,
                                 max_depth,
                                 transitions_fired,
+                                sleep_prune_hits,
+                                sleep_cardinality_by_depth,
                                 violation: Some(ViolationWitness {
                                     invariant: "__deadlock__".to_string(),
                                     violating_state_key: successor.canonical_key(),
@@ -409,6 +448,13 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                             chosen: None,
                             depth,
                         });
+                        if let Some(frame) = stack.last() {
+                            record_sleep_cardinality(
+                                &mut sleep_cardinality_by_depth,
+                                frame.depth,
+                                frame.sleep.len(),
+                            );
+                        }
                     }
                 }
                 None => {
@@ -425,8 +471,40 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         traces_explored,
         max_depth,
         transitions_fired,
+        sleep_prune_hits,
+        sleep_cardinality_by_depth,
         violation: None,
     }
+}
+
+fn record_sleep_cardinality(
+    stats: &mut BTreeMap<usize, SleepDepthStats>,
+    depth: usize,
+    cardinality: usize,
+) {
+    let entry = stats.entry(depth).or_default();
+    entry.samples += 1;
+    entry.total_cardinality += cardinality;
+    entry.max_cardinality = entry.max_cardinality.max(cardinality);
+}
+
+#[cfg(test)]
+fn format_sleep_cardinality_summary(stats: &BTreeMap<usize, SleepDepthStats>) -> String {
+    if stats.is_empty() {
+        return "-".to_string();
+    }
+    stats
+        .iter()
+        .map(|(depth, stat)| {
+            let avg = if stat.samples == 0 {
+                0.0
+            } else {
+                stat.total_cardinality as f64 / stat.samples as f64
+            };
+            format!("d{}:{:.1}/{}", depth, avg, stat.max_cardinality)
+        })
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 /// Result of replaying a violation witness.
@@ -1240,17 +1318,20 @@ max_seq_len = 4
         ];
 
         println!(
-            "| Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons |"
+            "| Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons | Sleep Prunes (sleep) | Sleep Cardinality (avg/max by depth, sleep) |"
         );
         println!(
-            "|------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|"
+            "|------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|---------------------:|---------------------------------------------|"
         );
 
         let mut multi_process_gate_hits = 0usize;
         for (case_id, filename) in &cases {
             let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
             if !spec_file.exists() {
-                println!("| {} | -- | -- | -- | -- | -- | -- | -- | -- |", case_id);
+                println!(
+                    "| {} | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |",
+                    case_id
+                );
                 continue;
             }
             let model_path = case_model_config(case_id);
@@ -1258,7 +1339,7 @@ max_seq_len = 4
                 Ok(c) => c,
                 Err(_) => {
                     println!(
-                        "| {} | load_failed | load_failed | load_failed | -- | -- | -- | -- | -- |",
+                        "| {} | load_failed | load_failed | load_failed | -- | -- | -- | -- | -- | -- | -- |",
                         case_id
                     );
                     continue;
@@ -1321,6 +1402,9 @@ max_seq_len = 4
             let cons_transitions = conservative.transitions_fired;
             let ind_transitions = independence.transitions_fired;
             let sleep_transitions = sleep.transitions_fired;
+            let sleep_prunes = sleep.sleep_prune_hits;
+            let sleep_cardinality =
+                format_sleep_cardinality_summary(&sleep.sleep_cardinality_by_depth);
 
             let distinct_reduction_pct = if cons_distinct == 0 {
                 0.0
@@ -1338,7 +1422,7 @@ max_seq_len = 4
             }
 
             println!(
-                "| {} | {} | {} | {} | {:.1}% | {} | {} | {} | {:.1}% |",
+                "| {} | {} | {} | {} | {:.1}% | {} | {} | {} | {:.1}% | {} | {} |",
                 case_id,
                 cons_distinct,
                 ind_distinct,
@@ -1347,7 +1431,9 @@ max_seq_len = 4
                 cons_transitions,
                 ind_transitions,
                 sleep_transitions,
-                transition_reduction_pct
+                transition_reduction_pct,
+                sleep_prunes,
+                sleep_cardinality
             );
         }
 
@@ -1653,6 +1739,31 @@ max_seq_len = 4
         assert!(
             backtrack.contains(&transition_b.ordering_key),
             "non-sleeping transition should remain in backtrack"
+        );
+    }
+
+    #[test]
+    fn test_sleep_cardinality_telemetry_helpers() {
+        let mut stats = std::collections::BTreeMap::new();
+        record_sleep_cardinality(&mut stats, 1, 2);
+        record_sleep_cardinality(&mut stats, 1, 4);
+        record_sleep_cardinality(&mut stats, 2, 0);
+
+        let d1 = stats.get(&1).expect("depth 1 stats missing");
+        assert_eq!(d1.samples, 2);
+        assert_eq!(d1.total_cardinality, 6);
+        assert_eq!(d1.max_cardinality, 4);
+
+        let summary = format_sleep_cardinality_summary(&stats);
+        assert!(
+            summary.contains("d1:3.0/4"),
+            "summary should include avg/max for depth 1, got {}",
+            summary
+        );
+        assert!(
+            summary.contains("d2:0.0/0"),
+            "summary should include depth 2 zero cardinality, got {}",
+            summary
         );
     }
 
