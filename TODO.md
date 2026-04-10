@@ -12675,3 +12675,33 @@ two cases are temporarily reclassified as `known_unimplemented` in
 `tests/manifest.toml` pending follow-up runtime/bounds closure. `38.14.10`
 remains closed after meeting the transition/work gate (`3/3`), and
 `38.14.11` integration-gate re-evaluation remains complete.
+
+- [ ] **38.15**: Re-close regenerated-corpus runtime blockers for protocol
+  cases 15/16 (restore real bounded outcomes under suite budget, then remove
+  temporary `known_unimplemented` classification).
+  Scope check (2026-04-10): end-to-end closure for both cases is likely
+  >500 LOC across model-config tuning, candidate-enumeration/runtime behavior,
+  and evidence/report synchronization; decompose into leaves below.
+  - [x] **38.15.1**: Reproduce current blockers with explicit commands and
+    capture evidence in `docs/runtime_blockers_15_16_reclosure.md`, including
+    concrete failure mode for each case and bounded-run baseline command lines.
+    **Done 2026-04-10**: Captured direct baseline reproductions:
+    case 15 fails with candidate-enumeration guardrail
+    (`Sequence domain expansion exceeded limit 200000`) and case 16 hits a
+    timeout-window wrapper exit (`timeout 60s`, no JSON report emitted).
+  - [ ] **38.15.2**: Case 15 closure leaf — tune candidate-enumeration/model
+    bounds for `15_chain_replication_small` so bounded baseline completes with
+    a real `deadlock_detected` outcome under full-suite budget (no vacuous
+    pass), then remove temporary `known_unimplemented` for case 15.
+  - [ ] **38.15.3**: Case 16 closure leaf — tune runtime/model bounds for
+    `16_primarybackup_small` so bounded baseline completes with a real `ok`
+    invariant-checked outcome under full-suite budget, then remove temporary
+    `known_unimplemented` for case 16.
+  - [ ] **38.15.4**: Re-enable/retune focused protocol regression tests for
+    cases 15/16 in `src/dpor.rs` once closures in `38.15.2`/`38.15.3` are
+    complete; remove temporary ignore reasons tied to these blockers.
+  - [ ] **38.15.5**: Re-run full DPOR/transpiler suites plus
+    `scripts/run_full_suite.sh --timeout 1200`, then resync
+    `tests/reports/latest.{json,md}`, `hard_case_blocker_ledger.md`, and this
+    TODO open-task map from "runtime blockers open" to "runtime blockers
+    closed" with concrete timestamps/results.

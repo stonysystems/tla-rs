@@ -21903,3 +21903,75 @@ fn test_phase_38_11_4_design_reference_notes_acceptance_criterion() {
         );
     }
 }
+
+#[test]
+fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "| **1** | Re-close regenerated-corpus runtime blockers (cases 15/16) |",
+        "- [ ] **38.15**: Re-close regenerated-corpus runtime blockers",
+        "- [x] **38.15.1**: Reproduce current blockers with explicit commands",
+        "case 15 fails with candidate-enumeration guardrail",
+        "timeout-window wrapper exit (`timeout 60s`, no JSON report emitted).",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include phase-38 blocker fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let evidence_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read blocker evidence doc {}: {}",
+            evidence_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## Reproduction commands and observed outcomes",
+        "### Case 15 (`15_chain_replication_small`)",
+        "Sequence domain expansion exceeded limit 200000",
+        "### Case 16 (`16_primarybackup_small`)",
+        "Wrapper exits with timeout code (`exit=124`).",
+        "See `TODO.md` `38.15` leaves:",
+    ] {
+        assert!(
+            evidence_src.contains(required_fragment),
+            "blocker evidence doc {} must include fragment `{}`",
+            evidence_path.display(),
+            required_fragment
+        );
+    }
+
+    let manifest_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/manifest.toml");
+    let manifest_src = std::fs::read_to_string(&manifest_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read manifest {}: {}",
+            manifest_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "id = \"15_chain_replication_small\"",
+        "id = \"16_primarybackup_small\"",
+        "expected_primary_result = \"known_unimplemented\"",
+        "candidate-enumeration guardrails",
+        "full-suite timeout budget",
+    ] {
+        assert!(
+            manifest_src.contains(required_fragment),
+            "manifest {} must include runtime-blocker fragment `{}`",
+            manifest_path.display(),
+            required_fragment
+        );
+    }
+}
