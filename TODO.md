@@ -11964,7 +11964,13 @@ stub detector clean and the run script reporting 0 vacuous passes.
    `transpiler/tests/integration.rs` via
    `test_phase_38_11_1_workfolder_structure_acceptance_criterion`, which
    checks the required Phase 38 workfolder files/directories directly.
-2. [ ] `tests/tla/` contains exactly 20 named cases, ordered `01` through `20`, from `APlusB`/lock basics up to `PrimaryBackup`, `Paxos`, and `Raft`.
+2. [x] `tests/tla/` contains exactly 20 named cases, ordered `01` through `20`, from `APlusB`/lock basics up to `PrimaryBackup`, `Paxos`, and `Raft`.
+   **Done 2026-04-10**: Added explicit acceptance-criterion guard coverage in
+   `transpiler/tests/integration.rs` via
+   `test_phase_38_11_2_tla_corpus_case_count_and_order_acceptance_criterion`,
+   which enforces exact canonical 20-case directory ordering in
+   `transpiler/DPOR_based_model_tla_rs_checker/tests/tla/` and checks required
+   hard-case presence (`PrimaryBackup`, `Paxos`, `Raft`).
 3. [ ] `tests/tla-rs/` contains the translated tla-rs corpus, and one documented command/script can regenerate it from scratch.
 4. [ ] `design.md` contains pinned notes from `GenMC`, `Nidhugg`, and `CDSChecker`, including "borrow / do not copy / local mapping" decisions.
 5. [ ] A simple exhaustive baseline explorer exists and is kept as a permanent oracle for the parity subset.
@@ -12644,10 +12650,10 @@ to do for DPOR"**, this is the canonical answer:
 
 | Priority | Task | What it unblocks |
 |---|---|---|
-| **1** | 38.11.2 corpus-case count/order closure | Keeps acceptance closure objective and reviewable |
+| **1** | 38.11.3 translated corpus + regeneration-command closure | Keeps acceptance closure objective and reviewable |
 
 Bug A is now closed. Bug B's protocol-suite closure path (14/15/16/19) is now
 also closed for honest baseline execution. `38.14.10` is now closed after
 meeting the transition/work gate (`3/3`), and `38.14.11` integration-gate
-re-evaluation is complete; `38.11.2` is now the top active DPOR engineering
+re-evaluation is complete; `38.11.3` is now the top active DPOR engineering
 leaf task under acceptance-criteria closure.

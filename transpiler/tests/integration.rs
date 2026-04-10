@@ -21631,3 +21631,83 @@ fn test_phase_38_11_1_workfolder_structure_acceptance_criterion() {
         );
     }
 }
+
+#[test]
+fn test_phase_38_11_2_tla_corpus_case_count_and_order_acceptance_criterion() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "2. [x] `tests/tla/` contains exactly 20 named cases",
+        "test_phase_38_11_2_tla_corpus_case_count_and_order_acceptance_criterion",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.2 fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let tla_root = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/tla");
+    assert!(
+        tla_root.exists() && tla_root.is_dir(),
+        "expected DPOR TLA corpus directory at {}",
+        tla_root.display()
+    );
+
+    let mut case_dirs: Vec<String> = std::fs::read_dir(&tla_root)
+        .unwrap_or_else(|err| panic!("failed to list {}: {}", tla_root.display(), err))
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect();
+    case_dirs.sort();
+
+    let expected: Vec<&str> = vec![
+        "01_aplusb",
+        "02_counter_incdec",
+        "03_counter_race_bug",
+        "04_lock_basic",
+        "05_broken_lock_bug",
+        "06_ticket_lock",
+        "07_producer_consumer_1slot",
+        "08_bounded_buffer_2slot",
+        "09_peterson_mutex_2p",
+        "10_bakery_mutex_3p",
+        "11_readers_writers_small",
+        "12_dining_philosophers_3",
+        "13_twophase_small",
+        "14_leader_election_small",
+        "15_chain_replication_small",
+        "16_primarybackup_small",
+        "17_paxos_small",
+        "18_pbft_small",
+        "19_epaxos_small",
+        "20_raft_small",
+    ];
+
+    assert_eq!(
+        case_dirs.len(),
+        expected.len(),
+        "DPOR TLA corpus must contain exactly {} case directories; found {}: {:?}",
+        expected.len(),
+        case_dirs.len(),
+        case_dirs
+    );
+    assert_eq!(
+        case_dirs,
+        expected.iter().map(|s| s.to_string()).collect::<Vec<String>>(),
+        "DPOR TLA corpus case directories must match canonical 01..20 ordering",
+    );
+
+    for required_hard_case in ["16_primarybackup_small", "17_paxos_small", "20_raft_small"] {
+        assert!(
+            case_dirs.iter().any(|id| id == required_hard_case),
+            "required hard case `{}` missing from DPOR TLA corpus",
+            required_hard_case
+        );
+    }
+}
