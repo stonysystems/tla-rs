@@ -20461,9 +20461,14 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "**38.14.11.b**",
         "[x] **38.14.11.b**",
         "**38.14.11.c**",
+        "**38.14.11.c.a**",
+        "[x] **38.14.11.c.a**",
+        "**38.14.11.c.b**",
+        "**38.14.11.c.c**",
         "38.14.10 is now closed (`3/3` transition-gate hits)",
         "38.14.11.b status (2026-04-10): `NOT MET` overall (5/6 preconditions met).",
-        "38.14.11.b status (2026-04-10): `NOT MET` (no explicit migration-plan",
+        "38.14.11.c.a status (2026-04-10): `MET` via",
+        "docs/integration_migration_plan.md",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -20491,12 +20496,40 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         "### Explicit integration-gate decision (38.14.11.b)",
         "**Decision: NOT MET**.",
         "`38.10.1` remains open: the matrix is `5/6` MET",
-        "`38.10.2` remains open: no explicit migration-plan artifact is checked in",
+        "`38.10.2` is now **MET** via",
+        "docs/integration_migration_plan.md",
     ] {
         assert!(
             design_src.contains(required_fragment),
             "DPOR design note {} must include 38.14.11 evidence fragment `{}`",
             design_path.display(),
+            required_fragment
+        );
+    }
+
+    let plan_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
+    );
+    let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read DPOR integration migration plan {}: {}",
+            plan_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "# DPOR Prototype Integration Migration Plan (Phase 38.10.2)",
+        "## 1. Proposed module move map (`38.10.2.a`)",
+        "## 2. Shadow-mode comparison period (`38.10.2.b`)",
+        "## 3. Rollback strategy (`38.10.2.c`)",
+        "## 4. Report-schema compatibility (`38.10.2.d`)",
+        "transpiler/DPOR_based_model_tla_rs_checker/src/dpor.rs",
+        "transpiler/src/modelcheck/",
+    ] {
+        assert!(
+            plan_src.contains(required_fragment),
+            "DPOR migration plan {} must include 38.10.2 fragment `{}`",
+            plan_path.display(),
             required_fragment
         );
     }

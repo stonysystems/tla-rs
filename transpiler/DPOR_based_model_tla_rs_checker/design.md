@@ -595,7 +595,7 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 
 | 38.10.1 precondition | Current evidence (2026-04-10) | Status |
 |---|---|---|
-| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T04:09:57Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
+| 20-case corpus exists and is reproducible | Corpus and harness are present under `tests/tla/`, `tests/tla-rs/`; full-suite script run at `2026-04-10T04:33:14Z` reports `20 real / 0 vacuous / 0 failed`. | MET |
 | `design.md` has pinned reference notes | Upstream-reference and concept-selection sections remain populated with pinned commits and mapping notes. | MET |
 | Baseline oracle exists | Baseline runner and baseline-vs-DPOR comparison path are present (`src/baseline.rs`, `dpor.rs` comparison harness). | MET |
 | Full-suite harness exists | `scripts/run_full_suite.sh` is checked in and used as the authoritative suite gate. | MET |
@@ -607,9 +607,9 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 - **Decision: NOT MET**.
 - `38.10.1` remains open: the matrix is `5/6` MET and the unmet row is
   "Parity subset is exact under DPOR".
-- `38.10.2` remains open: no explicit migration-plan artifact is checked in
-  yet (module move map, shadow-mode comparison plan, rollback plan, and
-  report-schema compatibility plan).
+- `38.10.2` is now **MET** via
+  `docs/integration_migration_plan.md` (module move map, shadow-mode
+  comparison plan, rollback plan, and report-schema compatibility plan).
 - Therefore the prototype remains an incubator and does not yet clear the
   Phase 38.10 gate for mainline integration.
 
@@ -626,5 +626,3 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 
 - The exact-parity wording in 38.10.1 is not yet met under the current
   subset-parity contract.
-- Phase 38.10.2 migration-plan artifacts are still missing (module move plan,
-  shadow-mode plan, rollback plan, and report-schema compatibility story).

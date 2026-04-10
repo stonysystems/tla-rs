@@ -11,7 +11,7 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Current Status (last updated 2026-04-10)
 
-**Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-10).** The 2026-04-01 "Milestone M9: 20/20 ALL GREEN" claim was audited/retracted and then repaired through 38.14.7-38.14.9. The full-suite source of truth is now `./scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T04:09:57Z` (`20 real / 0 vacuous / 0 failed`). Bug A and Bug B are closed for the suite-score path, `stub_status` annotations are retired from `tests/manifest.toml`, and reports were resynced. DPOR reduction gate 38.14.10 is now closed (`3/3` transition-gate hits); remaining DPOR work is 38.14.11 (integration-gate re-evaluation).
+**Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-10).** The 2026-04-01 "Milestone M9: 20/20 ALL GREEN" claim was audited/retracted and then repaired through 38.14.7-38.14.9. The full-suite source of truth is now `./scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T04:33:14Z` (`20 real / 0 vacuous / 0 failed`). Bug A and Bug B are closed for the suite-score path, `stub_status` annotations are retired from `tests/manifest.toml`, and reports were resynced. DPOR reduction gate 38.14.10 is now closed (`3/3` transition-gate hits); remaining DPOR work is 38.14.11 (integration-gate re-evaluation).
 
 Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. The top-priority implementation track is now Phase 38 (the separate DPOR-based checker prototype), followed by Phase 36 (exact-state parity and performance debugging) and then Phase 37 (CI/CD recovery). The remaining proof-heavy work is still concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
 The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. Phase 38 is a greenfield prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
@@ -56,7 +56,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **The depth-1 "green" smoke evidence is still too small to be convincing on its own** — the tiny fixtures remain useful for fast regression coverage, but the meaningful story comes from the benchmark/TLC-comparison artifacts and the architecture/tutorial docs that now explain how to interpret them.
 - **Model-check performance remains a product gap** — source-first still trails TLC substantially on the shared benchmark models, and `LeaderElection` / `Paxos` remain blocked on candidate-enumeration scalability in the matched benchmark configs.
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
-- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.10: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T04:09:57Z`), and Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`. DPOR reduction gate 38.14.10 is now **MET** (`3/3` measured cases above 10% transition reduction). The remaining DPOR blocker is Phase 38.10 integration-gate re-evaluation (38.14.11). Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
+- **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.10: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T04:33:14Z`), and Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`. DPOR reduction gate 38.14.10 is now **MET** (`3/3` measured cases above 10% transition reduction). The remaining DPOR blocker is Phase 38.10 integration-gate re-evaluation (38.14.11). Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
 **Next steps (priority order):**
 1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — with 38.14.10 now closed (`3/3` transition/work gate), execute 38.14.11 next to re-evaluate the 38.10 integration gate against the post-audit 20/20 honest baseline. This remains a separate incubator track; do not let it silently rewrite the current mainline checker before the prototype earns it. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
@@ -11383,7 +11383,7 @@ is not reintroduced.
 | DPOR reduction quality | **Closed for 38.14.10** | `use_independence` / `use_sleep_sets` now pass the transition/work gate (`3/3` measured multi-process cases above 10% reduction). |
 
 **What you can trust right now:**
-- `./scripts/run_full_suite.sh --timeout 1200` reports `20 real / 0 vacuous / 0 failed` (latest checked run: `2026-04-10T04:09:57Z`).
+- `./scripts/run_full_suite.sh --timeout 1200` reports `20 real / 0 vacuous / 0 failed` (latest checked run: `2026-04-10T04:33:14Z`).
 - The guard rails that prevent vacuous `ok` from being counted as PASS.
 - The synced reports under `tests/reports/` (`latest.json`, `latest.md`, blocker ledger).
 - The 38.14.10 reduction report (`tests/reports/sleep_set_reduction_table.md`) now
@@ -11890,18 +11890,18 @@ stub detector clean and the run script reporting 0 vacuous passes.
   - [x] **38.10.1.a**: No Phase 38 algorithm work should move files out of `transpiler/DPOR_based_model_tla_rs_checker/` before `38.8.2` parity and the `38.9` blocker ledger are both real.
   - [x] **38.10.1.b**: Shared-library extractions from `transpiler/src/modelcheck` are allowed only when they are narrow, semantics-preserving, and justified by the prototype's need for an in-process stepping/replay API.
   - [x] **38.10.1.c**: Any such shared extraction must land with existing mainline model-check tests still green; do not hide DPOR work inside unrelated mainline refactors.
-- [ ] **38.10.2**: If/when integration into `transpiler/src/modelcheck` is proposed, write an explicit migration plan first:
+- [x] **38.10.2**: If/when integration into `transpiler/src/modelcheck` is proposed, write an explicit migration plan first:
   - which modules move,
   - what existing code is replaced or kept,
   - how CLI/reporting surfaces stay compatible,
   - and how old vs new engines are compared during the switchover.
-  **38.14.11.b status (2026-04-10): `NOT MET` (no explicit migration-plan
-  artifact checked in yet).**
-  - [ ] **38.10.2.a**: The migration plan must name the exact prototype modules that would move (`types`, `dependence`, `replay`, `search`, report surfaces, etc.) and which mainline modules remain the source of truth.
-  - [ ] **38.10.2.b**: The migration plan must define a shadow-mode comparison period where baseline and DPOR can both be run on the same fixtures from the normal CLI/reporting surfaces.
-  - [ ] **38.10.2.c**: The migration plan must include a rollback story: how to disable the integrated DPOR path without losing the prototype corpus, harness, or evidence.
-  - [ ] **38.10.2.d**: The migration plan must preserve or explicitly supersede the current JSON/report schema so Phase 36/38 evidence consumers do not silently break.
-- [ ] **38.10.3**: Until that migration plan exists, treat the prototype as an incubator, not a justification for ad hoc edits in the mainline checker.
+  **38.14.11.c.a status (2026-04-10): `MET` via
+  `transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md`.**
+  - [x] **38.10.2.a**: The migration plan must name the exact prototype modules that would move (`types`, `dependence`, `replay`, `search`, report surfaces, etc.) and which mainline modules remain the source of truth.
+  - [x] **38.10.2.b**: The migration plan must define a shadow-mode comparison period where baseline and DPOR can both be run on the same fixtures from the normal CLI/reporting surfaces.
+  - [x] **38.10.2.c**: The migration plan must include a rollback story: how to disable the integrated DPOR path without losing the prototype corpus, harness, or evidence.
+  - [x] **38.10.2.d**: The migration plan must preserve or explicitly supersede the current JSON/report schema so Phase 36/38 evidence consumers do not silently break.
+- [ ] **38.10.3**: Until the full `38.10` gate is met, treat the prototype as an incubator, not a justification for ad hoc edits in the mainline checker.
   - [ ] **38.10.3.a**: Keep Phase 38 feature work reviewable as prototype-local commits where possible; avoid mixed commits that simultaneously change the incubator and rewrite production checker behavior.
   - [ ] **38.10.3.b**: If a mainline bug fix is discovered while doing prototype work, land it as a separately-justified mainline fix, not as an unreviewable side effect of "DPOR prep".
 
@@ -12500,10 +12500,10 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
 - [ ] **38.14.11**: **Re-evaluate the Phase 38.10 integration gate against
   the audited score.** The integration gate's preconditions ("the parity
   subset is exact under DPOR", "the required hard protocol gates are no
-  longer hand-waved") cannot be honestly satisfied while the protocol cases
-  are vacuous. After 38.14.7-10 land, re-read 38.10 with fresh eyes and
-  decide whether the prototype now meets the gate. Document the decision
-  in `design.md` either way.
+  longer hand-waved") are now mostly satisfied; the remaining blocker is the
+  exact-parity requirement in `38.10.1`. After 38.14.7-10 and 38.14.11.b land,
+  keep re-reading 38.10 with fresh evidence and document each gate decision in
+  `design.md`.
   **Decomposition (2026-04-10):**
   - [x] **38.14.11.a**: Build an explicit 38.10.1 gate-evidence matrix in
     `transpiler/DPOR_based_model_tla_rs_checker/design.md` using current
@@ -12524,6 +12524,23 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
   - [ ] **38.14.11.c**: If the gate remains `NOT MET`, decompose the remaining
     blockers into leaf tasks (<500 LOC each), prioritizing the smallest
     evidence-producing step that can move one unmet 38.10 criterion to met.
+    **Decomposition (2026-04-10):**
+    - [x] **38.14.11.c.a**: Add an explicit 38.10.2 migration-plan artifact
+      under `transpiler/DPOR_based_model_tla_rs_checker/docs/` that satisfies
+      `38.10.2.a`-`38.10.2.d`, and sync TODO/design status from `NOT MET` to
+      `MET` for `38.10.2`.
+      **Done 2026-04-10**: Added
+      `docs/integration_migration_plan.md` with module-move map, shadow-mode
+      plan, rollback plan, and report-schema compatibility plan; marked
+      `38.10.2` and `38.10.2.a`-`38.10.2.d` complete; and synced status in
+      `design.md`.
+    - [ ] **38.14.11.c.b**: Decompose the remaining `38.10.1` exact-parity
+      blocker into implementation-sized leaves (<500 LOC each), starting with
+      a parity-gap measurement leaf that identifies where exact parity fails
+      today on the declared parity subset.
+    - [ ] **38.14.11.c.c**: Implement the first exact-parity blocker leaf from
+      `38.14.11.c.b` and re-evaluate whether `38.10.1` can be moved from
+      `NOT MET` toward `MET` without weakening safety claims.
 
 #### Phase 38 Open-Task Map (post-audit)
 
