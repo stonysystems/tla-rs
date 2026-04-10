@@ -12054,7 +12054,14 @@ stub detector clean and the run script reporting 0 vacuous passes.
    (13–20). Current full-suite scoreboard
    (`tests/reports/latest.json`, `2026-04-10T20:24:42Z`) includes all three
    required hard cases.
-10. [ ] No mainline rewrite of `transpiler/src/modelcheck` happens before the prototype earns the integration gate in `38.10`.
+10. [x] No mainline rewrite of `transpiler/src/modelcheck` happens before the prototype earns the integration gate in `38.10`.
+   **Done 2026-04-10**: commit-scope discipline is enforced by
+   `scripts/check_phase38_commit_scope.sh` (mixed prototype+mainline changes
+   blocked by default; mainline-only modelcheck edits require explicit
+   `PHASE38_MAINLINE_FIX_JUSTIFICATION`) and pinned by integration guards
+   `test_phase_38_10_3_a_commit_scope_guard_behavior`,
+   `test_phase_38_10_3_b_mainline_fix_justification_guard_behavior`, and
+   `test_phase_38_11_10_no_mainline_rewrite_guard_before_integration_gate`.
 
 ### 38.12 Suggested execution order
 

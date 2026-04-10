@@ -22724,6 +22724,129 @@ fn test_phase_38_11_9_required_hard_cases_are_pinned_and_full_suite_guarded() {
 }
 
 #[test]
+fn test_phase_38_11_10_no_mainline_rewrite_guard_before_integration_gate() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "10. [x] No mainline rewrite of `transpiler/src/modelcheck` happens before the prototype earns the integration gate in `38.10`.",
+        "scripts/check_phase38_commit_scope.sh",
+        "PHASE38_MAINLINE_FIX_JUSTIFICATION",
+        "test_phase_38_10_3_a_commit_scope_guard_behavior",
+        "test_phase_38_10_3_b_mainline_fix_justification_guard_behavior",
+        "test_phase_38_11_10_no_mainline_rewrite_guard_before_integration_gate",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.10 closure fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let scope_guard_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/scripts/check_phase38_commit_scope.sh");
+    let scope_guard_src = std::fs::read_to_string(&scope_guard_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read commit-scope guard script {}: {}",
+            scope_guard_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "Do not mix incubator changes with mainline modelchecker rewrites in one commit.",
+        "if [[ \"$path\" == transpiler/src/modelcheck/* ]]; then",
+        "phase38-scope: mixed prototype/mainline scope detected",
+        "TODO 38.10.3.a",
+        "mainline-only modelcheck change requires explicit justification per TODO 38.10.3.b",
+        "PHASE38_MAINLINE_FIX_JUSTIFICATION",
+    ] {
+        assert!(
+            scope_guard_src.contains(required_fragment),
+            "commit-scope guard script {} must include fragment `{}`",
+            scope_guard_path.display(),
+            required_fragment
+        );
+    }
+
+    let run_guard = |paths: &[&str], envs: &[(&str, &str)]| -> std::process::Output {
+        let mut cmd = std::process::Command::new("bash");
+        cmd.arg(&scope_guard_path).current_dir(&repo_root);
+        for path in paths {
+            cmd.args(["--path", path]);
+        }
+        for (key, value) in envs {
+            cmd.env(key, value);
+        }
+        cmd.output().unwrap_or_else(|err| {
+            panic!(
+                "failed to execute commit-scope guard {}: {}",
+                scope_guard_path.display(),
+                err
+            )
+        })
+    };
+
+    let output_text = |output: &std::process::Output| -> String {
+        format!(
+            "stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    };
+
+    let mixed_without_override = run_guard(
+        &[
+            "transpiler/DPOR_based_model_tla_rs_checker/src/dpor.rs",
+            "transpiler/src/modelcheck/por.rs",
+        ],
+        &[],
+    );
+    assert!(
+        !mixed_without_override.status.success(),
+        "mixed prototype+mainline path set must be rejected by default; {}",
+        output_text(&mixed_without_override)
+    );
+    assert!(
+        output_text(&mixed_without_override).contains("mixed prototype/mainline scope detected"),
+        "mixed-scope rejection should mention detected mixed scope; {}",
+        output_text(&mixed_without_override)
+    );
+
+    let mainline_without_reason = run_guard(&["transpiler/src/modelcheck/por.rs"], &[]);
+    assert!(
+        !mainline_without_reason.status.success(),
+        "mainline-only modelcheck path must require justification; {}",
+        output_text(&mainline_without_reason)
+    );
+    assert!(
+        output_text(&mainline_without_reason).contains("PHASE38_MAINLINE_FIX_JUSTIFICATION"),
+        "mainline-only rejection should mention required justification env var; {}",
+        output_text(&mainline_without_reason)
+    );
+
+    let mainline_with_reason = run_guard(
+        &["transpiler/src/modelcheck/por.rs"],
+        &[(
+            "PHASE38_MAINLINE_FIX_JUSTIFICATION",
+            "narrow standalone mainline bug fix with separate justification",
+        )],
+    );
+    assert!(
+        mainline_with_reason.status.success(),
+        "mainline-only modelcheck path should pass with explicit justification; {}",
+        output_text(&mainline_with_reason)
+    );
+    assert!(
+        output_text(&mainline_with_reason).contains("mainline-only fix justification accepted"),
+        "mainline-only justified run should include acceptance marker; {}",
+        output_text(&mainline_with_reason)
+    );
+}
+
+#[test]
 fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
     let repo_root = resolve_repo_root_for_integration();
 
