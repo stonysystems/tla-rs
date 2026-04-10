@@ -3176,6 +3176,114 @@ fn try_solve_predicate_only_helper_branch(
             .join("|")
     }
 
+    fn helper_expr_mentions_identifier(expr: &Expr, ident: &str) -> bool {
+        match expr {
+            Expr::Conjunction(items) | Expr::Disjunction(items) => items
+                .iter()
+                .any(|item| helper_expr_mentions_identifier(item, ident)),
+            Expr::Implies(lhs, rhs)
+            | Expr::Iff(lhs, rhs)
+            | Expr::Eq(lhs, rhs)
+            | Expr::Ne(lhs, rhs)
+            | Expr::Lt(lhs, rhs)
+            | Expr::Le(lhs, rhs)
+            | Expr::Gt(lhs, rhs)
+            | Expr::Ge(lhs, rhs)
+            | Expr::Index(lhs, rhs)
+            | Expr::Binary(lhs, _, rhs) => {
+                helper_expr_mentions_identifier(lhs, ident)
+                    || helper_expr_mentions_identifier(rhs, ident)
+            }
+            Expr::Not(inner)
+            | Expr::View(inner)
+            | Expr::Cast(inner, _)
+            | Expr::Unary(_, inner)
+            | Expr::Is(inner, _)
+            | Expr::Field(inner, _)
+            | Expr::Arrow(inner, _) => helper_expr_mentions_identifier(inner, ident),
+            Expr::Forall { body, triggers, .. } => {
+                helper_expr_mentions_identifier(body, ident)
+                    || triggers
+                        .iter()
+                        .flat_map(|trigger| trigger.exprs.iter())
+                        .any(|trigger_expr| helper_expr_mentions_identifier(trigger_expr, ident))
+            }
+            Expr::Exists { body, .. } | Expr::Closure { body, .. } | Expr::Choose { body, .. } => {
+                helper_expr_mentions_identifier(body, ident)
+            }
+            Expr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                helper_expr_mentions_identifier(cond, ident)
+                    || helper_expr_mentions_identifier(then_branch, ident)
+                    || else_branch
+                        .as_ref()
+                        .map(|branch| helper_expr_mentions_identifier(branch, ident))
+                        .unwrap_or(false)
+            }
+            Expr::Match { scrutinee, arms } => {
+                helper_expr_mentions_identifier(scrutinee, ident)
+                    || arms.iter().any(|arm| {
+                        arm.guard
+                            .as_ref()
+                            .map(|guard| helper_expr_mentions_identifier(guard, ident))
+                            .unwrap_or(false)
+                            || helper_expr_mentions_identifier(&arm.body, ident)
+                    })
+            }
+            Expr::Let { value, body, .. } => {
+                helper_expr_mentions_identifier(value, ident)
+                    || helper_expr_mentions_identifier(body, ident)
+            }
+            Expr::Struct { fields, .. } => fields
+                .iter()
+                .any(|(_, field_expr)| helper_expr_mentions_identifier(field_expr, ident)),
+            Expr::StructUpdate { base, fields, .. } => {
+                helper_expr_mentions_identifier(base, ident)
+                    || fields
+                        .iter()
+                        .any(|(_, field_expr)| helper_expr_mentions_identifier(field_expr, ident))
+            }
+            Expr::SeqLit(items) | Expr::SetLit(items) => items
+                .iter()
+                .any(|item| helper_expr_mentions_identifier(item, ident)),
+            Expr::MapLit(items) => items.iter().any(|(key, value)| {
+                helper_expr_mentions_identifier(key, ident)
+                    || helper_expr_mentions_identifier(value, ident)
+            }),
+            Expr::Call { args, .. } => args
+                .iter()
+                .any(|arg| helper_expr_mentions_identifier(arg, ident)),
+            Expr::MethodCall { receiver, args, .. } => {
+                helper_expr_mentions_identifier(receiver, ident)
+                    || args
+                        .iter()
+                        .any(|arg| helper_expr_mentions_identifier(arg, ident))
+            }
+            Expr::Ident(name) => name == ident,
+            Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Literal(_) => false,
+        }
+    }
+
+    fn helper_constraint_depends_on_next_state(
+        constraint: &BranchConstraintIr,
+        next_state_param: &str,
+    ) -> bool {
+        match constraint {
+            BranchConstraintIr::Eq { target, value } => {
+                matches!(
+                    target.root,
+                    verus_transpiler::modelcheck::ir::ConstraintRoot::NextState
+                ) || helper_expr_mentions_identifier(value, next_state_param)
+            }
+            BranchConstraintIr::Predicate { expr } => {
+                helper_expr_mentions_identifier(expr, next_state_param)
+            }
+        }
+    }
+
     if branch.constraints.len() != 1 {
         return Ok(None);
     }
@@ -3320,6 +3428,16 @@ fn try_solve_predicate_only_helper_branch(
         let mut seen_merged = std::collections::BTreeSet::new();
         merged_assignments.retain(|assignment| seen_merged.insert(assignment_key(assignment)));
 
+        let helper_branch_depends_on_next_state = helper_branch
+            .constraints
+            .iter()
+            .any(|constraint| {
+                helper_constraint_depends_on_next_state(
+                    constraint,
+                    helper_transition.next_state_param.as_str(),
+                )
+            });
+
         let solved = match solve_branch_successors_with_candidates_and_telemetry(
             &helper_transition,
             helper_branch,
@@ -3339,7 +3457,40 @@ fn try_solve_predicate_only_helper_branch(
         ) {
             Ok(solved) => solved,
             Err(TranspileError::UnsupportedPattern { .. }) => {
-                if allow_partial_helper_solve {
+                // If an unsupported helper sub-branch is provably disabled for
+                // every merged assignment *and* does not depend on s_, we can
+                // safely skip it without forcing full predicate fallback.
+                let unsupported_branch_is_disabled = if helper_branch_depends_on_next_state {
+                    false
+                } else {
+                    let mut satisfiable = false;
+                    for merged_assignment in &merged_assignments {
+                        let probe = solve_branch_successors_with_candidates_and_telemetry(
+                            &helper_transition,
+                            helper_branch,
+                            current_state,
+                            constants,
+                            std::slice::from_ref(merged_assignment),
+                            Some(std::slice::from_ref(current_state)),
+                            None,
+                            bounds,
+                            SolverHooks {
+                                call_evaluator: Some(&call_evaluator),
+                                method_evaluator: None,
+                                quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+                                predicate_only_branch_solver: None,
+                            },
+                            None,
+                        )?;
+                        if !probe.successors.is_empty() {
+                            satisfiable = true;
+                            break;
+                        }
+                    }
+                    !satisfiable
+                };
+
+                if unsupported_branch_is_disabled || allow_partial_helper_solve {
                     continue;
                 }
                 return Ok(None);
@@ -8575,6 +8726,111 @@ max = 1
 
         assert_eq!(execution.summary.result, "ok");
         assert!(execution.summary.states >= 1);
+    }
+
+    #[test]
+    fn test_execute_model_check_helper_solver_skips_statically_disabled_unsupported_subbranches_without_fallback()
+    {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool { s.value == 0 && c.limit == 1 }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LStep(s: LState, s_: LState, c: LConstants) -> bool {
+        (s.value == 2) || ((s_.value == s.value + 1) && (s_.value <= c.limit))
+    }
+
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        LStep(s, s_, c)
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 1
+
+[quantifiers.int]
+min = 0
+max = 1
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+        let execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(execution.summary.result, "ok");
+        assert!(
+            execution
+                .summary
+                .enumeration
+                .direct_assignment_branch_solves
+                > 0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_fallback_branch_solves,
+            0
+        );
+        assert_eq!(
+            execution
+                .summary
+                .enumeration
+                .enumeration_candidate_evaluations,
+            0
+        );
+        let branch = execution
+            .summary
+            .branch_telemetry
+            .iter()
+            .find(|entry| entry.branch_label == "branch_0")
+            .expect("branch_0 telemetry should be present");
+        assert!(branch.direct_solver_hits > 0);
+        assert_eq!(branch.enumeration_fallback_hits, 0);
     }
 
     #[test]

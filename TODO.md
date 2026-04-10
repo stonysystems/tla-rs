@@ -12723,9 +12723,24 @@ re-closed with explicit evidence.
       guardrail `10000000` it shifts to timeout exits (`timeout 120s`, no
       JSON). No low-domain real deadlock row was found, so no new case-15
       model config is checked in here; proceed to `38.15.2.c`.
-    - [ ] **38.15.2.c**: If 38.15.2.b fails to produce a real deadlock row,
+    - [x] **38.15.2.c**: If 38.15.2.b fails to produce a real deadlock row,
       implement one targeted candidate-enumeration reduction step (<500 LOC)
       for case-15 helper-heavy branches, then remeasure with focused regressions.
+      **Done 2026-04-10**: Implemented targeted helper-branch reduction in
+      `transpiler/src/main.rs::try_solve_predicate_only_helper_branch`: when a
+      helper sub-branch is unsupported but **provably disabled** for the current
+      state/merged assignments and does not depend on `s_`, the solver skips it
+      instead of forcing whole-branch candidate-enumeration fallback. Added
+      regression test
+      `tests::test_execute_model_check_helper_solver_skips_statically_disabled_unsupported_subbranches_without_fallback`.
+      Focused remeasure (`docs/runtime_blockers_15_16_reclosure.md`, `38.15.2.c`):
+      default case-15 config still hits sequence-domain expansion (`limit 200000`);
+      the minimal non-vacuous profile (`int=0..1, seq=1, map=1`) still trips
+      `branch_1` guardrail (`200001 > 200000`) because the problematic helper
+      disjunct remains satisfiable there; however, under pinned constants where
+      that disjunct is disabled, the failure mode shifts from guardrail to a
+      concrete next-state bound error (`s_.history` length 2 > `max_seq_len` 1),
+      confirming the new pruning path is active.
     - [ ] **38.15.2.d**: Once deadlock closure is real, restore case-15
       manifest expectation from `known_unimplemented` to `deadlock` and sync
       focused protocol regression coverage (`src/dpor.rs`) plus suite evidence.

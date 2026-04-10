@@ -151,6 +151,47 @@ Conclusion:
 - `38.15.2.b` closes with "no feasible low-domain config found"; the next leaf
   is `38.15.2.c` (targeted candidate-enumeration reduction step in code).
 
+## 38.15.2.c targeted reduction step (helper-heavy branch fallback)
+
+Goal: land one <500 LOC reduction step that reduces unnecessary
+candidate-enumeration fallback for case-15 helper-call branches, then remeasure.
+
+Implemented change (`2026-04-10`):
+
+- File: `transpiler/src/main.rs`
+- Function: `try_solve_predicate_only_helper_branch`
+- Step: when a helper sub-branch is unsupported by direct assignment solving,
+  but (a) does **not** depend on `s_` and (b) is provably disabled for all
+  merged assignments at the current state, skip that sub-branch instead of
+  forcing full call-site fallback enumeration.
+- New unit regression:
+  `tests::test_execute_model_check_helper_solver_skips_statically_disabled_unsupported_subbranches_without_fallback`
+  verifies direct-helper solving remains active and fallback counters stay zero
+  in this guard-disabled unsupported-sub-branch shape.
+
+Focused remeasure (`2026-04-10`):
+
+1. Checked-in case-15 config (`tests/model_configs/15_chain_replication_small.toml`):
+   still fails at domain expansion stage:
+   `Sequence domain expansion exceeded limit 200000 assignments/values`.
+2. Minimal non-vacuous profile from `38.15.2.b`
+   (`int=0..1`, `max_seq_len=1`, `max_map_len=1`, guardrail `200000`):
+   still fails on `branch_1` guardrail (`200001 > 200000`) because the
+   problematic helper disjunct is satisfiable in this configuration.
+3. Pinned-constants probe where that helper disjunct is disabled
+   (`chain_len=2`, `node_id=1`, `max_seq_len=1`):
+   failure mode shifts from guardrail to a concrete next-state bound error:
+   `Failed to evaluate next-state assignment in branch 'branch_1' at s_.history:
+   Seq value length 2 exceeds configured max_seq_len 1.`
+
+Conclusion:
+
+- The `38.15.2.c` reduction path is active and cuts fallback in the
+  statically-disabled unsupported-sub-branch scenario.
+- Case-15 closure is still blocked in default/minimal profiles by (i) sequence
+  domain expansion and (ii) satisfiable helper disjuncts that retain huge
+  candidate spaces. `38.15.2.d` remains pending real deadlock closure.
+
 ## Runtime note discovered during 38.15.2.a reruns (case 19)
 
 While re-running mandatory full suites for this phase, case

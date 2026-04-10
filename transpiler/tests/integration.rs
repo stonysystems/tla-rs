@@ -22104,3 +22104,57 @@ fn test_phase_38_15_2_b_case15_low_domain_probe_evidence_is_recorded() {
         );
     }
 }
+
+#[test]
+fn test_phase_38_15_2_c_helper_branch_reduction_evidence_is_recorded() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "- [x] **38.15.2.c**: If 38.15.2.b fails to produce a real deadlock row,",
+        "targeted helper-branch reduction in",
+        "try_solve_predicate_only_helper_branch",
+        "the solver skips it",
+        "whole-branch candidate-enumeration fallback",
+        "test_execute_model_check_helper_solver_skips_statically_disabled_unsupported_subbranches_without_fallback",
+        "minimal non-vacuous profile (`int=0..1, seq=1, map=1`) still trips",
+        "branch_1` guardrail (`200001 > 200000`)",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.15.2.c evidence fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let evidence_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read blocker evidence doc {}: {}",
+            evidence_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## 38.15.2.c targeted reduction step (helper-heavy branch fallback)",
+        "try_solve_predicate_only_helper_branch",
+        "provably disabled",
+        "test_execute_model_check_helper_solver_skips_statically_disabled_unsupported_subbranches_without_fallback",
+        "still fails at domain expansion stage",
+        "still fails on `branch_1` guardrail (`200001 > 200000`)",
+        "failure mode shifts from guardrail to a concrete next-state bound error",
+        "s_.history",
+        "max_seq_len 1",
+    ] {
+        assert!(
+            evidence_src.contains(required_fragment),
+            "blocker evidence doc {} must include 38.15.2.c fragment `{}`",
+            evidence_path.display(),
+            required_fragment
+        );
+    }
+}
