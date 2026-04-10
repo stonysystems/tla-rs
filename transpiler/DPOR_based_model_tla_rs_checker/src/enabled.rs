@@ -251,12 +251,15 @@ impl SpecContext {
                     .get(branch_label)
                     .map(convert_por_footprint)
                     .unwrap_or_default();
-                let footprint = refine_transition_footprint_for_process_update(
+                let mut footprint = refine_transition_footprint_for_process_update(
                     base_footprint,
                     state,
                     successor,
                     *process_id,
                 );
+                if footprint.reads.is_empty() && footprint.writes.is_empty() {
+                    footprint = derive_conservative_unknown_footprint(state, successor);
+                }
                 enabled.push(EnabledTransition {
                     process_id: *process_id,
                     branch_label: branch_label.clone(),
@@ -277,12 +280,13 @@ impl SpecContext {
             let ordering_key = format!("{:04}", succ_idx);
             let process_id =
                 infer_process_id_from_state_delta(state, successor, &successor.canonical_key());
+            let footprint = derive_conservative_unknown_footprint(state, successor);
             all_enabled.push(EnabledTransition {
                 process_id,
                 branch_label: format!("transition_{}", succ_idx),
                 successor_fingerprint: fingerprint,
                 ordering_key,
-                footprint: TransitionFootprint::default(),
+                footprint,
             });
         }
         Ok(all_enabled)
@@ -819,6 +823,33 @@ fn convert_por_footprint(
     }
 }
 
+fn top_level_state_fields(state: &RuntimeValue) -> std::collections::BTreeSet<String> {
+    match state {
+        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
+            fields.keys().cloned().collect()
+        }
+        _ => std::collections::BTreeSet::new(),
+    }
+}
+
+fn derive_conservative_unknown_footprint(
+    current_state: &RuntimeValue,
+    successor_state: &RuntimeValue,
+) -> TransitionFootprint {
+    // Conservative fallback for unknown/whole-state branches:
+    // use all top-level state fields as read/write to keep dependence safe
+    // while avoiding empty-footprint "unknown" telemetry for struct-like states.
+    let mut fields = top_level_state_fields(current_state);
+    fields.extend(top_level_state_fields(successor_state));
+    if fields.is_empty() {
+        return TransitionFootprint::default();
+    }
+    TransitionFootprint {
+        reads: fields.clone(),
+        writes: fields,
+    }
+}
+
 fn refine_transition_footprint_for_process_update(
     footprint: TransitionFootprint,
     current_state: &RuntimeValue,
@@ -1318,6 +1349,7 @@ max_seq_len = 4
         let initials = ctx.initial_states().unwrap();
         let enabled = ctx.enabled_transitions(&initials[0]).unwrap();
         let footprints = ctx.branch_footprints().unwrap();
+        let conservative_fields = top_level_state_fields(&initials[0]);
         assert!(
             !enabled.is_empty(),
             "Expected at least one enabled transition"
@@ -1333,10 +1365,21 @@ max_seq_len = 4
                 .get(&transition.branch_label)
                 .expect("enabled transition branch label missing in footprint map");
             let expected = convert_por_footprint(source);
-            assert_eq!(
-                transition.footprint, expected,
-                "Enabled transition footprint should match converted POR branch footprint"
-            );
+            if expected.reads.is_empty() && expected.writes.is_empty() {
+                assert_eq!(
+                    transition.footprint.reads, conservative_fields,
+                    "Unknown branch footprints should derive conservative non-empty reads"
+                );
+                assert_eq!(
+                    transition.footprint.writes, conservative_fields,
+                    "Unknown branch footprints should derive conservative non-empty writes"
+                );
+            } else {
+                assert_eq!(
+                    transition.footprint, expected,
+                    "Enabled transition footprint should match converted POR branch footprint"
+                );
+            }
         }
     }
 
@@ -1551,6 +1594,36 @@ max_seq_len = 4
         assert!(refined.writes.contains("flag"));
         assert!(!refined.reads.iter().any(|path| path.starts_with("flag[")));
         assert!(!refined.writes.iter().any(|path| path.starts_with("flag[")));
+    }
+
+    #[test]
+    fn test_derive_conservative_unknown_footprint_uses_top_level_fields() {
+        let before = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([
+                ("x".to_string(), RuntimeValue::Int(1)),
+                ("y".to_string(), RuntimeValue::Int(2)),
+            ]),
+        };
+        let after = RuntimeValue::Struct {
+            ty: "S".to_string(),
+            fields: std::collections::BTreeMap::from([
+                ("x".to_string(), RuntimeValue::Int(1)),
+                ("y".to_string(), RuntimeValue::Int(3)),
+            ]),
+        };
+
+        let derived = derive_conservative_unknown_footprint(&before, &after);
+        assert_eq!(derived.reads, ["x".to_string(), "y".to_string()].into());
+        assert_eq!(derived.writes, ["x".to_string(), "y".to_string()].into());
+    }
+
+    #[test]
+    fn test_derive_conservative_unknown_footprint_non_struct_is_empty() {
+        let derived =
+            derive_conservative_unknown_footprint(&RuntimeValue::Int(1), &RuntimeValue::Int(2));
+        assert!(derived.reads.is_empty());
+        assert!(derived.writes.is_empty());
     }
 
     #[test]

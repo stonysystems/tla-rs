@@ -1413,7 +1413,7 @@ max_seq_len = 4
         ];
 
         println!(
-            "| Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons | Sleep Prunes (sleep) | Sleep Cardinality (avg/max by depth, sleep) | Independence Blockers (cand/ind/same/unknown/conflict, sleep) |"
+            "| Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons | Sleep Prunes (sleep) | Sleep Cardinality (avg/max by depth, sleep) | Independence Blockers (early_off/chosen_unknown/cand/ind/same/unknown/conflict, sleep) |"
         );
         println!(
             "|------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|---------------------:|---------------------------------------------|----------------------------------------------------------------|"
