@@ -12046,7 +12046,14 @@ stub detector clean and the run script reporting 0 vacuous passes.
    `2026-04-10T20:38:19Z` with summary:
    `total_cases=12`, `positive_exact=8`, `negative_witness_match=4`,
    `parity_failures=0` (no verdict/state/witness mismatches).
-9. [ ] `PrimaryBackup`, `Paxos`, and `Raft` are present as required hard cases and are never silently removed from the suite.
+9. [x] `PrimaryBackup`, `Paxos`, and `Raft` are present as required hard cases and are never silently removed from the suite.
+   **Done 2026-04-10**: hard-case presence is pinned across canonical corpus
+   directories (`16_primarybackup_small`, `17_paxos_small`, `20_raft_small`)
+   and full-suite execution now hard-fails when required protocol rows are
+   missing via `run_full_suite.sh` `REQUIRED_PROTOCOL_CASES` guard
+   (13–20). Current full-suite scoreboard
+   (`tests/reports/latest.json`, `2026-04-10T20:24:42Z`) includes all three
+   required hard cases.
 10. [ ] No mainline rewrite of `transpiler/src/modelcheck` happens before the prototype earns the integration gate in `38.10`.
 
 ### 38.12 Suggested execution order

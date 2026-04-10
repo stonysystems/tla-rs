@@ -22578,6 +22578,152 @@ fn test_phase_38_11_8_shadow_parity_subset_has_no_verdict_state_or_witness_misma
 }
 
 #[test]
+fn test_phase_38_11_9_required_hard_cases_are_pinned_and_full_suite_guarded() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "9. [x] `PrimaryBackup`, `Paxos`, and `Raft` are present as required hard cases and are never silently removed from the suite.",
+        "REQUIRED_PROTOCOL_CASES",
+        "16_primarybackup_small",
+        "17_paxos_small",
+        "20_raft_small",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.9 closure fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let suite_script_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/scripts/run_full_suite.sh");
+    let suite_script_src = std::fs::read_to_string(&suite_script_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read full-suite script {}: {}",
+            suite_script_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "REQUIRED_PROTOCOL_CASES=\"13_twophase_small 14_leader_election_small 15_chain_replication_small 16_primarybackup_small 17_paxos_small 18_pbft_small 19_epaxos_small 20_raft_small\"",
+        "grep -q \"\\\"case_id\\\": \\\"$required_case\\\"\"",
+        "Protocol cases missing from report",
+        "must remain in every full-suite run",
+        "exit 1",
+    ] {
+        assert!(
+            suite_script_src.contains(required_fragment),
+            "full-suite script {} must include hard-case guard fragment `{}`",
+            suite_script_path.display(),
+            required_fragment
+        );
+    }
+
+    let manifest_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/manifest.toml");
+    let manifest_src = std::fs::read_to_string(&manifest_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read manifest {}: {}",
+            manifest_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "id = \"16_primarybackup_small\"",
+        "id = \"17_paxos_small\"",
+        "id = \"20_raft_small\"",
+    ] {
+        assert!(
+            manifest_src.contains(required_fragment),
+            "manifest {} must include hard-case fragment `{}`",
+            manifest_path.display(),
+            required_fragment
+        );
+    }
+
+    for corpus_rel in [
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/tla/16_primarybackup_small",
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/tla/17_paxos_small",
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/tla/20_raft_small",
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/16_primarybackup_small",
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/17_paxos_small",
+        "transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/20_raft_small",
+    ] {
+        let corpus_path = repo_root.join(corpus_rel);
+        assert!(
+            corpus_path.exists() && corpus_path.is_dir(),
+            "required hard-case corpus path must exist as directory: {}",
+            corpus_path.display()
+        );
+    }
+
+    let latest_json_path =
+        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/tests/reports/latest.json");
+    let latest_json_src = std::fs::read_to_string(&latest_json_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read full-suite report {}: {}",
+            latest_json_path.display(),
+            err
+        )
+    });
+    let latest_json: serde_json::Value =
+        serde_json::from_str(&latest_json_src).unwrap_or_else(|err| {
+            panic!(
+                "failed to parse full-suite report {}: {}",
+                latest_json_path.display(),
+                err
+            )
+        });
+    let cases = latest_json
+        .get("cases")
+        .and_then(|v| v.as_array())
+        .unwrap_or_else(|| panic!("full-suite report {} missing `cases` array", latest_json_path.display()));
+    assert_eq!(
+        cases.len(),
+        20,
+        "full-suite report {} must contain 20 case rows",
+        latest_json_path.display()
+    );
+    for required_case in [
+        "16_primarybackup_small",
+        "17_paxos_small",
+        "20_raft_small",
+    ] {
+        let row = cases
+            .iter()
+            .find(|row| {
+                row.get("case_id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|id| id == required_case)
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "full-suite report {} missing required hard-case row `{}`",
+                    latest_json_path.display(),
+                    required_case
+                )
+            });
+        let result = row.get("result").and_then(|v| v.as_str()).unwrap_or_else(|| {
+            panic!(
+                "full-suite report {} row `{}` missing string result",
+                latest_json_path.display(),
+                required_case
+            )
+        });
+        assert_ne!(
+            result, "translation_failed",
+            "hard-case row `{}` must not silently drop to translation_failed in {}",
+            required_case,
+            latest_json_path.display()
+        );
+    }
+}
+
+#[test]
 fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
     let repo_root = resolve_repo_root_for_integration();
 
