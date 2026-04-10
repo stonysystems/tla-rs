@@ -12372,6 +12372,22 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         with `sleep_prune_hits=0` and `sleep` cardinality `0` at all observed
         depths for each case, indicating no currently-observed sleep-set
         population/pruning effect on this measured subset.
+      - [x] **38.14.10.d.b.c.f**: Add blocker telemetry for sleep independence
+        checks (candidate count + blocker reasons) so `0/3` runs can identify
+        whether we are blocked by same-process constraints, unknown footprints,
+        or concrete footprint conflicts.
+        **Done 2026-04-10**: Added `sleep_independence_blockers` telemetry to
+        `DporResult` with explicit counts for early exits and blocker reasons:
+        `early_off`, `chosen_unknown`, `cand`, `ind`, `same`, `unknown`,
+        `conflict`. Refreshed harness output and added focused test
+        `test_compute_child_sleep_set_records_independence_blockers`. Measured
+        runs (`02/09/17`) now show `cand=0` and non-zero `chosen_unknown`
+        (`4`, `9`, `39`), identifying unknown chosen-transition footprints as
+        the immediate blocker before any independence candidate evaluation.
+      - [ ] **38.14.10.d.b.c.g**: Reduce `chosen_unknown` on measured
+        multi-process cases by deriving conservative non-empty chosen
+        footprints where safe, then re-run parity + reduction harness to check
+        if candidate evaluation and sleep pruning begin occurring.
     - [x] **38.14.10.d.c**: Re-run the measurement harness, update
       `sleep_set_reduction_table.md` with post-change numbers, and close
       38.14.10 only if the gate is met.

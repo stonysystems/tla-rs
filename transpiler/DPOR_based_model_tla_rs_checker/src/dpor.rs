@@ -52,6 +52,8 @@ pub struct DporResult {
     pub sleep_prune_hits: usize,
     /// Per-depth sleep-set cardinality telemetry observed when frames are created.
     pub sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats>,
+    /// Independence blocker telemetry collected while building child sleep sets.
+    pub sleep_independence_blockers: SleepIndependenceBlockers,
     /// Violation witness if an invariant violation was found.
     pub violation: Option<ViolationWitness>,
 }
@@ -65,6 +67,25 @@ pub struct SleepDepthStats {
     pub total_cardinality: usize,
     /// Maximum observed cardinality at this depth.
     pub max_cardinality: usize,
+}
+
+/// Aggregated reasons why sleep-set independence checks did not admit candidates.
+#[derive(Debug, Clone, Default)]
+pub struct SleepIndependenceBlockers {
+    /// Child-sleep computation skipped because independence was disabled.
+    pub early_exit_independence_disabled: usize,
+    /// Child-sleep computation skipped because chosen transition had unknown footprint.
+    pub early_exit_chosen_unknown_footprint: usize,
+    /// Total candidate pairs evaluated for child-sleep seeding.
+    pub candidates_considered: usize,
+    /// Candidate pairs considered independent.
+    pub independent_candidates: usize,
+    /// Candidate pairs blocked because transitions are from the same process.
+    pub blocked_same_process: usize,
+    /// Candidate pairs blocked because one side has an unknown (empty) footprint.
+    pub blocked_unknown_footprint: usize,
+    /// Candidate pairs blocked due to read/write footprint conflict.
+    pub blocked_footprint_conflict: usize,
 }
 
 /// Configuration for the DPOR explorer.
@@ -145,6 +166,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     let mut transitions_fired: usize = 0;
     let mut sleep_prune_hits: usize = 0;
     let mut sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats> = BTreeMap::new();
+    let mut sleep_independence_blockers = SleepIndependenceBlockers::default();
 
     // Get initial states
     let initial_states = match ctx.initial_states() {
@@ -158,6 +180,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 transitions_fired: 0,
                 sleep_prune_hits: 0,
                 sleep_cardinality_by_depth: BTreeMap::new(),
+                sleep_independence_blockers: SleepIndependenceBlockers::default(),
                 violation: None,
             };
         }
@@ -200,6 +223,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 transitions_fired: 0,
                 sleep_prune_hits: 0,
                 sleep_cardinality_by_depth: BTreeMap::new(),
+                sleep_independence_blockers: SleepIndependenceBlockers::default(),
                 violation: Some(witness),
             };
         }
@@ -221,6 +245,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 transitions_fired: 0,
                 sleep_prune_hits: 0,
                 sleep_cardinality_by_depth: BTreeMap::new(),
+                sleep_independence_blockers: SleepIndependenceBlockers::default(),
                 violation: Some(ViolationWitness {
                     invariant: "__deadlock__".to_string(),
                     violating_state_key: initial.canonical_key(),
@@ -380,6 +405,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 transitions_fired,
                                 sleep_prune_hits,
                                 sleep_cardinality_by_depth,
+                                sleep_independence_blockers,
                                 violation: Some(witness),
                             };
                         }
@@ -413,6 +439,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 transitions_fired,
                                 sleep_prune_hits,
                                 sleep_cardinality_by_depth,
+                                sleep_independence_blockers,
                                 violation: Some(ViolationWitness {
                                     invariant: "__deadlock__".to_string(),
                                     violating_state_key: successor.canonical_key(),
@@ -432,6 +459,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 &transition,
                                 &parent_enabled,
                                 config.use_independence,
+                                &mut sleep_independence_blockers,
                             )
                         } else {
                             BTreeSet::new()
@@ -473,6 +501,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         transitions_fired,
         sleep_prune_hits,
         sleep_cardinality_by_depth,
+        sleep_independence_blockers,
         violation: None,
     }
 }
@@ -505,6 +534,20 @@ fn format_sleep_cardinality_summary(stats: &BTreeMap<usize, SleepDepthStats>) ->
         })
         .collect::<Vec<_>>()
         .join(";")
+}
+
+#[cfg(test)]
+fn format_independence_blockers_summary(stats: &SleepIndependenceBlockers) -> String {
+    format!(
+        "early_off={} chosen_unknown={} cand={} ind={} same={} unknown={} conflict={}",
+        stats.early_exit_independence_disabled,
+        stats.early_exit_chosen_unknown_footprint,
+        stats.candidates_considered,
+        stats.independent_candidates,
+        stats.blocked_same_process,
+        stats.blocked_unknown_footprint,
+        stats.blocked_footprint_conflict
+    )
 }
 
 /// Result of replaying a violation witness.
@@ -729,24 +772,61 @@ fn transition_has_unknown_footprint(transition: &EnabledTransition) -> bool {
     transition.footprint.reads.is_empty() && transition.footprint.writes.is_empty()
 }
 
-fn transitions_independent(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IndependenceDecision {
+    Independent,
+    BlockedSameProcess,
+    BlockedUnknownFootprint,
+    BlockedFootprintConflict,
+}
+
+fn classify_transition_independence(
     left: &EnabledTransition,
     right: &EnabledTransition,
     use_independence: bool,
-) -> bool {
+) -> IndependenceDecision {
     if !use_independence {
-        return false;
+        return IndependenceDecision::BlockedFootprintConflict;
     }
     // Same-process transitions are always dependent to preserve per-process
     // program-order semantics in this conservative DPOR prototype.
     if left.process_id == right.process_id {
-        return false;
+        return IndependenceDecision::BlockedSameProcess;
     }
     // Unknown footprints (including whole-state accesses) remain dependent.
     if transition_has_unknown_footprint(left) || transition_has_unknown_footprint(right) {
-        return false;
+        return IndependenceDecision::BlockedUnknownFootprint;
     }
-    left.footprint.independent_of(&right.footprint)
+    if left.footprint.independent_of(&right.footprint) {
+        IndependenceDecision::Independent
+    } else {
+        IndependenceDecision::BlockedFootprintConflict
+    }
+}
+
+fn record_independence_decision(
+    blockers: &mut SleepIndependenceBlockers,
+    decision: IndependenceDecision,
+) -> bool {
+    blockers.candidates_considered += 1;
+    match decision {
+        IndependenceDecision::Independent => {
+            blockers.independent_candidates += 1;
+            true
+        }
+        IndependenceDecision::BlockedSameProcess => {
+            blockers.blocked_same_process += 1;
+            false
+        }
+        IndependenceDecision::BlockedUnknownFootprint => {
+            blockers.blocked_unknown_footprint += 1;
+            false
+        }
+        IndependenceDecision::BlockedFootprintConflict => {
+            blockers.blocked_footprint_conflict += 1;
+            false
+        }
+    }
 }
 
 fn compute_child_sleep_set(
@@ -755,10 +835,16 @@ fn compute_child_sleep_set(
     chosen: &EnabledTransition,
     parent_enabled: &[EnabledTransition],
     use_independence: bool,
+    blockers: &mut SleepIndependenceBlockers,
 ) -> BTreeSet<String> {
     let mut child_sleep = BTreeSet::new();
 
-    if !use_independence || transition_has_unknown_footprint(chosen) {
+    if !use_independence {
+        blockers.early_exit_independence_disabled += 1;
+        return child_sleep;
+    }
+    if transition_has_unknown_footprint(chosen) {
+        blockers.early_exit_chosen_unknown_footprint += 1;
         return child_sleep;
     }
 
@@ -769,7 +855,10 @@ fn compute_child_sleep_set(
             .find(|t| transition_sleep_key(t) == *sleeping_key)
         {
             // If independent of chosen, keep asleep
-            if transitions_independent(sleeping_trans, chosen, use_independence) {
+            if record_independence_decision(
+                blockers,
+                classify_transition_independence(sleeping_trans, chosen, use_independence),
+            ) {
                 child_sleep.insert(sleeping_key.clone());
             }
             // If dependent, don't propagate (woken up)
@@ -784,7 +873,10 @@ fn compute_child_sleep_set(
             continue;
         }
         if let Some(done_trans) = parent_enabled.iter().find(|t| t.ordering_key == *done_key) {
-            if transitions_independent(done_trans, chosen, use_independence) {
+            if record_independence_decision(
+                blockers,
+                classify_transition_independence(done_trans, chosen, use_independence),
+            ) {
                 child_sleep.insert(transition_sleep_key(done_trans));
             }
         }
@@ -801,7 +893,10 @@ fn compute_child_sleep_set(
         if !ordering_key_is_before(&candidate.ordering_key, &chosen.ordering_key) {
             continue;
         }
-        if transitions_independent(candidate, chosen, use_independence) {
+        if record_independence_decision(
+            blockers,
+            classify_transition_independence(candidate, chosen, use_independence),
+        ) {
             child_sleep.insert(transition_sleep_key(candidate));
         }
     }
@@ -1318,10 +1413,10 @@ max_seq_len = 4
         ];
 
         println!(
-            "| Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons | Sleep Prunes (sleep) | Sleep Cardinality (avg/max by depth, sleep) |"
+            "| Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Distinct Reduction vs cons | Transitions (cons) | Transitions (ind) | Transitions (sleep) | Transition Reduction vs cons | Sleep Prunes (sleep) | Sleep Cardinality (avg/max by depth, sleep) | Independence Blockers (cand/ind/same/unknown/conflict, sleep) |"
         );
         println!(
-            "|------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|---------------------:|---------------------------------------------|"
+            "|------|-----------------:|---------------:|-----------------:|----------------------------:|-------------------:|------------------:|--------------------:|-----------------------------:|---------------------:|---------------------------------------------|----------------------------------------------------------------|"
         );
 
         let mut multi_process_gate_hits = 0usize;
@@ -1329,7 +1424,7 @@ max_seq_len = 4
             let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
             if !spec_file.exists() {
                 println!(
-                    "| {} | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |",
+                    "| {} | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |",
                     case_id
                 );
                 continue;
@@ -1339,7 +1434,7 @@ max_seq_len = 4
                 Ok(c) => c,
                 Err(_) => {
                     println!(
-                        "| {} | load_failed | load_failed | load_failed | -- | -- | -- | -- | -- | -- | -- |",
+                        "| {} | load_failed | load_failed | load_failed | -- | -- | -- | -- | -- | -- | -- | -- |",
                         case_id
                     );
                     continue;
@@ -1405,6 +1500,7 @@ max_seq_len = 4
             let sleep_prunes = sleep.sleep_prune_hits;
             let sleep_cardinality =
                 format_sleep_cardinality_summary(&sleep.sleep_cardinality_by_depth);
+            let blockers = format_independence_blockers_summary(&sleep.sleep_independence_blockers);
 
             let distinct_reduction_pct = if cons_distinct == 0 {
                 0.0
@@ -1422,7 +1518,7 @@ max_seq_len = 4
             }
 
             println!(
-                "| {} | {} | {} | {} | {:.1}% | {} | {} | {} | {:.1}% | {} | {} |",
+                "| {} | {} | {} | {} | {:.1}% | {} | {} | {} | {:.1}% | {} | {} | {} |",
                 case_id,
                 cons_distinct,
                 ind_distinct,
@@ -1433,7 +1529,8 @@ max_seq_len = 4
                 sleep_transitions,
                 transition_reduction_pct,
                 sleep_prunes,
-                sleep_cardinality
+                sleep_cardinality,
+                blockers
             );
         }
 
@@ -1474,17 +1571,22 @@ max_seq_len = 4
             footprint: TransitionFootprint::default(), // empty
         };
         let parent_enabled = vec![sleeping_one, sleeping_two];
+        let mut blockers = SleepIndependenceBlockers::default();
         let child_sleep = compute_child_sleep_set(
             &parent_sleep,
             &BTreeSet::new(),
             &chosen,
             &parent_enabled,
             true,
+            &mut blockers,
         );
         assert!(
             child_sleep.is_empty(),
             "Empty footprints → all dependent → empty child sleep"
         );
+        assert_eq!(blockers.early_exit_independence_disabled, 0);
+        assert_eq!(blockers.early_exit_chosen_unknown_footprint, 1);
+        assert_eq!(blockers.candidates_considered, 0);
     }
 
     #[test]
@@ -1523,12 +1625,14 @@ max_seq_len = 4
             },
         };
         let parent_enabled = vec![indep.clone(), dep.clone()];
+        let mut blockers = SleepIndependenceBlockers::default();
         let child_sleep = compute_child_sleep_set(
             &parent_sleep,
             &BTreeSet::new(),
             &chosen,
             &parent_enabled,
             true,
+            &mut blockers,
         );
         assert!(
             child_sleep.contains(&transition_sleep_key(&indep)),
@@ -1564,6 +1668,7 @@ max_seq_len = 4
             },
         };
         let parent_enabled = vec![sleeping];
+        let mut blockers = SleepIndependenceBlockers::default();
 
         let child_sleep = compute_child_sleep_set(
             &parent_sleep,
@@ -1571,6 +1676,7 @@ max_seq_len = 4
             &chosen,
             &parent_enabled,
             true,
+            &mut blockers,
         );
         assert!(
             child_sleep.is_empty(),
@@ -1621,6 +1727,7 @@ max_seq_len = 4
             done_dependent.clone(),
             chosen.clone(),
         ];
+        let mut blockers = SleepIndependenceBlockers::default();
 
         let child_sleep = compute_child_sleep_set(
             &BTreeSet::new(),
@@ -1628,6 +1735,7 @@ max_seq_len = 4
             &chosen,
             &parent_enabled,
             true,
+            &mut blockers,
         );
         assert!(
             child_sleep.contains(&transition_sleep_key(&done_independent)),
@@ -1691,6 +1799,7 @@ max_seq_len = 4
             chosen.clone(),
             post_indep.clone(),
         ];
+        let mut blockers = SleepIndependenceBlockers::default();
 
         let child_sleep = compute_child_sleep_set(
             &BTreeSet::new(),
@@ -1698,6 +1807,7 @@ max_seq_len = 4
             &chosen,
             &parent_enabled,
             true,
+            &mut blockers,
         );
         assert!(
             child_sleep.contains(&transition_sleep_key(&pre_indep)),
@@ -1763,6 +1873,105 @@ max_seq_len = 4
         assert!(
             summary.contains("d2:0.0/0"),
             "summary should include depth 2 zero cardinality, got {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn test_compute_child_sleep_set_records_independence_blockers() {
+        let chosen = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "t_chosen".to_string(),
+            successor_fingerprint: StateFingerprint(0),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(),
+                writes: ["x".to_string()].into(),
+            },
+        };
+        let same_process = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "t_same".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["y".to_string()].into(),
+                writes: ["y".to_string()].into(),
+            },
+        };
+        let unknown = EnabledTransition {
+            process_id: ProcessId(2),
+            branch_label: "t_unknown".to_string(),
+            successor_fingerprint: StateFingerprint(2),
+            ordering_key: "0002".to_string(),
+            footprint: TransitionFootprint::default(),
+        };
+        let conflict = EnabledTransition {
+            process_id: ProcessId(3),
+            branch_label: "t_conflict".to_string(),
+            successor_fingerprint: StateFingerprint(3),
+            ordering_key: "0003".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(),
+                writes: BTreeSet::new(),
+            },
+        };
+        let independent = EnabledTransition {
+            process_id: ProcessId(4),
+            branch_label: "t_indep".to_string(),
+            successor_fingerprint: StateFingerprint(4),
+            ordering_key: "0004".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["z".to_string()].into(),
+                writes: ["z".to_string()].into(),
+            },
+        };
+        let parent_enabled = vec![
+            chosen.clone(),
+            same_process.clone(),
+            unknown.clone(),
+            conflict.clone(),
+            independent.clone(),
+        ];
+        let parent_sleep: BTreeSet<String> = [
+            transition_sleep_key(&same_process),
+            transition_sleep_key(&unknown),
+            transition_sleep_key(&conflict),
+            transition_sleep_key(&independent),
+        ]
+        .into();
+
+        let mut blockers = SleepIndependenceBlockers::default();
+        let child_sleep = compute_child_sleep_set(
+            &parent_sleep,
+            &BTreeSet::new(),
+            &chosen,
+            &parent_enabled,
+            true,
+            &mut blockers,
+        );
+        assert!(
+            child_sleep.contains(&transition_sleep_key(&independent)),
+            "independent candidate should remain in child sleep"
+        );
+        assert_eq!(
+            child_sleep.len(),
+            1,
+            "only one candidate should remain asleep"
+        );
+        assert_eq!(blockers.early_exit_independence_disabled, 0);
+        assert_eq!(blockers.early_exit_chosen_unknown_footprint, 0);
+        assert_eq!(blockers.candidates_considered, 4);
+        assert_eq!(blockers.independent_candidates, 1);
+        assert_eq!(blockers.blocked_same_process, 1);
+        assert_eq!(blockers.blocked_unknown_footprint, 1);
+        assert_eq!(blockers.blocked_footprint_conflict, 1);
+
+        let summary = format_independence_blockers_summary(&blockers);
+        assert!(
+            summary
+                .contains("early_off=0 chosen_unknown=0 cand=4 ind=1 same=1 unknown=1 conflict=1"),
+            "summary should include blocker counts, got {}",
             summary
         );
     }
