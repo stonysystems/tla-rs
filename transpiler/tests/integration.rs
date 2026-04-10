@@ -21583,3 +21583,51 @@ fn test_phase_38_10_4_c_shadow_report_schema_drift_guard_contract() {
         bad_stderr
     );
 }
+
+#[test]
+fn test_phase_38_11_1_workfolder_structure_acceptance_criterion() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "### 38.11 Acceptance criteria",
+        "1. [x] `transpiler/DPOR_based_model_tla_rs_checker/` exists",
+        "test_phase_38_11_1_workfolder_structure_acceptance_criterion",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.11.1 fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let root = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker");
+    assert!(
+        root.exists() && root.is_dir(),
+        "expected DPOR workfolder at {}",
+        root.display()
+    );
+
+    let required_files = ["README.md", "design.md"];
+    for file in required_files {
+        let path = root.join(file);
+        assert!(
+            path.exists() && path.is_file(),
+            "expected required DPOR workfolder file {}",
+            path.display()
+        );
+    }
+
+    let required_dirs = ["src", "scripts", "tests"];
+    for dir in required_dirs {
+        let path = root.join(dir);
+        assert!(
+            path.exists() && path.is_dir(),
+            "expected required DPOR workfolder directory {}",
+            path.display()
+        );
+    }
+}
