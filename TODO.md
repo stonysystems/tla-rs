@@ -12350,9 +12350,16 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         **Done 2026-04-09**: Re-ran reduction harness (`02/09/17`) and full
         suites. Gate remains **NOT MET** (`0/3`; distinct and transition
         counts unchanged on all measured cases), so additional tuning is needed.
-      - [ ] **38.14.10.d.b.c.d**: Add sleep-set candidate seeding from
+      - [x] **38.14.10.d.b.c.d**: Add sleep-set candidate seeding from
         deterministic pre-chosen enabled alternatives (not only `done`) with
         conservative guards; verify no-lost-state parity checks still pass.
+        **Done 2026-04-09**: `compute_child_sleep_set()` now also seeds from
+        independent alternatives whose deterministic `ordering_key` is before
+        the chosen transition at the parent frame (in addition to propagated
+        parent-sleep and done-set alternatives). Added focused regression
+        `test_compute_child_sleep_set_seeds_from_prechosen_ordered_alternatives`
+        and re-ran parity/full-suite checks. No state-loss regressions observed,
+        but reduction gate remains **NOT MET** (`0/3`).
       - [ ] **38.14.10.d.b.c.e**: If c.d still yields `0/3`, add focused
         telemetry for sleep-prune hits and per-depth sleep cardinality to
         isolate whether dependence, candidate seeding, or replay order is the

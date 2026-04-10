@@ -712,7 +712,27 @@ fn compute_child_sleep_set(
         }
     }
 
+    // Deterministic-order candidate seeding: if an enabled alternative is
+    // ordered before the currently chosen transition at the same parent frame,
+    // treat it as a pre-chosen sibling candidate for child sleeping.
+    // Conservative guards are preserved via `transitions_independent()`.
+    for candidate in parent_enabled {
+        if candidate.ordering_key == chosen.ordering_key {
+            continue;
+        }
+        if !ordering_key_is_before(&candidate.ordering_key, &chosen.ordering_key) {
+            continue;
+        }
+        if transitions_independent(candidate, chosen, use_independence) {
+            child_sleep.insert(transition_sleep_key(candidate));
+        }
+    }
+
     child_sleep
+}
+
+fn ordering_key_is_before(left: &str, right: &str) -> bool {
+    left < right
 }
 
 #[cfg(test)]
@@ -1534,6 +1554,76 @@ max_seq_len = 4
         assert!(
             !child_sleep.contains(&transition_sleep_key(&chosen)),
             "chosen transition itself should not be seeded into child sleep from done-set"
+        );
+    }
+
+    #[test]
+    fn test_compute_child_sleep_set_seeds_from_prechosen_ordered_alternatives() {
+        let pre_indep = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "t_pre_indep".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0001".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["y".to_string()].into(),
+                writes: ["y".to_string()].into(),
+            },
+        };
+        let pre_dep = EnabledTransition {
+            process_id: ProcessId(2),
+            branch_label: "t_pre_dep".to_string(),
+            successor_fingerprint: StateFingerprint(2),
+            ordering_key: "0000".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(),
+                writes: BTreeSet::new(),
+            },
+        };
+        let chosen = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "t_chosen".to_string(),
+            successor_fingerprint: StateFingerprint(3),
+            ordering_key: "0002".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["x".to_string()].into(),
+                writes: ["x".to_string()].into(),
+            },
+        };
+        let post_indep = EnabledTransition {
+            process_id: ProcessId(3),
+            branch_label: "t_post_indep".to_string(),
+            successor_fingerprint: StateFingerprint(4),
+            ordering_key: "0003".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["z".to_string()].into(),
+                writes: ["z".to_string()].into(),
+            },
+        };
+        let parent_enabled = vec![
+            pre_dep.clone(),
+            pre_indep.clone(),
+            chosen.clone(),
+            post_indep.clone(),
+        ];
+
+        let child_sleep = compute_child_sleep_set(
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &chosen,
+            &parent_enabled,
+            true,
+        );
+        assert!(
+            child_sleep.contains(&transition_sleep_key(&pre_indep)),
+            "independent alternative ordered before chosen should seed child sleep"
+        );
+        assert!(
+            !child_sleep.contains(&transition_sleep_key(&pre_dep)),
+            "dependent alternative ordered before chosen should not seed child sleep"
+        );
+        assert!(
+            !child_sleep.contains(&transition_sleep_key(&post_indep)),
+            "alternatives after chosen should not be pre-chosen candidates"
         );
     }
 
