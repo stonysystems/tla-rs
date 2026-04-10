@@ -12696,12 +12696,14 @@ re-closed with explicit evidence.
     case 15 fails with candidate-enumeration guardrail
     (`Sequence domain expansion exceeded limit 200000`) and case 16 hits a
     timeout-window wrapper exit (`timeout 60s`, no JSON report emitted).
-  - [ ] **38.15.2**: Case 15 closure leaf — tune candidate-enumeration/model
+  - [x] **38.15.2**: Case 15 closure leaf — tune candidate-enumeration/model
     bounds for `15_chain_replication_small` so bounded baseline completes with
     a real `deadlock_detected` outcome under full-suite budget (no vacuous
     pass), then remove temporary `known_unimplemented` for case 15.
     Decomposed (2026-04-10) after sweep evidence showed tuning-only closure is
-    not yet sufficient under current runtime behavior.
+    not yet sufficient under current runtime behavior. **Done 2026-04-10**:
+    closure completed through `38.15.2.a/.b/.c/.d` with manifest restoration
+    plus focused-regression re-enable for case 15.
     - [x] **38.15.2.a**: Run and document a case-15 guardrail/timeout sweep on
       current non-vacuous bounds (including elevated
       `candidate_eval_guardrail` values) to determine whether tuning alone can
@@ -12743,7 +12745,7 @@ re-closed with explicit evidence.
       that disjunct is disabled, the failure mode shifts from guardrail to a
       concrete next-state bound error (`s_.history` length 2 > `max_seq_len` 1),
       confirming the new pruning path is active.
-    - [ ] **38.15.2.d**: Once deadlock closure is real, restore case-15
+    - [x] **38.15.2.d**: Once deadlock closure is real, restore case-15
       manifest expectation from `known_unimplemented` to `deadlock` and sync
       focused protocol regression coverage (`src/dpor.rs`) plus suite evidence.
       Preflight status snapshot (2026-04-10, before `38.15.2.d.a`):
@@ -12756,7 +12758,7 @@ re-closed with explicit evidence.
       (`s_.history` length 2 > `max_seq_len` 1), and `int=0..2` with
       `max_seq_len=2` still hits sequence-domain expansion (observed through
       limit 5,000,000). Current status update (2026-04-10 later):
-      `38.15.2.d.a` and `38.15.2.d.b` are complete; `38.15.2.d.c` remains.
+      `38.15.2.d.a/.b/.c` are complete.
       - [x] **38.15.2.d.a**: Produce one checked-in non-vacuous
         `deadlock_detected` baseline row for case 15 (distinct states > 0)
         under a reproducible model config and command line.
@@ -12794,9 +12796,15 @@ re-closed with explicit evidence.
         `scripts/run_full_suite.sh --timeout 1200` at `2026-04-10T15:37:34Z`
         reports `[15_chain_replication_small] PASS (deadlock found, 148982ms)`
         with `Known unimplemented: 2` (cases 16 and 19).
-      - [ ] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression in
+      - [x] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression in
         `src/dpor.rs` (remove temporary ignore reason) and verify focused/full
         suite behavior remains green.
+        **Done 2026-04-10** (<500 LOC scope): removed temporary `#[ignore]`
+        from `test_case15_chain_replication_is_real_non_vacuous_deadlock` in
+        `src/dpor.rs` and revalidated with
+        `cargo test --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml -q`
+        plus `scripts/run_full_suite.sh --timeout 1200` (case 15:
+        `PASS (deadlock found, 152675ms)`).
   - [ ] **38.15.3**: Case 16 closure leaf — tune runtime/model bounds for
     `16_primarybackup_small` so bounded baseline completes with a real `ok`
     invariant-checked outcome under full-suite budget, then remove temporary

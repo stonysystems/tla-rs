@@ -2924,7 +2924,6 @@ max_seq_len = 4
     }
 
     #[test]
-    #[ignore = "case 15 currently blocked by candidate-enumeration guardrails; tracked in tests/manifest.toml and covered by run_full_suite.sh status"]
     fn test_case15_chain_replication_is_real_non_vacuous_deadlock() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/15_chain_replication_small/Chain.rs");
@@ -2942,7 +2941,7 @@ max_seq_len = 4
         };
 
         let model_path = case_model_config("15_chain_replication_small");
-        let result = run_baseline_serial(&transpiler, &spec_file, &model_path, &[], 120);
+        let result = run_baseline_serial(&transpiler, &spec_file, &model_path, &[], 240);
 
         assert_eq!(
             result.result, "deadlock_detected",

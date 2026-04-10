@@ -21985,7 +21985,7 @@ fn test_phase_38_15_2_a_case15_guardrail_timeout_sweep_evidence_is_recorded() {
     let todo_src = std::fs::read_to_string(&todo_path)
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     for required_fragment in [
-        "- [ ] **38.15.2**: Case 15 closure leaf",
+        "- [x] **38.15.2**: Case 15 closure leaf",
         "- [x] **38.15.2.a**: Run and document a case-15 guardrail/timeout sweep",
         "guardrail abort persists for",
         "`10000000` and",
@@ -22168,7 +22168,7 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
     let todo_src = std::fs::read_to_string(&todo_path)
         .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
     for required_fragment in [
-        "- [ ] **38.15.2.d**: Once deadlock closure is real, restore case-15",
+        "- [x] **38.15.2.d**: Once deadlock closure is real, restore case-15",
         "Preflight status snapshot (2026-04-10, before `38.15.2.d.a`):",
         "Current status update (2026-04-10 later):",
         "chain_len=2,node_id=1",
@@ -22178,7 +22178,7 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
         "- [x] **38.15.2.d.a**: Produce one checked-in non-vacuous",
         "- [x] **38.15.2.d.b**: Once 38.15.2.d.a is met, restore case-15 manifest",
         "expected_primary_result = \"deadlock\"",
-        "- [ ] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression",
+        "- [x] **38.15.2.d.c**: Re-enable case-15 focused DPOR regression",
     ] {
         assert!(
             todo_src.contains(required_fragment),
@@ -22209,6 +22209,10 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
         "Struct domain expansion for LRecord exceeded limit 300000",
         "Historical snapshot only: this preflight block was resolved later by",
         "`38.15.2.d.b`",
+        "## 38.15.2.d.c focused regression re-enable (done)",
+        "Removed temporary `#[ignore =",
+        "`86 passed; 0 failed; 4 ignored`",
+        "[15_chain_replication_small] PASS (deadlock found, 152675ms)",
     ] {
         assert!(
             evidence_src.contains(required_fragment),
@@ -22239,6 +22243,28 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
             required_fragment
         );
     }
+
+    let dpor_src_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/src/dpor.rs");
+    let dpor_src = std::fs::read_to_string(&dpor_src_path)
+        .unwrap_or_else(|err| panic!("failed to read dpor source {}: {}", dpor_src_path.display(), err));
+    for required_fragment in [
+        "fn test_case15_chain_replication_is_real_non_vacuous_deadlock()",
+        "run_baseline_serial(&transpiler, &spec_file, &model_path, &[], 240);",
+    ] {
+        assert!(
+            dpor_src.contains(required_fragment),
+            "dpor source {} must include case-15 re-enable fragment `{}`",
+            dpor_src_path.display(),
+            required_fragment
+        );
+    }
+    let old_ignore = "case 15 currently blocked by candidate-enumeration guardrails";
+    assert!(
+        !dpor_src.contains(old_ignore),
+        "dpor source {} must not keep stale case-15 temporary ignore marker `{}`",
+        dpor_src_path.display(),
+        old_ignore
+    );
 }
 
 #[test]

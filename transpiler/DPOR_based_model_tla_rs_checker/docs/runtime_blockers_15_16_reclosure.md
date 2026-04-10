@@ -296,7 +296,8 @@ Conclusion (updated):
   now confirmed for case 15 under the selected bounded profile.
 - `38.15.2.d.a.iii` is satisfied by checking in that profile at
   `tests/model_configs/15_chain_replication_small.toml`.
-- Follow-up leaf `38.15.2.d.c` (focused regression re-enable) remains open.
+- Follow-up leaf `38.15.2.d.c` (focused regression re-enable) is now complete
+  (see subsection below).
 
 ## 38.15.2.d.b manifest expectation restore (done)
 
@@ -336,6 +337,31 @@ Full-suite verification after manifest restore:
   `[15_chain_replication_small] PASS (deadlock found, 148982ms)`
 - Summary:
   `Passed (real): 18`, `Known unimplemented: 2` (cases 16 and 19), `Failed: 0`.
+
+## 38.15.2.d.c focused regression re-enable (done)
+
+Goal: remove the temporary case-15 focused-regression ignore in
+`src/dpor.rs`, then verify focused + full-suite behavior stays green.
+
+Code change (<500 LOC):
+
+- File: `src/dpor.rs`
+- Removed temporary `#[ignore = "...candidate-enumeration guardrails..."]`
+  from `test_case15_chain_replication_is_real_non_vacuous_deadlock`.
+- Updated its call-site timeout budget from `120` to `240` seconds for
+  consistency with observed bounded runtime margin.
+
+Verification:
+
+- Focused DPOR test suite:
+  `cargo test --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml -q`
+  => `86 passed; 0 failed; 4 ignored`
+  (case 15 focused regression executes as active test).
+- Full suite:
+  `./transpiler/DPOR_based_model_tla_rs_checker/scripts/run_full_suite.sh --timeout 1200`
+  => case row
+  `[15_chain_replication_small] PASS (deadlock found, 152675ms)` and overall
+  `Passed (real): 18`, `Known unimplemented: 2`, `Failed: 0`.
 
 ## Runtime note discovered during 38.15.2.a reruns (case 19)
 
