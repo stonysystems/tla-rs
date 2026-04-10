@@ -2595,6 +2595,108 @@ max_seq_len = 4
     // Automated baseline-vs-DPOR comparison (Phase 38.8.4.a)
     // =========================================================================
 
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum NegativeWitnessSignature {
+        Invariant { invariant: String, depth: usize },
+        Deadlock { depth: usize },
+    }
+
+    fn extract_depth_with_summary_fallback(
+        root: &serde_json::Value,
+        section: &serde_json::Value,
+    ) -> Option<usize> {
+        section
+            .get("depth")
+            .and_then(|v| v.as_u64())
+            .map(|d| d as usize)
+            .or_else(|| {
+                root.get("summary")
+                    .and_then(|summary| summary.get("depth"))
+                    .and_then(|v| v.as_u64())
+                    .map(|d| d as usize)
+            })
+    }
+
+    fn baseline_negative_signature(
+        baseline: &crate::baseline::BaselineResult,
+    ) -> Option<NegativeWitnessSignature> {
+        let root = baseline.raw_json.as_ref()?;
+        match baseline.result.as_str() {
+            "invariant_violated" => {
+                let section = root.get("invariant_violation")?;
+                let invariant = section.get("invariant")?.as_str()?.to_string();
+                let depth = extract_depth_with_summary_fallback(root, section)?;
+                Some(NegativeWitnessSignature::Invariant { invariant, depth })
+            }
+            "deadlock_detected" => {
+                let section = root.get("deadlock")?;
+                let depth = extract_depth_with_summary_fallback(root, section)?;
+                Some(NegativeWitnessSignature::Deadlock { depth })
+            }
+            _ => None,
+        }
+    }
+
+    fn dpor_verdict_and_signature(
+        violation: Option<&ViolationWitness>,
+    ) -> (&'static str, Option<NegativeWitnessSignature>) {
+        match violation {
+            Some(witness) if witness.invariant == "__deadlock__" => (
+                "deadlock_detected",
+                Some(NegativeWitnessSignature::Deadlock {
+                    depth: witness.depth,
+                }),
+            ),
+            Some(witness) => (
+                "invariant_violated",
+                Some(NegativeWitnessSignature::Invariant {
+                    invariant: witness.invariant.clone(),
+                    depth: witness.depth,
+                }),
+            ),
+            None => ("ok", None),
+        }
+    }
+
+    fn classify_parity_status(
+        baseline_verdict: &str,
+        dpor_verdict: &str,
+        bl_states: usize,
+        dp_states: usize,
+        baseline_signature: Option<&NegativeWitnessSignature>,
+        dpor_signature: Option<&NegativeWitnessSignature>,
+    ) -> &'static str {
+        if baseline_verdict != "ok"
+            && baseline_verdict != "invariant_violated"
+            && baseline_verdict != "deadlock_detected"
+        {
+            return "baseline_error";
+        }
+
+        if baseline_verdict == "ok" {
+            if dpor_verdict != "ok" {
+                return "dpor_found_negative_on_positive_case";
+            }
+            if dp_states == bl_states {
+                return "exact_match";
+            }
+            if dp_states < bl_states {
+                return "dpor_subset";
+            }
+            return "dpor_exceeded_baseline";
+        }
+
+        if dpor_verdict != baseline_verdict {
+            return "negative_verdict_mismatch";
+        }
+
+        match (baseline_signature, dpor_signature) {
+            (Some(bl), Some(dp)) if bl == dp => "negative_witness_match",
+            (Some(_), Some(_)) => "negative_witness_mismatch",
+            _ => "negative_witness_unavailable",
+        }
+    }
+
     /// Run both baseline and DPOR on a case, compare results.
     /// Returns (baseline_states, dpor_states, match_status).
     fn compare_baseline_vs_dpor(
@@ -2607,42 +2709,108 @@ max_seq_len = 4
             Err(_) => return (0, 0, "load_failed"),
         };
 
-        // Run DPOR (use enough states for all baseline-passing cases)
-        let config = DporConfig {
-            max_depth: 20,
-            max_states: 10_000,
-            ..Default::default()
-        };
-        let dpor_result = explore_dpor(&ctx, &config);
-
         // Run baseline subprocess
         let transpiler = match crate::baseline::find_transpiler_bin() {
             Some(p) => p,
-            None => return (0, dpor_result.distinct_states.len(), "no_baseline_bin"),
+            None => return (0, 0, "no_baseline_bin"),
         };
         let baseline =
             crate::baseline::run_baseline(&transpiler, spec_file, model_path, invariants, 30);
 
+        // Run DPOR with witness checks aligned to the baseline's verdict mode.
+        // Deadlock checking is enabled only for baseline-deadlock rows so the
+        // comparison does not treat baseline-positive no-invariant rows as
+        // accidental deadlock checks.
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: invariants.to_vec(),
+            check_deadlock: baseline.result == "deadlock_detected",
+            ..Default::default()
+        };
+        let dpor_result = explore_dpor(&ctx, &config);
+
         let bl_states = baseline.distinct_states;
         let dp_states = dpor_result.distinct_states.len();
-
-        let status = if baseline.result != "ok"
-            && baseline.result != "invariant_violated"
-            && baseline.result != "deadlock_detected"
-        {
-            "baseline_error"
-        } else if dp_states == bl_states {
-            "exact_match"
-        } else if dp_states < bl_states {
-            "dpor_subset"
-        } else if baseline.result == "invariant_violated" {
-            // Baseline stopped early at violation; DPOR explored more — acceptable
-            "dpor_superset_violation"
-        } else {
-            "dpor_exceeded_baseline" // This would be a bug for positive cases!
-        };
+        let baseline_signature = baseline_negative_signature(&baseline);
+        let (dpor_verdict, dpor_signature) = dpor_verdict_and_signature(dpor_result.violation.as_ref());
+        let status = classify_parity_status(
+            baseline.result.as_str(),
+            dpor_verdict,
+            bl_states,
+            dp_states,
+            baseline_signature.as_ref(),
+            dpor_signature.as_ref(),
+        );
 
         (bl_states, dp_states, status)
+    }
+
+    #[test]
+    fn test_baseline_negative_signature_extracts_invariant_and_depth() {
+        let baseline = crate::baseline::BaselineResult {
+            case_id: "case".to_string(),
+            result: "invariant_violated".to_string(),
+            stop_reason: "InvariantViolated".to_string(),
+            states: 5,
+            distinct_states: 5,
+            elapsed_ms: 1,
+            raw_json: Some(serde_json::json!({
+                "invariant_violation": { "invariant": "LMutualExclusion", "depth": 2 }
+            })),
+        };
+
+        assert_eq!(
+            baseline_negative_signature(&baseline),
+            Some(NegativeWitnessSignature::Invariant {
+                invariant: "LMutualExclusion".to_string(),
+                depth: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn test_classify_parity_status_negative_witness_match_allows_state_mismatch() {
+        let status = classify_parity_status(
+            "invariant_violated",
+            "invariant_violated",
+            5,
+            7,
+            Some(&NegativeWitnessSignature::Invariant {
+                invariant: "LMutualExclusion".to_string(),
+                depth: 2,
+            }),
+            Some(&NegativeWitnessSignature::Invariant {
+                invariant: "LMutualExclusion".to_string(),
+                depth: 2,
+            }),
+        );
+        assert_eq!(status, "negative_witness_match");
+    }
+
+    #[test]
+    fn test_classify_parity_status_negative_witness_mismatch_detected() {
+        let status = classify_parity_status(
+            "invariant_violated",
+            "invariant_violated",
+            5,
+            7,
+            Some(&NegativeWitnessSignature::Invariant {
+                invariant: "LMutualExclusion".to_string(),
+                depth: 2,
+            }),
+            Some(&NegativeWitnessSignature::Invariant {
+                invariant: "LMutualExclusion".to_string(),
+                depth: 3,
+            }),
+        );
+        assert_eq!(status, "negative_witness_mismatch");
+    }
+
+    #[test]
+    fn test_classify_parity_status_positive_row_dpor_negative_is_error() {
+        let status = classify_parity_status("ok", "invariant_violated", 21, 21, None, None);
+        assert_eq!(status, "dpor_found_negative_on_positive_case");
     }
 
     /// Get the per-case model config path, falling back to default.
@@ -3040,8 +3208,28 @@ max_seq_len = 4
             eprintln!("  {} baseline={} dpor={} → {}", case_id, bl, dp, status);
         }
 
-        // Verify no DPOR-exceeded-baseline (would be a correctness bug)
+        // Verify no policy-level mismatches.
         for (case_id, _bl, _dp, status) in &results {
+            assert_ne!(
+                *status, "dpor_found_negative_on_positive_case",
+                "CORRECTNESS BUG: DPOR reported a negative verdict for baseline-positive case {}",
+                case_id
+            );
+            assert_ne!(
+                *status, "negative_verdict_mismatch",
+                "PARITY BUG: baseline/DPOR verdict-class mismatch for {}",
+                case_id
+            );
+            assert_ne!(
+                *status, "negative_witness_mismatch",
+                "PARITY BUG: baseline/DPOR negative witness signatures diverged for {}",
+                case_id
+            );
+            assert_ne!(
+                *status, "negative_witness_unavailable",
+                "PARITY BUG: missing witness signature data for {}",
+                case_id
+            );
             assert_ne!(
                 *status, "dpor_exceeded_baseline",
                 "CORRECTNESS BUG: DPOR found more states than baseline for {}",
@@ -3049,24 +3237,59 @@ max_seq_len = 4
             );
         }
 
-        // Verify at least one exact match exists
-        let exact_matches = results
+        // Verify positive exact parity and negative witness parity are both represented.
+        let positive_exact_matches = results
             .iter()
             .filter(|(_, _, _, s)| *s == "exact_match")
             .count();
         assert!(
-            exact_matches >= 1,
+            positive_exact_matches >= 1,
             "Expected at least 1 exact baseline-DPOR match, got {}",
-            exact_matches
+            positive_exact_matches
+        );
+        let negative_witness_matches = results
+            .iter()
+            .filter(|(_, _, _, s)| *s == "negative_witness_match")
+            .count();
+        assert!(
+            negative_witness_matches >= 1,
+            "Expected at least 1 negative witness parity match, got {}",
+            negative_witness_matches
         );
 
+        let broken_lock_status = results
+            .iter()
+            .find(|(case_id, _, _, _)| *case_id == "05_broken_lock_bug")
+            .map(|(_, _, _, status)| *status);
+        assert_eq!(
+            broken_lock_status,
+            Some("negative_witness_match"),
+            "BrokenLockBug should be witness-parity matched under 38.14.11.c.b.c"
+        );
+
+        let parity_failures = results
+            .iter()
+            .filter(|(_, _, _, status)| {
+                matches!(
+                    *status,
+                    "dpor_found_negative_on_positive_case"
+                        | "negative_verdict_mismatch"
+                        | "negative_witness_mismatch"
+                        | "negative_witness_unavailable"
+                        | "dpor_exceeded_baseline"
+                )
+            })
+            .count();
+
         eprintln!(
-            "\nAutomated comparison: {} cases, {} exact, {} subset, {} baseline_error, {} load_failed",
+            "\nAutomated comparison: {} cases, {} positive_exact, {} negative_witness_match, {} subset, {} baseline_error, {} load_failed, {} parity_failures",
             results.len(),
-            results.iter().filter(|(_, _, _, s)| *s == "exact_match").count(),
+            positive_exact_matches,
+            negative_witness_matches,
             results.iter().filter(|(_, _, _, s)| *s == "dpor_subset").count(),
             results.iter().filter(|(_, _, _, s)| *s == "baseline_error").count(),
             results.iter().filter(|(_, _, _, s)| *s == "load_failed").count(),
+            parity_failures,
         );
     }
 }

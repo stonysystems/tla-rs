@@ -21,15 +21,19 @@ cargo test --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml
 This test compares baseline vs DPOR on the declared comparison subset in
 `src/dpor.rs::test_automated_baseline_vs_dpor_comparison`.
 
-## Current parity-gap result
+## Current parity result (post-38.14.11.c.b.c)
 
 Summary from the test run:
 
 - Compared cases: `12`
-- Exact matches: `11`
-- Non-exact cases: `1`
+- Positive exact matches: `8`
+- Negative witness matches: `4`
+- Parity failures: `0`
 - Baseline errors: `0`
 - Load failures: `0`
+
+Historical note: the pre-policy implementation run was
+`12 cases / 11 exact / 1 non-exact` (`05_broken_lock_bug`).
 
 ### Per-case status (declared comparison subset)
 
@@ -37,28 +41,28 @@ Summary from the test run:
 |---|---:|---:|---|
 | `01_aplusb` | 21 | 21 | exact_match |
 | `02_counter_incdec` | 5 | 5 | exact_match |
-| `03_counter_race_bug` | 13 | 13 | exact_match |
+| `03_counter_race_bug` | 13 | 5 | negative_witness_match |
 | `04_lock_basic` | 3 | 3 | exact_match |
-| `05_broken_lock_bug` | 5 | 7 | dpor_superset_violation |
+| `05_broken_lock_bug` | 5 | 3 | negative_witness_match |
 | `06_ticket_lock` | 7 | 7 | exact_match |
 | `07_producer_consumer_1slot` | 21 | 21 | exact_match |
 | `08_bounded_buffer_2slot` | 6 | 6 | exact_match |
 | `09_peterson_mutex_2p` | 10 | 10 | exact_match |
-| `11_readers_writers_small` | 4 | 4 | exact_match |
-| `12_dining_philosophers_3` | 6 | 6 | exact_match |
+| `11_readers_writers_small` | 4 | 4 | negative_witness_match |
+| `12_dining_philosophers_3` | 6 | 3 | negative_witness_match |
 | `13_twophase_small` | 9 | 9 | exact_match |
 
-## Root-cause hypothesis for the non-exact case
+## Historical root cause for the pre-policy non-exact row
 
-`05_broken_lock_bug` is non-exact because the current comparison contract
-allows semantic asymmetry on negative cases:
+Before `38.14.11.c.b.c`, `05_broken_lock_bug` was non-exact because the
+comparison contract allowed semantic asymmetry on negative cases:
 
 - baseline is treated as `invariant_violated` with early-stop behavior;
 - DPOR continues exploring additional reachable states before returning;
 - the comparator labels this as `dpor_superset_violation`.
 
-So the remaining exact-parity blocker is primarily policy/contract alignment for
-negative-case parity, not broad correctness collapse.
+That mismatch was policy/contract alignment debt for negative-case parity,
+not broad correctness collapse.
 
 ## Policy decision (38.14.11.c.b.b)
 
@@ -92,14 +96,29 @@ Evidence snapshot motivating the decision:
   `LMutualExclusion` at depth `2`;
 - DPOR replay test (`test_replay_broken_lock_witness`) confirms
   `LMutualExclusion` at depth `2`;
-- current mismatch (`baseline=5`, `dpor=7`) is therefore treated as
+- pre-policy mismatch (`baseline=5`, `dpor=7`) is therefore treated as
   traversal-order diagnostic, not a contradiction in safety verdict.
 
-## Remaining implementation leaf
+## 38.14.11.c.b.c implementation landing
 
-- `38.14.11.c.b.c`: implement the witness-first policy in
-  `compare_baseline_vs_dpor` and related tests, then rerun parity measurement
-  on the declared subset.
+`38.14.11.c.b.c` is now complete:
+
+- `src/dpor.rs::compare_baseline_vs_dpor` now classifies rows with explicit
+  verdict/witness logic:
+  - positive rows: `exact_match` / `dpor_subset` / positive-case mismatch;
+  - negative rows: `negative_witness_match` or explicit mismatch statuses.
+- New helper/classification tests were added for:
+  - baseline negative-signature extraction;
+  - negative witness-match acceptance with state-count mismatch;
+  - negative witness-mismatch detection;
+  - positive-case protection against unexpected DPOR negative verdicts.
+- Remeasurement now reports `0` parity failures on the declared subset under
+  the chosen witness-first policy.
+
+## Remaining follow-up leaf
+
+- `38.14.11.c.c`: sync the explicit 38.10.1 gate decision based on this
+  updated evidence.
 
 ## Exit criterion for this blocker track
 

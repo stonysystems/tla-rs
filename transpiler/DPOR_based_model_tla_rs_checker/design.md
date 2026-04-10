@@ -599,7 +599,7 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 | `design.md` has pinned reference notes | Upstream-reference and concept-selection sections remain populated with pinned commits and mapping notes. | MET |
 | Baseline oracle exists | Baseline runner and baseline-vs-DPOR comparison path are present (`src/baseline.rs`, `dpor.rs` comparison harness). | MET |
 | Full-suite harness exists | `scripts/run_full_suite.sh` is checked in and used as the authoritative suite gate. | MET |
-| Parity subset is exact under DPOR | Current enforced safety contract is subset parity (`conservative ⊆ independence`, `conservative ⊆ sleep`), not exact-set parity; automated comparison still allows subset/superset statuses. | NOT MET |
+| Parity subset is exact under DPOR | `38.14.11.c.b.c` landed witness-first negative-case parity in `compare_baseline_vs_dpor`; latest comparison result is `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures`. | NOT MET (decision sync pending 38.14.11.c.c) |
 | Required hard protocol gates are no longer hand-waved | Protocol cases are non-vacuous in suite scoring (`20 real / 0 vacuous`) with audited reports synced. | MET |
 
 ### Explicit integration-gate decision (38.14.11.b)
@@ -624,19 +624,23 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
 
 ### Remaining blockers for 38.10 gate re-evaluation
 
-- The exact-parity wording in 38.10.1 is not yet met under the current
-  subset-parity contract.
+- `38.14.11.c.b.c` now provides explicit witness-first parity enforcement and
+  zero parity failures on the declared subset; the remaining step is to sync
+  the explicit 38.10.1 gate decision in `38.14.11.c.c`.
 
 ### 38.14.11.c.b parity-gap measurement snapshot
 
 - Added `docs/exact_parity_gap_analysis_38_10_1.md` with explicit
   measurement for the declared comparison subset from
   `test_automated_baseline_vs_dpor_comparison`.
-- Current measured status: `12` compared cases, `11` exact, `1` non-exact.
-- Current non-exact case: `05_broken_lock_bug`
-  (`baseline=5`, `dpor=7`, status `dpor_superset_violation`), which points to
-  negative-case parity policy mismatch (baseline early-stop semantics vs DPOR
-  continued exploration) as the current exact-parity blocker.
+- Initial measurement (before policy implementation): `12` compared cases,
+  `11` exact, `1` non-exact (`05_broken_lock_bug`).
+- Current measurement (after `38.14.11.c.b.c` implementation):
+  `12` compared cases, `8` `positive_exact`, `4` `negative_witness_match`,
+  `0` parity failures.
+- Under the witness-first policy, the prior `05_broken_lock_bug`
+  `dpor_superset_violation` row is now a `negative_witness_match`
+  (`LMutualExclusion` at depth `2` on both baseline and DPOR).
 
 ### 38.14.11.c.b.b negative-case exact-parity policy decision
 

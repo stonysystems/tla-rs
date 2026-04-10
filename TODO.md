@@ -12540,9 +12540,9 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
       today on the declared parity subset.
       **Done 2026-04-10**: Added
       `docs/exact_parity_gap_analysis_38_10_1.md` and decomposed the
-      `38.10.1` blocker into actionable leaves. Current parity-gap measurement
-      on the declared subset reports `12 cases / 11 exact / 1 non-exact`:
-      `05_broken_lock_bug` is `dpor_superset_violation` (`baseline=5`,
+      `38.10.1` blocker into actionable leaves. Initial parity-gap measurement
+      on the declared subset reported `12 cases / 11 exact / 1 non-exact`:
+      `05_broken_lock_bug` was `dpor_superset_violation` (`baseline=5`,
       `dpor=7`) due stop-on-first-violation semantic mismatch.
       - [x] **38.14.11.c.b.a**: Measure and document the exact-parity gap for
         the declared comparison subset by case ID (exact vs non-exact), using
@@ -12560,9 +12560,15 @@ Remaining DPOR follow-up is now 38.14.10 (real reduction) and 38.14.11
         stop order is traversal-strategy-dependent. Policy and rationale are
         documented in `docs/exact_parity_gap_analysis_38_10_1.md` and synced in
         `design.md`.
-      - [ ] **38.14.11.c.b.c**: Implement the chosen parity policy in
+      - [x] **38.14.11.c.b.c**: Implement the chosen parity policy in
         baseline-vs-DPOR comparison code and tests (<500 LOC), then remeasure
         the subset and update the gate evidence.
+        **Done 2026-04-10**: Implemented witness-first negative-case parity in
+        `src/dpor.rs::compare_baseline_vs_dpor` with explicit verdict/witness
+        signature classification and new regression tests. Re-ran
+        `test_automated_baseline_vs_dpor_comparison` and measured
+        `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures`
+        (no non-exact rows under the chosen parity policy).
     - [ ] **38.14.11.c.c**: Implement the first exact-parity blocker leaf from
       `38.14.11.c.b` and re-evaluate whether `38.10.1` can be moved from
       `NOT MET` toward `MET` without weakening safety claims.
