@@ -2956,7 +2956,6 @@ max_seq_len = 4
     }
 
     #[test]
-    #[ignore = "heavy/flaky in default cargo test under current runtime budget; covered by run_full_suite.sh case 16"]
     fn test_case16_primarybackup_is_real_non_vacuous_pass() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/16_primarybackup_small/Primarybackup.rs");

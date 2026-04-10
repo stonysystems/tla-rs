@@ -22264,6 +22264,79 @@ fn test_phase_38_15_3_case16_timeout_window_closure_is_recorded() {
 }
 
 #[test]
+fn test_phase_38_15_4_case15_case16_focused_regressions_are_reenabled() {
+    let repo_root = resolve_repo_root_for_integration();
+
+    let todo_path = repo_root.join("TODO.md");
+    let todo_src = std::fs::read_to_string(&todo_path)
+        .unwrap_or_else(|err| panic!("failed to read TODO {}: {}", todo_path.display(), err));
+    for required_fragment in [
+        "- [x] **38.15.4**: Re-enable/retune focused protocol regression tests for",
+        "test_case16_primarybackup_is_real_non_vacuous_pass",
+        "re-enable from `38.15.2.d.c` remains active.",
+        "PASS (ok, 211 states, 9011ms)",
+    ] {
+        assert!(
+            todo_src.contains(required_fragment),
+            "TODO {} must include 38.15.4 closure fragment `{}`",
+            todo_path.display(),
+            required_fragment
+        );
+    }
+
+    let evidence_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read blocker evidence doc {}: {}",
+            evidence_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "## 38.15.4 focused protocol regressions re-enable (done)",
+        "test_case16_primarybackup_is_real_non_vacuous_pass",
+        "both case-15 and case-16 focused regressions now run as active tests.",
+        "`87 passed; 0 failed; 3 ignored`",
+        "[16_primarybackup_small] PASS (ok, 211 states, 9011ms)",
+    ] {
+        assert!(
+            evidence_src.contains(required_fragment),
+            "blocker evidence doc {} must include 38.15.4 fragment `{}`",
+            evidence_path.display(),
+            required_fragment
+        );
+    }
+
+    let dpor_src_path = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/src/dpor.rs");
+    let dpor_src = std::fs::read_to_string(&dpor_src_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read dpor source {}: {}",
+            dpor_src_path.display(),
+            err
+        )
+    });
+    for required_fragment in [
+        "fn test_case15_chain_replication_is_real_non_vacuous_deadlock()",
+        "fn test_case16_primarybackup_is_real_non_vacuous_pass()",
+    ] {
+        assert!(
+            dpor_src.contains(required_fragment),
+            "dpor source {} must include focused-regression fragment `{}`",
+            dpor_src_path.display(),
+            required_fragment
+        );
+    }
+    let old_ignore = "heavy/flaky in default cargo test under current runtime budget; covered by run_full_suite.sh case 16";
+    assert!(
+        !dpor_src.contains(old_ignore),
+        "dpor source {} must not keep stale case-16 temporary ignore marker `{}`",
+        dpor_src_path.display(),
+        old_ignore
+    );
+}
+
+#[test]
 fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
     let repo_root = resolve_repo_root_for_integration();
 

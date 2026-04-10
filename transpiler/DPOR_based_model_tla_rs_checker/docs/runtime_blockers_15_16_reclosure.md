@@ -402,6 +402,30 @@ Manifest update:
 - closure note now points to the checked-in bounded profile and non-vacuous
   metrics above.
 
+## 38.15.4 focused protocol regressions re-enable (done)
+
+Goal: remove temporary blocker-era focused regression ignores for cases 15/16
+once both runtime closures are complete.
+
+Code change (<500 LOC):
+
+- File: `src/dpor.rs`
+- Removed temporary `#[ignore = "...current runtime budget..."]` from
+  `test_case16_primarybackup_is_real_non_vacuous_pass`.
+- Case 15 focused regression had already been re-enabled in `38.15.2.d.c`;
+  both case-15 and case-16 focused regressions now run as active tests.
+
+Verification:
+
+- Focused DPOR test suite:
+  `cargo test --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml -q`
+  => `87 passed; 0 failed; 3 ignored`.
+- Full suite:
+  `./transpiler/DPOR_based_model_tla_rs_checker/scripts/run_full_suite.sh --timeout 1200`
+  => case rows
+  `[15_chain_replication_small] PASS (deadlock found, 148357ms)` and
+  `[16_primarybackup_small] PASS (ok, 211 states, 9011ms)`.
+
 ## Runtime note discovered during 38.15.2.a reruns (case 19)
 
 While re-running mandatory full suites for this phase, case

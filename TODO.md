@@ -12817,9 +12817,16 @@ re-closed with explicit evidence.
     direct baseline now reports `result=ok`, `stop_reason=FrontierExhausted`,
     `initial_states=1`, `distinct_states=211`, and case 16 manifest
     expectation is restored to `expected_primary_result = "ok"`.
-  - [ ] **38.15.4**: Re-enable/retune focused protocol regression tests for
+  - [x] **38.15.4**: Re-enable/retune focused protocol regression tests for
     cases 15/16 in `src/dpor.rs` once closures in `38.15.2`/`38.15.3` are
     complete; remove temporary ignore reasons tied to these blockers.
+    **Done 2026-04-10** (<500 LOC scope): case-16 focused regression
+    `test_case16_primarybackup_is_real_non_vacuous_pass` in `src/dpor.rs` is
+    re-enabled by removing the temporary runtime-blocker `#[ignore]`; case-15
+    re-enable from `38.15.2.d.c` remains active. Revalidated with
+    `cargo test --manifest-path transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml -q`
+    and full-suite `scripts/run_full_suite.sh --timeout 1200` (case 16 row:
+    `PASS (ok, 211 states, 9011ms)`).
   - [ ] **38.15.5**: Re-run full DPOR/transpiler suites plus
     `scripts/run_full_suite.sh --timeout 1200`, then resync
     `tests/reports/latest.{json,md}`, `hard_case_blocker_ledger.md`, and this
