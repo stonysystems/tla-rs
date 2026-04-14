@@ -323,9 +323,110 @@ $inv"
         done <<< "$resolved_invs"
     fi
 
+    # ---- Generate CONSTRAINT wrapper if needed ----
+    # The DPOR checker bounds integers via [quantifiers] int = { min, max }.
+    # TLC has no equivalent — specs with unbounded integer growth (a' = a + 1)
+    # will never terminate. We generate a wrapper module <Module>_MC that
+    # EXTENDS the original and defines a Bound operator constraining all
+    # integer VARIABLE declarations to the DPOR config's int range.
+    # The .cfg then uses CONSTRAINT Bound.
+    #
+    # We only generate the wrapper when the spec has integer variables that
+    # could grow unboundedly (heuristic: the spec has '+ 1' or '- 1' patterns
+    # suggesting incrementing/decrementing variables).
+    module_name="${tla_entry%.tla}"
+    wrapper_module=""
+    wrapper_file=""
+    constraint_line=""
+
+    if [[ -f "$per_case_config" ]]; then
+        int_min="$(parse_toml_value "$per_case_config" "quantifiers.int" "min")"
+        int_max="$(parse_toml_value "$per_case_config" "quantifiers.int" "max")"
+        max_set_len="$(parse_toml_value "$per_case_config" "collections" "max_set_len")"
+    else
+        int_min="0"
+        int_max="5"
+        max_set_len=""
+    fi
+
+    # Parse VARIABLE declarations from the TLA+ source
+    tla_vars="$(grep -E '^VARIABLE[S]?\s' "$tla_file" | sed 's/^VARIABLE[S]\?\s*//' | tr ',' '\n' | sed 's/[[:space:]]//g' | grep -v '^$')"
+
+    # Check if the spec has unbounded integer growth
+    has_unbounded_growth=false
+    if grep -qE "'\s*=\s*\S+\s*\+\s*1\b|'\s*=\s*\S+\s*-\s*1\b" "$tla_file" 2>/dev/null; then
+        has_unbounded_growth=true
+    fi
+
+    if [[ "$has_unbounded_growth" == "true" && -n "$int_min" && -n "$int_max" && -n "$tla_vars" ]]; then
+        # Generate wrapper module
+        wrapper_module="${module_name}_MC"
+        wrapper_file="$case_dir/${wrapper_module}.tla"
+
+        # Build the Bound operator using Python to classify each variable.
+        # We only constrain variables that are used as integers (appear in
+        # arithmetic: + 1, - 1, >= N, <= N). Variables used as strings
+        # (compared to "..." literals) or sets ({}, \cup, \subseteq, \in)
+        # are skipped — TLC handles those natively with finite domains.
+        bound_conjuncts="$(python3 -c "
+import re, sys
+
+tla_file = '$tla_file'
+int_min, int_max = $int_min, $int_max
+with open(tla_file) as f:
+    src = f.read()
+
+# Parse VARIABLE declarations
+var_line = re.search(r'^VARIABLES?\s+(.*)', src, re.MULTILINE)
+if not var_line:
+    sys.exit(0)
+all_vars = [v.strip() for v in var_line.group(1).split(',') if v.strip()]
+
+conjuncts = []
+for var in all_vars:
+    # Skip if variable is used with string literals (pc = \"ready\", etc.)
+    if re.search(rf'\b{re.escape(var)}\b\s*=\s*\"', src):
+        continue
+    # Skip if variable is used as a set (var = {}, var \cup, \in var, var \subseteq)
+    if re.search(rf'\b{re.escape(var)}\b\s*=\s*\{{', src):
+        continue
+    if re.search(rf'\b{re.escape(var)}\s*\\\\cup\b', src):
+        continue
+    if re.search(rf'\\\\in\s+{re.escape(var)}\b', src):
+        continue
+    if re.search(rf'\b{re.escape(var)}\s*\\\\subseteq\b', src):
+        continue
+    # Skip if variable is never in arithmetic context
+    if not re.search(rf'\b{re.escape(var)}\b\s*[\+\-\*]|\b{re.escape(var)}\b\s*>=|\b{re.escape(var)}\b\s*<=|\b{re.escape(var)}\b\s*>|\b{re.escape(var)}\b\s*<|\b{re.escape(var)}\b\s*\\\\in\s+Nat\b|{re.escape(var)}\s*\x27\s*=\s*\S+\s*[\+\-]', src):
+        continue
+    conjuncts.append(f'    /\\\\ {var} >= {int_min} /\\\\ {var} <= {int_max}')
+
+print('\n'.join(conjuncts))
+" 2>/dev/null)"
+
+        if [[ -n "$bound_conjuncts" ]]; then
+            cat > "$wrapper_file" <<WRAPEOF
+---- MODULE ${wrapper_module} ----
+\* Auto-generated TLC wrapper for DPOR case ${case_id}.
+\* Adds a Bound constraint matching DPOR config: int ${int_min}..${int_max}
+
+EXTENDS ${module_name}
+
+Bound ==
+${bound_conjuncts}
+====
+WRAPEOF
+            constraint_line="CONSTRAINT Bound"
+            # TLC will run the wrapper module instead of the original
+            module_name="$wrapper_module"
+        else
+            # No constrainable variables found — run original directly
+            wrapper_file=""
+        fi
+    fi
+
     # ---- Generate temporary .cfg file ----
     cfg_file="$(mktemp /tmp/tlc_cfg_${case_id}_XXXXXX.cfg)"
-    module_name="${tla_entry%.tla}"
 
     {
         echo "INIT Init"
@@ -337,6 +438,10 @@ $inv"
         fi
         if [[ -n "$invariants_block" ]]; then
             echo "$invariants_block"
+            echo ""
+        fi
+        if [[ -n "$constraint_line" ]]; then
+            echo "$constraint_line"
             echo ""
         fi
     } > "$cfg_file"
@@ -386,7 +491,7 @@ $inv"
     tlc_output="$(cat "$tlc_stdout" 2>/dev/null || true)"
 
     # Check for successful completion
-    if echo "$tlc_output" | grep -q "Model checking completed. No error found."; then
+    if echo "$tlc_output" | grep -qE "Model checking completed\. No error (found|has been found)\."; then
         tlc_result="ok"
     fi
 
@@ -466,6 +571,7 @@ $inv"
 
     # Clean up temp files
     rm -f "$cfg_file" "$tlc_stdout"
+    [[ -n "$wrapper_file" && -f "$wrapper_file" ]] && rm -f "$wrapper_file"
 done
 
 RESULTS_JSON="$RESULTS_JSON
