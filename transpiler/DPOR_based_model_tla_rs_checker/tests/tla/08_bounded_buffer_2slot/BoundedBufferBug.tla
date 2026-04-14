@@ -1,4 +1,5 @@
 ---- MODULE BoundedBufferBug ----
+EXTENDS Naturals
 \* NEGATIVE variant: bounded buffer without proper count check.
 \* Producer can write when buffer is full, causing data loss.
 

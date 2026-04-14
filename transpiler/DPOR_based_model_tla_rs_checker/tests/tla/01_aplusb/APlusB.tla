@@ -1,4 +1,5 @@
 ---- MODULE APlusB ----
+EXTENDS Naturals
 \* Smallest end-to-end sanity check: two variables, one step, one invariant.
 
 VARIABLE a, b

@@ -1,4 +1,5 @@
 ---- MODULE TicketLock ----
+EXTENDS Naturals
 \* Ticket-based mutual exclusion: processes take a number, wait for their turn.
 
 CONSTANT NumProcs

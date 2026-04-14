@@ -1,4 +1,5 @@
 ---- MODULE ReadersWriters ----
+EXTENDS Naturals
 \* Readers-writers problem: multiple readers or one writer.
 
 CONSTANT NumReaders, NumWriters

@@ -1,4 +1,5 @@
 ---- MODULE CounterIncDec ----
+EXTENDS Naturals
 \* Tiny shared-state model: two processes can independently increment or decrement.
 
 CONSTANT NumProcs

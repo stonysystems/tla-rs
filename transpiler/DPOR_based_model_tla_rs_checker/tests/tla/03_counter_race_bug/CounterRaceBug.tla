@@ -1,4 +1,5 @@
 ---- MODULE CounterRaceBug ----
+EXTENDS Naturals
 \* Negative case: two processes read-then-write a shared counter.
 \* The interleaving causes a lost update — invariant TotalCorrect is violated.
 

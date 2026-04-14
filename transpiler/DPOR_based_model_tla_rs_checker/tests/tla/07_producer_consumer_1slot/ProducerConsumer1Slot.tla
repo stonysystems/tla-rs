@@ -1,4 +1,5 @@
 ---- MODULE ProducerConsumer1Slot ----
+EXTENDS Naturals
 \* Single-slot buffer: one producer, one consumer.
 
 VARIABLE buf, buf_full, produced, consumed

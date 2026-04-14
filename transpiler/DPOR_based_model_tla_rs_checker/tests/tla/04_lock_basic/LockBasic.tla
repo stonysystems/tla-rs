@@ -1,4 +1,5 @@
 ---- MODULE LockBasic ----
+EXTENDS Naturals
 \* Basic mutual exclusion with a single lock variable.
 \* Two processes acquire/release; invariant: at most one in critical section.
 

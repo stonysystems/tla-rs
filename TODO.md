@@ -12915,3 +12915,186 @@ Runtime-blocker re-closure for cases 15/16 is now complete: full-suite run
     scoreboard (`19 real`, `0 vacuous`, `1 known_unimplemented`, `0 failed`,
     `0 errors`) and updated this open-task map to closed status for cases
     15/16.
+
+### 38.16 Corpus Integrity, Model Scale-Up, and DPOR-vs-TLC Benchmark (2026-04-13)
+
+**Goal**: Make the DPOR checker results reproducible, scale all 20 cases to
+meaningful state spaces (≥ 5000 distinct states), fix the case 19 EPaxos
+runtime blocker, and produce a head-to-head DPOR-vs-TLC performance
+comparison on all 20 cases with matched model configurations.
+
+**Prerequisites verified in audit**:
+- `.rs` corpus under `tests/tla-rs/` is stale (dated 2026-03-31, never
+  regenerated since `.tla` fixes on 2026-04-09). Cases 13/17/18/20 error
+  immediately with "missing types.rs" when run against the checked-in corpus.
+- `latest.json` is NOT reproducible from the current checked-in repo state.
+- Protocol cases 17–20 have < 100 distinct states — too trivial for
+  performance comparison.
+- TLC infrastructure exists (`~/tla2tools.jar`, `scripts/run_tlc_benchmarks.sh`)
+  but only for 4 protocols on separate benchmark TLA+, not the DPOR corpus.
+
+**Parameters** (user-confirmed 2026-04-13):
+- State-count floor: **≥ 5000 distinct states** per case
+- TLC workers: **4** (`-workers 4`)
+- Timeout: **30 minutes** (1800s) per case, both DPOR and TLC
+- Scope: **all 20 cases** (micro-models 01–12 must also be scaled up)
+- Case 19 (EPaxos): **fix the runtime blocker** (not skip)
+
+#### 38.16.1 — Regenerate `.rs` corpus and verify reproducibility
+
+- [ ] **38.16.1.a**: Run `./scripts/regenerate_corpus.sh` to translate all
+  20 `.tla` sources into fresh `tests/tla-rs/` `.rs` files. Commit result.
+- [ ] **38.16.1.b**: Run `./scripts/detect_stub_specs.py` — must report 0
+  findings on protocol cases (13–20). (Residual `Types.rs` arbitrary findings
+  on generated cases 14/15/16/19 are acceptable if they are constructor-only.)
+- [ ] **38.16.1.c**: Run `./scripts/run_full_suite.sh --timeout 1800` and
+  verify `latest.json` is reproducible from the checked-in state. Every case
+  that reported a result before must produce the same verdict and a comparable
+  state count (±10%). Commit the refreshed `latest.json` and `latest.md`.
+
+#### 38.16.2 — Fix case 19 (EPaxos) runtime blocker
+
+- [ ] **38.16.2.a**: Diagnose the timeout-window instability. Run EPaxos
+  directly with `verus-transpile model-check` under increasing timeouts
+  (60s, 120s, 300s, 600s) and capture stderr/stdout. Identify whether the
+  blocker is: (a) candidate-expansion blowup, (b) missing initial state,
+  (c) solver hang on a specific branch, or (d) genuine state-space explosion.
+- [ ] **38.16.2.b**: Fix the blocker. If candidate expansion, tune
+  `candidate_eval_guardrail` or prune domain. If solver hang, add a
+  per-branch timeout or skip the offending helper branch. If state-space
+  explosion, narrow bounds while keeping ≥ 5000 states reachable.
+- [ ] **38.16.2.c**: Verify EPaxos runs within 30-minute timeout, produces
+  a non-vacuous result with ≥ 5000 distinct states, and the stub detector
+  is clean.
+- [ ] **38.16.2.d**: Update manifest from `known_unimplemented` back to
+  real `ok` or `deadlock` expectation. Re-run full suite to confirm 20/20.
+
+#### 38.16.3 — Scale up model configs for all 20 cases to ≥ 5000 distinct states
+
+Each case should reach **≥ 5000 distinct states** within the 30-minute
+timeout where feasible. **Exceptions**: (1) negative cases (03, 05, 08, 11,
+12, 15) that find violations/deadlocks early — these keep their natural size
+since the checker correctly stops at the first counterexample; (2) cases
+with inherent state-explosion bottlenecks (e.g., bakery mutex) where the
+solver is too slow to reach 5000 within budget — document the ceiling and
+the reason, don't force it.
+
+- [ ] **38.16.3.a**: Scale up **micro-models (cases 01–12)**. Current state
+  counts range from 3 to 51 — far too small. For each case, widen int
+  domains, increase process counts, and expand collection bounds until the
+  state count exceeds 5000. Concrete starting points:
+  - `01_aplusb`: widen `a,b` range (currently 0..3 → try 0..10+)
+  - `02_counter_incdec`: increase `NumProcs` (currently 2 → try 4+) and
+    counter range
+  - `03_counter_race_bug`: same approach, ensure violation is still found
+  - `04_lock_basic` / `05_broken_lock_bug`: increase `NumProcs` (2 → 4+)
+  - `06_ticket_lock`: increase `NumProcs` and ticket range
+  - `07_producer_consumer_1slot`: widen buffer/item domain
+  - `08_bounded_buffer_2slot`: increase buffer size and item domain
+  - `09_peterson_mutex_2p`: scale to 3+ processes if the spec supports it,
+    or widen the int domain
+  - `10_bakery_mutex_3p`: increase processes (3 → 4+) and ticket range
+    (NOTE: already takes 182s at 24 states — may need careful tuning)
+  - `11_readers_writers_small`: increase reader/writer counts
+  - `12_dining_philosophers_3`: increase philosopher count (3 → 4+)
+  For negative cases (03, 05, 08, 11, 12, 15): the violation/deadlock must
+  still be found within 30 minutes — if scaling makes it unreachable, find
+  the largest config that still triggers within budget.
+
+- [ ] **38.16.3.b**: Scale up **protocol cases (13–20)**. Current state
+  counts range from 1 to 211 (excluding the already-large 15/16). Targets:
+  - `13_twophase`: increase `NumRM` (2 → 3+) and int/set bounds
+  - `14_leader_election`: widen int (0..1 → 0..3+), increase set/seq bounds
+  - `15_chain_replication`: already 151 states — may need wider bounds or
+    deeper `max_depth` to reach 5000
+  - `16_primarybackup`: already 211 states — widen bounds similarly
+  - `17_paxos`: increase to 3 acceptors / 3 values, int 0..3, sets ≤ 3
+  - `18_pbft`: increase int 0..4, sets ≤ 2, possibly `replica=4` with
+    wider counter range
+  - `19_epaxos`: depends on 38.16.2 fix — scale after runtime is stable
+  - `20_raft`: increase to `server=4` or `server=5`, widen int/set bounds
+
+- [ ] **38.16.3.c**: For each case, record the final config and state count
+  in a table. Verify all 20 cases reach ≥ 5000 states within 30 minutes.
+  If a case cannot reach 5000 within budget (e.g., bakery mutex state
+  explosion is too slow), document the ceiling and the reason.
+
+#### 38.16.4 — Write TLC runner for the 20-case corpus
+
+- [ ] **38.16.4.a**: Create `scripts/run_tlc_suite.sh` that:
+  1. For each case in `tests/tla/`, generates a TLC model-check config
+     (`.cfg` file) from the corresponding `model_configs/*.toml` — matching
+     the same constants, same finite set assignments, same invariants, and
+     same deadlock-check setting.
+  2. Invokes TLC via:
+     ```
+     java -cp ~/tla2tools.jar tlc2.TLC \
+       -workers 4 -deadlock -config <case>.cfg <Module>.tla
+     ```
+     with a 30-minute (1800s) `timeout` wrapper.
+  3. Parses TLC stdout for: verdict (no error / invariant violated /
+     deadlock), distinct states, wall time.
+  4. Writes results to `tests/reports/tlc_results.json` with per-case
+     entries matching `latest.json` schema (case_id, result, distinct_states,
+     elapsed_ms, etc.).
+
+- [ ] **38.16.4.b**: Handle TLC `.cfg` generation for each case type:
+  - Hand-written TLA+ (cases 01–12, 13, 17, 18, 20): TLC reads the `.tla`
+    directly. The `.cfg` sets `CONSTANTS`, `INVARIANT`, `PROPERTY` fields.
+  - Generated TLA+ (cases 14, 15, 16, 19): TLC reads the source `.tla`
+    under `tests/tla/<case>/`. The `.cfg` must match the DPOR config's
+    `[constants.assignments]` and `[properties]`.
+  - Handle `Seq<char>` string constants: TLC uses native strings, so
+    `"init"`, `"committed"` etc. are passed directly in the `.cfg`.
+
+- [ ] **38.16.4.c**: Add a `--timeout` flag (default 1800s) and a
+  `--workers` flag (default 4) to `run_tlc_suite.sh`.
+
+#### 38.16.5 — Run both engines and build comparison report
+
+- [ ] **38.16.5.a**: Run `./scripts/run_full_suite.sh --timeout 1800` to
+  get DPOR baseline results for all 20 cases at the scaled-up configs.
+  Save as `tests/reports/dpor_results_scaled.json`.
+
+- [ ] **38.16.5.b**: Run `./scripts/run_tlc_suite.sh --timeout 1800 --workers 4`
+  to get TLC results for all 20 cases with the same configs.
+  Save as `tests/reports/tlc_results_scaled.json`.
+
+- [ ] **38.16.5.c**: Build comparison report `tests/reports/dpor_vs_tlc.md`:
+
+  ```
+  | # | Case ID | DPOR states | TLC states | Parity | DPOR time | TLC time | Speedup |
+  |---|---------|-------------|------------|--------|-----------|----------|---------|
+  | 01 | aplusb | ... | ... | match/mismatch | ...s | ...s | X.Xx |
+  ...
+  ```
+
+  Include:
+  - Per-case: verdict match (both agree on ok/violation/deadlock?),
+    state-count parity (exact match?), wall-time comparison, speedup ratio
+    (TLC_time / DPOR_time — >1 means DPOR is faster)
+  - Summary: how many cases have exact state-count parity, average speedup,
+    cases where one engine times out but the other finishes
+  - Flag any state-count mismatches as **parity bugs** requiring
+    investigation (Phase 36-style root-cause work)
+
+- [ ] **38.16.5.d**: Commit all results and the comparison report. Update
+  this TODO section with the final numbers.
+
+#### 38.16 Execution order
+
+```
+38.16.1  Regenerate .rs corpus → verify reproducibility
+  ↓
+38.16.2  Fix EPaxos runtime blocker (case 19)
+  ↓
+38.16.3  Scale up all 20 configs to ≥ 5000 states
+  ↓
+38.16.4  Write TLC runner script
+  ↓
+38.16.5  Run both engines, build comparison report
+```
+
+Steps 38.16.1 and 38.16.4 are independent and can be parallelized.
+Steps 38.16.2 and 38.16.3 are partially independent (scale non-EPaxos
+cases while fixing EPaxos). Step 38.16.5 requires all prior steps.

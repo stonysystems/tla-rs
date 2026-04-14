@@ -1,4 +1,5 @@
 ---- MODULE ReadersWritersBug ----
+EXTENDS Naturals
 \* NEGATIVE variant: writer doesn't check for active readers.
 \* Safety invariant is VIOLATED — writer enters while readers are active.
 

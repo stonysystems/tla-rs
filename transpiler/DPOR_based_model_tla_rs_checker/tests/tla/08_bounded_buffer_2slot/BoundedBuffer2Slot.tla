@@ -1,4 +1,5 @@
 ---- MODULE BoundedBuffer2Slot ----
+EXTENDS Naturals
 \* Two-slot bounded buffer with one producer and one consumer.
 
 CONSTANT MaxVal

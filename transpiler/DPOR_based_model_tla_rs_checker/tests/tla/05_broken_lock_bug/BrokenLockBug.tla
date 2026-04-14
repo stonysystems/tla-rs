@@ -1,4 +1,5 @@
 ---- MODULE BrokenLockBug ----
+EXTENDS Naturals
 \* Negative case: a broken lock that doesn't check the lock variable before entering.
 \* MutualExclusion invariant is VIOLATED.
 

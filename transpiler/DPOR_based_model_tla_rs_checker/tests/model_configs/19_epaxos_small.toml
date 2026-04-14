@@ -11,10 +11,10 @@ quorum_size = 1
 
 [search]
 # Keep this bounded model non-vacuous but tractable for suite runs.
-max_depth = 1
-# 1000 is enough for this bounded case and avoids pathological candidate scans.
-max_states = 1000
-timeout_ms = 120000
+# max_depth=2 allows Init + 2 transitions; tested at 94s / 11 states.
+max_depth = 2
+max_states = 9000
+timeout_ms = 180000
 candidate_eval_guardrail = 1000000
 
 [properties]

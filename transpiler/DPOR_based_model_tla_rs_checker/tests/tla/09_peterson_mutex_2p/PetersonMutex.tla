@@ -1,4 +1,5 @@
 ---- MODULE PetersonMutex ----
+EXTENDS Naturals
 \* Peterson's mutual exclusion algorithm for 2 processes.
 
 VARIABLE flag, turn, pc

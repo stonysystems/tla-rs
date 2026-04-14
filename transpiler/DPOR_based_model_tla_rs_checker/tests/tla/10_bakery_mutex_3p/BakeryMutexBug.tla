@@ -1,4 +1,5 @@
 ---- MODULE BakeryMutexBug ----
+EXTENDS Naturals
 \* NEGATIVE variant: Bakery algorithm with broken priority check.
 \* Omits the process-ID tiebreaker, allowing two processes with
 \* the same number to both enter the critical section.

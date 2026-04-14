@@ -1,4 +1,5 @@
 ---- MODULE DiningPhilosophers ----
+EXTENDS Naturals
 \* Dining philosophers with 3 philosophers. Deadlock is expected.
 
 CONSTANT NumPhil

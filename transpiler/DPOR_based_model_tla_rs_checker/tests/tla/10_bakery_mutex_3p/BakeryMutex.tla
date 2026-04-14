@@ -1,4 +1,5 @@
 ---- MODULE BakeryMutex ----
+EXTENDS Naturals
 \* Lamport's Bakery algorithm for N processes (configured for 3).
 
 CONSTANT NumProcs
