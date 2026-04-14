@@ -13098,3 +13098,181 @@ the reason, don't force it.
 Steps 38.16.1 and 38.16.4 are independent and can be parallelized.
 Steps 38.16.2 and 38.16.3 are partially independent (scale non-EPaxos
 cases while fixing EPaxos). Step 38.16.5 requires all prior steps.
+
+### 38.17 Close the DPOR Performance Gap — Direct Successor Computation (2026-04-14)
+
+**Goal**: Eliminate the 500–1100x per-state performance gap between the DPOR
+checker and TLC by replacing exhaustive candidate expansion with direct
+successor computation, then enable real DPOR reduction.
+
+**Background**: The Phase 38.16.5 DPOR-vs-TLC comparison revealed:
+- TLC: 232 Paxos states in <1s (7105 transitions evaluated)
+- DPOR: 232 Paxos states in 511s (~5.7M candidate evaluations)
+- Root cause: the solver falls back to `solve_branch_by_candidate_enumeration`
+  (solver.rs:340) which enumerates the Cartesian product of all possible
+  next-state field values and tests each against the predicate. For Paxos
+  with 3 Set<int> fields, that's 512 candidates per branch × 48 branches =
+  24,576 evaluations per state.
+
+**Key architectural insight**: The solver ALREADY has a fast direct-assignment
+path (`solve_one_assignment`, solver.rs:630) that constructs s' by evaluating
+`s_.field = expr(s)` directly. But it is bypassed whenever:
+- A branch has predicate-only constraints (no `s_.field == ...` equalities)
+- A branch doesn't assign all root-level state fields
+- A branch uses helper function calls in predicates
+- The constraint normalizer (`ir.rs:extract_target`) can't recognize the target
+
+The fix is to **extend the direct-assignment path** to handle more cases
+and **reduce the candidate-enumeration fallback** to a last resort.
+
+#### 38.17.1 — Diagnose: measure which branches fall back to enumeration
+
+- [ ] **38.17.1.a**: Add telemetry to `solve_transition_successors` that
+  logs, per branch: (1) whether direct-assignment or enumeration was used,
+  (2) number of constraints classified as Eq vs Predicate, (3) number of
+  candidate evaluations, (4) wall time. Run on the 20-case corpus and
+  produce a table showing which branches fall back and why.
+  
+  Key questions to answer:
+  - What fraction of branches use direct assignment vs enumeration?
+  - For enumeration branches, what prevents direct assignment?
+  - Which specific constraint patterns cause the fallback?
+
+  **Files**: `transpiler/src/modelcheck/solver.rs` (telemetry),
+  `transpiler/src/main.rs` (reporting)
+
+- [ ] **38.17.1.b**: For each of the 3 protocol cases (Paxos, PBFT, Raft),
+  dump the `TransitionIr` branches and classify each constraint as:
+  - `direct_eq`: `s_.field == expr(s)` → can be computed forward
+  - `frame_eq`: `s_.field == s.field` → copy from current state
+  - `guard`: condition on `s` only → evaluate once, skip branch if false
+  - `predicate`: arbitrary predicate on s and s_ → requires enumeration
+  
+  This tells us exactly what constraint patterns to handle.
+
+#### 38.17.2 — Extend direct-assignment path to cover more branches
+
+The goal is to make `can_use_direct_assignments` (solver.rs:187) return true
+for branches that currently fall back to enumeration.
+
+- [ ] **38.17.2.a**: **Handle frame conditions automatically.** When a branch
+  has `s_.field == s.field` equalities but doesn't explicitly assign every
+  root field, the solver currently falls back because
+  `branch_assigns_all_next_state_root_fields` fails. Fix: for any root
+  field NOT mentioned in the branch's constraints, automatically carry it
+  forward from the current state (implicit frame condition). This is safe
+  because TLA+ semantics require all primed variables to be determined.
+
+  **File**: `solver.rs`, around `solve_one_assignment` (line 630).
+  Change: after processing all explicit constraints, iterate over
+  `state_fields` and for any field not in `assigned_fields`, copy from
+  current state. Remove the `branch_assigns_all_next_state_root_fields`
+  gate.
+
+- [ ] **38.17.2.b**: **Handle guard predicates on current state.** Many
+  branches have predicates like `s.phase == "prepare"` that only reference
+  the current state. These should be evaluated BEFORE computing s',
+  and if they fail, the branch is skipped entirely (no candidate expansion
+  needed). The solver already partitions constraints by current-state vs
+  next-state dependency (line 358–364), but the direct-assignment path
+  doesn't use this optimization.
+
+  **File**: `solver.rs`, in `solve_one_assignment`.
+  Change: evaluate all `Predicate` constraints that reference only `s`
+  (not `s_`) before computing any assignments. Return empty if any guard
+  fails.
+
+- [ ] **38.17.2.c**: **Handle existential variables in direct assignment.**
+  Branches like `Send2b(a, b, v)` have existential parameters. Currently
+  these are expanded via `expand_branch_existentials` (domain.rs:15) into
+  all concrete combinations, then each combination is solved separately.
+  For the direct-assignment path, each concrete binding should produce
+  exactly one successor (or zero if guards fail). This should already work
+  if 38.17.2.a and 38.17.2.b are done correctly, but verify.
+
+- [ ] **38.17.2.d**: **Handle helper function calls in constraints.** Some
+  branches have predicates like `Prepared(s)` (a helper call). The current
+  constraint normalizer can't extract a target from these, so they become
+  `Predicate` constraints. For guards (helpers that only reference `s`),
+  treat them as guard predicates per 38.17.2.b. For helpers that compute
+  values used in assignments, inline them.
+
+  **File**: `ir.rs`, `normalize_constraint` (line 189).
+  Change: if a predicate expression is a function call that only references
+  `s` (not `s_`), classify it as a guard rather than a predicate.
+
+#### 38.17.3 — Validate: re-run comparison and measure improvement
+
+- [ ] **38.17.3.a**: Re-run the DPOR full suite with the optimized solver.
+  Record per-case state count and wall time. Verify state counts are
+  unchanged (the optimization must not change results).
+
+- [ ] **38.17.3.b**: Compute the new speedup vs TLC. Target: the per-state
+  cost should drop from 1.6–2.2s to <0.1s (10–20x improvement). If the
+  remaining gap is from specific branches, identify and fix them.
+
+- [ ] **38.17.3.c**: Update `tests/reports/dpor_vs_tlc.md` with the new
+  numbers. Document which branches still fall back to enumeration and why.
+
+#### 38.17.4 — Enable real DPOR reduction
+
+Once the per-state cost is competitive, the actual DPOR optimization
+(skipping equivalent interleavings) becomes relevant.
+
+- [ ] **38.17.4.a**: **Extract ProcessId from existential binders.** In the
+  transition IR, identify the "process" existential variable — typically
+  the outermost `∃ p ∈ Procs : ...` in the Next predicate. Tag each
+  concrete transition with `ProcessId(p)` instead of the current
+  `ProcessId(0)`.
+
+  **File**: `DPOR_based_model_tla_rs_checker/src/enabled.rs` (where
+  `EnabledTransition` is constructed).
+
+- [ ] **38.17.4.b**: **Populate transition footprints from IR constraints.**
+  For each branch, extract the set of state fields read (appearing in
+  guards and RHS of assignments) and written (appearing as LHS of
+  assignments). This is directly available from the `TransitionIr`
+  constraints.
+
+  **File**: `DPOR_based_model_tla_rs_checker/src/enabled.rs` and
+  `transpiler/src/modelcheck/por.rs` (existing footprint infrastructure).
+
+- [ ] **38.17.4.c**: **Verify DPOR reduction on multi-process cases.** With
+  real ProcessIds and real footprints, re-run the sleep-set reduction table.
+  Cases with independent processes (counter_incdec, peterson_mutex,
+  bakery_mutex, dining_philosophers) should show >10% reduction in
+  transitions explored.
+
+- [ ] **38.17.4.d**: **Re-run DPOR-vs-TLC comparison.** With both the
+  fast per-state computation AND real DPOR reduction, measure the combined
+  improvement. Target: competitive with TLC on cases where DPOR reduction
+  applies (possibly faster on high-interleaving cases).
+
+#### 38.17 Execution Order
+
+```
+38.17.1  Diagnose (telemetry + constraint classification)
+  ↓
+38.17.2  Fix direct-assignment path (a→b→c→d, incremental)
+  ↓
+38.17.3  Validate (re-run comparison, verify no regressions)
+  ↓
+38.17.4  Enable DPOR reduction (ProcessId + footprints)
+```
+
+38.17.1 is diagnostic only (no behavior change).
+38.17.2.a is the highest-impact single change — implicit frame conditions
+will likely flip most enumeration branches to direct assignment.
+38.17.3 must run after each 38.17.2 sub-step to catch regressions.
+38.17.4 is independent of 38.17.2 but benefits from it (faster per-state
+makes DPOR reduction measurable).
+
+#### 38.17 Key Files
+
+| File | What to change |
+|---|---|
+| `transpiler/src/modelcheck/solver.rs` | Extend `solve_one_assignment`, remove `branch_assigns_all_next_state_root_fields` gate, add guard evaluation |
+| `transpiler/src/modelcheck/ir.rs` | Improve `normalize_constraint` and `extract_target` to handle more patterns |
+| `transpiler/src/modelcheck/domain.rs` | Reduce usage — direct assignment should bypass domain expansion for s' |
+| `transpiler/src/main.rs` | Add telemetry reporting, wire new solver options |
+| `DPOR_based_model_tla_rs_checker/src/enabled.rs` | Extract ProcessId, populate footprints |
