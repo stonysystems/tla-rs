@@ -186,6 +186,16 @@ pub fn discover_lnext_branches(next_fn: &SpecFunction) -> TranspileResult<Vec<Tr
     Ok(branches)
 }
 
+/// Public wrapper for `normalize_constraint` (Phase 38.17.2).
+pub fn normalize_constraint_pub(
+    expr: Expr,
+    current_state_param: &str,
+    next_state_param: &str,
+    constants_param: Option<&str>,
+) -> BranchConstraintIr {
+    normalize_constraint(expr, current_state_param, next_state_param, constants_param)
+}
+
 fn normalize_constraint(
     expr: Expr,
     current_state_param: &str,
@@ -355,6 +365,11 @@ fn discover_disjunctive_branches(expr: &Expr) -> Vec<DiscoveredBranch> {
             expr: expr.clone(),
         }],
     }
+}
+
+/// Public wrapper for `flatten_branch_body` (Phase 38.17.2).
+pub fn flatten_branch_body_pub(expr: Expr) -> (Vec<Binding>, Vec<Expr>) {
+    flatten_branch_body(expr)
 }
 
 fn flatten_branch_body(expr: Expr) -> (Vec<Binding>, Vec<Expr>) {
