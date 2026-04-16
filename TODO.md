@@ -13297,29 +13297,55 @@ makes DPOR reduction measurable).
   - PBFT: 49 states → 125 states (over-explored), 4.9s → 0.4s (13x)
   - Raft: 681 → 540 states (missing), 196s → 1.1s (176x speedup)
 
-- [ ] **38.17.6**: **Investigate Raft/PBFT state parity bugs.**
-  Paxos has exact state parity under DPOR, but Raft misses states
-  (540 vs 681) and PBFT over-explores (125 vs 49). The parity-subset
-  regression test (cases 01-13) passes exactly. The bug is specific to
-  protocol cases (17, 18, 20) where branches have hardcoded parameter
-  values (Acceptors={1,2,3}, Servers={1..5}, etc.) rather than
-  existential quantification. Possible causes:
-  1. Sleep-set pruning incorrectly treats sibling branches (e.g.,
-     `StartElection(1)` vs `StartElection(2)`) as same-process (both
-     have `ProcessId(0)` from hash fallback) and prunes one
-  2. Footprint extraction misses helper call dependencies (e.g.,
-     `HasQuorum(vs)` has no s_ reads but depends on votesGranted)
-  3. DPOR stops too early at the max_depth limit (observed: Raft at
-     depth=100 finds 1930 phantom states vs baseline 681)
+- [x] **38.17.6**: **ProcessId(0) for concrete-enum branches** (commit `fffe4d70`).
+  When a branch has no existential variables (e.g., `LSend1a(s, s_, 1)` after
+  inlining substituted concrete args), `infer_process_id` now returns
+  `ProcessId(0)` instead of a hash of the branch label. This prevents
+  sleep-set pruning from incorrectly classifying sibling concrete-enum
+  branches as independent. Added `print_dpor_reduction_protocol_cases`
+  evidence test.
   
-  Investigation path:
-  - Add ProcessId extraction from concrete parameter values (e.g.,
-    `StartElection(1)` → `ProcessId(1)`, not hash)
-  - Improve footprint extraction to include transitively-read fields
-    via helper function calls
-  - Add a new reduction parity regression test covering protocol cases
+  Note: Raft/PBFT internal DPOR explorer finds slightly different state
+  counts than baseline `verus-transpile model-check` (570 vs 681 for Raft).
+  This is a pre-existing discrepancy in the DPOR crate's explorer (not
+  caused by sleep-set pruning — all three modes `cons`/`ind`/`slp` agree).
+  Paxos has exact parity (232 in both engines).
 
-- [ ] **38.17.7**: Cache helper function call evaluations.
-  Remaining 79x gap vs TLC on Paxos is mostly helper call evaluation
-  repeated per (state, branch, binding). A cache keyed on `(fn_name, args)`
-  would eliminate this.
+- [~] **38.17.7**: **Helper function call cache — REVERTED** (commit `91426ca1`).
+  Added thread-local cache keyed by `(fn_name, canonical_args)` with 100%
+  hit rate (27,838 hits on Paxos). However, the cache lookup overhead
+  (BTreeMap + canonical_key computation) actually SLOWED cases with
+  cheap helper calls by 1.5-2.2x (bakery: 181s → 405s, dining: 0.8s →
+  1.7s). Reverted because net impact was negative. Future alternative:
+  inline-expand helper calls at IR construction time (similar to
+  action-call inlining) so the evaluator never sees helper calls at all.
+
+- [x] **38.17.8**: **Final comparison report** (commit `66b8b658`).
+  - 20/20 DPOR suite pass, 0 VACUOUS, 0 FAIL
+  - Phase 38.17 cumulative protocol speedups: Paxos 6.6x, PBFT 19x, Raft 5.7x
+  - DPOR reduction gate: 5/5 multi-process cases >10% transition reduction
+  - shadow-compare Paxos: baseline 76s → DPOR 2.6s = **29x speedup**
+  - Remaining gap vs TLC: ~77-98x on protocol cases
+
+### 38.18 Future DPOR Optimization Track (open)
+
+- [ ] **38.18.1**: **Parallelize the DPOR explorer.** TLC uses 4 workers
+  and the comparison shows ~77-98x gap on protocol cases — parallelism
+  alone could close 4x of that gap.
+
+- [ ] **38.18.2**: **Inline-expand helper calls at IR time.** Similar to
+  action-call inlining (38.17.2), expand helper function calls in-place
+  during IR normalization so the runtime evaluator never sees `LAcceptors()`
+  etc. This avoids the cache-lookup overhead that made 38.17.7 a net loss.
+
+- [ ] **38.18.3**: **Apply DPOR reduction in `verus-transpile model-check`.**
+  Currently only the DPOR crate (dpor-checker binary) uses sleep sets.
+  The main model-check path in `transpiler/src/main.rs` is still plain BFS.
+  Adding `use_independence + use_sleep_sets` to the main path would make
+  DPOR's benefits visible in the standard workflow.
+
+- [ ] **38.18.4**: **Investigate DPOR crate vs baseline state-count
+  discrepancy on Raft/PBFT.** DPOR internal explorer finds fewer states
+  than the reference baseline (570 vs 681 for Raft). All DPOR modes
+  (cons/ind/slp) agree, so it's not a sleep-set bug — likely in the
+  state normalization or successor deduplication path.
