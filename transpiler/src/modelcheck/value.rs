@@ -27,7 +27,7 @@ pub enum RuntimeValue {
 }
 
 /// Length limits for model-check collections.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RuntimeCollectionBounds {
     pub max_seq_len: usize,
     pub max_set_len: usize,

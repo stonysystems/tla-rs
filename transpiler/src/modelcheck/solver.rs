@@ -8,8 +8,60 @@ use crate::modelcheck::ir::{
     BranchConstraintIr, ConstraintRoot, ConstraintTarget, TransitionBranchIr, TransitionIr,
 };
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use std::time::Instant;
+
+thread_local! {
+    /// Candidate-state key set cache: keyed by slice identity + length,
+    /// value is a shared BTreeSet<String> of canonical_key()s.
+    ///
+    /// Motivation: the baseline model-check loop calls
+    /// `solve_branch_successors_with_candidates_and_telemetry` once per
+    /// (state, branch). Each call computed `canonical_key()` over the same
+    /// candidate slice (e.g. 3375 Paxos candidates × 11,136 branch solves
+    /// = 37M canonical_key calls, ~60s wall-clock). The candidate slice is
+    /// invariant across the run, so its canonical-key set is too.
+    ///
+    /// Safe because:
+    /// - Slice pointer + length uniquely identify the borrowed buffer
+    ///   within the lifetime of the call site.
+    /// - Cache entries are cleared at run boundaries via
+    ///   `reset_candidate_state_keys_cache()`.
+    static CANDIDATE_STATE_KEYS_CACHE: RefCell<
+        Vec<(usize, usize, Arc<BTreeSet<String>>)>,
+    > = const { RefCell::new(Vec::new()) };
+}
+
+/// Clear the candidate-state-keys cache. Call at run boundaries.
+pub fn reset_candidate_state_keys_cache() {
+    CANDIDATE_STATE_KEYS_CACHE.with(|cache| cache.borrow_mut().clear());
+}
+
+fn canonical_keys_for_candidates(candidates: &[RuntimeValue]) -> Arc<BTreeSet<String>> {
+    let ptr = candidates.as_ptr() as usize;
+    let len = candidates.len();
+    let cached = CANDIDATE_STATE_KEYS_CACHE.with(|cache| {
+        cache
+            .borrow()
+            .iter()
+            .find(|(p, l, _)| *p == ptr && *l == len)
+            .map(|(_, _, keys)| Arc::clone(keys))
+    });
+    if let Some(keys) = cached {
+        return keys;
+    }
+    let keys: BTreeSet<String> =
+        candidates.iter().map(RuntimeValue::canonical_key).collect();
+    let keys = Arc::new(keys);
+    CANDIDATE_STATE_KEYS_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .push((ptr, len, Arc::clone(&keys)));
+    });
+    keys
+}
 
 pub type PredicateOnlyBranchSolver<'a> = dyn Fn(
         &TransitionIr,
@@ -164,7 +216,12 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     // (e.g., 1.7M for Paxos), computing canonical_key() for every candidate
     // was the dominant cost (~40s). When the predicate-only solver handles
     // the branch, this set is never needed.
-    let mut candidate_state_keys: Option<BTreeSet<String>> = None;
+    //
+    // Phase 38.18: memoize across branch solves via
+    // `canonical_keys_for_candidates` (thread-local, keyed by slice identity).
+    // The candidate slice is invariant across a model-check run, so the
+    // key set only needs to be built once — not once per (state, branch).
+    let mut candidate_state_keys: Option<Arc<BTreeSet<String>>> = None;
 
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
@@ -277,13 +334,12 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
             // Lazily compute candidate keys only when needed for filtering
             if candidate_state_keys.is_none() {
                 if let Some(candidates) = next_state_candidates {
-                    candidate_state_keys =
-                        Some(candidates.iter().map(RuntimeValue::canonical_key).collect());
+                    candidate_state_keys = Some(canonical_keys_for_candidates(candidates));
                 }
             }
             let successors = filter_successors_to_candidate_keys(
                 deduplicate_successors(successors),
-                candidate_state_keys.as_ref(),
+                candidate_state_keys.as_deref(),
             );
             return Ok(BranchSolveResult {
                 successors,
@@ -312,13 +368,12 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     // Lazily compute candidate keys only when needed for filtering
     if candidate_state_keys.is_none() {
         if let Some(candidates) = next_state_candidates {
-            candidate_state_keys =
-                Some(candidates.iter().map(RuntimeValue::canonical_key).collect());
+            candidate_state_keys = Some(canonical_keys_for_candidates(candidates));
         }
     }
     let successors = filter_successors_to_candidate_keys(
         deduplicate_successors(successors),
-        candidate_state_keys.as_ref(),
+        candidate_state_keys.as_deref(),
     );
 
     let (direct_fields, deferred_evals) = count_branch_constraint_telemetry(branch);

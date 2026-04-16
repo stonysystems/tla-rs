@@ -160,6 +160,11 @@ impl Default for DporConfig {
 /// dependent; only cross-process transitions with disjoint footprints
 /// are treated as independent for sleep-set propagation.
 pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
+    // Reset the zero-arg helper-call cache at run boundaries so that repeated
+    // invocations in the same process (e.g. shadow-compare or tests) do not
+    // carry stale cache entries across specs.
+    verus_transpiler::modelcheck::helpers::reset_zero_arg_helper_cache();
+
     let mut distinct_states: BTreeSet<String> = BTreeSet::new();
     let mut traces_explored: usize = 0;
     let mut max_depth: usize = 0;

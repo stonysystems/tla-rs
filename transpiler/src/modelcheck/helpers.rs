@@ -12,7 +12,29 @@ use crate::modelcheck::evaluator::{eval_expr, EvalContext};
 use crate::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use crate::spec_analyzer::SpecSchema;
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap};
+
+thread_local! {
+    /// Cache for zero-arg spec-function calls. A function with no parameters
+    /// is pure w.r.t. its name + the runtime collection bounds, so the result
+    /// can be memoized across evaluations within a model-check run.
+    ///
+    /// Safe because:
+    /// - No runtime-state parameters to vary on
+    /// - Bounds are part of the key, so changing bounds won't hit a stale entry
+    /// - Functions/schema/model_config are effectively fixed during a run;
+    ///   `reset_zero_arg_helper_cache()` is called at run boundaries for safety.
+    static ZERO_ARG_HELPER_CACHE: RefCell<
+        HashMap<(String, RuntimeCollectionBounds), RuntimeValue>,
+    > = RefCell::new(HashMap::new());
+}
+
+/// Clear the zero-arg helper-call cache. Call at run boundaries (e.g. when
+/// switching specs) to avoid any chance of stale results.
+pub fn reset_zero_arg_helper_cache() {
+    ZERO_ARG_HELPER_CACHE.with(|cache| cache.borrow_mut().clear());
+}
 
 /// Normalize a call path by splitting `::` segments and stripping generics.
 pub fn normalize_call_path(path: &Path) -> String {
@@ -160,6 +182,21 @@ pub fn eval_spec_function_call_recursive(
         });
     }
 
+    // Zero-arg helpers are pure w.r.t. (name, bounds). Hot for protocols
+    // like Paxos where `LAcceptors()` / `LValues()` appear in every branch.
+    let is_zero_arg = args.is_empty() && function.params.is_empty();
+    if is_zero_arg {
+        let cached = ZERO_ARG_HELPER_CACHE.with(|cache| {
+            cache
+                .borrow()
+                .get(&(function.name.clone(), bounds))
+                .cloned()
+        });
+        if let Some(value) = cached {
+            return Ok(value);
+        }
+    }
+
     let mut ctx = EvalContext::new(bounds);
     for (param, value) in function.params.iter().zip(args.iter()) {
         ctx = ctx.with_binding(param.name.clone(), value.clone());
@@ -182,12 +219,22 @@ pub fn eval_spec_function_call_recursive(
     ctx = ctx.with_call_evaluator(&recursive_call);
     ctx = ctx.with_quantifier_domain_evaluator(&quantifier_domain);
 
-    eval_expr(&function.body, &ctx).map_err(|err| TranspileError::Config {
+    let result = eval_expr(&function.body, &ctx).map_err(|err| TranspileError::Config {
         message: format!(
             "Failed to evaluate helper call `{}` via `{}`: {}",
             normalize_call_path(func_path),
             function.name,
             err
         ),
-    })
+    })?;
+
+    if is_zero_arg {
+        let key = (function.name.clone(), bounds);
+        let value = result.clone();
+        ZERO_ARG_HELPER_CACHE.with(|cache| {
+            cache.borrow_mut().insert(key, value);
+        });
+    }
+
+    Ok(result)
 }
