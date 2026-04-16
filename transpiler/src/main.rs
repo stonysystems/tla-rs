@@ -3672,19 +3672,44 @@ fn execute_model_check(
                             let func_name = func.segments.last().map(|s| s.as_str()).unwrap_or("");
                             // Look up the function in spec_functions
                             if let Some(spec_fn) = bundle.spec_functions.iter().find(|f| f.name == func_name) {
+                                // Phase 38.17.2: Only inline if the function body
+                                // references the next-state parameter. Otherwise
+                                // the inlined body has no s_ assignments and the
+                                // solver can't use direct assignment.
+                                let body_str = format!("{:?}", &spec_fn.body);
+                                if !body_str.contains(next_state_param) {
+                                    // Guard-only helper (no s_ writes) — keep as Predicate
+                                    new_constraints.push(constraint.clone());
+                                    continue;
+                                }
                                 // Substitute parameters: replace formal params with actual args
                                 let body = substitute_call_args(&spec_fn.body, &spec_fn.params, args);
                                 // Flatten conjunctions and normalize
                                 let (_, conjuncts) = verus_transpiler::modelcheck::ir::flatten_branch_body_pub(body);
-                                for conjunct in conjuncts {
-                                    new_constraints.push(normalize_constraint_pub(
-                                        conjunct,
-                                        current_state_param,
-                                        next_state_param,
-                                        constants_param,
-                                    ));
+                                let mut inlined_constraints: Vec<BranchConstraintIr> = conjuncts
+                                    .into_iter()
+                                    .map(|c| normalize_constraint_pub(c, current_state_param, next_state_param, constants_param))
+                                    .collect();
+                                // Only use inlined constraints if they contain at least one
+                                // NextState Eq — otherwise the solver can't use direct assignment
+                                // and we're better off keeping the opaque call for the
+                                // predicate_only_solver.
+                                let has_next_state_eq = inlined_constraints.iter().any(|c| {
+                                    matches!(c, BranchConstraintIr::Eq {
+                                        target: verus_transpiler::modelcheck::ir::ConstraintTarget {
+                                            root: verus_transpiler::modelcheck::ir::ConstraintRoot::NextState,
+                                            ..
+                                        },
+                                        ..
+                                    })
+                                });
+                                if has_next_state_eq {
+                                    new_constraints.append(&mut inlined_constraints);
+                                    inlined = true;
+                                } else {
+                                    // No s_ assignments in inlined body — keep original call
+                                    new_constraints.push(constraint.clone());
                                 }
-                                inlined = true;
                                 continue;
                             }
                         }

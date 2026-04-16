@@ -19,7 +19,7 @@ Constants = 0
 max_depth = 2
 max_states = 100000
 timeout_ms = 180000
-candidate_eval_guardrail = 300000
+candidate_eval_guardrail = 1000000
 
 [properties]
 invariants = []

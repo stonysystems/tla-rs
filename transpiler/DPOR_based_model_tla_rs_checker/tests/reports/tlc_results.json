@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-14T13:50:06Z",
+  "timestamp": "2026-04-16T02:15:21Z",
   "engine": "tlc",
   "timeout_sec": 1800,
   "workers": 4,
@@ -11,25 +11,25 @@
   "tlc_incompatible": 4,
   "skipped": 0,
   "cases": [
-  {"case_id": "01_aplusb", "tlc_result": "ok", "verdict": "PASS", "states_generated": 7, "distinct_states": 6, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "},
+  {"case_id": "01_aplusb", "tlc_result": "ok", "verdict": "PASS", "states_generated": 7, "distinct_states": 6, "elapsed_s": 3, "timed_out": false, "expected": "ok", "error": " "},
   {"case_id": "02_counter_incdec", "tlc_result": "ok", "verdict": "PASS", "states_generated": 7, "distinct_states": 5, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "},
   {"case_id": "03_counter_race_bug", "tlc_result": "invariant_violated", "verdict": "PASS", "states_generated": 15, "distinct_states": 13, "elapsed_s": 2, "timed_out": false, "expected": "invariant_violation", "error": "Invariant TotalCorrect is violated "},
-  {"case_id": "04_lock_basic", "tlc_result": "ok", "verdict": "PASS", "states_generated": 5, "distinct_states": 3, "elapsed_s": 2, "timed_out": false, "expected": "ok", "error": " "},
-  {"case_id": "05_broken_lock_bug", "tlc_result": "invariant_violated", "verdict": "PASS", "states_generated": 6, "distinct_states": 5, "elapsed_s": 2, "timed_out": false, "expected": "invariant_violation", "error": "Invariant MutualExclusion is violated "},
+  {"case_id": "04_lock_basic", "tlc_result": "ok", "verdict": "PASS", "states_generated": 5, "distinct_states": 3, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "},
+  {"case_id": "05_broken_lock_bug", "tlc_result": "invariant_violated", "verdict": "PASS", "states_generated": 6, "distinct_states": 5, "elapsed_s": 1, "timed_out": false, "expected": "invariant_violation", "error": "Invariant MutualExclusion is violated "},
   {"case_id": "06_ticket_lock", "tlc_result": "tlc_error", "verdict": "ERROR", "states_generated": 1, "distinct_states": 0, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": "Error: The first argument of >= should be an integer, but instead it is:;Error: The error occurred when TLC was evaluating the nested; "},
-  {"case_id": "07_producer_consumer_1slot", "tlc_result": "ok", "verdict": "PASS", "states_generated": 12, "distinct_states": 11, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "},
+  {"case_id": "07_producer_consumer_1slot", "tlc_result": "ok", "verdict": "PASS", "states_generated": 12, "distinct_states": 11, "elapsed_s": 2, "timed_out": false, "expected": "ok", "error": " "},
   {"case_id": "08_bounded_buffer_2slot", "tlc_result": "invariant_violated", "verdict": "PASS", "states_generated": 11, "distinct_states": 10, "elapsed_s": 1, "timed_out": false, "expected": "invariant_violation", "error": "Invariant BufferNotOverflow is violated "},
   {"case_id": "09_peterson_mutex_2p", "tlc_result": "ok", "verdict": "PASS", "states_generated": 17, "distinct_states": 10, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "},
   {"case_id": "10_bakery_mutex_3p", "tlc_result": "timeout", "verdict": "TIMEOUT", "states_generated": 0, "distinct_states": 0, "elapsed_s": 1800, "timed_out": true, "expected": "ok", "error": " "},
   {"case_id": "11_readers_writers_small", "tlc_result": "tlc_error", "verdict": "ERROR", "states_generated": 1, "distinct_states": 0, "elapsed_s": 1, "timed_out": false, "expected": "invariant_violation", "error": "Error: The first argument of >= should be an integer, but instead it is:;Error: The error occurred when TLC was evaluating the nested; "},
-  {"case_id": "12_dining_philosophers_3", "tlc_result": "invariant_violated", "verdict": "FAIL", "states_generated": 7, "distinct_states": 5, "elapsed_s": 2, "timed_out": false, "expected": "deadlock", "error": "Invariant NoStarvation is violated "},
-  {"case_id": "13_twophase_small", "tlc_result": "ok", "verdict": "PASS", "states_generated": 10, "distinct_states": 9, "elapsed_s": 2, "timed_out": false, "expected": "ok", "error": " "},
+  {"case_id": "12_dining_philosophers_3", "tlc_result": "invariant_violated", "verdict": "FAIL", "states_generated": 7, "distinct_states": 5, "elapsed_s": 1, "timed_out": false, "expected": "deadlock", "error": "Invariant NoStarvation is violated "},
+  {"case_id": "13_twophase_small", "tlc_result": "ok", "verdict": "PASS", "states_generated": 10, "distinct_states": 9, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "},
   {"case_id": "14_leader_election_small", "tlc_result": "tlc_incompatible", "reason": "parameterized_init_next", "states": 0, "elapsed_s": 0, "expected": "ok"},
   {"case_id": "15_chain_replication_small", "tlc_result": "tlc_incompatible", "reason": "parameterized_init_next", "states": 0, "elapsed_s": 0, "expected": "deadlock"},
   {"case_id": "16_primarybackup_small", "tlc_result": "tlc_incompatible", "reason": "parameterized_init_next", "states": 0, "elapsed_s": 0, "expected": "ok"},
   {"case_id": "17_paxos_small", "tlc_result": "ok", "verdict": "PASS", "states_generated": 7105, "distinct_states": 232, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "},
   {"case_id": "18_pbft_small", "tlc_result": "ok", "verdict": "PASS", "states_generated": 267, "distinct_states": 49, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "},
   {"case_id": "19_epaxos_small", "tlc_result": "tlc_incompatible", "reason": "parameterized_init_next", "states": 0, "elapsed_s": 0, "expected": "ok"},
-  {"case_id": "20_raft_small", "tlc_result": "ok", "verdict": "PASS", "states_generated": 1906, "distinct_states": 681, "elapsed_s": 1, "timed_out": false, "expected": "ok", "error": " "}
+  {"case_id": "20_raft_small", "tlc_result": "ok", "verdict": "PASS", "states_generated": 1906, "distinct_states": 681, "elapsed_s": 2, "timed_out": false, "expected": "ok", "error": " "}
 ]
 }
