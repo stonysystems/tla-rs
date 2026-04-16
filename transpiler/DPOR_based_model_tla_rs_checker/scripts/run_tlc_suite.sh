@@ -210,6 +210,15 @@ for case_dir in "$TLA_DIR"/*/; do
 
     echo -n "  [$case_id] "
 
+    # Phase 38.19: reset per-iteration state for the parameterized-MC wrapper
+    generated_mc_wrapper=""
+    override_init=""
+    override_next=""
+    override_invariant=""
+    override_enum_constants=""
+    override_abstract_constants=""
+    module_name=""
+
     # ---- Read manifest fields ----
     tla_entry=""
     expected_result=""
@@ -264,14 +273,65 @@ for case_dir in "$TLA_DIR"/*/; do
     fi
 
     # ---- Detect parameterized Init(s,c) / Next(s,s_,c) ----
+    # Phase 38.19: try auto-generating an MC wrapper that inlines Init/Next
+    # bodies with `s.field → field` / `s_.field → field'` substitutions.
+    # This enables TLC on cases 14/15/16/19 (Bug B cases), with the caveat
+    # that abstract-type constants/sequences are replaced with finite bounds
+    # so TLC's verdict may diverge from DPOR semantics.
+    generated_mc_wrapper=""
     if is_parameterized_init_next "$tla_file"; then
-        echo "TLC_INCOMPATIBLE (parameterized Init/Next)"
-        INCOMPATIBLE=$((INCOMPATIBLE + 1))
-        result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"tlc_incompatible\", \"reason\": \"parameterized_init_next\", \"states\": 0, \"elapsed_s\": 0, \"expected\": \"$expected_result\"}"
-        [[ "$TOTAL" -gt 1 ]] && RESULTS_JSON="$RESULTS_JSON,"
-        RESULTS_JSON="$RESULTS_JSON
+        if [[ -x "$SCRIPT_DIR/generate_parameterized_mc_wrapper.py" && -f "$per_case_config" ]]; then
+            mc_tla_file="$case_dir/${tla_entry%.tla}_MC.tla"
+            mc_info="$(python3 "$SCRIPT_DIR/generate_parameterized_mc_wrapper.py" \
+                --tla-file "$tla_file" \
+                --model-config "$per_case_config" \
+                --invariant-name "$expected_property" \
+                --out-file "$mc_tla_file" 2>/dev/null || true)"
+            if [[ -f "$mc_tla_file" ]]; then
+                # Parse the wrapper's module name and mapped names
+                wrapper_module="$(echo "$mc_info" | grep '^module=' | cut -d= -f2)"
+                wrapper_init="$(echo "$mc_info" | grep '^init=' | cut -d= -f2)"
+                wrapper_next="$(echo "$mc_info" | grep '^next=' | cut -d= -f2)"
+                wrapper_inv="$(echo "$mc_info" | grep '^invariant=' | cut -d= -f2)"
+                wrapper_enum_symbols="$(echo "$mc_info" | grep '^enum_symbols=' | cut -d= -f2)"
+                if [[ -n "$wrapper_module" && -n "$wrapper_init" && -n "$wrapper_next" ]]; then
+                    generated_mc_wrapper="$mc_tla_file"
+                    module_name="$wrapper_module"
+                    override_init="$wrapper_init"
+                    override_next="$wrapper_next"
+                    override_invariant="$wrapper_inv"
+                    # Phase 38.19: enum symbols (Head, Middle, Primary, etc.)
+                    # found in Types.tla — inject as CONSTANTS (model values).
+                    if [[ -n "$wrapper_enum_symbols" ]]; then
+                        enum_constants_block="CONSTANTS"
+                        IFS=',' read -ra enum_arr <<< "$wrapper_enum_symbols"
+                        for sym in "${enum_arr[@]}"; do
+                            enum_constants_block="$enum_constants_block
+$sym = $sym"
+                        done
+                        override_enum_constants="$enum_constants_block"
+                    fi
+                    # The generated wrapper also has abstract constants (State,
+                    # Constants, ElectionMessage). These need values too.
+                    if grep -qE "^CONSTANTS\s+State\b" "$mc_tla_file"; then
+                        override_abstract_constants="CONSTANTS
+State = 0
+Constants = 0
+ElectionMessage = 0"
+                    fi
+                fi
+            fi
+        fi
+
+        if [[ -z "$generated_mc_wrapper" ]]; then
+            echo "TLC_INCOMPATIBLE (parameterized Init/Next, wrapper gen failed)"
+            INCOMPATIBLE=$((INCOMPATIBLE + 1))
+            result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"tlc_incompatible\", \"reason\": \"parameterized_init_next\", \"states\": 0, \"elapsed_s\": 0, \"expected\": \"$expected_result\"}"
+            [[ "$TOTAL" -gt 1 ]] && RESULTS_JSON="$RESULTS_JSON,"
+            RESULTS_JSON="$RESULTS_JSON
   $result_json"
-        continue
+            continue
+        fi
     fi
 
     # ---- Read per-case model config ----
@@ -334,7 +394,11 @@ $inv"
     # We only generate the wrapper when the spec has integer variables that
     # could grow unboundedly (heuristic: the spec has '+ 1' or '- 1' patterns
     # suggesting incrementing/decrementing variables).
-    module_name="${tla_entry%.tla}"
+    # Phase 38.19: preserve module_name if already set by the parameterized-
+    # Init/Next wrapper path above.
+    if [[ -z "${module_name:-}" ]]; then
+        module_name="${tla_entry%.tla}"
+    fi
     wrapper_module=""
     wrapper_file=""
     constraint_line=""
@@ -382,6 +446,28 @@ if not var_line:
     sys.exit(0)
 all_vars = [v.strip() for v in var_line.group(1).split(',') if v.strip()]
 
+# Phase 38.19: Detect function-typed variables from Init-style function literals.
+# TLA+ functions are declared via \`[x \\in Set |-> value]\` or used as \`var[p]\`.
+# Bounding these as scalar integers causes TLC to raise
+# \"The first argument of >= should be an integer\".
+# For function-typed variables, skip the simple bound OR emit element-wise bounds
+# via \\A p \\in Procs : var[p] >= min /\\ var[p] <= max.
+function_vars = {}  # var_name -> domain_expr (e.g., 'Procs')
+for var in all_vars:
+    # Pattern 1: Init has \`var = [x \\in Domain |-> ...]\`
+    m = re.search(rf'\b{re.escape(var)}\s*=\s*\[\s*\w+\s*\\\\in\s+(\w+)\s*\|\->', src)
+    if m:
+        function_vars[var] = m.group(1)
+        continue
+    # Pattern 2: var is indexed somewhere: \`var[p]\`
+    if re.search(rf'\b{re.escape(var)}\[', src):
+        function_vars[var] = None  # unknown domain; skip bounds
+        continue
+    # Pattern 3: var used in EXCEPT: \`[var EXCEPT ![p] = ...]\`
+    if re.search(rf'\[\s*{re.escape(var)}\s+EXCEPT', src):
+        function_vars[var] = None
+        continue
+
 conjuncts = []
 for var in all_vars:
     # Skip if variable is used with string literals (pc = \"ready\", etc.)
@@ -395,6 +481,16 @@ for var in all_vars:
     if re.search(rf'\\\\in\s+{re.escape(var)}\b', src):
         continue
     if re.search(rf'\b{re.escape(var)}\s*\\\\subseteq\b', src):
+        continue
+    # Phase 38.19: handle function-typed variables (var : Domain -> Value)
+    if var in function_vars:
+        domain = function_vars[var]
+        if domain is not None:
+            # Check if the function maps to integers (conservative check:
+            # look for var[p] in arithmetic context anywhere in the source)
+            if re.search(rf'\b{re.escape(var)}\[\w+\]\s*[\+\-\*]|\b{re.escape(var)}\[\w+\]\s*>|\b{re.escape(var)}\[\w+\]\s*<', src):
+                conjuncts.append(f'    /\\\\ \\\\A p \\\\in {domain} : {var}[p] >= {int_min} /\\\\ {var}[p] <= {int_max}')
+        # else: unknown domain, skip — TLC will not bound this var
         continue
     # Skip if variable is never in arithmetic context
     if not re.search(rf'\b{re.escape(var)}\b\s*[\+\-\*]|\b{re.escape(var)}\b\s*>=|\b{re.escape(var)}\b\s*<=|\b{re.escape(var)}\b\s*>|\b{re.escape(var)}\b\s*<|\b{re.escape(var)}\b\s*\\\\in\s+Nat\b|{re.escape(var)}\s*\x27\s*=\s*\S+\s*[\+\-]', src):
@@ -428,15 +524,39 @@ WRAPEOF
     # ---- Generate temporary .cfg file ----
     cfg_file="$(mktemp /tmp/tlc_cfg_${case_id}_XXXXXX.cfg)"
 
+    # Phase 38.19: use the parameterized-MC wrapper's Init/Next/invariant names
+    # when we generated one for this case.
+    init_name="${override_init:-Init}"
+    next_name="${override_next:-Next}"
+    inv_override="${override_invariant:-}"
+
     {
-        echo "INIT Init"
-        echo "NEXT Next"
+        echo "INIT $init_name"
+        echo "NEXT $next_name"
         echo ""
-        if [[ -n "$constants_block" ]]; then
-            echo "$constants_block"
+        # Merge all CONSTANTS blocks (from config + wrapper overrides).
+        if [[ -n "$constants_block" || -n "${override_enum_constants:-}" || -n "${override_abstract_constants:-}" ]]; then
+            echo "CONSTANTS"
+            # Emit model-config constants (without the leading "CONSTANTS" keyword)
+            if [[ -n "$constants_block" ]]; then
+                echo "$constants_block" | grep -v '^CONSTANTS' | grep -v '^$'
+            fi
+            # Emit abstract constants (State = 0, Constants = 0, ElectionMessage = 0)
+            if [[ -n "${override_abstract_constants:-}" ]]; then
+                echo "${override_abstract_constants}" | grep -v '^CONSTANTS' | grep -v '^$'
+            fi
+            # Emit enum model values (Head = Head, Middle = Middle, ...)
+            if [[ -n "${override_enum_constants:-}" ]]; then
+                echo "${override_enum_constants}" | grep -v '^CONSTANTS' | grep -v '^$'
+            fi
             echo ""
         fi
-        if [[ -n "$invariants_block" ]]; then
+        if [[ -n "$inv_override" ]]; then
+            # Use the wrapper's invariant name (e.g., MC_SafetyElectingSubsetAlive)
+            echo "INVARIANT"
+            echo "$inv_override"
+            echo ""
+        elif [[ -n "$invariants_block" ]]; then
             echo "$invariants_block"
             echo ""
         fi
@@ -572,6 +692,11 @@ WRAPEOF
     # Clean up temp files
     rm -f "$cfg_file" "$tlc_stdout"
     [[ -n "$wrapper_file" && -f "$wrapper_file" ]] && rm -f "$wrapper_file"
+    # Phase 38.19: clean up auto-generated parameterized-MC wrapper
+    [[ -n "$generated_mc_wrapper" && -f "$generated_mc_wrapper" ]] && rm -f "$generated_mc_wrapper"
+    # Clean up TLC's trace exploration files
+    find "$case_dir" -maxdepth 1 -name "*_TTrace_*.tla" -delete 2>/dev/null || true
+    find "$case_dir" -maxdepth 1 -name "*_TTrace_*.bin" -delete 2>/dev/null || true
 done
 
 RESULTS_JSON="$RESULTS_JSON
