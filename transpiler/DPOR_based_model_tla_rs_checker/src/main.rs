@@ -15,7 +15,10 @@ struct ShadowCompareArgs {
     types_file: Option<PathBuf>,
     invariants: Vec<String>,
     check_deadlock: bool,
-    max_depth: usize,
+    /// Phase 38.18.4: when None, use the model.toml's `[search] max_depth`
+    /// so DPOR explores the same depth as the baseline. The CLI flag
+    /// `--max-depth` overrides.
+    max_depth: Option<usize>,
     max_states: usize,
     timeout_sec: u64,
     json_out: Option<PathBuf>,
@@ -94,7 +97,7 @@ fn parse_shadow_compare_args(args: &[String]) -> Result<ShadowCompareArgs, Strin
     let mut types_file: Option<PathBuf> = None;
     let mut invariants: Vec<String> = Vec::new();
     let mut check_deadlock = false;
-    let mut max_depth: usize = 100;
+    let mut max_depth: Option<usize> = None;
     let mut max_states: usize = 100_000;
     let mut timeout_sec: u64 = 30;
     let mut json_out: Option<PathBuf> = None;
@@ -125,9 +128,10 @@ fn parse_shadow_compare_args(args: &[String]) -> Result<ShadowCompareArgs, Strin
             "--max-depth" => {
                 i += 1;
                 let raw = next_arg(args, i, "--max-depth")?;
-                max_depth = raw
-                    .parse::<usize>()
-                    .map_err(|err| format!("invalid --max-depth `{}`: {}", raw, err))?;
+                max_depth = Some(
+                    raw.parse::<usize>()
+                        .map_err(|err| format!("invalid --max-depth `{}`: {}", raw, err))?,
+                );
             }
             "--max-states" => {
                 i += 1;
@@ -231,8 +235,16 @@ fn run_shadow_compare(args: &ShadowCompareArgs) -> Result<ShadowCompareReport, S
     )
     .map_err(|err| format!("failed to load spec context: {}", err))?;
 
+    // Phase 38.18.4: when --max-depth is not given on the CLI, use the
+    // model.toml's `[search] max_depth` so DPOR explores the same depth
+    // as the baseline. Pre-fix, the CLI defaulted to 100 and ignored
+    // the model config, which made DPOR explore further than the
+    // baseline on cases like Raft (DPOR 1930 states vs baseline 812).
+    let effective_max_depth = args
+        .max_depth
+        .unwrap_or(ctx.model_config.search.max_depth);
     let dpor_config = DporConfig {
-        max_depth: args.max_depth,
+        max_depth: effective_max_depth,
         max_states: args.max_states,
         use_independence: true,
         use_sleep_sets: true,
