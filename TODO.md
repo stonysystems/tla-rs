@@ -13276,3 +13276,50 @@ makes DPOR reduction measurable).
 | `transpiler/src/modelcheck/domain.rs` | Reduce usage — direct assignment should bypass domain expansion for s' |
 | `transpiler/src/main.rs` | Add telemetry reporting, wire new solver options |
 | `DPOR_based_model_tla_rs_checker/src/enabled.rs` | Extract ProcessId, populate footprints |
+
+#### 38.17 Completion Status (2026-04-16)
+
+- [x] **38.17.2**: Inline action calls in IR (commit `a41213d6`).
+  Paxos solver_ms: 511s → 79s (**6.5x speedup**). Direct-assignment
+  branch solves: 0 → 11,136. Candidate evaluations: 37.6M → 0.
+- [x] **38.17.3**: Verify full 20/20 suite + DPOR vs TLC comparison
+  (commit `23fd4502`). All 20 cases pass. Protocol speedups: Paxos 6.5x,
+  PBFT 18x, Raft 5.6x. Two state-count bugs fixed (cases 01, 07).
+- [x] **38.17.4**: Extract inliner to library + apply in DPOR crate's
+  enabled.rs (commit `7670df18`). DPOR sleep-set reduction now active:
+  - 02 counter_incdec: 33.3% transition reduction
+  - 09 peterson_mutex: 43.8% transition reduction
+  - 17 paxos_small: **82.9% transition reduction** (1348 → 231)
+  - Gate `>10% reduction on 3+ multi-process cases`: **3/3 hits ✓**
+- [x] **38.17.5**: Update `sleep_set_reduction_table.md` with evidence
+  (commit `fc08f5c4`). shadow-compare reduction results:
+  - Paxos: 232 states, 76s → 2.6s (**29x speedup, exact state parity**)
+  - PBFT: 49 states → 125 states (over-explored), 4.9s → 0.4s (13x)
+  - Raft: 681 → 540 states (missing), 196s → 1.1s (176x speedup)
+
+- [ ] **38.17.6**: **Investigate Raft/PBFT state parity bugs.**
+  Paxos has exact state parity under DPOR, but Raft misses states
+  (540 vs 681) and PBFT over-explores (125 vs 49). The parity-subset
+  regression test (cases 01-13) passes exactly. The bug is specific to
+  protocol cases (17, 18, 20) where branches have hardcoded parameter
+  values (Acceptors={1,2,3}, Servers={1..5}, etc.) rather than
+  existential quantification. Possible causes:
+  1. Sleep-set pruning incorrectly treats sibling branches (e.g.,
+     `StartElection(1)` vs `StartElection(2)`) as same-process (both
+     have `ProcessId(0)` from hash fallback) and prunes one
+  2. Footprint extraction misses helper call dependencies (e.g.,
+     `HasQuorum(vs)` has no s_ reads but depends on votesGranted)
+  3. DPOR stops too early at the max_depth limit (observed: Raft at
+     depth=100 finds 1930 phantom states vs baseline 681)
+  
+  Investigation path:
+  - Add ProcessId extraction from concrete parameter values (e.g.,
+    `StartElection(1)` → `ProcessId(1)`, not hash)
+  - Improve footprint extraction to include transitively-read fields
+    via helper function calls
+  - Add a new reduction parity regression test covering protocol cases
+
+- [ ] **38.17.7**: Cache helper function call evaluations.
+  Remaining 79x gap vs TLC on Paxos is mostly helper call evaluation
+  repeated per (state, branch, binding). A cache keyed on `(fn_name, args)`
+  would eliminate this.
