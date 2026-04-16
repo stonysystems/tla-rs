@@ -446,6 +446,267 @@ pub fn inline_action_calls(
     inlined_count
 }
 
+/// Phase 38.18.2: inline zero-argument spec-function calls into a
+/// constraint expression at IR build time. For helpers like Paxos's
+/// `LAcceptors()` (which returns `set![1, 2, 3]`), this replaces the
+/// runtime `Expr::Call { func: "LAcceptors", args: [] }` with a
+/// literal `Expr::SetLit([1, 2, 3])`, eliminating both the
+/// `eval_spec_function_call_recursive` invocation and the
+/// Phase 38.18.5 cache lookup. The helper body is only inlined if it
+/// has no further helper calls (avoid infinite recursion); functions
+/// referenced by a zero-arg helper that itself takes args are left
+/// alone for the runtime evaluator.
+pub fn inline_zero_arg_helper_calls(
+    transition: &mut TransitionIr,
+    spec_functions: &[SpecFunction],
+) -> usize {
+    let mut inlined_count = 0;
+    let zero_arg_helpers: std::collections::BTreeMap<String, Expr> = spec_functions
+        .iter()
+        .filter(|f| f.params.is_empty())
+        .filter(|f| !contains_call_to_any(&f.body, &|_| true))
+        .map(|f| (f.name.clone(), f.body.clone()))
+        .collect();
+    if zero_arg_helpers.is_empty() {
+        return 0;
+    }
+
+    for branch in &mut transition.branches {
+        for constraint in &mut branch.constraints {
+            match constraint {
+                BranchConstraintIr::Predicate { expr } => {
+                    let (new_expr, count) =
+                        inline_zero_arg_calls_in_expr(expr, &zero_arg_helpers);
+                    if count > 0 {
+                        *expr = new_expr;
+                        inlined_count += count;
+                    }
+                }
+                BranchConstraintIr::Eq { value, .. } => {
+                    let (new_expr, count) =
+                        inline_zero_arg_calls_in_expr(value, &zero_arg_helpers);
+                    if count > 0 {
+                        *value = new_expr;
+                        inlined_count += count;
+                    }
+                }
+            }
+        }
+    }
+    inlined_count
+}
+
+fn contains_call_to_any(expr: &Expr, predicate: &dyn Fn(&str) -> bool) -> bool {
+    match expr {
+        Expr::Call { func, args } => {
+            let name = func.segments.last().map(|s| s.as_str()).unwrap_or("");
+            if predicate(name) {
+                return true;
+            }
+            args.iter().any(|a| contains_call_to_any(a, predicate))
+        }
+        Expr::Eq(l, r) | Expr::Ne(l, r) | Expr::Lt(l, r) | Expr::Le(l, r)
+        | Expr::Gt(l, r) | Expr::Ge(l, r) | Expr::Implies(l, r) => {
+            contains_call_to_any(l, predicate) || contains_call_to_any(r, predicate)
+        }
+        Expr::Binary(l, _, r) => {
+            contains_call_to_any(l, predicate) || contains_call_to_any(r, predicate)
+        }
+        Expr::Conjunction(items) | Expr::Disjunction(items)
+        | Expr::SetLit(items) | Expr::SeqLit(items) => {
+            items.iter().any(|e| contains_call_to_any(e, predicate))
+        }
+        Expr::Not(inner) | Expr::View(inner) => contains_call_to_any(inner, predicate),
+        Expr::Field(b, _) | Expr::Arrow(b, _) => contains_call_to_any(b, predicate),
+        Expr::MethodCall { receiver, args, .. } => {
+            contains_call_to_any(receiver, predicate)
+                || args.iter().any(|a| contains_call_to_any(a, predicate))
+        }
+        Expr::If { cond, then_branch, else_branch } => {
+            contains_call_to_any(cond, predicate)
+                || contains_call_to_any(then_branch, predicate)
+                || else_branch.as_ref().map_or(false, |e| contains_call_to_any(e, predicate))
+        }
+        _ => false,
+    }
+}
+
+fn inline_zero_arg_calls_in_expr(
+    expr: &Expr,
+    helpers: &std::collections::BTreeMap<String, Expr>,
+) -> (Expr, usize) {
+    match expr {
+        Expr::Call { func, args } if args.is_empty() => {
+            let name = func.segments.last().cloned().unwrap_or_default();
+            if let Some(body) = helpers.get(&name) {
+                return (body.clone(), 1);
+            }
+            (expr.clone(), 0)
+        }
+        Expr::Call { func, args } => {
+            let mut total = 0;
+            let new_args: Vec<Expr> = args
+                .iter()
+                .map(|a| {
+                    let (na, c) = inline_zero_arg_calls_in_expr(a, helpers);
+                    total += c;
+                    na
+                })
+                .collect();
+            (
+                Expr::Call {
+                    func: func.clone(),
+                    args: new_args,
+                },
+                total,
+            )
+        }
+        Expr::Eq(l, r) => {
+            let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
+            let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
+            (Expr::Eq(Box::new(nl), Box::new(nr)), c1 + c2)
+        }
+        Expr::Ne(l, r) => {
+            let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
+            let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
+            (Expr::Ne(Box::new(nl), Box::new(nr)), c1 + c2)
+        }
+        Expr::Lt(l, r) => {
+            let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
+            let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
+            (Expr::Lt(Box::new(nl), Box::new(nr)), c1 + c2)
+        }
+        Expr::Le(l, r) => {
+            let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
+            let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
+            (Expr::Le(Box::new(nl), Box::new(nr)), c1 + c2)
+        }
+        Expr::Gt(l, r) => {
+            let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
+            let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
+            (Expr::Gt(Box::new(nl), Box::new(nr)), c1 + c2)
+        }
+        Expr::Ge(l, r) => {
+            let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
+            let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
+            (Expr::Ge(Box::new(nl), Box::new(nr)), c1 + c2)
+        }
+        Expr::Implies(l, r) => {
+            let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
+            let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
+            (Expr::Implies(Box::new(nl), Box::new(nr)), c1 + c2)
+        }
+        Expr::Binary(l, op, r) => {
+            let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
+            let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
+            (Expr::Binary(Box::new(nl), op.clone(), Box::new(nr)), c1 + c2)
+        }
+        Expr::Conjunction(items) => {
+            let mut total = 0;
+            let new_items: Vec<Expr> = items
+                .iter()
+                .map(|e| {
+                    let (ne, c) = inline_zero_arg_calls_in_expr(e, helpers);
+                    total += c;
+                    ne
+                })
+                .collect();
+            (Expr::Conjunction(new_items), total)
+        }
+        Expr::Disjunction(items) => {
+            let mut total = 0;
+            let new_items: Vec<Expr> = items
+                .iter()
+                .map(|e| {
+                    let (ne, c) = inline_zero_arg_calls_in_expr(e, helpers);
+                    total += c;
+                    ne
+                })
+                .collect();
+            (Expr::Disjunction(new_items), total)
+        }
+        Expr::Not(inner) => {
+            let (n, c) = inline_zero_arg_calls_in_expr(inner, helpers);
+            (Expr::Not(Box::new(n)), c)
+        }
+        Expr::Field(base, field) => {
+            let (n, c) = inline_zero_arg_calls_in_expr(base, helpers);
+            (Expr::Field(Box::new(n), field.clone()), c)
+        }
+        Expr::Arrow(base, field) => {
+            let (n, c) = inline_zero_arg_calls_in_expr(base, helpers);
+            (Expr::Arrow(Box::new(n), field.clone()), c)
+        }
+        Expr::MethodCall { receiver, method, args } => {
+            let (nr, mut total) = inline_zero_arg_calls_in_expr(receiver, helpers);
+            let new_args: Vec<Expr> = args
+                .iter()
+                .map(|a| {
+                    let (na, c) = inline_zero_arg_calls_in_expr(a, helpers);
+                    total += c;
+                    na
+                })
+                .collect();
+            (
+                Expr::MethodCall {
+                    receiver: Box::new(nr),
+                    method: method.clone(),
+                    args: new_args,
+                },
+                total,
+            )
+        }
+        Expr::If { cond, then_branch, else_branch } => {
+            let (nc, c1) = inline_zero_arg_calls_in_expr(cond, helpers);
+            let (nt, c2) = inline_zero_arg_calls_in_expr(then_branch, helpers);
+            let (ne, c3) = match else_branch {
+                Some(e) => {
+                    let (n, c) = inline_zero_arg_calls_in_expr(e, helpers);
+                    (Some(Box::new(n)), c)
+                }
+                None => (None, 0),
+            };
+            (
+                Expr::If {
+                    cond: Box::new(nc),
+                    then_branch: Box::new(nt),
+                    else_branch: ne,
+                },
+                c1 + c2 + c3,
+            )
+        }
+        Expr::SetLit(items) => {
+            let mut total = 0;
+            let new_items: Vec<Expr> = items
+                .iter()
+                .map(|e| {
+                    let (ne, c) = inline_zero_arg_calls_in_expr(e, helpers);
+                    total += c;
+                    ne
+                })
+                .collect();
+            (Expr::SetLit(new_items), total)
+        }
+        Expr::SeqLit(items) => {
+            let mut total = 0;
+            let new_items: Vec<Expr> = items
+                .iter()
+                .map(|e| {
+                    let (ne, c) = inline_zero_arg_calls_in_expr(e, helpers);
+                    total += c;
+                    ne
+                })
+                .collect();
+            (Expr::SeqLit(new_items), total)
+        }
+        Expr::View(inner) => {
+            let (n, c) = inline_zero_arg_calls_in_expr(inner, helpers);
+            (Expr::View(Box::new(n)), c)
+        }
+        _ => (expr.clone(), 0),
+    }
+}
+
 /// Substitute formal parameters with actual argument expressions.
 fn substitute_call_args(
     body: &Expr,

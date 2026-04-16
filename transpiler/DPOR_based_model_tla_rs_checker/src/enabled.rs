@@ -324,6 +324,11 @@ impl SpecContext {
             &mut transition,
             &self.bundle.spec_functions,
         );
+        // Phase 38.18.2: inline zero-argument helper calls.
+        verus_transpiler::modelcheck::ir::inline_zero_arg_helper_calls(
+            &mut transition,
+            &self.bundle.spec_functions,
+        );
 
         let mut assignments_by_branch = std::collections::BTreeMap::new();
         for branch in &transition.branches {
@@ -641,6 +646,12 @@ impl SpecContext {
         // Phase 38.17.4: Inline action calls so branch_footprint can see the
         // real s_.field assignments instead of opaque Predicate(Call(...)).
         verus_transpiler::modelcheck::ir::inline_action_calls(
+            &mut transition,
+            &self.bundle.spec_functions,
+        );
+        // Phase 38.18.2: inline zero-arg helper calls (consistency with
+        // the solver path).
+        verus_transpiler::modelcheck::ir::inline_zero_arg_helper_calls(
             &mut transition,
             &self.bundle.spec_functions,
         );

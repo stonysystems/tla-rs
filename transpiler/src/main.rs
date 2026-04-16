@@ -3553,6 +3553,16 @@ fn execute_model_check(
         &mut transition,
         &bundle.spec_functions,
     );
+    // Phase 38.18.2: also inline zero-argument helper calls
+    // (e.g. `LAcceptors()` → `set![1, 2, 3]`) so the runtime evaluator
+    // never has to re-evaluate them. Eliminates both the
+    // `eval_spec_function_call_recursive` invocation and the
+    // Phase 38.18.5 cache lookup. Must run after `inline_action_calls`
+    // so it sees the inlined branch bodies, not the opaque calls.
+    verus_transpiler::modelcheck::ir::inline_zero_arg_helper_calls(
+        &mut transition,
+        &bundle.spec_functions,
+    );
 
     let transition_branch_labels = transition
         .branches
