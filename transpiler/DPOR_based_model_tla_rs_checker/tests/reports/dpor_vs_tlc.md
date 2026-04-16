@@ -39,26 +39,33 @@ finishes the same state space in 1.5 s.
 
 | # | Case | DPOR states | DPOR time | TLC states | TLC time | Parity | Gap |
 |---|---|---:|---:|---:|---:|---|---:|
-| 01 | aplusb | 6 | 0.05 s | 6 | 1.38 s | **MATCH** | — |
-| 02 | counter_incdec | 5 | 0.17 s | 5 | 1.32 s | MATCH | — |
+| 01 | aplusb | 6 | 0.05 s | 6 | 1.38 s | **MATCH** | DPOR wins 27.6x ‡ |
+| 02 | counter_incdec | 5 | 0.17 s | 5 | 1.32 s | MATCH | DPOR wins 7.8x ‡ |
 | 03 | counter_race_bug | 13 | 3.51 s | 13 | 1.59 s | MATCH | 2.2x |
-| 04 | lock_basic | 3 | 0.06 s | 3 | 1.45 s | MATCH | — |
-| 05 | broken_lock_bug | 5 | 0.07 s | 5 | 1.55 s | MATCH | — |
+| 04 | lock_basic | 3 | 0.06 s | 3 | 1.45 s | MATCH | DPOR wins 24.2x ‡ |
+| 05 | broken_lock_bug | 5 | 0.07 s | 5 | 1.55 s | MATCH | DPOR wins 22.1x ‡ |
 | 06 | ticket_lock | 7 | 9.34 s | 7 | 1.36 s | MATCH | 6.9x |
-| 07 | producer_consumer | 11 | 0.07 s | 11 | 1.39 s | **MATCH** | — |
-| 08 | bounded_buffer | 6 | 3.25 s | 10 | 1.54 s | DIFF | — |
-| 09 | peterson_mutex | 10 | 0.40 s | 10 | 1.47 s | MATCH | — |
-| 10 | bakery_mutex | 24 | 181.7 s | — | timeout | DPOR wins | — |
-| 11 | readers_writers | 4 | 0.72 s | 4 | 1.49 s | MATCH | — |
-| 12 | dining_phil | 6 | 1.04 s | 5 | 1.49 s | DIFF | — |
-| 13 | twophase | 9 | 0.26 s | 9 | 1.45 s | MATCH | — |
+| 07 | producer_consumer | 11 | 0.07 s | 11 | 1.39 s | **MATCH** | DPOR wins 19.9x ‡ |
+| 08 | bounded_buffer | 6 | 3.25 s | 10 | 1.54 s | DIFF | 2.1x |
+| 09 | peterson_mutex | 10 | 0.40 s | 10 | 1.47 s | MATCH | DPOR wins 3.7x |
+| 10 | bakery_mutex | 24 | 181.7 s | — | timeout (>120 s) | DPOR wins | DPOR wins (TLC didn't finish) |
+| 11 | readers_writers | 4 | 0.72 s | 4 | 1.49 s | MATCH | DPOR wins 2.1x |
+| 12 | dining_phil | 6 | 1.04 s | 5 | 1.49 s | DIFF | DPOR wins 1.4x |
+| 13 | twophase | 9 | 0.26 s | 9 | 1.45 s | MATCH | DPOR wins 5.6x ‡ |
 | 14 | **leader_election** | **108** | 477.0 s | **108** | **1.51 s** | **MATCH** | 316x |
-| 15 | chain_replication | 24 | 16.9 s | 74 | 1.40 s | DIFF (deadlock) | — |
-| 16 | primarybackup | 8 | 0.96 s | 48 | 1.59 s | DIFF | — |
-| 17 | **paxos** | **232** | **0.41 s** | **232** | **1.44 s** | **MATCH** | **DPOR wins (3.5x)** |
-| 18 | **pbft** (≈10× scale) | **634** | **1.07 s** | **634** | **1.52 s** | **MATCH** | **DPOR wins (1.4x)** |
-| 19 | epaxos | timeout † | 600 s | 37 | 1.39 s | DPOR regression | — |
+| 15 | chain_replication | 24 | 16.9 s | 74 | 1.40 s | DIFF (deadlock) | 12.1x |
+| 16 | primarybackup | 8 | 0.96 s | 48 | 1.59 s | DIFF | DPOR wins 1.7x |
+| 17 | **paxos** | **232** | **0.41 s** | **232** | **1.44 s** | **MATCH** | **DPOR wins 3.5x** |
+| 18 | **pbft** (≈10× scale) | **634** | **1.07 s** | **634** | **1.52 s** | **MATCH** | **DPOR wins 1.4x** |
+| 19 | epaxos | timeout † | >120 s | 37 | 1.39 s | DPOR regression | TLC wins (DPOR didn't finish) |
 | 20 | **raft** (≈1.6× scale) | **812** | **3.14 s** | **1089** | **1.58 s** | DIFF (DPOR-side bound) | 2.0x |
+
+‡ Small-case TLC times (cases 01-13 with state count ≤ 13) are
+dominated by ~1.3 s of JVM startup + module loading, not by
+state-space exploration. The "DPOR wins 20x" entries on those rows
+mostly measure JVM cold-start cost vs the Rust binary's near-zero
+startup. Compare protocol cases (17/18/20) for engine-vs-engine
+numbers that aren't startup-dominated.
 
 † Phase 38.20.2 replaced case 19's `verus2tla`-generated parameterized
 spec with a hand-written native form. TLC now runs it directly (37
