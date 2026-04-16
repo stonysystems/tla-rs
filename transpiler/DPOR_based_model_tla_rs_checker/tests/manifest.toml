@@ -214,9 +214,9 @@ notes = "REAL PASS candidate for Bug A: Next includes \\E r \\in RM : TMRcvPrepa
 [[case]]
 id = "14_leader_election_small"
 difficulty_rank = 14
-source_kind = "generated_repo_tla"
+source_kind = "hand_written"
 tla_entry = "Election.tla"
-tla_aux_modules = ["Types.tla"]
+tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "ok"
 expected_property = "SafetyElectingSubsetAlive"
@@ -230,9 +230,9 @@ notes = "REAL PASS for Bug B case 14 (2026-04-09): regenerated from source Elect
 [[case]]
 id = "15_chain_replication_small"
 difficulty_rank = 15
-source_kind = "generated_repo_tla"
+source_kind = "hand_written"
 tla_entry = "Chain.tla"
-tla_aux_modules = ["Types.tla"]
+tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "deadlock"
 expected_property = ""
@@ -250,9 +250,9 @@ notes = "Restored from temporary known_unimplemented status (2026-04-10) after P
 [[case]]
 id = "16_primarybackup_small"
 difficulty_rank = 16
-source_kind = "generated_repo_tla"
+source_kind = "hand_written"
 tla_entry = "Primarybackup.tla"
-tla_aux_modules = ["Types.tla"]
+tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "ok"
 expected_property = "SafetyInactiveStateIsQuiescent"
@@ -298,9 +298,9 @@ notes = "REAL PASS candidate for Bug A: Next now includes SendPrePrepare/SendPre
 [[case]]
 id = "19_epaxos_small"
 difficulty_rank = 19
-source_kind = "generated_repo_tla"
+source_kind = "hand_written"
 tla_entry = "Epaxos.tla"
-tla_aux_modules = ["Types.tla"]
+tla_aux_modules = []
 generated_tlars_entry = ""
 expected_primary_result = "ok"
 expected_property = ""

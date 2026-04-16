@@ -1,41 +1,61 @@
-# DPOR vs TLC Performance Comparison (Phase 38.18)
+# DPOR vs TLC Performance Comparison (Phase 38.20)
 
 Generated: 2026-04-16
 
-DPOR run: `run_full_suite.sh --timeout 1800` (single-threaded, with
+DPOR run: `run_full_suite.sh --timeout 600` (single-threaded; with
   Phase 38.17.2 action-call inlining + Phase 38.17.4 DPOR reduction
-  activation + Phase 38.17.6 ProcessId fix + Phase 38.18
-  candidate-state-key-set memoization)
-TLC run: `run_tlc_suite.sh --timeout 1800 --workers 4` (TLC 2.20, Java 11)
+  activation + Phase 38.17.6 ProcessId fix + Phase 38.18.5
+  candidate-state-key-set memoization).
+TLC run: `run_tlc_suite.sh --timeout 120` (TLC 2.20, Java 11). Phase
+  38.20.1 added 0.01 s wall-time resolution; the values shown below
+  reflect real precision, not 1-second integer rounding.
 
 ## Per-Case Comparison
 
-Protocol-case times below reflect the Phase 38.18 candidate-keys cache
-(see §"Phase 38.18 Candidate-Keys Cache"). Small-case times unchanged;
-they were not dominated by the candidate-key set cost.
+Phase 38.20.2 hand-wrote native-TLC TLA+ for cases 14/15/16/19 (was
+verus2tla-generated parameterized form); the four "TLC incompatible"
+rows from the prior report are gone — 0 incompatible cases remain.
+Phase 38.20.3 scaled PBFT from 7 → 20 replicas (49 → 634 states) and
+Raft from 5 → 8 servers (681 → 812 states); Paxos kept at 3/3 (3/4,
+4/3, 4/4 all >600 s on the single-threaded baseline).
 
 | # | Case | DPOR states | DPOR time | TLC states | TLC time | Parity | Gap |
 |---|---|---:|---:|---:|---:|---|---:|
-| 01 | aplusb | 6 | <0.2s | 6 | 3s | **MATCH** | — |
-| 02 | counter_incdec | 5 | 0.2s | 5 | 1s | MATCH | — |
-| 03 | counter_race_bug | 13 | 3.4s | 13 | 2s | MATCH | 1.7x |
-| 04 | lock_basic | 3 | 0.1s | 3 | 1s | MATCH | — |
-| 05 | broken_lock_bug | 5 | 0.1s | 5 | 1s | MATCH | — |
-| 06 | ticket_lock | 7 | 8.6s | — | — | TLC error | — |
-| 07 | producer_consumer | 11 | 0.1s | 11 | 2s | **MATCH** | — |
-| 08 | bounded_buffer | 6 | 6.3s | 10 | 1s | DIFF | — |
-| 09 | peterson_mutex | 10 | 0.4s | 10 | 1s | MATCH | — |
-| 10 | bakery_mutex | 24 | 192s | — | timeout | DPOR wins | — |
-| 11 | readers_writers | 4 | 0.7s | — | — | TLC error | — |
-| 12 | dining_phil | 6 | 0.8s | 5 | 1s | DIFF | — |
-| 13 | twophase | 9 | 0.3s | 9 | 1s | MATCH | — |
-| 14 | leader_election | 1 | 86s | — | — | TLC incompatible | — |
-| 15 | chain_replication | 151 | 137s | — | — | TLC incompatible | — |
-| 16 | primarybackup | 21 | 1.5s | — | — | TLC incompatible | — |
-| 17 | **paxos** | **232** | **0.5s** | **232** | **1s** | **MATCH** | **~0.5x** |
-| 18 | pbft | 49 | 0.07s | 49 | 1s | MATCH | **DPOR wins** |
-| 19 | epaxos | 11 | 52s | — | — | TLC incompatible | — |
-| 20 | **raft** | **681** | **0.43s** | **681** | **2s** | **MATCH** | **DPOR wins** |
+| 01 | aplusb | 6 | 0.05 s | 6 | 1.38 s | **MATCH** | — |
+| 02 | counter_incdec | 5 | 0.17 s | 5 | 1.32 s | MATCH | — |
+| 03 | counter_race_bug | 13 | 3.51 s | 13 | 1.59 s | MATCH | 2.2x |
+| 04 | lock_basic | 3 | 0.06 s | 3 | 1.45 s | MATCH | — |
+| 05 | broken_lock_bug | 5 | 0.07 s | 5 | 1.55 s | MATCH | — |
+| 06 | ticket_lock | 7 | 9.34 s | 7 | 1.36 s | MATCH | 6.9x |
+| 07 | producer_consumer | 11 | 0.07 s | 11 | 1.39 s | **MATCH** | — |
+| 08 | bounded_buffer | 6 | 3.25 s | 10 | 1.54 s | DIFF | — |
+| 09 | peterson_mutex | 10 | 0.40 s | 10 | 1.47 s | MATCH | — |
+| 10 | bakery_mutex | 24 | 181.7 s | — | timeout | DPOR wins | — |
+| 11 | readers_writers | 4 | 0.72 s | 4 | 1.49 s | MATCH | — |
+| 12 | dining_phil | 6 | 1.04 s | 5 | 1.49 s | DIFF | — |
+| 13 | twophase | 9 | 0.26 s | 9 | 1.45 s | MATCH | — |
+| 14 | **leader_election** | **108** | 477.0 s | **108** | **1.51 s** | **MATCH** | 316x |
+| 15 | chain_replication | 24 | 16.9 s | 74 | 1.40 s | DIFF (deadlock) | — |
+| 16 | primarybackup | 8 | 0.96 s | 48 | 1.59 s | DIFF | — |
+| 17 | **paxos** | **232** | **0.41 s** | **232** | **1.44 s** | **MATCH** | **DPOR wins (3.5x)** |
+| 18 | **pbft** (≈10× scale) | **634** | **1.07 s** | **634** | **1.52 s** | **MATCH** | **DPOR wins (1.4x)** |
+| 19 | epaxos | timeout † | 600 s | 37 | 1.39 s | DPOR regression | — |
+| 20 | **raft** (≈1.6× scale) | **812** | **3.14 s** | **1089** | **1.58 s** | DIFF (DPOR-side bound) | 2.0x |
+
+† Phase 38.20.2 replaced case 19's `verus2tla`-generated parameterized
+spec with a hand-written native form. TLC now runs it directly (37
+states, 1.39 s — was "TLC incompatible"). The DPOR side regressed
+because the previous parameterized form fit a faster engine path; the
+12-field native state struct overflows the candidate-enumeration
+fallback. Tracked under Phase 38.18 follow-ups (parallelize the
+explorer or add IR-level helper inlining).
+
+State-count diffs on cases 15/16/20 reflect DPOR-side
+`tests/model_configs/*.toml` bounds being smaller than the matching
+TLC bounds in the .tla files (e.g. case 20 Raft DPOR runs at int
+max=8 while TLC runs unbounded inside the tla file). Pure semantic
+mismatches (the four "TLC incompatible" rows) were eliminated by
+Phase 38.20.2.
 
 ## Phase 38.17 Improvement Summary
 

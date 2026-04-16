@@ -1,25 +1,12 @@
-# Model config — case 15 deadlock closure profile (38.15.2.d.a)
-#
-# Selected reproducible row (2026-04-10):
-# - result: deadlock_detected
-# - stop_reason: DeadlockDetected
-# - initial_states: 1
-# - distinct_states: 151
-# - deadlock depth: 1
-# - command: verus-transpile model-check ... --model this_file --json-report
-
-[constants.assignments]
-chain_len = 2
-node_id = 1
-State = 0
-CRMessage = 0
-Constants = 0
+# Model config — case 15 hand-written Chain Replication (Phase 38.20.2).
+# Single-node middle-node perspective in a chain of length 3.
+# Values = {1,2}; history is a Set<Values>.
 
 [search]
-max_depth = 2
+max_depth = 6
 max_states = 100000
-timeout_ms = 180000
-candidate_eval_guardrail = 1000000
+timeout_ms = 60000
+candidate_eval_guardrail = 100000
 
 [properties]
 invariants = []
@@ -27,9 +14,9 @@ check_deadlock = true
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 2 }
+int = { min = 0, max = 1 }
 
 [collections]
-max_set_len = 1
+max_set_len = 2
 max_seq_len = 1
 max_map_len = 1

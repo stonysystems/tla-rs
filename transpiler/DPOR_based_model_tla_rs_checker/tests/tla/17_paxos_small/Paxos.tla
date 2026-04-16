@@ -6,6 +6,15 @@ EXTENDS Naturals
 
 VARIABLE maxBal, maxVBal, maxVal
 
+\* Phase 38.20.3: scale axis explored:
+\*   3/3 (baseline): 232 states, 0.51 s
+\*   3/4 (more values): >600 s timeout
+\*   4/3 (more acceptors): >600 s timeout
+\*   4/4: >600 s timeout
+\* Settled on keeping 3/3 — single-decree Paxos's reachable-state
+\* space at any larger bound exceeds the 10-minute DPOR budget on the
+\* current single-threaded explorer. Future scale-up depends on
+\* Phase 38.18.1 (parallelize the explorer).
 Acceptors == {1, 2, 3}
 Values == {1, 2, 3}
 
@@ -44,6 +53,9 @@ Send2b(a, b, v) ==
     /\ maxVBal' = maxVBal \cup {b}
     /\ maxVal' = maxVal \cup {v}
 
+\* Next is fully unrolled (no \E quantifiers) so the Phase-38.17.2
+\* action-call inliner can convert each branch to direct-assignment
+\* form. \E-quantified Next regressed Paxos to >600 s.
 Next ==
     \/ Send1a(1) \/ Send1a(2) \/ Send1a(3)
     \/ Send1b(1, 1) \/ Send1b(1, 2) \/ Send1b(1, 3)

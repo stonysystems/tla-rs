@@ -243,7 +243,7 @@ for case_dir in "$TLA_DIR"/*/; do
     if [[ -z "$tla_entry" ]]; then
         echo "ERROR: no manifest entry found"
         ERRORS=$((ERRORS + 1))
-        result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"error\", \"error\": \"no_manifest_entry\", \"states\": 0, \"elapsed_s\": 0, \"expected\": \"\"}"
+        result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"error\", \"error\": \"no_manifest_entry\", \"states\": 0, \"elapsed_s\": 0.00, \"expected\": \"\"}"
         [[ "$TOTAL" -gt 1 ]] && RESULTS_JSON="$RESULTS_JSON,"
         RESULTS_JSON="$RESULTS_JSON
   $result_json"
@@ -254,7 +254,7 @@ for case_dir in "$TLA_DIR"/*/; do
     if [[ ! -f "$tla_file" ]]; then
         echo "ERROR: TLA+ file not found: $tla_file"
         ERRORS=$((ERRORS + 1))
-        result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"error\", \"error\": \"tla_file_missing\", \"states\": 0, \"elapsed_s\": 0, \"expected\": \"$expected_result\"}"
+        result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"error\", \"error\": \"tla_file_missing\", \"states\": 0, \"elapsed_s\": 0.00, \"expected\": \"$expected_result\"}"
         [[ "$TOTAL" -gt 1 ]] && RESULTS_JSON="$RESULTS_JSON,"
         RESULTS_JSON="$RESULTS_JSON
   $result_json"
@@ -265,7 +265,7 @@ for case_dir in "$TLA_DIR"/*/; do
     if [[ "$expected_result" == "known_unimplemented" ]]; then
         echo "SKIPPED (known_unimplemented)"
         SKIPPED=$((SKIPPED + 1))
-        result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"skipped\", \"reason\": \"known_unimplemented\", \"states\": 0, \"elapsed_s\": 0, \"expected\": \"$expected_result\"}"
+        result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"skipped\", \"reason\": \"known_unimplemented\", \"states\": 0, \"elapsed_s\": 0.00, \"expected\": \"$expected_result\"}"
         [[ "$TOTAL" -gt 1 ]] && RESULTS_JSON="$RESULTS_JSON,"
         RESULTS_JSON="$RESULTS_JSON
   $result_json"
@@ -326,7 +326,7 @@ ElectionMessage = 0"
         if [[ -z "$generated_mc_wrapper" ]]; then
             echo "TLC_INCOMPATIBLE (parameterized Init/Next, wrapper gen failed)"
             INCOMPATIBLE=$((INCOMPATIBLE + 1))
-            result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"tlc_incompatible\", \"reason\": \"parameterized_init_next\", \"states\": 0, \"elapsed_s\": 0, \"expected\": \"$expected_result\"}"
+            result_json="{\"case_id\": \"$case_id\", \"tlc_result\": \"tlc_incompatible\", \"reason\": \"parameterized_init_next\", \"states\": 0, \"elapsed_s\": 0.00, \"expected\": \"$expected_result\"}"
             [[ "$TOTAL" -gt 1 ]] && RESULTS_JSON="$RESULTS_JSON,"
             RESULTS_JSON="$RESULTS_JSON
   $result_json"
@@ -583,7 +583,9 @@ WRAPEOF
 
     # ---- Run TLC ----
     tlc_stdout="$(mktemp /tmp/tlc_out_${case_id}_XXXXXX.txt)"
-    start_epoch=$(date +%s)
+    # Phase 38.20.1: nanosecond-precision wall time for sub-second runs.
+    # GNU date %N is required (Linux); BSD date returns literal "N".
+    start_ns=$(date +%s%N)
 
     # Run from the case directory so TLC resolves module references
     (
@@ -592,8 +594,9 @@ WRAPEOF
     ) > "$tlc_stdout" 2>&1
     tlc_exit=$?
 
-    end_epoch=$(date +%s)
-    elapsed_s=$((end_epoch - start_epoch))
+    end_ns=$(date +%s%N)
+    elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
+    elapsed_s=$(printf "%d.%02d" $((elapsed_ms / 1000)) $(( (elapsed_ms % 1000) / 10 )))
 
     # ---- Parse TLC output ----
     tlc_result="unknown"
@@ -734,5 +737,7 @@ echo "  Skipped:              $SKIPPED"
 echo "========================================"
 echo "Results written to: tests/reports/tlc_results.json"
 echo ""
-echo "NOTE: 'TLC incompatible' cases (14, 15, 16, 19) use parameterized"
-echo "      Init(s,c)/Next(s,s_,c) which TLC cannot directly model-check."
+echo "NOTE: Phase 38.20.2 hand-wrote native-TLC TLA+ for cases 14/15/16/19,"
+echo "      so TLC runs them directly without the parameterized-MC wrapper."
+echo "      The wrapper code path remains for any future case that re-introduces"
+echo "      parameterized Init(s,c)/Next(s,s_,c) shapes."

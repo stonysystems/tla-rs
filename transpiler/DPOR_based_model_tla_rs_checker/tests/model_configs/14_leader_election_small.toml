@@ -1,9 +1,12 @@
-# Model config — narrow bounds for tractable existential expansion
+# Model config — case 14 hand-written Election spec (Phase 38.20.2).
+# Nodes = {1,2,3}, single-node bully-election perspective.
+# Bounds tuned to match the spec's universe and stay tractable.
 
 [search]
-max_depth = 20
+max_depth = 6
 max_states = 100000
-timeout_ms = 30000
+timeout_ms = 60000
+candidate_eval_guardrail = 100000
 
 [properties]
 invariants = []
@@ -11,9 +14,9 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 1 }
+int = { min = 0, max = 2 }
 
 [collections]
-max_set_len = 1
+max_set_len = 2
 max_seq_len = 1
 max_map_len = 1

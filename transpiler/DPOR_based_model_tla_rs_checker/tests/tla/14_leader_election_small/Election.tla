@@ -1,129 +1,146 @@
 ---- MODULE Election ----
-\* Auto-generated from Verus spec by verus2tla
-\* DO NOT EDIT MANUALLY
+\* Hand-written single-node Bully leader-election spec for DPOR case 14.
+\* Replaces the prior verus2tla-emitted parameterized Init/Next that TLC
+\* could not enumerate without a wrapper. This version uses TLC-native
+\* VARIABLES + Init/Next so the case runs directly under TLC.
+\*
+\* Models one node's local view during a Bully election. Other nodes are
+\* abstracted as nondeterministic event sources via existential
+\* quantification over Nodes in Next.
 
-EXTENDS Integers, Sequences, FiniteSets
+EXTENDS Naturals, FiniteSets
 
-CONSTANTS State, Constants, ElectionMessage
+VARIABLE electing, has_leader, leader, alive,
+         has_highest, highest_heard,
+         waiting_answer, waiting_node
 
-Init(s, c) ==
-    /\ s.electing = {}
-    /\ s.has_leader = FALSE
-    /\ s.leader = 0
-    /\ s.alive = c.nodes
-    /\ s.has_highest = FALSE
-    /\ s.highest_heard = 0
-    /\ s.waiting_answer = FALSE
-    /\ s.waiting_node = 0
+Nodes == {1, 2}
 
-DetectFailure(s, s_, c, node, sent_packets) ==
-    /\ node \in s.alive
-    /\ s.has_leader = TRUE
-    /\ ~s.leader \in s.alive
-    /\ s_.electing = s.electing \cup {node}
-    /\ s_.waiting_answer = TRUE
-    /\ s_.waiting_node = node
-    /\ s_.has_leader = s.has_leader
-    /\ s_.leader = s.leader
-    /\ s_.alive = s.alive
-    /\ s_.has_highest = s.has_highest
-    /\ s_.highest_heard = s.highest_heard
-    /\ sent_packets = <<[sender |-> node]>>
+Init ==
+    /\ electing = {}
+    /\ has_leader = FALSE
+    /\ leader = 0
+    /\ alive = Nodes
+    /\ has_highest = FALSE
+    /\ highest_heard = 0
+    /\ waiting_answer = FALSE
+    /\ waiting_node = 0
 
-StartElection(s, s_, c, node, sent_packets) ==
-    /\ node \in s.alive
-    /\ s_.electing = s.electing \cup {node}
-    /\ s_.has_leader = FALSE
-    /\ s_.leader = 0
-    /\ s_.waiting_answer = TRUE
-    /\ s_.waiting_node = node
-    /\ s_.alive = s.alive
-    /\ s_.has_highest = s.has_highest
-    /\ s_.highest_heard = s.highest_heard
-    /\ sent_packets = <<[sender |-> node]>>
+DetectFailure(node) ==
+    /\ node \in alive
+    /\ has_leader = TRUE
+    /\ leader \notin alive
+    /\ electing' = electing \cup {node}
+    /\ waiting_answer' = TRUE
+    /\ waiting_node' = node
+    /\ has_leader' = has_leader
+    /\ leader' = leader
+    /\ alive' = alive
+    /\ has_highest' = has_highest
+    /\ highest_heard' = highest_heard
 
-SendAnswer(s, s_, c, node, sender, sent_packets) ==
-    /\ node \in s.alive
+StartElection(node) ==
+    /\ node \in alive
+    /\ electing' = electing \cup {node}
+    /\ has_leader' = FALSE
+    /\ leader' = 0
+    /\ waiting_answer' = TRUE
+    /\ waiting_node' = node
+    /\ alive' = alive
+    /\ has_highest' = has_highest
+    /\ highest_heard' = highest_heard
+
+SendAnswer(node, sender) ==
+    /\ node \in alive
     /\ node > sender
-    /\ s_.electing = s.electing \cup {node}
-    /\ s_.has_highest = TRUE
-    /\ s_.highest_heard = IF ~s.has_highest \/ node > s.highest_heard THEN node ELSE s.highest_heard
-    /\ s_.has_leader = s.has_leader
-    /\ s_.leader = s.leader
-    /\ s_.alive = s.alive
-    /\ s_.waiting_answer = s.waiting_answer
-    /\ s_.waiting_node = s.waiting_node
-    /\ sent_packets = <<[responder |-> node]>>
+    /\ electing' = electing \cup {node}
+    /\ has_highest' = TRUE
+    /\ highest_heard' = IF (~has_highest) \/ (node > highest_heard)
+                        THEN node ELSE highest_heard
+    /\ has_leader' = has_leader
+    /\ leader' = leader
+    /\ alive' = alive
+    /\ waiting_answer' = waiting_answer
+    /\ waiting_node' = waiting_node
 
-ReceiveAnswer(s, s_, c, node, responder, sent_packets) ==
-    /\ node \in s.alive
-    /\ s.waiting_answer = TRUE
-    /\ s.waiting_node = node
-    /\ s_.waiting_answer = FALSE
-    /\ s_.waiting_node = 0
-    /\ s_.electing = s.electing \ {node}
-    /\ s_.has_leader = s.has_leader
-    /\ s_.leader = s.leader
-    /\ s_.alive = s.alive
-    /\ s_.has_highest = s.has_highest
-    /\ s_.highest_heard = s.highest_heard
-    /\ sent_packets = <<>>
+ReceiveAnswer(node) ==
+    /\ node \in alive
+    /\ waiting_answer = TRUE
+    /\ waiting_node = node
+    /\ waiting_answer' = FALSE
+    /\ waiting_node' = 0
+    /\ electing' = electing \ {node}
+    /\ has_leader' = has_leader
+    /\ leader' = leader
+    /\ alive' = alive
+    /\ has_highest' = has_highest
+    /\ highest_heard' = highest_heard
 
-SendCoordinator(s, s_, c, node, sent_packets) ==
-    /\ node \in s.alive
-    /\ node \in s.electing
-    /\ s.waiting_answer = TRUE
-    /\ s.waiting_node = node
-    /\ s_.has_leader = TRUE
-    /\ s_.leader = node
-    /\ s_.electing = s.electing \ {node}
-    /\ s_.waiting_answer = FALSE
-    /\ s_.waiting_node = 0
-    /\ s_.alive = s.alive
-    /\ s_.has_highest = s.has_highest
-    /\ s_.highest_heard = s.highest_heard
-    /\ sent_packets = <<[leader |-> node]>>
+SendCoordinator(node) ==
+    /\ node \in alive
+    /\ node \in electing
+    /\ waiting_answer = TRUE
+    /\ waiting_node = node
+    /\ has_leader' = TRUE
+    /\ leader' = node
+    /\ electing' = electing \ {node}
+    /\ waiting_answer' = FALSE
+    /\ waiting_node' = 0
+    /\ alive' = alive
+    /\ has_highest' = has_highest
+    /\ highest_heard' = highest_heard
 
-ReceiveCoordinator(s, s_, c, node, leader, sent_packets) ==
-    /\ node \in s.alive
-    /\ s_.has_leader = TRUE
-    /\ s_.leader = leader
-    /\ s_.electing = s.electing \ {node}
-    /\ s_.alive = s.alive
-    /\ s_.has_highest = s.has_highest
-    /\ s_.highest_heard = s.highest_heard
-    /\ s_.waiting_answer = s.waiting_answer
-    /\ s_.waiting_node = s.waiting_node
-    /\ sent_packets = <<>>
+ReceiveCoordinator(node, new_leader) ==
+    /\ node \in alive
+    /\ has_leader' = TRUE
+    /\ leader' = new_leader
+    /\ electing' = electing \ {node}
+    /\ alive' = alive
+    /\ has_highest' = has_highest
+    /\ highest_heard' = highest_heard
+    /\ waiting_answer' = waiting_answer
+    /\ waiting_node' = waiting_node
 
-NodeFail(s, s_, c, node, sent_packets) ==
-    /\ node \in s.alive
-    /\ s_.alive = s.alive \ {node}
-    /\ s_.electing = s.electing \ {node}
-    /\ s_.has_leader = IF s.has_leader /\ s.leader = node THEN FALSE ELSE s.has_leader
-    /\ s_.leader = IF s.has_leader /\ s.leader = node THEN 0 ELSE s.leader
-    /\ s_.waiting_answer = IF s.waiting_answer /\ s.waiting_node = node THEN FALSE ELSE s.waiting_answer
-    /\ s_.waiting_node = IF s.waiting_answer /\ s.waiting_node = node THEN 0 ELSE s.waiting_node
-    /\ s_.has_highest = s.has_highest
-    /\ s_.highest_heard = s.highest_heard
-    /\ sent_packets = <<>>
+NodeFail(node) ==
+    /\ node \in alive
+    /\ alive' = alive \ {node}
+    /\ electing' = electing \ {node}
+    /\ has_leader' = IF has_leader /\ leader = node THEN FALSE ELSE has_leader
+    /\ leader'     = IF has_leader /\ leader = node THEN 0 ELSE leader
+    /\ waiting_answer' = IF waiting_answer /\ waiting_node = node
+                         THEN FALSE ELSE waiting_answer
+    /\ waiting_node'   = IF waiting_answer /\ waiting_node = node
+                         THEN 0 ELSE waiting_node
+    /\ has_highest' = has_highest
+    /\ highest_heard' = highest_heard
 
-Next(s, s_, c) ==
-    \/ \E node \in Int, sent_packets \in Seq(ElectionMessage) : DetectFailure(s, s_, c, node, sent_packets)
-    \/ \E node \in Int, sent_packets \in Seq(ElectionMessage) : StartElection(s, s_, c, node, sent_packets)
-    \/ \E node \in Int, sender \in Int, sent_packets \in Seq(ElectionMessage) : SendAnswer(s, s_, c, node, sender, sent_packets)
-    \/ \E node \in Int, responder \in Int, sent_packets \in Seq(ElectionMessage) : ReceiveAnswer(s, s_, c, node, responder, sent_packets)
-    \/ \E node \in Int, sent_packets \in Seq(ElectionMessage) : SendCoordinator(s, s_, c, node, sent_packets)
-    \/ \E node \in Int, leader \in Int, sent_packets \in Seq(ElectionMessage) : ReceiveCoordinator(s, s_, c, node, leader, sent_packets)
-    \/ \E node \in Int, sent_packets \in Seq(ElectionMessage) : NodeFail(s, s_, c, node, sent_packets)
+Next ==
+    \E n \in Nodes :
+        \/ DetectFailure(n)
+        \/ StartElection(n)
+        \/ \E sndr \in Nodes : SendAnswer(n, sndr)
+        \/ ReceiveAnswer(n)
+        \/ SendCoordinator(n)
+        \/ \E ldr \in Nodes : ReceiveCoordinator(n, ldr)
+        \/ NodeFail(n)
 
-SafetyElectingSubsetAlive(s, c) ==
-    \A node \in Int : node \in s.electing => node \in s.alive
+SafetyElectingSubsetAlive ==
+    \A n \in Nodes : n \in electing => n \in alive
 
-SafetyWaitingNodeAliveWhenWaiting(s, c) ==
-    s.waiting_answer => s.waiting_node \in s.alive
+SafetyWaitingNodeAliveWhenWaiting ==
+    waiting_answer => waiting_node \in alive
 
-SafetyNoWaitingImpliesClearedWaitingNode(s, c) ==
-    ~s.waiting_answer => s.waiting_node = 0
+SafetyNoWaitingImpliesClearedWaitingNode ==
+    ~waiting_answer => waiting_node = 0
 
-====
+TypeOK ==
+    /\ electing \subseteq Nodes
+    /\ has_leader \in BOOLEAN
+    /\ leader \in (Nodes \cup {0})
+    /\ alive \subseteq Nodes
+    /\ has_highest \in BOOLEAN
+    /\ highest_heard \in (Nodes \cup {0})
+    /\ waiting_answer \in BOOLEAN
+    /\ waiting_node \in (Nodes \cup {0})
+
+================================================================================

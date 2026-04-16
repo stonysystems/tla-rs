@@ -1,10 +1,14 @@
-# Model config for case 17: Paxos
-# 3 acceptors / 3 values, no LConstants (hard-coded in spec).
+# Model config for case 17: Paxos.
+# Phase 38.20.3: kept at 3 acceptors / 3 values. Scale-up attempts
+# (3/4, 4/3, 4/4) all exceed 600 s on the current single-threaded
+# baseline explorer. See Paxos.tla comment block for the sweep.
+# Future scale-up depends on Phase 38.18.1 (parallelize) or further
+# Phase-38.18.5-style memoization wins.
 
 [search]
 max_depth = 30
 max_states = 500000
-timeout_ms = 1800000
+timeout_ms = 600000
 candidate_eval_guardrail = 500000
 
 [properties]

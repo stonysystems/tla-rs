@@ -1,25 +1,30 @@
-# Model config for case 20: Raft
-# 5 servers for meaningful quorum-based election state space.
+# Model config for case 20: Raft.
+# Phase 38.20.3: scaled from 5 servers (681 states, 0.43 s) to 8
+# servers to push DPOR wall-time toward the 10-min budget.
+# Sweep: 5 → 681 / 0.43 s; 7 → 812 / 1.43 s; 10/12 → evaluator-hook
+# missing for LFollower at int max ≥ 8. Settled on 8 — the largest
+# value where the evaluator's constants-dependent expression for
+# Init still resolves.
 
 [constants.assignments]
-server = 5
+server = 8
 
 [search]
 max_depth = 30
 max_states = 500000
-timeout_ms = 1800000
+timeout_ms = 600000
 candidate_eval_guardrail = 500000
 
 [properties]
-invariants = ["ElectionSafety"]
+invariants = ["LElectionSafety"]
 check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 5 }
+int = { min = 0, max = 8 }
 
 [collections]
-max_set_len = 5
+max_set_len = 8
 max_seq_len = 2
 max_map_len = 2
 

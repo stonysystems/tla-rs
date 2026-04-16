@@ -1,14 +1,22 @@
-# Model config for case 18: PBFT
-# 7 replicas (f=2, quorum=5) for meaningful state space.
+# Model config for case 18: PBFT.
+# Phase 38.20.3: scaled from 7 replicas (49 states, 0.07 s) to 20
+# replicas (f=2 stays hardcoded in Init). Sweep:
+#   7  → 49 states, 0.07 s
+#   10 → 124 / 0.16 s
+#   20 → 634 / 0.86 s
+#   50 → evaluator-hook missing for LPrePrepare at int max=50
+# Settled on 20 — 13x state-count increase, ~12x wall-time. Larger
+# bounds need a Phase-38.18-style fix to the evaluator or
+# parallelization (Phase 38.18.1).
 
 [constants.assignments]
-replica = 7
+replica = 20
 f = 2
 
 [search]
 max_depth = 100
 max_states = 500000
-timeout_ms = 1800000
+timeout_ms = 600000
 candidate_eval_guardrail = 500000
 
 [properties]
@@ -17,7 +25,7 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 7 }
+int = { min = 0, max = 20 }
 
 [collections]
 max_set_len = 1

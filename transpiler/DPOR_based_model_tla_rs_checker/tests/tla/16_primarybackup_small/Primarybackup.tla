@@ -1,161 +1,172 @@
 ---- MODULE Primarybackup ----
-\* Auto-generated from Verus spec by verus2tla
-\* DO NOT EDIT MANUALLY
+\* Hand-written single-node Primary-Backup spec for DPOR case 16.
+\* Replaces the prior verus2tla-emitted parameterized Init/Next that TLC
+\* could not enumerate (untyped record-tag access on s.role.tag).
+\*
+\* Models one node's local view in a Primary-Backup pair. The node's
+\* role transitions Primary -> Inactive on PrimaryFail and Inactive ->
+\* Primary on BackupPromote. Backup state fields (backup_log_length /
+\* backup_last_value / backup_synced) track the local node's view of
+\* its peer.
 
-EXTENDS Integers, Sequences, FiniteSets
+EXTENDS Naturals, FiniteSets
 
-CONSTANTS State, PBMessage, Constants
+VARIABLE role, log_length, last_value,
+         has_pending, pending_value, acked,
+         backup_log_length, backup_last_value, backup_synced, view
 
-Init(s, c) ==
-    /\ s.role.tag = Primary
-    /\ s.log_length = 0
-    /\ s.last_value = 0
-    /\ s.has_pending = FALSE
-    /\ s.pending_value = 0
-    /\ s.acked = TRUE
-    /\ s.backup_log_length = 0
-    /\ s.backup_last_value = 0
-    /\ s.backup_synced = TRUE
-    /\ s.view = 0
+\* Role encoded as a small integer to avoid TLC model-value pitfalls:
+\*   1 = Primary, 2 = Backup, 3 = Inactive
+Primary  == 1
+Backup   == 2
+Inactive == 3
+Roles    == {Primary, Backup, Inactive}
 
-PrimaryWrite(s, s_, c, val, sent_packets) ==
-    /\ s.role.tag = Primary
-    /\ s.acked = TRUE
-    /\ s.has_pending = FALSE
-    /\ s.log_length < c.max_log_len
-    /\ s_.has_pending = TRUE
-    /\ s_.pending_value = val
-    /\ s_.acked = FALSE
-    /\ s_.role = s.role
-    /\ s_.log_length = s.log_length
-    /\ s_.last_value = s.last_value
-    /\ s_.backup_log_length = s.backup_log_length
-    /\ s_.backup_last_value = s.backup_last_value
-    /\ s_.backup_synced = s.backup_synced
-    /\ s_.view = s.view
-    /\ sent_packets = <<>>
+Values    == {1}
+MaxLogLen == 1
 
-PrimarySendReplicate(s, s_, c, sent_packets) ==
-    /\ s.role.tag = Primary
-    /\ s.has_pending = TRUE
-    /\ s.acked = FALSE
-    /\ s_.role = s.role
-    /\ s_.log_length = s.log_length
-    /\ s_.last_value = s.last_value
-    /\ s_.has_pending = s.has_pending
-    /\ s_.pending_value = s.pending_value
-    /\ s_.acked = s.acked
-    /\ s_.backup_log_length = s.backup_log_length
-    /\ s_.backup_last_value = s.backup_last_value
-    /\ s_.backup_synced = s.backup_synced
-    /\ s_.view = s.view
-    /\ sent_packets = <<[val |-> s.pending_value]>>
+Init ==
+    /\ role = Primary
+    /\ log_length = 0
+    /\ last_value = 0
+    /\ has_pending = FALSE
+    /\ pending_value = 0
+    /\ acked = TRUE
+    /\ backup_log_length = 0
+    /\ backup_last_value = 0
+    /\ backup_synced = TRUE
+    /\ view = 0
 
-BackupReceiveReplicate(s, s_, c, val, sent_packets) ==
-    /\ s.role.tag = Primary
-    /\ s_.backup_log_length = s.backup_log_length + 1
-    /\ s_.backup_last_value = val
-    /\ s_.backup_synced = TRUE
-    /\ s_.role = s.role
-    /\ s_.log_length = s.log_length
-    /\ s_.last_value = s.last_value
-    /\ s_.has_pending = s.has_pending
-    /\ s_.pending_value = s.pending_value
-    /\ s_.acked = s.acked
-    /\ s_.view = s.view
-    /\ sent_packets = <<>>
+PrimaryWrite(val) ==
+    /\ role = Primary
+    /\ acked = TRUE
+    /\ has_pending = FALSE
+    /\ log_length < MaxLogLen
+    /\ has_pending' = TRUE
+    /\ pending_value' = val
+    /\ acked' = FALSE
+    /\ role' = role
+    /\ log_length' = log_length
+    /\ last_value' = last_value
+    /\ backup_log_length' = backup_log_length
+    /\ backup_last_value' = backup_last_value
+    /\ backup_synced' = backup_synced
+    /\ view' = view
 
-BackupSendAck(s, s_, c, sent_packets) ==
-    /\ s.role.tag = Primary
-    /\ s.backup_synced = TRUE
-    /\ s_.role = s.role
-    /\ s_.log_length = s.log_length
-    /\ s_.last_value = s.last_value
-    /\ s_.has_pending = s.has_pending
-    /\ s_.pending_value = s.pending_value
-    /\ s_.acked = s.acked
-    /\ s_.backup_log_length = s.backup_log_length
-    /\ s_.backup_last_value = s.backup_last_value
-    /\ s_.backup_synced = s.backup_synced
-    /\ s_.view = s.view
-    /\ sent_packets = <<Ack>>
+PrimarySendReplicate ==
+    /\ role = Primary
+    /\ has_pending = TRUE
+    /\ acked = FALSE
+    /\ UNCHANGED <<role, log_length, last_value, has_pending, pending_value,
+                   acked, backup_log_length, backup_last_value, backup_synced,
+                   view>>
 
-PrimaryReceiveAck(s, s_, c, sent_packets) ==
-    /\ s.role.tag = Primary
-    /\ s.has_pending = TRUE
-    /\ s_.acked = TRUE
-    /\ s_.role = s.role
-    /\ s_.log_length = s.log_length
-    /\ s_.last_value = s.last_value
-    /\ s_.has_pending = s.has_pending
-    /\ s_.pending_value = s.pending_value
-    /\ s_.backup_log_length = s.backup_log_length
-    /\ s_.backup_last_value = s.backup_last_value
-    /\ s_.backup_synced = s.backup_synced
-    /\ s_.view = s.view
-    /\ sent_packets = <<>>
+BackupReceiveReplicate(val) ==
+    /\ role = Primary
+    /\ backup_log_length < MaxLogLen + 1
+    /\ backup_log_length' = backup_log_length + 1
+    /\ backup_last_value' = val
+    /\ backup_synced' = TRUE
+    /\ role' = role
+    /\ log_length' = log_length
+    /\ last_value' = last_value
+    /\ has_pending' = has_pending
+    /\ pending_value' = pending_value
+    /\ acked' = acked
+    /\ view' = view
 
-PrimaryCommit(s, s_, c, sent_packets) ==
-    /\ s.role.tag = Primary
-    /\ s.acked = TRUE
-    /\ s.has_pending = TRUE
-    /\ s_.log_length = s.log_length + 1
-    /\ s_.last_value = s.pending_value
-    /\ s_.has_pending = FALSE
-    /\ s_.pending_value = 0
-    /\ s_.acked = TRUE
-    /\ s_.role = s.role
-    /\ s_.backup_log_length = s.backup_log_length
-    /\ s_.backup_last_value = s.backup_last_value
-    /\ s_.backup_synced = s.backup_synced
-    /\ s_.view = s.view
-    /\ sent_packets = <<>>
+BackupSendAck ==
+    /\ role = Primary
+    /\ backup_synced = TRUE
+    /\ UNCHANGED <<role, log_length, last_value, has_pending, pending_value,
+                   acked, backup_log_length, backup_last_value, backup_synced,
+                   view>>
 
-PrimaryFail(s, s_, c, sent_packets) ==
-    /\ s.role.tag = Primary
-    /\ s_.role.tag = Inactive
-    /\ s_.has_pending = FALSE
-    /\ s_.pending_value = 0
-    /\ s_.acked = TRUE
-    /\ s_.log_length = s.log_length
-    /\ s_.last_value = s.last_value
-    /\ s_.backup_log_length = s.backup_log_length
-    /\ s_.backup_last_value = s.backup_last_value
-    /\ s_.backup_synced = FALSE
-    /\ s_.view = s.view
-    /\ sent_packets = <<>>
+PrimaryReceiveAck ==
+    /\ role = Primary
+    /\ has_pending = TRUE
+    /\ acked' = TRUE
+    /\ role' = role
+    /\ log_length' = log_length
+    /\ last_value' = last_value
+    /\ has_pending' = has_pending
+    /\ pending_value' = pending_value
+    /\ backup_log_length' = backup_log_length
+    /\ backup_last_value' = backup_last_value
+    /\ backup_synced' = backup_synced
+    /\ view' = view
 
-BackupPromote(s, s_, c, sent_packets) ==
-    /\ s.role.tag = Inactive
-    /\ s_.role.tag = Primary
-    /\ s_.log_length = s.backup_log_length
-    /\ s_.last_value = s.backup_last_value
-    /\ s_.has_pending = FALSE
-    /\ s_.pending_value = 0
-    /\ s_.acked = TRUE
-    /\ s_.backup_log_length = s.backup_log_length
-    /\ s_.backup_last_value = s.backup_last_value
-    /\ s_.backup_synced = TRUE
-    /\ s_.view = s.view + 1
-    /\ sent_packets = <<>>
+PrimaryCommit ==
+    /\ role = Primary
+    /\ acked = TRUE
+    /\ has_pending = TRUE
+    /\ log_length' = log_length + 1
+    /\ last_value' = pending_value
+    /\ has_pending' = FALSE
+    /\ pending_value' = 0
+    /\ acked' = TRUE
+    /\ role' = role
+    /\ backup_log_length' = backup_log_length
+    /\ backup_last_value' = backup_last_value
+    /\ backup_synced' = backup_synced
+    /\ view' = view
 
-Next(s, s_, c) ==
-    \/ \E val \in Int, sent_packets \in Seq(PBMessage) : PrimaryWrite(s, s_, c, val, sent_packets)
-    \/ \E sent_packets \in Seq(PBMessage) : PrimarySendReplicate(s, s_, c, sent_packets)
-    \/ \E val \in Int, sent_packets \in Seq(PBMessage) : BackupReceiveReplicate(s, s_, c, val, sent_packets)
-    \/ \E sent_packets \in Seq(PBMessage) : BackupSendAck(s, s_, c, sent_packets)
-    \/ \E sent_packets \in Seq(PBMessage) : PrimaryReceiveAck(s, s_, c, sent_packets)
-    \/ \E sent_packets \in Seq(PBMessage) : PrimaryCommit(s, s_, c, sent_packets)
-    \/ \E sent_packets \in Seq(PBMessage) : PrimaryFail(s, s_, c, sent_packets)
-    \/ \E sent_packets \in Seq(PBMessage) : BackupPromote(s, s_, c, sent_packets)
+PrimaryFail ==
+    /\ role = Primary
+    /\ view < 2
+    /\ role' = Inactive
+    /\ has_pending' = FALSE
+    /\ pending_value' = 0
+    /\ acked' = TRUE
+    /\ log_length' = log_length
+    /\ last_value' = last_value
+    /\ backup_log_length' = backup_log_length
+    /\ backup_last_value' = backup_last_value
+    /\ backup_synced' = FALSE
+    /\ view' = view
 
-SafetyNoPendingImpliesClearedValue(s, c) ==
-    ~s.has_pending => s.pending_value = 0
+BackupPromote ==
+    /\ role = Inactive
+    /\ role' = Primary
+    /\ log_length' = backup_log_length
+    /\ last_value' = backup_last_value
+    /\ has_pending' = FALSE
+    /\ pending_value' = 0
+    /\ acked' = TRUE
+    /\ backup_log_length' = backup_log_length
+    /\ backup_last_value' = backup_last_value
+    /\ backup_synced' = TRUE
+    /\ view' = view + 1
 
-SafetyUnackedImpliesPending(s, c) ==
-    ~s.acked => s.has_pending
+Next ==
+    \/ \E v \in Values : PrimaryWrite(v)
+    \/ PrimarySendReplicate
+    \/ \E v \in Values : BackupReceiveReplicate(v)
+    \/ BackupSendAck
+    \/ PrimaryReceiveAck
+    \/ PrimaryCommit
+    \/ PrimaryFail
+    \/ BackupPromote
 
-SafetyInactiveStateIsQuiescent(s, c) ==
-    s.role.tag = Inactive => (~s.has_pending /\ s.acked /\ ~s.backup_synced)
+SafetyNoPendingImpliesClearedValue ==
+    ~has_pending => pending_value = 0
 
-====
+SafetyUnackedImpliesPending ==
+    ~acked => has_pending
+
+SafetyInactiveStateIsQuiescent ==
+    role = Inactive => (~has_pending /\ acked /\ ~backup_synced)
+
+TypeOK ==
+    /\ role \in Roles
+    /\ log_length \in 0..MaxLogLen
+    /\ last_value \in (Values \cup {0})
+    /\ has_pending \in BOOLEAN
+    /\ pending_value \in (Values \cup {0})
+    /\ acked \in BOOLEAN
+    /\ backup_log_length \in 0..(MaxLogLen + 1)
+    /\ backup_last_value \in (Values \cup {0})
+    /\ backup_synced \in BOOLEAN
+    /\ view \in Nat
+
+================================================================================
