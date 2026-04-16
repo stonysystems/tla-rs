@@ -19,6 +19,24 @@ Phase 38.20.3 scaled PBFT from 7 → 20 replicas (49 → 634 states) and
 Raft from 5 → 8 servers (681 → 812 states); Paxos kept at 3/3 (3/4,
 4/3, 4/4 all >600 s on the single-threaded baseline).
 
+**Column key.** *Parity* compares **distinct-state counts only**, not
+wall-time:
+- `MATCH` = DPOR distinct-state count exactly equals TLC distinct-state
+  count (same reachable state space at the configured bounds).
+- `DIFF`  = state counts differ (usually because DPOR-side and TLC-side
+  bounds aren't perfectly aligned, or because the spec deadlocks on
+  one side under different action orderings).
+- `DPOR wins` / `DPOR regression` = comparison incomplete (one side
+  timed out or failed).
+
+The *Gap* column is the DPOR/TLC wall-time ratio. A row can show
+`MATCH` (state-count parity) and a multi-x time gap simultaneously — the
+two are independent dimensions. e.g. case 14 has identical 108-state
+exploration on both engines (MATCH) while DPOR took 316× longer to do
+it (Gap), driven by case 14's heavy candidate-enumeration fallback
+that doesn't hit the Phase-38.17.2 inliner; TLC's compiled enumeration
+finishes the same state space in 1.5 s.
+
 | # | Case | DPOR states | DPOR time | TLC states | TLC time | Parity | Gap |
 |---|---|---:|---:|---:|---:|---|---:|
 | 01 | aplusb | 6 | 0.05 s | 6 | 1.38 s | **MATCH** | — |
