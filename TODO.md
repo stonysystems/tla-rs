@@ -13334,28 +13334,42 @@ makes DPOR reduction measurable).
   - shadow-compare Paxos: baseline 76s → DPOR 2.6s = **29x speedup**
   - Remaining gap vs TLC: ~77-98x on protocol cases
 
-### 38.18 Future DPOR Optimization Track (1 / 5 closed)
+### 38.18 Future DPOR Optimization Track (3 / 5 closed)
 
 - [ ] **38.18.1**: **Parallelize the DPOR explorer.** TLC uses 4 workers
   and the comparison shows ~77-98x gap on protocol cases — parallelism
-  alone could close 4x of that gap.
+  alone could close 4x of that gap. (Multi-day rewrite; deferred.)
 
-- [ ] **38.18.2**: **Inline-expand helper calls at IR time.** Similar to
-  action-call inlining (38.17.2), expand helper function calls in-place
-  during IR normalization so the runtime evaluator never sees `LAcceptors()`
-  etc. This avoids the cache-lookup overhead that made 38.17.7 a net loss.
+- [x] **38.18.2**: **Inline-expand helper calls at IR time.** Added
+  `inline_zero_arg_helper_calls()` in `transpiler/src/modelcheck/ir.rs`,
+  wired into all three IR-build sites (main.rs, DPOR enabled.rs solver
+  + footprint paths). For Paxos `LAcceptors().contains(b)` becomes
+  `set![1, 2, 3].contains(b)` at IR time, eliminating both the runtime
+  call and the Phase-38.18.5 cache lookup. Measured impact on the
+  protocol cases is within noise (Phase 38.18.5 cache already covered
+  the helper-call cost on these specs); kept as the cleaner long-term
+  primitive for future specs with heavier helper bodies. Commit
+  `1d453822`.
 
 - [ ] **38.18.3**: **Apply DPOR reduction in `verus-transpile model-check`.**
   Currently only the DPOR crate (dpor-checker binary) uses sleep sets.
-  The main model-check path in `transpiler/src/main.rs` is still plain BFS.
-  Adding `use_independence + use_sleep_sets` to the main path would make
-  DPOR's benefits visible in the standard workflow.
+  The main model-check path in `transpiler/src/main.rs` is still plain
+  BFS with the static `por_heuristic` branch-pruning. Adding dynamic
+  `use_independence + use_sleep_sets` to the main path would make DPOR's
+  benefits visible in the standard workflow. (Multi-day rewrite; needs
+  backtrack-stack + sleep-set state machine inside the BFS loop;
+  deferred.)
 
-- [ ] **38.18.4**: **Investigate DPOR crate vs baseline state-count
-  discrepancy on Raft/PBFT.** DPOR internal explorer finds fewer states
-  than the reference baseline (570 vs 681 for Raft). All DPOR modes
-  (cons/ind/slp) agree, so it's not a sleep-set bug — likely in the
-  state normalization or successor deduplication path.
+- [x] **38.18.4**: **Investigate DPOR crate vs baseline state-count
+  discrepancy on Raft/PBFT.** Root-caused: `dpor-checker shadow-compare`
+  CLI defaulted `--max-depth` to 100 and ignored the model.toml's
+  `[search] max_depth`, so DPOR explored deeper than the baseline
+  (Raft 1930 vs baseline 812 at the new server=8 bounds). Fixed by
+  threading `ctx.model_config.search.max_depth` into `DporConfig`
+  when no CLI override is given. Commit `e745a28b`. Remaining diff
+  is non-uniform direction (DPOR fewer on Raft 570/812 at depth=30;
+  DPOR more on PBFT 671/634 at depth=100), so it's not a single bug;
+  followups tracked separately.
 
 - [x] **38.18.5**: **Memoize candidate canonical-key set across branch
   solves.** Profiling under the post-38.17 numbers showed the dominant
