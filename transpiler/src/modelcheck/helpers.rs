@@ -12,7 +12,48 @@ use crate::modelcheck::evaluator::{eval_expr, EvalContext};
 use crate::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use crate::spec_analyzer::SpecSchema;
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
+
+// Phase 38.17.7: Thread-local cache for helper function call evaluations.
+// Keyed by (function_name, canonical_args_key). For deterministic specs,
+// the result is a pure function of the args — caching eliminates repeated
+// evaluation of the same helper call across branches and states.
+thread_local! {
+    static HELPER_CALL_CACHE: RefCell<BTreeMap<String, RuntimeValue>> =
+        RefCell::new(BTreeMap::new());
+    static HELPER_CACHE_HITS: RefCell<u64> = RefCell::new(0);
+    static HELPER_CACHE_MISSES: RefCell<u64> = RefCell::new(0);
+}
+
+/// Clear the helper call cache. Should be called at the start of a fresh
+/// model-check run to avoid cross-run pollution.
+pub fn clear_helper_call_cache() {
+    HELPER_CALL_CACHE.with(|c| c.borrow_mut().clear());
+    HELPER_CACHE_HITS.with(|h| *h.borrow_mut() = 0);
+    HELPER_CACHE_MISSES.with(|m| *m.borrow_mut() = 0);
+}
+
+pub fn helper_cache_stats() -> (u64, u64) {
+    (
+        HELPER_CACHE_HITS.with(|h| *h.borrow()),
+        HELPER_CACHE_MISSES.with(|m| *m.borrow()),
+    )
+}
+
+fn helper_cache_key(func_name: &str, args: &[RuntimeValue]) -> String {
+    let mut key = String::with_capacity(func_name.len() + 64);
+    key.push_str(func_name);
+    key.push('(');
+    for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+            key.push(',');
+        }
+        key.push_str(&arg.canonical_key());
+    }
+    key.push(')');
+    key
+}
 
 /// Normalize a call path by splitting `::` segments and stripping generics.
 pub fn normalize_call_path(path: &Path) -> String {
@@ -160,6 +201,17 @@ pub fn eval_spec_function_call_recursive(
         });
     }
 
+    // Phase 38.17.7: Check the cache first. Helper calls are pure functions
+    // of their args, so caching the result eliminates redundant evaluation.
+    let cache_key = helper_cache_key(&function.name, args);
+    if let Some(cached) =
+        HELPER_CALL_CACHE.with(|c| c.borrow().get(&cache_key).cloned())
+    {
+        HELPER_CACHE_HITS.with(|h| *h.borrow_mut() += 1);
+        return Ok(cached);
+    }
+    HELPER_CACHE_MISSES.with(|m| *m.borrow_mut() += 1);
+
     let mut ctx = EvalContext::new(bounds);
     for (param, value) in function.params.iter().zip(args.iter()) {
         ctx = ctx.with_binding(param.name.clone(), value.clone());
@@ -182,12 +234,19 @@ pub fn eval_spec_function_call_recursive(
     ctx = ctx.with_call_evaluator(&recursive_call);
     ctx = ctx.with_quantifier_domain_evaluator(&quantifier_domain);
 
-    eval_expr(&function.body, &ctx).map_err(|err| TranspileError::Config {
+    let result = eval_expr(&function.body, &ctx).map_err(|err| TranspileError::Config {
         message: format!(
             "Failed to evaluate helper call `{}` via `{}`: {}",
             normalize_call_path(func_path),
             function.name,
             err
         ),
-    })
+    })?;
+
+    // Phase 38.17.7: Cache the result for future calls with the same args.
+    HELPER_CALL_CACHE.with(|c| {
+        c.borrow_mut().insert(cache_key, result.clone());
+    });
+
+    Ok(result)
 }
