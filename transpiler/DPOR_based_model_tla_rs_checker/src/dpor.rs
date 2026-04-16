@@ -3112,6 +3112,43 @@ max_seq_len = 4
     }
 
     #[test]
+    #[ignore = "evidence-generation: DPOR reduction on protocol cases (17/18/20)"]
+    fn print_dpor_reduction_protocol_cases() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let cases: Vec<(&str, &str, &str)> = vec![
+            ("17_paxos_small", "Paxos.rs", "LChosenValueAgreement"),
+            ("18_pbft_small", "PBFT.rs", "LPBFTSafety"),
+            ("20_raft_small", "Raft.rs", "LElectionSafety"),
+        ];
+        println!("| Case | Cons states | Ind states | Slp states | Cons trans | Ind trans | Slp trans |");
+        for (case_id, filename, _inv) in &cases {
+            let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
+            if !spec_file.exists() {
+                continue;
+            }
+            let model_path = case_model_config(case_id);
+            let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let configs = [
+                ("cons", DporConfig { max_depth: 30, max_states: 500000, use_independence: false, use_sleep_sets: false, invariants: vec![], check_deadlock: false }),
+                ("ind",  DporConfig { max_depth: 30, max_states: 500000, use_independence: true, use_sleep_sets: false, invariants: vec![], check_deadlock: false }),
+                ("slp",  DporConfig { max_depth: 30, max_states: 500000, use_independence: true, use_sleep_sets: true, invariants: vec![], check_deadlock: false }),
+            ];
+            let mut states = [0usize; 3];
+            let mut trans = [0usize; 3];
+            for (i, (_label, cfg)) in configs.iter().enumerate() {
+                let r = explore_dpor(&ctx, cfg);
+                states[i] = r.distinct_states.len();
+                trans[i] = r.transitions_fired;
+            }
+            println!("| {} | {} | {} | {} | {} | {} | {} |",
+                case_id, states[0], states[1], states[2], trans[0], trans[1], trans[2]);
+        }
+    }
+
+    #[test]
     fn test_case20_raft_is_real_non_vacuous_pass() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let spec_file = manifest_dir.join("tests/tla-rs/20_raft_small/Raft.rs");

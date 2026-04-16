@@ -1100,6 +1100,16 @@ fn infer_process_id(
         }
     }
 
+    // Phase 38.17.6: If the branch has NO existential variables, it's a
+    // concrete-enum variant (e.g., LSend1a(s, s_, 1) after inlining — the
+    // formal param `b` was substituted with concrete 1). These are
+    // non-deterministic choices of the same transition, NOT different
+    // processes. Return ProcessId(0) so sleep-set pruning doesn't
+    // incorrectly classify them as independent.
+    if assignment.is_empty() {
+        return ProcessId(0);
+    }
+
     // No process-like binder available: deterministic hash fallback.
     ProcessId(stable_nonzero_process_hash(branch_label))
 }
