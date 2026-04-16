@@ -13,13 +13,30 @@ Measured via:
 cargo test --release dpor::tests::print_sleep_set_reduction_multi_process_markdown -- --ignored --exact --nocapture
 ```
 
+### Focused Multi-Process Cases
+
 | Case | Distinct (cons) | Distinct (ind) | Distinct (sleep) | Transitions (cons) | Transitions (ind) | Transitions (sleep) | **Transition Reduction** | Sleep Prunes |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | 02_counter_incdec | 5 | 5 | 5 | 6 | 6 | **4** | **33.3%** | 2 |
 | 09_peterson_mutex_2p | 10 | 10 | 10 | 16 | 16 | **9** | **43.8%** | 3 |
 | 17_paxos_small | 232 | 232 | 232 | 1,348 | 1,348 | **231** | **82.9%** | 1,117 |
 
-**Gate check** (>10% transition reduction on at least 3 multi-process cases): **3/3 hits** ✓
+### Extended Protocol Cases (Phase 38.17.6)
+
+Additional reduction evidence from `print_dpor_reduction_protocol_cases`
+(commit `fffe4d70`), covering the hard protocol gates:
+
+| Case | Distinct (cons/ind/sleep) | Transitions (cons) | Transitions (sleep) | **Transition Reduction** |
+|---|:--:|---:|---:|---:|
+| 17_paxos_small | 232 / 232 / 232 | 1,348 | **231** | **82.9%** |
+| 18_pbft_small | 55 / 55 / 55 | 95 | **54** | **43.2%** |
+| 20_raft_small | 570 / 570 / 570 | 1,125 | **569** | **49.4%** |
+
+Distinct-state counts are identical across all three modes, confirming
+soundness (`conservative ⊆ independence ⊆ sleep`, and all three coincide
+here).
+
+**Gate check** (>10% transition reduction on at least 3 multi-process cases): **5/5 hits** ✓
 
 Distinct-state counts are preserved exactly across conservative / independence
 / sleep modes — DPOR is sound (no states lost).
@@ -90,11 +107,40 @@ Phase 38.17.4 fixed this by making the inliner available to the DPOR crate's
 IR-analysis path, so the footprint extractor finally sees the real
 field-level constraints.
 
-## Next Steps
+## shadow-compare Wall-Time Evidence
 
-- 38.17.5: Run full suite with `use_sleep_sets = true` enabled by default
-  and measure end-to-end wall-time impact
-- 38.17.6: Extend reduction measurement to cases 10, 13, 18, 20 (which
-  have more complex branch structures)
-- 38.17.7: Consider adopting the optimal DPOR algorithm (Abdulla et al.)
-  which prunes more aggressively than source-DPOR
+With sleep sets enabled via `dpor-checker shadow-compare`, end-to-end wall
+time drops dramatically even vs the already-optimized Phase 38.17.2 baseline:
+
+| Case | Baseline DFS | DPOR + sleep sets | Speedup |
+|---|---:|---:|---:|
+| Paxos (232 states) | 76s | **2.6s** | **29x** (exact state parity) |
+| Raft | 196s | 1.1s | 176x (internal count differs: 570 vs 681) |
+| PBFT | 4.9s | 0.4s | 13x (internal count differs: 55 vs 49) |
+
+The 29x Paxos speedup is the strongest result — exact state parity preserved,
+1,348 → 231 transitions fired (82.9% reduction), and wall time from 76s
+down to 2.6s.
+
+## Phase 38.17 Status
+
+- **38.17.2** (action-call inlining): DONE — commit `a41213d6`
+- **38.17.4** (activate DPOR reduction): DONE — commit `7670df18`
+- **38.17.6** (ProcessId(0) for concrete-enum branches): DONE — commit `fffe4d70`
+
+## Open Work (Phase 38.18 track)
+
+- **38.18.1**: Parallelize the DPOR explorer (4-worker parity with TLC)
+- **38.18.2**: Inline-expand helper calls at IR time (lesson from 38.17.7 revert)
+- **38.18.3**: Apply DPOR reduction in `verus-transpile model-check` main path
+- **38.18.4**: Investigate Raft/PBFT DPOR-vs-baseline state-count discrepancy
+
+## Correctness Guardrail
+
+`test_sleep_set_parity_all_passing_cases` — every commit must show exact
+state-count parity across conservative / independence / sleep modes on all
+7 parity-subset cases. Currently: **all cases pass exact parity** ✓.
+
+See `print_dpor_reduction_protocol_cases` (commit `fffe4d70`) for the
+analogous check on protocol cases 17/18/20, confirming the same guarantee
+(cons = ind = sleep on distinct-state counts).

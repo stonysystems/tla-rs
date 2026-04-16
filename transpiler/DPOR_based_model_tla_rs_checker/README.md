@@ -70,3 +70,15 @@ This prototype must earn mainline integration by demonstrating:
 3. A green regression story exists before any `transpiler/src/modelcheck` changes.
 
 See `design.md` §"Prototype-to-Mainline Integration Gate" for details.
+
+## Current Status (Phase 38.17 final, 2026-04-16)
+
+- **Suite**: 20/20 real passes, 0 vacuous, 0 failed (see `tests/reports/latest.md`)
+- **Protocol speedups** (main path): Paxos 6.6x, PBFT 19x, Raft 5.7x
+- **DPOR reduction**: active on all multi-process cases, 5/5 >10% transition
+  reduction gate hits (Paxos 82.9%, Raft 49.4%, PBFT 43.2%)
+- **With DPOR reduction** (shadow-compare): Paxos 29x speedup with exact state
+  parity
+
+See `tests/reports/dpor_vs_tlc.md` for the head-to-head comparison against TLC
+and `tests/reports/sleep_set_reduction_table.md` for the reduction evidence.

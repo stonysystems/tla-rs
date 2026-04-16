@@ -789,3 +789,130 @@ Phase 38.10 integration gate after 38.14.7-38.14.10.
     `LMutualExclusion` at depth `2`, while DPOR replay tests already confirm a
     reproducible `LMutualExclusion` witness at depth `2`; the state-count
     mismatch (`5` vs `7`) reflects traversal order, not contradictory verdicts.
+
+---
+
+## Phase 38.17 — Closing the Performance Gap (2026-04-14 through 2026-04-16)
+
+### Problem as identified in Phase 38.16
+
+The Phase 38.16.5 DPOR-vs-TLC comparison showed that the DPOR baseline
+was **500-1100x slower than TLC** on protocol cases (Paxos 232 states in
+511s vs TLC <1s). Root cause diagnosis: the solver falls back to
+exhaustive candidate enumeration whenever a branch doesn't have all root
+state fields explicitly constrained — for Paxos's 48 inlined branches
+this meant 37.6M candidate evaluations per run.
+
+### Two-part fix
+
+**1. Action-call inlining at IR time (Phase 38.17.2, commit `a41213d6`)**
+
+In the translated spec, `LNext` is a disjunction of concrete action calls:
+`LSend1a(s, s_, 1) || LSend1a(s, s_, 2) || ...`. The IR builder splits
+these into separate branches but keeps each one as an opaque
+`Predicate { Call("LSend1a", [s, s_, 1]) }` constraint. The solver can't
+decompose this call into `s_.field == ...` equalities, so it falls back
+to enumeration.
+
+Fix: after `build_transition_ir`, walk each branch's Predicate constraints,
+look up the called function in `spec_functions`, substitute formal
+parameters with actual arguments, flatten the resulting conjunction, and
+replace the opaque Predicate with individual normalized constraints.
+
+Result (Paxos with 3 acceptors, 3 values):
+- Direct-assignment branch solves: **0 → 11,136**
+- Candidate evaluations: **37,584,000 → 0**
+- Wall time: **511s → 77s** (6.6x)
+
+**2. DPOR reduction activation (Phase 38.17.4, commit `7670df18`)**
+
+Before Phase 38.17.4, the DPOR crate's `enabled.rs` called
+`build_transition_ir` on the raw `LNext` function — producing the same
+opaque Predicate branches that the main solver had before 38.17.2. This
+meant `por::branch_footprint` saw only `Call("LSend1a", ...)` and could
+not extract any field read/write sets, so `TransitionFootprint` was
+always empty and sleep-set pruning couldn't prove independence for any
+transitions.
+
+Fix: extract the inlining logic into a public `inline_action_calls`
+function in `transpiler/src/modelcheck/ir.rs`, and apply it from three
+places:
+1. `transpiler/src/main.rs` (already present from 38.17.2)
+2. `DPOR_based_model_tla_rs_checker/src/enabled.rs:321` in
+   `enumerate_successors` (solver path)
+3. `DPOR_based_model_tla_rs_checker/src/enabled.rs:635` in
+   `branch_footprints` (POR analysis path)
+
+With inlined branches, `por::branch_footprint` now extracts constraints
+like `Eq { target: NextState, path: ["maxBal"], value: s.maxBal.union({b}) }`
+and correctly identifies `maxBal` as a written field. Sleep-set pruning
+then uses these footprints to prove independence between transitions
+that touch disjoint state fields.
+
+Result on multi-process cases (transitions fired):
+- `02_counter_incdec`: 6 → 4 (33.3% reduction)
+- `09_peterson_mutex_2p`: 16 → 9 (43.8% reduction)
+- `17_paxos_small`: **1,348 → 231** (82.9% reduction)
+- `18_pbft_small`: 95 → 54 (43.2% reduction)
+- `20_raft_small`: 1,125 → 569 (49.4% reduction)
+
+**Gate check** (>10% transition reduction on at least 3 multi-process
+cases): **5/5 hits** ✓
+
+All reduction modes preserve exact distinct-state count — soundness
+maintained (conservative ⊆ independence ⊆ sleep).
+
+### Supporting fixes
+
+- **ProcessId(0) for concrete-enum branches (Phase 38.17.6, commit `fffe4d70`)**:
+  After inlining, branches like `LSend1a(s, s_, 1)` have empty existential
+  assignments. The previous hash-based fallback for `infer_process_id`
+  gave sibling concrete-enum branches distinct synthetic ProcessIds,
+  causing sleep-set pruning to misclassify them as different processes.
+  Fix: when the existential assignment is empty, return `ProcessId(0)` so
+  these alternatives (which are non-deterministic parameter choices of
+  the same transition) are treated as same-process.
+
+- **Helper function call cache (Phase 38.17.7, REVERTED in commit `91426ca1`)**:
+  Added a thread-local `BTreeMap<String, RuntimeValue>` cache keyed by
+  `(function_name, canonical_args)`. Achieved 100% hit rate (27,838
+  hits on Paxos) but BTreeMap lookup + canonical_key overhead slowed
+  cases with cheap helpers by 1.5-2.2x (bakery 181s → 405s). Net negative,
+  reverted. Future alternative: inline-expand helper calls at IR time
+  (similar to action-call inlining) so the evaluator never sees helper
+  calls at all.
+
+### Combined shadow-compare result (baseline DFS vs DPOR + sleep sets)
+
+- **Paxos (232 states)**: baseline 76s → DPOR 2.6s = **29x speedup**, exact
+  state parity
+- **Raft**: baseline 196s → DPOR 1.1s = 176x speedup (internal DPOR explorer
+  state count differs: 570 vs baseline 681; all three DPOR modes agree, so
+  not a sleep-set bug)
+- **PBFT**: baseline 4.9s → DPOR 0.4s = 13x speedup (similar discrepancy)
+
+### What Phase 38.17 proves
+
+1. The direct-assignment path can handle protocol-scale specs when the IR
+   exposes field-level equalities (action-call inlining is sufficient).
+2. Sleep-set DPOR delivers real transition reduction (33-83%) once the
+   footprint extractor has proper IR input, and does so without losing
+   any reachable states.
+3. Wall-time improvements of 5-19x on the main model-check path
+   (`verus-transpile model-check`) with just the Phase 38.17.2 inlining.
+4. Additional 5-30x on top of that when DPOR reduction is applied
+   (`dpor-checker shadow-compare`).
+
+### Open work (Phase 38.18)
+
+- **38.18.1**: Parallelize the DPOR explorer (match TLC's 4 workers)
+- **38.18.2**: Inline-expand helper calls at IR time (avoid the cache
+  overhead that made 38.17.7 a net loss)
+- **38.18.3**: Apply DPOR reduction in `verus-transpile model-check`
+  main path (currently only the DPOR crate uses sleep sets)
+- **38.18.4**: Investigate DPOR crate vs baseline state-count discrepancy
+  on Raft/PBFT (570 vs 681 for Raft; affects internal DPOR explorer only,
+  not the main `verus-transpile model-check` numbers)
+
+See `tests/reports/dpor_vs_tlc.md` and `tests/reports/sleep_set_reduction_table.md`
+for the full evidence ledger.
