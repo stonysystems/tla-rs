@@ -372,6 +372,179 @@ pub fn flatten_branch_body_pub(expr: Expr) -> (Vec<Binding>, Vec<Expr>) {
     flatten_branch_body(expr)
 }
 
+/// Phase 38.17.4: Inline action predicate calls in branch constraints.
+/// When LNext decomposes into branches like `LSend1a(s, s_, 1)`, the IR
+/// creates a single Predicate { Call("LSend1a", ...) } constraint. The
+/// solver can't extract s_.field assignments from this opaque call,
+/// forcing the 500x-slower candidate-enumeration fallback.
+///
+/// This function looks up the called function in `spec_functions`,
+/// substitutes formal parameters with actual arguments, and expands the
+/// conjunction into individual normalized constraints. If the inlined
+/// result has no NextState Eq constraints, the original Predicate call
+/// is kept (for the predicate_only_solver to handle).
+///
+/// Returns the number of branches that were inlined.
+pub fn inline_action_calls(
+    transition: &mut TransitionIr,
+    spec_functions: &[SpecFunction],
+) -> usize {
+    let current_state_param = transition.current_state_param.clone();
+    let next_state_param = transition.next_state_param.clone();
+    let constants_param = transition.constants_param.clone();
+    let mut inlined_count = 0;
+
+    for branch in &mut transition.branches {
+        let mut new_constraints = Vec::new();
+        let mut any_inlined = false;
+        for constraint in &branch.constraints {
+            if let BranchConstraintIr::Predicate { expr } = constraint {
+                if let Expr::Call { func, args } = expr {
+                    let func_name = func.segments.last().map(|s| s.as_str()).unwrap_or("");
+                    if let Some(spec_fn) = spec_functions.iter().find(|f| f.name == func_name) {
+                        let body = substitute_call_args(&spec_fn.body, &spec_fn.params, args);
+                        let (_, conjuncts) = flatten_branch_body(body);
+                        let inlined_constraints: Vec<BranchConstraintIr> = conjuncts
+                            .into_iter()
+                            .map(|c| {
+                                normalize_constraint(
+                                    c,
+                                    &current_state_param,
+                                    &next_state_param,
+                                    constants_param.as_deref(),
+                                )
+                            })
+                            .collect();
+                        let has_next_state_eq = inlined_constraints.iter().any(|c| {
+                            matches!(
+                                c,
+                                BranchConstraintIr::Eq {
+                                    target: ConstraintTarget {
+                                        root: ConstraintRoot::NextState,
+                                        ..
+                                    },
+                                    ..
+                                }
+                            )
+                        });
+                        if has_next_state_eq {
+                            new_constraints.extend(inlined_constraints);
+                            any_inlined = true;
+                            continue;
+                        }
+                    }
+                }
+            }
+            new_constraints.push(constraint.clone());
+        }
+        if any_inlined {
+            branch.constraints = new_constraints;
+            inlined_count += 1;
+        }
+    }
+
+    inlined_count
+}
+
+/// Substitute formal parameters with actual argument expressions.
+fn substitute_call_args(
+    body: &Expr,
+    params: &[crate::ast::Parameter],
+    args: &[Expr],
+) -> Expr {
+    let subst: std::collections::BTreeMap<String, &Expr> = params
+        .iter()
+        .zip(args.iter())
+        .map(|(p, a)| (p.name.clone(), a))
+        .collect();
+    substitute_expr(body, &subst)
+}
+
+fn substitute_expr(
+    expr: &Expr,
+    subst: &std::collections::BTreeMap<String, &Expr>,
+) -> Expr {
+    match expr {
+        Expr::Ident(name) => {
+            if let Some(replacement) = subst.get(name.as_str()) {
+                (*replacement).clone()
+            } else {
+                expr.clone()
+            }
+        }
+        Expr::Eq(lhs, rhs) => Expr::Eq(
+            Box::new(substitute_expr(lhs, subst)),
+            Box::new(substitute_expr(rhs, subst)),
+        ),
+        Expr::Ne(lhs, rhs) => Expr::Ne(
+            Box::new(substitute_expr(lhs, subst)),
+            Box::new(substitute_expr(rhs, subst)),
+        ),
+        Expr::Lt(lhs, rhs) => Expr::Lt(
+            Box::new(substitute_expr(lhs, subst)),
+            Box::new(substitute_expr(rhs, subst)),
+        ),
+        Expr::Le(lhs, rhs) => Expr::Le(
+            Box::new(substitute_expr(lhs, subst)),
+            Box::new(substitute_expr(rhs, subst)),
+        ),
+        Expr::Gt(lhs, rhs) => Expr::Gt(
+            Box::new(substitute_expr(lhs, subst)),
+            Box::new(substitute_expr(rhs, subst)),
+        ),
+        Expr::Ge(lhs, rhs) => Expr::Ge(
+            Box::new(substitute_expr(lhs, subst)),
+            Box::new(substitute_expr(rhs, subst)),
+        ),
+        Expr::Conjunction(exprs) => Expr::Conjunction(
+            exprs.iter().map(|e| substitute_expr(e, subst)).collect(),
+        ),
+        Expr::Disjunction(exprs) => Expr::Disjunction(
+            exprs.iter().map(|e| substitute_expr(e, subst)).collect(),
+        ),
+        Expr::Not(inner) => Expr::Not(Box::new(substitute_expr(inner, subst))),
+        Expr::Binary(lhs, op, rhs) => Expr::Binary(
+            Box::new(substitute_expr(lhs, subst)),
+            op.clone(),
+            Box::new(substitute_expr(rhs, subst)),
+        ),
+        Expr::Field(base, field) => Expr::Field(
+            Box::new(substitute_expr(base, subst)),
+            field.clone(),
+        ),
+        Expr::Arrow(base, field) => Expr::Arrow(
+            Box::new(substitute_expr(base, subst)),
+            field.clone(),
+        ),
+        Expr::Call { func, args } => Expr::Call {
+            func: func.clone(),
+            args: args.iter().map(|a| substitute_expr(a, subst)).collect(),
+        },
+        Expr::MethodCall { receiver, method, args } => Expr::MethodCall {
+            receiver: Box::new(substitute_expr(receiver, subst)),
+            method: method.clone(),
+            args: args.iter().map(|a| substitute_expr(a, subst)).collect(),
+        },
+        Expr::If { cond, then_branch, else_branch } => Expr::If {
+            cond: Box::new(substitute_expr(cond, subst)),
+            then_branch: Box::new(substitute_expr(then_branch, subst)),
+            else_branch: else_branch.as_ref().map(|e| Box::new(substitute_expr(e, subst))),
+        },
+        Expr::Implies(lhs, rhs) => Expr::Implies(
+            Box::new(substitute_expr(lhs, subst)),
+            Box::new(substitute_expr(rhs, subst)),
+        ),
+        Expr::SetLit(exprs) => Expr::SetLit(
+            exprs.iter().map(|e| substitute_expr(e, subst)).collect(),
+        ),
+        Expr::SeqLit(exprs) => Expr::SeqLit(
+            exprs.iter().map(|e| substitute_expr(e, subst)).collect(),
+        ),
+        Expr::View(inner) => Expr::View(Box::new(substitute_expr(inner, subst))),
+        _ => expr.clone(),
+    }
+}
+
 fn flatten_branch_body(expr: Expr) -> (Vec<Binding>, Vec<Expr>) {
     let mut existential_bindings = Vec::new();
     let mut constraints = Vec::new();

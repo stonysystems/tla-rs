@@ -318,7 +318,12 @@ impl SpecContext {
         &self,
         state: &RuntimeValue,
     ) -> TranspileResult<Vec<(String, ProcessId, RuntimeValue)>> {
-        let transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
+        let mut transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
+        // Phase 38.17.4: Inline action calls for direct-assignment solving
+        verus_transpiler::modelcheck::ir::inline_action_calls(
+            &mut transition,
+            &self.bundle.spec_functions,
+        );
 
         let mut assignments_by_branch = std::collections::BTreeMap::new();
         for branch in &transition.branches {
@@ -632,7 +637,13 @@ impl SpecContext {
     ) -> TranspileResult<
         std::collections::BTreeMap<String, verus_transpiler::modelcheck::por::Footprint>,
     > {
-        let transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
+        let mut transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
+        // Phase 38.17.4: Inline action calls so branch_footprint can see the
+        // real s_.field assignments instead of opaque Predicate(Call(...)).
+        verus_transpiler::modelcheck::ir::inline_action_calls(
+            &mut transition,
+            &self.bundle.spec_functions,
+        );
         let mut footprints = std::collections::BTreeMap::new();
         for branch in &transition.branches {
             let fp = verus_transpiler::modelcheck::por::branch_footprint(&transition, branch);
