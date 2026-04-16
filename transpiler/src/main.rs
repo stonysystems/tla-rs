@@ -3540,22 +3540,6 @@ fn execute_model_check(
     let started = Instant::now();
     let mut timing_summary = ModelCheckPhaseTimingSummary::default();
 
-    // Phase 38.17.7: Clear helper call cache at start of each run.
-    verus_transpiler::modelcheck::helpers::clear_helper_call_cache();
-    // Guard that prints cache stats on drop
-    struct CacheStatsGuard;
-    impl Drop for CacheStatsGuard {
-        fn drop(&mut self) {
-            if std::env::var("DPOR_CACHE_STATS").is_ok() {
-                let (hits, misses) = verus_transpiler::modelcheck::helpers::helper_cache_stats();
-                eprintln!("HELPER_CACHE: hits={} misses={} hit_rate={:.1}%",
-                    hits, misses,
-                    if hits + misses > 0 { 100.0 * hits as f64 / (hits + misses) as f64 } else { 0.0 });
-            }
-        }
-    }
-    let _cache_stats_guard = CacheStatsGuard;
-
     let mut transition =
         build_transition_ir(&bundle.entrypoints.lnext).map_err(|e| miette::miette!("{}", e))?;
 
