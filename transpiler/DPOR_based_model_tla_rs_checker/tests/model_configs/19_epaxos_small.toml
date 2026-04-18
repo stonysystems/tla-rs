@@ -1,15 +1,9 @@
 # Model config — case 19 hand-written EPaxos (Phase 38.20.2).
 # Single-replica EPaxos instance, my_id = 0, NumReplicas = 2.
 #
-# KNOWN LIMITATION: hand-written native EPaxos times out at 120 s
-# with only 2 distinct states because the DPOR baseline candidate-
-# enumeration path explodes on the 12-field state struct (phase,
-# senders sets, counts). The pre-Phase-38.20.2 verus2tla-generated
-# spec used a parameterized form that the engine handled via a
-# faster path. TLC runs the new spec in 1.4 s with 37 distinct
-# states. DPOR-side fix is tracked under Phase 38.18 (parallelize
-# explorer or add IR-level helper inlining); see Phase 38.20.2's
-# DPOR-regression note in dpor_vs_tlc.md.
+# Phase 38.18.6 re-enabled deadlock checking: the ∧-through-∨
+# distribution fix cleared the pre-38.18.6 timeout (was stuck in
+# candidate-enumeration fallback). Now finishes in ~0.6 s.
 
 [search]
 max_depth = 4
@@ -19,7 +13,7 @@ candidate_eval_guardrail = 50000
 
 [properties]
 invariants = []
-check_deadlock = false
+check_deadlock = true
 successor_semantics = "deadlock"
 
 [quantifiers]

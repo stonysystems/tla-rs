@@ -360,11 +360,85 @@ fn discover_disjunctive_branches(expr: &Expr) -> Vec<DiscoveredBranch> {
                 }
             })
             .collect(),
+        // Phase 38.18.6: distribute ∧ through nested ∨ so that a body
+        // like `guard(n) ∧ (Call1(n) ∨ Call2(n))` — produced by TLA+
+        // specs of the form `\E n ∈ S : P(n) /\ (A(n) \/ B(n))` — gets
+        // split into per-disjunct branches `guard ∧ Call_i`. Without
+        // this distribution the whole conjunction stays as one branch
+        // and the Phase 38.17.2 action-call inliner can't see the
+        // Call expressions, forcing the 1000x-slower candidate-
+        // enumeration fallback. Kept gated on the "some child is
+        // itself disjunctive" check so trivial conjunctions are left
+        // as a single branch.
+        Expr::Conjunction(items) => {
+            distribute_conjunction_over_disjunction(items).unwrap_or_else(|| {
+                vec![DiscoveredBranch {
+                    existential_bindings: Vec::new(),
+                    expr: expr.clone(),
+                }]
+            })
+        }
+        Expr::Binary(lhs, BinOp::And, rhs) => {
+            let items = vec![(**lhs).clone(), (**rhs).clone()];
+            distribute_conjunction_over_disjunction(&items).unwrap_or_else(|| {
+                vec![DiscoveredBranch {
+                    existential_bindings: Vec::new(),
+                    expr: expr.clone(),
+                }]
+            })
+        }
         _ => vec![DiscoveredBranch {
             existential_bindings: Vec::new(),
             expr: expr.clone(),
         }],
     }
+}
+
+/// Phase 38.18.6: if any conjunct is itself disjunctive (or wraps one
+/// via `Exists`), distribute: return branches of form
+/// `non_disjunctive_conjuncts ∧ one_disjunct`. Otherwise return None
+/// so the caller falls back to the single-branch path.
+fn distribute_conjunction_over_disjunction(items: &[Expr]) -> Option<Vec<DiscoveredBranch>> {
+    let mut disjunctive_items: Vec<(usize, Vec<DiscoveredBranch>)> = Vec::new();
+    for (idx, item) in items.iter().enumerate() {
+        let branches = discover_disjunctive_branches(item);
+        if branches.len() > 1
+            || branches
+                .first()
+                .map_or(false, |b| !b.existential_bindings.is_empty())
+        {
+            disjunctive_items.push((idx, branches));
+        }
+    }
+    if disjunctive_items.is_empty() {
+        return None;
+    }
+    // Pick the first disjunctive conjunct; treat the others as plain
+    // guards on each expanded branch. (Full DNF expansion across
+    // multiple disjunctions is avoided — in practice LNext shapes
+    // have at most one inner disjunction per conjunction.)
+    let (disj_idx, disj_branches) = &disjunctive_items[0];
+    let other_conjuncts: Vec<Expr> = items
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i != disj_idx)
+        .map(|(_, e)| e.clone())
+        .collect();
+    let mut out = Vec::new();
+    for branch in disj_branches {
+        let mut conjuncts: Vec<Expr> = other_conjuncts.clone();
+        conjuncts.push(branch.expr.clone());
+        let combined = if conjuncts.len() == 1 {
+            conjuncts.into_iter().next().unwrap()
+        } else {
+            Expr::Conjunction(conjuncts)
+        };
+        out.push(DiscoveredBranch {
+            existential_bindings: branch.existential_bindings.clone(),
+            expr: combined,
+        });
+    }
+    Some(out)
 }
 
 /// Public wrapper for `flatten_branch_body` (Phase 38.17.2).

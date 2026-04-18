@@ -114,6 +114,11 @@ NodeFail(node) ==
     /\ has_highest' = has_highest
     /\ highest_heard' = highest_heard
 
+\* Phase 38.18.6 distributes ∧ through nested ∨ in branch discovery,
+\* so this `\E n : guard(n) /\ (A(n) \/ B(n) \/ ...)` form is now
+\* handled correctly without manual unrolling. Pre-38.18.6 this
+\* ran in 477 s via the candidate-enumeration fallback; post-fix
+\* it hits the Phase-38.17.2 action-call inliner directly.
 Next ==
     \E n \in Nodes :
         \/ DetectFailure(n)
