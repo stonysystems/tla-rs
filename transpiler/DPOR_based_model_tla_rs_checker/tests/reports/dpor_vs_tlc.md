@@ -1,12 +1,13 @@
-# DPOR vs TLC Performance Comparison (Phase 38.18.6)
+# DPOR vs TLC Performance Comparison (Phase 38.18.7)
 
 Generated: 2026-04-16
 
-DPOR run: `run_full_suite.sh --timeout 300` (single-threaded; with
+DPOR run: `run_full_suite.sh --timeout 120` (single-threaded; with
   Phase 38.17.2 action-call inlining + Phase 38.17.4 DPOR reduction
   activation + Phase 38.17.6 ProcessId fix + Phase 38.18.5
-  candidate-state-key-set memoization + **Phase 38.18.6 ∧-through-∨
-  branch-discovery distribution**).
+  candidate-state-key-set memoization + Phase 38.18.6 ∧-through-∨
+  branch-discovery distribution + **Phase 38.18.7 forall-body q-free
+  conjunct lifting**). **20/20 real pass, 0 vacuous, 0 errors.**
 TLC run: `run_tlc_suite.sh --timeout 120` (TLC 2.20, Java 11). Phase
   38.20.1 added 0.01 s wall-time resolution; the values shown below
   reflect real precision, not 1-second integer rounding.
@@ -45,7 +46,7 @@ two are independent dimensions.
 | 07 | producer_consumer | 11 | 0.07 s | 11 | 1.58 s | **MATCH** | DPOR wins 23.9x ‡ |
 | 08 | bounded_buffer | 6 | 3.11 s | 10 | 1.47 s | DIFF | 2.1x |
 | 09 | peterson_mutex | 10 | 0.07 s | 10 | 1.42 s | MATCH | DPOR wins 20.0x ‡ |
-| 10 | bakery_mutex | 24 | 76.2 s | — | timeout (>120 s) | DPOR wins | DPOR wins (TLC didn't finish) |
+| 10 | bakery_mutex | 24 | **2.43 s** | — | timeout (>120 s) | DPOR wins | DPOR wins (TLC didn't finish) |
 | 11 | readers_writers | 4 | 0.12 s | 4 | 1.46 s | MATCH | DPOR wins 12.2x ‡ |
 | 12 | dining_phil | 6 | 0.13 s | 5 | 1.42 s | DIFF | DPOR wins 10.9x |
 | 13 | twophase | 9 | 0.06 s | 9 | 1.34 s | MATCH | DPOR wins 21.6x ‡ |
@@ -153,10 +154,43 @@ Suite-wide impact (Phase 38.18.5 baseline → Phase 38.18.6):
 | 10 bakery_mutex | 181.7 s | 76.2 s | 2.4× |
 | 19 epaxos | timeout (>120 s) | 0.63 s | ∞ |
 
-Case 10 bakery is the remaining soft spot: 24 of its 96 branches still
-fall back to candidate enumeration (second pattern the inliner can't
-yet match — likely `s_.choosing = s.choosing EXCEPT ![p] = TRUE`-style
-function updates). Tracked as follow-up.
+## Phase 38.18.7 Forall-Body q-Free Conjunct Lifting
+
+After Phase 38.18.6 closed 9 of the 10 slow cases, case 10 Bakery
+was still stuck at 76 s because its `LEnter` action has the shape
+
+    s.pc[p] == "waiting"
+    /\ forall q ∈ Procs\{p} :
+         guard(q) /\ s_.pc == ... /\ s_.choosing == s.choosing
+                  /\ s_.number == s.number
+
+The `s_.field == expr` next-state assignments are nested inside the
+forall body, even though three of them don't depend on `q`. The
+action-call inliner only scans top-level conjuncts, so the hidden
+assignments never reached the direct-assignment solver — 24 of 96
+Bakery branches fell back to candidate enumeration.
+
+Phase 38.18.7 extends `flatten_branch_body_into` to detect
+`Forall { vars, body }` constraints, split `body` at the nested
+implication (`guard ==> (A(q) ∧ B)`), and lift any conjunct `B` that
+doesn't mention the forall-bound variables as an additional top-level
+constraint. The forall itself stays (so the guard still gates the
+branch); only the q-independent next-state assignments are hoisted.
+
+Soundness caveat: the lifted conjunct is required at the top level,
+which is stricter than the original when the forall domain is empty
+(original is vacuously true in that case). For all practical specs
+(Procs ≥ 2, Nodes ≥ 2, Replicas ≥ 2) the domain is non-empty and the
+transformation is sound. See code comment in
+`transpiler/src/modelcheck/ir.rs`.
+
+| Case | Before 38.18.7 | After 38.18.7 | Speedup | Direct / Fallback |
+|---|---:|---:|---:|---:|
+| 10 bakery_mutex | 76.2 s | **2.43 s** | **31×** | 72/24 → 96/0 |
+
+Everything else stays at its 38.18.6 speed. Net result: **20/20 real
+pass**, Bakery is no longer the suite's long pole (now case 03
+counter_race_bug at 244 ms is the median small case).
 
 ## DPOR Reduction Evidence (with sleep sets enabled)
 
@@ -273,6 +307,7 @@ on Paxos is unchanged; only the relative wall-time comparison shifted.
 | e745a28b | 38.18.4 read max_depth from model.toml in shadow-compare | DPOR/baseline state-count alignment |
 | 1d453822 | 38.18.2 inline zero-arg helper calls at IR build time | Within-noise (38.18.5 covers); cleaner primitive |
 | 9776a725 | **38.18.6 distribute ∧ through ∨ in branch discovery** | **Election 917×, Chain 99×, Bakery 2.4×** |
+| (this) | **38.18.7 lift q-free conjuncts out of forall body** | **Bakery 31× (76.2 s → 2.43 s); closes last fallback** |
 
 ## Reproduction
 

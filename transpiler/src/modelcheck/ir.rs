@@ -906,7 +906,109 @@ fn flatten_branch_body_into(
             existential_bindings.extend(vars);
             flatten_branch_body_into(*body, existential_bindings, constraints);
         }
+        Expr::Forall { vars, triggers, body } => {
+            // Phase 38.18.7: lift q-independent conjuncts out of
+            // `forall q : guard(q) ⇒ (A(q) ∧ B)` bodies. The translator
+            // emits Bakery's `LEnter` with all `s_.field == expr`
+            // assignments buried inside the forall body even though
+            // they don't depend on q; the action-call inliner only
+            // scans top-level conjuncts, so those hidden assignments
+            // never reach the direct-assignment solver and every call
+            // falls back to candidate enumeration. Extracting the
+            // q-free conjuncts to the top level fixes that.
+            //
+            // Soundness caveat: the lifted conjunct is required by the
+            // caller, which is stricter than the original when the
+            // forall domain is empty (original is vacuously true).
+            // For all practical specs (Procs ≥ 2, Nodes ≥ 2) the
+            // domain is non-empty and the transformation is sound.
+            // Kept the forall itself as a constraint so the guard
+            // logic still gates the branch.
+            let bound_names: Vec<String> = vars
+                .iter()
+                .filter_map(|v| v.name().map(|s| s.to_string()))
+                .collect();
+            let (lifted_conjuncts, residual_body) =
+                split_forall_body_by_bound_identifiers(&body, &bound_names);
+            let reassembled_forall = Expr::Forall {
+                vars,
+                triggers,
+                body: Box::new(residual_body),
+            };
+            constraints.push(reassembled_forall);
+            for lifted in lifted_conjuncts {
+                flatten_branch_body_into(lifted, existential_bindings, constraints);
+            }
+        }
         other => constraints.push(other),
+    }
+}
+
+/// Phase 38.18.7: split a forall-body conjunction into (lifted, residual)
+/// where `lifted` are conjuncts that don't mention any of the forall-
+/// bound identifiers. Returns (lifted_list, residual_body) where
+/// `residual_body` is the conjunction of the remaining conjuncts (or
+/// `TRUE` literal if none remain). If the body isn't conjunctive or no
+/// conjuncts qualify, `lifted_list` is empty and `residual_body` equals
+/// the original body.
+fn split_forall_body_by_bound_identifiers(
+    body: &Expr,
+    bound_names: &[String],
+) -> (Vec<Expr>, Expr) {
+    // Collect the top-level conjuncts of `body`, peering through the
+    // `guard ⇒ (A ∧ B ∧ ...)` shape that the translator emits for
+    // `\A q ∈ S : body(q)` (which lowers to `S.contains(q) ==> body(q)`).
+    let (guard, inner_body): (Option<Expr>, Expr) = match body {
+        Expr::Implies(lhs, rhs) => (Some((**lhs).clone()), (**rhs).clone()),
+        _ => (None, body.clone()),
+    };
+    let conjuncts = collect_top_level_conjuncts(&inner_body);
+    if conjuncts.len() < 2 {
+        return (Vec::new(), body.clone());
+    }
+    let mentions_bound = |e: &Expr| {
+        bound_names
+            .iter()
+            .any(|name| expr_mentions_identifier(e, name))
+    };
+    let (dependent, independent): (Vec<Expr>, Vec<Expr>) =
+        conjuncts.into_iter().partition(|c| mentions_bound(c));
+    if independent.is_empty() {
+        return (Vec::new(), body.clone());
+    }
+    // Reassemble the forall body with only the q-dependent conjuncts.
+    let residual_inner = if dependent.is_empty() {
+        Expr::Literal(crate::ast::Literal::Bool(true))
+    } else if dependent.len() == 1 {
+        dependent.into_iter().next().unwrap()
+    } else {
+        Expr::Conjunction(dependent)
+    };
+    let residual_body = match guard {
+        Some(g) => Expr::Implies(Box::new(g), Box::new(residual_inner)),
+        None => residual_inner,
+    };
+    (independent, residual_body)
+}
+
+fn collect_top_level_conjuncts(expr: &Expr) -> Vec<Expr> {
+    let mut out = Vec::new();
+    collect_top_level_conjuncts_into(expr, &mut out);
+    out
+}
+
+fn collect_top_level_conjuncts_into(expr: &Expr, out: &mut Vec<Expr>) {
+    match expr {
+        Expr::Conjunction(items) => {
+            for item in items {
+                collect_top_level_conjuncts_into(item, out);
+            }
+        }
+        Expr::Binary(lhs, BinOp::And, rhs) => {
+            collect_top_level_conjuncts_into(lhs, out);
+            collect_top_level_conjuncts_into(rhs, out);
+        }
+        _ => out.push(expr.clone()),
     }
 }
 
