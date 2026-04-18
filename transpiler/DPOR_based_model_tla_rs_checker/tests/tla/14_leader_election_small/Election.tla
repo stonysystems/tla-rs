@@ -14,7 +14,7 @@ VARIABLE electing, has_leader, leader, alive,
          has_highest, highest_heard,
          waiting_answer, waiting_node
 
-Nodes == {1, 2}
+Nodes == {1, 2, 3, 4}
 
 Init ==
     /\ electing = {}

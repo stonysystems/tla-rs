@@ -6,17 +6,17 @@ EXTENDS Naturals
 
 VARIABLE maxBal, maxVBal, maxVal
 
-\* Phase 38.20.3: scale axis explored:
-\*   3/3 (baseline): 232 states, 0.51 s
-\*   3/4 (more values): >600 s timeout
-\*   4/3 (more acceptors): >600 s timeout
-\*   4/4: >600 s timeout
-\* Settled on keeping 3/3 — single-decree Paxos's reachable-state
-\* space at any larger bound exceeds the 10-minute DPOR budget on the
-\* current single-threaded explorer. Future scale-up depends on
-\* Phase 38.18.1 (parallelize the explorer).
-Acceptors == {1, 2, 3}
-Values == {1, 2, 3}
+\* Phase 38.18.8 scale-up sweep (post-inliner-fix):
+\*   3/3 → 232 states / 0.37 s   (baseline)
+\*   4/4 → 1,216 states / 6.7 s
+\*   5/4 → 4,992 states / 46.7 s
+\*   5/5 → 5,984 states / 60.3 s
+\*   6/4 → 20,224 states / 267 s
+\*   6/5 → 24,256 states / 370 s  (chosen — fits in 10-min budget
+\*                                 with ~4 min headroom, 100× the
+\*                                 original state count)
+Acceptors == {1, 2, 3, 4, 5, 6}
+Values == {1, 2, 3, 4, 5}
 
 Init ==
     /\ maxBal = {}
@@ -53,26 +53,15 @@ Send2b(a, b, v) ==
     /\ maxVBal' = maxVBal \cup {b}
     /\ maxVal' = maxVal \cup {v}
 
-\* Next is fully unrolled (no \E quantifiers) so the Phase-38.17.2
-\* action-call inliner can convert each branch to direct-assignment
-\* form. \E-quantified Next regressed Paxos to >600 s.
+\* Phase 38.18.8: with 38.18.6 handling the nested ∨-inside-∧-inside-
+\* ∃ pattern, Next can use \E-quantifier form — branch discovery
+\* automatically unrolls the action parameters to concrete branches.
+\* This scales automatically when Acceptors/Values grow.
 Next ==
-    \/ Send1a(1) \/ Send1a(2) \/ Send1a(3)
-    \/ Send1b(1, 1) \/ Send1b(1, 2) \/ Send1b(1, 3)
-    \/ Send1b(2, 1) \/ Send1b(2, 2) \/ Send1b(2, 3)
-    \/ Send1b(3, 1) \/ Send1b(3, 2) \/ Send1b(3, 3)
-    \/ Send2a(1, 1) \/ Send2a(1, 2) \/ Send2a(1, 3)
-    \/ Send2a(2, 1) \/ Send2a(2, 2) \/ Send2a(2, 3)
-    \/ Send2a(3, 1) \/ Send2a(3, 2) \/ Send2a(3, 3)
-    \/ Send2b(1, 1, 1) \/ Send2b(1, 1, 2) \/ Send2b(1, 1, 3)
-    \/ Send2b(1, 2, 1) \/ Send2b(1, 2, 2) \/ Send2b(1, 2, 3)
-    \/ Send2b(1, 3, 1) \/ Send2b(1, 3, 2) \/ Send2b(1, 3, 3)
-    \/ Send2b(2, 1, 1) \/ Send2b(2, 1, 2) \/ Send2b(2, 1, 3)
-    \/ Send2b(2, 2, 1) \/ Send2b(2, 2, 2) \/ Send2b(2, 2, 3)
-    \/ Send2b(2, 3, 1) \/ Send2b(2, 3, 2) \/ Send2b(2, 3, 3)
-    \/ Send2b(3, 1, 1) \/ Send2b(3, 1, 2) \/ Send2b(3, 1, 3)
-    \/ Send2b(3, 2, 1) \/ Send2b(3, 2, 2) \/ Send2b(3, 2, 3)
-    \/ Send2b(3, 3, 1) \/ Send2b(3, 3, 2) \/ Send2b(3, 3, 3)
+    \/ \E b \in Acceptors : Send1a(b)
+    \/ \E a \in Acceptors, b \in Acceptors : Send1b(a, b)
+    \/ \E b \in Acceptors, v \in Values : Send2a(b, v)
+    \/ \E a \in Acceptors, b \in Acceptors, v \in Values : Send2b(a, b, v)
 
 ChosenValueAgreement ==
     \A v1, v2 \in maxVal : v1 = v2

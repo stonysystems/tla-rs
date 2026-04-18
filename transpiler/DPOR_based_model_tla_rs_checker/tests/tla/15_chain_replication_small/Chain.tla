@@ -25,10 +25,10 @@ RoleTail   == 3
 Roles      == {RoleHead, RoleMiddle, RoleTail}
 
 \* Bounded universe of values that can appear in the log.
-Values == {1}
+Values == {1, 2}
 
-ChainLen == 2
-NodeId   == 0   \* this spec instance models the Head node; Middle and
+ChainLen == 3
+NodeId   == 1   \* this spec instance models the Head node; Middle and
                 \* Tail variants would set NodeId to 1.
 
 InitialRole ==

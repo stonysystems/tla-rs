@@ -4,9 +4,9 @@
 
 [search]
 max_depth = 6
-max_states = 100000
-timeout_ms = 60000
-candidate_eval_guardrail = 100000
+max_states = 5000000
+timeout_ms = 600000
+candidate_eval_guardrail = 5000000
 
 [properties]
 invariants = []
@@ -14,9 +14,9 @@ check_deadlock = true
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 1 }
+int = { min = 0, max = 2 }
 
 [collections]
-max_set_len = 2
+max_set_len = 3
 max_seq_len = 1
 max_map_len = 1

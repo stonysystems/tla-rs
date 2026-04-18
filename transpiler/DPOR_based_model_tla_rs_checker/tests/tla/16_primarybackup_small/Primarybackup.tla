@@ -22,8 +22,8 @@ Backup   == 2
 Inactive == 3
 Roles    == {Primary, Backup, Inactive}
 
-Values    == {1}
-MaxLogLen == 1
+Values    == {1, 2}
+MaxLogLen == 3
 
 Init ==
     /\ role = Primary

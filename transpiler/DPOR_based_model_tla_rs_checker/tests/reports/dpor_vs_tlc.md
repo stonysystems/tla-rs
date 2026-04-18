@@ -1,25 +1,25 @@
-# DPOR vs TLC Performance Comparison (Phase 38.18.7)
+# DPOR vs TLC Performance Comparison (Phase 38.18.8)
 
 Generated: 2026-04-16
 
-DPOR run: `run_full_suite.sh --timeout 120` (single-threaded; with
+DPOR run: `run_full_suite.sh --timeout 600` (single-threaded; with
   Phase 38.17.2 action-call inlining + Phase 38.17.4 DPOR reduction
   activation + Phase 38.17.6 ProcessId fix + Phase 38.18.5
   candidate-state-key-set memoization + Phase 38.18.6 ∧-through-∨
-  branch-discovery distribution + **Phase 38.18.7 forall-body q-free
-  conjunct lifting**). **20/20 real pass, 0 vacuous, 0 errors.**
+  branch-discovery distribution + Phase 38.18.7 forall-body q-free
+  conjunct lifting + **Phase 38.18.8 model-bound scale-up**).
+  **20/20 real pass, 0 vacuous, 0 errors, total suite time ~7.7 min.**
 TLC run: `run_tlc_suite.sh --timeout 120` (TLC 2.20, Java 11). Phase
   38.20.1 added 0.01 s wall-time resolution; the values shown below
   reflect real precision, not 1-second integer rounding.
 
 ## Per-Case Comparison
 
-Phase 38.20.2 hand-wrote native-TLC TLA+ for cases 14/15/16/19 (was
-verus2tla-generated parameterized form); the four "TLC incompatible"
-rows from the prior report are gone — 0 incompatible cases remain.
-Phase 38.20.3 scaled PBFT from 7 → 20 replicas (49 → 634 states) and
-Raft from 5 → 8 servers (681 → 812 states); Paxos kept at 3/3 (3/4,
-4/3, 4/4 all >600 s on the single-threaded baseline).
+Phase 38.18.8 scale-up leveraged the Phase-38.18.5/6/7 inliner fixes
+to push every case toward the 10-min budget while staying under it.
+Protocol-case configurations now explore 5-100× more distinct states
+than the Phase 38.18.7 baseline — the state-count column below is
+much larger than in prior reports.
 
 **Column key.** *Parity* compares **distinct-state counts only**, not
 wall-time:
@@ -37,26 +37,26 @@ two are independent dimensions.
 
 | # | Case | DPOR states | DPOR time | TLC states | TLC time | Parity | Gap |
 |---|---|---:|---:|---:|---:|---|---:|
-| 01 | aplusb | 6 | 0.06 s | 6 | 2.72 s | **MATCH** | DPOR wins 45.3x ‡ |
-| 02 | counter_incdec | 5 | 0.07 s | 5 | 1.55 s | MATCH | DPOR wins 23.5x ‡ |
-| 03 | counter_race_bug | 13 | 0.22 s | 13 | 1.53 s | MATCH | DPOR wins 6.8x |
-| 04 | lock_basic | 3 | 0.06 s | 3 | 1.54 s | MATCH | DPOR wins 25.7x ‡ |
-| 05 | broken_lock_bug | 5 | 0.06 s | 5 | 1.40 s | MATCH | DPOR wins 25.5x ‡ |
-| 06 | ticket_lock | 7 | 0.67 s | 7 | 1.38 s | MATCH | DPOR wins 2.1x |
-| 07 | producer_consumer | 11 | 0.07 s | 11 | 1.58 s | **MATCH** | DPOR wins 23.9x ‡ |
-| 08 | bounded_buffer | 6 | 3.11 s | 10 | 1.47 s | DIFF | 2.1x |
-| 09 | peterson_mutex | 10 | 0.07 s | 10 | 1.42 s | MATCH | DPOR wins 20.0x ‡ |
-| 10 | bakery_mutex | 24 | **2.43 s** | — | timeout (>120 s) | DPOR wins | DPOR wins (TLC didn't finish) |
-| 11 | readers_writers | 4 | 0.12 s | 4 | 1.46 s | MATCH | DPOR wins 12.2x ‡ |
-| 12 | dining_phil | 6 | 0.13 s | 5 | 1.42 s | DIFF | DPOR wins 10.9x |
-| 13 | twophase | 9 | 0.06 s | 9 | 1.34 s | MATCH | DPOR wins 21.6x ‡ |
-| 14 | **leader_election** | **108** | **0.52 s** | **108** | **1.36 s** | **MATCH** | **DPOR wins 2.6x** |
-| 15 | chain_replication | 35 | 0.17 s | 75 | 1.64 s | DIFF (deadlock) | DPOR wins 9.6x |
-| 16 | primarybackup | 8 | 0.08 s | 48 | 1.33 s | DIFF | DPOR wins 16.6x |
-| 17 | **paxos** | **232** | **0.37 s** | **232** | **1.43 s** | **MATCH** | **DPOR wins 3.9x** |
-| 18 | **pbft** (≈10× scale) | **634** | **0.84 s** | **634** | **1.48 s** | **MATCH** | **DPOR wins 1.8x** |
-| 19 | epaxos | 11 | 0.63 s | 37 | 1.46 s | DIFF (DPOR-side bound) | DPOR wins 2.3x |
-| 20 | **raft** (≈1.6× scale) | **812** | **2.92 s** | **1089** | **1.67 s** | DIFF (DPOR-side bound) | 1.7x |
+| 01 | aplusb | 6 | 0.06 s | 6 | 1.52 s | **MATCH** | DPOR wins 25.3x ‡ |
+| 02 | counter_incdec | 5 | 0.07 s | 5 | 1.38 s | MATCH | DPOR wins 19.7x ‡ |
+| 03 | counter_race_bug | 13 | 0.22 s | 13 | 1.55 s | MATCH | DPOR wins 7.0x |
+| 04 | lock_basic | 3 | 0.06 s | 3 | 1.40 s | MATCH | DPOR wins 23.3x ‡ |
+| 05 | broken_lock_bug | 5 | 0.06 s | 5 | 1.54 s | MATCH | DPOR wins 25.7x ‡ |
+| 06 | ticket_lock | 7 | 0.69 s | 7 | 1.56 s | MATCH | DPOR wins 2.3x |
+| 07 | producer_consumer | 11 | 0.06 s | 11 | 1.50 s | **MATCH** | DPOR wins 25.0x ‡ |
+| 08 | bounded_buffer | 6 | 3.06 s | 10 | 1.55 s | DIFF | 2.0x |
+| 09 | peterson_mutex | 10 | 0.06 s | 10 | 1.46 s | MATCH | DPOR wins 24.3x ‡ |
+| 10 | bakery_mutex | 24 | 2.53 s | — | timeout (>300 s) | DPOR wins | DPOR wins (TLC didn't finish) |
+| 11 | readers_writers | 4 | 0.12 s | 4 | 1.57 s | MATCH | DPOR wins 13.1x ‡ |
+| 12 | dining_phil | 6 | 0.14 s | 5 | 1.60 s | DIFF | DPOR wins 11.4x |
+| 13 | twophase | 9 | 0.06 s | 9 | 1.47 s | MATCH | DPOR wins 24.5x ‡ |
+| 14 | **leader_election** (4 nodes) | **5,704** | **60.5 s** | **5,786** | **1.90 s** | DIFF (DPOR-side bound) | 31.8x |
+| 15 | chain_replication (chain=3) | 114 | 3.80 s | 234 | 1.83 s | DIFF (deadlock) | 2.1x |
+| 16 | primarybackup (logLen=3) | **261** | **3.14 s** | **855** | **1.48 s** | DIFF (DPOR-side bound) | 2.1x |
+| 17 | **paxos (6/5 scale)** | **24,256** | **370.6 s** | **24,256** | **3.48 s** | **MATCH** | 106.5x |
+| 18 | **pbft (40 replicas)** | **2,854** | **6.67 s** | **2,854** | **1.75 s** | **MATCH** | 3.8x |
+| 19 | epaxos | 11 | 0.73 s | 37 | 1.36 s | DIFF (DPOR-side bound) | DPOR wins 1.9x |
+| 20 | **raft (8 servers)** | **812** | **3.09 s** | **1,089** | **1.46 s** | DIFF (DPOR-side bound) | 2.1x |
 
 ‡ Small-case TLC times (cases 01-13 with state count ≤ 13) are
 dominated by ~1.3 s of JVM startup + module loading, not by
@@ -153,6 +153,42 @@ Suite-wide impact (Phase 38.18.5 baseline → Phase 38.18.6):
 | 13 twophase | 0.26 s | 0.06 s | 4× |
 | 10 bakery_mutex | 181.7 s | 76.2 s | 2.4× |
 | 19 epaxos | timeout (>120 s) | 0.63 s | ∞ |
+
+## Phase 38.18.8 Model-Bound Scale-Up
+
+After Phase 38.18.5/6/7 closed the solver's performance holes, the
+per-case `tests/model_configs/*.toml` configs were scaled up toward
+the 10-minute DPOR budget. Old scale-up attempts (Phase 38.20.3)
+timed out at these bounds because the inliner wasn't firing; with
+the inliner fixes, larger state spaces become tractable:
+
+| Case | Old bound / states | New bound / states | DPOR time |
+|---|---|---|---:|
+| 17 Paxos | 3/3, 232 states | **6 acceptors / 5 values**, 24,256 states | 370.6 s |
+| 18 PBFT | 20 replicas, 634 states | **40 replicas**, 2,854 states | 6.67 s |
+| 14 Election | 2 nodes, 108 states | **4 nodes**, 5,704 states | 60.5 s |
+| 16 PrimaryBackup | MaxLogLen=1, 8 states | **MaxLogLen=3, 2 values**, 261 states | 3.14 s |
+| 15 Chain | 1 value, 35 states | **ChainLen=3, 2 values**, 114 states | 3.80 s |
+
+Bounds that can't go higher on the current engine:
+- **19 EPaxos** capped at NumReplicas=2, MaxBallot=1 — 12-field state
+  struct explodes the candidate-enumeration pool at any larger bound
+  (even 1 M / 10 M candidate caps were exceeded).
+- **20 Raft** capped at server=8 — server≥10 hits an evaluator-hook
+  missing bug for `LFollower` in constants-dependent Init expressions.
+- **18 PBFT** capped at replica=40 — replica≥50 hits the same
+  evaluator-hook pattern for `LPrePrepare`.
+- **10 Bakery** capped at NumProcs=2 for the suite run — NumProcs=3
+  has the same evaluator-hook issue at int max=3.
+
+These ceiling bugs are tracked as follow-ups; they're not in the
+inliner path, they're in `expand_type_domain_candidates` /
+`eval_constants_dependent_init`.
+
+Notable finding: at the new Paxos 6/5 scale, DPOR and TLC agree on
+an **exactly 24,256-state** reachable set (MATCH) — the same parity
+story held at 3/3 (232 states) is preserved 100× larger. This is a
+stronger soundness cross-check than any prior run.
 
 ## Phase 38.18.7 Forall-Body q-Free Conjunct Lifting
 

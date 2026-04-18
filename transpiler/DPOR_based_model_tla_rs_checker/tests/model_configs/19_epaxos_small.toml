@@ -6,10 +6,10 @@
 # candidate-enumeration fallback). Now finishes in ~0.6 s.
 
 [search]
-max_depth = 4
-max_states = 50000
-timeout_ms = 60000
-candidate_eval_guardrail = 50000
+max_depth = 6
+max_states = 1000000
+timeout_ms = 600000
+candidate_eval_guardrail = 1000000
 
 [properties]
 invariants = []
