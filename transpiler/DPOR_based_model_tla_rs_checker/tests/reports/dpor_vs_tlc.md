@@ -1,11 +1,12 @@
-# DPOR vs TLC Performance Comparison (Phase 38.20)
+# DPOR vs TLC Performance Comparison (Phase 38.18.6)
 
 Generated: 2026-04-16
 
-DPOR run: `run_full_suite.sh --timeout 600` (single-threaded; with
+DPOR run: `run_full_suite.sh --timeout 300` (single-threaded; with
   Phase 38.17.2 action-call inlining + Phase 38.17.4 DPOR reduction
   activation + Phase 38.17.6 ProcessId fix + Phase 38.18.5
-  candidate-state-key-set memoization).
+  candidate-state-key-set memoization + **Phase 38.18.6 ∧-through-∨
+  branch-discovery distribution**).
 TLC run: `run_tlc_suite.sh --timeout 120` (TLC 2.20, Java 11). Phase
   38.20.1 added 0.01 s wall-time resolution; the values shown below
   reflect real precision, not 1-second integer rounding.
@@ -31,34 +32,30 @@ wall-time:
 
 The *Gap* column is the DPOR/TLC wall-time ratio. A row can show
 `MATCH` (state-count parity) and a multi-x time gap simultaneously — the
-two are independent dimensions. e.g. case 14 has identical 108-state
-exploration on both engines (MATCH) while DPOR took 316× longer to do
-it (Gap), driven by case 14's heavy candidate-enumeration fallback
-that doesn't hit the Phase-38.17.2 inliner; TLC's compiled enumeration
-finishes the same state space in 1.5 s.
+two are independent dimensions.
 
 | # | Case | DPOR states | DPOR time | TLC states | TLC time | Parity | Gap |
 |---|---|---:|---:|---:|---:|---|---:|
-| 01 | aplusb | 6 | 0.05 s | 6 | 1.38 s | **MATCH** | DPOR wins 27.6x ‡ |
-| 02 | counter_incdec | 5 | 0.17 s | 5 | 1.32 s | MATCH | DPOR wins 7.8x ‡ |
-| 03 | counter_race_bug | 13 | 3.51 s | 13 | 1.59 s | MATCH | 2.2x |
-| 04 | lock_basic | 3 | 0.06 s | 3 | 1.45 s | MATCH | DPOR wins 24.2x ‡ |
-| 05 | broken_lock_bug | 5 | 0.07 s | 5 | 1.55 s | MATCH | DPOR wins 22.1x ‡ |
-| 06 | ticket_lock | 7 | 9.34 s | 7 | 1.36 s | MATCH | 6.9x |
-| 07 | producer_consumer | 11 | 0.07 s | 11 | 1.39 s | **MATCH** | DPOR wins 19.9x ‡ |
-| 08 | bounded_buffer | 6 | 3.25 s | 10 | 1.54 s | DIFF | 2.1x |
-| 09 | peterson_mutex | 10 | 0.40 s | 10 | 1.47 s | MATCH | DPOR wins 3.7x |
-| 10 | bakery_mutex | 24 | 181.7 s | — | timeout (>120 s) | DPOR wins | DPOR wins (TLC didn't finish) |
-| 11 | readers_writers | 4 | 0.72 s | 4 | 1.49 s | MATCH | DPOR wins 2.1x |
-| 12 | dining_phil | 6 | 1.04 s | 5 | 1.49 s | DIFF | DPOR wins 1.4x |
-| 13 | twophase | 9 | 0.26 s | 9 | 1.45 s | MATCH | DPOR wins 5.6x ‡ |
-| 14 | **leader_election** | **108** | 477.0 s | **108** | **1.51 s** | **MATCH** | 316x |
-| 15 | chain_replication | 24 | 16.9 s | 74 | 1.40 s | DIFF (deadlock) | 12.1x |
-| 16 | primarybackup | 8 | 0.96 s | 48 | 1.59 s | DIFF | DPOR wins 1.7x |
-| 17 | **paxos** | **232** | **0.41 s** | **232** | **1.44 s** | **MATCH** | **DPOR wins 3.5x** |
-| 18 | **pbft** (≈10× scale) | **634** | **1.07 s** | **634** | **1.52 s** | **MATCH** | **DPOR wins 1.4x** |
-| 19 | epaxos | timeout † | >120 s | 37 | 1.39 s | DPOR regression | TLC wins (DPOR didn't finish) |
-| 20 | **raft** (≈1.6× scale) | **812** | **3.14 s** | **1089** | **1.58 s** | DIFF (DPOR-side bound) | 2.0x |
+| 01 | aplusb | 6 | 0.06 s | 6 | 2.72 s | **MATCH** | DPOR wins 45.3x ‡ |
+| 02 | counter_incdec | 5 | 0.07 s | 5 | 1.55 s | MATCH | DPOR wins 23.5x ‡ |
+| 03 | counter_race_bug | 13 | 0.22 s | 13 | 1.53 s | MATCH | DPOR wins 6.8x |
+| 04 | lock_basic | 3 | 0.06 s | 3 | 1.54 s | MATCH | DPOR wins 25.7x ‡ |
+| 05 | broken_lock_bug | 5 | 0.06 s | 5 | 1.40 s | MATCH | DPOR wins 25.5x ‡ |
+| 06 | ticket_lock | 7 | 0.67 s | 7 | 1.38 s | MATCH | DPOR wins 2.1x |
+| 07 | producer_consumer | 11 | 0.07 s | 11 | 1.58 s | **MATCH** | DPOR wins 23.9x ‡ |
+| 08 | bounded_buffer | 6 | 3.11 s | 10 | 1.47 s | DIFF | 2.1x |
+| 09 | peterson_mutex | 10 | 0.07 s | 10 | 1.42 s | MATCH | DPOR wins 20.0x ‡ |
+| 10 | bakery_mutex | 24 | 76.2 s | — | timeout (>120 s) | DPOR wins | DPOR wins (TLC didn't finish) |
+| 11 | readers_writers | 4 | 0.12 s | 4 | 1.46 s | MATCH | DPOR wins 12.2x ‡ |
+| 12 | dining_phil | 6 | 0.13 s | 5 | 1.42 s | DIFF | DPOR wins 10.9x |
+| 13 | twophase | 9 | 0.06 s | 9 | 1.34 s | MATCH | DPOR wins 21.6x ‡ |
+| 14 | **leader_election** | **108** | **0.52 s** | **108** | **1.36 s** | **MATCH** | **DPOR wins 2.6x** |
+| 15 | chain_replication | 35 | 0.17 s | 75 | 1.64 s | DIFF (deadlock) | DPOR wins 9.6x |
+| 16 | primarybackup | 8 | 0.08 s | 48 | 1.33 s | DIFF | DPOR wins 16.6x |
+| 17 | **paxos** | **232** | **0.37 s** | **232** | **1.43 s** | **MATCH** | **DPOR wins 3.9x** |
+| 18 | **pbft** (≈10× scale) | **634** | **0.84 s** | **634** | **1.48 s** | **MATCH** | **DPOR wins 1.8x** |
+| 19 | epaxos | 11 | 0.63 s | 37 | 1.46 s | DIFF (DPOR-side bound) | DPOR wins 2.3x |
+| 20 | **raft** (≈1.6× scale) | **812** | **2.92 s** | **1089** | **1.67 s** | DIFF (DPOR-side bound) | 1.7x |
 
 ‡ Small-case TLC times (cases 01-13 with state count ≤ 13) are
 dominated by ~1.3 s of JVM startup + module loading, not by
@@ -67,20 +64,16 @@ mostly measure JVM cold-start cost vs the Rust binary's near-zero
 startup. Compare protocol cases (17/18/20) for engine-vs-engine
 numbers that aren't startup-dominated.
 
-† Phase 38.20.2 replaced case 19's `verus2tla`-generated parameterized
-spec with a hand-written native form. TLC now runs it directly (37
-states, 1.39 s — was "TLC incompatible"). The DPOR side regressed
-because the previous parameterized form fit a faster engine path; the
-12-field native state struct overflows the candidate-enumeration
-fallback. Tracked under Phase 38.18 follow-ups (parallelize the
-explorer or add IR-level helper inlining).
-
-State-count diffs on cases 15/16/20 reflect DPOR-side
+State-count diffs on cases 15/16/19/20 reflect DPOR-side
 `tests/model_configs/*.toml` bounds being smaller than the matching
 TLC bounds in the .tla files (e.g. case 20 Raft DPOR runs at int
-max=8 while TLC runs unbounded inside the tla file). Pure semantic
-mismatches (the four "TLC incompatible" rows) were eliminated by
-Phase 38.20.2.
+max=8 while TLC runs unbounded inside the tla file, case 19 EPaxos
+DPOR runs at max_depth=4). Pure semantic mismatches (the four "TLC
+incompatible" rows) were eliminated by Phase 38.20.2. The case 19
+pre-fix "DPOR regression" note has been dropped — Phase 38.18.6's
+∧-through-∨ distribution cleared the candidate-enumeration timeout
+that had stuck DPOR at "only 2 states in 120 s"; it now finishes in
+0.6 s and matches case 18 PBFT's direct-assignment path behavior.
 
 ## Phase 38.17 Improvement Summary
 
@@ -121,6 +114,49 @@ hits out of ~28K zero-arg helper invocations. The savings per call were
 small (helpers build 3-element sets) so this optimization is
 near-noise-level on its own, but it's retained as a defense against
 helper bodies that grow more expensive in future specs.
+
+## Phase 38.18.6 ∧-through-∨ Branch Distribution
+
+The Phase 38.17.2 action-call inliner only matches when a branch's
+top-level expression is an `Expr::Call`. But many TLA+ specs use the
+shape
+
+    \E x \in S : guard(x) /\ (Action1(x) \/ Action2(x) \/ ...)
+
+After `discover_disjunctive_branches` strips the `Exists`, the body is
+a `Conjunction` at top level — not a `Disjunction`. The old code
+handled `Exists`, `Disjunction`, and `Or` but fell through on
+`Conjunction`, leaving the whole conjunction (including the nested
+disjunction) as one opaque branch. The inliner never saw the inner
+Call expressions, every branch fell back to the 1000×-slower
+candidate-enumeration path.
+
+Phase 38.18.6 extends `discover_disjunctive_branches` to detect when
+any conjunct is itself disjunctive and distribute: emit one branch per
+disjunct, carrying the other conjuncts as guards. Paxos-style
+fully-unrolled Next remains unchanged (no nested disjunction → no
+distribution).
+
+Suite-wide impact (Phase 38.18.5 baseline → Phase 38.18.6):
+
+| Case | Before | After | Speedup |
+|---|---:|---:|---:|
+| 14 leader_election | **477.0 s** | **0.52 s** | **917×** |
+| 15 chain_replication | 16.9 s | 0.17 s | 99× |
+| 03 counter_race_bug | 3.51 s | 0.22 s | 16× |
+| 06 ticket_lock | 9.34 s | 0.67 s | 14× |
+| 16 primarybackup | 0.96 s | 0.08 s | 16× |
+| 12 dining_phil | 1.04 s | 0.13 s | 8× |
+| 11 readers_writers | 0.72 s | 0.12 s | 6× |
+| 09 peterson_mutex | 0.40 s | 0.07 s | 6× |
+| 13 twophase | 0.26 s | 0.06 s | 4× |
+| 10 bakery_mutex | 181.7 s | 76.2 s | 2.4× |
+| 19 epaxos | timeout (>120 s) | 0.63 s | ∞ |
+
+Case 10 bakery is the remaining soft spot: 24 of its 96 branches still
+fall back to candidate enumeration (second pattern the inliner can't
+yet match — likely `s_.choosing = s.choosing EXCEPT ![p] = TRUE`-style
+function updates). Tracked as follow-up.
 
 ## DPOR Reduction Evidence (with sleep sets enabled)
 
@@ -180,26 +216,27 @@ Cases 01 (APlusB: 51 → 6) and 07 (ProducerConsumer: 51 → 11) now match
 TLC exactly. The old candidate-enumeration path was producing phantom
 states; the direct-assignment path computes exact successors.
 
-### 4. DPOR now competitive with TLC on protocol cases (Phase 38.18)
+### 4. DPOR beats TLC on 18/20 cases after Phase 38.18.6
 
-After the candidate-keys cache, DPOR runs the three large protocol
-cases in **sub-second wall-time**, erasing the 77-98x pre-38.18 gap:
+After Phase 38.18.5 (candidate-keys cache) + Phase 38.18.6
+(∧-through-∨ branch distribution), DPOR wins on every protocol case
+and every small case except 08 bounded_buffer (2.1× TLC wins) and
+20 raft (1.7× TLC wins, DPOR running at a tighter bound than TLC):
 
-| Case | DPOR 38.17 | DPOR 38.18 | TLC | DPOR/TLC |
+| Case | DPOR 38.17 | DPOR 38.18.6 | TLC | DPOR vs TLC |
 |---|---:|---:|---:|---|
-| 17 Paxos | 77s | **0.51s** | 1s | ~0.5x (DPOR wins) |
-| 18 PBFT  | 4.6s | **0.07s** | 1s | **14x faster than TLC** |
-| 20 Raft  | 195s | **0.43s** | 2s | **~5x faster than TLC** |
-
-The remaining gap vs TLC on small cases (e.g. counter_race_bug 3.4s vs
-2s) is now dominated by per-process startup overhead (Rust binary load,
-JSON parsing, model config resolution), not evaluator throughput.
+| 14 Election | — (new 38.20.2) | **0.52 s** | 1.36 s | **2.6× DPOR wins** |
+| 17 Paxos | 77 s | **0.37 s** | 1.43 s | **3.9× DPOR wins** |
+| 18 PBFT  | 4.6 s | **0.84 s** | 1.48 s | **1.8× DPOR wins** |
+| 20 Raft  | 195 s | **2.92 s** | 1.67 s | 1.7× TLC wins (DPOR runs at lower bound) |
 
 Future optimization options (no longer urgent):
 - Parallelize the DPOR explorer (use worker threads)
 - Pre-compile transition predicates to a faster internal form
 - Apply sleep sets in the main `verus-transpile model-check` path
   (currently only the DPOR crate uses sleep sets)
+- Handle `s_.choosing = s.choosing EXCEPT ![p] = val` function-update
+  patterns in the inliner (closes the remaining case 10 bakery fallback)
 
 ### 5. DPOR reduction value vs cached baseline (Phase 38.18 update)
 
@@ -231,8 +268,11 @@ on Paxos is unchanged; only the relative wall-time comparison shifted.
 
 | Commit | Change | Impact |
 |---|---|---|
-| (this) | Memoize candidate canonical-key set across branch solves | Paxos 145x, PBFT 65x, Raft 453x faster |
-| (this) | Zero-arg spec-helper call cache (LAcceptors/LValues) | Noise-level on current specs, safety net for future |
+| 216f6c8f | 38.18.5 memoize candidate canonical-key set across branch solves | Paxos 145x, PBFT 65x, Raft 453x faster |
+| 216f6c8f | 38.18.5 zero-arg spec-helper call cache (LAcceptors/LValues) | Noise-level on current specs, safety net for future |
+| e745a28b | 38.18.4 read max_depth from model.toml in shadow-compare | DPOR/baseline state-count alignment |
+| 1d453822 | 38.18.2 inline zero-arg helper calls at IR build time | Within-noise (38.18.5 covers); cleaner primitive |
+| 9776a725 | **38.18.6 distribute ∧ through ∨ in branch discovery** | **Election 917×, Chain 99×, Bakery 2.4×** |
 
 ## Reproduction
 
