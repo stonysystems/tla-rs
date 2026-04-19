@@ -5,8 +5,13 @@
 [search]
 max_depth = 6
 max_states = 5000000
-timeout_ms = 60000
+timeout_ms = 600000
 candidate_eval_guardrail = 5000000
+# Phase 38.18.9: nodes are interchangeable; canonicalize the two
+# Set<int> fields under permutation. Scalar int fields (leader,
+# highest_heard, waiting_node) intentionally NOT included because
+# they use 0 as a "no value" sentinel that shouldn't be relabeled.
+symmetry_fields = ["electing", "alive"]
 
 [properties]
 invariants = []
