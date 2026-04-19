@@ -1,4 +1,4 @@
-# DPOR vs TLC Performance Comparison (Phase 38.18.10)
+# DPOR vs TLC Performance Comparison (Phase 38.21)
 
 Generated: 2026-04-19
 
@@ -7,9 +7,12 @@ DPOR run: `run_full_suite.sh --timeout 600` (single-threaded; with
   activation + Phase 38.17.6 ProcessId fix + Phase 38.18.5
   candidate-state-key-set memoization + Phase 38.18.6 ∧-through-∨
   branch-discovery distribution + Phase 38.18.7 forall-body q-free
-  conjunct lifting + Phase 38.18.8 model-bound scale-up + **Phase
-  38.18.9 cross-field acceptor symmetry reduction**).
-  **20/20 real pass, 0 vacuous, 0 errors, total suite time ~4.7 min.**
+  conjunct lifting + Phase 38.18.8 model-bound scale-up + Phase
+  38.18.9 (now superseded) cross-field acceptor symmetry + Phase
+  38.18.10 DPOR sleep-set in main path + **Phase 38.21.D complete-
+  symmetry canonical labeling + Phase 38.21.J SpecContext lazy-init
+  cache**).
+  **20/20 real pass, 0 vacuous, 0 errors, total suite time ~5 min.**
 TLC run: `run_tlc_suite.sh --timeout 120` (TLC 2.20, Java 11). Phase
   38.20.1 added 0.01 s wall-time resolution; the values shown below
   reflect real precision, not 1-second integer rounding.
@@ -51,10 +54,12 @@ two are independent dimensions.
 | 11 | readers_writers | 4 | 0.12 s | 4 | 1.57 s | MATCH | DPOR wins 13.1x ‡ |
 | 12 | dining_phil | 6 | 0.14 s | 5 | 1.60 s | DIFF | DPOR wins 11.4x |
 | 13 | twophase | 9 | 0.06 s | 9 | 1.47 s | MATCH | DPOR wins 24.5x ‡ |
-| 14 | **leader_election** (4 nodes) | **5,704** | **60.5 s** | **5,786** | **1.90 s** | DIFF (DPOR-side bound) | 31.8x |
+| 14 | **leader_election** (4 nodes, BFS+sym) | **1,263** | **33.3 s** | **5,786** | **1.90 s** | DIFF (canonical-symmetry collapse) | 17.5x |
+| 14b| leader_election (4 nodes, --search dpor) | **38** | 37.8 s | 5,786 | 1.90 s | DIFF (DPOR canonical) | 19.9x |
 | 15 | chain_replication (chain=3) | 114 | 3.80 s | 234 | 1.83 s | DIFF (deadlock) | 2.1x |
 | 16 | primarybackup (logLen=3) | **261** | **3.14 s** | **855** | **1.48 s** | DIFF (DPOR-side bound) | 2.1x |
-| 17 | **paxos (8/5 + symmetry)** | **6,033** | **194.3 s** | **24,256** † | **3.48 s** | DIFF (DPOR symmetry-collapsed) | 55.8x |
+| 17 | **paxos (8/5, BFS+sym)** | **945** | **32.3 s** | **24,256** † | **3.48 s** | DIFF (canonical-symmetry collapse) | 9.3x |
+| 17b| paxos (8/5, --search dpor) | **153** | 33.3 s | 24,256 † | 3.48 s | DIFF (DPOR sleep-set) | 9.6x |
 | 18 | **pbft (40 replicas)** | **2,854** | **6.67 s** | **2,854** | **1.75 s** | **MATCH** | 3.8x |
 | 19 | epaxos | 11 | 0.73 s | 37 | 1.36 s | DIFF (DPOR-side bound) | DPOR wins 1.9x |
 | 20 | **raft (8 servers)** | **812** | **3.09 s** | **1,089** | **1.46 s** | DIFF (DPOR-side bound) | 2.1x |
@@ -165,7 +170,76 @@ Suite-wide impact (Phase 38.18.5 baseline → Phase 38.18.6):
 | 10 bakery_mutex | 181.7 s | 76.2 s | 2.4× |
 | 19 epaxos | timeout (>120 s) | 0.63 s | ∞ |
 
-## Phase 38.18.9 Cross-Field Symmetry Reduction
+## Phase 38.21.D + 38.21.J — Complete Symmetry + SpecContext Cache
+
+Two follow-on optimizations on top of Phase 38.18.9/10:
+
+**38.21.D — complete canonical labeling** (commit `13aaa959`).
+Phase 38.18.9 used field-walk-order rank assignment, sound but
+incomplete: states X = (maxBal={1,2}, maxVBal={2}) and
+Y = (maxBal={1,2}, maxVBal={1}) are equivalent under the 1↔2
+permutation but were canonicalized to different keys.
+
+The replacement: for each int that appears in any symmetric field,
+compute a *signature* — the tuple of its membership in each
+symmetric field. Two ints with the same signature are interchangeable;
+sort by (signature, original_value) and assign ranks. Sound AND
+complete for Set<int>/Map<int, _> field-wise permutations.
+
+**38.21.J — SpecContext lazy-init cache** (commit `208bbf0e`).
+Added `OnceLock` fields to SpecContext for the post-inlining
+TransitionIr and per-branch existential expansions. Both are run-
+invariant; previously rebuilt for every state inside
+`solve_successors_with_branch_labels`.
+
+### Re-measured results on Election + Paxos (2026-04-19)
+
+| Case | Strategy | States | Trans | Wall | Sym collapses |
+|---|---|---:|---:|---:|---:|
+| 14 Election (4 nodes) | `--search bfs` | **1,263** | 19,887 | **33.3 s** | 2,547 |
+| 14 Election (4 nodes) | `--search dpor` | **38** | 37 | 37.8 s | n/a |
+| 17 Paxos (8 acceptors / 5 values) | `--search bfs` | **945** | 17,957 | **32.3 s** | 5,404 |
+| 17 Paxos (8 acceptors / 5 values) | `--search dpor` | **153** | 152 | 33.3 s | n/a |
+
+### Profile breakdown
+
+**Paxos BFS (32.3 s, 945 states, 17,957 transitions):**
+
+| Phase | Time | % |
+|---|---:|---:|
+| `successor_solving_ms` | 26,407 ms | 82 % |
+| `candidate_generation_evaluation_ms` | 3,877 ms | 12 % |
+| `dedup_hashing_normalization_ms` | 1,906 ms | 6 % |
+| `invariant_evaluation_ms` | 6 ms | 0 % |
+
+Solver dominates. Direct-assignment branch solves: **3,780**
+(zero enumeration fallback). Guard pruning eliminated **586,185**
+candidate assignments — over 70 % of total — confirming the
+Phase-38.17.2 inliner + symmetry tightening are doing their job.
+
+**Election BFS (31.8 s, 1,263 states, 19,887 transitions):**
+
+| Phase | Time | % |
+|---|---:|---:|
+| `successor_solving_ms` | 10,698 ms | 34 % |
+| `candidate_generation_evaluation_ms` | 9,696 ms | 30 % |
+| `dedup_hashing_normalization_ms` | 2,792 ms | 9 % |
+| (residual / explorer overhead) | 8,574 ms | 27 % |
+
+Election's solver-vs-candidate split is more balanced because its
+branches each take an existential `node` parameter that's enumerated
+inside the solve. **84,229** existential assignments guard-pruned.
+
+**Paxos / Election DPOR (`--search dpor`):** the synthesized
+`ExplorationResult` doesn't decompose the DPOR engine's internal
+phases, so its `dedup_hashing_normalization_ms` is a residual catch-
+all (29,099 ms / 20,484 ms respectively). Real time is split across
+DPOR's own per-state successor enumeration, sleep-set computation,
+and the symmetry-aware canonical-key construction — all currently
+uninstrumented in the synthesized result. Future work: thread
+DPOR-internal phase timers up through the `DporResult` struct.
+
+## Phase 38.18.9 Cross-Field Symmetry Reduction (superseded by 38.21.D)
 
 The existing `search.symmetry_fields` mechanism in
 `transpiler/src/modelcheck/explorer.rs` was per-field — it normalized
