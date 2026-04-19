@@ -373,6 +373,40 @@ DPOR's value will reappear at larger bounds where the algorithmic
 exponential-vs-polynomial gap dominates. The 82.9% transition reduction
 on Paxos is unchanged; only the relative wall-time comparison shifted.
 
+### 6. DPOR sleep-set wiring would give another 39× on Paxos (deferred)
+
+Measured directly via `dpor-checker shadow-compare` on Paxos 8/5
+(post-symmetry):
+- Baseline (BFS in main): 6,033 distinct states / 206 s
+- DPOR (sleep-set): **153** distinct states / 30 s — **39× state
+  reduction, 7× wall-time** on top of symmetry.
+
+The DPOR sleep-set algorithm is already implemented in the
+`dpor-checker` library; the win is real and verified. Wiring it into
+the main `verus-transpile model-check` path is blocked by a
+cyclic-dependency: `dpor-checker` depends on `verus-transpiler`, so
+moving the algorithm into `transpiler/src/modelcheck/dpor/` would
+require relocating ~600 lines of code. Tracked as multi-day work
+under Phase 38.18.3.
+
+### 7. Solver throughput is the remaining bottleneck
+
+Post-symmetry profile of Paxos 8/5 (204 s wall-clock):
+- successor_solving_ms: **186,040 ms (91%)** ← AST-interpreter overhead
+- dedup_hashing_normalization_ms: 13,447 ms (6.6%)
+- everything else: ~5%
+
+`canonical_key()` String dedup is no longer the bottleneck; it's the
+per-action AST-interpreted `eval_expr` walking RuntimeValue trees and
+cloning ~3 `Set<int>` field structs per successful transition. To get
+another order of magnitude:
+- **Codegen spec functions to Rust closures** at startup (5-20× win
+  on solver, multi-day implementation)
+- **Hash-cons / Arc<RuntimeValue> for unchanged subfields** to avoid
+  per-successor field-clones
+- **FxHash u64 dedup** instead of String canonical_key — small win
+  now (~5% wall-time on Paxos 8/5) since dedup is no longer dominant
+
 ## Phase 38.17 Commits Summary
 
 | Commit | Change | Impact |
