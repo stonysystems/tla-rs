@@ -13531,3 +13531,78 @@ the next round of algorithm work.
     reduction needed) or an evaluator-throughput limit (more
     Phase 38.18.5-style memoization opportunities). This determines
     whether the next phase is algorithmic or implementation work.
+
+### 38.21 Remaining DPOR optimization queue (post-38.18.10)
+
+After Phase 38.18.10 wired the relocated DPOR sleep-set explorer into
+the main path, Paxos 8/5 runs in 33 s with 153 distinct states (was
+199 s / 6,033 states under BFS). The remaining wins fall into three
+tiers, ordered biggest-gain-per-effort first.
+
+#### Tier 1 — biggest theoretical wins (multi-day each)
+
+- [ ] **38.21.A**: **Codegen spec functions to Rust closures or
+  compiled IR** (5-20× on solver time). The current evaluator AST-
+  interprets every action body via `eval_expr` walking trees and
+  cloning `RuntimeValue` structs. At startup, generate Rust closures
+  (or compile to a faster internal IR) so the runtime never walks the
+  AST. TLC equivalent of compiled form. Profile target: the 91 % of
+  Paxos wall-time currently in `successor_solving_ms`. Largest absolute
+  remaining gain; multi-week implementation.
+- [ ] **38.21.B**: **Parallelize the explorer** (2-4× on multicore).
+  TLC uses 4 workers. DPOR currently single-threaded. Worker-thread
+  pool with a lock-free `DashMap<u64, ()>` visited set and per-worker
+  backtrack stacks. The DPOR algorithm has known parallel variants
+  (e.g. Source DPOR + work-stealing). Multi-week.
+- [ ] **38.21.C**: **Source DPOR / persistent sets** (1.5-2× more
+  transition reduction). Sleep sets are sound but not optimal.
+  Source-DPOR (Abdulla et al., POPL '14) provably explores the
+  minimum number of traces. Probably another 30-50 % transition
+  reduction on Paxos. Multi-week algorithm rewrite.
+
+#### Tier 2 — medium effort, predictable wins
+
+- [ ] **38.21.D**: **Complete symmetry reduction** (more state-set
+  reduction). The Phase 38.18.9 algorithm uses field-walk-order rank
+  assignment — sound but incomplete. Two permutation-equivalent
+  states can canonicalize to different keys depending on traversal
+  order. A true canonical form (lex-min over all permutations) would
+  catch every equivalence — probably another 2-3× state reduction on
+  Paxos at 8/5. **Best gain-per-effort in this list: 1-2 days, no
+  algorithm risk.**
+- [ ] **38.21.E**: **Hash-cons / `Arc<RuntimeValue>` for shared
+  subterms**. Most successors share most fields with the predecessor
+  (only one field changes per transition). Currently we deep-clone
+  the entire state. With `Arc`, clone becomes refcount bump and
+  unchanged fields are shared. Memory + clone-speed win. 3-4 days.
+- [ ] **38.21.F**: **Stateful DPOR** (combine sleep-sets with state-
+  set memoization). Currently DPOR dedups by canonical_key but
+  doesn't propagate "I've seen this state before through a different
+  trace, no need to explore from here." Stateful DPOR formalizes
+  this — would skip whole subtrees that lead only to already-explored
+  states. 2-4 days.
+
+#### Tier 3 — small wins, quick to implement
+
+- [ ] **38.21.G**: **FxHash `u64` dedup instead of String
+  canonical_key** (~5 % wall-time on Paxos at the current scale).
+  Was bigger before symmetry reduced state count; now smaller because
+  dedup is only 6.6 % of Paxos wall-time. Still ~hour of work, ~half
+  of dedup time saved. *Smallest scope.*
+- [ ] **38.21.H**: **Bit-pack small-state cases** (case-specific).
+  Cases like 09 Peterson have small bounded state (a few booleans +
+  tiny ints). Packing into a `u64` would make dedup near-free. Per-
+  spec change.
+- [ ] **38.21.I**: **Profile-guided POR**. Static POR currently
+  treats branches with overlapping write-sets as conflicting. Many
+  of those "conflicts" never materialize at runtime. Record actual
+  runtime conflicts, narrow the relation on subsequent runs.
+- [ ] **38.21.J**: **`expand_branch_existentials` caching** (same
+  pattern as Phase 38.18.5). Per-branch existential domains are
+  recomputed every state but invariant across the run. One-line cache
+  addition. *Trivial.*
+
+#### Recommended execution order
+
+D → G+J (do together) → E → A → B. C and F are advanced research
+techniques; defer until simpler wins exhausted.
