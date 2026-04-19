@@ -165,6 +165,19 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     // carry stale cache entries across specs.
     crate::modelcheck::helpers::reset_zero_arg_helper_cache();
 
+    // Phase 38.21.D: route every dedup key through the symmetry-aware
+    // canonical labeling that BFS uses, so DPOR also benefits from
+    // symmetry reduction declared in `[search] symmetry_fields = [...]`.
+    // When the field list is empty this collapses back to plain
+    // `state.canonical_key()`.
+    let symmetry_fields_owned: Vec<String> = ctx.model_config.search.symmetry_fields.clone();
+    let canonical_state_key = |state: &RuntimeValue| -> String {
+        crate::modelcheck::explorer::canonical_dedup_key_public(
+            state,
+            symmetry_fields_owned.iter().cloned(),
+        )
+    };
+
     let mut distinct_states: BTreeSet<String> = BTreeSet::new();
     let mut traces_explored: usize = 0;
     let mut max_depth: usize = 0;
@@ -214,7 +227,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
     // Explore from each initial state
     for initial in &initial_states {
-        let initial_key = initial.canonical_key();
+        let initial_key = canonical_state_key(initial);
         if !distinct_states.insert(initial_key.clone()) {
             continue; // Already seen this initial state
         }
@@ -392,7 +405,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                         continue;
                     };
 
-                    let succ_key = successor.canonical_key();
+                    let succ_key = canonical_state_key(&successor);
                     if should_prune_seen_successor(config.use_sleep_sets, &distinct_states, &succ_key)
                     {
                         // Global seen-successor pruning is sleep-mode-only to

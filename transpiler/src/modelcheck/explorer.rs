@@ -778,6 +778,18 @@ fn record_symmetry_collapse(
     inserted && raw_keys.len() > 1
 }
 
+/// Phase 38.21.D: public re-export so the DPOR explorer (and any other
+/// out-of-module dedup site) can use the same complete-symmetry
+/// canonicalization the BFS path uses.
+pub fn canonical_dedup_key_public(
+    state: &RuntimeValue,
+    symmetry_fields_iter: impl IntoIterator<Item = String>,
+) -> String {
+    let names: Vec<String> = symmetry_fields_iter.into_iter().collect();
+    let set: BTreeSet<&str> = names.iter().map(String::as_str).collect();
+    canonical_dedup_key(state, &set)
+}
+
 fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -> String {
     if symmetry_fields.is_empty() {
         return state.canonical_key();
@@ -785,20 +797,60 @@ fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -
 
     match state {
         RuntimeValue::Struct { ty, fields } => {
-            // Phase 38.18.9: share the atoms map across all symmetry-listed
-            // fields so cross-field permutations are correctly canonicalized.
-            // For Paxos (maxBal, maxVBal both over acceptor IDs), this means
-            // a state where acceptor 1 appears in maxBal+maxVBal and a state
-            // where acceptor 4 appears in maxBal+maxVBal hash to the same
-            // canonical key — provided both fields share the atom pool.
-            // The previous per-field semantics over-merged structurally
-            // distinct states (e.g. 1 in maxBal+maxVBal vs 1 in maxBal +
-            // 2 in maxVBal would have collided).
-            let mut shared_atoms = std::collections::BTreeMap::<String, usize>::new();
+            // Phase 38.21.D: complete canonical labeling.
+            //
+            // Phase 38.18.9 (the previous attempt) used field-walk-order
+            // rank assignment with shared atoms — sound but not complete:
+            // states X = (maxBal={1,2}, maxVBal={2}) and
+            // Y = (maxBal={1,2}, maxVBal={1}) are equivalent under the
+            // 1↔2 permutation, but the previous algorithm assigned
+            // 1→a0, 2→a1 in maxBal first and then mapped maxVBal
+            // differently for each, producing different keys.
+            //
+            // The complete algorithm: for each int that appears in any
+            // symmetric field, compute a *signature* — the tuple of
+            // its membership in each symmetric field. Two ints with the
+            // same signature are interchangeable; sort all ints by
+            // (signature, original_value) and assign ranks 1, 2, 3, ...
+            // by sorted position. Apply rank assignment when emitting
+            // the canonical key. This is sound AND complete for Set<int>
+            // / Map<int, _> field-wise permutations.
+            let symmetric_fields: Vec<(&str, &RuntimeValue)> = fields
+                .iter()
+                .filter(|(name, _)| symmetry_fields.contains(name.as_str()))
+                .map(|(name, value)| (name.as_str(), value))
+                .collect();
+
+            // Step 1: collect all distinct ints appearing in any symmetric field.
+            let mut domain: BTreeSet<i128> = BTreeSet::new();
+            for (_, v) in &symmetric_fields {
+                collect_ints_into(v, &mut domain);
+            }
+
+            // Step 2: compute each int's membership signature across the
+            // symmetric fields (in the field's natural traversal order).
+            let mut signatures: Vec<(i128, Vec<bool>)> = Vec::new();
+            for &x in &domain {
+                let sig: Vec<bool> = symmetric_fields
+                    .iter()
+                    .map(|(_, v)| value_contains_int(v, x))
+                    .collect();
+                signatures.push((x, sig));
+            }
+
+            // Step 3: sort by (signature, original_value), assign ranks.
+            signatures.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+            let rank_map: std::collections::HashMap<i128, i128> = signatures
+                .iter()
+                .enumerate()
+                .map(|(idx, (val, _))| (*val, (idx as i128) + 1))
+                .collect();
+
+            // Step 4: emit canonical key with relabeled ints in symmetric fields.
             let mut parts = Vec::new();
             for (name, value) in fields {
                 let field_key = if symmetry_fields.contains(name.as_str()) {
-                    symmetry_normalized_key_with_atoms(value, &mut shared_atoms)
+                    relabeled_canonical_key(value, &rank_map)
                 } else {
                     value.canonical_key()
                 };
@@ -807,6 +859,127 @@ fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -
             format!("struct:{ty}{{{}}}", parts.join(","))
         }
         _ => state.canonical_key(),
+    }
+}
+
+/// Phase 38.21.D: recursively walk a RuntimeValue and collect every
+/// `Int` that appears (regardless of nesting depth or container type).
+fn collect_ints_into(value: &RuntimeValue, out: &mut BTreeSet<i128>) {
+    match value {
+        RuntimeValue::Int(v) => {
+            out.insert(*v);
+        }
+        RuntimeValue::Set(items) => {
+            for item in items {
+                collect_ints_into(item, out);
+            }
+        }
+        RuntimeValue::Seq(items) | RuntimeValue::Tuple(items) => {
+            for item in items {
+                collect_ints_into(item, out);
+            }
+        }
+        RuntimeValue::Map(entries) => {
+            for (k, v) in entries {
+                collect_ints_into(k, out);
+                collect_ints_into(v, out);
+            }
+        }
+        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
+            for (_, v) in fields {
+                collect_ints_into(v, out);
+            }
+        }
+        RuntimeValue::Unit
+        | RuntimeValue::Bool(_)
+        | RuntimeValue::Nat(_)
+        | RuntimeValue::String(_) => {}
+    }
+}
+
+/// Phase 38.21.D: does this RuntimeValue contain the given int (anywhere
+/// in its structure)? Used to compute per-int membership signatures.
+fn value_contains_int(value: &RuntimeValue, target: i128) -> bool {
+    match value {
+        RuntimeValue::Int(v) => *v == target,
+        RuntimeValue::Set(items) => items.iter().any(|item| value_contains_int(item, target)),
+        RuntimeValue::Seq(items) | RuntimeValue::Tuple(items) => {
+            items.iter().any(|item| value_contains_int(item, target))
+        }
+        RuntimeValue::Map(entries) => entries
+            .iter()
+            .any(|(k, v)| value_contains_int(k, target) || value_contains_int(v, target)),
+        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
+            fields.iter().any(|(_, v)| value_contains_int(v, target))
+        }
+        RuntimeValue::Unit
+        | RuntimeValue::Bool(_)
+        | RuntimeValue::Nat(_)
+        | RuntimeValue::String(_) => false,
+    }
+}
+
+/// Phase 38.21.D: emit the canonical key for a value with every `Int`
+/// relabeled by `rank_map`. Falls back to the un-relabeled
+/// `canonical_key()` shape for everything else.
+fn relabeled_canonical_key(value: &RuntimeValue, rank_map: &std::collections::HashMap<i128, i128>) -> String {
+    match value {
+        RuntimeValue::Int(v) => {
+            let relabeled = rank_map.get(v).copied().unwrap_or(*v);
+            format!("int:{relabeled}")
+        }
+        RuntimeValue::Set(items) => {
+            let mut parts: Vec<String> = items
+                .iter()
+                .map(|i| relabeled_canonical_key(i, rank_map))
+                .collect();
+            parts.sort();
+            format!("set:{{{}}}", parts.join(","))
+        }
+        RuntimeValue::Seq(items) => {
+            let parts: Vec<String> = items
+                .iter()
+                .map(|i| relabeled_canonical_key(i, rank_map))
+                .collect();
+            format!("seq:[{}]", parts.join(","))
+        }
+        RuntimeValue::Tuple(items) => {
+            let parts: Vec<String> = items
+                .iter()
+                .map(|i| relabeled_canonical_key(i, rank_map))
+                .collect();
+            format!("tuple:({})", parts.join(","))
+        }
+        RuntimeValue::Map(entries) => {
+            let mut parts: Vec<String> = entries
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "{}=>{}",
+                        relabeled_canonical_key(k, rank_map),
+                        relabeled_canonical_key(v, rank_map)
+                    )
+                })
+                .collect();
+            parts.sort();
+            format!("map:{{{}}}", parts.join(","))
+        }
+        RuntimeValue::Struct { ty, fields } => {
+            let parts: Vec<String> = fields
+                .iter()
+                .map(|(k, v)| format!("{k}:{}", relabeled_canonical_key(v, rank_map)))
+                .collect();
+            format!("struct:{ty}{{{}}}", parts.join(","))
+        }
+        RuntimeValue::Enum { ty, variant, fields } => {
+            let parts: Vec<String> = fields
+                .iter()
+                .map(|(k, v)| format!("{k}:{}", relabeled_canonical_key(v, rank_map)))
+                .collect();
+            format!("enum:{ty}::{variant}{{{}}}", parts.join(","))
+        }
+        // Non-int leaves: use the regular canonical_key encoding.
+        _ => value.canonical_key(),
     }
 }
 
