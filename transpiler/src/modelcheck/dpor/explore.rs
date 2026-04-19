@@ -9,9 +9,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::enabled::SpecContext;
-use crate::types::*;
-use verus_transpiler::modelcheck::value::RuntimeValue;
+use crate::modelcheck::dpor::enabled::SpecContext;
+use crate::modelcheck::dpor::types::*;
+use crate::modelcheck::value::RuntimeValue;
 
 /// One frame in the DPOR search stack.
 #[derive(Clone, Debug)]
@@ -163,7 +163,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     // Reset the zero-arg helper-call cache at run boundaries so that repeated
     // invocations in the same process (e.g. shadow-compare or tests) do not
     // carry stale cache entries across specs.
-    verus_transpiler::modelcheck::helpers::reset_zero_arg_helper_cache();
+    crate::modelcheck::helpers::reset_zero_arg_helper_cache();
 
     let mut distinct_states: BTreeSet<String> = BTreeSet::new();
     let mut traces_explored: usize = 0;
@@ -204,7 +204,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 Ok(Some(violated)) => Some(ViolationWitness {
                     invariant: violated,
                     violating_state_key: state.canonical_key(),
-                    violating_state_fingerprint: crate::enabled::hash_state(state),
+                    violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(state),
                     depth,
                     trace: trace.to_vec(),
                 }),
@@ -254,7 +254,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 violation: Some(ViolationWitness {
                     invariant: "__deadlock__".to_string(),
                     violating_state_key: initial.canonical_key(),
-                    violating_state_fingerprint: crate::enabled::hash_state(initial),
+                    violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(initial),
                     depth: 0,
                     trace: vec![],
                 }),
@@ -266,7 +266,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
         let initial_frame = StackFrame {
             state: initial.clone(),
-            state_fingerprint: crate::enabled::hash_state(initial),
+            state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(initial),
             enabled,
             done: BTreeSet::new(),
             backtrack,
@@ -385,7 +385,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
                     let successor = successors
                         .iter()
-                        .find(|s| crate::enabled::hash_state(s) == transition.successor_fingerprint)
+                        .find(|s| crate::modelcheck::dpor::enabled::hash_state(s) == transition.successor_fingerprint)
                         .cloned();
 
                     let Some(successor) = successor else {
@@ -470,7 +470,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 violation: Some(ViolationWitness {
                                     invariant: "__deadlock__".to_string(),
                                     violating_state_key: successor.canonical_key(),
-                                    violating_state_fingerprint: crate::enabled::hash_state(
+                                    violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(
                                         &successor,
                                     ),
                                     depth,
@@ -701,7 +701,7 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
         {
             successors
                 .iter()
-                .find(|s| crate::enabled::hash_state(s) == trans.successor_fingerprint)
+                .find(|s| crate::modelcheck::dpor::enabled::hash_state(s) == trans.successor_fingerprint)
                 .cloned()
         } else {
             // Fallback: if transition_key doesn't match, try to find by index
@@ -1033,11 +1033,11 @@ max_seq_len = 4
         model_toml: &std::path::Path,
         invariants: &[String],
         timeout_sec: u64,
-    ) -> crate::baseline::BaselineResult {
+    ) -> crate::modelcheck::dpor::baseline::BaselineResult {
         let _guard = baseline_run_lock()
             .lock()
             .expect("baseline run lock poisoned");
-        crate::baseline::run_baseline(transpiler_bin, spec_file, model_toml, invariants, timeout_sec)
+        crate::modelcheck::dpor::baseline::run_baseline(transpiler_bin, spec_file, model_toml, invariants, timeout_sec)
     }
 
     #[test]
@@ -1185,7 +1185,7 @@ max_seq_len = 4
         let dpor_result = explore_dpor(&ctx, &config);
 
         // Also run the baseline subprocess for comparison
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 // Can't compare without baseline binary — just check DPOR ran
@@ -1251,7 +1251,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 return;
@@ -2642,7 +2642,7 @@ max_seq_len = 4
     }
 
     fn baseline_negative_signature(
-        baseline: &crate::baseline::BaselineResult,
+        baseline: &crate::modelcheck::dpor::baseline::BaselineResult,
     ) -> Option<NegativeWitnessSignature> {
         let root = baseline.raw_json.as_ref()?;
         match baseline.result.as_str() {
@@ -2734,7 +2734,7 @@ max_seq_len = 4
         };
 
         // Run baseline subprocess
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => return (0, 0, "no_baseline_bin"),
         };
@@ -2771,7 +2771,7 @@ max_seq_len = 4
 
     #[test]
     fn test_baseline_negative_signature_extracts_invariant_and_depth() {
-        let baseline = crate::baseline::BaselineResult {
+        let baseline = crate::modelcheck::dpor::baseline::BaselineResult {
             case_id: "case".to_string(),
             result: "invariant_violated".to_string(),
             stop_reason: "InvariantViolated".to_string(),
@@ -2861,7 +2861,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");
@@ -2899,7 +2899,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");
@@ -2937,7 +2937,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");
@@ -2969,7 +2969,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");
@@ -3007,7 +3007,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");
@@ -3045,7 +3045,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");
@@ -3084,7 +3084,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");
@@ -3162,7 +3162,7 @@ max_seq_len = 4
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");

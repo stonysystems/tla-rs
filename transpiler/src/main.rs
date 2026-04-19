@@ -37,6 +37,13 @@ use verus_transpiler::{FileConfig, TranslatorConfig, Transpiler, TranspilerConfi
 enum CliSearchMode {
     Bfs,
     Dfs,
+    /// Phase 38.18.10: invoke the DPOR sleep-set explorer (relocated
+    /// from the prototype crate `dpor-checker` into
+    /// `transpiler/src/modelcheck/dpor/`). Reduces transition count
+    /// and reachable distinct-state count substantially on protocols
+    /// with concurrent independent actions (e.g. Paxos 8/5: BFS finds
+    /// 6,033 states / 206 s; this strategy finds 153 / 30 s).
+    Dpor,
 }
 
 impl CliSearchMode {
@@ -44,6 +51,7 @@ impl CliSearchMode {
         match self {
             Self::Bfs => "bfs",
             Self::Dfs => "dfs",
+            Self::Dpor => "dpor",
         }
     }
 }
@@ -2186,6 +2194,11 @@ fn cli_search_to_explorer_mode(
     match mode {
         CliSearchMode::Bfs => SearchMode::Bfs,
         CliSearchMode::Dfs => SearchMode::Dfs,
+        // Phase 38.18.10: Dpor doesn't go through the explorer's
+        // SearchMode dispatch — it has its own DFS+sleep-set engine.
+        // The fallback Bfs is used only by code paths that touch
+        // the SearchMode enum before the strategy branch.
+        CliSearchMode::Dpor => SearchMode::Bfs,
     }
 }
 
@@ -3505,6 +3518,85 @@ fn try_solve_predicate_only_helper_branch(
     ))
 }
 
+/// Phase 38.18.10: invoke the relocated DPOR sleep-set explorer
+/// (`crate::modelcheck::dpor::explore_dpor`) on the same bundle and
+/// model config that the BFS path uses, then synthesize a minimal
+/// `ExplorationResult` so the existing JSON-report code path can
+/// consume it without changes.
+///
+/// Drops a few BFS-specific things (the per-state successor traces
+/// used by the leads_to/liveness checker) — DPOR doesn't store
+/// every reached state's RuntimeValue, only their canonical-key
+/// strings. For DPOR runs, `exploration.explored` is empty and the
+/// downstream leads_to check is skipped accordingly.
+fn run_dpor_explorer_as_main_path(
+    bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
+    model_config: &verus_transpiler::modelcheck::config::ModelConfig,
+    bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds,
+    constants_value: &verus_transpiler::modelcheck::value::RuntimeValue,
+    invariants: &[verus_transpiler::ast::SpecFunction],
+    limits: verus_transpiler::modelcheck::explorer::ExplorationLimits,
+) -> std::result::Result<
+    verus_transpiler::modelcheck::explorer::ExplorationResult,
+    String,
+> {
+    use verus_transpiler::modelcheck::dpor::enabled::SpecContext;
+    use verus_transpiler::modelcheck::dpor::{explore_dpor, DporConfig};
+    use verus_transpiler::modelcheck::explorer::{
+        ExplorationResult, ExplorationStats, ExplorationStopReason,
+    };
+
+    let constants_opt = if matches!(
+        constants_value,
+        verus_transpiler::modelcheck::value::RuntimeValue::Unit
+    ) {
+        None
+    } else {
+        Some(constants_value.clone())
+    };
+    let ctx = SpecContext {
+        bundle: bundle.clone(),
+        model_config: model_config.clone(),
+        bounds,
+        constants: constants_opt,
+    };
+    let invariant_names: Vec<String> = invariants.iter().map(|f| f.name.clone()).collect();
+    let dpor_config = DporConfig {
+        max_depth: limits.max_depth,
+        max_states: limits.max_states,
+        use_independence: true,
+        use_sleep_sets: true,
+        invariants: invariant_names,
+        check_deadlock: model_config.properties.check_deadlock,
+    };
+    let result = explore_dpor(&ctx, &dpor_config);
+    let stop_reason = if result.violation.is_some() {
+        ExplorationStopReason::InvariantViolated
+    } else {
+        ExplorationStopReason::FrontierExhausted
+    };
+    let stats = ExplorationStats {
+        initial_states: 1,
+        explored_states: result.distinct_states.len(),
+        visited_states: result.distinct_states.len(),
+        max_frontier_size: 0,
+        frontier_size_at_stop: 0,
+        successors_considered: result.transitions_fired,
+        successors_enqueued: result.transitions_fired,
+        duplicate_successors: 0,
+        hash_compaction_collisions: 0,
+        symmetry_collapses: 0,
+    };
+    Ok(ExplorationResult {
+        explored: Vec::new(),
+        stop_reason,
+        stats,
+        invariant_violation: None,
+        deadlock: None,
+        counterexample: None,
+    })
+}
+
 fn execute_model_check(
     bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
@@ -3993,7 +4085,23 @@ fn execute_model_check(
             ParityDebugExporter::new(dir)
                 .unwrap_or_else(|e| panic!("Failed to create parity debug exporter: {e}"))
         });
-        let mut exploration = explore_state_space_with_traces_dedup_and_debug(
+        // Phase 38.18.10: when --search dpor is selected, route through
+        // the relocated DPOR sleep-set explorer (in
+        // `transpiler/src/modelcheck/dpor/`) instead of plain BFS/DFS.
+        // The DPOR result is adapted into the same ExplorationResult
+        // shape so the existing JSON-report code path keeps working.
+        let mut exploration = if matches!(selected_search, CliSearchMode::Dpor) {
+            run_dpor_explorer_as_main_path(
+                bundle,
+                model_config,
+                bounds,
+                constants_value,
+                &owned_invariants,
+                limits,
+            )
+            .map_err(|e| miette::miette!("{}", e))?
+        } else {
+            explore_state_space_with_traces_dedup_and_debug(
             &initial_states,
             search_mode,
             limits,
@@ -4030,7 +4138,8 @@ fn execute_model_check(
             },
             debug_exporter.as_mut(),
         )
-        .map_err(|e| miette::miette!("{}", e))?;
+        .map_err(|e| miette::miette!("{}", e))?
+        };
         let exploration_elapsed_ms = exploration_started.elapsed().as_millis();
         if cooperative_timeout_hit.get()
             && matches!(

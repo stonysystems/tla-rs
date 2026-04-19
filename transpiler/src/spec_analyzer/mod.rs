@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 /// Contains all type definitions (structs, enums, aliases) and function
 /// signatures found in the spec. This is the input for auto-deriving
 /// TOML configuration in later phases.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SpecSchema {
     /// All struct definitions, keyed by name (e.g., "LState", "LConstants")
     pub structs: HashMap<String, StructDef>,
@@ -168,7 +168,7 @@ pub struct SchemaSummary {
 /// and exposes both:
 /// - merged schema (types + signatures), and
 /// - full parsed spec functions (`SpecFunction` / `Expr` AST) from both files.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProtocolSourceBundle {
     /// `src/protocol/<Proto>/types.rs`
     pub types_file: PathBuf,

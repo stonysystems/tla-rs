@@ -16,12 +16,12 @@ pub struct LState {
 
 /// Acceptors operator
 pub open spec fn LAcceptors() -> Set<int> {
-    set![1, 2, 3]
+    set![1, 2, 3, 4, 5, 6, 7, 8]
 }
 
 /// Values operator
 pub open spec fn LValues() -> Set<int> {
-    set![1, 2, 3]
+    set![1, 2, 3, 4, 5]
 }
 
 /// Init operator
@@ -51,7 +51,7 @@ pub open spec fn LSend2b(s: LState, s_: LState, a: int, b: int, v: int) -> bool 
 
 /// Next operator
 pub open spec fn LNext(s: LState, s_: LState) -> bool {
-    (((((((((((((((((((((((((((((((((((((((((((((((LSend1a(s, s_, 1) || LSend1a(s, s_, 2)) || LSend1a(s, s_, 3)) || LSend1b(s, s_, 1, 1)) || LSend1b(s, s_, 1, 2)) || LSend1b(s, s_, 1, 3)) || LSend1b(s, s_, 2, 1)) || LSend1b(s, s_, 2, 2)) || LSend1b(s, s_, 2, 3)) || LSend1b(s, s_, 3, 1)) || LSend1b(s, s_, 3, 2)) || LSend1b(s, s_, 3, 3)) || LSend2a(s, s_, 1, 1)) || LSend2a(s, s_, 1, 2)) || LSend2a(s, s_, 1, 3)) || LSend2a(s, s_, 2, 1)) || LSend2a(s, s_, 2, 2)) || LSend2a(s, s_, 2, 3)) || LSend2a(s, s_, 3, 1)) || LSend2a(s, s_, 3, 2)) || LSend2a(s, s_, 3, 3)) || LSend2b(s, s_, 1, 1, 1)) || LSend2b(s, s_, 1, 1, 2)) || LSend2b(s, s_, 1, 1, 3)) || LSend2b(s, s_, 1, 2, 1)) || LSend2b(s, s_, 1, 2, 2)) || LSend2b(s, s_, 1, 2, 3)) || LSend2b(s, s_, 1, 3, 1)) || LSend2b(s, s_, 1, 3, 2)) || LSend2b(s, s_, 1, 3, 3)) || LSend2b(s, s_, 2, 1, 1)) || LSend2b(s, s_, 2, 1, 2)) || LSend2b(s, s_, 2, 1, 3)) || LSend2b(s, s_, 2, 2, 1)) || LSend2b(s, s_, 2, 2, 2)) || LSend2b(s, s_, 2, 2, 3)) || LSend2b(s, s_, 2, 3, 1)) || LSend2b(s, s_, 2, 3, 2)) || LSend2b(s, s_, 2, 3, 3)) || LSend2b(s, s_, 3, 1, 1)) || LSend2b(s, s_, 3, 1, 2)) || LSend2b(s, s_, 3, 1, 3)) || LSend2b(s, s_, 3, 2, 1)) || LSend2b(s, s_, 3, 2, 2)) || LSend2b(s, s_, 3, 2, 3)) || LSend2b(s, s_, 3, 3, 1)) || LSend2b(s, s_, 3, 3, 2)) || LSend2b(s, s_, 3, 3, 3))
+    exists |b: int| LAcceptors().contains(b) && (LSend1a(s, s_, b) || exists |a: int, b: int| (LAcceptors().contains(a) && LAcceptors().contains(b)) && (LSend1b(s, s_, a, b) || exists |b: int, v: int| (LAcceptors().contains(b) && LValues().contains(v)) && (LSend2a(s, s_, b, v) || exists |a: int, b: int, v: int| (LAcceptors().contains(a) && LAcceptors().contains(b) && LValues().contains(v)) && LSend2b(s, s_, a, b, v))))
 }
 
 /// ChosenValueAgreement operator

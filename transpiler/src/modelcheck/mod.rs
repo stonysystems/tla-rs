@@ -17,6 +17,7 @@
 
 pub mod config;
 pub mod domain;
+pub mod dpor;
 pub mod evaluator;
 pub mod explorer;
 pub mod graph;

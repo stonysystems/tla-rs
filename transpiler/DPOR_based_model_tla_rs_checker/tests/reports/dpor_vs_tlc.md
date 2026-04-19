@@ -1,4 +1,4 @@
-# DPOR vs TLC Performance Comparison (Phase 38.18.9)
+# DPOR vs TLC Performance Comparison (Phase 38.18.10)
 
 Generated: 2026-04-19
 
@@ -373,21 +373,28 @@ DPOR's value will reappear at larger bounds where the algorithmic
 exponential-vs-polynomial gap dominates. The 82.9% transition reduction
 on Paxos is unchanged; only the relative wall-time comparison shifted.
 
-### 6. DPOR sleep-set wiring would give another 39× on Paxos (deferred)
+### 6. DPOR sleep-set in main path — landed (Phase 38.18.10)
 
-Measured directly via `dpor-checker shadow-compare` on Paxos 8/5
-(post-symmetry):
-- Baseline (BFS in main): 6,033 distinct states / 206 s
-- DPOR (sleep-set): **153** distinct states / 30 s — **39× state
-  reduction, 7× wall-time** on top of symmetry.
+The cyclic dep that blocked this for months has been broken:
+`transpiler/src/modelcheck/dpor/{baseline,enabled,explore,types,witness}.rs`
+now hold the DPOR algorithm directly, and the prototype `dpor-checker`
+crate is a thin re-export. The main `verus-transpile model-check` CLI
+gained `--search dpor` to invoke the relocated explorer instead of
+BFS/DFS.
 
-The DPOR sleep-set algorithm is already implemented in the
-`dpor-checker` library; the win is real and verified. Wiring it into
-the main `verus-transpile model-check` path is blocked by a
-cyclic-dependency: `dpor-checker` depends on `verus-transpiler`, so
-moving the algorithm into `transpiler/src/modelcheck/dpor/` would
-require relocating ~600 lines of code. Tracked as multi-day work
-under Phase 38.18.3.
+Measured directly on Paxos 8/5 (post-symmetry):
+- `--search bfs`  (default): 6,033 distinct states / 199 s
+- `--search dpor` (new):     **153 distinct states / 33 s**
+
+That's **39× state-set reduction, 6× wall-time** on top of the symmetry
+win. The MATCH-vs-DIFF parity column for case 17 reflects the
+algorithmic reduction — DPOR's sleep-set explores fewer interleavings
+that produce equivalent state sequences.
+
+Caveat: when `--search dpor` is set, the leads_to/liveness checker is
+skipped (DPOR doesn't store full RuntimeValue for every reached
+state, only canonical-key strings). For invariant-only specs (the
+common case), this has no effect.
 
 ### 7. Solver throughput is the remaining bottleneck
 

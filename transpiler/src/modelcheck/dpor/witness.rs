@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::Command;
 
-use crate::types::*;
+use crate::modelcheck::dpor::types::*;
 
 /// A loaded execution graph from the baseline's debug export.
 #[derive(Debug)]
@@ -456,7 +456,7 @@ mod tests {
             return;
         }
 
-        let transpiler = match crate::baseline::find_transpiler_bin() {
+        let transpiler = match crate::modelcheck::dpor::baseline::find_transpiler_bin() {
             Some(p) => p,
             None => {
                 eprintln!("Skipping: transpiler binary not found");
@@ -465,7 +465,7 @@ mod tests {
         };
 
         let tmp = tempfile::tempdir().unwrap();
-        let model_path = crate::baseline::create_default_model_toml(tmp.path());
+        let model_path = crate::modelcheck::dpor::baseline::create_default_model_toml(tmp.path());
         let export_dir = tmp.path().join("export");
 
         let graph = run_baseline_with_export(
