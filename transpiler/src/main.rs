@@ -4856,6 +4856,9 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     miette::miette!("Failed to serialize model-check JSON report: {}", e)
                 })?;
                 println!("{}", rendered);
+                // Phase 38.22.1.a: dump eval_expr profile to stderr
+                // when TLARS_EVAL_PROFILE=1.
+                verus_transpiler::modelcheck::evaluator::dump_eval_expr_profile();
                 return Ok(());
             }
 

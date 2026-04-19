@@ -66,8 +66,205 @@ impl<'a> EvalContext<'a> {
     }
 }
 
+/// Phase 38.22.1.a — eval_expr profile counters. Per-Expr-variant call
+/// counts that ground-truth where AST-traversal time goes. Gated on
+/// the `TLARS_EVAL_PROFILE=1` environment variable so the increment is
+/// branch-prediction-friendly when disabled. Counts are dumped to
+/// stderr at process exit by `dump_eval_expr_profile()`.
+#[derive(Default, Debug)]
+pub struct EvalExprProfile {
+    pub conjunction: u64,
+    pub disjunction: u64,
+    pub implies: u64,
+    pub iff: u64,
+    pub not: u64,
+    pub if_expr: u64,
+    pub literal: u64,
+    pub ident: u64,
+    pub view: u64,
+    pub cast: u64,
+    pub field: u64,
+    pub arrow: u64,
+    pub call: u64,
+    pub method_call: u64,
+    pub binary: u64,
+    pub eq: u64,
+    pub ne: u64,
+    pub lt: u64,
+    pub le: u64,
+    pub gt: u64,
+    pub ge: u64,
+    pub set_lit: u64,
+    pub seq_lit: u64,
+    pub map_lit: u64,
+    pub tuple: u64,
+    pub set_empty: u64,
+    pub seq_empty: u64,
+    pub map_empty: u64,
+    pub forall: u64,
+    pub exists: u64,
+    pub choose: u64,
+    pub closure: u64,
+    pub struct_lit: u64,
+    pub struct_update: u64,
+    pub is_check: u64,
+    pub match_expr: u64,
+    pub other: u64,
+}
+
+thread_local! {
+    static EVAL_EXPR_PROFILE: std::cell::RefCell<EvalExprProfile> =
+        std::cell::RefCell::new(EvalExprProfile::default());
+    static EVAL_EXPR_PROFILE_ENABLED: std::cell::Cell<bool> =
+        std::cell::Cell::new(std::env::var("TLARS_EVAL_PROFILE").is_ok());
+}
+
+#[inline(always)]
+fn bump_profile<F: FnOnce(&mut EvalExprProfile)>(f: F) {
+    if EVAL_EXPR_PROFILE_ENABLED.with(|c| c.get()) {
+        EVAL_EXPR_PROFILE.with(|p| f(&mut p.borrow_mut()));
+    }
+}
+
+/// Print the accumulated eval_expr profile to stderr and reset the
+/// counters. Called once at the end of a model-check run when the
+/// `TLARS_EVAL_PROFILE` env var is set.
+pub fn dump_eval_expr_profile() {
+    if !EVAL_EXPR_PROFILE_ENABLED.with(|c| c.get()) {
+        return;
+    }
+    EVAL_EXPR_PROFILE.with(|p| {
+        let p = p.borrow();
+        let total = p.conjunction
+            + p.disjunction
+            + p.implies
+            + p.iff
+            + p.not
+            + p.if_expr
+            + p.literal
+            + p.ident
+            + p.view
+            + p.cast
+            + p.field
+            + p.arrow
+            + p.call
+            + p.method_call
+            + p.binary
+            + p.eq
+            + p.ne
+            + p.lt
+            + p.le
+            + p.gt
+            + p.ge
+            + p.set_lit
+            + p.seq_lit
+            + p.map_lit
+            + p.tuple
+            + p.set_empty
+            + p.seq_empty
+            + p.map_empty
+            + p.forall
+            + p.exists
+            + p.choose
+            + p.closure
+            + p.struct_lit
+            + p.struct_update
+            + p.is_check
+            + p.match_expr
+            + p.other;
+        eprintln!("=== eval_expr profile (Phase 38.22.1.a) ===");
+        eprintln!("total calls: {}", total);
+        let mut entries: Vec<(&str, u64)> = vec![
+            ("Conjunction", p.conjunction),
+            ("Disjunction", p.disjunction),
+            ("Implies", p.implies),
+            ("Iff", p.iff),
+            ("Not", p.not),
+            ("If", p.if_expr),
+            ("Literal", p.literal),
+            ("Ident", p.ident),
+            ("View", p.view),
+            ("Cast", p.cast),
+            ("Field", p.field),
+            ("Arrow", p.arrow),
+            ("Call", p.call),
+            ("MethodCall", p.method_call),
+            ("Binary", p.binary),
+            ("Eq", p.eq),
+            ("Ne", p.ne),
+            ("Lt", p.lt),
+            ("Le", p.le),
+            ("Gt", p.gt),
+            ("Ge", p.ge),
+            ("SetLit", p.set_lit),
+            ("SeqLit", p.seq_lit),
+            ("MapLit", p.map_lit),
+            ("Tuple", p.tuple),
+            ("SetEmpty", p.set_empty),
+            ("SeqEmpty", p.seq_empty),
+            ("MapEmpty", p.map_empty),
+            ("Forall", p.forall),
+            ("Exists", p.exists),
+            ("Choose", p.choose),
+            ("Closure", p.closure),
+            ("Struct", p.struct_lit),
+            ("StructUpdate", p.struct_update),
+            ("Is", p.is_check),
+            ("Match", p.match_expr),
+            ("(other)", p.other),
+        ];
+        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        for (name, count) in entries.iter().filter(|(_, c)| *c > 0) {
+            let pct = if total > 0 {
+                100.0 * (*count as f64) / (total as f64)
+            } else {
+                0.0
+            };
+            eprintln!("  {:<14} {:>12}  {:>6.2}%", name, count, pct);
+        }
+    });
+}
+
 /// Evaluate a spec expression into a concrete runtime value.
 pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeValue> {
+    bump_profile(|p| match expr {
+        Expr::Conjunction(_) => p.conjunction += 1,
+        Expr::Disjunction(_) => p.disjunction += 1,
+        Expr::Implies(_, _) => p.implies += 1,
+        Expr::Iff(_, _) => p.iff += 1,
+        Expr::Not(_) => p.not += 1,
+        Expr::If { .. } => p.if_expr += 1,
+        Expr::Eq(_, _) => p.eq += 1,
+        Expr::Ne(_, _) => p.ne += 1,
+        Expr::Lt(_, _) => p.lt += 1,
+        Expr::Le(_, _) => p.le += 1,
+        Expr::Gt(_, _) => p.gt += 1,
+        Expr::Ge(_, _) => p.ge += 1,
+        Expr::Field(_, _) => p.field += 1,
+        Expr::Arrow(_, _) => p.arrow += 1,
+        Expr::Call { .. } => p.call += 1,
+        Expr::MethodCall { .. } => p.method_call += 1,
+        Expr::View(_) => p.view += 1,
+        Expr::Cast(_, _) => p.cast += 1,
+        Expr::Ident(_) => p.ident += 1,
+        Expr::Literal(_) => p.literal += 1,
+        Expr::Binary(_, _, _) => p.binary += 1,
+        Expr::SetLit(_) => p.set_lit += 1,
+        Expr::SeqLit(_) => p.seq_lit += 1,
+        Expr::MapLit(_) => p.map_lit += 1,
+        Expr::SetEmpty => p.set_empty += 1,
+        Expr::SeqEmpty => p.seq_empty += 1,
+        Expr::MapEmpty => p.map_empty += 1,
+        Expr::Forall { .. } => p.forall += 1,
+        Expr::Exists { .. } => p.exists += 1,
+        Expr::Choose { .. } => p.choose += 1,
+        Expr::Closure { .. } => p.closure += 1,
+        Expr::Struct { .. } => p.struct_lit += 1,
+        Expr::StructUpdate { .. } => p.struct_update += 1,
+        Expr::Is(_, _) => p.is_check += 1,
+        Expr::Match { .. } => p.match_expr += 1,
+        _ => p.other += 1,
+    });
     match expr {
         Expr::Conjunction(items) => {
             for item in items {
