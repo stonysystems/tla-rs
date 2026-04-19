@@ -13618,6 +13618,106 @@ Remaining: A, B, C, E, F, H, I — each multi-day to multi-week. Default
 Paxos run-time at the new bounds is ~35 s with `--search dpor`, well
 within the 10-min budget; further optimization is no longer urgent.
 
+### 38.22 Architectural performance gaps (per-state throughput)
+
+After Phase 38.21 wins, DPOR runs Paxos at ~30 states/sec (BFS) or
+~5 states/sec (--search dpor). TLC, after JVM warmup, runs the same
+spec at ~11,000 states/sec — a **400-2000× per-state throughput
+gap**. This isn't missed micro-optimization; three architectural
+roots dominate. Listed in priority order (largest expected gain first).
+
+#### 38.22.1 — Replace AST interpretation with compiled execution
+
+The current evaluator walks the `Expr` AST recursively in `eval_expr`
+for every action attempt. For Paxos at 8/5, each state runs ~430
+(a,b,v) tuples × ~70 AST node visits ≈ 30,000 AST traversals per
+state. Each visit: pattern-match on `Expr::*`, recursive call,
+RuntimeValue allocation, binding-map String lookup. ~30 ms per state.
+
+TLC compiles the spec to a custom bytecode and runs it in a tight VM
+loop; per-state cost ~10 µs. **~100× of the throughput gap is from
+this single layer.**
+
+Three implementation paths, in increasing engineering cost / payoff:
+
+- [ ] **38.22.1.a**: **Profile eval_expr first.** Add per-Expr-variant
+  counters and timing in `transpiler/src/modelcheck/evaluator.rs` so
+  we know WHERE the AST traversal time goes (Call vs Field vs
+  MethodCall vs Set ops). Currently we're guessing; data would
+  inform whether to chase a generic VM or focus on a few hot patterns.
+  *Half a day; deliverable is a profile report.*
+- [ ] **38.22.1.b**: **Stack-based bytecode VM.** Compile each spec
+  function to a sequence of opcodes (LoadVar, LoadField, SetUnion,
+  Eq, JumpIfFalse, …) executed by a tight switch-dispatched loop.
+  Inspired by TLC's compiled form. Per-op cost drops from ~µs (AST
+  match + recursive call) to ~10 ns (table dispatch + register
+  load). Estimated 50-100× win on the eval phase. *2-4 weeks.*
+- [ ] **38.22.1.c**: **Codegen Rust closures via syn / quote.**
+  Generate Rust source per spec function, compile to `cdylib` at
+  startup via cargo, dlopen at runtime. True native execution; LLVM
+  optimizes the closure. ~200× win possible but adds compilation
+  latency (cargo invocation per run). *4-8 weeks; biggest absolute
+  win but slowest to land.*
+
+#### 38.22.2 — Replace boxed enum value layout with packed native
+
+`RuntimeValue::Struct { ty: String, fields: BTreeMap<String, RuntimeValue> }`
+allocates a heap-resident BTreeMap with String keys per state.
+Successor construction does:
+- Clone the BTreeMap (full re-allocation, dozens of allocs)
+- Each `Set(BTreeSet<RuntimeValue>)` field clones the BTreeSet
+- Recursive cloning at every nesting depth
+
+Per Paxos state-clone: ~50 small allocations totaling ~1 KB. TLC uses
+flat fingerprint-addressed values with structural sharing; per-state
+alloc is ~bytes.
+
+Implementation paths:
+
+- [ ] **38.22.2.a**: **Intern field names** to `Symbol` (u32) so the
+  BTreeMap key isn't a String. Field lookup becomes integer-indexed.
+  *2-3 days; modest win but easy.*
+- [ ] **38.22.2.b**: **Replace BTreeMap fields with Vec<RuntimeValue>**
+  indexed by a precomputed `field_name → index` table per `LState`
+  type. Eliminates BTreeMap allocation entirely. *1 week.*
+- [ ] **38.22.2.c**: **Hash-cons / `Arc<RuntimeValue>` for shared
+  subterms.** Most successors share most fields with the predecessor;
+  with Arc, clone becomes refcount bump. *1 week. Combines with .b.*
+- [ ] **38.22.2.d**: **Bit-packed representation for small enum
+  variants and small integer sets.** Domain-specific; for Paxos's
+  Set<int> over {1..8}, a bitmap (u8) is ~32× smaller than
+  BTreeSet<RuntimeValue>. *Per-spec design work.*
+
+#### 38.22.3 — Replace recursive String canonical_key with streaming hash
+
+`canonical_key()` recursively builds a String like
+`struct:LState{maxBal:set:{int:1,int:2},maxVBal:set:{int:1},maxVal:set:{int:1}}`
+(30-50 small String allocations per call). `BTreeSet<String>` insert
+then does string comparison.
+
+TLC computes a 64-bit fingerprint via streaming hash — one allocation,
+one comparison. Per-state dedup cost ~100 ns vs our ~100 µs.
+
+Implementation paths:
+
+- [ ] **38.22.3.a**: **Streaming `Hasher::write` walk** that produces
+  u64 directly without intermediate Strings. Use FxHash or XXH3.
+  Replace `BTreeSet<String>` with `HashSet<u64>` (with collision
+  handling via BTreeSet<state> per bucket if paranoid). *3-5 days.*
+- [ ] **38.22.3.b**: **Cache the hash on `RuntimeValue`** (OnceLock
+  field per Struct/Enum). First compute is the same; subsequent
+  lookups (e.g. for re-dedup of an already-emitted state) are free.
+  *2-3 days. Combines with .a.*
+
+#### Recommended starting path
+
+D and J already landed. The next concrete deliverable, executable
+without weeks of commitment, is **38.22.1.a — profile eval_expr** to
+ground-truth where the AST time goes. After that, decide whether to
+invest in 38.22.1.b (bytecode VM) or 38.22.1.c (codegen). 38.22.2
+and 38.22.3 are each multi-day standalone efforts that can be done
+in parallel.
+
 #### Recommended execution order
 
 ~~D → G+J (do together) → E → A → B.~~ D and J landed. The next
