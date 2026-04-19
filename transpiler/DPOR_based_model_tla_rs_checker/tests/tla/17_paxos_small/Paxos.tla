@@ -6,16 +6,16 @@ EXTENDS Naturals
 
 VARIABLE maxBal, maxVBal, maxVal
 
-\* Phase 38.18.8 scale-up sweep (post-inliner-fix):
-\*   3/3 → 232 states / 0.37 s   (baseline)
-\*   4/4 → 1,216 states / 6.7 s
-\*   5/4 → 4,992 states / 46.7 s
-\*   5/5 → 5,984 states / 60.3 s
-\*   6/4 → 20,224 states / 267 s
-\*   6/5 → 24,256 states / 370 s  (chosen — fits in 10-min budget
-\*                                 with ~4 min headroom, 100× the
-\*                                 original state count)
-Acceptors == {1, 2, 3, 4, 5, 6}
+\* Phase 38.18.9 scale-up sweep (post-symmetry-reduction):
+\*   3/3 → 232 states / 0.37 s   (baseline, no symmetry)
+\*   6/5 → 24,256 → 1,447 states / 25.0 s   (17× state reduction
+\*                                            via Phase 38.18.9
+\*                                            cross-field acceptor
+\*                                            symmetry on maxBal/maxVBal)
+\*   7/5 → 2,972 states / 75 s   (post-symmetry)
+\*   8/5 → 6,033 states / 204 s  (chosen — half the budget)
+\*   9/5 → 12,166 states / 555 s (over-budget margin)
+Acceptors == {1, 2, 3, 4, 5, 6, 7, 8}
 Values == {1, 2, 3, 4, 5}
 
 Init ==

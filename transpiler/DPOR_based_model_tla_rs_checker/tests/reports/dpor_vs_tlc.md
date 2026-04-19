@@ -1,14 +1,15 @@
-# DPOR vs TLC Performance Comparison (Phase 38.18.8)
+# DPOR vs TLC Performance Comparison (Phase 38.18.9)
 
-Generated: 2026-04-16
+Generated: 2026-04-19
 
 DPOR run: `run_full_suite.sh --timeout 600` (single-threaded; with
   Phase 38.17.2 action-call inlining + Phase 38.17.4 DPOR reduction
   activation + Phase 38.17.6 ProcessId fix + Phase 38.18.5
   candidate-state-key-set memoization + Phase 38.18.6 ∧-through-∨
   branch-discovery distribution + Phase 38.18.7 forall-body q-free
-  conjunct lifting + **Phase 38.18.8 model-bound scale-up**).
-  **20/20 real pass, 0 vacuous, 0 errors, total suite time ~7.7 min.**
+  conjunct lifting + Phase 38.18.8 model-bound scale-up + **Phase
+  38.18.9 cross-field acceptor symmetry reduction**).
+  **20/20 real pass, 0 vacuous, 0 errors, total suite time ~4.7 min.**
 TLC run: `run_tlc_suite.sh --timeout 120` (TLC 2.20, Java 11). Phase
   38.20.1 added 0.01 s wall-time resolution; the values shown below
   reflect real precision, not 1-second integer rounding.
@@ -53,10 +54,20 @@ two are independent dimensions.
 | 14 | **leader_election** (4 nodes) | **5,704** | **60.5 s** | **5,786** | **1.90 s** | DIFF (DPOR-side bound) | 31.8x |
 | 15 | chain_replication (chain=3) | 114 | 3.80 s | 234 | 1.83 s | DIFF (deadlock) | 2.1x |
 | 16 | primarybackup (logLen=3) | **261** | **3.14 s** | **855** | **1.48 s** | DIFF (DPOR-side bound) | 2.1x |
-| 17 | **paxos (6/5 scale)** | **24,256** | **370.6 s** | **24,256** | **3.48 s** | **MATCH** | 106.5x |
+| 17 | **paxos (8/5 + symmetry)** | **6,033** | **194.3 s** | **24,256** † | **3.48 s** | DIFF (DPOR symmetry-collapsed) | 55.8x |
 | 18 | **pbft (40 replicas)** | **2,854** | **6.67 s** | **2,854** | **1.75 s** | **MATCH** | 3.8x |
 | 19 | epaxos | 11 | 0.73 s | 37 | 1.36 s | DIFF (DPOR-side bound) | DPOR wins 1.9x |
 | 20 | **raft (8 servers)** | **812** | **3.09 s** | **1,089** | **1.46 s** | DIFF (DPOR-side bound) | 2.1x |
+
+† Phase 38.18.9 enabled cross-field acceptor-symmetry on Paxos
+(`symmetry_fields = ["maxBal", "maxVBal"]`). Pre-symmetry the Paxos
+6/5 row was 24,256 states / 370.6 s; post-symmetry on the same 6/5
+config the same row would be 1,447 states / 25.0 s — a 17× state-set
+reduction. With the headroom freed up, the spec was scaled to 8/5,
+producing 6,033 canonical states / 194.3 s. TLC at 8/5 was not
+re-measured for this row (TLC has its own VIEW-based symmetry that
+would need to be defined separately); the listed TLC count is from
+the prior 6/5 baseline.
 
 ‡ Small-case TLC times (cases 01-13 with state count ≤ 13) are
 dominated by ~1.3 s of JVM startup + module loading, not by
@@ -153,6 +164,45 @@ Suite-wide impact (Phase 38.18.5 baseline → Phase 38.18.6):
 | 13 twophase | 0.26 s | 0.06 s | 4× |
 | 10 bakery_mutex | 181.7 s | 76.2 s | 2.4× |
 | 19 epaxos | timeout (>120 s) | 0.63 s | ∞ |
+
+## Phase 38.18.9 Cross-Field Symmetry Reduction
+
+The existing `search.symmetry_fields` mechanism in
+`transpiler/src/modelcheck/explorer.rs` was per-field — it normalized
+each named field's int atoms independently with a fresh atom map per
+field. That's correct for *single-field* symmetry but loses cross-
+field permutation equivalence: state {maxBal={1,2}, maxVBal={1}}
+and state {maxBal={3,4}, maxVBal={3}} (both representing "two
+acceptors voted in 1b, one in 2b ack, where the 2b acceptor is one
+of the 1b acceptors") were treated as distinct.
+
+Phase 38.18.9 makes the atom map *shared* across all listed
+symmetry fields — first-encountered int values get atom IDs in
+field-walk order, and the same int gets the same atom ID across all
+listed fields. This correctly canonicalizes states that differ only
+in acceptor-permutation when multiple fields share the same actor
+domain.
+
+Soundness: my algorithm is sound (won't merge non-equivalent states)
+but not complete (may miss some equivalences depending on field
+walk order). For Paxos, a 17× empirical reduction at 6/5 scale
+suggests it captures the bulk of the symmetric class structure.
+
+| Case | Pre-symmetry | Post-symmetry | Reduction |
+|---|---:|---:|---:|
+| 17 Paxos 6/5 | 24,256 states / 370.6 s | 1,447 states / 25.0 s | **17× states / 14.8× wall-time** |
+
+After the win, Paxos was scaled from 6/5 → 8/5 (same wall-time
+budget):
+- 6/5 + sym: 1,447 / 25.0 s
+- 7/5 + sym: 2,972 / 75.4 s
+- 8/5 + sym: **6,033 / 194.3 s** (chosen)
+- 9/5 + sym: 12,166 / 555.5 s (over-margin)
+
+Opt-in per-case: add `symmetry_fields = ["field1", "field2", ...]`
+to `[search]`. Only Paxos is currently using it; the other multi-
+process protocols (PBFT, Raft, Election) could benefit similarly
+once their symmetry classes are annotated.
 
 ## Phase 38.18.8 Model-Bound Scale-Up
 
@@ -342,8 +392,10 @@ on Paxos is unchanged; only the relative wall-time comparison shifted.
 | 216f6c8f | 38.18.5 zero-arg spec-helper call cache (LAcceptors/LValues) | Noise-level on current specs, safety net for future |
 | e745a28b | 38.18.4 read max_depth from model.toml in shadow-compare | DPOR/baseline state-count alignment |
 | 1d453822 | 38.18.2 inline zero-arg helper calls at IR build time | Within-noise (38.18.5 covers); cleaner primitive |
-| 9776a725 | **38.18.6 distribute ∧ through ∨ in branch discovery** | **Election 917×, Chain 99×, Bakery 2.4×** |
-| (this) | **38.18.7 lift q-free conjuncts out of forall body** | **Bakery 31× (76.2 s → 2.43 s); closes last fallback** |
+| 9776a725 | 38.18.6 distribute ∧ through ∨ in branch discovery | Election 917×, Chain 99×, Bakery 2.4× |
+| 6315cb3b | 38.18.7 lift q-free conjuncts out of forall body | Bakery 31× (76.2 s → 2.43 s); closes last fallback |
+| c4d77402 | 38.18.8 scale up all 20 case bounds toward 10-min budget | Paxos 100× state-count growth, etc. |
+| (this) | **38.18.9 cross-field acceptor-symmetry reduction** | **Paxos 17× state-set reduction; enables 8/5 scale-up at 4× headroom** |
 
 ## Reproduction
 

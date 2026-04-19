@@ -785,10 +785,20 @@ fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -
 
     match state {
         RuntimeValue::Struct { ty, fields } => {
+            // Phase 38.18.9: share the atoms map across all symmetry-listed
+            // fields so cross-field permutations are correctly canonicalized.
+            // For Paxos (maxBal, maxVBal both over acceptor IDs), this means
+            // a state where acceptor 1 appears in maxBal+maxVBal and a state
+            // where acceptor 4 appears in maxBal+maxVBal hash to the same
+            // canonical key — provided both fields share the atom pool.
+            // The previous per-field semantics over-merged structurally
+            // distinct states (e.g. 1 in maxBal+maxVBal vs 1 in maxBal +
+            // 2 in maxVBal would have collided).
+            let mut shared_atoms = std::collections::BTreeMap::<String, usize>::new();
             let mut parts = Vec::new();
             for (name, value) in fields {
                 let field_key = if symmetry_fields.contains(name.as_str()) {
-                    symmetry_normalized_key(value)
+                    symmetry_normalized_key_with_atoms(value, &mut shared_atoms)
                 } else {
                     value.canonical_key()
                 };

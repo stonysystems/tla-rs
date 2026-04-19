@@ -7,6 +7,10 @@ max_depth = 40
 max_states = 1000000
 timeout_ms = 600000
 candidate_eval_guardrail = 1000000
+# Phase 38.18.9: acceptors are interchangeable; canonicalize maxBal/maxVBal
+# (acceptor sets) under permutation. maxVal stays unsymmetric since values
+# carry semantic identity.
+symmetry_fields = ["maxBal", "maxVBal"]
 
 [properties]
 invariants = ["LChosenValueAgreement"]
@@ -14,12 +18,12 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 6 }
+int = { min = 0, max = 8 }
 
 [collections]
-max_set_len = 6
-max_seq_len = 6
-max_map_len = 6
+max_set_len = 8
+max_seq_len = 8
+max_map_len = 8
 
 [quantifiers.types.Seq_char]
 kind = "values"
