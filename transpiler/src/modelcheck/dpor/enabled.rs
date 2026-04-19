@@ -30,6 +30,21 @@ pub struct SpecContext {
     pub bounds: RuntimeCollectionBounds,
     /// Resolved constants value (None for specs without LConstants parameter).
     pub constants: Option<RuntimeValue>,
+    /// Phase 38.21.J: cache the post-inlining transition IR. The IR is
+    /// computed from `bundle.entrypoints.lnext` and is invariant across
+    /// the model-check run — no need to rebuild it per state.
+    pub cached_transition_ir:
+        std::sync::OnceLock<crate::modelcheck::ir::TransitionIr>,
+    /// Phase 38.21.J: cache the per-branch existential expansions. These
+    /// depend on (branch, schema, model_config) which are all run-
+    /// invariant; rebuilding them per state was a hot loop on cases
+    /// with many existential variables.
+    pub cached_branch_assignments: std::sync::OnceLock<
+        std::collections::BTreeMap<
+            String,
+            Vec<crate::modelcheck::domain::ExistentialAssignment>,
+        >,
+    >,
 }
 
 impl SpecContext {
@@ -63,6 +78,8 @@ impl SpecContext {
             model_config,
             bounds,
             constants,
+            cached_transition_ir: std::sync::OnceLock::new(),
+            cached_branch_assignments: std::sync::OnceLock::new(),
         })
     }
 
@@ -318,24 +335,45 @@ impl SpecContext {
         &self,
         state: &RuntimeValue,
     ) -> TranspileResult<Vec<(String, ProcessId, RuntimeValue)>> {
-        let mut transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
-        // Phase 38.17.4: Inline action calls for direct-assignment solving
-        crate::modelcheck::ir::inline_action_calls(
-            &mut transition,
-            &self.bundle.spec_functions,
-        );
-        // Phase 38.18.2: inline zero-argument helper calls.
-        crate::modelcheck::ir::inline_zero_arg_helper_calls(
-            &mut transition,
-            &self.bundle.spec_functions,
-        );
+        // Phase 38.21.J: build the transition IR once per SpecContext,
+        // not per state. Same for per-branch existentials.
+        let transition = self
+            .cached_transition_ir
+            .get_or_init(|| {
+                let mut t = build_transition_ir(&self.bundle.entrypoints.lnext)
+                    .expect("build_transition_ir failed in cache init");
+                crate::modelcheck::ir::inline_action_calls(&mut t, &self.bundle.spec_functions);
+                crate::modelcheck::ir::inline_zero_arg_helper_calls(
+                    &mut t,
+                    &self.bundle.spec_functions,
+                );
+                t
+            })
+            .clone();
 
-        let mut assignments_by_branch = std::collections::BTreeMap::new();
-        for branch in &transition.branches {
-            let assignments =
-                expand_branch_existentials(branch, &self.bundle.schema, &self.model_config)?;
-            assignments_by_branch.insert(branch.label.clone(), assignments);
-        }
+        let assignments_by_branch_owned;
+        let assignments_by_branch = match self.cached_branch_assignments.get() {
+            Some(cached) => cached,
+            None => {
+                let mut map = std::collections::BTreeMap::new();
+                for branch in &transition.branches {
+                    let assignments = expand_branch_existentials(
+                        branch,
+                        &self.bundle.schema,
+                        &self.model_config,
+                    )?;
+                    map.insert(branch.label.clone(), assignments);
+                }
+                assignments_by_branch_owned = map;
+                self.cached_branch_assignments
+                    .set(assignments_by_branch_owned.clone())
+                    .ok();
+                self.cached_branch_assignments.get().unwrap()
+            }
+        };
+        // (Pull a usable mutable name into the rest of the function below.)
+        let assignments_by_branch = assignments_by_branch.clone();
+        let mut transition = transition;
 
         let call_eval = |func_path: &crate::ast::Path,
                          args: &[RuntimeValue]|
