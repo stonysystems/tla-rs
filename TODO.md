@@ -13562,14 +13562,15 @@ tiers, ordered biggest-gain-per-effort first.
 
 #### Tier 2 — medium effort, predictable wins
 
-- [ ] **38.21.D**: **Complete symmetry reduction** (more state-set
-  reduction). The Phase 38.18.9 algorithm uses field-walk-order rank
-  assignment — sound but incomplete. Two permutation-equivalent
-  states can canonicalize to different keys depending on traversal
-  order. A true canonical form (lex-min over all permutations) would
-  catch every equivalence — probably another 2-3× state reduction on
-  Paxos at 8/5. **Best gain-per-effort in this list: 1-2 days, no
-  algorithm risk.**
+- [x] **38.21.D**: **Complete symmetry reduction** — DONE
+  (commit `13aaa959`). Replaced field-walk-order rank assignment
+  with signature-based canonical labeling (compute each int's
+  membership signature across all symmetric fields, sort by
+  (signature, original_value), assign ranks). Sound AND complete for
+  Set<int>/Map<int,_> field-wise permutations. Wired through both
+  BFS dedup and the DPOR sleep-set explorer.
+  Measured: Paxos 8/5 BFS 6,033 → **945 states** (6.4× reduction);
+  Election 4 nodes 2,839 → **1,263 states** (55% reduction).
 - [ ] **38.21.E**: **Hash-cons / `Arc<RuntimeValue>` for shared
   subterms**. Most successors share most fields with the predecessor
   (only one field changes per transition). Currently we deep-clone
@@ -13584,11 +13585,15 @@ tiers, ordered biggest-gain-per-effort first.
 
 #### Tier 3 — small wins, quick to implement
 
-- [ ] **38.21.G**: **FxHash `u64` dedup instead of String
-  canonical_key** (~5 % wall-time on Paxos at the current scale).
-  Was bigger before symmetry reduced state count; now smaller because
-  dedup is only 6.6 % of Paxos wall-time. Still ~hour of work, ~half
-  of dedup time saved. *Smallest scope.*
+- [~] **38.21.G**: **FxHash `u64` dedup** — analyzed and deferred.
+  The actual bottleneck isn't `BTreeSet<String>` insertion ops; it's
+  the recursive String construction inside `canonical_key()` /
+  `relabeled_canonical_key()`. Replacing the String hash key with a
+  u64 hash without also bypassing String construction would save only
+  the BTreeSet comparison cost (negligible). Doing it properly means
+  rewriting canonical_key as a streaming `Hasher::write` walk that
+  never allocates a String — a multi-day refactor for a small win at
+  current scale. Revisit if state count grows past ~10,000.
 - [ ] **38.21.H**: **Bit-pack small-state cases** (case-specific).
   Cases like 09 Peterson have small bounded state (a few booleans +
   tiny ints). Packing into a `u64` would make dedup near-free. Per-
@@ -13597,12 +13602,28 @@ tiers, ordered biggest-gain-per-effort first.
   treats branches with overlapping write-sets as conflicting. Many
   of those "conflicts" never materialize at runtime. Record actual
   runtime conflicts, narrow the relation on subsequent runs.
-- [ ] **38.21.J**: **`expand_branch_existentials` caching** (same
-  pattern as Phase 38.18.5). Per-branch existential domains are
-  recomputed every state but invariant across the run. One-line cache
-  addition. *Trivial.*
+- [x] **38.21.J**: **SpecContext lazy-init cache** for the post-
+  inlining transition IR and per-branch existential expansions —
+  DONE (commit `208bbf0e`). Added two `OnceLock` fields on
+  SpecContext; `solve_successors_with_branch_labels` populates them
+  on first call and reuses them for every subsequent state instead
+  of rebuilding. Also covers `expand_branch_existentials` since the
+  per-branch expansions are part of the cached map.
+  Measured: Election 58 s → 30 s (1.9×); Paxos 53 s → 35 s (1.5×).
+
+#### Status (2026-04-19)
+
+Done: D, J. Analyzed and deferred: G (low ROI without deeper rewrite).
+Remaining: A, B, C, E, F, H, I — each multi-day to multi-week. Default
+Paxos run-time at the new bounds is ~35 s with `--search dpor`, well
+within the 10-min budget; further optimization is no longer urgent.
 
 #### Recommended execution order
 
-D → G+J (do together) → E → A → B. C and F are advanced research
-techniques; defer until simpler wins exhausted.
+~~D → G+J (do together) → E → A → B.~~ D and J landed. The next
+biggest impact is **38.21.B (parallelize)** — TLC uses 4 workers for a
+roughly 4× wall-time win on multicore. After that, **38.21.A (codegen
+spec functions)** is the largest absolute win but the longest
+implementation; use it when you need to stress-test substantially
+larger spec instances. C and F are advanced research techniques;
+defer until simpler wins exhausted.
