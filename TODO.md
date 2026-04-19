@@ -13640,12 +13640,40 @@ this single layer.**
 
 Three implementation paths, in increasing engineering cost / payoff:
 
-- [ ] **38.22.1.a**: **Profile eval_expr first.** Add per-Expr-variant
-  counters and timing in `transpiler/src/modelcheck/evaluator.rs` so
-  we know WHERE the AST traversal time goes (Call vs Field vs
-  MethodCall vs Set ops). Currently we're guessing; data would
-  inform whether to chase a generic VM or focus on a few hot patterns.
-  *Half a day; deliverable is a profile report.*
+- [x] **38.22.1.a**: **Profile eval_expr first.** DONE
+  (commit `6cf1e679`). Added opt-in per-variant counters in
+  `transpiler/src/modelcheck/evaluator.rs`, gated on
+  `TLARS_EVAL_PROFILE=1`. Dump function emits to stderr at end of run.
+
+  Findings on Paxos 8/5 BFS — total **96.3 M eval_expr calls** for
+  945 distinct states (= ~102K per state):
+
+  | Variant      | Calls | %     |
+  |---|---:|---:|
+  | Literal      | 63 M  | 65.5% |
+  | Ident        | 11 M  | 11.6% |
+  | MethodCall   | 9.6 M | 9.95% |
+  | SetLit       | 9.0 M | 9.34% |
+  | Field        | 1.5 M | 1.62% |
+  | Binary       | 681 K | 0.71% |
+  | Eq, Call     | 0.6 M | 0.63% each |
+
+  Election 4-nodes BFS: total 20.5 M calls. Different shape — Binary
+  34%, Literal 17%, Ident 17% (Election uses many arithmetic
+  comparisons; Paxos uses set ops).
+
+  **Per-call cost is OK (~335 ns)**; the issue is volume. Codegen
+  must reduce traversal count (constant folding, indexed locals,
+  static dispatch), not just per-call cost.
+
+  **Highest-leverage codegen targets** (data-driven priorities for
+  38.22.1.b/.c):
+  1. Constant fold `set![Literal, ...]` → precomputed Set: kills
+     ~75% of all calls (Literal + SetLit).
+  2. Replace `BTreeMap<String, RuntimeValue>` binding lookup with
+     indexed locals: speeds up Ident at 12% by ~10×.
+  3. Static dispatch on `RuntimeValue` Set/Map methods: speeds up
+     MethodCall at 10%.
 - [ ] **38.22.1.b**: **Stack-based bytecode VM.** Compile each spec
   function to a sequence of opcodes (LoadVar, LoadField, SetUnion,
   Eq, JumpIfFalse, …) executed by a tight switch-dispatched loop.
