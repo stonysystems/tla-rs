@@ -20,6 +20,7 @@ pub mod domain;
 pub mod dpor;
 pub mod evaluator;
 pub mod explorer;
+pub mod field_schema;
 pub mod graph;
 pub mod helpers;
 pub mod init;

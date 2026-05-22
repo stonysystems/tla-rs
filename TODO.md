@@ -13613,9 +13613,11 @@ Implementation paths:
     Updated evaluator.rs, solver.rs, explorer.rs, parity.rs, and
     dpor/enabled.rs type annotations and test constructors. 313 tests
     pass, 0 new regressions.
-  - [ ] **38.22.2.b.ii**: **Add `FieldSchema` registry** mapping struct/enum
-    type names to ordered field lists with `name → index` lookup. Populate
-    during spec loading. ~100 LOC.
+  - [x] **38.22.2.b.ii**: **Add `FieldSchema` registry** mapping struct/enum
+    type names to ordered field lists with `name → index` lookup. Populated
+    during spec loading. Added `FieldLayout` (ordered fields + HashMap index)
+    and `FieldSchemaRegistry` in `modelcheck/field_schema.rs`. Wired into
+    `SpecContext` and `main.rs`. ~90 LOC + tests.
   - [ ] **38.22.2.b.iii**: **Switch `NamedFields` to indexed Vec** using
     FieldSchema for O(1) field access. `get(&sym)` becomes
     `schema.index(sym).map(|i| &self.0[i])`. ~100 LOC (internal change only,

@@ -3560,6 +3560,7 @@ fn run_dpor_explorer_as_main_path(
     } else {
         Some(constants_value.clone())
     };
+    let field_schema = verus_transpiler::modelcheck::field_schema::FieldSchemaRegistry::from_spec_schema(&bundle.schema);
     let ctx = SpecContext {
         bundle: bundle.clone(),
         model_config: model_config.clone(),
@@ -3567,6 +3568,7 @@ fn run_dpor_explorer_as_main_path(
         constants: constants_opt,
         cached_transition_ir: std::sync::OnceLock::new(),
         cached_branch_assignments: std::sync::OnceLock::new(),
+        field_schema,
     };
     let invariant_names: Vec<String> = invariants.iter().map(|f| f.name.clone()).collect();
     let dpor_config = DporConfig {

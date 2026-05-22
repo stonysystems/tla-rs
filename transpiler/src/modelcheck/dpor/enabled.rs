@@ -45,6 +45,9 @@ pub struct SpecContext {
             Vec<crate::modelcheck::domain::ExistentialAssignment>,
         >,
     >,
+    /// Phase 38.22.2.b.ii: field schema registry mapping struct/enum type
+    /// names to ordered field layouts with name→index lookup.
+    pub field_schema: crate::modelcheck::field_schema::FieldSchemaRegistry,
 }
 
 impl SpecContext {
@@ -73,6 +76,11 @@ impl SpecContext {
         // Resolve constants if LInit has an LConstants parameter
         let constants = resolve_constants_from_config(&bundle, &model_config, &bounds)?;
 
+        // Build field schema registry from spec types
+        let field_schema = crate::modelcheck::field_schema::FieldSchemaRegistry::from_spec_schema(
+            &bundle.schema,
+        );
+
         Ok(Self {
             bundle,
             model_config,
@@ -80,6 +88,7 @@ impl SpecContext {
             constants,
             cached_transition_ir: std::sync::OnceLock::new(),
             cached_branch_assignments: std::sync::OnceLock::new(),
+            field_schema,
         })
     }
 
