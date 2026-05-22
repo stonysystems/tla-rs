@@ -115,6 +115,14 @@ pub struct BranchSolveTelemetry {
     /// Number of existential assignments pruned by guard-first evaluation
     /// (Phase 36.3.7.c: constraints checked before cloning next state).
     pub guard_pruned_assignments: usize,
+    /// Number of `Eq { target: NextState, .. }` constraints in this branch
+    /// (Phase 38.17.1: constraint classification telemetry).
+    pub eq_constraints: usize,
+    /// Number of `Predicate { .. }` constraints in this branch.
+    pub predicate_constraints: usize,
+    /// Why the branch fell back to enumeration (Phase 38.17.1 diagnostics).
+    /// 0 = direct assignment, 1 = no next-state assignment, 2 = not all fields assigned.
+    pub fallback_reason: u8,
 }
 
 /// Result payload for one branch-solve attempt.
@@ -271,15 +279,17 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 // the filter avoids computing canonical_key() for all
                 // candidates (e.g., 1.7M for Paxos, which was ~40s).
                 let successors = deduplicate_successors(successors);
-                let (direct_fields, deferred_evals) = count_branch_constraint_telemetry(branch);
+                let counts = count_branch_constraint_telemetry(branch);
                 let assignment_count = assignments.len().max(1);
                 return Ok(BranchSolveResult {
                     successors,
                     telemetry: BranchSolveTelemetry {
                         direct_assignment_branch_solves: 1,
-                        direct_assigned_fields: direct_fields,
-                        deferred_constraint_evaluations: deferred_evals,
-                        evaluator_calls: (direct_fields + deferred_evals) * assignment_count,
+                        direct_assigned_fields: counts.direct_assigned,
+                        deferred_constraint_evaluations: counts.deferred,
+                        evaluator_calls: (counts.direct_assigned + counts.deferred) * assignment_count,
+                        eq_constraints: counts.eq_constraints,
+                        predicate_constraints: counts.predicate_constraints,
                         ..Default::default()
                     },
                 });
@@ -303,6 +313,8 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 hooks,
                 should_stop,
             )?;
+            let counts = count_branch_constraint_telemetry(branch);
+            let fallback_reason = if !has_next_state_assignments { 1 } else { 2 };
             return Ok(BranchSolveResult {
                 successors,
                 telemetry: BranchSolveTelemetry {
@@ -310,6 +322,9 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                     enumeration_candidate_evaluations: candidate_evaluations,
                     guard_pruned_candidate_evaluations,
                     enumeration_candidate_evaluation_elapsed_ms,
+                    eq_constraints: counts.eq_constraints,
+                    predicate_constraints: counts.predicate_constraints,
+                    fallback_reason,
                     ..Default::default()
                 },
             });
@@ -376,16 +391,19 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
         candidate_state_keys.as_deref(),
     );
 
-    let (direct_fields, deferred_evals) = count_branch_constraint_telemetry(branch);
+    let counts = count_branch_constraint_telemetry(branch);
     let assignment_count = existential_assignments.len().max(1);
     Ok(BranchSolveResult {
         successors,
         telemetry: BranchSolveTelemetry {
             direct_assignment_branch_solves: 1,
-            direct_assigned_fields: direct_fields,
-            deferred_constraint_evaluations: deferred_evals,
-            evaluator_calls: (direct_fields + deferred_evals) * assignment_count,
+            direct_assigned_fields: counts.direct_assigned,
+            deferred_constraint_evaluations: counts.deferred,
+            evaluator_calls: (counts.direct_assigned + counts.deferred) * assignment_count,
             guard_pruned_assignments,
+            eq_constraints: counts.eq_constraints,
+            predicate_constraints: counts.predicate_constraints,
+            fallback_reason: 0,
             ..Default::default()
         },
     })
@@ -602,10 +620,22 @@ pub fn deduplicate_successors(successors: Vec<RuntimeValue>) -> Vec<RuntimeValue
     unique
 }
 
+/// Constraint classification counts for a branch (Phase 38.17.1).
+struct BranchConstraintCounts {
+    direct_assigned: usize,
+    deferred: usize,
+    eq_constraints: usize,
+    predicate_constraints: usize,
+}
+
 /// Count structural telemetry from a branch's constraint set.
-fn count_branch_constraint_telemetry(branch: &TransitionBranchIr) -> (usize, usize) {
-    let mut direct_assigned = 0usize;
-    let mut deferred = 0usize;
+fn count_branch_constraint_telemetry(branch: &TransitionBranchIr) -> BranchConstraintCounts {
+    let mut counts = BranchConstraintCounts {
+        direct_assigned: 0,
+        deferred: 0,
+        eq_constraints: 0,
+        predicate_constraints: 0,
+    };
     for constraint in &branch.constraints {
         match constraint {
             BranchConstraintIr::Eq {
@@ -616,21 +646,24 @@ fn count_branch_constraint_telemetry(branch: &TransitionBranchIr) -> (usize, usi
                     },
                 ..
             } => {
-                direct_assigned += 1;
+                counts.direct_assigned += 1;
+                counts.eq_constraints += 1;
+            }
+            BranchConstraintIr::Eq { .. } => {
+                counts.deferred += 1;
+                counts.eq_constraints += 1;
             }
             BranchConstraintIr::Predicate { expr } => {
+                counts.predicate_constraints += 1;
                 if next_state_variant_assignment(expr, "s_").is_some() {
-                    direct_assigned += 1;
+                    counts.direct_assigned += 1;
                 } else {
-                    deferred += 1;
+                    counts.deferred += 1;
                 }
-            }
-            _ => {
-                deferred += 1;
             }
         }
     }
-    (direct_assigned, deferred)
+    counts
 }
 
 /// Detect if a constraint is a frame condition: `s_.path == s.path`.

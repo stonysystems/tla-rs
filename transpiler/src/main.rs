@@ -1992,6 +1992,11 @@ struct ModelCheckBranchTelemetrySummary {
     evaluator_calls: usize,
     // Phase 36.3.7.c guard-first telemetry
     guard_pruned_assignments: usize,
+    // Phase 38.17.1 constraint classification telemetry
+    eq_constraints: usize,
+    predicate_constraints: usize,
+    /// 0 = direct, 1 = no next-state assignment, 2 = not all fields assigned
+    fallback_reason: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4022,6 +4027,9 @@ fn execute_model_check(
                                 deferred_constraint_evaluations: 0,
                                 evaluator_calls: 0,
                                 guard_pruned_assignments: 0,
+                                eq_constraints: 0,
+                                predicate_constraints: 0,
+                                fallback_reason: 0,
                             });
                         entry.invocations = entry.invocations.saturating_add(1);
                         entry.existential_assignment_count = entry
@@ -4056,6 +4064,16 @@ fn execute_model_check(
                         entry.guard_pruned_assignments = entry
                             .guard_pruned_assignments
                             .saturating_add(solved.telemetry.guard_pruned_assignments);
+                        entry.eq_constraints = entry
+                            .eq_constraints
+                            .max(solved.telemetry.eq_constraints);
+                        entry.predicate_constraints = entry
+                            .predicate_constraints
+                            .max(solved.telemetry.predicate_constraints);
+                        // Keep the first non-zero fallback reason seen
+                        if entry.fallback_reason == 0 {
+                            entry.fallback_reason = solved.telemetry.fallback_reason;
+                        }
                     }
 
                     for successor in solved.successors {
@@ -4298,6 +4316,9 @@ fn execute_model_check(
                     deferred_constraint_evaluations: 0,
                     evaluator_calls: 0,
                     guard_pruned_assignments: 0,
+                    eq_constraints: 0,
+                    predicate_constraints: 0,
+                    fallback_reason: 0,
                 });
             aggregate.invocations = aggregate.invocations.saturating_add(entry.invocations);
             aggregate.existential_assignment_count = aggregate
@@ -4333,6 +4354,15 @@ fn execute_model_check(
             aggregate.guard_pruned_assignments = aggregate
                 .guard_pruned_assignments
                 .saturating_add(entry.guard_pruned_assignments);
+            aggregate.eq_constraints = aggregate
+                .eq_constraints
+                .max(entry.eq_constraints);
+            aggregate.predicate_constraints = aggregate
+                .predicate_constraints
+                .max(entry.predicate_constraints);
+            if aggregate.fallback_reason == 0 {
+                aggregate.fallback_reason = entry.fallback_reason;
+            }
         }
 
         aggregated_states = aggregated_states.saturating_add(run_summary.states);
@@ -4756,6 +4786,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                             "deferred_constraint_evaluations": branch.deferred_constraint_evaluations,
                             "evaluator_calls": branch.evaluator_calls,
                             "guard_pruned_assignments": branch.guard_pruned_assignments,
+                            "eq_constraints": branch.eq_constraints,
+                            "predicate_constraints": branch.predicate_constraints,
+                            "fallback_reason": match branch.fallback_reason {
+                                0 => "direct",
+                                1 => "no_next_state_assignment",
+                                2 => "not_all_fields_assigned",
+                                _ => "unknown",
+                            },
                         })).collect::<Vec<_>>(),
                         "timing": {
                             "source_ingestion_parsing_ms": execution.summary.timing.source_ingestion_parsing_ms,
