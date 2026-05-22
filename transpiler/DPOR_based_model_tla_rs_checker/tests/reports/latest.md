@@ -1,14 +1,15 @@
 # DPOR Checker Suite Scoreboard
 
-## Phase 38.16.3.a Micro-Model Scale-Up (2026-05-22): 20 real / 0 vacuous
+## Phase 38.16.3.a+b Micro-Model & Protocol Scale-Up (2026-05-22): 20 real / 0 vacuous
 
-Scaled up micro-model configs (cases 01-12) to maximize distinct states.
-Cases 01 and 07 reach >= 5000 states (linear state spaces). Other cases
-have inherent solver ceilings due to map-domain expansion, constants-dependent
-evaluation, or candidate-expansion limits. See per-case notes below.
+Scaled all model configs (cases 01-20) to maximize distinct states.
+Cases 01 and 07 reach >= 5000 states (linear state spaces). Protocol cases
+scaled where possible: PBFT 40->45 replicas, TwoPhase 2->7 RMs,
+PrimaryBackup wider bounds, Raft deeper search. Other cases hit solver
+ceilings (candidate expansion, evaluator-hook limits).
 
 Source of truth: `tests/reports/latest.json` generated at
-`2026-05-22T02:47:19Z`.
+`2026-05-22T03:08:29Z`.
 
 | Metric | Count |
 |---|---:|
@@ -27,42 +28,49 @@ A "real" outcome means at least one property class was checked
 
 | # | Case ID | Result | Distinct states | Elapsed | Notes |
 |---|---|---|---:|---:|---|
-| 01 | `01_aplusb` | `ok` | 6001 | 192ms | Scaled: int 0..5000, depth 6000 |
-| 02 | `02_counter_incdec` | `ok` | 28 | 5.6s | Ceiling: NumProcs=4, int 0..10 |
-| 03 | `03_counter_race_bug` | `invariant_violated` | 13 | 185ms | Expected negative |
+| 01 | `01_aplusb` | `ok` | 6001 | 214ms | Scaled: int 0..5000, depth 6000 |
+| 02 | `02_counter_incdec` | `ok` | 28 | 5.8s | Ceiling: NumProcs=4, int 0..10 |
+| 03 | `03_counter_race_bug` | `invariant_violated` | 13 | 167ms | Expected negative |
 | 04 | `04_lock_basic` | `ok` | 5 | 123ms | Ceiling: NumProcs=4 |
 | 05 | `05_broken_lock_bug` | `invariant_violated` | 17 | 124ms | NumProcs=4, violation still found |
-| 06 | `06_ticket_lock` | `ok` | 7 | 437ms | Ceiling: NumProcs=2 (solver error at 3) |
-| 07 | `07_producer_consumer_1slot` | `ok` | 10001 | 799ms | Scaled: int 0..100, depth 10000 |
-| 08 | `08_bounded_buffer_2slot` | `invariant_violated` | 6 | 2.5s | Ceiling: MaxVal=3 (guardrail at 8) |
-| 09 | `09_peterson_mutex_2p` | `ok` | 10 | 124ms | Ceiling: 2-process only |
-| 10 | `10_bakery_mutex_3p` | `ok` | 24 | 1.9s | Ceiling: NumProcs=2 (solver error at 3) |
-| 11 | `11_readers_writers_small` | `invariant_violated` | 4 | 91ms | Ceiling: 1R/1W (solver error at 3R/2W) |
-| 12 | `12_dining_philosophers_3` | `deadlock_detected` | 14 | 4.0s | NumPhil=3, deadlock still found |
-| 13 | `13_twophase_small` | `ok` | 9 | 47ms | Matches TLC |
-| 14 | `14_leader_election_small` | `ok` | 1263 | 25.7s | |
-| 15 | `15_chain_replication_small` | `deadlock_detected` | 114 | 3.1s | Expected negative |
-| 16 | `16_primarybackup_small` | `ok` | 261 | 2.5s | |
-| 17 | `17_paxos_small` | `ok` | 945 | 27.0s | Matches TLC |
-| 18 | `18_pbft_small` | `ok` | 2854 | 5.0s | Matches TLC |
-| 19 | `19_epaxos_small` | `ok` | 11 | 614ms | |
-| 20 | `20_raft_small` | `ok` | 812 | 2.5s | Matches TLC |
+| 06 | `06_ticket_lock` | `ok` | 7 | 414ms | Ceiling: NumProcs=2 (solver error at 3) |
+| 07 | `07_producer_consumer_1slot` | `ok` | 10001 | 821ms | Scaled: int 0..100, depth 10000 |
+| 08 | `08_bounded_buffer_2slot` | `invariant_violated` | 6 | 2.3s | Ceiling: MaxVal=3 (guardrail at 8) |
+| 09 | `09_peterson_mutex_2p` | `ok` | 10 | 125ms | Ceiling: 2-process only |
+| 10 | `10_bakery_mutex_3p` | `ok` | 24 | 2.0s | Ceiling: NumProcs=2 (solver error at 3) |
+| 11 | `11_readers_writers_small` | `invariant_violated` | 4 | 87ms | Ceiling: 1R/1W (solver error at 3R/2W) |
+| 12 | `12_dining_philosophers_3` | `deadlock_detected` | 14 | 3.7s | NumPhil=3, deadlock still found |
+| 13 | `13_twophase_small` | `ok` | 257 | 7.4s | Scaled: NumRM=7 (was 2). Ceiling at 8 |
+| 14 | `14_leader_election_small` | `ok` | 1313 | 26.6s | Depth=12, fully explored. Ceiling at int>4 |
+| 15 | `15_chain_replication_small` | `deadlock_detected` | 114 | 3.3s | Negative: deadlock at depth 1 |
+| 16 | `16_primarybackup_small` | `ok` | 861 | 41.0s | Scaled: int 0..5, set 4, seq/map 3. Ceiling at 6 |
+| 17 | `17_paxos_small` | `ok` | 945 | 27.3s | Fully explored at 4/4 acceptors/values |
+| 18 | `18_pbft_small` | `ok` | 3659 | 7.2s | Scaled: replica=45 (was 40). Ceiling at 46 |
+| 19 | `19_epaxos_small` | `ok` | 11 | 579ms | Ceiling: int 0..1 (expansion error at 2) |
+| 20 | `20_raft_small` | `ok` | 1089 | 2.7s | Scaled: depth=50 (was 30). Ceiling at server>8 |
 
-## Micro-Model Scaling Summary (Cases 01-12)
+## Scaling Summary
 
-| Target | Result |
+| Target | Count |
 |---|---|
 | Cases reaching >= 5000 states | 2 (01, 07) |
-| Cases at solver ceiling < 5000 | 10 (02-06, 08-12) |
+| Cases scaled but below 5000 | 7 (02, 05, 12, 13, 14, 16, 18, 20) |
+| Cases at original ceiling | 7 (04, 06, 09, 10, 11, 17, 19) |
+| Negative cases (violation/deadlock) | 4 (03, 08, 11, 15) |
+
+**Protocol case improvements (13-20):**
+- TwoPhase: 9 -> 257 states (NumRM 2->7)
+- LeaderElection: 1263 -> 1313 (depth 6->12, fully explored)
+- PrimaryBackup: 261 -> 861 (wider int/collection bounds)
+- PBFT: 2854 -> 3659 (replica 40->45)
+- Raft: 812 -> 1089 (depth 30->50, fully explored at 41)
+- Paxos, ChainReplication, EPaxos: unchanged (at ceiling)
 
 **Solver ceiling causes:**
-- **Map domain expansion** (cases 03, 06, 10, 11): Concurrent specs with per-process maps exceed the solver's map-domain expansion limit when scaling NumProcs.
-- **Constants-dependent evaluation** (cases 06, 10, 11): The solver cannot evaluate expressions that depend on constant values at higher process counts.
-- **Candidate expansion guardrail** (case 08): BoundedBuffer with MaxVal>3 exceeds the candidate expansion limit.
-- **Fixed-topology** (case 09): PetersonMutex is inherently 2-process.
-
-Cases 01 (APlusB) and 07 (ProducerConsumer) have linear state chains
-(depth = states) and scale freely.
+- **Candidate expansion** (cases 08, 13, 14, 19): struct field combinatorics exceed guardrail
+- **Evaluator-hook missing** (cases 18, 20): constants-dependent expressions fail at higher values
+- **Map domain expansion** (cases 06, 10, 11): concurrent per-process maps exceed limit
+- **Fixed-topology** (case 09): PetersonMutex is inherently 2-process
 
 ## Protocol Hard-Case Slice (13-20)
 

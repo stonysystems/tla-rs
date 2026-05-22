@@ -1,16 +1,14 @@
 # Model config for case 20: Raft.
-# Phase 38.20.3: scaled from 5 servers (681 states, 0.43 s) to 8
-# servers to push DPOR wall-time toward the 10-min budget.
-# Sweep: 5 → 681 / 0.43 s; 7 → 812 / 1.43 s; 10/12 → evaluator-hook
-# missing for LFollower at int max ≥ 8. Settled on 8 — the largest
-# value where the evaluator's constants-dependent expression for
-# Init still resolves.
+# Phase 38.20.3 / 38.16.3.b: scaled to server=8, depth=50.
+# Sweep: 5 → 681 / 0.43 s; 8/depth30 → 812 / 2.6 s;
+# 8/depth50 → 1089 / 2.3 s (fully converged at depth 41).
+# 10+ → evaluator-hook missing for LFollower at int max ≥ 8.
 
 [constants.assignments]
 server = 8
 
 [search]
-max_depth = 30
+max_depth = 50
 max_states = 500000
 timeout_ms = 600000
 candidate_eval_guardrail = 500000

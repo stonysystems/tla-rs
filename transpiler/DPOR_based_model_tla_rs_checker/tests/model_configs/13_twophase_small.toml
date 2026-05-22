@@ -1,13 +1,16 @@
 # Model config for case 13: TwoPhase commit
+# Phase 38.16.3.b: scaled from NumRM=2 (9 states) to NumRM=7 (257 states).
+# NumRM=8 exceeds candidate expansion limit. Ceiling: 257 states.
 # tmState uses Seq<char> for state names; provide string constants.
 
 [constants.assignments]
-NumRM = 2
+NumRM = 7
 
 [search]
-max_depth = 50
-max_states = 100000
-timeout_ms = 30000
+max_depth = 1000
+max_states = 500000
+timeout_ms = 600000
+candidate_eval_guardrail = 500000
 
 [properties]
 invariants = ["LTCConsistent"]
@@ -15,12 +18,12 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 2 }
+int = { min = 0, max = 7 }
 
 [collections]
-max_set_len = 2
-max_seq_len = 2
-max_map_len = 2
+max_set_len = 7
+max_seq_len = 7
+max_map_len = 7
 
 [quantifiers.types.Seq_char]
 kind = "values"

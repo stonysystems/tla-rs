@@ -1,15 +1,13 @@
 # Model config for case 18: PBFT.
-# Phase 38.18.8 scale-up: 7 → 40 replicas.
+# Phase 38.18.8 / 38.16.3.b scale-up: 7 → 45 replicas.
 #   7   → 49 states, 0.07 s   (baseline)
-#   20  → 634 states, 0.86 s
-#   40  → 2854 states, 6.8 s   (chosen)
-#   50+ → evaluator-hook missing for LPrePrepare (int max ≥ 50)
-# Settled on 40 — 58× state-count increase, ~100× wall-time but still
-# well under the 10-min budget. Higher replica counts hit the
-# LPrePrepare evaluator-hook missing bug.
+#   40  → 2854 states, 5.0 s
+#   45  → 3659 states, 6.5 s   (chosen)
+#   46+ → evaluator-hook missing for LPrePrepare (int max ≥ 46)
+# Settled on 45 — ceiling before evaluator-hook bug.
 
 [constants.assignments]
-replica = 40
+replica = 45
 f = 2
 
 [search]
@@ -24,7 +22,7 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 40 }
+int = { min = 0, max = 45 }
 
 [collections]
 max_set_len = 1

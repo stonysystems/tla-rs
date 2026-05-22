@@ -13026,23 +13026,21 @@ the reason, don't force it.
   evaluation failures, or candidate-expansion guardrails. Only linear-chain
   state spaces (01, 07) can scale freely. Full suite: 20/20 pass, 0 vacuous.
 
-- [ ] **38.16.3.b**: Scale up **protocol cases (13–20)**. Current state
-  counts range from 1 to 211 (excluding the already-large 15/16). Targets:
-  - `13_twophase`: increase `NumRM` (2 → 3+) and int/set bounds
-  - `14_leader_election`: widen int (0..1 → 0..3+), increase set/seq bounds
-  - `15_chain_replication`: already 151 states — may need wider bounds or
-    deeper `max_depth` to reach 5000
-  - `16_primarybackup`: already 211 states — widen bounds similarly
-  - `17_paxos`: increase to 3 acceptors / 3 values, int 0..3, sets ≤ 3
-  - `18_pbft`: increase int 0..4, sets ≤ 2, possibly `replica=4` with
-    wider counter range
-  - `19_epaxos`: depends on 38.16.2 fix — scale after runtime is stable
-  - `20_raft`: increase to `server=4` or `server=5`, widen int/set bounds
+- [x] **38.16.3.b**: Scale up **protocol cases (13–20)** — DONE (2026-05-22).
+  - `13_twophase`: 9 → 257 states (NumRM 2→7, ceiling at 8: candidate expansion)
+  - `14_leader_election`: 1263 → 1313 states (depth 6→12, fully explored; ceiling at int>4)
+  - `15_chain_replication`: 114 states unchanged (negative: deadlock at depth 1)
+  - `16_primarybackup`: 261 → 861 states (int 0..5, set 4, seq/map 3; ceiling at int 6)
+  - `17_paxos`: 945 states unchanged (fully explored at 4/4 acceptors/values)
+  - `18_pbft`: 2854 → 3659 states (replica 40→45; ceiling at 46: evaluator-hook)
+  - `19_epaxos`: 11 states unchanged (ceiling at int>1: candidate expansion)
+  - `20_raft`: 812 → 1089 states (depth 30→50, fully explored at depth 41)
+  Full suite: 20/20 pass, 0 vacuous.
 
-- [ ] **38.16.3.c**: For each case, record the final config and state count
-  in a table. Verify all 20 cases reach ≥ 5000 states within 30 minutes.
-  If a case cannot reach 5000 within budget (e.g., bakery mutex state
-  explosion is too slow), document the ceiling and the reason.
+- [x] **38.16.3.c**: Scaling table recorded in `tests/reports/latest.md` — DONE
+  (2026-05-22). Only 2 of 20 cases (01, 07) reach ≥5000 states. All others
+  have documented solver ceilings (candidate expansion, evaluator-hook
+  missing, map domain expansion).
 
 #### 38.16.4 — Write TLC runner for the 20-case corpus
 

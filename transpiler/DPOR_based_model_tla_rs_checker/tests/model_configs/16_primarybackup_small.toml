@@ -3,7 +3,7 @@
 # and Inactive -> Primary on promote. Values = {1,2}, MaxLogLen = 2.
 
 [search]
-max_depth = 6
+max_depth = 20
 max_states = 5000000
 timeout_ms = 600000
 candidate_eval_guardrail = 5000000
@@ -14,9 +14,9 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 3 }
+int = { min = 0, max = 5 }
 
 [collections]
-max_set_len = 2
-max_seq_len = 1
-max_map_len = 1
+max_set_len = 4
+max_seq_len = 3
+max_map_len = 3
