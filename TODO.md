@@ -13684,7 +13684,7 @@ implementation; use it when you need to stress-test substantially
 larger spec instances. C and F are advanced research techniques;
 defer until simpler wins exhausted.
 
-## Phase 39: Migrate Auto-Generated RSL Network from TCP+SSL to UDP — 39.1-39.3 DONE
+## Phase 39: Migrate Auto-Generated RSL Network from TCP+SSL to UDP — COMPLETE
 
 ### Motivation
 The auto-generated RSL in `src/generated/RSL/` currently runs over
@@ -13745,16 +13745,14 @@ This is a **C#-only** migration; no Rust or proof work required.
   (shared lab machine under load). Protocol works correctly; throughput
   is in the expected order of magnitude.
 
-#### 39.4 Decide TCP path's fate
-- [ ] **39.4.1**: Once UDP is the default, decide whether to:
-  - (a) Keep `IronRSLServer.dll` (TCP) for backwards compat /
-    cross-engine comparison, or
-  - (b) Delete the TCP entry point and remove `IoFramework.cs` from
-    `csharp/Common/` (only the `lock_main_wrapper` FFI in
-    `src/lib.rs` would need updating, since the generic protocols
-    don't depend on it).
-- [ ] **39.4.2**: Update `README.md` and `CLAUDE.md` to reflect that
-  RSL is now UDP-by-default; remove "RSL = TCP" notes.
+#### 39.4 Decide TCP path's fate — DONE (2026-05-22)
+- [x] **39.4.1**: Decision: keep `IronRSLServer.dll` (TCP) for backward
+  compat (option a). The TCP variant still works and `IronLockServer.dll`
+  depends on `IoFramework.cs`, so deleting would break Lock. UDP is now
+  the documented default for RSL.
+- [x] **39.4.2**: Updated `README.md` and `CLAUDE.md` to show
+  `IronRSLServerUDP.dll` as the default, with the TCP variant noted as
+  legacy. Build target examples updated to `scons bin/IronRSLServerUDP.dll`.
 
 ### Cost estimate
 - **39.1 + 39.2**: ~30 min of C# paste + build (no logic changes).

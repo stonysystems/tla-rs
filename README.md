@@ -45,7 +45,7 @@ scons --verus-path="$VERUS_PATH"
 scons --skip-verus
 
 # Build specific target
-scons bin/IronRSLServer.dll
+scons bin/IronRSLServerUDP.dll
 ```
 
 ## Running
@@ -64,15 +64,25 @@ dotnet bin/CreateIronServiceCerts.dll \
     addr3=127.0.0.1 port3=4003
 ```
 
-#### Run Servers
+#### Run Servers (UDP — recommended)
 
 Run each in a separate terminal:
 
 ```bash
-dotnet bin/IronRSLServer.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server1.private.txt
-dotnet bin/IronRSLServer.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server2.private.txt
-dotnet bin/IronRSLServer.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server3.private.txt
+export LD_LIBRARY_PATH="$PWD"
+dotnet bin/IronRSLServerUDP.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server1.private.txt
+dotnet bin/IronRSLServerUDP.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server2.private.txt
+dotnet bin/IronRSLServerUDP.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server3.private.txt
 ```
+
+#### Run Client (UDP)
+
+```bash
+dotnet bin/IronRSLClientUDP.dll ip1=127.0.0.1 port1=4001 ip2=127.0.0.1 port2=4002 ip3=127.0.0.1 port3=4003 nthreads=4 duration=10
+```
+
+> **Note:** A legacy TCP+SSL variant (`IronRSLServer.dll` / `IronRSLClient.dll`) is
+> still available for backward compatibility but delivers ~17x lower throughput.
 
 ### IronLock (Distributed Lock Service)
 

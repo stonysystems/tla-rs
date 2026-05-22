@@ -18,7 +18,7 @@ scons --verus-path=/path/to/verus
 scons --skip-verus
 
 # Build specific target
-scons bin/IronRSLServer.dll
+scons bin/IronRSLServerUDP.dll
 ```
 
 **Requirements:**
@@ -33,11 +33,15 @@ scons bin/IronRSLServer.dll
 # Generate certificates
 dotnet bin/CreateIronServiceCerts.dll outputdir=certs name=MyService ...
 
-# Run RSL server
-dotnet bin/IronRSLServer.dll <service.txt> <private_key.txt>
+# Run RSL server (UDP — default)
+export LD_LIBRARY_PATH="$PWD"
+dotnet bin/IronRSLServerUDP.dll <service.txt> <private_key.txt>
 
-# Run RSL client
-dotnet bin/IronRSLClient.dll
+# Run RSL client (UDP)
+dotnet bin/IronRSLClientUDP.dll ip1=... port1=... nthreads=4 duration=10
+
+# Legacy TCP+SSL variant (slower, kept for backward compat)
+# dotnet bin/IronRSLServer.dll <service.txt> <private_key.txt>
 ```
 
 ## Architecture
