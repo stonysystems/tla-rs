@@ -1,0 +1,22 @@
+# Model config for case 07: ProducerConsumer1Slot
+# State: buf, buf_full, produced, consumed. No procs — implicit 2 roles.
+# State space grows with produced/consumed range.
+# Target: >= 5000 distinct states.
+
+[search]
+max_depth = 10000
+max_states = 500000
+timeout_ms = 300000
+
+[properties]
+invariants = ["LSafetyInvariant"]
+check_deadlock = false
+successor_semantics = "deadlock"
+
+[quantifiers]
+int = { min = 0, max = 100 }
+
+[collections]
+max_set_len = 2
+max_seq_len = 2
+max_map_len = 2

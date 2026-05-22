@@ -1,10 +1,12 @@
 # Model config for case 09: PetersonMutex
-# pc uses Seq<char> for state names; provide string constants.
+# pc uses Seq<char> for state names.
+# Fixed 2-process algorithm — state space is inherently bounded (~10-15 states).
+# Cannot reach 5000 — document ceiling.
 
 [search]
-max_depth = 50
+max_depth = 100
 max_states = 100000
-timeout_ms = 30000
+timeout_ms = 60000
 
 [properties]
 invariants = ["LMutualExclusion"]
@@ -12,7 +14,7 @@ check_deadlock = false
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 1 }
+int = { min = 0, max = 2 }
 
 [collections]
 max_set_len = 2

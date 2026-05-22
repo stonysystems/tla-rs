@@ -1,0 +1,18 @@
+# APlusB: a,b both start at 0, increment together.
+# State count = int_max - int_min + 1 (linear chain from (0,0) to (max,max)).
+# Target: >= 5000 distinct states.
+[search]
+max_depth = 6000
+max_states = 100000
+timeout_ms = 60000
+
+[properties]
+invariants = ["LSumInvariant"]
+check_deadlock = false
+successor_semantics = "deadlock"
+
+[quantifiers]
+int = { min = 0, max = 5000 }
+max_set_len = 1
+max_seq_len = 1
+max_map_len = 1

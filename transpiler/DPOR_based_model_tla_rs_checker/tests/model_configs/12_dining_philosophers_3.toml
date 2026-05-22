@@ -1,15 +1,15 @@
 # Model config for case 12: DiningPhilosophers (negative — deadlock)
 # pc uses Seq<char> for state names.
-# Reduced to NumPhil=2 for tractable state space.
+# Scale-up: NumPhil=3, int 0..3. Deadlock must still be found.
 
 [constants.assignments]
-NumPhil = 2
+NumPhil = 3
 
 [search]
-max_depth = 50
+max_depth = 100
 max_states = 500000
-timeout_ms = 60000
-candidate_eval_guardrail = 200000
+timeout_ms = 300000
+candidate_eval_guardrail = 500000
 
 [properties]
 invariants = []
@@ -17,12 +17,12 @@ check_deadlock = true
 successor_semantics = "deadlock"
 
 [quantifiers]
-int = { min = 0, max = 2 }
+int = { min = 0, max = 3 }
 
 [collections]
-max_set_len = 2
-max_seq_len = 2
-max_map_len = 2
+max_set_len = 3
+max_seq_len = 3
+max_map_len = 3
 
 [quantifiers.types.Seq_char]
 kind = "values"
