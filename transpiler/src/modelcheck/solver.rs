@@ -10,40 +10,40 @@ use crate::modelcheck::ir::{
 use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
 thread_local! {
-    /// Candidate-state key set cache: keyed by slice identity + length,
-    /// value is a shared BTreeSet<String> of canonical_key()s.
+    /// Candidate-state fingerprint cache: keyed by slice identity + length,
+    /// value is a shared HashSet<u64> of fingerprint()s.
     ///
     /// Motivation: the baseline model-check loop calls
     /// `solve_branch_successors_with_candidates_and_telemetry` once per
-    /// (state, branch). Each call computed `canonical_key()` over the same
-    /// candidate slice (e.g. 3375 Paxos candidates × 11,136 branch solves
-    /// = 37M canonical_key calls, ~60s wall-clock). The candidate slice is
-    /// invariant across the run, so its canonical-key set is too.
+    /// (state, branch). Each call computed fingerprints over the same
+    /// candidate slice (e.g. 3375 Paxos candidates × 11,136 branch solves).
+    /// The candidate slice is invariant across the run, so its fingerprint
+    /// set is too.
     ///
     /// Safe because:
     /// - Slice pointer + length uniquely identify the borrowed buffer
     ///   within the lifetime of the call site.
     /// - Cache entries are cleared at run boundaries via
-    ///   `reset_candidate_state_keys_cache()`.
-    static CANDIDATE_STATE_KEYS_CACHE: RefCell<
-        Vec<(usize, usize, Arc<BTreeSet<String>>)>,
+    ///   `reset_candidate_fingerprint_cache()`.
+    static CANDIDATE_FINGERPRINT_CACHE: RefCell<
+        Vec<(usize, usize, Arc<HashSet<u64>>)>,
     > = const { RefCell::new(Vec::new()) };
 }
 
-/// Clear the candidate-state-keys cache. Call at run boundaries.
-pub fn reset_candidate_state_keys_cache() {
-    CANDIDATE_STATE_KEYS_CACHE.with(|cache| cache.borrow_mut().clear());
+/// Clear the candidate fingerprint cache. Call at run boundaries.
+pub fn reset_candidate_fingerprint_cache() {
+    CANDIDATE_FINGERPRINT_CACHE.with(|cache| cache.borrow_mut().clear());
 }
 
-fn canonical_keys_for_candidates(candidates: &[RuntimeValue]) -> Arc<BTreeSet<String>> {
+fn fingerprints_for_candidates(candidates: &[RuntimeValue]) -> Arc<HashSet<u64>> {
     let ptr = candidates.as_ptr() as usize;
     let len = candidates.len();
-    let cached = CANDIDATE_STATE_KEYS_CACHE.with(|cache| {
+    let cached = CANDIDATE_FINGERPRINT_CACHE.with(|cache| {
         cache
             .borrow()
             .iter()
@@ -53,10 +53,10 @@ fn canonical_keys_for_candidates(candidates: &[RuntimeValue]) -> Arc<BTreeSet<St
     if let Some(keys) = cached {
         return keys;
     }
-    let keys: BTreeSet<String> =
-        candidates.iter().map(RuntimeValue::canonical_key).collect();
+    let keys: HashSet<u64> =
+        candidates.iter().map(RuntimeValue::fingerprint).collect();
     let keys = Arc::new(keys);
-    CANDIDATE_STATE_KEYS_CACHE.with(|cache| {
+    CANDIDATE_FINGERPRINT_CACHE.with(|cache| {
         cache
             .borrow_mut()
             .push((ptr, len, Arc::clone(&keys)));
@@ -222,15 +222,15 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
 ) -> TranspileResult<BranchSolveResult> {
     // Candidate key set for filtering direct-assignment successors.
     // OPTIMIZATION: Defer computation until needed. For large candidate pools
-    // (e.g., 1.7M for Paxos), computing canonical_key() for every candidate
-    // was the dominant cost (~40s). When the predicate-only solver handles
+    // (e.g., 1.7M for Paxos), computing fingerprints for every candidate
+    // was a significant cost. When the predicate-only solver handles
     // the branch, this set is never needed.
     //
     // Phase 38.18: memoize across branch solves via
-    // `canonical_keys_for_candidates` (thread-local, keyed by slice identity).
+    // `fingerprints_for_candidates` (thread-local, keyed by slice identity).
     // The candidate slice is invariant across a model-check run, so the
-    // key set only needs to be built once — not once per (state, branch).
-    let mut candidate_state_keys: Option<Arc<BTreeSet<String>>> = None;
+    // fingerprint set only needs to be built once — not once per (state, branch).
+    let mut candidate_fingerprints: Option<Arc<HashSet<u64>>> = None;
 
     let assignments: Vec<ExistentialAssignment> = if existential_assignments.is_empty() {
         vec![BTreeMap::new()]
@@ -277,8 +277,8 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                 // for predicate-only solver results. The predicate-only solver
                 // already produces domain-bounded successors internally
                 // (existentials expanded from configured domains). Skipping
-                // the filter avoids computing canonical_key() for all
-                // candidates (e.g., 1.7M for Paxos, which was ~40s).
+                // the filter avoids computing fingerprints for all
+                // candidates (e.g., 1.7M for Paxos).
                 let successors = deduplicate_successors(successors);
                 let counts = count_branch_constraint_telemetry(branch);
                 let assignment_count = assignments.len().max(1);
@@ -347,15 +347,15 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
     let mut guard_pruned_assignments = 0usize;
     for assignment in assignments {
         if should_stop.map(|check| check()).unwrap_or(false) {
-            // Lazily compute candidate keys only when needed for filtering
-            if candidate_state_keys.is_none() {
+            // Lazily compute candidate fingerprints only when needed for filtering
+            if candidate_fingerprints.is_none() {
                 if let Some(candidates) = next_state_candidates {
-                    candidate_state_keys = Some(canonical_keys_for_candidates(candidates));
+                    candidate_fingerprints = Some(fingerprints_for_candidates(candidates));
                 }
             }
-            let successors = filter_successors_to_candidate_keys(
+            let successors = filter_successors_to_candidate_fingerprints(
                 deduplicate_successors(successors),
-                candidate_state_keys.as_deref(),
+                candidate_fingerprints.as_deref(),
             );
             return Ok(BranchSolveResult {
                 successors,
@@ -381,15 +381,15 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
         }
     }
 
-    // Lazily compute candidate keys only when needed for filtering
-    if candidate_state_keys.is_none() {
+    // Lazily compute candidate fingerprints only when needed for filtering
+    if candidate_fingerprints.is_none() {
         if let Some(candidates) = next_state_candidates {
-            candidate_state_keys = Some(canonical_keys_for_candidates(candidates));
+            candidate_fingerprints = Some(fingerprints_for_candidates(candidates));
         }
     }
-    let successors = filter_successors_to_candidate_keys(
+    let successors = filter_successors_to_candidate_fingerprints(
         deduplicate_successors(successors),
-        candidate_state_keys.as_deref(),
+        candidate_fingerprints.as_deref(),
     );
 
     let counts = count_branch_constraint_telemetry(branch);
@@ -608,13 +608,12 @@ pub fn solve_transition_successors_with_semantics(
     Ok(deduplicated)
 }
 
-/// Deduplicate successor states by canonical runtime-value key while preserving order.
+/// Deduplicate successor states by fingerprint (u64 hash) while preserving order.
 pub fn deduplicate_successors(successors: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    let mut seen = BTreeSet::new();
+    let mut seen = HashSet::new();
     let mut unique = Vec::new();
     for successor in successors {
-        let key = successor.canonical_key();
-        if seen.insert(key) {
+        if seen.insert(successor.fingerprint()) {
             unique.push(successor);
         }
     }
@@ -703,16 +702,16 @@ fn is_frame_condition(target_path: &[String], value: &Expr, current_state_param:
     segments[1..] == *target_path
 }
 
-fn filter_successors_to_candidate_keys(
+fn filter_successors_to_candidate_fingerprints(
     successors: Vec<RuntimeValue>,
-    candidate_state_keys: Option<&BTreeSet<String>>,
+    candidate_fingerprints: Option<&HashSet<u64>>,
 ) -> Vec<RuntimeValue> {
-    let Some(candidate_state_keys) = candidate_state_keys else {
+    let Some(candidate_fingerprints) = candidate_fingerprints else {
         return successors;
     };
     successors
         .into_iter()
-        .filter(|state| candidate_state_keys.contains(&state.canonical_key()))
+        .filter(|state| candidate_fingerprints.contains(&state.fingerprint()))
         .collect()
 }
 

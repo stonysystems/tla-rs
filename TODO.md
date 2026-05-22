@@ -13671,6 +13671,12 @@ Implementation paths:
   allocating a Vec and sorting by name. Also uses `Symbol::hash()` (u32,
   no lock) instead of `hash_name()` (acquires read lock per field).
   `canonical_key()` retains its name-based sort for cross-run output.
+  **Followup**: Switched solver `deduplicate_successors` and candidate
+  filtering from `canonical_key()` (String alloc + name sort) to
+  `fingerprint()` (u64 hash, zero alloc). Renamed cache from
+  `CANDIDATE_STATE_KEYS_CACHE` (BTreeSet<String>) to
+  `CANDIDATE_FINGERPRINT_CACHE` (HashSet<u64>). Eliminates String
+  allocation per successor in the BFS solver hot loop.
 - [ ] **38.22.3.b**: **Cache the hash on `RuntimeValue`** (OnceLock
   field per Struct/Enum). First compute is the same; subsequent
   lookups (e.g. for re-dedup of an already-emitted state) are free.
