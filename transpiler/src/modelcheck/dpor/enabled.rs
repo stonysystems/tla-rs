@@ -864,12 +864,9 @@ fn constants_candidate_matches_assignments(
 }
 
 /// Hash a RuntimeValue into a compact StateFingerprint.
+/// Uses the streaming fingerprint (no intermediate String allocation).
 pub fn hash_state(state: &RuntimeValue) -> StateFingerprint {
-    use std::hash::{Hash, Hasher};
-    let key = state.canonical_key();
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    key.hash(&mut hasher);
-    StateFingerprint(hasher.finish())
+    StateFingerprint(state.fingerprint())
 }
 
 fn convert_por_footprint(

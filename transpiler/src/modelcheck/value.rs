@@ -3,6 +3,7 @@ use crate::modelcheck::config::{CollectionBounds, ModelValue};
 use crate::modelcheck::symbol::Symbol;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 
 /// Concrete runtime value used by source-first model checking.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -181,6 +182,83 @@ impl RuntimeValue {
         match self {
             RuntimeValue::Tuple(items) | RuntimeValue::Seq(items) => items.get(index),
             _ => None,
+        }
+    }
+
+    /// Compute a 64-bit fingerprint by streaming the value structure directly
+    /// into a hasher, without building an intermediate String. Produces the
+    /// same hash as hashing `canonical_key()` would logically imply (same
+    /// structural ordering guarantees), but avoids all String allocations.
+    ///
+    /// For struct/enum fields: hashes fields sorted alphabetically by name
+    /// (matching `canonical_key()`'s deterministic output).
+    pub fn fingerprint(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.hash_into(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Stream this value's canonical representation into the given hasher.
+    /// Field order is alphabetical (by resolved symbol name) for determinism.
+    fn hash_into(&self, h: &mut impl Hasher) {
+        // Discriminant tag
+        std::mem::discriminant(self).hash(h);
+        match self {
+            RuntimeValue::Unit => {}
+            RuntimeValue::Bool(v) => v.hash(h),
+            RuntimeValue::Int(v) => v.hash(h),
+            RuntimeValue::Nat(v) => v.hash(h),
+            RuntimeValue::String(v) => v.hash(h),
+            RuntimeValue::Enum {
+                ty,
+                variant,
+                fields,
+            } => {
+                ty.hash(h);
+                variant.hash(h);
+                // Sort fields by name for determinism
+                let mut sorted: Vec<_> = fields.iter().collect();
+                sorted.sort_by_key(|(k, _)| k.resolve());
+                for (k, v) in sorted {
+                    k.resolve().hash(h);
+                    v.hash_into(h);
+                }
+            }
+            RuntimeValue::Tuple(items) => {
+                items.len().hash(h);
+                for item in items {
+                    item.hash_into(h);
+                }
+            }
+            RuntimeValue::Struct { ty, fields } => {
+                ty.hash(h);
+                // Sort fields by name for determinism
+                let mut sorted: Vec<_> = fields.iter().collect();
+                sorted.sort_by_key(|(k, _)| k.resolve());
+                for (k, v) in sorted {
+                    k.resolve().hash(h);
+                    v.hash_into(h);
+                }
+            }
+            RuntimeValue::Seq(items) => {
+                items.len().hash(h);
+                for item in items {
+                    item.hash_into(h);
+                }
+            }
+            RuntimeValue::Set(items) => {
+                items.len().hash(h);
+                for item in items {
+                    item.hash_into(h);
+                }
+            }
+            RuntimeValue::Map(entries) => {
+                entries.len().hash(h);
+                for (k, v) in entries {
+                    k.hash_into(h);
+                    v.hash_into(h);
+                }
+            }
         }
     }
 
@@ -582,5 +660,83 @@ mod tests {
         )
         .unwrap();
         assert_eq!(left_map.canonical_key(), right_map.canonical_key());
+    }
+
+    #[test]
+    fn test_fingerprint_deterministic_for_same_value() {
+        let a = RuntimeValue::struct_value(
+            "State",
+            vec![
+                ("x".to_string(), RuntimeValue::Int(42)),
+                ("y".to_string(), RuntimeValue::Bool(true)),
+            ],
+        )
+        .unwrap();
+        let b = RuntimeValue::struct_value(
+            "State",
+            vec![
+                ("x".to_string(), RuntimeValue::Int(42)),
+                ("y".to_string(), RuntimeValue::Bool(true)),
+            ],
+        )
+        .unwrap();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn test_fingerprint_differs_for_different_values() {
+        let a = RuntimeValue::struct_value(
+            "State",
+            vec![("x".to_string(), RuntimeValue::Int(1))],
+        )
+        .unwrap();
+        let b = RuntimeValue::struct_value(
+            "State",
+            vec![("x".to_string(), RuntimeValue::Int(2))],
+        )
+        .unwrap();
+        assert_ne!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn test_fingerprint_field_order_independent() {
+        // Fields inserted in different order should produce the same fingerprint
+        // (since fingerprint sorts by field name)
+        let a = RuntimeValue::struct_value(
+            "State",
+            vec![
+                ("alpha".to_string(), RuntimeValue::Int(1)),
+                ("beta".to_string(), RuntimeValue::Int(2)),
+            ],
+        )
+        .unwrap();
+        let b = RuntimeValue::struct_value(
+            "State",
+            vec![
+                ("beta".to_string(), RuntimeValue::Int(2)),
+                ("alpha".to_string(), RuntimeValue::Int(1)),
+            ],
+        )
+        .unwrap();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn test_fingerprint_set_order_independent() {
+        let a =
+            RuntimeValue::set_bounded(vec![RuntimeValue::Int(2), RuntimeValue::Int(1)], &bounds())
+                .unwrap();
+        let b =
+            RuntimeValue::set_bounded(vec![RuntimeValue::Int(1), RuntimeValue::Int(2)], &bounds())
+                .unwrap();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn test_fingerprint_type_discriminant_matters() {
+        // Int(1) vs Nat(1) should differ
+        let a = RuntimeValue::Int(1);
+        let b = RuntimeValue::Nat(1);
+        assert_ne!(a.fingerprint(), b.fingerprint());
     }
 }

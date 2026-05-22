@@ -13624,10 +13624,12 @@ one comparison. Per-state dedup cost ~100 ns vs our ~100 µs.
 
 Implementation paths:
 
-- [ ] **38.22.3.a**: **Streaming `Hasher::write` walk** that produces
-  u64 directly without intermediate Strings. Use FxHash or XXH3.
-  Replace `BTreeSet<String>` with `HashSet<u64>` (with collision
-  handling via BTreeSet<state> per bucket if paranoid). *3-5 days.*
+- [x] **38.22.3.a**: **Streaming `Hasher::write` walk** — DONE.
+  Added `RuntimeValue::fingerprint()` → u64 via `hash_into()` recursive
+  walk using `DefaultHasher`. Struct/Enum fields sorted by name for
+  determinism. Wired into BFS explorer (fast path when no symmetry +
+  `HashCompaction64` mode) and DPOR `hash_state()`. Skips all
+  intermediate String allocations. 5 new unit tests.
 - [ ] **38.22.3.b**: **Cache the hash on `RuntimeValue`** (OnceLock
   field per Struct/Enum). First compute is the same; subsequent
   lookups (e.g. for re-dedup of an already-emitted state) are free.

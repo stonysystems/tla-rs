@@ -316,21 +316,32 @@ where
     let mut frontier = VecDeque::new();
     let mut states_by_key = std::collections::BTreeMap::new();
     let mut stats = ExplorationStats::default();
+    // Fast-path flag: skip canonical_key String construction when no symmetry
+    // is active and hash compaction is enabled.
+    let use_fingerprint_fast_path =
+        symmetry_field_set.is_empty() && matches!(state_dedup, StateDedupMode::HashCompaction64);
+
     for state in initial_states {
-        let dedup_canonical = canonical_dedup_key(state, &symmetry_field_set);
-        if !symmetry_field_set.is_empty()
-            && record_symmetry_collapse(
-                &mut symmetry_representatives,
-                &dedup_canonical,
-                &state.canonical_key(),
-            )
-        {
-            stats.symmetry_collapses += 1;
-        }
-        let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
+        let key = if use_fingerprint_fast_path {
+            format!("h{:016x}", state.fingerprint())
+        } else {
+            let dedup_canonical = canonical_dedup_key(state, &symmetry_field_set);
+            if !symmetry_field_set.is_empty()
+                && record_symmetry_collapse(
+                    &mut symmetry_representatives,
+                    &dedup_canonical,
+                    &state.canonical_key(),
+                )
+            {
+                stats.symmetry_collapses += 1;
+            }
+            dedup_key_from_canonical(&dedup_canonical, state_dedup)
+        };
         if visited.insert(key.clone()) {
-            if matches!(state_dedup, StateDedupMode::HashCompaction64) {
-                hash_representatives.insert(key.clone(), dedup_canonical);
+            if !use_fingerprint_fast_path && matches!(state_dedup, StateDedupMode::HashCompaction64) {
+                // In fingerprint fast path, we skip canonical string tracking
+                let canonical = canonical_dedup_key(state, &symmetry_field_set);
+                hash_representatives.insert(key.clone(), canonical);
             }
             if let Some(ref mut exporter) = debug_exporter {
                 let _ = exporter.record_generated(
@@ -476,25 +487,34 @@ where
                 ));
             }
 
-            let dedup_canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
-            if !symmetry_field_set.is_empty()
-                && record_symmetry_collapse(
-                    &mut symmetry_representatives,
-                    &dedup_canonical,
-                    &successor.state.canonical_key(),
-                )
-            {
-                stats.symmetry_collapses += 1;
-            }
-            let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
+            let key = if use_fingerprint_fast_path {
+                format!("h{:016x}", successor.state.fingerprint())
+            } else {
+                let dedup_canonical =
+                    canonical_dedup_key(&successor.state, &symmetry_field_set);
+                if !symmetry_field_set.is_empty()
+                    && record_symmetry_collapse(
+                        &mut symmetry_representatives,
+                        &dedup_canonical,
+                        &successor.state.canonical_key(),
+                    )
+                {
+                    stats.symmetry_collapses += 1;
+                }
+                dedup_key_from_canonical(&dedup_canonical, state_dedup)
+            };
             let branch_label = if successor.action_branch.is_empty() {
                 None
             } else {
                 Some(successor.action_branch.as_str())
             };
             if visited.insert(key.clone()) {
-                if matches!(state_dedup, StateDedupMode::HashCompaction64) {
-                    hash_representatives.insert(key.clone(), dedup_canonical);
+                if !use_fingerprint_fast_path
+                    && matches!(state_dedup, StateDedupMode::HashCompaction64)
+                {
+                    let canonical =
+                        canonical_dedup_key(&successor.state, &symmetry_field_set);
+                    hash_representatives.insert(key.clone(), canonical);
                 }
                 if let Some(ref mut exporter) = debug_exporter {
                     let _ = exporter.record_generated(
@@ -547,8 +567,12 @@ where
                         let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
                     }
                 }
-                if is_hash_collision(&hash_representatives, &key, &dedup_canonical) {
-                    stats.hash_compaction_collisions += 1;
+                if !use_fingerprint_fast_path {
+                    let dedup_canonical =
+                        canonical_dedup_key(&successor.state, &symmetry_field_set);
+                    if is_hash_collision(&hash_representatives, &key, &dedup_canonical) {
+                        stats.hash_compaction_collisions += 1;
+                    }
                 }
                 stats.duplicate_successors += 1;
             }
@@ -751,6 +775,8 @@ fn dedup_key_from_canonical(canonical: &str, mode: StateDedupMode) -> String {
     match mode {
         StateDedupMode::Canonical => canonical.to_string(),
         StateDedupMode::HashCompaction64 => {
+            // Legacy path: hash the canonical string (used when symmetry
+            // reduction produces a different canonical form than fingerprint)
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             canonical.hash(&mut hasher);
             format!("h{:016x}", hasher.finish())
