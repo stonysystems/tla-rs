@@ -1,6 +1,7 @@
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{SearchLimits, StateDedupMode};
 use crate::modelcheck::parity::ParityDebugExporter;
+use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::RuntimeValue;
 use std::collections::{BTreeSet, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -815,10 +816,10 @@ fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -
             // by sorted position. Apply rank assignment when emitting
             // the canonical key. This is sound AND complete for Set<int>
             // / Map<int, _> field-wise permutations.
-            let symmetric_fields: Vec<(&str, &RuntimeValue)> = fields
+            let symmetric_fields: Vec<(String, &RuntimeValue)> = fields
                 .iter()
-                .filter(|(name, _)| symmetry_fields.contains(name.as_str()))
-                .map(|(name, value)| (name.as_str(), value))
+                .filter(|(name, _)| symmetry_fields.contains(name.resolve().as_str()))
+                .map(|(name, value)| (name.resolve(), value))
                 .collect();
 
             // Step 1: collect all distinct ints appearing in any symmetric field.
@@ -847,16 +848,26 @@ fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -
                 .collect();
 
             // Step 4: emit canonical key with relabeled ints in symmetric fields.
-            let mut parts = Vec::new();
-            for (name, value) in fields {
-                let field_key = if symmetry_fields.contains(name.as_str()) {
-                    relabeled_canonical_key(value, &rank_map)
-                } else {
-                    value.canonical_key()
-                };
-                parts.push(format!("{name}:{field_key}"));
-            }
-            format!("struct:{ty}{{{}}}", parts.join(","))
+            // Sort by field name string for deterministic output.
+            let mut entries: Vec<_> = fields
+                .iter()
+                .map(|(name, value)| {
+                    let name_str = name.resolve();
+                    let field_key = if symmetry_fields.contains(name_str.as_str()) {
+                        relabeled_canonical_key(value, &rank_map)
+                    } else {
+                        value.canonical_key()
+                    };
+                    (name_str, field_key)
+                })
+                .collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            let rendered = entries
+                .iter()
+                .map(|(name, key)| format!("{name}:{key}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("struct:{ty}{{{rendered}}}")
         }
         _ => state.canonical_key(),
     }
@@ -1202,15 +1213,15 @@ fn collect_state_diffs(
 
 fn collect_named_field_diffs(
     path: &str,
-    before: &std::collections::BTreeMap<String, RuntimeValue>,
-    after: &std::collections::BTreeMap<String, RuntimeValue>,
+    before: &std::collections::BTreeMap<Symbol, RuntimeValue>,
+    after: &std::collections::BTreeMap<Symbol, RuntimeValue>,
     diffs: &mut Vec<StateDiffSummary>,
 ) {
-    let mut keys: BTreeSet<String> = BTreeSet::new();
+    let mut keys: BTreeSet<Symbol> = BTreeSet::new();
     keys.extend(before.keys().cloned());
     keys.extend(after.keys().cloned());
     for key in keys {
-        let sub_path = format!("{path}.{key}");
+        let sub_path = format!("{path}.{}", key.as_str());
         match (before.get(&key), after.get(&key)) {
             (Some(b), Some(a)) => collect_state_diffs(&sub_path, b, a, diffs),
             (Some(b), None) => diffs.push(StateDiffSummary {
@@ -1288,10 +1299,13 @@ mod tests {
 
     fn state_id(state: &RuntimeValue) -> i128 {
         match state {
-            RuntimeValue::Struct { fields, .. } => match fields.get("id") {
-                Some(RuntimeValue::Int(v)) => *v,
-                other => panic!("invalid id field: {other:?}"),
-            },
+            RuntimeValue::Struct { fields, .. } => {
+                let sym = Symbol::intern("id");
+                match fields.get(&sym) {
+                    Some(RuntimeValue::Int(v)) => *v,
+                    other => panic!("invalid id field: {other:?}"),
+                }
+            }
             other => panic!("expected struct state, got {other:?}"),
         }
     }

@@ -13594,9 +13594,13 @@ alloc is ~bytes.
 
 Implementation paths:
 
-- [ ] **38.22.2.a**: **Intern field names** to `Symbol` (u32) so the
-  BTreeMap key isn't a String. Field lookup becomes integer-indexed.
-  *2-3 days; modest win but easy.*
+- [x] **38.22.2.a**: **Intern field names** to `Symbol` (u32) — DONE.
+  Added `modelcheck/symbol.rs` with global `LazyLock<RwLock<Interner>>`.
+  `BTreeMap<String, RuntimeValue>` → `BTreeMap<Symbol, RuntimeValue>` in
+  Struct/Enum variants. Updated evaluator, solver, explorer, DPOR/POR,
+  parity, and main.rs. `canonical_key()` and `to_canonical_json()` sort
+  by resolved string for deterministic output. All 1647 unit tests pass;
+  0 new integration regressions (13 pre-existing).
 - [ ] **38.22.2.b**: **Replace BTreeMap fields with Vec<RuntimeValue>**
   indexed by a precomputed `field_name → index` table per `LState`
   type. Eliminates BTreeMap allocation entirely. *1 week.*

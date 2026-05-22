@@ -848,7 +848,8 @@ fn constants_candidate_matches_assignments(
     };
 
     for (field_name, expected_value) in &model_config.constants.assignments {
-        if let Some(actual) = fields.get(field_name) {
+        let sym = crate::modelcheck::symbol::Symbol::intern(field_name);
+        if let Some(actual) = fields.get(&sym) {
             let matches = match expected_value {
                 ModelValue::Int(v) => actual == &RuntimeValue::Int(i128::from(*v)),
                 ModelValue::Bool(v) => actual == &RuntimeValue::Bool(*v),
@@ -888,7 +889,7 @@ fn convert_por_footprint(
 fn top_level_state_fields(state: &RuntimeValue) -> std::collections::BTreeSet<String> {
     match state {
         RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
-            fields.keys().cloned().collect()
+            fields.keys().map(|k| k.resolve()).collect()
         }
         _ => std::collections::BTreeSet::new(),
     }
@@ -922,12 +923,12 @@ fn top_level_changed_fields(
         ) => {
             for field in current_fields.keys() {
                 if successor_fields.get(field) != current_fields.get(field) {
-                    changed.insert(field.clone());
+                    changed.insert(field.resolve());
                 }
             }
             for field in successor_fields.keys() {
                 if !current_fields.contains_key(field) {
-                    changed.insert(field.clone());
+                    changed.insert(field.resolve());
                 }
             }
         }
@@ -1027,9 +1028,10 @@ fn refine_transition_footprint_for_process_update(
 }
 
 fn top_level_state_field<'a>(state: &'a RuntimeValue, field: &str) -> Option<&'a RuntimeValue> {
+    let sym = crate::modelcheck::symbol::Symbol::intern(field);
     match state {
         RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
-            fields.get(field)
+            fields.get(&sym)
         }
         _ => None,
     }
@@ -1324,7 +1326,12 @@ fn stable_nonzero_process_hash(seed: &str) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modelcheck::symbol::Symbol;
     use std::io::Write;
+
+    fn sym(s: &str) -> Symbol {
+        Symbol::intern(s)
+    }
 
     fn create_model_toml(dir: &Path) -> std::path::PathBuf {
         let model_path = dir.join("model.toml");
@@ -1578,7 +1585,7 @@ max_seq_len = 4
     fn test_infer_process_id_from_state_delta_map_key() {
         let mut before_fields = std::collections::BTreeMap::new();
         before_fields.insert(
-            "pc".to_string(),
+            sym("pc"),
             RuntimeValue::Map(std::collections::BTreeMap::from([
                 (
                     RuntimeValue::Int(0),
@@ -1597,7 +1604,7 @@ max_seq_len = 4
 
         let mut after_fields = std::collections::BTreeMap::new();
         after_fields.insert(
-            "pc".to_string(),
+            sym("pc"),
             RuntimeValue::Map(std::collections::BTreeMap::from([
                 (
                     RuntimeValue::Int(0),
@@ -1623,7 +1630,7 @@ max_seq_len = 4
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "pc".to_string(),
+                sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
@@ -1639,7 +1646,7 @@ max_seq_len = 4
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "pc".to_string(),
+                sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
@@ -1670,7 +1677,7 @@ max_seq_len = 4
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "tickets".to_string(),
+                sym("tickets"),
                 RuntimeValue::Seq(vec![
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(0),
@@ -1681,7 +1688,7 @@ max_seq_len = 4
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "tickets".to_string(),
+                sym("tickets"),
                 RuntimeValue::Seq(vec![
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(1),
@@ -1707,7 +1714,7 @@ max_seq_len = 4
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "flag".to_string(),
+                sym("flag"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(false)),
                     (RuntimeValue::Int(1), RuntimeValue::Bool(false)),
@@ -1717,7 +1724,7 @@ max_seq_len = 4
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "flag".to_string(),
+                sym("flag"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(true)),
                     (RuntimeValue::Int(1), RuntimeValue::Bool(true)),
@@ -1742,15 +1749,15 @@ max_seq_len = 4
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([
-                ("x".to_string(), RuntimeValue::Int(1)),
-                ("y".to_string(), RuntimeValue::Int(2)),
+                (sym("x"), RuntimeValue::Int(1)),
+                (sym("y"), RuntimeValue::Int(2)),
             ]),
         };
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([
-                ("x".to_string(), RuntimeValue::Int(1)),
-                ("y".to_string(), RuntimeValue::Int(3)),
+                (sym("x"), RuntimeValue::Int(1)),
+                (sym("y"), RuntimeValue::Int(3)),
             ]),
         };
 
@@ -1775,7 +1782,7 @@ max_seq_len = 4
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "pc".to_string(),
+                sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
@@ -1791,7 +1798,7 @@ max_seq_len = 4
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "pc".to_string(),
+                sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
@@ -1814,7 +1821,7 @@ max_seq_len = 4
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "pc".to_string(),
+                sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
@@ -1830,7 +1837,7 @@ max_seq_len = 4
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
             fields: std::collections::BTreeMap::from([(
-                "pc".to_string(),
+                sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),

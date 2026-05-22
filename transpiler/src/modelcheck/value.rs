@@ -1,5 +1,6 @@
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{CollectionBounds, ModelValue};
+use crate::modelcheck::symbol::Symbol;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,12 +15,12 @@ pub enum RuntimeValue {
     Enum {
         ty: String,
         variant: String,
-        fields: BTreeMap<String, RuntimeValue>,
+        fields: BTreeMap<Symbol, RuntimeValue>,
     },
     Tuple(Vec<RuntimeValue>),
     Struct {
         ty: String,
-        fields: BTreeMap<String, RuntimeValue>,
+        fields: BTreeMap<Symbol, RuntimeValue>,
     },
     Seq(Vec<RuntimeValue>),
     Set(BTreeSet<RuntimeValue>),
@@ -68,6 +69,33 @@ impl RuntimeValue {
             ty: ty.into(),
             fields: collect_named_fields(fields)?,
         })
+    }
+
+    /// Construct an enum value with pre-interned Symbol keys.
+    pub fn enum_value_sym<I>(
+        ty: impl Into<String>,
+        variant: impl Into<String>,
+        fields: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = (Symbol, RuntimeValue)>,
+    {
+        Self::Enum {
+            ty: ty.into(),
+            variant: variant.into(),
+            fields: fields.into_iter().collect(),
+        }
+    }
+
+    /// Construct a struct value with pre-interned Symbol keys.
+    pub fn struct_value_sym<I>(ty: impl Into<String>, fields: I) -> Self
+    where
+        I: IntoIterator<Item = (Symbol, RuntimeValue)>,
+    {
+        Self::Struct {
+            ty: ty.into(),
+            fields: fields.into_iter().collect(),
+        }
     }
 
     pub fn seq_bounded(
@@ -133,10 +161,17 @@ impl RuntimeValue {
         Ok(Self::Map(map))
     }
 
+    /// Access a field by string name (interns on each call — use `field_sym` in hot paths).
     pub fn field(&self, name: &str) -> Option<&RuntimeValue> {
+        let sym = Symbol::intern(name);
+        self.field_sym(sym)
+    }
+
+    /// Access a field by pre-interned Symbol (no allocation).
+    pub fn field_sym(&self, sym: Symbol) -> Option<&RuntimeValue> {
         match self {
             RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
-                fields.get(name)
+                fields.get(&sym)
             }
             _ => None,
         }
@@ -162,9 +197,15 @@ impl RuntimeValue {
                 variant,
                 fields,
             } => {
-                let rendered = fields
+                // Sort by field name string for deterministic output
+                let mut entries: Vec<_> = fields
                     .iter()
-                    .map(|(k, v)| format!("{k}:{}", v.canonical_key()))
+                    .map(|(k, v)| (k.resolve(), v.canonical_key()))
+                    .collect();
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                let rendered = entries
+                    .iter()
+                    .map(|(k, v)| format!("{k}:{v}"))
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("enum:{ty}::{variant}{{{rendered}}}")
@@ -178,9 +219,15 @@ impl RuntimeValue {
                 format!("tuple:({rendered})")
             }
             RuntimeValue::Struct { ty, fields } => {
-                let rendered = fields
+                // Sort by field name string for deterministic output
+                let mut entries: Vec<_> = fields
                     .iter()
-                    .map(|(k, v)| format!("{k}:{}", v.canonical_key()))
+                    .map(|(k, v)| (k.resolve(), v.canonical_key()))
+                    .collect();
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                let rendered = entries
+                    .iter()
+                    .map(|(k, v)| format!("{k}:{v}"))
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("struct:{ty}{{{rendered}}}")
@@ -231,7 +278,7 @@ impl RuntimeValue {
                 let mut obj = serde_json::Map::new();
                 obj.insert("_variant".to_string(), JsonValue::String(variant.clone()));
                 for (k, v) in fields {
-                    obj.insert(k.clone(), v.to_canonical_json());
+                    obj.insert(k.resolve(), v.to_canonical_json());
                 }
                 JsonValue::Object(obj)
             }
@@ -239,11 +286,12 @@ impl RuntimeValue {
                 JsonValue::Array(items.iter().map(|v| v.to_canonical_json()).collect())
             }
             RuntimeValue::Struct { fields, .. } => {
-                // BTreeMap is already alphabetically sorted
-                let obj: serde_json::Map<String, JsonValue> = fields
+                // Symbols are ordered by intern-id; re-sort by name for stable JSON
+                let mut obj: serde_json::Map<String, JsonValue> = fields
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.to_canonical_json()))
+                    .map(|(k, v)| (k.resolve(), v.to_canonical_json()))
                     .collect();
+                obj.sort_keys();
                 JsonValue::Object(obj)
             }
             RuntimeValue::Seq(items) => {
@@ -288,13 +336,14 @@ impl From<&ModelValue> for RuntimeValue {
     }
 }
 
-fn collect_named_fields<I>(fields: I) -> TranspileResult<BTreeMap<String, RuntimeValue>>
+fn collect_named_fields<I>(fields: I) -> TranspileResult<BTreeMap<Symbol, RuntimeValue>>
 where
     I: IntoIterator<Item = (String, RuntimeValue)>,
 {
     let mut out = BTreeMap::new();
     for (name, value) in fields {
-        if out.insert(name.clone(), value).is_some() {
+        let sym = Symbol::intern(&name);
+        if out.insert(sym, value).is_some() {
             return Err(TranspileError::Config {
                 message: format!(
                     "Model-check value contains duplicate field `{}` in named fields.",

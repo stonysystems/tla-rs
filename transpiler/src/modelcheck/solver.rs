@@ -7,6 +7,7 @@ use crate::modelcheck::evaluator::{
 use crate::modelcheck::ir::{
     BranchConstraintIr, ConstraintRoot, ConstraintTarget, TransitionBranchIr, TransitionIr,
 };
+use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -962,7 +963,8 @@ fn read_value_at_path(value: &RuntimeValue, path: &[String]) -> TranspileResult<
 
     match value {
         RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
-            let next = fields.get(head).ok_or_else(|| TranspileError::Config {
+            let sym = Symbol::intern(head);
+            let next = fields.get(&sym).ok_or_else(|| TranspileError::Config {
                 message: format!(
                     "Constraint path `.{}.` is invalid: field `{}` not found.",
                     join_path(path),
@@ -995,7 +997,8 @@ fn write_value_at_path(
     let tail = &path[1..];
     match value {
         RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
-            let next = fields.get_mut(head).ok_or_else(|| TranspileError::Config {
+            let sym = Symbol::intern(head);
+            let next = fields.get_mut(&sym).ok_or_else(|| TranspileError::Config {
                 message: format!(
                     "Cannot assign to `.{}`: field `{}` does not exist.",
                     join_path(path),
@@ -1053,7 +1056,7 @@ fn branch_assigns_all_next_state_root_fields(
 ) -> bool {
     let required_fields = match current_state {
         RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
-            fields.keys().cloned().collect::<BTreeSet<String>>()
+            fields.keys().cloned().collect::<BTreeSet<Symbol>>()
         }
         _ => return true,
     };
@@ -1061,7 +1064,7 @@ fn branch_assigns_all_next_state_root_fields(
         return true;
     }
 
-    let mut assigned_fields = BTreeSet::<String>::new();
+    let mut assigned_fields = BTreeSet::<Symbol>::new();
     for constraint in &branch.constraints {
         match constraint {
             BranchConstraintIr::Eq {
@@ -1075,7 +1078,7 @@ fn branch_assigns_all_next_state_root_fields(
                 if path.is_empty() {
                     return true;
                 }
-                assigned_fields.insert(path[0].clone());
+                assigned_fields.insert(Symbol::intern(&path[0]));
             }
             BranchConstraintIr::Predicate { expr } => {
                 let Some((path, _variant)) = next_state_variant_assignment(expr, next_state_param)
@@ -1085,7 +1088,7 @@ fn branch_assigns_all_next_state_root_fields(
                 if path.is_empty() {
                     return true;
                 }
-                assigned_fields.insert(path[0].clone());
+                assigned_fields.insert(Symbol::intern(&path[0]));
             }
             _ => {}
         }

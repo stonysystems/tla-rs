@@ -3051,7 +3051,8 @@ fn synthesize_constants_candidates_from_assignments(
         };
         let mut rewritten_fields = fields.clone();
         for (field, assigned) in &model_config.constants.assignments {
-            let existing_field = rewritten_fields.get(field).ok_or_else(|| {
+            let sym = verus_transpiler::modelcheck::symbol::Symbol::intern(field);
+            let existing_field = rewritten_fields.get(&sym).ok_or_else(|| {
                 miette::miette!(
                     "Invalid constants assignment: field `{}` does not exist on candidate constants value `{}`.",
                     field,
@@ -3059,7 +3060,7 @@ fn synthesize_constants_candidates_from_assignments(
                 )
             })?;
             let replacement = assignment_value_for_constant_field(assigned, existing_field, field)?;
-            rewritten_fields.insert(field.clone(), replacement);
+            rewritten_fields.insert(sym, replacement);
         }
 
         let candidate = RuntimeValue::Struct {

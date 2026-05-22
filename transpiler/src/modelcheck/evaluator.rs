@@ -1,5 +1,6 @@
 use crate::ast::{BinOp, Binding, Expr, MatchArm, Path, Pattern, Type, UnaryOp};
 use crate::error::{TranspileError, TranspileResult};
+use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::collections::BTreeMap;
 
@@ -777,7 +778,8 @@ fn apply_struct_update(
         RuntimeValue::Struct { ty, mut fields } => {
             validate_struct_update_target(expected_name, &ty, None)?;
             for (field, value) in updates {
-                if !fields.contains_key(&field) {
+                let sym = Symbol::intern(&field);
+                if !fields.contains_key(&sym) {
                     return Err(type_error(
                         format!(
                             "struct update field `{}` does not exist on struct `{}`.",
@@ -786,7 +788,7 @@ fn apply_struct_update(
                         .as_str(),
                     ));
                 }
-                fields.insert(field, value);
+                fields.insert(sym, value);
             }
             Ok(RuntimeValue::Struct { ty, fields })
         }
@@ -797,7 +799,8 @@ fn apply_struct_update(
         } => {
             validate_struct_update_target(expected_name, &ty, Some(&variant))?;
             for (field, value) in updates {
-                if !fields.contains_key(&field) {
+                let sym = Symbol::intern(&field);
+                if !fields.contains_key(&sym) {
                     return Err(type_error(
                         format!(
                             "struct update field `{}` does not exist on enum variant `{}::{}`.",
@@ -806,7 +809,7 @@ fn apply_struct_update(
                         .as_str(),
                     ));
                 }
-                fields.insert(field, value);
+                fields.insert(sym, value);
             }
             Ok(RuntimeValue::Enum {
                 ty,
@@ -963,11 +966,12 @@ fn match_pattern(
 
 fn match_named_pattern_fields(
     fields: &[(String, Pattern)],
-    runtime_fields: &BTreeMap<String, RuntimeValue>,
+    runtime_fields: &BTreeMap<Symbol, RuntimeValue>,
     bindings: &mut BTreeMap<String, RuntimeValue>,
 ) -> TranspileResult<bool> {
     for (field_name, field_pattern) in fields {
-        let Some(field_value) = runtime_fields.get(field_name) else {
+        let sym = Symbol::intern(field_name);
+        let Some(field_value) = runtime_fields.get(&sym) else {
             return Ok(false);
         };
         if !match_pattern(field_pattern, field_value, bindings)? {
@@ -979,7 +983,7 @@ fn match_named_pattern_fields(
 
 fn match_variant_pattern_fields(
     fields: &[Pattern],
-    runtime_fields: &BTreeMap<String, RuntimeValue>,
+    runtime_fields: &BTreeMap<Symbol, RuntimeValue>,
     bindings: &mut BTreeMap<String, RuntimeValue>,
 ) -> TranspileResult<bool> {
     if fields.len() != runtime_fields.len() {
@@ -987,8 +991,8 @@ fn match_variant_pattern_fields(
     }
 
     for (idx, field_pattern) in fields.iter().enumerate() {
-        let indexed_key = format!("_{idx}");
-        let plain_key = idx.to_string();
+        let indexed_key = Symbol::intern(&format!("_{idx}"));
+        let plain_key = Symbol::intern(&idx.to_string());
         let Some(field_value) = runtime_fields
             .get(&indexed_key)
             .or_else(|| runtime_fields.get(&plain_key))

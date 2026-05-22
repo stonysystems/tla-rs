@@ -199,7 +199,7 @@ mod tests {
             ty: "LState".to_string(),
             fields: fields
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), RuntimeValue::Int(v)))
+                .map(|(k, v)| (crate::modelcheck::symbol::Symbol::intern(k), RuntimeValue::Int(v)))
                 .collect(),
         }
     }

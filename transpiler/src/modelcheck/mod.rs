@@ -29,4 +29,5 @@ pub mod liveness;
 pub mod parity;
 pub mod por;
 pub mod solver;
+pub mod symbol;
 pub mod value;
