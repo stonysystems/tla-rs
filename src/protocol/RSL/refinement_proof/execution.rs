@@ -38,6 +38,7 @@ use crate::common::framework::environment_s::*;
 use crate::common::logic::heuristics_i::*;
 use crate::common::logic::temporal_s::*;
 use crate::common::native::io_s::*;
+use crate::services::RSL::app_state_machine::*;
 
 verus! {
     #[verifier(external_body)]
@@ -372,7 +373,44 @@ verus! {
         return (qs_new, batches_new, batch_num_new, req_num_new);
     }
 
-    #[verifier(external_body)]
+    // Helper: from LExecutorExecute + ios.contains(Send{s:p}), extract batch/replies
+    // and prove GetPacketsFromReplies contains p. Isolates LExecutorExecute unfolding.
+    proof fn lemma_execution_packet_in_replies(
+        s: LExecutor,
+        s_: LExecutor,
+        ios: Seq<RslIo>,
+        p: RslPacket,
+    ) -> (rc: (Seq<Request>, Seq<Reply>))
+        requires
+            s.next_op_to_execute is OutstandingOpKnown,
+            LReplicaConstantsValid(s.constants),
+            LExecutorExecute(s, s_, ExtractSentPacketsFromIos(ios)),
+            ios.contains(LIoOp::Send{s:p}),
+        ensures
+            ({
+                let batch = rc.0;
+                let replies = rc.1;
+                let me = s.constants.all.config.replica_ids[s.constants.my_index];
+                &&& batch == s.next_op_to_execute->v
+                &&& (batch, replies) == (s.next_op_to_execute->v, HandleRequestBatch(s.app, s.next_op_to_execute->v).1)
+                &&& batch.len() == replies.len()
+                &&& GetPacketsFromReplies(me, batch, replies).contains(p)
+            })
+    {
+        let batch = s.next_op_to_execute->v;
+        let temp = HandleRequestBatch(s.app, batch);
+        lemma_HandleRequestBatchTriggerHappy(s.app, batch, temp.0, temp.1);
+        let replies = temp.1;
+        let me = s.constants.all.config.replica_ids[s.constants.my_index];
+
+        // Bridge: ios.contains(Send{s:p}) => ExtractSentPacketsFromIos(ios).contains(p)
+        ExtractSentPacketsFromIos_Ensures2(ios);
+        // From LExecutorExecute: ExtractSentPacketsFromIos(ios) == GetPacketsFromReplies(me, batch, replies)
+        assert(GetPacketsFromReplies(me, batch, replies).contains(p));
+
+        (batch, replies)
+    }
+
     pub proof fn lemma_ReplySentViaExecutionIsAllowed(
         b: Behavior<RslState>,
         c: LConstants,
@@ -422,28 +460,77 @@ verus! {
         lemma_ReplicaConstantsAllConsistent(b, c, i, idx);
         lemma_ReplicaConstantsAllConsistent(b, c, i + 1, idx);
 
+        let s = b[i].replicas[idx].replica.executor;
+        let s_ = b[i + 1].replicas[idx].replica.executor;
+
         let qs_prev = lemma_AppStateAlwaysValid(b, c, i, idx);
         let q = lemma_DecidedOperationWasChosen(b, c, i, idx);
+
+        let (batch, replies) = lemma_execution_packet_in_replies(s, s_, ios, p);
+        let me = c.config.replica_ids[idx];
+
+        lemma_execution_assemble_result(b[i], qs_prev, q, s.app, batch, replies, p, me)
+    }
+
+    // Helper: assemble final result from qs_prev, q, batch, replies.
+    // Isolates GetSequenceOfRequestBatches + GetRequestIndex from heavy behavior reasoning.
+    proof fn lemma_execution_assemble_result(
+        ps: RslState,
+        qs_prev: Seq<QuorumOf2bs>,
+        q: QuorumOf2bs,
+        app: AppState,
+        batch: Seq<Request>,
+        replies: Seq<Reply>,
+        p: RslPacket,
+        me: AbstractEndPoint,
+    ) -> (rc: (Seq<QuorumOf2bs>, Seq<RequestBatch>, int, int))
+        requires
+            IsValidQuorumOf2bsSequence(ps, qs_prev),
+            IsValidQuorumOf2bs(ps, q),
+            q.opn == qs_prev.len(),
+            q.v == batch,
+            batch.len() == replies.len(),
+            app == GetAppStateFromRequestBatches(GetSequenceOfRequestBatches(qs_prev)),
+            replies == HandleRequestBatch(app, batch).1,
+            GetPacketsFromReplies(me, batch, replies).contains(p),
+        ensures
+            ({
+                let reply = Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply};
+                let qs = rc.0;
+                let batches = rc.1;
+                let batch_num = rc.2;
+                let req_num = rc.3;
+                &&& IsValidQuorumOf2bsSequence(ps, qs)
+                &&& batches == GetSequenceOfRequestBatches(qs)
+                &&& 0 <= batch_num < batches.len()
+                &&& 0 <= req_num < batches[batch_num].len()
+                &&& reply == GetReplyFromRequestBatches(batches, batch_num, req_num)
+            })
+    {
         let qs = qs_prev + seq![q];
         let batches = GetSequenceOfRequestBatches(qs);
         let batch_num = qs_prev.len() as int;
 
-        assert(GetSequenceOfRequestBatches(qs_prev) == batches.subrange(0, batch_num));
+        lemma_GetSequenceOfRequestBatches(qs);
+        lemma_SequenceOfRequestBatchesNthElement(qs, batch_num);
+        // Now: batches.len() == qs.len() == qs_prev.len() + 1, and batches[batch_num] == qs[batch_num].v == q.v == batch
 
-        let s = b[i].replicas[idx].replica.executor;
-        assert(s.app == GetAppStateFromRequestBatches(GetSequenceOfRequestBatches(qs_prev)));
-
-        let batch = s.next_op_to_execute->v;
-        let temp = HandleRequestBatch(s.app, batch);
-        lemma_HandleRequestBatchTriggerHappy(s.app, batch, temp.0, temp.1);
-        let new_state = temp.0.last();
-        let replies = temp.1;
-        let me = c.config.replica_ids[idx];
-
-        assert(GetPacketsFromReplies(me, batch, replies).contains(p));
-        assert(p.src == c.config.replica_ids[idx]);
         let req_num = lemma_GetRequestIndexCorrespondingToPacketInGetPacketsFromReplies(p, me, batch, replies);
         let reply = Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply};
+        // Prove batches.subrange(0, batch_num) == GetSequenceOfRequestBatches(qs_prev)
+        // This connects GetReplyFromRequestBatches to HandleRequestBatch(app, batch)
+        lemma_GetSequenceOfRequestBatches(qs_prev);
+        assert(batches.subrange(0, batch_num) =~= GetSequenceOfRequestBatches(qs_prev)) by {
+            assert forall |n: int| 0 <= n < batch_num implies batches.subrange(0, batch_num)[n] == GetSequenceOfRequestBatches(qs_prev)[n] by {
+                lemma_SequenceOfRequestBatchesNthElement(qs, n);
+                lemma_SequenceOfRequestBatchesNthElement(qs_prev, n);
+                assert(qs[n] == qs_prev[n]);  // since n < qs_prev.len() and qs = qs_prev + seq![q]
+            }
+        }
+        // Now GetReplyFromRequestBatches(batches, batch_num, req_num)
+        //   = HandleRequestBatch(GetAppStateFromRequestBatches(batches.subrange(0, batch_num)), batches[batch_num]).1[req_num]
+        //   = HandleRequestBatch(app, batch).1[req_num] = replies[req_num]
+        lemma_HandleRequestBatchTriggerHappy(app, batch, HandleRequestBatch(app, batch).0, replies);
         assert(reply == replies[req_num]);
         (qs, batches, batch_num, req_num)
     }
