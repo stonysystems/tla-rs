@@ -12,6 +12,7 @@ use crate::protocol::RSL::common_proof::packet_sending::*;
 use crate::protocol::RSL::common_proof::receive1b::*;
 use crate::protocol::RSL::common_proof::requests::*;
 use crate::protocol::RSL::broadcast::*;
+use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::constants::*;
 use crate::protocol::RSL::distributed_system::*;
 use crate::protocol::RSL::message::*;
@@ -887,7 +888,6 @@ verus! {
         p_req
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_DecidedRequestWasSentByClient(
         b:Behavior<RslState>,
         c:LConstants,
@@ -918,12 +918,26 @@ verus! {
         lemma_GetSequenceOfRequestBatches(qs);
         lemma_SequenceOfRequestBatchesNthElement(qs, batch_num);
         let batch = batches[batch_num];
-        let request = batch[req_num];
         let q = qs[batch_num];
-        let idx = choose |idx:int| q.indices.contains(idx);
+        // From IsValidQuorumOf2bsSequence: IsValidQuorumOf2bs(b[i], q) && q.opn == batch_num
+        assert(IsValidQuorumOf2bs(b[i], q));
+        // batches[batch_num] == GetSequenceOfRequestBatches(qs)[batch_num] == q.v
+        assert(batch == q.v);
+        // q.indices is non-empty (size >= LMinQuorumSize >= 1)
+        assert(q.indices.len() >= LMinQuorumSize(b[i].constants.config));
+        assert(q.indices.len() >= 1);
+        let idx = q.indices.choose();
+        assert(q.indices.contains(idx));
+        // Instantiate the IsValidQuorumOf2bs quantifier for our chosen idx
+        assert(0 <= idx < b[i].constants.config.replica_ids.len()
+            && q.packets[idx].src == b[i].constants.config.replica_ids[idx]
+            && q.packets[idx].msg is RslMessage2b
+            && q.packets[idx].msg->val_2b == q.v
+            && b[i].environment.sentPackets.contains(q.packets[idx]));
         let packet_2b = q.packets[idx];
-        assert(packet_2b.msg is RslMessage2b);
-        assert(packet_2b.msg->val_2b == batch);
+        assert(packet_2b.msg->val_2b == q.v);
+        assert(b[i].environment.sentPackets.contains(packet_2b));
+        assert(c.config.replica_ids.contains(packet_2b.src));
 
         let packet_2a = lemma_2bMessageHasCorresponding2aMessage(b, c, i, packet_2b);
 
