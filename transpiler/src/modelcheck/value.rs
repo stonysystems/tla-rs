@@ -25,27 +25,30 @@ impl NamedFields {
     }
 
     pub fn get(&self, key: &Symbol) -> Option<&RuntimeValue> {
-        self.0.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+        let i = self.0.partition_point(|(k, _)| k < key);
+        self.0.get(i).filter(|(k, _)| k == key).map(|(_, v)| v)
     }
 
     pub fn get_mut(&mut self, key: &Symbol) -> Option<&mut RuntimeValue> {
-        self.0.iter_mut().find(|(k, _)| k == key).map(|(_, v)| v)
+        let i = self.0.partition_point(|(k, _)| k < key);
+        self.0.get_mut(i).filter(|(k, _)| k == key).map(|(_, v)| v)
     }
 
     /// Insert a field. Returns the previous value if the key already existed.
     /// Maintains sorted order by Symbol.
     pub fn insert(&mut self, key: Symbol, value: RuntimeValue) -> Option<RuntimeValue> {
-        if let Some(entry) = self.0.iter_mut().find(|(k, _)| *k == key) {
+        let pos = self.0.partition_point(|(k, _)| *k < key);
+        if let Some(entry) = self.0.get_mut(pos).filter(|(k, _)| *k == key) {
             Some(std::mem::replace(&mut entry.1, value))
         } else {
-            let pos = self.0.partition_point(|(k, _)| *k < key);
             self.0.insert(pos, (key, value));
             None
         }
     }
 
     pub fn contains_key(&self, key: &Symbol) -> bool {
-        self.0.iter().any(|(k, _)| k == key)
+        let i = self.0.partition_point(|(k, _)| k < key);
+        self.0.get(i).is_some_and(|(k, _)| k == key)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Symbol, &RuntimeValue)> + '_ {

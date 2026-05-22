@@ -13619,9 +13619,19 @@ Implementation paths:
     and `FieldSchemaRegistry` in `modelcheck/field_schema.rs`. Wired into
     `SpecContext` and `main.rs`. ~90 LOC + tests.
   - [ ] **38.22.2.b.iii**: **Switch `NamedFields` to indexed Vec** using
-    FieldSchema for O(1) field access. `get(&sym)` becomes
-    `schema.index(sym).map(|i| &self.0[i])`. ~100 LOC (internal change only,
-    external API unchanged).
+    FieldSchema for O(1) field access. Decomposed:
+    - [x] **38.22.2.b.iii.a**: **Use binary search in NamedFields lookups.**
+      Since NamedFields is sorted by Symbol (u32 intern-id), replace linear
+      `iter().find()` with `partition_point` + equality check for O(log n)
+      lookups. Purely internal, no API change. ~10 LOC.
+    - [ ] **38.22.2.b.iii.b**: **Thread FieldLayout through construction sites.**
+      Add optional `&FieldLayout` parameter to `struct_value_sym`,
+      `enum_value_sym`, `collect_named_fields`. Store layout ref in
+      NamedFields for O(1) access. ~200 LOC (touches evaluator, solver,
+      domain, dpor/enabled).
+    - [ ] **38.22.2.b.iii.c**: **Switch internal repr to `Vec<RuntimeValue>`**
+      when FieldLayout is available. `get(&sym)` uses layout index. Fallback
+      to sorted pairs when no layout. ~150 LOC.
 - [ ] **38.22.2.c**: **Hash-cons / `Arc<RuntimeValue>` for shared
   subterms.** Most successors share most fields with the predecessor;
   with Arc, clone becomes refcount bump. *1 week. Combines with .b.*
