@@ -11,8 +11,10 @@ use crate::protocol::RSL::common_proof::message2b::*;
 use crate::protocol::RSL::common_proof::packet_sending::*;
 use crate::protocol::RSL::common_proof::receive1b::*;
 use crate::protocol::RSL::common_proof::requests::*;
+use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::constants::*;
 use crate::protocol::RSL::distributed_system::*;
+use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::election::*;
 use crate::protocol::RSL::environment::*;
 use crate::protocol::RSL::executor::*;
@@ -624,14 +626,212 @@ verus! {
                 p_1b.msg->votes[opn].max_val[req_num].seqno == p_req.msg->seqno_req,
                 p_1b.msg->votes[opn].max_val[req_num].request == p_req.msg->val,
                 // p_1b.msg.votes[opn].max_val[req_num] == Request(p_req.src, p_req.msg.seqno_req, p_req.msg.val)
-        decreases i, 1 as nat
+        decreases i, 3 as nat
     {
         let p_2a = lemma_1bMessageWithOpnImplies2aSent(b, c, i, opn, p_1b);
         let p_req = lemma_RequestIn2aMessageHasCorrespondingRequestMessage(b, c, i, p_2a, req_num);
         p_req
     }
 
-    #[verifier(external_body)]
+    /// Helper for new-value branch: when LAllAcceptorsHadNoProposal, the 2a value
+    /// comes from request_queue, so we delegate to lemma_RequestInRequestQueueHasCorrespondingRequestMessage.
+    proof fn lemma_RequestIn2a_new_value_branch(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        idx: int,
+        s: LProposer,
+        s_: LProposer,
+        clock: int,
+        log_truncation_point: int,
+        sent_packets: Seq<RslPacket>,
+        p_2a: RslPacket,
+        req_num: int,
+    ) -> (p_req: RslPacket)
+        requires
+            IsValidBehaviorPrefix(b, c, i - 1),
+            i > 0,
+            0 <= idx < b[i - 1].replicas.len(),
+            s == b[i - 1].replicas[idx].replica.proposer,
+            LProposerNominateNewValueAndSend2a(s, s_, clock, log_truncation_point, sent_packets),
+            sent_packets.contains(p_2a),
+            p_2a.msg is RslMessage2a,
+            0 <= req_num < p_2a.msg->val_2a.len(),
+        ensures
+            b[i - 1].environment.sentPackets.contains(p_req),
+            c.config.replica_ids.contains(p_req.dst),
+            p_req.msg is RslMessageRequest,
+            p_2a.msg->val_2a[req_num].client == p_req.src,
+            p_2a.msg->val_2a[req_num].seqno == p_req.msg->seqno_req,
+            p_2a.msg->val_2a[req_num].request == p_req.msg->val,
+        decreases i, 0 as nat
+    {
+        // From LProposerNominateNewValueAndSend2a: val_2a = s.request_queue.subrange(0, batchSize)
+        // and LBroadcastToEveryone ensures all packets in sent_packets have the same msg.
+        // So p_2a.msg->val_2a == s.request_queue.subrange(0, batchSize).
+        let batchSize = if s.request_queue.len() <= s.constants.all.params.max_batch_size || s.constants.all.params.max_batch_size < 0 {
+            s.request_queue.len() as int
+        } else {
+            s.constants.all.params.max_batch_size
+        };
+        let v = s.request_queue.subrange(0, batchSize);
+        let opn = s.next_operation_number_to_propose;
+        let m = RslMessage::RslMessage2a { bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: v };
+        // LBroadcastToEveryone: sent_packets[j] =~= LPacket{dst: ..., src: ..., msg: m}
+        // sent_packets.contains(p_2a) => p_2a.msg == m => p_2a.msg->val_2a == v
+        let j = choose |j: int| 0 <= j < sent_packets.len() && sent_packets[j] == p_2a;
+        assert(sent_packets[j] =~= LPacket {
+            dst: s.constants.all.config.replica_ids[j],
+            src: s.constants.all.config.replica_ids[s.constants.my_index],
+            msg: m,
+        });
+        assert(p_2a.msg->val_2a == v);
+        // v[req_num] == s.request_queue.subrange(0, batchSize)[req_num] == s.request_queue[req_num]
+        assert(v[req_num] == s.request_queue[req_num]);
+        assert(s.request_queue.contains(s.request_queue[req_num]));
+        let p_req = lemma_RequestInRequestQueueHasCorrespondingRequestMessage(b, c, i - 1, idx, s.request_queue[req_num]);
+        p_req
+    }
+
+    /// Extract 1b witness from LProposerNominateOldValueAndSend2a in isolation.
+    /// The 2a value comes from a 1b packet's vote via LExistsBallotInS.
+    /// Returns p_1b where p_1b is in received_1b_packets, has votes[opn], and
+    /// p_2a.msg->val_2a == p_1b.msg->votes[opn].max_val.
+    proof fn lemma_RequestIn2a_extract_old_value_witness(
+        s: LProposer,
+        s_: LProposer,
+        log_truncation_point: int,
+        sent_packets: Seq<RslPacket>,
+        p_2a: RslPacket,
+    ) -> (p_1b: RslPacket)
+        requires
+            LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets),
+            LSetOfMessage1b(s.received_1b_packets),
+            sent_packets.contains(p_2a),
+        ensures
+            s.received_1b_packets.contains(p_1b),
+            p_1b.msg is RslMessage1b,
+            p_1b.msg->votes.contains_key(s.next_operation_number_to_propose),
+            p_2a.msg->val_2a == p_1b.msg->votes[s.next_operation_number_to_propose].max_val,
+    {
+        let opn = s.next_operation_number_to_propose;
+        // LProposerNominateOldValueAndSend2a gives exists |p| ... && LValIsHighestNumberedProposal(v, S, opn)
+        // where v = p.msg->votes[opn].max_val and LBroadcastToEveryone(..., val_2a: v, sent_packets).
+        // We first extract the broadcast value v via the outer existential.
+        let p_outer: RslPacket = choose |p_outer: RslPacket|
+            s.received_1b_packets.contains(p_outer)
+            && #[trigger] LValIsHighestNumberedProposal(p_outer.msg->votes[opn].max_val, s.received_1b_packets, opn)
+            && LBroadcastToEveryone(s.constants.all.config, s.constants.my_index,
+                RslMessage::RslMessage2a { bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: p_outer.msg->votes[opn].max_val },
+                sent_packets);
+        let v = p_outer.msg->votes[opn].max_val;
+        // From LBroadcastToEveryone + sent_packets.contains(p_2a): p_2a.msg->val_2a == v
+        let j = choose |j: int| 0 <= j < sent_packets.len() && sent_packets[j] == p_2a;
+        let m = RslMessage::RslMessage2a { bal_2a: s.max_ballot_i_sent_1a, opn_2a: opn, val_2a: v };
+        assert(sent_packets[j] =~= LPacket {
+            dst: s.constants.all.config.replica_ids[j],
+            src: s.constants.all.config.replica_ids[s.constants.my_index],
+            msg: m,
+        });
+        assert(p_2a.msg->val_2a == v);
+        // From LValIsHighestNumberedProposal → LValIsHighestNumberedProposalAtBallot → LExistsBallotInS:
+        // exists |p_1b| S.contains(p_1b) && p_1b.msg->votes.contains_key(opn) && p_1b.msg->votes[opn].max_val == v
+        let bal: Ballot = choose |bal: Ballot| LValIsHighestNumberedProposalAtBallot(v, bal, s.received_1b_packets, opn);
+        let p_1b: RslPacket = choose |p_1b: RslPacket|
+            s.received_1b_packets.contains(p_1b)
+            && p_1b.msg->votes.contains_key(opn)
+            && p_1b.msg->votes[opn].max_val == v;
+        p_1b
+    }
+
+    /// Helper for old-value branch: given the pre-extracted 1b witness,
+    /// delegate through 1b message provenance.
+    proof fn lemma_RequestIn2a_old_value_branch(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        idx: int,
+        p_1b: RslPacket,
+        opn: OperationNumber,
+        p_2a: RslPacket,
+        req_num: int,
+    ) -> (p_req: RslPacket)
+        requires
+            IsValidBehaviorPrefix(b, c, i - 1),
+            i > 0,
+            0 <= idx < b[i - 1].replicas.len(),
+            b[i - 1].replicas[idx].replica.proposer.received_1b_packets.contains(p_1b),
+            p_1b.msg is RslMessage1b,
+            p_1b.msg->votes.contains_key(opn),
+            p_2a.msg->val_2a == p_1b.msg->votes[opn].max_val,
+            p_2a.msg is RslMessage2a,
+            0 <= req_num < p_2a.msg->val_2a.len(),
+        ensures
+            b[i - 1].environment.sentPackets.contains(p_req),
+            c.config.replica_ids.contains(p_req.dst),
+            p_req.msg is RslMessageRequest,
+            p_2a.msg->val_2a[req_num].client == p_req.src,
+            p_2a.msg->val_2a[req_num].seqno == p_req.msg->seqno_req,
+            p_2a.msg->val_2a[req_num].request == p_req.msg->val,
+        decreases i, 0 as nat
+    {
+        lemma_PacketInReceived1bWasSent(b, c, i - 1, idx, p_1b);
+        let p_req = lemma_RequestIn1bMessageHasCorrespondingRequestMessage(b, c, i - 1, p_1b, opn, req_num);
+        p_req
+    }
+
+    /// Dispatcher: takes LProposerMaybeNominateValueAndSend2a (NOT the heavier
+    /// LReplicaNextReadClockMaybeNominateValueAndSend2a), classifies into new/old
+    /// branch, and delegates to the appropriate branch-specific helper.
+    proof fn lemma_RequestIn2a_dispatch(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        idx: int,
+        s: LProposer,
+        s_: LProposer,
+        clock: int,
+        log_truncation_point: int,
+        sent_packets: Seq<RslPacket>,
+        p_2a: RslPacket,
+        req_num: int,
+    ) -> (p_req: RslPacket)
+        requires
+            IsValidBehaviorPrefix(b, c, i - 1),
+            i > 0,
+            0 <= idx < b[i - 1].replicas.len(),
+            s == b[i - 1].replicas[idx].replica.proposer,
+            LProposerMaybeNominateValueAndSend2a(s, s_, clock, log_truncation_point, sent_packets),
+            sent_packets.contains(p_2a),
+            p_2a.msg is RslMessage2a,
+            0 <= req_num < p_2a.msg->val_2a.len(),
+        ensures
+            b[i - 1].environment.sentPackets.contains(p_req),
+            c.config.replica_ids.contains(p_req.dst),
+            p_req.msg is RslMessageRequest,
+            p_2a.msg->val_2a[req_num].client == p_req.src,
+            p_2a.msg->val_2a[req_num].seqno == p_req.msg->seqno_req,
+            p_2a.msg->val_2a[req_num].request == p_req.msg->val,
+        decreases i, 1 as nat
+    {
+        assert(sent_packets.len() > 0);
+        lemma_MaybeNominate_nonempty_implies_old_or_new(s, s_, clock, log_truncation_point, sent_packets);
+
+        if LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose) {
+            let p_req = lemma_RequestIn2a_new_value_branch(b, c, i, idx, s, s_, clock, log_truncation_point, sent_packets, p_2a, req_num);
+            p_req
+        } else {
+            // LProposerMaybeNominateValueAndSend2a with non-empty sent_packets
+            // implies LProposerCanNominateUsingOperationNumber, which gives
+            // LSetOfMessage1bAboutBallot → LSetOfMessage1b
+            assert(LSetOfMessage1b(s.received_1b_packets));
+            let p_1b = lemma_RequestIn2a_extract_old_value_witness(s, s_, log_truncation_point, sent_packets, p_2a);
+            let opn = s.next_operation_number_to_propose;
+            let p_req = lemma_RequestIn2a_old_value_branch(b, c, i, idx, p_1b, opn, p_2a, req_num);
+            p_req
+        }
+    }
+
     pub proof fn lemma_RequestIn2aMessageHasCorrespondingRequestMessage(
         b:Behavior<RslState>,
         c:LConstants,
@@ -654,7 +854,7 @@ verus! {
                 p_2a.msg->val_2a[req_num].client == p_req.src,
                 p_2a.msg->val_2a[req_num].seqno == p_req.msg->seqno_req,
                 p_2a.msg->val_2a[req_num].request == p_req.msg->val,
-        decreases i, 0 as nat
+        decreases i, 2 as nat
     {
         if i == 0
         {
@@ -668,6 +868,7 @@ verus! {
           return p_req;
         }
 
+        // Extract which replica sent the 2a and the step properties
         lemma_ConstantsAllConsistent(b, c, i-1);
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_AssumptionsMakeValidTransition(b, c, i-1);
@@ -677,25 +878,13 @@ verus! {
         let s_ = b[i].replicas[idx].replica.proposer;
         let log_truncation_point = b[i-1].replicas[idx].replica.acceptor.log_truncation_point;
         let sent_packets = ExtractSentPacketsFromIos(ios);
+        lemma_ExtractSentPacketsFromIos(ios);
+        let clock = ios[0]->t;
 
-        if LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose)
-        {
-          assert(LProposerNominateNewValueAndSend2a(s, s_, ios[0]->t, log_truncation_point, sent_packets));
-          assert(s.request_queue[req_num] == p_2a.msg->val_2a[req_num]);
-          let p_req = lemma_RequestInRequestQueueHasCorrespondingRequestMessage(b, c, i-1, idx, s.request_queue[req_num]);
-          p_req
-        }
-        else
-        {
-          assert(LProposerNominateOldValueAndSend2a(s, s_, log_truncation_point, sent_packets));
-          let opn = s.next_operation_number_to_propose;
-          let v = p_2a.msg->val_2a;
-          // var earlier_ballot :| LValIsHighestNumberedProposalAtBallot(v, earlier_ballot, s.received_1b_packets, opn);
-          let p_1b = choose |p_1b:RslPacket| s.received_1b_packets.contains(p_1b) && p_1b.msg->votes.contains_key(opn) && p_1b.msg->votes[opn].max_val == v;
-          lemma_PacketInReceived1bWasSent(b, c, i-1, idx, p_1b);
-          let p_req = lemma_RequestIn1bMessageHasCorrespondingRequestMessage(b, c, i-1, p_1b, opn, req_num);
-          p_req
-        }
+        // Delegate to dispatcher which only sees LProposerMaybeNominateValueAndSend2a
+        let p_req = lemma_RequestIn2a_dispatch(b, c, i, idx, s, s_, clock, log_truncation_point, sent_packets, p_2a, req_num);
+        lemma_PacketStaysInSentPackets(b, c, i - 1, i, p_req);
+        p_req
     }
 
     #[verifier(external_body)]
