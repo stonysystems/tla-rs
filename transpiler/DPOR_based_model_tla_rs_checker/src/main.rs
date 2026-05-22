@@ -492,7 +492,7 @@ mod tests {
             vec!["LSafety".to_string(), "LTypeOk".to_string()]
         );
         assert!(parsed.check_deadlock);
-        assert_eq!(parsed.max_depth, 12);
+        assert_eq!(parsed.max_depth, Some(12));
         assert_eq!(parsed.max_states, 345);
         assert_eq!(parsed.timeout_sec, 9);
         assert_eq!(parsed.json_out, Some(PathBuf::from("out.json")));
@@ -520,7 +520,7 @@ mod tests {
             types_file: None,
             invariants: vec!["LSumInvariant".to_string()],
             check_deadlock: false,
-            max_depth: 30,
+            max_depth: Some(30),
             max_states: 10_000,
             timeout_sec: 30,
             json_out: None,

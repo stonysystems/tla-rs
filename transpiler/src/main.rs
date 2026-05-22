@@ -9014,23 +9014,9 @@ max = 1
                 ("has_conflict".to_string(), RuntimeValue::Bool(false)),
                 ("is_leader".to_string(), RuntimeValue::Bool(false)),
                 ("max_resp_seq".to_string(), RuntimeValue::Int(0)),
-                ("phase".to_string(), RuntimeValue::Int(1)),
+                ("phase".to_string(), RuntimeValue::Int(0)),
                 ("preaccept_senders".to_string(), empty_set()),
                 ("seq".to_string(), RuntimeValue::Int(0)),
-            ],
-        )
-        .unwrap();
-
-        let constants = RuntimeValue::struct_value(
-            "LConstants",
-            vec![
-                ("EPaxosMessage".to_string(), RuntimeValue::Int(0)),
-                ("State".to_string(), RuntimeValue::Int(0)),
-                ("Constants".to_string(), RuntimeValue::Int(0)),
-                ("fast_quorum_size".to_string(), RuntimeValue::Int(2)),
-                ("my_id".to_string(), RuntimeValue::Int(0)),
-                ("num_replicas".to_string(), RuntimeValue::Int(3)),
-                ("quorum_size".to_string(), RuntimeValue::Int(1)),
             ],
         )
         .unwrap();
@@ -9040,7 +9026,7 @@ max = 1
             &bundle.schema,
             &model_config,
             &Path::single("LInit".to_string()),
-            &[init_state.clone(), constants.clone()],
+            &[init_state.clone()],
             bounds,
             0,
         )
@@ -9052,42 +9038,19 @@ max = 1
             vec![
                 ("accept_senders".to_string(), empty_set()),
                 ("ballot".to_string(), RuntimeValue::Int(0)),
-                ("cmd".to_string(), RuntimeValue::Int(0)),
+                ("cmd".to_string(), RuntimeValue::Int(1)),
                 ("committed_count".to_string(), RuntimeValue::Int(0)),
                 ("dep_count".to_string(), RuntimeValue::Int(0)),
                 ("executed_count".to_string(), RuntimeValue::Int(0)),
                 ("has_conflict".to_string(), RuntimeValue::Bool(false)),
                 ("is_leader".to_string(), RuntimeValue::Bool(true)),
                 ("max_resp_seq".to_string(), RuntimeValue::Int(0)),
-                ("phase".to_string(), RuntimeValue::Int(2)),
+                ("phase".to_string(), RuntimeValue::Int(1)),
                 ("preaccept_senders".to_string(), singleton_set(0)),
                 ("seq".to_string(), RuntimeValue::Int(1)),
             ],
         )
         .unwrap();
-
-        let sent_packets = RuntimeValue::Seq(vec![
-            RuntimeValue::struct_value(
-                "LRecord",
-                vec![
-                    ("accept_senders".to_string(), empty_set()),
-                    ("ballot".to_string(), RuntimeValue::Int(0)),
-                    ("cmd".to_string(), RuntimeValue::Int(0)),
-                    ("committed_count".to_string(), RuntimeValue::Int(0)),
-                    ("conflict".to_string(), RuntimeValue::Int(0)),
-                    ("dep_count".to_string(), RuntimeValue::Int(0)),
-                    ("executed_count".to_string(), RuntimeValue::Int(0)),
-                    ("has_conflict".to_string(), RuntimeValue::Bool(false)),
-                    ("is_leader".to_string(), RuntimeValue::Bool(false)),
-                    ("max_resp_seq".to_string(), RuntimeValue::Int(0)),
-                    ("phase".to_string(), RuntimeValue::Int(0)),
-                    ("preaccept_senders".to_string(), empty_set()),
-                    ("sender".to_string(), RuntimeValue::Int(0)),
-                    ("seq".to_string(), RuntimeValue::Int(1)),
-                ],
-            )
-            .unwrap(),
-        ]);
 
         let propose_result = eval_spec_function_call_recursive(
             &bundle.spec_functions,
@@ -9097,9 +9060,7 @@ max = 1
             &[
                 init_state,
                 next_state,
-                constants,
-                RuntimeValue::Int(0),
-                sent_packets,
+                RuntimeValue::Int(1),
             ],
             bounds,
             0,

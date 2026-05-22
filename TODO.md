@@ -12949,15 +12949,26 @@ comparison on all 20 cases with matched model configurations.
 
 #### 38.16.1 — Regenerate `.rs` corpus and verify reproducibility
 
-- [ ] **38.16.1.a**: Run `./scripts/regenerate_corpus.sh` to translate all
+- [x] **38.16.1.a**: Run `./scripts/regenerate_corpus.sh` to translate all
   20 `.tla` sources into fresh `tests/tla-rs/` `.rs` files. Commit result.
-- [ ] **38.16.1.b**: Run `./scripts/detect_stub_specs.py` — must report 0
+  **Done 2026-05-22**: 20/20 translation success, 0 failures, 0 skipped.
+  All 20 cases now have fresh `.rs` files under `tests/tla-rs/`.
+- [x] **38.16.1.b**: Run `./scripts/detect_stub_specs.py` — must report 0
   findings on protocol cases (13–20). (Residual `Types.rs` arbitrary findings
   on generated cases 14/15/16/19 are acceptable if they are constructor-only.)
-- [ ] **38.16.1.c**: Run `./scripts/run_full_suite.sh --timeout 1800` and
+  **Done 2026-05-22**: 0 findings (was 4 pre-regeneration — all resolved by
+  fresh corpus generation). The constructor-style `arbitrary::<...>()` findings
+  in generated `Types.rs` are gone after regeneration.
+- [x] **38.16.1.c**: Run `./scripts/run_full_suite.sh --timeout 1800` and
   verify `latest.json` is reproducible from the checked-in state. Every case
   that reported a result before must produce the same verdict and a comparable
   state count (±10%). Commit the refreshed `latest.json` and `latest.md`.
+  **Done 2026-05-22**: 20/20 real outcomes, 0 vacuous, 0 failed. All positive
+  cases have identical state counts before/after regeneration. 3 negative cases
+  (11, 12, 15) have slightly different state counts because the checker stops
+  at the first counterexample (exploration order differs with regenerated code).
+  All verdicts match. Also fixed EPaxos test (`test_case19_epaxos_propose_helper`)
+  and DPOR `max_depth` type mismatch caused by regenerated spec signature changes.
 
 #### 38.16.2 — Fix case 19 (EPaxos) runtime blocker
 
