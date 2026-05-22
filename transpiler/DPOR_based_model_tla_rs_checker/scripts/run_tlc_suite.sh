@@ -367,8 +367,11 @@ $resolved"
         check_deadlock="$(parse_toml_value "$per_case_config" "properties" "check_deadlock")"
     fi
 
-    # If no invariants from config, try using the manifest's expected_property
-    if [[ -z "$resolved_invs" && -n "$expected_property" ]]; then
+    # If no invariants from config, try using the manifest's expected_property.
+    # But NOT for deadlock-only cases (check_deadlock=true with no invariants) —
+    # adding an invariant would cause TLC to report invariant_violated before
+    # finding the expected deadlock.
+    if [[ -z "$resolved_invs" && -n "$expected_property" && "$check_deadlock" != "true" && "$requires_deadlock_check" != "true" ]]; then
         resolved="$(resolve_invariant_name "$expected_property" "$case_dir")"
         resolved_invs="$resolved"
     fi

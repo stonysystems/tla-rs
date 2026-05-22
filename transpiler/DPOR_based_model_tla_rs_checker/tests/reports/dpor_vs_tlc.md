@@ -1,96 +1,64 @@
-# DPOR vs TLC Performance Comparison (Phase 38.21)
+# DPOR vs TLC Performance Comparison (Phase 38.16.5 / 38.21)
 
-Generated: 2026-04-19
+Generated: 2026-05-22 (Phase 38.16.3.b scaled configs)
 
-DPOR run: `run_full_suite.sh --timeout 600` (single-threaded; with
-  Phase 38.17.2 action-call inlining + Phase 38.17.4 DPOR reduction
-  activation + Phase 38.17.6 ProcessId fix + Phase 38.18.5
-  candidate-state-key-set memoization + Phase 38.18.6 ∧-through-∨
-  branch-discovery distribution + Phase 38.18.7 forall-body q-free
-  conjunct lifting + Phase 38.18.8 model-bound scale-up + Phase
-  38.18.9 (now superseded) cross-field acceptor symmetry + Phase
-  38.18.10 DPOR sleep-set in main path + **Phase 38.21.D complete-
-  symmetry canonical labeling + Phase 38.21.J SpecContext lazy-init
-  cache**).
-  **20/20 real pass, 0 vacuous, 0 errors, total suite time ~5 min.**
-TLC run: `run_tlc_suite.sh --timeout 120` (TLC 2.20, Java 11). Phase
-  38.20.1 added 0.01 s wall-time resolution; the values shown below
-  reflect real precision, not 1-second integer rounding.
+DPOR run: `run_full_suite.sh --timeout 1800` (single-threaded; all
+  optimizations through Phase 38.21.J). **20/20 real pass, 0 vacuous.**
+TLC run: `run_tlc_suite.sh --timeout 300 --workers 4` (TLC 2026.03,
+  Java 17). **19/20 pass, 1 timeout (case 10 BakeryMutex).**
 
-## Per-Case Comparison
+## Per-Case Comparison (Phase 38.16.3 Scaled Configs)
 
-Phase 38.18.8 scale-up leveraged the Phase-38.18.5/6/7 inliner fixes
-to push every case toward the 10-min budget while staying under it.
-Protocol-case configurations now explore 5-100× more distinct states
-than the Phase 38.18.7 baseline — the state-count column below is
-much larger than in prior reports.
+All configs scaled to maximize distinct states (Phase 38.16.3.a+b).
+Cases 01 and 07 use linear state chains (depth 6000/10000); protocol
+cases use widened constants and deeper search.
 
-**Column key.** *Parity* compares **distinct-state counts only**, not
-wall-time:
-- `MATCH` = DPOR distinct-state count exactly equals TLC distinct-state
-  count (same reachable state space at the configured bounds).
-- `DIFF`  = state counts differ (usually because DPOR-side and TLC-side
-  bounds aren't perfectly aligned, or because the spec deadlocks on
-  one side under different action orderings).
-- `DPOR wins` / `DPOR regression` = comparison incomplete (one side
-  timed out or failed).
+**Column key.** *Parity* compares distinct-state counts:
+- `MATCH` = exact state-count agreement between DPOR and TLC.
+- `DIFF`  = state counts differ (different bounding mechanisms or
+  exploration order on negative cases).
+- `TIMEOUT` = one engine didn't finish within budget.
 
-The *Gap* column is the DPOR/TLC wall-time ratio. A row can show
-`MATCH` (state-count parity) and a multi-x time gap simultaneously — the
-two are independent dimensions.
+| # | Case | DPOR states | DPOR time | TLC states | TLC time | Parity | Notes |
+|---|---|---:|---:|---:|---:|---|---|
+| 01 | aplusb | 6,001 | 0.21 s | 5,001 | 0.90 s | DIFF | TLC CONSTRAINT cuts 1 state |
+| 02 | counter_incdec | 28 | 5.76 s | 28 | 0.77 s | **MATCH** | |
+| 03 | counter_race_bug | 13 | 0.17 s | 13 | 0.81 s | **MATCH** | Negative |
+| 04 | lock_basic | 5 | 0.12 s | 5 | 0.75 s | **MATCH** | |
+| 05 | broken_lock_bug | 17 | 0.12 s | 9 | 0.80 s | DIFF | Negative; different trace |
+| 06 | ticket_lock | 7 | 0.41 s | 7 | 0.74 s | **MATCH** | |
+| 07 | producer_consumer | 10,001 | 0.82 s | 201 | 0.83 s | DIFF | TLC CONSTRAINT much tighter |
+| 08 | bounded_buffer | 6 | 2.34 s | 10 | 0.82 s | DIFF | Negative; TLC explores more |
+| 09 | peterson_mutex | 10 | 0.12 s | 10 | 0.82 s | **MATCH** | |
+| 10 | bakery_mutex | 24 | 2.03 s | -- | timeout | TIMEOUT | TLC can't finish at int 0..2 |
+| 11 | readers_writers | 4 | 0.09 s | 4 | 0.80 s | **MATCH** | Negative |
+| 12 | dining_phil | 14 | 3.69 s | 14 | 0.86 s | **MATCH** | Negative (deadlock) |
+| 13 | twophase | 257 | 7.43 s | 257 | 0.80 s | **MATCH** | NumRM=7 |
+| 14 | leader_election | 1,313 | 26.57 s | 5,786 | 1.08 s | DIFF | Symmetry collapse (DPOR) |
+| 15 | chain_replication | 114 | 3.27 s | 154 | 0.85 s | DIFF | Negative (deadlock) |
+| 16 | primarybackup | 861 | 40.99 s | 861 | 0.90 s | **MATCH** | |
+| 17 | paxos | 945 | 27.26 s | 391,936 | 33.07 s | DIFF | Symmetry collapse (DPOR) |
+| 18 | pbft | 3,659 | 7.17 s | 3,659 | 1.15 s | **MATCH** | replica=45 |
+| 19 | epaxos | 11 | 0.58 s | 37 | 0.84 s | DIFF | Different bounds |
+| 20 | raft | 1,089 | 2.68 s | 1,089 | 0.91 s | **MATCH** | server=8, depth=50 |
 
-| # | Case | DPOR states | DPOR time | TLC states | TLC time | Parity | Gap |
-|---|---|---:|---:|---:|---:|---|---:|
-| 01 | aplusb | 6 | 0.06 s | 6 | 1.52 s | **MATCH** | DPOR wins 25.3x ‡ |
-| 02 | counter_incdec | 5 | 0.07 s | 5 | 1.38 s | MATCH | DPOR wins 19.7x ‡ |
-| 03 | counter_race_bug | 13 | 0.22 s | 13 | 1.55 s | MATCH | DPOR wins 7.0x |
-| 04 | lock_basic | 3 | 0.06 s | 3 | 1.40 s | MATCH | DPOR wins 23.3x ‡ |
-| 05 | broken_lock_bug | 5 | 0.06 s | 5 | 1.54 s | MATCH | DPOR wins 25.7x ‡ |
-| 06 | ticket_lock | 7 | 0.69 s | 7 | 1.56 s | MATCH | DPOR wins 2.3x |
-| 07 | producer_consumer | 11 | 0.06 s | 11 | 1.50 s | **MATCH** | DPOR wins 25.0x ‡ |
-| 08 | bounded_buffer | 6 | 3.06 s | 10 | 1.55 s | DIFF | 2.0x |
-| 09 | peterson_mutex | 10 | 0.06 s | 10 | 1.46 s | MATCH | DPOR wins 24.3x ‡ |
-| 10 | bakery_mutex | 24 | 2.53 s | — | timeout (>300 s) | DPOR wins | DPOR wins (TLC didn't finish) |
-| 11 | readers_writers | 4 | 0.12 s | 4 | 1.57 s | MATCH | DPOR wins 13.1x ‡ |
-| 12 | dining_phil | 6 | 0.14 s | 5 | 1.60 s | DIFF | DPOR wins 11.4x |
-| 13 | twophase | 9 | 0.06 s | 9 | 1.47 s | MATCH | DPOR wins 24.5x ‡ |
-| 14 | **leader_election** (4 nodes, BFS+sym) | **1,263** | **33.3 s** | **5,786** | **1.90 s** | DIFF (canonical-symmetry collapse) | 17.5x |
-| 14b| leader_election (4 nodes, --search dpor) | **38** | 37.8 s | 5,786 | 1.90 s | DIFF (DPOR canonical) | 19.9x |
-| 15 | chain_replication (chain=3) | 114 | 3.80 s | 234 | 1.83 s | DIFF (deadlock) | 2.1x |
-| 16 | primarybackup (logLen=3) | **261** | **3.14 s** | **855** | **1.48 s** | DIFF (DPOR-side bound) | 2.1x |
-| 17 | **paxos (8/5, BFS+sym)** | **945** | **32.3 s** | **24,256** † | **3.48 s** | DIFF (canonical-symmetry collapse) | 9.3x |
-| 17b| paxos (8/5, --search dpor) | **153** | 33.3 s | 24,256 † | 3.48 s | DIFF (DPOR sleep-set) | 9.6x |
-| 18 | **pbft (40 replicas)** | **2,854** | **6.67 s** | **2,854** | **1.75 s** | **MATCH** | 3.8x |
-| 19 | epaxos | 11 | 0.73 s | 37 | 1.36 s | DIFF (DPOR-side bound) | DPOR wins 1.9x |
-| 20 | **raft (8 servers)** | **812** | **3.09 s** | **1,089** | **1.46 s** | DIFF (DPOR-side bound) | 2.1x |
+**Summary:**
+- **MATCH on 11/20 cases** (02,03,04,06,09,11,12,13,16,18,20)
+- **DIFF on 8/20 cases** (01,05,07,08,14,15,17,19) — all explained by
+  bounding differences or symmetry reduction
+- **TIMEOUT on 1/20** (case 10 BakeryMutex — TLC can't finish even at
+  NumProcs=2 within 300s)
+- DPOR finds exact same verdicts as TLC on all 19 comparable cases
 
-† Phase 38.18.9 enabled cross-field acceptor-symmetry on Paxos
-(`symmetry_fields = ["maxBal", "maxVBal"]`). Pre-symmetry the Paxos
-6/5 row was 24,256 states / 370.6 s; post-symmetry on the same 6/5
-config the same row would be 1,447 states / 25.0 s — a 17× state-set
-reduction. With the headroom freed up, the spec was scaled to 8/5,
-producing 6,033 canonical states / 194.3 s. TLC at 8/5 was not
-re-measured for this row (TLC has its own VIEW-based symmetry that
-would need to be defined separately); the listed TLC count is from
-the prior 6/5 baseline.
-
-‡ Small-case TLC times (cases 01-13 with state count ≤ 13) are
-dominated by ~1.3 s of JVM startup + module loading, not by
-state-space exploration. The "DPOR wins 20x" entries on those rows
-mostly measure JVM cold-start cost vs the Rust binary's near-zero
-startup. Compare protocol cases (17/18/20) for engine-vs-engine
-numbers that aren't startup-dominated.
-
-State-count diffs on cases 15/16/19/20 reflect DPOR-side
-`tests/model_configs/*.toml` bounds being smaller than the matching
-TLC bounds in the .tla files (e.g. case 20 Raft DPOR runs at int
-max=8 while TLC runs unbounded inside the tla file, case 19 EPaxos
-DPOR runs at max_depth=4). Pure semantic mismatches (the four "TLC
-incompatible" rows) were eliminated by Phase 38.20.2. The case 19
-pre-fix "DPOR regression" note has been dropped — Phase 38.18.6's
-∧-through-∨ distribution cleared the candidate-enumeration timeout
-that had stuck DPOR at "only 2 states in 120 s"; it now finishes in
-0.6 s and matches case 18 PBFT's direct-assignment path behavior.
+**DIFF explanations:**
+- Cases 01, 07: DPOR uses depth-based bounding; TLC uses
+  CONSTRAINT on integer variables. Different mechanisms explore
+  different subsets.
+- Cases 05, 08, 15: Negative cases where exploration order affects
+  how many states are seen before the violation/deadlock.
+- Case 14, 17: DPOR's symmetry reduction (`symmetry_fields`) collapses
+  equivalent states that TLC explores individually.
+- Case 19: DPOR's tighter int bounds (0..1) vs TLC's wider exploration.
 
 ## Phase 38.17 Improvement Summary
 
