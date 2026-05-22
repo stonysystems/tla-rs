@@ -87,7 +87,6 @@ verus! {
         return new_qs;
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_TransferredStateAlwaysValid(
         b: Behavior<RslState>,
         c: LConstants,
@@ -121,6 +120,40 @@ verus! {
 
         lemma_AssumptionsMakeValidTransition(b, c, i - 1);
         let (idx, ios) = lemma_ActionThatSendsAppStateSupplyIsProcessAppStateRequest(b[i - 1], b[i], p);
+        let s = b[i - 1].replicas[idx].replica.executor;
+        let s_ = b[i].replicas[idx].replica.executor;
+        let inp = ios[0]->r;
+        assert(LExecutorProcessAppStateRequest(s, s_, inp, seq![p]));
+
+        // LExecutorProcessAppStateRequest is an if-then-else:
+        //   if cond { s_ == s && sent_packets == seq![expected] }
+        //   else    { s_ == s && sent_packets == Seq::empty() }
+        // Prove cond is true by ruling out the else branch (sent_packets non-empty)
+        let cond = s.constants.all.config.replica_ids.contains(inp.src)
+            && BalLeq(s.max_bal_reflected, inp.msg->bal_state_req)
+            && s.ops_complete >= inp.msg->opn_state_req
+            && LReplicaConstantsValid(s.constants);
+        if !cond {
+            // else branch: sent_packets == Seq::empty(), contradiction with seq![p]
+            assert(seq![p] =~= Seq::<RslPacket>::empty());
+            assert(false);
+        }
+        // Now cond is true, so the spec gives sent_packets == seq![expected_pkt]
+        let expected_pkt = LPacket{
+            dst: inp.src,
+            src: s.constants.all.config.replica_ids[s.constants.my_index],
+            msg: RslMessage::RslMessageAppStateSupply{
+                bal_state_supply: s.max_bal_reflected,
+                opn_state_supply: s.ops_complete,
+                app_state: s.app,
+                reply_cache: s.reply_cache,
+            }
+        };
+        // Help Z3: the if-branch means the function returns s_ == s && sent_packets == seq![expected_pkt]
+        assert(s_ == s && seq![p] =~= seq![expected_pkt]);
+        assert(seq![p][0] == seq![expected_pkt][0]);
+        assert(p == expected_pkt);
+
         return lemma_AppStateAlwaysValid(b, c, i - 1, idx);
     }
 
@@ -261,7 +294,6 @@ verus! {
         return (qs_new, batches_new, batch_num_new, req_num_new);
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_ReplyInAppStateSupplyIsAllowed(
         b: Behavior<RslState>,
         c: LConstants,
@@ -278,7 +310,6 @@ verus! {
             p.msg->reply_cache.contains_key(client),
         ensures
             ({
-                // let (qs, batches, batch_num, req_num) = lemma_ReplyInAppStateSupplyIsAllowed(b, c, i, client, p);
                 let qs = rc.0;
                 let batches = rc.1;
                 let batch_num = rc.2;
@@ -306,6 +337,36 @@ verus! {
         }
 
         let (idx, ios) = lemma_ActionThatSendsAppStateSupplyIsProcessAppStateRequest(b[i - 1], b[i], p);
+
+        // Connect p.msg->reply_cache to executor state via LExecutorProcessAppStateRequest
+        let s = b[i - 1].replicas[idx].replica.executor;
+        let s_ = b[i].replicas[idx].replica.executor;
+        let inp = ios[0]->r;
+        assert(LExecutorProcessAppStateRequest(s, s_, inp, seq![p]));
+        let cond = s.constants.all.config.replica_ids.contains(inp.src)
+            && BalLeq(s.max_bal_reflected, inp.msg->bal_state_req)
+            && s.ops_complete >= inp.msg->opn_state_req
+            && LReplicaConstantsValid(s.constants);
+        if !cond {
+            assert(seq![p] =~= Seq::<RslPacket>::empty());
+            assert(false);
+        }
+        let expected_pkt = LPacket{
+            dst: inp.src,
+            src: s.constants.all.config.replica_ids[s.constants.my_index],
+            msg: RslMessage::RslMessageAppStateSupply{
+                bal_state_supply: s.max_bal_reflected,
+                opn_state_supply: s.ops_complete,
+                app_state: s.app,
+                reply_cache: s.reply_cache,
+            }
+        };
+        assert(s_ == s && seq![p] =~= seq![expected_pkt]);
+        assert(seq![p][0] == seq![expected_pkt][0]);
+        assert(p == expected_pkt);
+        // Now p.msg->reply_cache == s.reply_cache, so s.reply_cache.contains_key(client)
+        assert(s.reply_cache.contains_key(client));
+
         let (qs_new, batches_new, batch_num_new, req_num_new) = lemma_ReplyInReplyCacheIsAllowed(b, c, i - 1, client, idx);
 
         return (qs_new, batches_new, batch_num_new, req_num_new);
