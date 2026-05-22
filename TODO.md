@@ -13628,8 +13628,11 @@ Implementation paths:
   Added `RuntimeValue::fingerprint()` → u64 via `hash_into()` recursive
   walk using `DefaultHasher`. Struct/Enum fields sorted by name for
   determinism. Wired into BFS explorer (fast path when no symmetry +
-  `HashCompaction64` mode) and DPOR `hash_state()`. Skips all
-  intermediate String allocations. 5 new unit tests.
+  `HashCompaction64` mode) and DPOR `hash_state()`. Also converted
+  DPOR `solve_branch_with_assignments` and `enumerate_successors_by_predicate`
+  successor dedup from `BTreeSet<String>` (via canonical_key) to
+  `HashSet<u64>` (via fingerprint). Skips all intermediate String
+  allocations in the hot paths. 5 new unit tests.
 - [ ] **38.22.3.b**: **Cache the hash on `RuntimeValue`** (OnceLock
   field per Struct/Enum). First compute is the same; subsequent
   lookups (e.g. for re-dedup of an already-emitted state) are free.

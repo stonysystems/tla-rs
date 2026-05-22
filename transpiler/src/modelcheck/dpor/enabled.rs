@@ -552,7 +552,7 @@ impl SpecContext {
         };
 
         let mut solved = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
+        let mut seen = std::collections::HashSet::new();
         for branch in &transition.branches {
             let branch_assignments: &[crate::modelcheck::domain::ExistentialAssignment] =
                 assignments_by_branch
@@ -588,8 +588,7 @@ impl SpecContext {
                 };
 
                 for successor in branch_successors {
-                    let key = successor.canonical_key();
-                    if seen.insert(key) {
+                    if seen.insert(successor.fingerprint()) {
                         solved.push((branch.label.clone(), process_id, successor));
                     }
                 }
@@ -638,7 +637,7 @@ impl SpecContext {
 
         let next_fn = &self.bundle.entrypoints.lnext;
         let mut successors = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
+        let mut seen = std::collections::HashSet::new();
 
         for candidate in &candidates {
             // Build evaluation context with s=state, s_=candidate, c=constants
@@ -661,8 +660,7 @@ impl SpecContext {
 
             match eval_expr(&next_fn.body, &ctx) {
                 Ok(RuntimeValue::Bool(true)) => {
-                    let key = candidate.canonical_key();
-                    if seen.insert(key) {
+                    if seen.insert(candidate.fingerprint()) {
                         successors.push(candidate.clone());
                     }
                 }
