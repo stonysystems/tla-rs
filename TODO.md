@@ -13604,6 +13604,22 @@ Implementation paths:
 - [ ] **38.22.2.b**: **Replace BTreeMap fields with Vec<RuntimeValue>**
   indexed by a precomputed `field_name → index` table per `LState`
   type. Eliminates BTreeMap allocation entirely. *1 week.*
+  Decomposed into sub-tasks:
+  - [x] **38.22.2.b.i**: **Introduce `NamedFields` newtype** — DONE.
+    Wraps `Vec<(Symbol, RuntimeValue)>` sorted by Symbol with
+    BTreeMap-compatible API (get, get_mut, insert, iter, keys, len,
+    contains_key, FromIterator, IntoIterator). Changed Struct/Enum
+    `fields` from `BTreeMap<Symbol, RuntimeValue>` to `NamedFields`.
+    Updated evaluator.rs, solver.rs, explorer.rs, parity.rs, and
+    dpor/enabled.rs type annotations and test constructors. 313 tests
+    pass, 0 new regressions.
+  - [ ] **38.22.2.b.ii**: **Add `FieldSchema` registry** mapping struct/enum
+    type names to ordered field lists with `name → index` lookup. Populate
+    during spec loading. ~100 LOC.
+  - [ ] **38.22.2.b.iii**: **Switch `NamedFields` to indexed Vec** using
+    FieldSchema for O(1) field access. `get(&sym)` becomes
+    `schema.index(sym).map(|i| &self.0[i])`. ~100 LOC (internal change only,
+    external API unchanged).
 - [ ] **38.22.2.c**: **Hash-cons / `Arc<RuntimeValue>` for shared
   subterms.** Most successors share most fields with the predecessor;
   with Arc, clone becomes refcount bump. *1 week. Combines with .b.*
@@ -13633,6 +13649,10 @@ Implementation paths:
   successor dedup from `BTreeSet<String>` (via canonical_key) to
   `HashSet<u64>` (via fingerprint). Skips all intermediate String
   allocations in the hot paths. 5 new unit tests.
+  **Followup (commit `cdda052`)**: Added `Symbol::cmp_by_name()` and
+  `Symbol::hash_name()` methods that operate on interned strings directly
+  without allocating. Updated `hash_into()` and `canonical_key()` to use
+  these instead of `k.resolve()` (which allocated a String per field).
 - [ ] **38.22.3.b**: **Cache the hash on `RuntimeValue`** (OnceLock
   field per Struct/Enum). First compute is the same; subsequent
   lookups (e.g. for re-dedup of an already-emitted state) are free.

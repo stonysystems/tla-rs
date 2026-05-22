@@ -1239,8 +1239,8 @@ fn collect_state_diffs(
 
 fn collect_named_field_diffs(
     path: &str,
-    before: &std::collections::BTreeMap<Symbol, RuntimeValue>,
-    after: &std::collections::BTreeMap<Symbol, RuntimeValue>,
+    before: &crate::modelcheck::value::NamedFields,
+    after: &crate::modelcheck::value::NamedFields,
     diffs: &mut Vec<StateDiffSummary>,
 ) {
     let mut keys: BTreeSet<Symbol> = BTreeSet::new();

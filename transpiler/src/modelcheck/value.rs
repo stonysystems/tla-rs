@@ -5,6 +5,95 @@ use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 
+/// Sorted vector of named fields, replacement for `BTreeMap<Symbol, RuntimeValue>`.
+///
+/// Fields are kept sorted by `Symbol` (intern-id order) so that
+/// `PartialEq`/`Ord`/`Hash` are deterministic and consistent with the
+/// former `BTreeMap` representation. Typical struct sizes (3-10 fields)
+/// make linear-scan lookups and insertion-sort cheaper than B-tree node
+/// allocation.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NamedFields(Vec<(Symbol, RuntimeValue)>);
+
+impl NamedFields {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn with_capacity(cap: usize) -> Self {
+        Self(Vec::with_capacity(cap))
+    }
+
+    pub fn get(&self, key: &Symbol) -> Option<&RuntimeValue> {
+        self.0.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+
+    pub fn get_mut(&mut self, key: &Symbol) -> Option<&mut RuntimeValue> {
+        self.0.iter_mut().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+
+    /// Insert a field. Returns the previous value if the key already existed.
+    /// Maintains sorted order by Symbol.
+    pub fn insert(&mut self, key: Symbol, value: RuntimeValue) -> Option<RuntimeValue> {
+        if let Some(entry) = self.0.iter_mut().find(|(k, _)| *k == key) {
+            Some(std::mem::replace(&mut entry.1, value))
+        } else {
+            let pos = self.0.partition_point(|(k, _)| *k < key);
+            self.0.insert(pos, (key, value));
+            None
+        }
+    }
+
+    pub fn contains_key(&self, key: &Symbol) -> bool {
+        self.0.iter().any(|(k, _)| k == key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Symbol, &RuntimeValue)> + '_ {
+        self.0.iter().map(|(k, v)| (k, v))
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &Symbol> + '_ {
+        self.0.iter().map(|(k, _)| k)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::iter::FromIterator<(Symbol, RuntimeValue)> for NamedFields {
+    fn from_iter<I: IntoIterator<Item = (Symbol, RuntimeValue)>>(iter: I) -> Self {
+        let mut v: Vec<(Symbol, RuntimeValue)> = iter.into_iter().collect();
+        v.sort_by_key(|(k, _)| *k);
+        Self(v)
+    }
+}
+
+impl IntoIterator for NamedFields {
+    type Item = (Symbol, RuntimeValue);
+    type IntoIter = std::vec::IntoIter<(Symbol, RuntimeValue)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a NamedFields {
+    type Item = (&'a Symbol, &'a RuntimeValue);
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'a, (Symbol, RuntimeValue)>,
+        fn(&'a (Symbol, RuntimeValue)) -> (&'a Symbol, &'a RuntimeValue),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(|(k, v)| (k, v))
+    }
+}
+
 /// Concrete runtime value used by source-first model checking.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RuntimeValue {
@@ -16,12 +105,12 @@ pub enum RuntimeValue {
     Enum {
         ty: String,
         variant: String,
-        fields: BTreeMap<Symbol, RuntimeValue>,
+        fields: NamedFields,
     },
     Tuple(Vec<RuntimeValue>),
     Struct {
         ty: String,
-        fields: BTreeMap<Symbol, RuntimeValue>,
+        fields: NamedFields,
     },
     Seq(Vec<RuntimeValue>),
     Set(BTreeSet<RuntimeValue>),
@@ -408,11 +497,11 @@ impl From<&ModelValue> for RuntimeValue {
     }
 }
 
-fn collect_named_fields<I>(fields: I) -> TranspileResult<BTreeMap<Symbol, RuntimeValue>>
+fn collect_named_fields<I>(fields: I) -> TranspileResult<NamedFields>
 where
     I: IntoIterator<Item = (String, RuntimeValue)>,
 {
-    let mut out = BTreeMap::new();
+    let mut out = NamedFields::new();
     for (name, value) in fields {
         let sym = Symbol::intern(&name);
         if out.insert(sym, value).is_some() {
@@ -584,11 +673,10 @@ mod tests {
 
     #[test]
     fn test_to_canonical_json_enum_has_variant_tag() {
-        use std::collections::BTreeMap;
         let val = RuntimeValue::Enum {
             ty: "TMState".to_string(),
             variant: "Committed".to_string(),
-            fields: BTreeMap::new(),
+            fields: NamedFields::new(),
         };
         assert_eq!(
             val.to_canonical_json(),
@@ -598,11 +686,10 @@ mod tests {
 
     #[test]
     fn test_to_canonical_json_nested() {
-        use std::collections::BTreeMap;
         let inner_enum = RuntimeValue::Enum {
             ty: "TMState".to_string(),
             variant: "Init".to_string(),
-            fields: BTreeMap::new(),
+            fields: NamedFields::new(),
         };
         let set = RuntimeValue::Set(
             vec![RuntimeValue::Int(1), RuntimeValue::Int(0)]

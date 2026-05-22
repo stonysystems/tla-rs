@@ -216,7 +216,7 @@ mod tests {
         let state = RuntimeValue::Enum {
             ty: "TMState".to_string(),
             variant: "Init".to_string(),
-            fields: BTreeMap::new(),
+            fields: crate::modelcheck::value::NamedFields::new(),
         };
         let json = state.to_canonical_json();
         assert_eq!(json, serde_json::json!({"_variant": "Init"}));

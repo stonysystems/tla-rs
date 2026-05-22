@@ -1328,6 +1328,10 @@ mod tests {
         Symbol::intern(s)
     }
 
+    fn nf(pairs: impl IntoIterator<Item = (Symbol, RuntimeValue)>) -> crate::modelcheck::value::NamedFields {
+        pairs.into_iter().collect()
+    }
+
     fn create_model_toml(dir: &Path) -> std::path::PathBuf {
         let model_path = dir.join("model.toml");
         let mut f = std::fs::File::create(&model_path).unwrap();
@@ -1578,7 +1582,7 @@ max_seq_len = 4
 
     #[test]
     fn test_infer_process_id_from_state_delta_map_key() {
-        let mut before_fields = std::collections::BTreeMap::new();
+        let mut before_fields = nf([]);
         before_fields.insert(
             sym("pc"),
             RuntimeValue::Map(std::collections::BTreeMap::from([
@@ -1597,7 +1601,7 @@ max_seq_len = 4
             fields: before_fields,
         };
 
-        let mut after_fields = std::collections::BTreeMap::new();
+        let mut after_fields = nf([]);
         after_fields.insert(
             sym("pc"),
             RuntimeValue::Map(std::collections::BTreeMap::from([
@@ -1624,7 +1628,7 @@ max_seq_len = 4
     fn test_refine_transition_footprint_process_scoped_map_update() {
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1640,7 +1644,7 @@ max_seq_len = 4
         };
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1671,7 +1675,7 @@ max_seq_len = 4
     fn test_refine_transition_footprint_process_scoped_seq_update() {
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("tickets"),
                 RuntimeValue::Seq(vec![
                     RuntimeValue::Int(0),
@@ -1682,7 +1686,7 @@ max_seq_len = 4
         };
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("tickets"),
                 RuntimeValue::Seq(vec![
                     RuntimeValue::Int(0),
@@ -1708,7 +1712,7 @@ max_seq_len = 4
     fn test_refine_transition_footprint_keeps_coarse_for_ambiguous_map_delta() {
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("flag"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(false)),
@@ -1718,7 +1722,7 @@ max_seq_len = 4
         };
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("flag"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(true)),
@@ -1743,14 +1747,14 @@ max_seq_len = 4
     fn test_derive_conservative_unknown_footprint_uses_top_level_fields() {
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([
+            fields: nf([
                 (sym("x"), RuntimeValue::Int(1)),
                 (sym("y"), RuntimeValue::Int(2)),
             ]),
         };
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([
+            fields: nf([
                 (sym("x"), RuntimeValue::Int(1)),
                 (sym("y"), RuntimeValue::Int(3)),
             ]),
@@ -1776,7 +1780,7 @@ max_seq_len = 4
     fn test_derive_conservative_unknown_footprint_process_scoped_update_is_keyed() {
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1792,7 +1796,7 @@ max_seq_len = 4
         };
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1815,7 +1819,7 @@ max_seq_len = 4
     fn test_derive_conservative_unknown_footprint_ambiguous_update_stays_coarse() {
         let before = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1831,7 +1835,7 @@ max_seq_len = 4
         };
         let after = RuntimeValue::Struct {
             ty: "S".to_string(),
-            fields: std::collections::BTreeMap::from([(
+            fields: nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (

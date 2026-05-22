@@ -966,7 +966,7 @@ fn match_pattern(
 
 fn match_named_pattern_fields(
     fields: &[(String, Pattern)],
-    runtime_fields: &BTreeMap<Symbol, RuntimeValue>,
+    runtime_fields: &crate::modelcheck::value::NamedFields,
     bindings: &mut BTreeMap<String, RuntimeValue>,
 ) -> TranspileResult<bool> {
     for (field_name, field_pattern) in fields {
@@ -983,7 +983,7 @@ fn match_named_pattern_fields(
 
 fn match_variant_pattern_fields(
     fields: &[Pattern],
-    runtime_fields: &BTreeMap<Symbol, RuntimeValue>,
+    runtime_fields: &crate::modelcheck::value::NamedFields,
     bindings: &mut BTreeMap<String, RuntimeValue>,
 ) -> TranspileResult<bool> {
     if fields.len() != runtime_fields.len() {
