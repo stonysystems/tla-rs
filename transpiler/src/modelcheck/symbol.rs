@@ -6,6 +6,7 @@
 //! comparisons integer-only (not pointer-chasing + memcmp).
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::{LazyLock, RwLock};
 
 /// An interned field-name handle. Cheap to copy, compare, and hash.
@@ -46,6 +47,23 @@ impl Symbol {
     pub fn resolve(&self) -> String {
         let interner = INTERNER.read().unwrap();
         interner.strings[self.0 as usize].clone()
+    }
+
+    /// Compare two symbols by their resolved name (alphabetical order).
+    /// Avoids allocating Strings — acquires the read lock once.
+    pub fn cmp_by_name(&self, other: &Symbol) -> std::cmp::Ordering {
+        if self.0 == other.0 {
+            return std::cmp::Ordering::Equal;
+        }
+        let interner = INTERNER.read().unwrap();
+        interner.strings[self.0 as usize].cmp(&interner.strings[other.0 as usize])
+    }
+
+    /// Hash this symbol's resolved name into the given hasher.
+    /// Avoids allocating a String — acquires the read lock once.
+    pub fn hash_name(&self, h: &mut impl std::hash::Hasher) {
+        let interner = INTERNER.read().unwrap();
+        interner.strings[self.0 as usize].hash(h);
     }
 }
 

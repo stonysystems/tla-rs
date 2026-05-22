@@ -218,9 +218,9 @@ impl RuntimeValue {
                 variant.hash(h);
                 // Sort fields by name for determinism
                 let mut sorted: Vec<_> = fields.iter().collect();
-                sorted.sort_by_key(|(k, _)| k.resolve());
+                sorted.sort_by(|(a, _), (b, _)| a.cmp_by_name(b));
                 for (k, v) in sorted {
-                    k.resolve().hash(h);
+                    k.hash_name(h);
                     v.hash_into(h);
                 }
             }
@@ -234,9 +234,9 @@ impl RuntimeValue {
                 ty.hash(h);
                 // Sort fields by name for determinism
                 let mut sorted: Vec<_> = fields.iter().collect();
-                sorted.sort_by_key(|(k, _)| k.resolve());
+                sorted.sort_by(|(a, _), (b, _)| a.cmp_by_name(b));
                 for (k, v) in sorted {
-                    k.resolve().hash(h);
+                    k.hash_name(h);
                     v.hash_into(h);
                 }
             }
@@ -275,15 +275,12 @@ impl RuntimeValue {
                 variant,
                 fields,
             } => {
-                // Sort by field name string for deterministic output
-                let mut entries: Vec<_> = fields
+                // Sort by field name for deterministic output
+                let mut sorted: Vec<_> = fields.iter().collect();
+                sorted.sort_by(|(a, _), (b, _)| a.cmp_by_name(b));
+                let rendered = sorted
                     .iter()
-                    .map(|(k, v)| (k.resolve(), v.canonical_key()))
-                    .collect();
-                entries.sort_by(|a, b| a.0.cmp(&b.0));
-                let rendered = entries
-                    .iter()
-                    .map(|(k, v)| format!("{k}:{v}"))
+                    .map(|(k, v)| format!("{}:{}", k.as_str(), v.canonical_key()))
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("enum:{ty}::{variant}{{{rendered}}}")
@@ -297,15 +294,12 @@ impl RuntimeValue {
                 format!("tuple:({rendered})")
             }
             RuntimeValue::Struct { ty, fields } => {
-                // Sort by field name string for deterministic output
-                let mut entries: Vec<_> = fields
+                // Sort by field name for deterministic output
+                let mut sorted: Vec<_> = fields.iter().collect();
+                sorted.sort_by(|(a, _), (b, _)| a.cmp_by_name(b));
+                let rendered = sorted
                     .iter()
-                    .map(|(k, v)| (k.resolve(), v.canonical_key()))
-                    .collect();
-                entries.sort_by(|a, b| a.0.cmp(&b.0));
-                let rendered = entries
-                    .iter()
-                    .map(|(k, v)| format!("{k}:{v}"))
+                    .map(|(k, v)| format!("{}:{}", k.as_str(), v.canonical_key()))
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("struct:{ty}{{{rendered}}}")
