@@ -277,21 +277,24 @@ impl RuntimeValue {
         }
     }
 
-    /// Compute a 64-bit fingerprint by streaming the value structure directly
-    /// into a hasher, without building an intermediate String. Produces the
-    /// same hash as hashing `canonical_key()` would logically imply (same
-    /// structural ordering guarantees), but avoids all String allocations.
+    /// Compute a 64-bit fingerprint for within-run state deduplication.
     ///
-    /// For struct/enum fields: hashes fields sorted alphabetically by name
-    /// (matching `canonical_key()`'s deterministic output).
+    /// Hashes the value structure directly into a hasher without building an
+    /// intermediate String. Struct/Enum fields are hashed in intern-id order
+    /// (deterministic within a run, zero allocations). For cross-run
+    /// deterministic output, use `canonical_key()` instead.
     pub fn fingerprint(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         self.hash_into(&mut hasher);
         hasher.finish()
     }
 
-    /// Stream this value's canonical representation into the given hasher.
-    /// Field order is alphabetical (by resolved symbol name) for determinism.
+    /// Stream this value into the given hasher for within-run deduplication.
+    ///
+    /// Struct/Enum fields are hashed in intern-id order (the order stored in
+    /// `NamedFields`). This is deterministic within a single model-check run
+    /// and avoids the Vec allocation + sort that name-based ordering required.
+    /// For cross-run deterministic output, use `canonical_key()` instead.
     fn hash_into(&self, h: &mut impl Hasher) {
         // Discriminant tag
         std::mem::discriminant(self).hash(h);
@@ -308,11 +311,8 @@ impl RuntimeValue {
             } => {
                 ty.hash(h);
                 variant.hash(h);
-                // Sort fields by name for determinism
-                let mut sorted: Vec<_> = fields.iter().collect();
-                sorted.sort_by(|(a, _), (b, _)| a.cmp_by_name(b));
-                for (k, v) in sorted {
-                    k.hash_name(h);
+                for (k, v) in fields.iter() {
+                    k.hash(h);
                     v.hash_into(h);
                 }
             }
@@ -324,11 +324,8 @@ impl RuntimeValue {
             }
             RuntimeValue::Struct { ty, fields } => {
                 ty.hash(h);
-                // Sort fields by name for determinism
-                let mut sorted: Vec<_> = fields.iter().collect();
-                sorted.sort_by(|(a, _), (b, _)| a.cmp_by_name(b));
-                for (k, v) in sorted {
-                    k.hash_name(h);
+                for (k, v) in fields.iter() {
+                    k.hash(h);
                     v.hash_into(h);
                 }
             }
@@ -785,7 +782,7 @@ mod tests {
     #[test]
     fn test_fingerprint_field_order_independent() {
         // Fields inserted in different order should produce the same fingerprint
-        // (since fingerprint sorts by field name)
+        // (NamedFields sorts by intern-id, so same fields → same order)
         let a = RuntimeValue::struct_value(
             "State",
             vec![

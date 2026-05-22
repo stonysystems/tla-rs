@@ -13624,14 +13624,14 @@ Implementation paths:
       Since NamedFields is sorted by Symbol (u32 intern-id), replace linear
       `iter().find()` with `partition_point` + equality check for O(log n)
       lookups. Purely internal, no API change. ~10 LOC.
-    - [ ] **38.22.2.b.iii.b**: **Thread FieldLayout through construction sites.**
-      Add optional `&FieldLayout` parameter to `struct_value_sym`,
-      `enum_value_sym`, `collect_named_fields`. Store layout ref in
-      NamedFields for O(1) access. ~200 LOC (touches evaluator, solver,
-      domain, dpor/enabled).
-    - [ ] **38.22.2.b.iii.c**: **Switch internal repr to `Vec<RuntimeValue>`**
-      when FieldLayout is available. `get(&sym)` uses layout index. Fallback
-      to sorted pairs when no layout. ~150 LOC.
+    - [ ] **38.22.2.b.iii.b+c**: **Thread FieldLayout + switch internal repr.**
+      Analysis: b and c are tightly coupled (no benefit to threading layout
+      without changing repr). Combined change requires dual-repr NamedFields
+      with custom Eq/Ord/Hash + touching 60+ call sites. For 3-10 fields,
+      binary search (2-3 u32 comparisons) is already near O(1); the HashMap
+      lookup in FieldLayout has comparable overhead. **Deferred** — marginal
+      benefit vs complexity. The real wins are in hash-cons (38.22.2.c) and
+      eval codegen (38.22.1.b/c).
 - [ ] **38.22.2.c**: **Hash-cons / `Arc<RuntimeValue>` for shared
   subterms.** Most successors share most fields with the predecessor;
   with Arc, clone becomes refcount bump. *1 week. Combines with .b.*
@@ -13665,6 +13665,12 @@ Implementation paths:
   `Symbol::hash_name()` methods that operate on interned strings directly
   without allocating. Updated `hash_into()` and `canonical_key()` to use
   these instead of `k.resolve()` (which allocated a String per field).
+  **Followup**: Eliminated Vec alloc + sort in `hash_into()` for Struct/Enum
+  fields. Since `NamedFields` is already in deterministic intern-id order
+  (consistent within a run), `hash_into` now iterates directly instead of
+  allocating a Vec and sorting by name. Also uses `Symbol::hash()` (u32,
+  no lock) instead of `hash_name()` (acquires read lock per field).
+  `canonical_key()` retains its name-based sort for cross-run output.
 - [ ] **38.22.3.b**: **Cache the hash on `RuntimeValue`** (OnceLock
   field per Struct/Enum). First compute is the same; subsequent
   lookups (e.g. for re-dedup of an already-emitted state) are free.
