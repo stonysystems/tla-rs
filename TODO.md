@@ -13755,3 +13755,106 @@ spec functions)** is the largest absolute win but the longest
 implementation; use it when you need to stress-test substantially
 larger spec instances. C and F are advanced research techniques;
 defer until simpler wins exhausted.
+
+## Phase 39: Migrate Auto-Generated RSL Network from TCP+SSL to UDP — NOT STARTED
+
+### Motivation
+The auto-generated RSL in `src/generated/RSL/` currently runs over
+TCP+SSL via `csharp/Common/IoFramework.cs` (the original IronFleet
+runtime borrowed from IronKV). Newer transpiled protocols (Raft,
+Paxos, 2PC, PBFT, …) run over UDP via `csharp/Common/IoNative.cs` and
+deliver ~17× higher throughput on the same machine.
+
+Measured baseline (3 nodes on 127.0.0.1, 32-thread client, 30 s run):
+
+| Variant                                           | Transport | ops/s | latency |
+|---------------------------------------------------|-----------|------:|--------:|
+| `tla-rs/bin/IronRSLServer.dll` (current)          | TCP+SSL   |   230 | n/a (client latency calc commented out) |
+| `~/VerusRSL/bin/IronRSLServerUDP.dll` (reference) | UDP       | 3 857 | 10.14 ms |
+| `~/wasiq-inspect/bin/IronRSLServerUDP.dll` (twin) | UDP       | 3 866 | 10.12 ms |
+
+The Rust FFI is already prepared on both sides — `rsl_main_wrapper`
+in `tla-rs/src/lib.rs:101` exposes the same 4-callback shape
+(`get_my_end_point / get_time / receive / send`) that the working
+UDP server in `~/VerusRSL/csharp/IronRSLServerUDP/Program.cs` calls.
+This is a **C#-only** migration; no Rust or proof work required.
+
+### Pre-existing assets to lift from `~/VerusRSL/`
+- `csharp/IronRSLServerUDP/Program.cs` — complete `Main()` (line 268)
+  with `UdpClient.Construct`, `ReceiveStatic` / `SendStatic`
+  delegates, `rsl_main_wrapper` P/Invoke wiring.
+- `csharp/IronRSLClientUDP/Program.cs` — complete client with
+  per-thread UDP socket + working latency measurement (the TCP client
+  in `tla-rs/csharp/IronRSLClient/Client.cs:119` has the latency
+  computation commented out — UDP client does not).
+- `csharp/Common/IoNative.cs` — already present in `tla-rs/csharp/`,
+  shared with the generic Protocol Server. No changes needed.
+
+### Plan
+
+#### 39.1 Port `IronRSLServerUDP/Program.cs`
+- [ ] **39.1.1**: Copy `~/VerusRSL/csharp/IronRSLServerUDP/Program.cs`
+  → `tla-rs/csharp/IronRSLServerUDP/Program.cs`, replacing the
+  currently-commented stub.
+- [ ] **39.1.2**: Verify `tla-rs/csharp/IronRSLServerUDP/IronRSLServerUDP.csproj`
+  references `..\Common\IoFramework.cs`, `..\Common\IoNative.cs`,
+  `..\Common\Profiler.cs` (it already does — confirm no edits needed).
+- [ ] **39.1.3**: Build via `dotnet build --configuration Release
+  --output bin csharp/IronRSLServerUDP/IronRSLServerUDP.csproj` and
+  confirm `bin/IronRSLServerUDP.dll` is produced.
+- [ ] **39.1.4**: Add `env.DotnetBuild('bin/IronRSLServerUDP.dll', …)`
+  line to `SConstruct` (line is already present at SConstruct:153 —
+  confirm it actually builds end-to-end now that Main() is real).
+
+#### 39.2 Port `IronRSLClientUDP/Program.cs`
+- [ ] **39.2.1**: Copy `~/VerusRSL/csharp/IronRSLClientUDP/Program.cs`
+  → `tla-rs/csharp/IronRSLClientUDP/Program.cs`.
+- [ ] **39.2.2**: Build via `dotnet build --configuration Release
+  --output bin csharp/IronRSLClientUDP/IronRSLClientUDP.csproj` and
+  confirm `bin/IronRSLClientUDP.dll` is produced.
+- [ ] **39.2.3**: Confirm the latency calculation at the equivalent
+  of `Client.cs:119` is **not** commented out (the UDP client has it
+  enabled).
+
+#### 39.3 End-to-end smoke test
+- [ ] **39.3.1**: Generate certs (`type=IronRSL`) and launch 3
+  `IronRSLServerUDP` instances on `127.0.0.1:{4001,4002,4003}` (same
+  ports as the working Raft setup; cannot coexist with the running
+  generic Protocol Server). Confirm `udp UNCONN 4001/4002/4003`
+  appear in `ss -tunap` and that one server logs leader-election
+  evidence (Paxos 1b receive).
+- [ ] **39.3.2**: Run `IronRSLClientUDP` with `nthreads=32 duration=30`
+  and confirm throughput is within 20% of the reference numbers above
+  (~3.5K ops/s, ~10 ms latency).
+
+#### 39.4 Decide TCP path's fate
+- [ ] **39.4.1**: Once UDP is the default, decide whether to:
+  - (a) Keep `IronRSLServer.dll` (TCP) for backwards compat /
+    cross-engine comparison, or
+  - (b) Delete the TCP entry point and remove `IoFramework.cs` from
+    `csharp/Common/` (only the `lock_main_wrapper` FFI in
+    `src/lib.rs` would need updating, since the generic protocols
+    don't depend on it).
+- [ ] **39.4.2**: Update `README.md` and `CLAUDE.md` to reflect that
+  RSL is now UDP-by-default; remove "RSL = TCP" notes.
+
+### Cost estimate
+- **39.1 + 39.2**: ~30 min of C# paste + build (no logic changes).
+- **39.3**: ~10 min of smoke testing.
+- **39.4**: optional cleanup, ~1 hour if pursued.
+- **Risk**: low — Rust FFI already wired (tla-rs uses
+  `rsl_main_wrapper` identical to VerusRSL); no proof / verification
+  changes needed; the same Verus core (`liblib.so`) drives both
+  transports.
+
+### Out of scope
+- Refactoring the RSL host to use the generic `NetClient` /
+  `ProtocolHost` framework (would require moving RSL onto
+  `protocol_main_wrapper` like Raft/Paxos do). Worthwhile but
+  separate phase if pursued.
+- Improving the TCP path (batching, pipelining ballots) — UDP makes
+  this irrelevant for benchmarking.
+- Verification of message-loss / duplication semantics introduced by
+  switching transports — the RSL protocol already assumes a lossy
+  network at the spec layer, so no proof change is needed, but a
+  bounded check with the model checker would be reassuring.
