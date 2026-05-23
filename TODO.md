@@ -13917,7 +13917,7 @@ which produces the observed throughput decay (trial 1 → trial 2:
 
 #### 40.1 Investigate alternative emit strategies
 
-- [ ] **40.1.a**: Document the four candidate fixes with their
+- [x] **40.1.a**: Document the four candidate fixes with their
   ad-hoc-ness / proof-impact / expected speedup. Output: a short
   design note under `transpiler/docs/EFFICIENT_EMIT.md`.
   Candidates (ranked by uniformity):
@@ -13934,9 +13934,10 @@ which produces the observed throughput decay (trial 1 → trial 2:
     second codegen path + new proof template.
   - **(D) Do nothing; let users hand-optimize hot paths.** Current
     Wasiq model.
-- [ ] **40.1.b**: Pick the path. **Default recommendation: A (Arc) +
-  partial B (only for the demonstrably hot HashMap fields).** C is
+- [x] **40.1.b**: Pick the path. **Decision: A (Arc) +
+  conditional B (only if post-Arc benchmarks show decay).** C is
   rejected as too ad-hoc; D is the fallback if A doesn't pan out.
+  See `transpiler/docs/EFFICIENT_EMIT.md` for full analysis.
 
 #### 40.2 (Path A) Arc-wrap sub-components in the transpiler
 
