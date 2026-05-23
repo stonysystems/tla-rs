@@ -158,7 +158,6 @@ verus! {
         return lemma_AppStateAlwaysValid(b, c, i - 1, idx);
     }
 
-    #[verifier(external_body)]
     pub proof fn lemma_ReplySentIsAllowed(
         b: Behavior<RslState>,
         c: LConstants,
@@ -178,7 +177,6 @@ verus! {
             0 <= r.3 < r.1[r.2].len(),
             ({let reply = Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply};
                 reply == GetReplyFromRequestBatches(r.1, r.2, r.3)}),
-            // Reply(p.dst, p.msg.seqno_reply, p.msg.reply) == GetReplyFromRequestBatches(batches, batch_num, req_num),
         decreases i,
     {
         if i == 0 {
@@ -195,33 +193,46 @@ verus! {
             return (qs_prime, batches_prime, batch_num_prime, req_num_prime);
         }
 
-        assert(LEnvironment_Next(b[i - 1].environment, b[i].environment));
-        assert(b[i - 1].environment.nextStep is LEnvStepHostIos);
-        let ios = b[i - 1].environment.nextStep->ios;
-        assert(LEnvironment_PerformIos(b[i - 1].environment, b[i].environment, b[i - 1].environment.nextStep->actor, ios));
-        assert(b[i].environment.sentPackets =~= b[i - 1].environment.sentPackets.union(
-            ios.filter(|io: RslIo| io is Send).map_values(|io: RslIo| io->s).to_set()));
-        assert(ios.filter(|io: RslIo| io is Send).map_values(|io: RslIo| io->s).to_set().contains(p));
-        assert(ios.contains(LIoOp::Send{s:p}));
-        let idx = GetReplicaIndex(b[i - 1].environment.nextStep->actor, c.config);
-        let idx_alt = choose |idx_alt: int|
-            #![trigger RslNextOneReplica(b[i - 1], b[i], idx_alt, ios)]
-            RslNextOneReplica(b[i - 1], b[i], idx_alt, ios);
-        assert(ReplicasDistinct(c.config.replica_ids, idx, idx_alt));
+        // Packet was newly sent in step i-1 → i
+        let (idx, ios) = lemma_ActionThatSendsPacketIsActionOfSource(b[i - 1], b[i], p);
 
         let next_action_index = b[i - 1].replicas[idx].nextActionIndex;
         if next_action_index == 0 {
-            let (qs_prime, batches_prime, batch_num_prime, req_num_prime) = lemma_ReplyInReplyCacheIsAllowed(b, c, i - 1, ios[0]->r.src, idx);
+            // Reply sent via action 0 = ProcessRequest cache hit
+            let client = lemma_reply_from_cache_hit(b[i - 1], b[i], idx, ios, p);
+            let (qs_prime, batches_prime, batch_num_prime, req_num_prime) = lemma_ReplyInReplyCacheIsAllowed(b, c, i - 1, client, idx);
             lemma_IfValidQuorumOf2bsSequenceNowThenNext(b, c, i - 1, qs_prime);
             return (qs_prime, batches_prime, batch_num_prime, req_num_prime);
         } else if next_action_index == 6 {
-            let (qs_prime, batches_prime, batch_num_prime, req_num_prime) = lemma_ReplySentViaExecutionIsAllowed(b, c, i - 1, p, idx, ios);
+            let (qs_prime, batches_prime, batch_num_prime, req_num_prime) = lemma_reply_sent_via_execution_bridge(b, c, i, p, idx, ios);
             lemma_IfValidQuorumOf2bsSequenceNowThenNext(b, c, i - 1, qs_prime);
             return (qs_prime, batches_prime, batch_num_prime, req_num_prime);
         } else {
-            assert(false);
+            lemma_only_actions_0_6_send_reply(b[i - 1], b[i], idx, ios, p);
             return arbitrary();
         }
+    }
+
+    // Helper: proves that only actions 0 and 6 can send RslMessageReply.
+    // Eliminates actions 1-5,7-9 by showing they send empty or non-Reply packets.
+    proof fn lemma_only_actions_0_6_send_reply(
+        ps: RslState,
+        ps_: RslState,
+        idx: int,
+        ios: Seq<RslIo>,
+        p: RslPacket,
+    )
+        requires
+            RslNextOneReplica(ps, ps_, idx, ios),
+            ps.replicas[idx].nextActionIndex != 0,
+            ps.replicas[idx].nextActionIndex != 6,
+            ios.contains(LIoOp::Send{s:p}),
+            p.msg is RslMessageReply,
+        ensures false,
+    {
+        let sent = ExtractSentPacketsFromIos(ios);
+        ExtractSentPacketsFromIos_Ensures2(ios);
+        assert(sent.contains(p));
     }
 
     pub proof fn lemma_ReplyInReplyCacheIsAllowed(
@@ -369,6 +380,115 @@ verus! {
 
         lemma_HandleRequestBatchTriggerHappy(s.app, batch, temp.0, temp.1);
         return (qs_new, batches_new, batch_num_new, req_num_new);
+    }
+
+    // Helper: when nextActionIndex == 0 and a Reply is sent, it must be
+    // from LReplicaNextProcessRequest (cache hit). Proves cache contains
+    // the client and the sent Reply == cache entry.
+    proof fn lemma_reply_from_cache_hit(
+        ps: RslState,
+        ps_: RslState,
+        idx: int,
+        ios: Seq<RslIo>,
+        p: RslPacket,
+    ) -> (client: AbstractEndPoint)
+        requires
+            RslNextOneReplica(ps, ps_, idx, ios),
+            ps.replicas[idx].nextActionIndex == 0,
+            ios.contains(LIoOp::Send{s:p}),
+            p.msg is RslMessageReply,
+        ensures
+            ({
+                let s = ps.replicas[idx].replica.executor;
+                &&& client == ios[0]->r.src
+                &&& s.reply_cache.contains_key(client)
+                &&& Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply} == s.reply_cache[client]
+            }),
+    {
+        let s = ps.replicas[idx].replica;
+        let s_ = ps_.replicas[idx].replica;
+        let sent_packets = ExtractSentPacketsFromIos(ios);
+
+        // nextActionIndex == 0 → LReplicaNextProcessPacket
+        assert(LReplicaNextProcessPacket(s, s_, ios));
+
+        // ios has a Send, so ios[0] can't be TimeoutReceive
+        assert(ios[0] is Receive);
+        let received = ios[0]->r;
+
+        // Bridge: ios.contains(Send{s:p}) → sent_packets.contains(p)
+        ExtractSentPacketsFromIos_Ensures2(ios);
+        assert(sent_packets.contains(p));
+
+        // Rule out heartbeat: heartbeat → sent_packets == empty → contradiction
+        if received.msg is RslMessageHeartbeat {
+            assert(false);
+        }
+
+        // Now in LReplicaNextProcessPacketWithoutReadingClock.
+        // Of all message types, only RslMessageRequest can produce RslMessageReply.
+        // Z3 case-splits on the match and eliminates all others.
+        let ex = s.executor;
+        assert(ex.reply_cache.contains_key(received.src));
+
+        let r = ex.reply_cache[received.src];
+        let expected = LPacket{
+            dst: r.client,
+            src: ex.constants.all.config.replica_ids[ex.constants.my_index],
+            msg: RslMessage::RslMessageReply{seqno_reply: r.seqno, reply: r.reply},
+        };
+        assert(sent_packets =~= seq![expected]);
+        assert(sent_packets[0] == seq![expected][0]);
+        assert(p == expected);
+
+        received.src
+    }
+
+    // Helper: bridges RslNextOneReplica + nextActionIndex == 6 to
+    // lemma_ReplySentViaExecutionIsAllowed by deriving its preconditions.
+    proof fn lemma_reply_sent_via_execution_bridge(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        p: RslPacket,
+        idx: int,
+        ios: Seq<RslIo>,
+    ) -> (rc: (Seq<QuorumOf2bs>, Seq<RequestBatch>, int, int))
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            0 <= idx < c.config.replica_ids.len(),
+            RslNextOneReplica(b[i - 1], b[i], idx, ios),
+            b[i - 1].replicas[idx].nextActionIndex == 6,
+            ios.contains(LIoOp::Send{s:p}),
+            p.msg is RslMessageReply,
+        ensures
+            ({
+                let reply = Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply};
+                let qs = rc.0;
+                let batches = rc.1;
+                let batch_num = rc.2;
+                let req_num = rc.3;
+                &&& IsValidQuorumOf2bsSequence(b[i - 1], qs)
+                &&& batches == GetSequenceOfRequestBatches(qs)
+                &&& 0 <= batch_num < batches.len()
+                &&& 0 <= req_num < batches[batch_num].len()
+                &&& reply == GetReplyFromRequestBatches(batches, batch_num, req_num)
+            }),
+    {
+        lemma_ConstantsAllConsistent(b, c, i - 1);
+        lemma_ReplicaConstantsAllConsistent(b, c, i - 1, idx);
+        let s = b[i - 1].replicas[idx].replica;
+        let sent = ExtractSentPacketsFromIos(ios);
+
+        // Unfold: action 6 → LReplicaNextSpontaneousMaybeExecute → LExecutorExecute
+        assert(LReplicaNextSpontaneousMaybeExecute(s, b[i].replicas[idx].replica, sent));
+        // The if-condition must be true: else branch sends nothing, contradicting ios.contains(Send{s:p})
+        ExtractSentPacketsFromIos_Ensures2(ios);
+        assert(s.executor.next_op_to_execute is OutstandingOpKnown);
+        assert(LExecutorExecute(s.executor, b[i].replicas[idx].replica.executor, sent));
+
+        lemma_ReplySentViaExecutionIsAllowed(b, c, i - 1, p, idx, ios)
     }
 
     pub proof fn lemma_ReplyInAppStateSupplyIsAllowed(
