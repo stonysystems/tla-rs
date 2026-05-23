@@ -13941,11 +13941,16 @@ which produces the observed throughput decay (trial 1 → trial 2:
 
 #### 40.2 (Path A) Arc-wrap sub-components in the transpiler
 
-- [ ] **40.2.a**: Identify the spec types that map to "top-level
+- [x] **40.2.a**: Identify the spec types that map to "top-level
   protocol state with sub-components" (e.g., `LReplica`, `LState`).
   Currently the transpiler emits `CReplica { proposer, acceptor, … }`
   with bare nested types; this step is the type-generator change.
-- [ ] **40.2.b**: Change `transpiler/src/codegen/` to emit
+  **Findings**: RSL has hierarchical sub-components (CProposer, CAcceptor,
+  CLearner, CExecutor in CReplica). All 9 non-RSL protocols have flat
+  CState with expensive container fields (Vec, HashMap, HashSet).
+  The uniform rule: add `arc_wrap_types` config; for each listed type,
+  wrap non-scalar/non-Copy fields in `Arc<T>`. See `EFFICIENT_EMIT.md`.
+- [x] **40.2.b**: Change `transpiler/src/codegen/` to emit
   `pub proposer: Arc<CProposer>` etc. for sub-components. Field
   access through Arc relies on autoderef — no body edits needed.
 - [ ] **40.2.c**: Emit `broadcast use vstd::sync::group_arc_axioms;`

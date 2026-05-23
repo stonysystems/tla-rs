@@ -74,6 +74,8 @@ pub struct TypeGenerator {
     /// These get `Copy` in addition to `Clone` and are treated as copy-scalar
     /// in verified clone generation.
     unit_enums: HashSet<String>,
+    /// Exec type names whose non-scalar fields should be wrapped in `Arc<T>`.
+    arc_wrap_types: HashSet<String>,
 }
 
 impl TypeGenerator {
@@ -98,6 +100,7 @@ impl TypeGenerator {
             generate_clone_up_to_view_simple: false,
             hashset_element_types: HashSet::new(),
             unit_enums: HashSet::new(),
+            arc_wrap_types: HashSet::new(),
         }
     }
 
@@ -166,6 +169,19 @@ impl TypeGenerator {
 
     pub fn set_unit_enums(&mut self, enums: HashSet<String>) {
         self.unit_enums = enums;
+    }
+
+    /// Set exec type names whose non-scalar fields should be wrapped in Arc<T>.
+    pub fn set_arc_wrap_types(&mut self, types: HashSet<String>) {
+        self.arc_wrap_types = types;
+    }
+
+    /// Check if a field should be Arc-wrapped in the given struct.
+    fn should_arc_wrap_field(&self, exec_name: &str, field_ty: &Type) -> bool {
+        if !self.arc_wrap_types.contains(exec_name) {
+            return false;
+        }
+        !self.is_copy_scalar_type_for_clone_up_to_view(field_ty)
     }
 
     /// Generate `#[derive(...)]` attribute and determine clone strategy for a type.
@@ -422,15 +438,24 @@ impl TypeGenerator {
             .filter(|field| !skip_fields.is_some_and(|skips| skips.contains(&field.name)))
             .collect();
 
+        let _is_arc_wrapped = self.arc_wrap_types.contains(&exec_name);
+
         // Generate struct definition
         code.push_str(&format!("pub struct {} {{\n", exec_name));
         for field in &generated_fields {
             let exec_type = self.translate_type(&field.ty);
             let vis = if field.is_public { "pub " } else { "" };
-            code.push_str(&format!(
-                "{}{}{}: {},\n",
-                self.indent, vis, field.name, exec_type
-            ));
+            if self.should_arc_wrap_field(&exec_name, &field.ty) {
+                code.push_str(&format!(
+                    "{}{}{}: Arc<{}>,\n",
+                    self.indent, vis, field.name, exec_type
+                ));
+            } else {
+                code.push_str(&format!(
+                    "{}{}{}: {},\n",
+                    self.indent, vis, field.name, exec_type
+                ));
+            }
         }
         // Add extra fields not in spec
         for (key, value) in &self.extra_fields {
@@ -1221,6 +1246,7 @@ pub fn generate_all_types_with_options(
         generate_clone_up_to_view_simple: false,
         generate_unreachable_value_helper: false,
         manual_code: None,
+        arc_wrap_types: &[],
     })
 }
 
@@ -1244,6 +1270,9 @@ pub struct TypeGenConfig<'a> {
     pub generate_clone_up_to_view_simple: bool,
     pub generate_unreachable_value_helper: bool,
     pub manual_code: Option<&'a str>,
+    /// Exec type names whose non-scalar fields should be wrapped in Arc<T>.
+    #[allow(dead_code)]
+    pub arc_wrap_types: &'a [String],
 }
 
 fn generate_unreachable_value_helper() -> &'static str {
@@ -1285,6 +1314,7 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
         }
     }
     generator.set_unit_enums(unit_enums);
+    generator.set_arc_wrap_types(cfg.arc_wrap_types.iter().cloned().collect());
 
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
@@ -1293,8 +1323,9 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     all_code.push_str("// Auto-generated concrete types by verus-transpiler\n");
     all_code.push_str("// DO NOT EDIT MANUALLY\n\n");
 
-    // Auto-inject imports required by clone strategies
+    // Auto-inject imports required by clone strategies and Arc wrapping
     let needs_hashset_clone_import = cfg.clone_strategy.values().any(|v| v == "verified");
+    let needs_arc_import = !cfg.arc_wrap_types.is_empty();
 
     // Custom imports (sorted case-insensitively for rustfmt compatibility)
     // Filter out self-referential types_gen imports that would cause
@@ -1304,6 +1335,9 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
         if needs_hashset_clone_import {
             all_code.push_str("use crate::common::collections::hashsets::clone_hashset_u64;\n");
             all_code.push_str("use std::collections::HashSet;\n");
+        }
+        if needs_arc_import {
+            all_code.push_str("use std::sync::Arc;\n");
         }
         all_code.push('\n');
     } else {
@@ -1322,6 +1356,13 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
                 .any(|i| i.contains("clone_hashset_u64"))
             {
                 sorted_imports.push(hashset_import);
+            }
+        }
+        // Add Arc import when arc_wrap_types is active
+        if needs_arc_import {
+            let arc_import = "use std::sync::Arc;".to_string();
+            if !sorted_imports.iter().any(|i| i.contains("std::sync::Arc")) {
+                sorted_imports.push(arc_import);
             }
         }
         sorted_imports.sort_by_key(|a| a.to_lowercase());
@@ -2352,6 +2393,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2398,6 +2440,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2452,6 +2495,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2506,6 +2550,7 @@ mod tests {
             generate_clone_up_to_view_simple: true,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
         let result = generate_all_types_full(&cfg);
         assert!(
@@ -2557,6 +2602,7 @@ mod tests {
             generate_clone_up_to_view_simple: true,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
         let result = generate_all_types_full(&cfg);
         assert!(
@@ -2604,6 +2650,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
         let result = generate_all_types_full(&cfg);
         assert!(
@@ -2656,6 +2703,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
         let result = generate_all_types_full(&cfg);
         assert!(
@@ -3074,6 +3122,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3131,6 +3180,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: None,
+            arc_wrap_types: &[],
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3173,6 +3223,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: false,
             manual_code: Some(manual),
+            arc_wrap_types: &[],
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3214,6 +3265,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: true,
             manual_code: None,
+            arc_wrap_types: &[],
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3252,6 +3304,7 @@ mod tests {
             generate_clone_up_to_view_simple: false,
             generate_unreachable_value_helper: true,
             manual_code: Some(manual),
+            arc_wrap_types: &[],
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3684,6 +3737,101 @@ mod tests {
         assert!(
             !enum_code.contains("#[derive(Clone)]"),
             "Enum should not derive Clone with external_body"
+        );
+    }
+
+    #[test]
+    fn test_arc_wrap_types_wraps_non_scalar_fields() {
+        let mut generator = TypeGenerator::new(make_config());
+        generator.set_arc_wrap_types(
+            vec!["CReplica".to_string()].into_iter().collect(),
+        );
+
+        let spec = StructDef {
+            name: "LReplica".to_string(),
+            generics: Generics::default(),
+            fields: vec![
+                FieldDef {
+                    name: "proposer".to_string(),
+                    ty: Type::Named(Path::single("Proposer".to_string())),
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "acceptor".to_string(),
+                    ty: Type::Named(Path::single("Acceptor".to_string())),
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "next_heartbeat".to_string(),
+                    ty: Type::Nat,
+                    is_public: true,
+                },
+                FieldDef {
+                    name: "active".to_string(),
+                    ty: Type::Bool,
+                    is_public: true,
+                },
+            ],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Non-scalar fields should be Arc-wrapped
+        assert!(
+            result.code.contains("pub proposer: Arc<CProposer>"),
+            "Named type should be Arc-wrapped: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("pub acceptor: Arc<CAcceptor>"),
+            "Named type should be Arc-wrapped: {}",
+            result.code
+        );
+        // Scalar fields should NOT be Arc-wrapped
+        assert!(
+            result.code.contains("pub next_heartbeat: u64"),
+            "Nat (u64) should not be Arc-wrapped: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains("pub active: bool"),
+            "Bool should not be Arc-wrapped: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn test_arc_wrap_types_does_not_affect_unlisted_structs() {
+        let mut generator = TypeGenerator::new(make_config());
+        generator.set_arc_wrap_types(
+            vec!["CReplica".to_string()].into_iter().collect(),
+        );
+
+        // CAcceptor is NOT in arc_wrap_types
+        let spec = StructDef {
+            name: "LAcceptor".to_string(),
+            generics: Generics::default(),
+            fields: vec![FieldDef {
+                name: "votes".to_string(),
+                ty: Type::Named(Path::single("Votes".to_string())),
+                is_public: true,
+            }],
+            is_spec: true,
+        };
+
+        let result = generator.generate_struct(&spec);
+
+        // Should NOT be Arc-wrapped since CAcceptor is not in the list
+        assert!(
+            result.code.contains("pub votes: CVotes"),
+            "Unlisted struct should not have Arc-wrapped fields: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("Arc<CVotes>"),
+            "Unlisted struct should not have Arc<> fields: {}",
+            result.code
         );
     }
 }

@@ -128,6 +128,15 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub clone_up_to_view_types: Vec<String>,
 
+    /// Exec type names whose non-scalar fields should be wrapped in `Arc<T>`.
+    /// For types in this list, all fields that are not Copy scalars (u64, bool,
+    /// enums) get emitted as `Arc<FieldType>` instead of bare `FieldType`.
+    /// This makes `clone()` O(1) (refcount bump) instead of deep copy.
+    /// vstd provides `impl View for Arc<A>` so spec-level code is unaffected.
+    /// e.g., ["CReplica", "CState"]
+    #[serde(default)]
+    pub arc_wrap_types: Vec<String>,
+
     /// Types to skip during generation (already manually implemented).
     /// These spec type names will be parsed but NOT generated as exec types.
     /// e.g., ["Ballot", "Request", "Reply", "Vote", "LearnerTuple"]
