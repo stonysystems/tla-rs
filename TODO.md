@@ -9,11 +9,15 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 - **Verification command**: `/home/users/zihao/verus/verus --crate-type=lib src/lib.rs`
 - **Build command**: `scons --verus-path=/home/users/zihao/verus`
 
-## Current Status (last updated 2026-04-16)
+## Current Status (last updated 2026-05-23)
 
 **Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-16).** After Phase 38.17 (direct-assignment solver optimization + DPOR reduction activation), the main `verus-transpile model-check` path is 5.7-19x faster on protocol cases (Paxos 511s → 77s, PBFT 87s → 4.6s, Raft 1115s → 195s). Sleep-set DPOR reduction now actively prunes transitions on all multi-process cases (5/5 reduction-gate hits: Paxos 82.9%, Raft 49.4%, PBFT 43.2%, Peterson 43.8%, counter 33.3%). With DPOR reduction enabled (`dpor-checker shadow-compare`), Paxos runs in 2.6s — a 29x end-to-end speedup from the pre-38.17 baseline with exact state parity preserved. See `transpiler/DPOR_based_model_tla_rs_checker/tests/reports/{latest.md,dpor_vs_tlc.md,sleep_set_reduction_table.md}` for full evidence. Remaining DPOR work is tracked in Phase 38.18 (explorer parallelism, helper-call inlining at IR, main-path DPOR reduction, Raft/PBFT internal-explorer parity).
 
-Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. The top-priority implementation track is now Phase 38 (the separate DPOR-based checker prototype), followed by Phase 36 (exact-state parity and performance debugging) and then Phase 37 (CI/CD recovery). The remaining proof-heavy work is still concentrated in Phase 31 and Phase 34: the RSL refinement-proof port still has 10 `external_body` lemmas left to discharge, and the Raft refinement proof still has 12 assumes in `invariants.rs` (7 LC `assume(false)` blocked on the `d_rli <= k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code also remain.
+**🛑 Phase 31 and Phase 34 deprecated (2026-05-23).** Both refinement-proof completion efforts have been halted. Phase 31 left ~5 `external_body` lemmas in RSL refinement; Phase 34 left 12 assumes in Raft (7 blocked on the `d_rli ≤ k` strict-term wall). Further proof engineering yields diminishing safety return relative to cost; focus shifts to transpiler-side work.
+
+**🔝 Phase 40 is now TOP PRIORITY (2026-05-23).** Eliminate whole-state functional clone via Arc-wrapping. gdb profiling on a tla-rs RSL leader (zoo-002, 32 clients, 32-thread benchmark) shows ~35% of active CPU spent on `CProposer::clone_up_to_view` + related shallow clones, with the same pattern present across all 10 transpiled protocols (Raft `SendAppendEntries` clones the entire `log: Vec<CLogEntry>` on every heartbeat). One transpiler-side change (Arc-wrap protocol sub-components in type generation + `broadcast use vstd::sync::group_arc_axioms` template) closes ~50% of the gap to hand-tuned impls (wasiq-inspect 28.6K vs tla-rs auto-gen 13.5K ops/s on zoo-002) while keeping spec→exec auto-generation intact. Estimated ~1 week, benefits every transpiled protocol simultaneously. Runs in parallel with Phase 38 (different codepaths). The longstanding 10 packet-identity trust-boundary assumes in generated RSL replica code remain as a documented IO trust boundary, unaffected.
+
+Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. Phase 39 (RSL TCP→UDP migration) complete. After **Phase 40** the next priorities are Phase 38 (DPOR prototype, active model-checker track), Phase 36 (exact-state parity follow-up), and Phase 37 (CI/CD recovery).
 The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. Phase 38 is a greenfield prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
 
 **What works:**
@@ -37,7 +41,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - Phase 22 model checker baseline: ✅ COMPLETE — source-first `verus-transpile model-check` supports BFS/DFS, invariant/deadlock checking, counterexample traces, wrapper generation, symmetry/hash/POR reductions, and bounded `leads_to`/fairness; checked-in bounded source-first smoke runs exist for TwoPhase, LeaderElection, PrimaryBackup, and Paxos
 - Phase 33 model checker hardening / coverage / benchmark evidence: ✅ COMPLETION GATE CLOSED — canonical status matrix, blocker fixtures, matched TLC-vs-source-first benchmark artifacts, same-time-budget progress tables, release-vs-debug comparison, wall-time attribution, and branch-level blocker telemetry are checked in
 - Phase 35 beginner model checker architecture survey/tutorial: ✅ COMPLETE — `docs/model-checker-architecture/` now contains the beginner tutorial, walkthrough, comparison, optimization audit, evidence ledger, and review guards
-- Phase 38 DPOR-based checker prototype track: 🚧 TOP PRIORITY — prototype a real DPOR explorer under `transpiler/DPOR_based_model_tla_rs_checker/` with a fixed 20-case TLA+→tla-rs test gauntlet, design notes, and milestone-by-milestone full-suite runs before touching `transpiler/src/modelcheck`
+- Phase 38 DPOR-based checker prototype track: 🚧 HIGH PRIORITY (Phase 40 promoted above) — prototype a real DPOR explorer under `transpiler/DPOR_based_model_tla_rs_checker/` with a fixed 20-case TLA+→tla-rs test gauntlet, design notes, and milestone-by-milestone full-suite runs before touching `transpiler/src/modelcheck`
 - Phase 36 exact-state parity / performance debugging: 🚧 HIGH PRIORITY FOLLOW-UP — benchmark comparison still needs semantic-parity debugging and performance root-cause work before further model-checker claims should be trusted
 - Phase 37 CI/CD recovery: 🚧 FOLLOW-UP PRIORITY — the current GitHub Actions workflow must be restored to green without weakening checks
 - Documentation: transpiler config reference, proof patterns, regeneration scripts
@@ -45,11 +49,12 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - 145 transpiler integration tests pass (including 10 verifying generated module public APIs, 1 verus2tla roundtrip for all 7 protocols, 10 D4 pipeline regression tests, 9 message generation per-protocol tests, 9 marshalling round-trip tests, 10 LNext scheduler analysis tests, 3 action classification tests, 9 scaffold structure tests, 9 host-init compilation tests, 15 scheduler generation tests [2 TOML roundtrip, 1 exact counts, 1 consistency, 1 message_variant validity, 1 heuristic coverage, 9 scaffold compilation], 2 impl file dead code stripping tests)
 
 **What doesn't work yet:**
-- 10 packet-identity assumes in replica_gen.rs — all state `sent_packets =~= ExtractSentPacketsFromIos(ios)`, the irreducible IO trust boundary (runtime faithfully records sent packets)
-- Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CIsLogTruncationPointValid + helpers (acceptorimpl), CExecutorExecute (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl).
+- 10 packet-identity assumes in replica_gen.rs — all state `sent_packets =~= ExtractSentPacketsFromIos(ios)`, the irreducible IO trust boundary (runtime faithfully records sent packets). Accepted as a documented limitation.
+- Manual impl modules (acceptorimpl, ExecutorImpl, ElectionImpl, ProposerImpl) are stripped to minimal live code only — dead `&mut self` methods removed in Phase 19.7. learnerimpl.rs fully stripped (only re-exports). Remaining live code: CIsLogTruncationPointValid + helpers (acceptorimpl), CExecutorExecute (ExecutorImpl), Clone + CRequestHeader + helpers (ElectionImpl), Clone + 5 static methods (ProposerImpl). To be picked up by Phase 21 cleanup.
 - **All generated RSL code is standalone** — proposer_gen (0/12), acceptor_gen (0/7), executor_gen (0/10), replica_gen (0/20) — all delegates eliminated. Phases 19.2/19.3/19.4/19.5/19.6 COMPLETE, Phase 19.7 (dead code stripped).
-- **Phase 31 is still incomplete** — the RSL refinement-proof port now has 6 remaining `external_body` lemmas to discharge (2 in `refinement_proof/requests.rs`, 2 in `refinement_proof/refinement.rs`, 2 in `refinement_proof/execution.rs`), followed by a full sweep with both proof modules enabled.
-- **Phase 34 is still incomplete** — the Raft refinement proof still has 12 assumes left. The main blocker is the strict-term LeaderCompleteness argument (`d_rli <= k` wall), and the final SMS assume depends on resolving that LC path.
+- **Generated code is structurally inefficient** — every `ProcessXxx` rebuilds the full top-level state and `clone_up_to_view()` unchanged sub-components. 62 sites in RSL replica_gen alone; 12-18 sites each in the other 9 protocols. gdb sampling shows ~35% CPU spent on clone/drop/alloc on the RSL leader. Time-based throughput decay (trial 1: 16,549 → trial 2: 10,488 ops/s) traceable to grow-with-time HashMap fields cloned per dispatch. **Phase 40 will fix this via Arc-wrapping.**
+- **Phase 31 (RSL refinement proof) — DEPRECATED.** ~5 `external_body` lemmas remain as a documented gap; not pursued further.
+- **Phase 34 (Raft refinement proof) — DEPRECATED.** 12 assumes remain (7 LC `assume(false)` on the `d_rli ≤ k` wall + 4 sound Z3 workarounds + 1 SMS); not pursued further.
 - **Native model checker is still partial** — the remaining blockers are now concentrated in exact-mode candidate/state-expansion scalability, finite-domain configuration limits, and protocol-specific unsupported rows tracked in `docs/model_checker_status.md`.
 - **Exact-state parity between TLC and source-first is not yet demonstrated** — the benchmark report currently shows mismatched reachable-state counts on shared models. Before trusting any performance comparison, the repo needs deterministic state-set export, normalized state/edge diffing, and root-cause fixes until the exact reachable distinct-state sets agree on the shared small-model cases.
 - **Consensus protocol source-first coverage is still not fully green** — all target protocols now have checked-in status/evidence rows, but only TwoPhase, LeaderElection, PrimaryBackup, Paxos, and PBFT currently have checked-in bounded `result = ok` runs. RSL, Raft, VerticalPaxos, EPaxos, and ChainReplication still bottom out at checked-in blocker models.
@@ -58,17 +63,20 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
 - **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. Remaining DPOR work is acceptance-criteria closure in `38.11`. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
-**Next steps (priority order):**
-1. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — with 38.14.10 closed (`3/3` transition/work gate), 38.14.11 integration-gate re-evaluation completed, and `38.10.3`/`38.10.4` migration discipline landed, continue by closing `38.11` acceptance criteria with explicit evidence sync. See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
-2. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models and fix the source-first performance pathologies exposed by the benchmark comparison. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
-3. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks, and keep the evidence/benchmark guards aligned with any schema or artifact changes from Phase 36. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
-4. **Phase 31: RSL Refinement Proof** — remove the remaining 10 `external_body` lemmas, then run the full sweep with both proof modules enabled and update the remaining-count summary. **IMPORTANT: Every RSL proof fn has a corresponding Dafny lemma in the IronFleet repo (https://github.com/microsoft/Ironclad/tree/main/ironfleet, under `protocol/RSL/` proof files). Always consult the original Dafny proof for structure, intermediate assertions, and invariant usage before attempting fixes.** See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--incomplete-not-verified).
-5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler support for value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation.
-6. **Phase 21: Minimal TOML + full regeneration + eliminate manual_code** — simplify all TOMLs to minimal auto-inferred form, regenerate all protocols, and eliminate residual `manual_code`.
+**Next steps (priority order, updated 2026-05-23):**
+1. **Phase 40: Transpiler-Emitted Impl Efficiency — TOP PRIORITY** — Arc-wrap unchanged sub-components in generated state-rebuild sites. Benefits all 10 protocols; ~30% structural CPU win confirmed by gdb profiling on RSL leader. Closes 50%+ of the gap to hand-tuned implementations (e.g. wasiq's 28K ops/s) while keeping the spec→exec pipeline auto-generated. ~1 week. See [Phase 40](#phase-40-transpiler-emitted-impl-efficiency--eliminate-whole-state-functional-clone).
+2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
+3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
+4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
+5. **Phase 29: Transpiler support for spec helper functions and composite action generation** — extend transpiler to translate value-returning spec helpers, intermediate-state let-bindings, and whole-state delegation. Concrete target: eliminate `raft_manual.rs` (369 LOC).
+6. **Phase 21: Minimal TOML + eliminate residual manual_code (much smaller than original framing)** — simplify the 17 hand-written TOMLs using Phase 20's auto-inference, and pick off the remaining ~1,400 LOC of `CXxxImpl` shell code that the transpiler should auto-emit. See updated status box at [Phase 21](#phase-21-minimal-toml-regeneration-and-eliminate-manual_code--mostly-done-doc-outdated).
 7. **Phase 20 cleanup** — finish the remaining auto-inference cleanup.
-8. **Phase 34: Raft Network Model and Complete Refinement Proof** — eliminate the remaining 12 assumes. This is currently the lowest-priority major open phase; the dominant blocker is the strict-term LeaderCompleteness argument (`d_rli <= k` wall), which still needs a stronger induction/provenance strategy. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof).
 
-**Active work**: The top-priority implementation phase is now **Phase 38** (the isolated DPOR prototype track under `transpiler/DPOR_based_model_tla_rs_checker/`). **Phase 36** remains the next model-checker correctness/performance follow-up, and **Phase 37** follows it for CI recovery. The DPOR work must stay in the separate workfolder until it has its own design doc, 20-case corpus, baseline oracle, and regression harness. After that, the next proof phase is **Phase 31** (RSL refinement proof de-externalization). **Phase 34** (Raft refinement proof assume elimination) is currently the lowest-priority major open phase. Phase 35 is complete, and Phase 33 should be treated as a historical evidence-discipline milestone rather than the final word on model-checker correctness/performance. See `reports/raft_refinement_proof.md` for detailed Raft status.
+**🛑 Deprecated (will not be pursued):**
+- **Phase 31: RSL Refinement Proof** — diminishing safety return relative to proof-engineering cost. ~5 `external_body` lemmas remain as a documented gap. See [Phase 31](#phase-31-rsl-refinement-proof--eliminate-external_body-proof-functions--deprecated-not-pursued).
+- **Phase 34: Raft Network Model and Complete Refinement Proof** — strict-term LeaderCompleteness gap (`d_rli ≤ k` wall) requires well-founded induction on terms (Ongaro §3.6.1) that has resisted multiple attempts. 12 assumes remain as a documented limitation. See [Phase 34](#phase-34-raft-network-model-and-complete-refinement-proof--deprecated-not-pursued).
+
+**Active work**: The top-priority implementation phase is now **Phase 40** (Arc-wrap unchanged sub-components in transpiler output; all 10 protocols benefit; ~30% CPU win confirmed by gdb profiling). **Phase 38** (DPOR prototype) continues in parallel on the model-checker track. **Phase 36** (exact-state parity) and **Phase 37** (CI recovery) follow for model-checker correctness and hygiene. After Phase 40 the transpiler-side track continues with **Phase 29** (helper-function support to eliminate `raft_manual.rs`) and **Phase 21/20** cleanup. Proof-completion work (Phase 31, Phase 34) is deprecated.
 
 ## Reference
 
@@ -107,7 +115,9 @@ This plan is based on [AutoMan](https://github.com/stonysystems/automan), which 
 27. [Phase 35: Beginner Model Checker Architecture Survey and Tutorial — TOP PRIORITY](#phase-35-beginner-model-checker-architecture-survey-and-tutorial--top-priority)
 28. [Phase 36: Exact-State Parity and Performance Debugging — HIGH PRIORITY FOLLOW-UP](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up)
 29. [Phase 37: CI/CD Recovery — FOLLOW-UP PRIORITY](#phase-37-cicd-recovery--follow-up-priority)
-30. [Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — TOP PRIORITY](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority)
+30. [Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — HIGH PRIORITY](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--high-priority-phase-40-promoted-above)
+31. [Phase 39: Migrate Auto-Generated RSL Network from TCP+SSL to UDP — COMPLETE](#phase-39-migrate-auto-generated-rsl-network-from-tcpssl-to-udp--complete)
+32. [Phase 40: Transpiler-Emitted Impl Efficiency — Eliminate Whole-State Functional Clone — TOP PRIORITY](#phase-40-transpiler-emitted-impl-efficiency--eliminate-whole-state-functional-clone--top-priority)
 
 ---
 
@@ -6773,15 +6783,33 @@ skip_functions = ["LNext"]
 
 ---
 
-## Phase 21: Minimal TOML Regeneration and Eliminate manual_code
+## Phase 21: Minimal TOML Regeneration and Eliminate manual_code — MOSTLY DONE (DOC OUTDATED)
 
-### 21.0 Problem Statement
+**🟡 STATUS (2026-05-23)**: **~80% done.** The "4,760 LOC of `*_manual.rs` with 204 assume + 25 external_body" described below is **stale (from 2024)**. Phase 19.x already eliminated the bulk of `manual_code`. Current RSL state:
+
+| Layer | LOC | `assume()` | `external_body` |
+|-------|----:|-----------:|----------------:|
+| `generated/RSL/` (transpiler output) | 5,225 | **0** | 0 |
+| `implementation/RSL/` (runtime wrappers + helpers + type defs) | 7,417 | **0** | 22 (all in helpers/wrappers) |
+| `protocol/RSL/*_manual.rs` (spec-side manual lemmas) | 560 | — | — |
+
+**Remaining work (much smaller than original doc)**:
+- ~1,400 LOC of stripped `CXxxImpl` struct shells (Init/Clone) that transpiler could auto-emit
+- ~1,800 LOC of helpers (HashMap helpers, CAddVoteAndRemoveOldOnes, etc.) — partly belongs in vstd standardization, partly in extra transpiler patterns
+
+**Sub-task A (TOML simplification) — still relevant**: 17 TOMLs are still hand-written; Phase 20 proved they could be ~80 lines/protocol smaller via auto-inference but no TOMLs have actually been simplified yet.
+
+The historical plan below is kept for context; concrete remaining work is much smaller than the original framing suggests.
+
+---
+
+### 21.0 Original Problem Statement (kept for context; numbers outdated)
 
 Phase 20 proved that auto-inference works (9 non-RSL protocols produce identical output with minimal TOMLs), but:
 
 1. **No TOML has been actually simplified** — all 17 TOMLs still contain hand-written Tier 1 fields that auto-inference can derive.
-2. **All RSL modules use `manual_code`** — 4,760 LOC of hand-written Rust in 7 `*_manual.rs` files, injected into generated output. This defeats the purpose of having a transpiler.
-3. **manual_code contains 204 `assume()` + 25 `external_body`** — these are unverified trust points hidden inside "generated" code.
+2. **All RSL modules use `manual_code`** — 4,760 LOC of hand-written Rust in 7 `*_manual.rs` files, injected into generated output. This defeats the purpose of having a transpiler. ⚠️ **OUTDATED — see status box above.**
+3. **manual_code contains 204 `assume()` + 25 `external_body`** — these are unverified trust points hidden inside "generated" code. ⚠️ **OUTDATED — current count is 0 assume + 22 external_body, all in helpers.**
 
 **Goal**: Eliminate `manual_code` entirely. The transpiler should generate all functions. Where it cannot produce a valid proof, it should:
 - Mark the function `#[verifier(external_body)]`
@@ -9477,11 +9505,15 @@ These 5 `external_body` proof axioms are irreducible type-system trust:
 
 ---
 
-## Phase 31: RSL Refinement Proof — Eliminate external_body Proof Functions — INCOMPLETE (NOT VERIFIED)
+## Phase 31: RSL Refinement Proof — Eliminate external_body Proof Functions — DEPRECATED (NOT PURSUED)
 
-**Goal**: The RSL refinement proof (`src/protocol/RSL/refinement_proof/`) contains 20 `external_body` proof functions, and the supporting `common_proof/` has 8 more (total 28). These are trusted stubs inherited from the Dafny→Verus port. Fill in real proof bodies so Verus mechanically verifies them, reducing the trusted base.
+**🛑 STATUS (2026-05-23)**: **Deprecated.** Decision: the residual ~5 `external_body` lemmas left after Phase 31.9.4.11 are not worth the proof-engineering effort. The RSL refinement proof has been carried far enough that the `assume` count is small, well-localized, and documented. Further reduction yields diminishing safety value relative to the cost (each remaining lemma requires several days of Z3 trigger / proof-restructuring work; see the `d_rli ≤ k` style walls). Future RSL work should focus on transpiler-side improvements (Phase 21, 29, 40) rather than chasing the last proofs. The historical plan below is kept for reference but no further sub-tasks will be opened.
 
-**⚠️ STATUS (2026-03-08)**: Both `common_proof` and `refinement_proof` modules are now **uncommented** in `src/protocol/RSL/mod.rs` and compile cleanly (0 compilation errors). **Phase 31.9.4 step 3 IN PROGRESS**: Fixed `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState` and `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`. **49 verified, 0 errors** at rlimit 80. **21 `external_body` annotations remain** on functions that still fail. Remaining failures are mostly rlimit-bound (need proof restructuring to guide Z3). Next: continue fixing remaining 21 failures.
+---
+
+**Original goal (kept for context)**: The RSL refinement proof (`src/protocol/RSL/refinement_proof/`) contains 20 `external_body` proof functions, and the supporting `common_proof/` has 8 more (total 28). These are trusted stubs inherited from the Dafny→Verus port. Fill in real proof bodies so Verus mechanically verifies them, reducing the trusted base.
+
+**Last status before deprecation (2026-03-08)**: Both `common_proof` and `refinement_proof` modules are now **uncommented** in `src/protocol/RSL/mod.rs` and compile cleanly (0 compilation errors). **Phase 31.9.4 step 3 IN PROGRESS**: Fixed `lemma_FirstProduceIntermediateAbstractStateProducesAbstractState` and `lemma_RequestInRequestsReceivedThisEpochHasCorrespondingRequestMessage`. **49 verified, 0 errors** at rlimit 80. **21 `external_body` annotations remain** on functions that still fail. Remaining failures are mostly rlimit-bound (need proof restructuring to guide Z3). Next: continue fixing remaining 21 failures.
 
 - [x] **31.8**: Fix compilation errors in `common_proof/` and `refinement_proof/` so they can be uncommented in `src/protocol/RSL/mod.rs`. [2026-03-07]
 - [ ] **31.9**: Run Verus verification with both modules enabled and confirm 0 errors. After 31.9.1 + import fix: 30 errors at rlimit 40 (down from 36 at rlimit 30). Breakdown: 11 assertion, 9 rlimit, 5 postcondition, 3 precondition, 1 termination. 39 verified. Decomposed below.
@@ -10518,11 +10550,15 @@ Rules for this phase (do not cut corners):
 
 ---
 
-## Phase 34: Raft Network Model and Complete Refinement Proof
+## Phase 34: Raft Network Model and Complete Refinement Proof — DEPRECATED (NOT PURSUED)
 
-**Goal**: Eliminate all remaining assumes in the Raft refinement proof by extending the Raft spec with an RSL-style network model and proving the full safety invariant inductively. This upgrades the Raft refinement from "partially trusted" to "fully machine-verified" (modulo IO trust boundary shared with RSL).
+**🛑 STATUS (2026-05-23)**: **Deprecated.** Decision: the remaining 12 assumes (7 LeaderCompleteness `assume(false)` blocked on the `d_rli ≤ k` wall + 4 sound Z3 workarounds + 1 SMS blocked on LC) are not worth pursuing in Verus. The strict-term LeaderCompleteness gap requires a well-founded induction on terms (Ongaro PhD thesis §3.6.1) which has resisted multiple attempts and faces fundamental SMT-blowup constraints. Raft's safety has been argued informally and the refinement structure is sound; the residual machine-checked gap is a known limitation, not an active project. Future Raft work should focus on transpiler-side improvements (Phase 21, 29, 40) rather than chasing the proof. The historical plan below is kept for reference but no further sub-tasks will be opened.
 
-**Context**: Phase 32 completed the refinement proof structure but left 6 assumes. Phases 34.1-34.6 added the network model and proved VotersVotedForCandidate, ElectionSafety, and LogMatching. Phases 34.7-34.9 partially proved LeaderCompleteness (equal-term cases done, 3 strict-term assumes resolved via ETHVQ vote dest uniqueness). Phases 34.11-34.15 fixed the spec, added SMS infrastructure invariants (ARLA, MILA, MIB, AELCB), and proved committed log monotonicity. **Current status**: 12 assumes remain (7 LC `assume(false)` blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). See `reports/raft_refinement_proof.md` for the full status.
+---
+
+**Original goal (kept for context)**: Eliminate all remaining assumes in the Raft refinement proof by extending the Raft spec with an RSL-style network model and proving the full safety invariant inductively. This upgrades the Raft refinement from "partially trusted" to "fully machine-verified" (modulo IO trust boundary shared with RSL).
+
+**Last status before deprecation**: Phase 32 completed the refinement proof structure but left 6 assumes. Phases 34.1-34.6 added the network model and proved VotersVotedForCandidate, ElectionSafety, and LogMatching. Phases 34.7-34.9 partially proved LeaderCompleteness (equal-term cases done, 3 strict-term assumes resolved via ETHVQ vote dest uniqueness). Phases 34.11-34.15 fixed the spec, added SMS infrastructure invariants (ARLA, MILA, MIB, AELCB), and proved committed log monotonicity. **Final state**: 12 assumes remain (7 LC `assume(false)` blocked on `d_rli ≤ k` wall, 4 sound Z3 workarounds, 1 SMS blocked on LC). See `reports/raft_refinement_proof.md` for the full status.
 
 **Dependency chain (current)**:
 ```
@@ -11333,7 +11369,7 @@ Phase 37 completion status (reassessed 2026-03-19 after local spot-check):
 
 ---
 
-## Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — TOP PRIORITY
+## Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs — HIGH PRIORITY (Phase 40 promoted above)
 
 **Goal**: Build a standalone DPOR-based model checker prototype for translated tla-rs specs under `transpiler/DPOR_based_model_tla_rs_checker/`. The first-class deliverables are:
 - an isolated workfolder that does **not** destabilize `transpiler/src/modelcheck`,
@@ -13796,3 +13832,219 @@ This is a **C#-only** migration; no Rust or proof work required.
   switching transports — the RSL protocol already assumes a lossy
   network at the spec layer, so no proof change is needed, but a
   bounded check with the model checker would be reassuring.
+
+## Phase 40: Transpiler-Emitted Impl Efficiency — Eliminate Whole-State Functional Clone — TOP PRIORITY
+
+### Motivation
+
+Auto-generated exec code currently mirrors spec functions one-for-one
+in a pure-functional style: every `ProcessXxx` action takes `&State`
+and returns a fresh `State`, rebuilding the entire top-level struct
+even when the action only touches one sub-component. This pattern
+shows up in **all 10 transpiled protocols**, not just RSL.
+
+Concrete pattern from `src/generated/RSL/replica_gen.rs:432-439`:
+
+```rust
+let result_replica = CReplica {
+    constants: s.constants.clone(),                  // always copied
+    nextHeartbeatTime: s.nextHeartbeatTime,
+    proposer: s.proposer.clone_up_to_view(),         // unchanged but cloned
+    acceptor: s_acceptor,                            // the actual delta
+    learner: s.learner.clone_up_to_view(),           // unchanged but cloned
+    executor: s.executor.clone_up_to_view(),         // unchanged but cloned
+};
+```
+
+There are **62 such rebuild sites in RSL's generated code** and **12-18
+each across the other 9 protocols** (Raft, Paxos, PBFT, EPaxos,
+VerticalPaxos, ChainReplication, PrimaryBackup, TwoPhase,
+LeaderElection).
+
+Worse, the sub-components contain HashMap/HashSet/Vec that **grow
+monotonically with time**:
+
+| Field                                                           | Growth driver                    |
+|-----------------------------------------------------------------|----------------------------------|
+| `CExecutor.reply_cache: HashMap<EndPoint, CReply>`              | one entry per client, value updated per reply |
+| `CLearner.unexecuted_ops: HashMap<COperationNumber, …>`         | proposal backlog                 |
+| `CProposer.highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>` | per-view per-client accumulation |
+| `CProposer.election_state.requests_received_this_epoch: Vec<CRequest>` | per-epoch accumulation        |
+| `CState.log: Vec<CLogEntry>` (Raft)                             | append-only until snapshot — **worst case for Raft** |
+
+`HashMap::clone()` is O(n) ⇒ per-call cost is O(throughput × Δt),
+which produces the observed throughput decay (trial 1 → trial 2:
+16,549 → 10,488 ops/s on zoo-002 for tla-rs auto-gen RSL).
+
+### Evidence
+
+1. **Benchmark gap** (zoo-002, 32 client threads × 30 s × 2 trials,
+   all `liblib.so` freshly built with `-C opt-level=3 --no-verify`):
+
+   | Variant                              | ops/s mean | latency mean |
+   |--------------------------------------|-----------:|-------------:|
+   | wasiq-inspect (hand-tuned `&mut self` + 2,407-line codex impl) | 28,646 | 1.36 ms |
+   | **tla-rs auto-gen (transpiler-emitted functional clone)**       | **13,518** | **3.0 ms** |
+   | Verus-IronFleet (hand-written `&mut self`, no batching tuning) | 4,895 | 7.98 ms |
+
+   wasiq is ~2.1× faster than tla-rs auto-gen; Verus-IronFleet's
+   `&mut self` baseline (without Wasiq's batching tricks) shows the
+   "structural" effect of `&mut self` over functional clone is ~2.8×.
+
+2. **gdb sampling on zoo-002 tla-rs leader** (60 samples × 15 threads
+   while client running 32 threads):
+
+   - 30 frames in `CProposer::clone_up_to_view` (single largest hot
+     spot in active code)
+   - 14 in `clone_request_batch_up_to_view`
+   - 11 in `clone_vec_u8` (EndPoint byte copies)
+   - 10 in `HashMap<EndPoint,_>::clone` (proposer client-seqno map)
+   - 9 in `CElectionState::clone_up_to_view`
+   - 9 in `drop_in_place<CProposer>` (paired with the clone)
+   - 8 in `RawTable<(EndPoint,_)>::clone`
+   - 3 in `CConfiguration::clone_up_to_view`
+   - 12 + 8 in `malloc` / `_int_malloc`, 12 in `free`
+   - **~83 of ~240 active CPU samples → ~35% of CPU is clone/drop/alloc.**
+
+3. **wasiq stability vs tla-rs decay**:
+
+   | Variant   | Trial 1 → Trial 2     |
+   |-----------|-----------------------|
+   | wasiq     | 28,711 → 28,580 ops/s (flat) |
+   | tla-rs    | 16,549 → 10,488 ops/s (−37%) |
+
+### Plan
+
+#### 40.1 Investigate alternative emit strategies
+
+- [ ] **40.1.a**: Document the four candidate fixes with their
+  ad-hoc-ness / proof-impact / expected speedup. Output: a short
+  design note under `transpiler/docs/EFFICIENT_EMIT.md`.
+  Candidates (ranked by uniformity):
+  - **(A) `Arc<T>` wrapping for unchanged sub-components** — single
+    type-level codegen rule, vstd already has View axioms for
+    `Arc<T>`. Estimated reach: kills ~30% CPU on tla-rs RSL (the
+    `clone_up_to_view` family above).
+  - **(B) Persistent data structures (`im::HashMap`, `im::Vec`)** —
+    swap container types. Clone becomes O(1), mutation O(log n).
+    Needs Verus adapter spec for `im` types.
+  - **(C) Mutation analysis emitting `&mut self`** — detect
+    `s_.f == s.f` (field unchanged) vs `s_.f == expr(s, …)` and emit
+    in-place mutation. Highest peak speedup; **most ad-hoc**, adds a
+    second codegen path + new proof template.
+  - **(D) Do nothing; let users hand-optimize hot paths.** Current
+    Wasiq model.
+- [ ] **40.1.b**: Pick the path. **Default recommendation: A (Arc) +
+  partial B (only for the demonstrably hot HashMap fields).** C is
+  rejected as too ad-hoc; D is the fallback if A doesn't pan out.
+
+#### 40.2 (Path A) Arc-wrap sub-components in the transpiler
+
+- [ ] **40.2.a**: Identify the spec types that map to "top-level
+  protocol state with sub-components" (e.g., `LReplica`, `LState`).
+  Currently the transpiler emits `CReplica { proposer, acceptor, … }`
+  with bare nested types; this step is the type-generator change.
+- [ ] **40.2.b**: Change `transpiler/src/codegen/` to emit
+  `pub proposer: Arc<CProposer>` etc. for sub-components. Field
+  access through Arc relies on autoderef — no body edits needed.
+- [ ] **40.2.c**: Emit `broadcast use vstd::sync::group_arc_axioms;`
+  at the top of every generated function body (mechanical template
+  insertion).
+- [ ] **40.2.d**: For functions whose spec only updates one
+  sub-component (the majority), the existing
+  `clone()` calls become `Arc::clone` ⇒ refcount bump, O(1). Verify
+  that `let new_s = CReplica { proposer: s.proposer.clone(), …,
+  acceptor: Arc::new(s_acceptor), … }` Verus-closes without further
+  hints.
+- [ ] **40.2.e**: For functions whose spec mutates inside a
+  sub-component (`s_.proposer.queue == s.proposer.queue.push(x)`),
+  emit `Arc::make_mut(&mut new_s.proposer).queue.push(x);`. Verify
+  Verus accepts `Arc::make_mut`'s view spec — vstd already supports
+  this; only proof-template emission is new.
+- [ ] **40.2.f**: Re-run the full 10-protocol generation. Aim for
+  ≥85% of functions to close without manual proof hints (matching
+  current transpiler's auto-close rate).
+
+#### 40.3 Bench regression: ensure efficiency lift is real
+
+- [ ] **40.3.a**: Rebuild `liblib.so` on `~/test/tla-rs` after Phase
+  40.2 lands. Capture timestamp + size.
+- [ ] **40.3.b**: Re-run the RSL UDP bench on zoo-002 / zoo-004 with
+  32 threads × 30 s × 2 trials. Target: **≥18 K ops/s on zoo-002
+  trial-1 (+33% vs pre-Phase-40 baseline of 13.5 K)**, and
+  **trial-2 ≥ trial-1 × 0.85** (decay reduced from 1.6× to ≤1.18×).
+- [ ] **40.3.c**: Re-run Raft bench (currently `bin/IronRaftClient.dll`
+  via `IronProtocolServer` with `protocol=raft`). Target:
+  **≥5 K ops/s on zoo-002** (Raft is currently 3.4 K ops/s baseline
+  per Phase 26 measurements; log-clone elimination should give the
+  biggest absolute lift).
+- [ ] **40.3.d**: Smoke other protocols (PBFT, Paxos, EPaxos,
+  PrimaryBackup, TwoPhase, etc.) — at minimum, run a 1-thread × 5 s
+  client to confirm no regression / no broken behavior. We do not
+  yet have benchmark clients for all of them.
+- [ ] **40.3.e**: Capture a fresh gdb sample profile on the Arc-ified
+  tla-rs RSL leader. Confirm `CProposer::clone_up_to_view` drops
+  out of the top frames (it should become `Arc::clone` — refcount
+  increment, sub-ns).
+
+#### 40.4 (Conditional, Path B) HashMap → persistent
+
+Only pursue if 40.3 results show throughput decay still present.
+
+- [ ] **40.4.a**: Identify hottest HashMap fields per gdb profile
+  (currently `highest_seqno_requested_by_client_this_view`,
+  `reply_cache`, `unexecuted_ops`).
+- [ ] **40.4.b**: Write a Verus-compatible adapter for `im::HashMap`
+  with `View == Map<K, V>` (vstd's `Map` is the abstract type).
+- [ ] **40.4.c**: Update transpiler config to emit `im::HashMap` for
+  these flagged fields. Per-protocol, not per-codebase.
+- [ ] **40.4.d**: Re-bench. Target: time decay completely flat
+  (trial-2 within 5% of trial-1).
+
+#### 40.5 Document + close the loop
+
+- [ ] **40.5.a**: Update `transpiler/docs/PATTERNS.md` with the new
+  Arc-wrapping pattern and emit examples.
+- [ ] **40.5.b**: Note in `transpiler/docs/LIMITATIONS.md` that the
+  remaining gap to hand-tuned implementations (e.g. wasiq's batching
+  reorg) is **algorithmic, not structural**, and is out of scope for
+  the transpiler.
+- [ ] **40.5.c**: Update README's "Transpiler" section with the new
+  perf numbers and the auto-gen-vs-handwritten gap.
+
+### Risk & Mitigation
+
+| Risk | Likelihood | Mitigation |
+|------|------------|------------|
+| Verus trigger heuristics destabilize on `Arc<T>::view()` paths | Medium | Add `broadcast use` templates; small lemma helpers; per-function rlimit bumps if needed |
+| `Arc::make_mut` proof template insufficient for some spec patterns | Medium | Fall back to functional clone for those functions; flag in a per-protocol audit table |
+| HashMap fields that are mutated frequently incur Arc overhead from `make_mut` clone-on-write | Low | Profile, then selectively un-Arc back to bare field if measurement shows regression |
+| Verus version drift breaks `vstd::sync::Arc` axioms | Low | Pin Verus version; same constraint as [[liblib-so-staleness]] memory |
+| Cache miss from Arc indirection adds latency | Very low | Arc is single pointer + 16-byte refcount header; modern CPU prefetcher handles |
+
+### Out of Scope (deferred to later phases)
+
+- Replicating Wasiq's specific Lab2 Part 3 optimizations (batching
+  reorg, custom request_queue layout) — these are **algorithmic
+  improvements** that belong in hand-written impls, not transpiler
+  output.
+- Switching the protocol layer to multi-threaded execution; current
+  model is single-threaded per replica.
+- Touching the spec layer at all — Phase 40 is impl-only.
+- Generic refactors to the C# / .NET I/O layer — orthogonal.
+
+### Expected outcome
+
+- **All 10 transpiled protocols** see structural perf lift,
+  proportional to the size of their "rarely-touched" sub-state.
+- tla-rs RSL: 13.5 K → 18-22 K ops/s on zoo-002 (close ~50% of the
+  gap to wasiq).
+- Raft: 3.4 K → 5-7 K ops/s (log-clone removal is the biggest single
+  win; Raft's `log: Vec<CLogEntry>` grows without bound and is
+  cloned on every `SendAppendEntries`).
+- Transpiler complexity grows by ~1 codegen rule (Arc-wrap) + ~1
+  proof template (Arc::make_mut), not a new code-gen path.
+- Refinement proofs continue to be auto-generated for ≥85% of
+  functions, same as current state. The remaining edge cases follow
+  the existing Phase 31 / Phase 34 pattern (Claude / human fills in
+  `assert` hints).
