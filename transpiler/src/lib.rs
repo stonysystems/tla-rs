@@ -245,6 +245,46 @@ impl Transpiler {
             }
         }
 
+        // Compute arc_wrap_fields from struct definitions even when generate_inline_types is false.
+        // This is needed for the translator to emit Arc::new() in struct construction.
+        if !self.config.arc_wrap_types.is_empty()
+            && translator_config.arc_wrap_fields.is_empty()
+        {
+            if let Ok(type_defs) = types::parse_types_from_file(spec_path) {
+                let registry = types::build_registry(type_defs);
+                let naming = crate::config::NamingConfig {
+                    spec_prefix: self.config.translator.spec_prefix.clone(),
+                    exec_prefix: self.config.translator.exec_prefix.clone(),
+                    ..Default::default()
+                };
+                for struct_def in registry.structs.values() {
+                    if struct_def.is_spec {
+                        let exec_name = naming.get_exec_type(&struct_def.name);
+                        if self.config.arc_wrap_types.contains(&exec_name) {
+                            let mut arc_fields = std::collections::HashSet::new();
+                            for field in &struct_def.fields {
+                                let is_scalar = matches!(
+                                    &field.ty,
+                                    crate::ast::Type::Bool
+                                        | crate::ast::Type::Int
+                                        | crate::ast::Type::Nat
+                                        | crate::ast::Type::Unit
+                                );
+                                if !is_scalar {
+                                    arc_fields.insert(field.name.clone());
+                                }
+                            }
+                            if !arc_fields.is_empty() {
+                                translator_config
+                                    .arc_wrap_fields
+                                    .insert(exec_name, arc_fields);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let has_auto_set_fields = !translator_config.set_fields.is_empty();
         let mut translator = Translator::new(translator_config);
         let mut printer = Printer::new(self.config.printer.clone());

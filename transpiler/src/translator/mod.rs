@@ -3563,7 +3563,9 @@ impl Translator {
                     return (fname, fexpr);
                 }
 
-                // Check if this is an unchanged field (clone/clone_up_to_view of input)
+                // Check if this is an unchanged field (clone/clone_up_to_view of input).
+                // With Arc wrapping, unchanged fields should use Arc::clone (O(1))
+                // instead of deep-cloning the inner value.
                 match &fexpr {
                     // s.field.clone_up_to_view() → s.field.clone() (Arc::clone, O(1))
                     ExecExpr::MethodCall {
@@ -3576,19 +3578,18 @@ impl Translator {
                     }
                     // s.field.clone() → already correct (Arc::clone)
                     ExecExpr::Clone(_) => (fname, fexpr),
-                    // clone_hashset(s.field) or similar clone helper → Arc::new(clone_result)
-                    ExecExpr::Call { func, .. }
-                        if func.starts_with("clone_hashset")
-                            || func.starts_with("clone_hashmap")
-                            || func.starts_with("clone_") =>
+                    // clone_hashset(&s.field) / clone_hashmap(&s.field) — unchanged field
+                    // clone. With Arc wrapping, use s.field.clone() (Arc::clone, O(1))
+                    // instead of deep-cloning + Arc::new().
+                    ExecExpr::Call { func, args }
+                        if (func.starts_with("clone_hashset")
+                            || func.starts_with("clone_hashmap"))
+                            && args.len() == 1
+                            && Self::is_ref_to_field_access(&args[0]) =>
                     {
-                        (
-                            fname,
-                            ExecExpr::Call {
-                                func: "Arc::new".to_string(),
-                                args: vec![fexpr],
-                            },
-                        )
+                        // Extract s.field from &s.field
+                        let inner = Self::strip_ref(&args[0]);
+                        (fname, ExecExpr::Clone(Box::new(inner)))
                     }
                     // New value (local variable, function call result, etc.) → Arc::new(value)
                     _ => (
@@ -3601,6 +3602,22 @@ impl Translator {
                 }
             })
             .collect()
+    }
+
+    /// Check if an expression is a reference to a field access (e.g., `&s.field`).
+    fn is_ref_to_field_access(expr: &ExecExpr) -> bool {
+        matches!(
+            expr,
+            ExecExpr::Unary { op, expr } if op == "&" && matches!(expr.as_ref(), ExecExpr::Field(_, _))
+        )
+    }
+
+    /// Strip a `&` reference from an expression, returning the inner expression.
+    fn strip_ref(expr: &ExecExpr) -> ExecExpr {
+        match expr {
+            ExecExpr::Unary { op, expr } if op == "&" => *expr.clone(),
+            _ => expr.clone(),
+        }
     }
 
     /// Check if a field name is a non-Copy collection type (Set/Map/Vec/HashMap/struct-typed Vec).
@@ -27911,6 +27928,40 @@ borrowed_args = [0]
         assert!(
             matches!(&result[0].1, ExecExpr::Var(n) if n == "s_proposer"),
             "Unlisted struct should not have Arc wrapping: {:?}",
+            result[0].1
+        );
+    }
+
+    #[test]
+    fn test_arc_wrap_struct_fields_clone_hashset_becomes_arc_clone() {
+        let mut config = TranslatorConfig::default();
+        let mut arc_fields = HashSet::new();
+        arc_fields.insert("tm_prepared".to_string());
+        config
+            .arc_wrap_fields
+            .insert("CState".to_string(), arc_fields);
+        let translator = Translator::new(config);
+
+        // clone_hashset_u64(&s.tm_prepared) → s.tm_prepared.clone() (Arc::clone)
+        let fields = vec![(
+            "tm_prepared".to_string(),
+            ExecExpr::Call {
+                func: "clone_hashset_u64".to_string(),
+                args: vec![ExecExpr::Unary {
+                    op: "&".to_string(),
+                    expr: Box::new(ExecExpr::Field(
+                        Box::new(ExecExpr::Var("s".to_string())),
+                        "tm_prepared".to_string(),
+                    )),
+                }],
+            },
+        )];
+
+        let result = translator.arc_wrap_struct_fields("CState", fields);
+
+        assert!(
+            matches!(&result[0].1, ExecExpr::Clone(inner) if matches!(inner.as_ref(), ExecExpr::Field(_, f) if f == "tm_prepared")),
+            "clone_hashset of unchanged field should become Arc::clone: {:?}",
             result[0].1
         );
     }

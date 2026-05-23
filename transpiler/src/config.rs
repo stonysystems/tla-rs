@@ -137,6 +137,15 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub arc_wrap_types: Vec<String>,
 
+    /// Per-struct field names that are Arc-wrapped in the generated code.
+    /// Used by the translator to emit `Arc::new(value)` for changed fields
+    /// and `.clone()` for unchanged fields in struct construction.
+    /// Computed automatically from `arc_wrap_types` + type definitions during
+    /// type generation, but can also be set manually for cross-file struct refs.
+    /// e.g., {"CState" = ["tm_prepared", "rm_prepared", "rm_committed", "rm_aborted"]}
+    #[serde(default)]
+    pub arc_wrap_fields: HashMap<String, Vec<String>>,
+
     /// Types to skip during generation (already manually implemented).
     /// These spec type names will be parsed but NOT generated as exec types.
     /// e.g., ["Ballot", "Request", "Reply", "Vote", "LearnerTuple"]

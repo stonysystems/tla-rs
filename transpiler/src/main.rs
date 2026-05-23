@@ -6054,7 +6054,11 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
             exec_prefix: file_config.naming.exec_prefix.clone(),
             generate_abstraction_fns: false,
             generate_validity_predicates: false,
-            arc_wrap_fields: HashMap::new(),
+            arc_wrap_fields: file_config
+                .arc_wrap_fields
+                .iter()
+                .map(|(k, v)| (k.clone(), v.iter().cloned().collect()))
+                .collect(),
         },
         custom_imports: file_config.output.custom_imports,
         generate_inline_types: file_config.output.generate_inline_types,
