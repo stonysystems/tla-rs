@@ -13953,15 +13953,22 @@ which produces the observed throughput decay (trial 1 → trial 2:
 - [x] **40.2.b**: Change `transpiler/src/codegen/` to emit
   `pub proposer: Arc<CProposer>` etc. for sub-components. Field
   access through Arc relies on autoderef — no body edits needed.
-- [ ] **40.2.c**: Emit `broadcast use vstd::sync::group_arc_axioms;`
-  at the top of every generated function body (mechanical template
-  insertion).
-- [ ] **40.2.d**: For functions whose spec only updates one
+- [x] **40.2.c**: ~~Emit `broadcast use vstd::sync::group_arc_axioms;`~~
+  N/A — vstd has no `group_arc_axioms` broadcast group. Arc's View is
+  `#[verifier::inline]` (vstd/view.rs:84) and `Arc::new` spec is in
+  `vstd/std_specs/smart_ptrs.rs` (assume_specification, auto-available).
+  No broadcast use needed.
+- [x] **40.2.d**: For functions whose spec only updates one
   sub-component (the majority), the existing
   `clone()` calls become `Arc::clone` ⇒ refcount bump, O(1). Verify
   that `let new_s = CReplica { proposer: s.proposer.clone(), …,
   acceptor: Arc::new(s_acceptor), … }` Verus-closes without further
   hints.
+  **Implementation**: Added `arc_wrap_fields: HashMap<String, HashSet<String>>`
+  to TranslatorConfig. `arc_wrap_struct_fields()` post-processes struct
+  construction: changed fields → `Arc::new(value)`, unchanged
+  `clone_up_to_view()` → `.clone()` (Arc::clone, O(1)). Computed from
+  struct definitions + `arc_wrap_types` in `transpile_file_inner`.
 - [ ] **40.2.e**: For functions whose spec mutates inside a
   sub-component (`s_.proposer.queue == s.proposer.queue.push(x)`),
   emit `Arc::make_mut(&mut new_s.proposer).queue.push(x);`. Verify

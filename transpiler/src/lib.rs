@@ -121,6 +121,9 @@ pub struct TranspilerConfig {
     /// Message type pair (ExecType, SpecType) for generating `lemma_empty_msg_map()`.
     /// Used by composite handlers that return `(CState, Vec<CMessage>)`.
     pub msg_vec_type: Option<(String, String)>,
+    /// Exec type names whose non-scalar fields should be wrapped in Arc<T>.
+    /// Used to compute arc_wrap_fields for the translator.
+    pub arc_wrap_types: Vec<String>,
 }
 
 /// A function that was automatically skipped during transpilation.
@@ -214,6 +217,29 @@ impl Transpiler {
                     if has_set_field {
                         let exec_name = naming.get_exec_type(&struct_def.name);
                         auto_clone_strategy.insert(exec_name, "external_body".to_string());
+                    }
+
+                    // Compute arc_wrap_fields for this struct if it's in arc_wrap_types
+                    let exec_name = naming.get_exec_type(&struct_def.name);
+                    if self.config.arc_wrap_types.contains(&exec_name) {
+                        let mut arc_fields = std::collections::HashSet::new();
+                        for field in &struct_def.fields {
+                            let is_scalar = matches!(
+                                &field.ty,
+                                crate::ast::Type::Bool
+                                    | crate::ast::Type::Int
+                                    | crate::ast::Type::Nat
+                                    | crate::ast::Type::Unit
+                            );
+                            if !is_scalar {
+                                arc_fields.insert(field.name.clone());
+                            }
+                        }
+                        if !arc_fields.is_empty() {
+                            translator_config
+                                .arc_wrap_fields
+                                .insert(exec_name, arc_fields);
+                        }
                     }
                 }
             }
