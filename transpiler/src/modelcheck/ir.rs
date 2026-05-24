@@ -1,5 +1,6 @@
 use crate::ast::{BinOp, Binding, Expr, SpecFunction, Type};
 use crate::error::{TranspileError, TranspileResult};
+use std::sync::Arc;
 
 /// Normalized transition IR extracted from `LNext`.
 #[derive(Debug, Clone)]
@@ -1080,25 +1081,25 @@ fn try_eval_constant(expr: &Expr) -> Option<RuntimeValue> {
             for item in items {
                 set.insert(try_eval_constant(item)?);
             }
-            Some(RuntimeValue::Set(set))
+            Some(RuntimeValue::Set(Arc::new(set)))
         }
         Expr::SeqLit(items) => {
             let mut seq = Vec::with_capacity(items.len());
             for item in items {
                 seq.push(try_eval_constant(item)?);
             }
-            Some(RuntimeValue::Seq(seq))
+            Some(RuntimeValue::Seq(Arc::new(seq)))
         }
         Expr::MapLit(entries) => {
             let mut map = BTreeMap::new();
             for (k, v) in entries {
                 map.insert(try_eval_constant(k)?, try_eval_constant(v)?);
             }
-            Some(RuntimeValue::Map(map))
+            Some(RuntimeValue::Map(Arc::new(map)))
         }
-        Expr::SeqEmpty => Some(RuntimeValue::Seq(Vec::new())),
-        Expr::SetEmpty => Some(RuntimeValue::Set(BTreeSet::new())),
-        Expr::MapEmpty => Some(RuntimeValue::Map(BTreeMap::new())),
+        Expr::SeqEmpty => Some(RuntimeValue::Seq(Arc::new(Vec::new()))),
+        Expr::SetEmpty => Some(RuntimeValue::Set(Arc::new(BTreeSet::new()))),
+        Expr::MapEmpty => Some(RuntimeValue::Map(Arc::new(BTreeMap::new()))),
         Expr::ConstantValue(v) => Some(v.clone()),
         _ => None,
     }
@@ -1133,7 +1134,7 @@ fn constant_fold_expr(expr: Expr) -> Expr {
                         _ => unreachable!(),
                     })
                     .collect();
-                return Expr::ConstantValue(RuntimeValue::Set(set));
+                return Expr::ConstantValue(RuntimeValue::Set(Arc::new(set)));
             }
             Expr::SetLit(folded)
         }
@@ -1147,7 +1148,7 @@ fn constant_fold_expr(expr: Expr) -> Expr {
                         _ => unreachable!(),
                     })
                     .collect();
-                return Expr::ConstantValue(RuntimeValue::Seq(seq));
+                return Expr::ConstantValue(RuntimeValue::Seq(Arc::new(seq)));
             }
             Expr::SeqLit(folded)
         }
@@ -1166,7 +1167,7 @@ fn constant_fold_expr(expr: Expr) -> Expr {
                         _ => unreachable!(),
                     })
                     .collect();
-                return Expr::ConstantValue(RuntimeValue::Map(map));
+                return Expr::ConstantValue(RuntimeValue::Map(Arc::new(map)));
             }
             Expr::MapLit(folded)
         }
@@ -1632,7 +1633,7 @@ mod tests {
         let folded = constant_fold_expr(expr);
         match folded {
             Expr::ConstantValue(RuntimeValue::Seq(seq)) => {
-                assert_eq!(seq, vec![RuntimeValue::Int(10), RuntimeValue::Int(20)]);
+                assert_eq!(*seq, vec![RuntimeValue::Int(10), RuntimeValue::Int(20)]);
             }
             other => panic!("Expected ConstantValue(Seq), got {:?}", other),
         }

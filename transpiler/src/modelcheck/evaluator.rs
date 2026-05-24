@@ -3,6 +3,7 @@ use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use std::cell::RefCell;
+use std::sync::Arc;
 
 pub type CallEvaluator<'a> = dyn Fn(&Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
 pub type MethodEvaluator<'a> =
@@ -427,9 +428,22 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         Expr::Index(base, idx) => {
             let base = eval_expr(base, ctx)?;
             let idx = eval_expr(idx, ctx)?;
-            match base {
-                RuntimeValue::Seq(items) | RuntimeValue::Tuple(items) => {
-                    let position = expect_index(&idx, "sequence/tuple index")?;
+            match &base {
+                RuntimeValue::Seq(items) => {
+                    let position = expect_index(&idx, "sequence index")?;
+                    items.get(position).cloned().ok_or_else(|| {
+                        type_error(
+                            format!(
+                                "Index {} out of bounds for length {}.",
+                                position,
+                                items.len()
+                            )
+                            .as_str(),
+                        )
+                    })
+                }
+                RuntimeValue::Tuple(items) => {
+                    let position = expect_index(&idx, "tuple index")?;
                     items.get(position).cloned().ok_or_else(|| {
                         type_error(
                             format!(
@@ -1189,7 +1203,7 @@ fn eval_builtin_method(
             match receiver {
                 RuntimeValue::Map(entries) => {
                     let keys = entries.keys().cloned().collect();
-                    Ok(Some(RuntimeValue::Set(keys)))
+                    Ok(Some(RuntimeValue::Set(Arc::new(keys))))
                 }
                 other => Err(type_error(
                     format!(
@@ -1206,17 +1220,17 @@ fn eval_builtin_method(
                     if args.len() != 1 {
                         return Err(type_error("Set `.insert(...)` expects one argument."));
                     }
-                    let mut next = items.clone();
+                    let mut next = (**items).clone();
                     next.insert(args[0].clone());
-                    Ok(Some(RuntimeValue::Set(next)))
+                    Ok(Some(RuntimeValue::Set(Arc::new(next))))
                 }
                 RuntimeValue::Map(entries) => {
                     if args.len() != 2 {
                         return Err(type_error("Map `.insert(key, value)` expects two arguments."));
                     }
-                    let mut next = entries.clone();
+                    let mut next = (**entries).clone();
                     next.insert(args[0].clone(), args[1].clone());
-                    Ok(Some(RuntimeValue::Map(next)))
+                    Ok(Some(RuntimeValue::Map(Arc::new(next))))
                 }
                 other => Err(type_error(
                     format!(
@@ -1233,9 +1247,9 @@ fn eval_builtin_method(
             }
             match receiver {
                 RuntimeValue::Set(items) => {
-                    let mut next = items.clone();
+                    let mut next = (**items).clone();
                     next.remove(&args[0]);
-                    Ok(Some(RuntimeValue::Set(next)))
+                    Ok(Some(RuntimeValue::Set(Arc::new(next))))
                 }
                 other => Err(type_error(
                     format!(
@@ -1253,7 +1267,7 @@ fn eval_builtin_method(
             match (receiver, &args[0]) {
                 (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
                     let result: std::collections::BTreeSet<_> = a.union(b).cloned().collect();
-                    Ok(Some(RuntimeValue::Set(result)))
+                    Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
                 _ => Err(type_error("`.union(...)` expects Set receiver and Set argument.")),
             }
@@ -1265,7 +1279,7 @@ fn eval_builtin_method(
             match (receiver, &args[0]) {
                 (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
                     let result: std::collections::BTreeSet<_> = a.difference(b).cloned().collect();
-                    Ok(Some(RuntimeValue::Set(result)))
+                    Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
                 _ => Err(type_error("`.difference(...)` expects Set receiver and Set argument.")),
             }
@@ -1277,7 +1291,7 @@ fn eval_builtin_method(
             match (receiver, &args[0]) {
                 (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
                     let result: std::collections::BTreeSet<_> = a.intersection(b).cloned().collect();
-                    Ok(Some(RuntimeValue::Set(result)))
+                    Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
                 _ => Err(type_error("`.intersect(...)` expects Set receiver and Set argument.")),
             }
@@ -1288,7 +1302,7 @@ fn eval_builtin_method(
             }
             match receiver {
                 RuntimeValue::Seq(items) => {
-                    let mut next = items.clone();
+                    let mut next = (**items).clone();
                     next.push(args[0].clone());
                     Ok(Some(RuntimeValue::seq_bounded(next, &bounds)?))
                 }
@@ -1510,7 +1524,7 @@ fn eval_set_map_with_closure(
         result.insert(value);
     }
 
-    Ok(RuntimeValue::Set(result))
+    Ok(RuntimeValue::Set(Arc::new(result)))
 }
 
 fn eval_map_new_with_closure(
@@ -1796,7 +1810,7 @@ mod tests {
             args: vec![],
         };
         let seq_out = eval_expr(&seq_expr, &EvalContext::new(test_bounds())).unwrap();
-        assert_eq!(seq_out, RuntimeValue::Seq(Vec::new()));
+        assert_eq!(seq_out, RuntimeValue::Seq(Arc::new(Vec::new())));
     }
 
     #[test]
@@ -1841,11 +1855,11 @@ mod tests {
         let insert_out = eval_expr(&insert_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(
             insert_out,
-            RuntimeValue::Set(
+            RuntimeValue::Set(Arc::new(
                 [RuntimeValue::Int(3), RuntimeValue::Int(4)]
                     .into_iter()
                     .collect()
-            )
+            ))
         );
 
         let remove_expr = Expr::MethodCall {
@@ -1859,7 +1873,7 @@ mod tests {
         let remove_out = eval_expr(&remove_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(
             remove_out,
-            RuntimeValue::Set([RuntimeValue::Int(4)].into_iter().collect())
+            RuntimeValue::Set(Arc::new([RuntimeValue::Int(4)].into_iter().collect()))
         );
 
         let push_expr = Expr::MethodCall {
@@ -1870,7 +1884,7 @@ mod tests {
         let push_out = eval_expr(&push_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(
             push_out,
-            RuntimeValue::Seq(vec![RuntimeValue::Int(3), RuntimeValue::Int(4)])
+            RuntimeValue::Seq(Arc::new(vec![RuntimeValue::Int(3), RuntimeValue::Int(4)]))
         );
     }
 
@@ -2178,7 +2192,7 @@ mod tests {
             &ctx,
         )
         .unwrap();
-        assert_eq!(seq_empty, RuntimeValue::Seq(Vec::new()));
+        assert_eq!(seq_empty, RuntimeValue::Seq(Arc::new(Vec::new())));
 
         let set_empty = eval_expr(
             &Expr::Call {
@@ -2190,7 +2204,7 @@ mod tests {
             &ctx,
         )
         .unwrap();
-        assert_eq!(set_empty, RuntimeValue::Set(Default::default()));
+        assert_eq!(set_empty, RuntimeValue::Set(Arc::new(Default::default())));
 
         let map_empty = eval_expr(
             &Expr::Call {
@@ -2202,7 +2216,7 @@ mod tests {
             &ctx,
         )
         .unwrap();
-        assert_eq!(map_empty, RuntimeValue::Map(Default::default()));
+        assert_eq!(map_empty, RuntimeValue::Map(Arc::new(Default::default())));
     }
 
     #[test]

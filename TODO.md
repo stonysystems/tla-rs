@@ -13504,11 +13504,15 @@ tiers, ordered biggest-gain-per-effort first.
   BFS dedup and the DPOR sleep-set explorer.
   Measured: Paxos 8/5 BFS 6,033 → **945 states** (6.4× reduction);
   Election 4 nodes 2,839 → **1,263 states** (55% reduction).
-- [ ] **38.21.E**: **Hash-cons / `Arc<RuntimeValue>` for shared
-  subterms**. Most successors share most fields with the predecessor
-  (only one field changes per transition). Currently we deep-clone
-  the entire state. With `Arc`, clone becomes refcount bump and
-  unchanged fields are shared. Memory + clone-speed win. 3-4 days.
+- [x] **38.21.E**: **`Arc`-wrap RuntimeValue collections for shared
+  subterms.** Changed `Seq(Vec<RuntimeValue>)` → `Seq(Arc<Vec<...>>)`,
+  `Set(BTreeSet<...>)` → `Set(Arc<BTreeSet<...>>)`, `Map(BTreeMap<...>)` →
+  `Map(Arc<BTreeMap<...>>)`. Cloning a RuntimeValue with set/map/seq fields
+  is now a refcount bump instead of deep-cloning the collection. Mutation
+  sites use `(**items).clone()` for copy-on-write. Split `Seq|Tuple`
+  combined pattern matches into separate arms (different inner types).
+  Updated constructors, mutation sites, and iteration patterns across 8
+  files. 1682 unit tests pass, 0 regressions. *DONE.*
 - [x] **38.21.F**: **Stateful DPOR** — analyzed and implemented.
   The explorer already had stateful pruning (`is_new` gate on line 455
   skips re-exploration of seen states). The remaining optimization was
@@ -13705,9 +13709,9 @@ Implementation paths:
       lookup in FieldLayout has comparable overhead. **Deferred** — marginal
       benefit vs complexity. The real wins are in hash-cons (38.22.2.c) and
       eval codegen (38.22.1.b/c).
-- [ ] **38.22.2.c**: **Hash-cons / `Arc<RuntimeValue>` for shared
-  subterms.** Most successors share most fields with the predecessor;
-  with Arc, clone becomes refcount bump. *1 week. Combines with .b.*
+- [x] **38.22.2.c**: **`Arc<RuntimeValue>` for shared subterms.**
+  Implemented as part of 38.21.E. Set/Map/Seq inner collections are
+  now `Arc`-wrapped; clone becomes refcount bump. *DONE.*
 - [ ] **38.22.2.d**: **Bit-packed representation for small enum
   variants and small integer sets.** Domain-specific; for Paxos's
   Set<int> over {1..8}, a bitmap (u8) is ~32× smaller than

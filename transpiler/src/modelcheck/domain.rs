@@ -6,6 +6,7 @@ use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
 use crate::spec_analyzer::SpecSchema;
 use crate::types::{EnumDef, StructDef, VariantFields};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 /// Concrete assignment for existential variables in one `LNext` branch.
 pub type ExistentialAssignment = BTreeMap<String, RuntimeValue>;
@@ -745,7 +746,7 @@ fn generate_seq_values_recursive(
     current: &mut Vec<RuntimeValue>,
     out: &mut Vec<RuntimeValue>,
 ) -> TranspileResult<()> {
-    out.push(RuntimeValue::Seq(current.clone()));
+    out.push(RuntimeValue::Seq(Arc::new(current.clone())));
     if out.len() > expansion_limit {
         return Err(TranspileError::Config {
             message: format!(
@@ -793,7 +794,7 @@ fn generate_set_values_recursive(
 ) -> TranspileResult<()> {
     if current.len() <= max_len {
         let set = current.iter().cloned().collect::<BTreeSet<_>>();
-        out.push(RuntimeValue::Set(set));
+        out.push(RuntimeValue::Set(Arc::new(set)));
         if out.len() > expansion_limit {
             return Err(TranspileError::Config {
                 message: format!(
@@ -852,7 +853,7 @@ fn generate_map_values_recursive(
     current: &mut BTreeMap<RuntimeValue, RuntimeValue>,
     out: &mut Vec<RuntimeValue>,
 ) -> TranspileResult<()> {
-    out.push(RuntimeValue::Map(current.clone()));
+    out.push(RuntimeValue::Map(Arc::new(current.clone())));
     if out.len() > expansion_limit {
         return Err(TranspileError::Config {
             message: format!(

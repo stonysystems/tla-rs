@@ -2432,6 +2432,7 @@ fn expr_to_static_runtime_value(
     expr: &verus_transpiler::ast::Expr,
 ) -> Option<verus_transpiler::modelcheck::value::RuntimeValue> {
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
     use verus_transpiler::ast::{Expr, Literal, UnaryOp};
     use verus_transpiler::modelcheck::value::RuntimeValue;
 
@@ -2471,13 +2472,13 @@ fn expr_to_static_runtime_value(
             _ => None,
         },
         Expr::Cast(inner, _) => expr_to_static_runtime_value(inner),
-        Expr::SeqEmpty => Some(RuntimeValue::Seq(Vec::new())),
-        Expr::SetEmpty => Some(RuntimeValue::Set(BTreeSet::new())),
-        Expr::MapEmpty => Some(RuntimeValue::Map(BTreeMap::new())),
+        Expr::SeqEmpty => Some(RuntimeValue::Seq(Arc::new(Vec::new()))),
+        Expr::SetEmpty => Some(RuntimeValue::Set(Arc::new(BTreeSet::new()))),
+        Expr::MapEmpty => Some(RuntimeValue::Map(Arc::new(BTreeMap::new()))),
         Expr::Call { func, args } if args.is_empty() => match call_empty_constructor_kind(func) {
-            Some("seq") => Some(RuntimeValue::Seq(Vec::new())),
-            Some("set") => Some(RuntimeValue::Set(BTreeSet::new())),
-            Some("map") => Some(RuntimeValue::Map(BTreeMap::new())),
+            Some("seq") => Some(RuntimeValue::Seq(Arc::new(Vec::new()))),
+            Some("set") => Some(RuntimeValue::Set(Arc::new(BTreeSet::new()))),
+            Some("map") => Some(RuntimeValue::Map(Arc::new(BTreeMap::new()))),
             _ => None,
         },
         Expr::SeqLit(items) => {
@@ -2485,14 +2486,14 @@ fn expr_to_static_runtime_value(
             for item in items {
                 out.push(expr_to_static_runtime_value(item)?);
             }
-            Some(RuntimeValue::Seq(out))
+            Some(RuntimeValue::Seq(Arc::new(out)))
         }
         Expr::SetLit(items) => {
             let mut out = BTreeSet::new();
             for item in items {
                 out.insert(expr_to_static_runtime_value(item)?);
             }
-            Some(RuntimeValue::Set(out))
+            Some(RuntimeValue::Set(Arc::new(out)))
         }
         Expr::MapLit(entries) => {
             let mut out = BTreeMap::new();
@@ -2503,7 +2504,7 @@ fn expr_to_static_runtime_value(
                     return None;
                 }
             }
-            Some(RuntimeValue::Map(out))
+            Some(RuntimeValue::Map(Arc::new(out)))
         }
         Expr::ConstantValue(v) => Some(v.clone()),
         _ => None,
@@ -9024,6 +9025,7 @@ max = 1
     fn test_case19_epaxos_propose_helper_is_satisfiable_from_init_with_record_packets() {
         use std::collections::BTreeSet;
         use std::path::PathBuf;
+        use std::sync::Arc;
         use verus_transpiler::ast::Path;
         use verus_transpiler::modelcheck::config::parse_model_config_str;
         use verus_transpiler::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
@@ -9049,9 +9051,9 @@ max = 1
         .unwrap();
         let bounds = RuntimeCollectionBounds::from(&model_config.collections);
 
-        let empty_set = || RuntimeValue::Set(BTreeSet::new());
+        let empty_set = || RuntimeValue::Set(Arc::new(BTreeSet::new()));
         let singleton_set =
-            |v: i128| RuntimeValue::Set(BTreeSet::from([RuntimeValue::Int(v)]));
+            |v: i128| RuntimeValue::Set(Arc::new(BTreeSet::from([RuntimeValue::Int(v)])));
 
         let init_state = RuntimeValue::struct_value(
             "LState",

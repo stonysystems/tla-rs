@@ -8,6 +8,7 @@
 //! extraction) rather than shelling out to a subprocess.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::error::TranspileResult;
 use crate::modelcheck::config::parse_model_config_file;
@@ -198,11 +199,11 @@ impl SpecContext {
                 || matches!(&field.ty, Type::Generic(p, _) if p.last() == Some("Seq"));
 
             let domain = if is_set {
-                vec![RuntimeValue::Set(BTreeSet::new())]
+                vec![RuntimeValue::Set(Arc::new(BTreeSet::new()))]
             } else if is_map {
-                vec![RuntimeValue::Map(BTreeMap::new())]
+                vec![RuntimeValue::Map(Arc::new(BTreeMap::new()))]
             } else if is_seq {
-                vec![RuntimeValue::Seq(Vec::new())]
+                vec![RuntimeValue::Seq(Arc::new(Vec::new()))]
             } else {
                 match &field.ty {
                     _ => {
@@ -1053,15 +1054,22 @@ fn detect_process_scoped_update_field(
     let successor_value = top_level_state_field(successor_state, field)?;
     match (current_value, successor_value) {
         (RuntimeValue::Map(current_entries), RuntimeValue::Map(successor_entries)) => {
-            let changed_pid = single_changed_map_process_key(current_entries, successor_entries)?;
+            let changed_pid = single_changed_map_process_key(&current_entries, &successor_entries)?;
             if changed_pid == process_id {
                 Some(changed_pid)
             } else {
                 None
             }
         }
-        (RuntimeValue::Seq(current_items), RuntimeValue::Seq(successor_items))
-        | (RuntimeValue::Tuple(current_items), RuntimeValue::Tuple(successor_items)) => {
+        (RuntimeValue::Seq(current_items), RuntimeValue::Seq(successor_items)) => {
+            let changed_pid = single_changed_sequence_index(&current_items, &successor_items)?;
+            if changed_pid == process_id {
+                Some(changed_pid)
+            } else {
+                None
+            }
+        }
+        (RuntimeValue::Tuple(current_items), RuntimeValue::Tuple(successor_items)) => {
             let changed_pid = single_changed_sequence_index(current_items, successor_items)?;
             if changed_pid == process_id {
                 Some(changed_pid)
@@ -1184,6 +1192,35 @@ fn infer_process_id_from_state_delta(
     ProcessId(stable_nonzero_process_hash(fallback_seed))
 }
 
+fn collect_pid_candidates_from_seq_delta(
+    current_items: &[RuntimeValue],
+    successor_items: &[RuntimeValue],
+    candidates: &mut std::collections::BTreeSet<u32>,
+) {
+    for idx in 0..current_items.len().max(successor_items.len()) {
+        match (current_items.get(idx), successor_items.get(idx)) {
+            (Some(current_item), Some(successor_item)) => {
+                if current_item != successor_item {
+                    if let Ok(pid) = u32::try_from(idx) {
+                        candidates.insert(pid);
+                    }
+                    collect_process_id_candidates_from_delta(
+                        current_item,
+                        successor_item,
+                        candidates,
+                    );
+                }
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                if let Ok(pid) = u32::try_from(idx) {
+                    candidates.insert(pid);
+                }
+            }
+            (None, None) => {}
+        }
+    }
+}
+
 fn collect_process_id_candidates_from_delta(
     current: &RuntimeValue,
     successor: &RuntimeValue,
@@ -1224,33 +1261,14 @@ fn collect_process_id_candidates_from_delta(
                 }
             }
         }
-        (RuntimeValue::Tuple(current_items), RuntimeValue::Tuple(successor_items))
-        | (RuntimeValue::Seq(current_items), RuntimeValue::Seq(successor_items)) => {
-            for idx in 0..current_items.len().max(successor_items.len()) {
-                match (current_items.get(idx), successor_items.get(idx)) {
-                    (Some(current_item), Some(successor_item)) => {
-                        if current_item != successor_item {
-                            if let Ok(pid) = u32::try_from(idx) {
-                                candidates.insert(pid);
-                            }
-                            collect_process_id_candidates_from_delta(
-                                current_item,
-                                successor_item,
-                                candidates,
-                            );
-                        }
-                    }
-                    (Some(_), None) | (None, Some(_)) => {
-                        if let Ok(pid) = u32::try_from(idx) {
-                            candidates.insert(pid);
-                        }
-                    }
-                    (None, None) => {}
-                }
-            }
+        (RuntimeValue::Tuple(current_items), RuntimeValue::Tuple(successor_items)) => {
+            collect_pid_candidates_from_seq_delta(current_items, successor_items, candidates);
+        }
+        (RuntimeValue::Seq(current_items), RuntimeValue::Seq(successor_items)) => {
+            collect_pid_candidates_from_seq_delta(&current_items, &successor_items, candidates);
         }
         (RuntimeValue::Map(current_entries), RuntimeValue::Map(successor_entries)) => {
-            for (key, current_value) in current_entries {
+            for (key, current_value) in current_entries.iter() {
                 match successor_entries.get(key) {
                     Some(successor_value) => {
                         if current_value != successor_value {
@@ -1596,7 +1614,7 @@ max_seq_len = 4
         let mut before_fields = nf([]);
         before_fields.insert(
             sym("pc"),
-            RuntimeValue::Map(std::collections::BTreeMap::from([
+            RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                 (
                     RuntimeValue::Int(0),
                     RuntimeValue::String("idle".to_string()),
@@ -1605,14 +1623,14 @@ max_seq_len = 4
                     RuntimeValue::Int(1),
                     RuntimeValue::String("idle".to_string()),
                 ),
-            ])),
+            ]))),
         );
         let before = RuntimeValue::struct_value_sym("S", before_fields);
 
         let mut after_fields = nf([]);
         after_fields.insert(
             sym("pc"),
-            RuntimeValue::Map(std::collections::BTreeMap::from([
+            RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                 (
                     RuntimeValue::Int(0),
                     RuntimeValue::String("wait".to_string()),
@@ -1621,7 +1639,7 @@ max_seq_len = 4
                     RuntimeValue::Int(1),
                     RuntimeValue::String("idle".to_string()),
                 ),
-            ])),
+            ]))),
         );
         let after = RuntimeValue::struct_value_sym("S", after_fields);
 
@@ -1633,7 +1651,7 @@ max_seq_len = 4
     fn test_refine_transition_footprint_process_scoped_map_update() {
         let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
-                RuntimeValue::Map(std::collections::BTreeMap::from([
+                RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
                         RuntimeValue::String("idle".to_string()),
@@ -1642,11 +1660,11 @@ max_seq_len = 4
                         RuntimeValue::Int(1),
                         RuntimeValue::String("idle".to_string()),
                     ),
-                ])),
+                ]))),
             )]));
         let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
-                RuntimeValue::Map(std::collections::BTreeMap::from([
+                RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
                         RuntimeValue::String("wait".to_string()),
@@ -1655,7 +1673,7 @@ max_seq_len = 4
                         RuntimeValue::Int(1),
                         RuntimeValue::String("idle".to_string()),
                     ),
-                ])),
+                ]))),
             )]));
 
         let base = TransitionFootprint {
@@ -1674,19 +1692,19 @@ max_seq_len = 4
     fn test_refine_transition_footprint_process_scoped_seq_update() {
         let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("tickets"),
-                RuntimeValue::Seq(vec![
+                RuntimeValue::Seq(Arc::new(vec![
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(0),
-                ]),
+                ])),
             )]));
         let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("tickets"),
-                RuntimeValue::Seq(vec![
+                RuntimeValue::Seq(Arc::new(vec![
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(1),
                     RuntimeValue::Int(0),
-                ]),
+                ])),
             )]));
 
 
@@ -1706,17 +1724,17 @@ max_seq_len = 4
     fn test_refine_transition_footprint_keeps_coarse_for_ambiguous_map_delta() {
         let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("flag"),
-                RuntimeValue::Map(std::collections::BTreeMap::from([
+                RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(false)),
                     (RuntimeValue::Int(1), RuntimeValue::Bool(false)),
-                ])),
+                ]))),
             )]));
         let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("flag"),
-                RuntimeValue::Map(std::collections::BTreeMap::from([
+                RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(true)),
                     (RuntimeValue::Int(1), RuntimeValue::Bool(true)),
-                ])),
+                ]))),
             )]));
 
 
@@ -1763,7 +1781,7 @@ max_seq_len = 4
     fn test_derive_conservative_unknown_footprint_process_scoped_update_is_keyed() {
         let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
-                RuntimeValue::Map(std::collections::BTreeMap::from([
+                RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
                         RuntimeValue::String("idle".to_string()),
@@ -1772,11 +1790,11 @@ max_seq_len = 4
                         RuntimeValue::Int(1),
                         RuntimeValue::String("idle".to_string()),
                     ),
-                ])),
+                ]))),
             )]));
         let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
-                RuntimeValue::Map(std::collections::BTreeMap::from([
+                RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
                         RuntimeValue::String("wait".to_string()),
@@ -1785,7 +1803,7 @@ max_seq_len = 4
                         RuntimeValue::Int(1),
                         RuntimeValue::String("idle".to_string()),
                     ),
-                ])),
+                ]))),
             )]));
         let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
         assert_eq!(derived.reads, ["pc[0]".to_string()].into());
@@ -1796,7 +1814,7 @@ max_seq_len = 4
     fn test_derive_conservative_unknown_footprint_ambiguous_update_stays_coarse() {
         let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
-                RuntimeValue::Map(std::collections::BTreeMap::from([
+                RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
                         RuntimeValue::String("idle".to_string()),
@@ -1805,11 +1823,11 @@ max_seq_len = 4
                         RuntimeValue::Int(1),
                         RuntimeValue::String("idle".to_string()),
                     ),
-                ])),
+                ]))),
             )]));
         let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
-                RuntimeValue::Map(std::collections::BTreeMap::from([
+                RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
                         RuntimeValue::Int(0),
                         RuntimeValue::String("wait".to_string()),
@@ -1818,7 +1836,7 @@ max_seq_len = 4
                         RuntimeValue::Int(1),
                         RuntimeValue::String("wait".to_string()),
                     ),
-                ])),
+                ]))),
             )]));
 
         let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));

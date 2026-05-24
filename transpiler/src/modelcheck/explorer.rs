@@ -907,17 +907,22 @@ fn collect_ints_into(value: &RuntimeValue, out: &mut BTreeSet<i128>) {
             out.insert(*v);
         }
         RuntimeValue::Set(items) => {
-            for item in items {
+            for item in items.iter() {
                 collect_ints_into(item, out);
             }
         }
-        RuntimeValue::Seq(items) | RuntimeValue::Tuple(items) => {
+        RuntimeValue::Seq(items) => {
+            for item in items.iter() {
+                collect_ints_into(item, out);
+            }
+        }
+        RuntimeValue::Tuple(items) => {
             for item in items {
                 collect_ints_into(item, out);
             }
         }
         RuntimeValue::Map(entries) => {
-            for (k, v) in entries {
+            for (k, v) in entries.iter() {
                 collect_ints_into(k, out);
                 collect_ints_into(v, out);
             }
@@ -940,7 +945,10 @@ fn value_contains_int(value: &RuntimeValue, target: i128) -> bool {
     match value {
         RuntimeValue::Int(v) => *v == target,
         RuntimeValue::Set(items) => items.iter().any(|item| value_contains_int(item, target)),
-        RuntimeValue::Seq(items) | RuntimeValue::Tuple(items) => {
+        RuntimeValue::Seq(items) => {
+            items.iter().any(|item| value_contains_int(item, target))
+        }
+        RuntimeValue::Tuple(items) => {
             items.iter().any(|item| value_contains_int(item, target))
         }
         RuntimeValue::Map(entries) => entries
@@ -1175,6 +1183,32 @@ fn summarize_state_diff(before: &RuntimeValue, after: &RuntimeValue) -> Vec<Stat
     diffs
 }
 
+fn collect_indexed_diffs(
+    path: &str,
+    b_values: &[RuntimeValue],
+    a_values: &[RuntimeValue],
+    diffs: &mut Vec<StateDiffSummary>,
+) {
+    let max_len = b_values.len().max(a_values.len());
+    for idx in 0..max_len {
+        let sub_path = format!("{path}[{idx}]");
+        match (b_values.get(idx), a_values.get(idx)) {
+            (Some(b), Some(a)) => collect_state_diffs(&sub_path, b, a, diffs),
+            (Some(b), None) => diffs.push(StateDiffSummary {
+                path: sub_path,
+                before: b.canonical_key(),
+                after: "<missing>".to_string(),
+            }),
+            (None, Some(a)) => diffs.push(StateDiffSummary {
+                path: sub_path,
+                before: "<missing>".to_string(),
+                after: a.canonical_key(),
+            }),
+            (None, None) => {}
+        }
+    }
+}
+
 fn collect_state_diffs(
     path: &str,
     before: &RuntimeValue,
@@ -1214,26 +1248,11 @@ fn collect_state_diffs(
         ) if b_ty == a_ty && b_variant == a_variant => {
             collect_named_field_diffs(path, b_fields, a_fields, diffs)
         }
-        (RuntimeValue::Tuple(b_values), RuntimeValue::Tuple(a_values))
-        | (RuntimeValue::Seq(b_values), RuntimeValue::Seq(a_values)) => {
-            let max_len = b_values.len().max(a_values.len());
-            for idx in 0..max_len {
-                let sub_path = format!("{path}[{idx}]");
-                match (b_values.get(idx), a_values.get(idx)) {
-                    (Some(b), Some(a)) => collect_state_diffs(&sub_path, b, a, diffs),
-                    (Some(b), None) => diffs.push(StateDiffSummary {
-                        path: sub_path,
-                        before: b.canonical_key(),
-                        after: "<missing>".to_string(),
-                    }),
-                    (None, Some(a)) => diffs.push(StateDiffSummary {
-                        path: sub_path,
-                        before: "<missing>".to_string(),
-                        after: a.canonical_key(),
-                    }),
-                    (None, None) => {}
-                }
-            }
+        (RuntimeValue::Tuple(b_values), RuntimeValue::Tuple(a_values)) => {
+            collect_indexed_diffs(path, b_values, a_values, diffs);
+        }
+        (RuntimeValue::Seq(b_values), RuntimeValue::Seq(a_values)) => {
+            collect_indexed_diffs(path, &**b_values, &**a_values, diffs);
         }
         _ => diffs.push(StateDiffSummary {
             path: path.to_string(),

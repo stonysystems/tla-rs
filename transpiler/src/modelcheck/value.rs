@@ -6,6 +6,7 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 /// Sorted vector of named fields, replacement for `BTreeMap<Symbol, RuntimeValue>`.
 ///
@@ -175,9 +176,9 @@ pub enum RuntimeValue {
         #[doc(hidden)]
         _cache: FingerprintCache,
     },
-    Seq(Vec<RuntimeValue>),
-    Set(BTreeSet<RuntimeValue>),
-    Map(BTreeMap<RuntimeValue, RuntimeValue>),
+    Seq(Arc<Vec<RuntimeValue>>),
+    Set(Arc<BTreeSet<RuntimeValue>>),
+    Map(Arc<BTreeMap<RuntimeValue, RuntimeValue>>),
 }
 
 /// Length limits for model-check collections.
@@ -268,7 +269,7 @@ impl RuntimeValue {
                 ),
             });
         }
-        Ok(Self::Seq(values))
+        Ok(Self::Seq(Arc::new(values)))
     }
 
     pub fn set_bounded<I>(values: I, bounds: &RuntimeCollectionBounds) -> TranspileResult<Self>
@@ -288,7 +289,7 @@ impl RuntimeValue {
                 });
             }
         }
-        Ok(Self::Set(set))
+        Ok(Self::Set(Arc::new(set)))
     }
 
     pub fn map_bounded<I>(entries: I, bounds: &RuntimeCollectionBounds) -> TranspileResult<Self>
@@ -315,7 +316,7 @@ impl RuntimeValue {
                 });
             }
         }
-        Ok(Self::Map(map))
+        Ok(Self::Map(Arc::new(map)))
     }
 
     /// Access a field by string name (interns on each call — use `field_sym` in hot paths).
@@ -336,7 +337,8 @@ impl RuntimeValue {
 
     pub fn element_at(&self, index: usize) -> Option<&RuntimeValue> {
         match self {
-            RuntimeValue::Tuple(items) | RuntimeValue::Seq(items) => items.get(index),
+            RuntimeValue::Tuple(items) => items.get(index),
+            RuntimeValue::Seq(items) => items.get(index),
             _ => None,
         }
     }
@@ -430,19 +432,19 @@ impl RuntimeValue {
             }
             RuntimeValue::Seq(items) => {
                 items.len().hash(h);
-                for item in items {
+                for item in items.iter() {
                     item.hash_into(h);
                 }
             }
             RuntimeValue::Set(items) => {
                 items.len().hash(h);
-                for item in items {
+                for item in items.iter() {
                     item.hash_into(h);
                 }
             }
             RuntimeValue::Map(entries) => {
                 entries.len().hash(h);
-                for (k, v) in entries {
+                for (k, v) in entries.iter() {
                     k.hash_into(h);
                     v.hash_into(h);
                 }
@@ -802,11 +804,11 @@ mod tests {
             fields: NamedFields::new(),
             _cache: FingerprintCache::new(),
         };
-        let set = RuntimeValue::Set(
+        let set = RuntimeValue::Set(Arc::new(
             vec![RuntimeValue::Int(1), RuntimeValue::Int(0)]
                 .into_iter()
                 .collect(),
-        );
+        ));
         let state = RuntimeValue::struct_value(
             "LState",
             vec![

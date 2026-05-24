@@ -1321,7 +1321,7 @@ mod tests {
             "LState",
             vec![(
                 "history".to_string(),
-                RuntimeValue::Seq(values.into_iter().map(RuntimeValue::Int).collect()),
+                RuntimeValue::Seq(Arc::new(values.into_iter().map(RuntimeValue::Int).collect())),
             )],
         )
         .unwrap()
