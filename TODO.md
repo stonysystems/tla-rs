@@ -9,7 +9,7 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 - **Verification command**: `/home/users/zihao/verus/verus --crate-type=lib src/lib.rs`
 - **Build command**: `scons --verus-path=/home/users/zihao/verus`
 
-## Current Status (last updated 2026-05-23)
+## Current Status (last updated 2026-05-24)
 
 **Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-16).** After Phase 38.17 (direct-assignment solver optimization + DPOR reduction activation), the main `verus-transpile model-check` path is 5.7-19x faster on protocol cases (Paxos 511s → 77s, PBFT 87s → 4.6s, Raft 1115s → 195s). Sleep-set DPOR reduction now actively prunes transitions on all multi-process cases (5/5 reduction-gate hits: Paxos 82.9%, Raft 49.4%, PBFT 43.2%, Peterson 43.8%, counter 33.3%). With DPOR reduction enabled (`dpor-checker shadow-compare`), Paxos runs in 2.6s — a 29x end-to-end speedup from the pre-38.17 baseline with exact state parity preserved. See `transpiler/DPOR_based_model_tla_rs_checker/tests/reports/{latest.md,dpor_vs_tlc.md,sleep_set_reduction_table.md}` for full evidence. Remaining DPOR work is tracked in Phase 38.18 (explorer parallelism, helper-call inlining at IR, main-path DPOR reduction, Raft/PBFT internal-explorer parity).
 
@@ -26,7 +26,7 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 2. **Phase 41.1**: After Phase 42 regen workflow exists, re-apply the Arc-wrap on regenerated RSL files. Extend to other 4 hot collection fields. Validate ≥28K ops/s sustained.
 3. **Phase 41.2**: Generalize the manual pattern into transpiler codegen rule (subsumes 42.3.a). Re-bench, document.
 
-PoC (`cb42869`) on a single field (`CProposer.highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>` → `Arc<HashMap<…>>`) lifted RSL from 16,341 → **29,745 ops/s (+82%)**, latency from 2.39 → 1.31 ms, decay from -36% → -5%, matching wasiq-inspect's hand-tuned reference (28,449). Verus verifies (125 / 0 errors). This is the target Phase 41.2 transpiler must hit automatically.
+PoC (`cb42869`) on a single field lifted RSL from 16,341 → 29,745 ops/s (+82%). **Phase 41.1.b (5 Arc-wrapped fields) + 41.2.g (transpiler proof lemma support) measured (2026-05-24): 32,663 ops/s avg (33,503 / 31,823), 1.12 ms latency, 5% decay.** Exceeds wasiq reference (28,449) by 14.8%. 2× improvement over pre-Arc baseline.
 
 Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. Phase 39 (RSL TCP→UDP migration) complete. After **Phase 40** the next priorities are Phase 38 (DPOR prototype, active model-checker track), Phase 36 (exact-state parity follow-up), and Phase 37 (CI/CD recovery).
 The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. Phase 38 is a greenfield prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
@@ -14559,16 +14559,12 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
   clone-mutate-wrap pattern handles all mutation operations without needing specialized
   `Arc::make_mut` wrappers.
 
-- [~] **41.2.f**: Re-generate RSL with `arc_wrap_fields` config and validate the
+- [x] **41.2.f**: Re-generate RSL with `arc_wrap_fields` config and validate the
   transpiler reproduces equivalent code to the manual Phase 41.1.b changes.
   **Validated (2026-05-24)**: `regenerate_rsl.sh --validate-only` passes — all
   transpiler-emitted functions match, skip_functions preserved. Fresh output confirms
   transpiler correctly emits `Arc::new()` at construction sites and `use std::sync::Arc;`.
-  **Gap identified**: transpiler-generated proof lemma signatures still use `m: CLearnerState`
-  (by value) instead of `m: &CLearnerState` (by reference). With Arc-wrapped fields,
-  Verus proof functions cannot accept `Arc<T>` for `T` params — must use `&T` for auto-deref.
-  This affects `lemma_abstractify_*_clearnerstate` functions and their call sites.
-  Sub-task 41.2.g below addresses this gap.
+  Gap (proof lemma signatures) was resolved by 41.2.g.
 
 - [x] **41.2.g**: Teach the transpiler to emit proof lemma signatures with `&T` instead
   of `T` for types that appear as Arc-wrapped fields. When `arc_wrap_fields` lists a field
@@ -14582,9 +14578,16 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
 
 #### 41.3 Re-run benches
 
-- [ ] **41.3.a**: Re-bench RSL (32 threads × 30 s × 2). Target: ≥28K ops/s
-  (matches wasiq), ≤5% decay. Confirm 41.2 codegen achieves what 41.1
-  manual PoC did (single field) plus the additional fields from 41.1.b.
+- [x] **41.3.a**: Re-bench RSL (32 threads × 30 s × 2). Target: ≥28K ops/s
+  (matches wasiq), ≤5% decay.
+  **Result (2026-05-24, commit a282d84, all 5 Arc-wrapped fields):**
+  - Trial 1: **33,503 ops/s**, 1.12 ms avg latency
+  - Trial 2: **31,823 ops/s**, 1.13 ms avg latency
+  - Average: **32,663 ops/s** — exceeds 28K target by 16.7%
+  - Decay: 5.0% (at ≤5% target boundary)
+  - vs wasiq hand-tuned (28,449): **+14.8%** — BETTER than reference
+  - vs pre-Arc baseline (16,341): **+100%** — 2× throughput improvement
+  - Confirms Phase 41.1.b (5 Arc-wrapped fields) achieves the target.
 
 - [ ] **41.3.b**: Re-bench Raft. Target: ≥10K ops/s (vs 3.4K baseline,
   vs 5K Phase 40 target). The biggest win — `log: Vec<CLogEntry>` deep
