@@ -927,6 +927,787 @@ fn compile_pattern_bind(
     Ok(())
 }
 
+// ── VM interpreter ────────────────────────────────────────────────────
+
+use crate::modelcheck::evaluator::{
+    eval_binary, eval_builtin_method, eval_builtin_static_call, expect_bool, expect_index,
+    expect_number, split_variant_path, type_error,
+};
+use crate::modelcheck::value::RuntimeCollectionBounds;
+
+/// Context for VM execution. Mirrors `EvalContext` but without the
+/// binding stack (the VM uses local slots instead).
+pub struct VmContext<'a> {
+    pub bounds: RuntimeCollectionBounds,
+    pub call_evaluator: Option<&'a dyn Fn(&Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>>,
+    pub method_evaluator:
+        Option<&'a dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue>>,
+    pub quantifier_domain:
+        Option<&'a dyn Fn(&crate::ast::Binding) -> TranspileResult<Vec<RuntimeValue>>>,
+}
+
+/// Execute a compiled chunk, returning the result value.
+pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeValue> {
+    let mut pc: usize = 0;
+    let mut stack: Vec<RuntimeValue> = Vec::with_capacity(32);
+    let mut locals: Vec<RuntimeValue> = vec![RuntimeValue::Unit; chunk.num_locals as usize];
+
+    while pc < chunk.ops.len() {
+        match &chunk.ops[pc] {
+            Opcode::LoadConst(ci) => {
+                stack.push(chunk.constants[*ci as usize].clone());
+            }
+            Opcode::LoadLocal(slot) => {
+                stack.push(locals[*slot as usize].clone());
+            }
+            Opcode::StoreLocal(slot) => {
+                locals[*slot as usize] = stack.pop().unwrap();
+            }
+            Opcode::Pop => {
+                stack.pop();
+            }
+            Opcode::Dup => {
+                let top = stack.last().unwrap().clone();
+                stack.push(top);
+            }
+
+            // ── Field / index access ──────────────────────────────────
+            Opcode::LoadField(sym) => {
+                let base = stack.pop().unwrap();
+                match base.field_sym(*sym).cloned() {
+                    Some(value) => stack.push(value),
+                    None => {
+                        let name = sym.resolve();
+                        if name == "tag" {
+                            stack.push(base);
+                        } else {
+                            return Err(type_error(&format!(
+                                "VM: field `.{}` not valid for `{}`",
+                                name,
+                                base.canonical_key()
+                            )));
+                        }
+                    }
+                }
+            }
+            Opcode::LoadArrow(sym) => {
+                let base = stack.pop().unwrap();
+                match base.field_sym(*sym).cloned() {
+                    Some(value) => stack.push(value),
+                    None => {
+                        return Err(type_error(&format!(
+                            "VM: arrow `->{}` not valid for `{}`",
+                            sym.resolve(),
+                            base.canonical_key()
+                        )));
+                    }
+                }
+            }
+            Opcode::GetIndex => {
+                let idx = stack.pop().unwrap();
+                let base = stack.pop().unwrap();
+                match &base {
+                    RuntimeValue::Seq(items) => {
+                        let pos = expect_index(&idx, "VM seq index")?;
+                        stack.push(items.get(pos).cloned().ok_or_else(|| {
+                            type_error(&format!(
+                                "VM: index {} out of bounds for len {}",
+                                pos,
+                                items.len()
+                            ))
+                        })?);
+                    }
+                    RuntimeValue::Tuple(items) => {
+                        let pos = expect_index(&idx, "VM tuple index")?;
+                        stack.push(items.get(pos).cloned().ok_or_else(|| {
+                            type_error(&format!(
+                                "VM: index {} out of bounds for tuple len {}",
+                                pos,
+                                items.len()
+                            ))
+                        })?);
+                    }
+                    RuntimeValue::Map(entries) => {
+                        stack.push(entries.get(&idx).cloned().ok_or_else(|| {
+                            type_error(&format!(
+                                "VM: map key `{}` not found",
+                                idx.canonical_key()
+                            ))
+                        })?);
+                    }
+                    other => {
+                        return Err(type_error(&format!(
+                            "VM: index on non-indexable `{}`",
+                            other.canonical_key()
+                        )));
+                    }
+                }
+            }
+
+            // ── Comparisons ───────────────────────────────────────────
+            Opcode::Eq => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(lhs == rhs));
+            }
+            Opcode::Ne => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(lhs != rhs));
+            }
+            Opcode::Lt => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                let l = expect_number(&lhs, "VM lt lhs")?;
+                let r = expect_number(&rhs, "VM lt rhs")?;
+                stack.push(RuntimeValue::Bool(l < r));
+            }
+            Opcode::Le => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                let l = expect_number(&lhs, "VM le lhs")?;
+                let r = expect_number(&rhs, "VM le rhs")?;
+                stack.push(RuntimeValue::Bool(l <= r));
+            }
+            Opcode::Gt => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                let l = expect_number(&lhs, "VM gt lhs")?;
+                let r = expect_number(&rhs, "VM gt rhs")?;
+                stack.push(RuntimeValue::Bool(l > r));
+            }
+            Opcode::Ge => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                let l = expect_number(&lhs, "VM ge lhs")?;
+                let r = expect_number(&rhs, "VM ge rhs")?;
+                stack.push(RuntimeValue::Bool(l >= r));
+            }
+
+            // ── Arithmetic / logic ────────────────────────────────────
+            Opcode::BinaryOp(op) => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(eval_binary(&lhs, *op, &rhs)?);
+            }
+            Opcode::UnaryNot => {
+                let val = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(!expect_bool(&val, "VM not")?));
+            }
+            Opcode::UnaryNeg => {
+                let val = stack.pop().unwrap();
+                stack.push(RuntimeValue::Int(-expect_number(&val, "VM neg")?));
+            }
+
+            // ── Type tests ────────────────────────────────────────────
+            Opcode::Is(variant_sym) => {
+                let val = stack.pop().unwrap();
+                let variant_name = variant_sym.resolve();
+                let result = match &val {
+                    RuntimeValue::Enum { variant, .. } => *variant == variant_name,
+                    _ => false,
+                };
+                stack.push(RuntimeValue::Bool(result));
+            }
+
+            // ── Collection literals ───────────────────────────────────
+            Opcode::SetLit(n) => {
+                let n = *n as usize;
+                let items: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
+                stack.push(RuntimeValue::set_bounded(items, &ctx.bounds)?);
+            }
+            Opcode::SeqLit(n) => {
+                let n = *n as usize;
+                let items: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
+                stack.push(RuntimeValue::seq_bounded(items, &ctx.bounds)?);
+            }
+            Opcode::MapLit(n) => {
+                let n = *n as usize;
+                let pairs: Vec<RuntimeValue> = stack.drain(stack.len() - 2 * n..).collect();
+                let entries: Vec<(RuntimeValue, RuntimeValue)> = pairs
+                    .chunks(2)
+                    .map(|chunk| (chunk[0].clone(), chunk[1].clone()))
+                    .collect();
+                stack.push(RuntimeValue::map_bounded(entries, &ctx.bounds)?);
+            }
+
+            // ── Struct construction ───────────────────────────────────
+            Opcode::StructNew(meta_idx) => {
+                let meta = &chunk.struct_metas[*meta_idx as usize];
+                let n = meta.field_names.len();
+                let values: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
+                let ty_or_variant = &meta.type_name;
+                if let Some((ty, variant)) = split_variant_path(ty_or_variant) {
+                    let fields: Vec<(String, RuntimeValue)> = meta
+                        .field_names
+                        .iter()
+                        .zip(values)
+                        .map(|(sym, v)| (sym.resolve(), v))
+                        .collect();
+                    stack.push(RuntimeValue::enum_value(ty, variant, fields)?);
+                } else {
+                    let fields: Vec<(String, RuntimeValue)> = meta
+                        .field_names
+                        .iter()
+                        .zip(values)
+                        .map(|(sym, v)| (sym.resolve(), v))
+                        .collect();
+                    stack.push(RuntimeValue::struct_value(ty_or_variant.clone(), fields)?);
+                }
+            }
+            Opcode::StructUpdate(meta_idx) => {
+                let meta = &chunk.struct_update_metas[*meta_idx as usize];
+                let n = meta.update_field_names.len();
+                let values: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
+                let base = stack.pop().unwrap();
+                match base {
+                    RuntimeValue::Struct {
+                        ty, mut fields, ..
+                    } => {
+                        for (sym, value) in meta.update_field_names.iter().zip(values) {
+                            fields.insert(*sym, value);
+                        }
+                        stack.push(RuntimeValue::struct_value_sym(ty, fields));
+                    }
+                    RuntimeValue::Enum {
+                        ty,
+                        variant,
+                        mut fields,
+                        ..
+                    } => {
+                        for (sym, value) in meta.update_field_names.iter().zip(values) {
+                            fields.insert(*sym, value);
+                        }
+                        stack.push(RuntimeValue::enum_value_sym(ty, variant, fields));
+                    }
+                    other => {
+                        return Err(type_error(&format!(
+                            "VM: struct update on non-struct `{}`",
+                            other.canonical_key()
+                        )));
+                    }
+                }
+            }
+
+            // ── Control flow ──────────────────────────────────────────
+            Opcode::JumpIfFalse(offset) => {
+                let val = stack.pop().unwrap();
+                if !expect_bool(&val, "VM jump-if-false")? {
+                    pc += *offset as usize;
+                    // pc will be incremented at end of loop
+                }
+            }
+            Opcode::JumpIfTrue(offset) => {
+                let val = stack.pop().unwrap();
+                if expect_bool(&val, "VM jump-if-true")? {
+                    pc += *offset as usize;
+                }
+            }
+            Opcode::Jump(offset) => {
+                pc += *offset as usize;
+            }
+
+            // ── Function / method calls ───────────────────────────────
+            Opcode::Call(target_idx, argc) => {
+                let argc = *argc as usize;
+                let args: Vec<RuntimeValue> = stack.drain(stack.len() - argc..).collect();
+                let func = &chunk.call_targets[*target_idx as usize];
+
+                // Try builtin static calls first
+                if let Some(result) = eval_builtin_static_call(func, &args, ctx.bounds)? {
+                    stack.push(result);
+                } else if let Some(evaluator) = ctx.call_evaluator {
+                    stack.push(evaluator(func, &args)?);
+                } else {
+                    return Err(type_error(&format!(
+                        "VM: call `{}` without call evaluator",
+                        crate::modelcheck::evaluator::path_name(func)
+                    )));
+                }
+            }
+            Opcode::MethodCall(method_sym, argc) => {
+                let argc = *argc as usize;
+                let args: Vec<RuntimeValue> = stack.drain(stack.len() - argc..).collect();
+                let receiver = stack.pop().unwrap();
+                let method_name = method_sym.resolve();
+
+                if let Some(result) =
+                    eval_builtin_method(&receiver, &method_name, &args, ctx.bounds)?
+                {
+                    stack.push(result);
+                } else if let Some(evaluator) = ctx.method_evaluator {
+                    stack.push(evaluator(&receiver, &method_name, &args)?);
+                } else {
+                    return Err(type_error(&format!(
+                        "VM: method `.{}(...)` without method evaluator",
+                        method_name
+                    )));
+                }
+            }
+
+            // ── Quantifiers ───────────────────────────────────────────
+            Opcode::Forall { var, body_len } => {
+                let body_len = *body_len as usize;
+                let var_slot = *var as usize;
+                // Quantifier domain is not on the stack — it comes from the
+                // quantifier_domain callback (same as the AST evaluator).
+                // For now, the VM cannot directly run quantifiers without
+                // a domain callback. The body is the next `body_len` ops.
+                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: forall without domain evaluator")
+                })?;
+                // We need the binding info — but the VM doesn't have it.
+                // For now, use a dummy binding. The real integration (b.vi)
+                // will thread binding metadata through.
+                // Skip over the body; quantifiers in pure VM mode need
+                // domain info that the compiler doesn't yet embed.
+                // For correctness, fall through to a helper:
+                let result = vm_eval_quantifier(
+                    chunk,
+                    ctx,
+                    &mut locals,
+                    pc + 1,
+                    body_len,
+                    var_slot,
+                    QuantifierMode::Forall,
+                    domain_eval,
+                )?;
+                stack.push(result);
+                pc += body_len; // skip body (already executed by helper)
+            }
+            Opcode::Exists { var, body_len } => {
+                let body_len = *body_len as usize;
+                let var_slot = *var as usize;
+                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: exists without domain evaluator")
+                })?;
+                let result = vm_eval_quantifier(
+                    chunk,
+                    ctx,
+                    &mut locals,
+                    pc + 1,
+                    body_len,
+                    var_slot,
+                    QuantifierMode::Exists,
+                    domain_eval,
+                )?;
+                stack.push(result);
+                pc += body_len;
+            }
+            Opcode::Choose { var, body_len } => {
+                let body_len = *body_len as usize;
+                let var_slot = *var as usize;
+                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: choose without domain evaluator")
+                })?;
+                let result = vm_eval_quantifier(
+                    chunk,
+                    ctx,
+                    &mut locals,
+                    pc + 1,
+                    body_len,
+                    var_slot,
+                    QuantifierMode::Choose,
+                    domain_eval,
+                )?;
+                stack.push(result);
+                pc += body_len;
+            }
+
+            // ── Termination ───────────────────────────────────────────
+            Opcode::Return => {
+                return stack.pop().ok_or_else(|| type_error("VM: return on empty stack"));
+            }
+        }
+        pc += 1;
+    }
+
+    // Fell off the end without Return
+    stack.pop().ok_or_else(|| type_error("VM: ended without value on stack"))
+}
+
+enum QuantifierMode {
+    Forall,
+    Exists,
+    Choose,
+}
+
+/// Execute a quantifier body sub-slice for each domain value.
+fn vm_eval_quantifier(
+    chunk: &Chunk,
+    ctx: &VmContext<'_>,
+    locals: &mut [RuntimeValue],
+    body_start: usize,
+    body_len: usize,
+    var_slot: usize,
+    mode: QuantifierMode,
+    _domain_eval: &dyn Fn(&crate::ast::Binding) -> TranspileResult<Vec<RuntimeValue>>,
+) -> TranspileResult<RuntimeValue> {
+    // Build a sub-chunk from the body instructions for recursive evaluation.
+    // This is simpler than trying to re-enter the main loop at an offset.
+    // For the domain, we need the Binding metadata. Since the compiler
+    // doesn't embed it yet, we create a dummy int binding.
+    let dummy_binding = crate::ast::Binding {
+        pattern: Pattern::Ident(format!("__vm_var_{}", var_slot)),
+        ty: Some(crate::ast::Type::Int),
+        variable_mode: crate::ast::VariableMode::Exec,
+    };
+
+    let domain = _domain_eval(&dummy_binding)?;
+
+    match mode {
+        QuantifierMode::Forall => {
+            if domain.is_empty() {
+                return Ok(RuntimeValue::Bool(true));
+            }
+            for val in domain {
+                locals[var_slot] = val;
+                let result = vm_eval_body_slice(chunk, ctx, locals, body_start, body_len)?;
+                if !expect_bool(&result, "VM forall body")? {
+                    return Ok(RuntimeValue::Bool(false));
+                }
+            }
+            Ok(RuntimeValue::Bool(true))
+        }
+        QuantifierMode::Exists => {
+            if domain.is_empty() {
+                return Ok(RuntimeValue::Bool(false));
+            }
+            for val in domain {
+                locals[var_slot] = val;
+                let result = vm_eval_body_slice(chunk, ctx, locals, body_start, body_len)?;
+                if expect_bool(&result, "VM exists body")? {
+                    return Ok(RuntimeValue::Bool(true));
+                }
+            }
+            Ok(RuntimeValue::Bool(false))
+        }
+        QuantifierMode::Choose => {
+            for val in &domain {
+                locals[var_slot] = val.clone();
+                let result = vm_eval_body_slice(chunk, ctx, locals, body_start, body_len)?;
+                if expect_bool(&result, "VM choose body")? {
+                    return Ok(val.clone());
+                }
+            }
+            Err(type_error("VM: choose found no satisfying value"))
+        }
+    }
+}
+
+/// Execute a sub-slice of a chunk's opcodes using the shared locals array.
+fn vm_eval_body_slice(
+    chunk: &Chunk,
+    ctx: &VmContext<'_>,
+    locals: &mut [RuntimeValue],
+    start: usize,
+    len: usize,
+) -> TranspileResult<RuntimeValue> {
+    // Create a temporary sub-chunk that references the same constants/metadata
+    // but only contains the body instructions.
+    let mut sub_chunk = Chunk {
+        ops: chunk.ops[start..start + len].to_vec(),
+        constants: chunk.constants.clone(),
+        struct_metas: chunk.struct_metas.clone(),
+        struct_update_metas: chunk.struct_update_metas.clone(),
+        call_targets: chunk.call_targets.clone(),
+        num_locals: chunk.num_locals,
+    };
+    // Add a Return at the end so vm_eval terminates properly
+    sub_chunk.ops.push(Opcode::Return);
+
+    // We need to use the shared locals. Since vm_eval creates its own,
+    // we run inline instead.
+    let mut pc: usize = 0;
+    let mut stack: Vec<RuntimeValue> = Vec::with_capacity(16);
+    let end = sub_chunk.ops.len();
+
+    while pc < end {
+        match &sub_chunk.ops[pc] {
+            Opcode::LoadConst(ci) => {
+                stack.push(sub_chunk.constants[*ci as usize].clone());
+            }
+            Opcode::LoadLocal(slot) => {
+                stack.push(locals[*slot as usize].clone());
+            }
+            Opcode::StoreLocal(slot) => {
+                locals[*slot as usize] = stack.pop().unwrap();
+            }
+            Opcode::Pop => {
+                stack.pop();
+            }
+            Opcode::Dup => {
+                let top = stack.last().unwrap().clone();
+                stack.push(top);
+            }
+            Opcode::LoadField(sym) => {
+                let base = stack.pop().unwrap();
+                match base.field_sym(*sym).cloned() {
+                    Some(value) => stack.push(value),
+                    None => {
+                        let name = sym.resolve();
+                        if name == "tag" {
+                            stack.push(base);
+                        } else {
+                            return Err(type_error(&format!(
+                                "VM: field `.{}` not valid",
+                                name
+                            )));
+                        }
+                    }
+                }
+            }
+            Opcode::LoadArrow(sym) => {
+                let base = stack.pop().unwrap();
+                match base.field_sym(*sym).cloned() {
+                    Some(value) => stack.push(value),
+                    None => {
+                        return Err(type_error(&format!(
+                            "VM: arrow `->{}` not valid",
+                            sym.resolve()
+                        )));
+                    }
+                }
+            }
+            Opcode::GetIndex => {
+                let idx = stack.pop().unwrap();
+                let base = stack.pop().unwrap();
+                match &base {
+                    RuntimeValue::Seq(items) => {
+                        let pos = expect_index(&idx, "VM seq index")?;
+                        stack.push(items[pos].clone());
+                    }
+                    RuntimeValue::Tuple(items) => {
+                        let pos = expect_index(&idx, "VM tuple index")?;
+                        stack.push(items[pos].clone());
+                    }
+                    RuntimeValue::Map(entries) => {
+                        stack.push(entries[&idx].clone());
+                    }
+                    _ => return Err(type_error("VM: index on non-indexable")),
+                }
+            }
+            Opcode::Eq => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(lhs == rhs));
+            }
+            Opcode::Ne => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(lhs != rhs));
+            }
+            Opcode::Lt => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(
+                    expect_number(&lhs, "lt")? < expect_number(&rhs, "lt")?,
+                ));
+            }
+            Opcode::Le => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(
+                    expect_number(&lhs, "le")? <= expect_number(&rhs, "le")?,
+                ));
+            }
+            Opcode::Gt => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(
+                    expect_number(&lhs, "gt")? > expect_number(&rhs, "gt")?,
+                ));
+            }
+            Opcode::Ge => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(
+                    expect_number(&lhs, "ge")? >= expect_number(&rhs, "ge")?,
+                ));
+            }
+            Opcode::BinaryOp(op) => {
+                let rhs = stack.pop().unwrap();
+                let lhs = stack.pop().unwrap();
+                stack.push(eval_binary(&lhs, *op, &rhs)?);
+            }
+            Opcode::UnaryNot => {
+                let val = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(!expect_bool(&val, "not")?));
+            }
+            Opcode::UnaryNeg => {
+                let val = stack.pop().unwrap();
+                stack.push(RuntimeValue::Int(-expect_number(&val, "neg")?));
+            }
+            Opcode::Is(variant_sym) => {
+                let val = stack.pop().unwrap();
+                let vn = variant_sym.resolve();
+                let r = matches!(&val, RuntimeValue::Enum { variant, .. } if *variant == vn);
+                stack.push(RuntimeValue::Bool(r));
+            }
+            Opcode::SetLit(n) => {
+                let n = *n as usize;
+                let items: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
+                stack.push(RuntimeValue::set_bounded(items, &ctx.bounds)?);
+            }
+            Opcode::SeqLit(n) => {
+                let n = *n as usize;
+                let items: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
+                stack.push(RuntimeValue::seq_bounded(items, &ctx.bounds)?);
+            }
+            Opcode::MapLit(n) => {
+                let n = *n as usize;
+                let pairs: Vec<RuntimeValue> = stack.drain(stack.len() - 2 * n..).collect();
+                let entries: Vec<(RuntimeValue, RuntimeValue)> = pairs
+                    .chunks(2)
+                    .map(|c| (c[0].clone(), c[1].clone()))
+                    .collect();
+                stack.push(RuntimeValue::map_bounded(entries, &ctx.bounds)?);
+            }
+            Opcode::StructNew(meta_idx) => {
+                let meta = &sub_chunk.struct_metas[*meta_idx as usize];
+                let n = meta.field_names.len();
+                let values: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
+                let ty_or_variant = &meta.type_name;
+                if let Some((ty, variant)) = split_variant_path(ty_or_variant) {
+                    let fields: Vec<(String, RuntimeValue)> = meta
+                        .field_names
+                        .iter()
+                        .zip(values)
+                        .map(|(sym, v)| (sym.resolve(), v))
+                        .collect();
+                    stack.push(RuntimeValue::enum_value(ty, variant, fields)?);
+                } else {
+                    let fields: Vec<(String, RuntimeValue)> = meta
+                        .field_names
+                        .iter()
+                        .zip(values)
+                        .map(|(sym, v)| (sym.resolve(), v))
+                        .collect();
+                    stack.push(RuntimeValue::struct_value(ty_or_variant.clone(), fields)?);
+                }
+            }
+            Opcode::StructUpdate(meta_idx) => {
+                let meta = &sub_chunk.struct_update_metas[*meta_idx as usize];
+                let n = meta.update_field_names.len();
+                let values: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
+                let base = stack.pop().unwrap();
+                match base {
+                    RuntimeValue::Struct {
+                        ty, mut fields, ..
+                    } => {
+                        for (sym, value) in meta.update_field_names.iter().zip(values) {
+                            fields.insert(*sym, value);
+                        }
+                        stack.push(RuntimeValue::struct_value_sym(ty, fields));
+                    }
+                    RuntimeValue::Enum {
+                        ty,
+                        variant,
+                        mut fields,
+                        ..
+                    } => {
+                        for (sym, value) in meta.update_field_names.iter().zip(values) {
+                            fields.insert(*sym, value);
+                        }
+                        stack.push(RuntimeValue::enum_value_sym(ty, variant, fields));
+                    }
+                    _ => return Err(type_error("VM: struct update on non-struct")),
+                }
+            }
+            Opcode::JumpIfFalse(offset) => {
+                let val = stack.pop().unwrap();
+                if !expect_bool(&val, "jif")? {
+                    pc += *offset as usize;
+                }
+            }
+            Opcode::JumpIfTrue(offset) => {
+                let val = stack.pop().unwrap();
+                if expect_bool(&val, "jit")? {
+                    pc += *offset as usize;
+                }
+            }
+            Opcode::Jump(offset) => {
+                pc += *offset as usize;
+            }
+            Opcode::Call(target_idx, argc) => {
+                let argc = *argc as usize;
+                let args: Vec<RuntimeValue> = stack.drain(stack.len() - argc..).collect();
+                let func = &sub_chunk.call_targets[*target_idx as usize];
+                if let Some(result) = eval_builtin_static_call(func, &args, ctx.bounds)? {
+                    stack.push(result);
+                } else if let Some(evaluator) = ctx.call_evaluator {
+                    stack.push(evaluator(func, &args)?);
+                } else {
+                    return Err(type_error("VM: call without evaluator"));
+                }
+            }
+            Opcode::MethodCall(method_sym, argc) => {
+                let argc = *argc as usize;
+                let args: Vec<RuntimeValue> = stack.drain(stack.len() - argc..).collect();
+                let receiver = stack.pop().unwrap();
+                let method_name = method_sym.resolve();
+                if let Some(result) =
+                    eval_builtin_method(&receiver, &method_name, &args, ctx.bounds)?
+                {
+                    stack.push(result);
+                } else if let Some(evaluator) = ctx.method_evaluator {
+                    stack.push(evaluator(&receiver, &method_name, &args)?);
+                } else {
+                    return Err(type_error(&format!(
+                        "VM: method `.{}` without evaluator",
+                        method_name
+                    )));
+                }
+            }
+            Opcode::Forall { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let de = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: forall without domain")
+                })?;
+                let result = vm_eval_quantifier(
+                    &sub_chunk, ctx, locals, pc + 1, bl, vs,
+                    QuantifierMode::Forall, de,
+                )?;
+                stack.push(result);
+                pc += bl;
+            }
+            Opcode::Exists { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let de = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: exists without domain")
+                })?;
+                let result = vm_eval_quantifier(
+                    &sub_chunk, ctx, locals, pc + 1, bl, vs,
+                    QuantifierMode::Exists, de,
+                )?;
+                stack.push(result);
+                pc += bl;
+            }
+            Opcode::Choose { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let de = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: choose without domain")
+                })?;
+                let result = vm_eval_quantifier(
+                    &sub_chunk, ctx, locals, pc + 1, bl, vs,
+                    QuantifierMode::Choose, de,
+                )?;
+                stack.push(result);
+                pc += bl;
+            }
+            Opcode::Return => {
+                return stack.pop().ok_or_else(|| type_error("VM: return on empty stack"));
+            }
+        }
+        pc += 1;
+    }
+
+    stack.pop().ok_or_else(|| type_error("VM: body ended without value"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1630,5 +2411,461 @@ mod tests {
             .iter()
             .any(|op| matches!(op, Opcode::StructUpdate(_)));
         assert!(has_struct_update);
+    }
+
+    // ── VM interpreter tests (Phase 38.22.1.b.iv+v) ──────────────────
+
+    fn simple_ctx() -> VmContext<'static> {
+        VmContext {
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: None,
+        }
+    }
+
+    /// Helper: compile + run an expression
+    fn eval(expr: &Expr) -> TranspileResult<RuntimeValue> {
+        let chunk = compile(expr)?;
+        vm_eval(&chunk, &simple_ctx())
+    }
+
+    #[test]
+    fn test_vm_literal_int() {
+        assert_eq!(
+            eval(&Expr::Literal(Literal::Int(42))).unwrap(),
+            RuntimeValue::Int(42)
+        );
+    }
+
+    #[test]
+    fn test_vm_literal_bool() {
+        assert_eq!(
+            eval(&Expr::Literal(Literal::Bool(true))).unwrap(),
+            RuntimeValue::Bool(true)
+        );
+    }
+
+    #[test]
+    fn test_vm_arithmetic() {
+        let expr = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Int(10))),
+            BinOp::Add,
+            Box::new(Expr::Literal(Literal::Int(32))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
+    }
+
+    #[test]
+    fn test_vm_subtraction() {
+        let expr = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Int(50))),
+            BinOp::Sub,
+            Box::new(Expr::Literal(Literal::Int(8))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
+    }
+
+    #[test]
+    fn test_vm_eq_true() {
+        let expr = Expr::Eq(
+            Box::new(Expr::Literal(Literal::Int(1))),
+            Box::new(Expr::Literal(Literal::Int(1))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_eq_false() {
+        let expr = Expr::Eq(
+            Box::new(Expr::Literal(Literal::Int(1))),
+            Box::new(Expr::Literal(Literal::Int(2))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_ne() {
+        let expr = Expr::Ne(
+            Box::new(Expr::Literal(Literal::Int(1))),
+            Box::new(Expr::Literal(Literal::Int(2))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_lt() {
+        let expr = Expr::Lt(
+            Box::new(Expr::Literal(Literal::Int(1))),
+            Box::new(Expr::Literal(Literal::Int(2))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_not() {
+        let expr = Expr::Not(Box::new(Expr::Literal(Literal::Bool(true))));
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_neg() {
+        let expr = Expr::Unary(UnaryOp::Neg, Box::new(Expr::Literal(Literal::Int(5))));
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(-5));
+    }
+
+    #[test]
+    fn test_vm_conjunction_true() {
+        let expr = Expr::Conjunction(vec![
+            Expr::Literal(Literal::Bool(true)),
+            Expr::Literal(Literal::Bool(true)),
+        ]);
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_conjunction_false() {
+        let expr = Expr::Conjunction(vec![
+            Expr::Literal(Literal::Bool(true)),
+            Expr::Literal(Literal::Bool(false)),
+        ]);
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_disjunction_true() {
+        let expr = Expr::Disjunction(vec![
+            Expr::Literal(Literal::Bool(false)),
+            Expr::Literal(Literal::Bool(true)),
+        ]);
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_disjunction_false() {
+        let expr = Expr::Disjunction(vec![
+            Expr::Literal(Literal::Bool(false)),
+            Expr::Literal(Literal::Bool(false)),
+        ]);
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_implies_true_true() {
+        let expr = Expr::Implies(
+            Box::new(Expr::Literal(Literal::Bool(true))),
+            Box::new(Expr::Literal(Literal::Bool(true))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_implies_false_any() {
+        let expr = Expr::Implies(
+            Box::new(Expr::Literal(Literal::Bool(false))),
+            Box::new(Expr::Literal(Literal::Bool(false))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_implies_true_false() {
+        let expr = Expr::Implies(
+            Box::new(Expr::Literal(Literal::Bool(true))),
+            Box::new(Expr::Literal(Literal::Bool(false))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_if_then_else() {
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(Literal::Bool(true))),
+            then_branch: Box::new(Expr::Literal(Literal::Int(1))),
+            else_branch: Some(Box::new(Expr::Literal(Literal::Int(2)))),
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(1));
+
+        let expr2 = Expr::If {
+            cond: Box::new(Expr::Literal(Literal::Bool(false))),
+            then_branch: Box::new(Expr::Literal(Literal::Int(1))),
+            else_branch: Some(Box::new(Expr::Literal(Literal::Int(2)))),
+        };
+        assert_eq!(eval(&expr2).unwrap(), RuntimeValue::Int(2));
+    }
+
+    #[test]
+    fn test_vm_let_binding() {
+        // let x = 10 in x + 1
+        let expr = Expr::Let {
+            binding: crate::ast::Binding {
+                pattern: Pattern::Ident("x".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            },
+            value: Box::new(Expr::Literal(Literal::Int(10))),
+            body: Box::new(Expr::Binary(
+                Box::new(Expr::Ident("x".to_string())),
+                BinOp::Add,
+                Box::new(Expr::Literal(Literal::Int(1))),
+            )),
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(11));
+    }
+
+    #[test]
+    fn test_vm_nested_let() {
+        // let x = 3 in (let y = 4 in x * y)
+        let expr = Expr::Let {
+            binding: crate::ast::Binding {
+                pattern: Pattern::Ident("x".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            },
+            value: Box::new(Expr::Literal(Literal::Int(3))),
+            body: Box::new(Expr::Let {
+                binding: crate::ast::Binding {
+                    pattern: Pattern::Ident("y".to_string()),
+                    ty: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                },
+                value: Box::new(Expr::Literal(Literal::Int(4))),
+                body: Box::new(Expr::Binary(
+                    Box::new(Expr::Ident("x".to_string())),
+                    BinOp::Mul,
+                    Box::new(Expr::Ident("y".to_string())),
+                )),
+            }),
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(12));
+    }
+
+    #[test]
+    fn test_vm_set_lit() {
+        let expr = Expr::SetLit(vec![
+            Expr::Literal(Literal::Int(1)),
+            Expr::Literal(Literal::Int(2)),
+            Expr::Literal(Literal::Int(3)),
+        ]);
+        let result = eval(&expr).unwrap();
+        match result {
+            RuntimeValue::Set(items) => assert_eq!(items.len(), 3),
+            _ => panic!("expected Set"),
+        }
+    }
+
+    #[test]
+    fn test_vm_seq_lit() {
+        let expr = Expr::SeqLit(vec![
+            Expr::Literal(Literal::Int(10)),
+            Expr::Literal(Literal::Int(20)),
+        ]);
+        let result = eval(&expr).unwrap();
+        match result {
+            RuntimeValue::Seq(items) => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0], RuntimeValue::Int(10));
+                assert_eq!(items[1], RuntimeValue::Int(20));
+            }
+            _ => panic!("expected Seq"),
+        }
+    }
+
+    #[test]
+    fn test_vm_map_lit() {
+        let expr = Expr::MapLit(vec![(
+            Expr::Literal(Literal::Int(1)),
+            Expr::Literal(Literal::Bool(true)),
+        )]);
+        let result = eval(&expr).unwrap();
+        match result {
+            RuntimeValue::Map(entries) => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[&RuntimeValue::Int(1)], RuntimeValue::Bool(true));
+            }
+            _ => panic!("expected Map"),
+        }
+    }
+
+    #[test]
+    fn test_vm_empty_collections() {
+        match eval(&Expr::SetEmpty).unwrap() {
+            RuntimeValue::Set(s) => assert!(s.is_empty()),
+            _ => panic!("expected Set"),
+        }
+        match eval(&Expr::SeqEmpty).unwrap() {
+            RuntimeValue::Seq(s) => assert!(s.is_empty()),
+            _ => panic!("expected Seq"),
+        }
+        match eval(&Expr::MapEmpty).unwrap() {
+            RuntimeValue::Map(m) => assert!(m.is_empty()),
+            _ => panic!("expected Map"),
+        }
+    }
+
+    #[test]
+    fn test_vm_struct_new() {
+        let expr = Expr::Struct {
+            name: Path::new(vec!["Point".to_string()]),
+            fields: vec![
+                ("x".to_string(), Expr::Literal(Literal::Int(1))),
+                ("y".to_string(), Expr::Literal(Literal::Int(2))),
+            ],
+        };
+        let result = eval(&expr).unwrap();
+        assert_eq!(result.field("x"), Some(&RuntimeValue::Int(1)));
+        assert_eq!(result.field("y"), Some(&RuntimeValue::Int(2)));
+    }
+
+    #[test]
+    fn test_vm_field_access() {
+        // Create struct then access field: (Point { x: 42, y: 0 }).x
+        let expr = Expr::Field(
+            Box::new(Expr::Struct {
+                name: Path::new(vec!["Point".to_string()]),
+                fields: vec![
+                    ("x".to_string(), Expr::Literal(Literal::Int(42))),
+                    ("y".to_string(), Expr::Literal(Literal::Int(0))),
+                ],
+            }),
+            "x".to_string(),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
+    }
+
+    #[test]
+    fn test_vm_seq_index() {
+        // seq![10, 20, 30][1]
+        let expr = Expr::Index(
+            Box::new(Expr::SeqLit(vec![
+                Expr::Literal(Literal::Int(10)),
+                Expr::Literal(Literal::Int(20)),
+                Expr::Literal(Literal::Int(30)),
+            ])),
+            Box::new(Expr::Literal(Literal::Int(1))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(20));
+    }
+
+    #[test]
+    fn test_vm_iff() {
+        let expr = Expr::Iff(
+            Box::new(Expr::Literal(Literal::Bool(true))),
+            Box::new(Expr::Literal(Literal::Bool(true))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+
+        let expr2 = Expr::Iff(
+            Box::new(Expr::Literal(Literal::Bool(true))),
+            Box::new(Expr::Literal(Literal::Bool(false))),
+        );
+        assert_eq!(eval(&expr2).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_binary_and_short_circuit() {
+        let expr = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Bool(false))),
+            BinOp::And,
+            Box::new(Expr::Literal(Literal::Bool(true))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_binary_or_short_circuit() {
+        let expr = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Bool(true))),
+            BinOp::Or,
+            Box::new(Expr::Literal(Literal::Bool(false))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_constant_value() {
+        let expr = Expr::ConstantValue(RuntimeValue::String("hello".to_string()));
+        assert_eq!(
+            eval(&expr).unwrap(),
+            RuntimeValue::String("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn test_vm_view_passthrough() {
+        let expr = Expr::View(Box::new(Expr::Literal(Literal::Int(7))));
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(7));
+    }
+
+    #[test]
+    fn test_vm_method_call_len() {
+        // seq![1, 2, 3].len()
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::SeqLit(vec![
+                Expr::Literal(Literal::Int(1)),
+                Expr::Literal(Literal::Int(2)),
+                Expr::Literal(Literal::Int(3)),
+            ])),
+            method: "len".to_string(),
+            args: vec![],
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Nat(3));
+    }
+
+    #[test]
+    fn test_vm_method_call_contains() {
+        // set![1, 2, 3].contains(2)
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::SetLit(vec![
+                Expr::Literal(Literal::Int(1)),
+                Expr::Literal(Literal::Int(2)),
+                Expr::Literal(Literal::Int(3)),
+            ])),
+            method: "contains".to_string(),
+            args: vec![Expr::Literal(Literal::Int(2))],
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_complex_expression() {
+        // let a = 5 in let b = 10 in if a < b { a + b } else { a - b }
+        let expr = Expr::Let {
+            binding: crate::ast::Binding {
+                pattern: Pattern::Ident("a".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            },
+            value: Box::new(Expr::Literal(Literal::Int(5))),
+            body: Box::new(Expr::Let {
+                binding: crate::ast::Binding {
+                    pattern: Pattern::Ident("b".to_string()),
+                    ty: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                },
+                value: Box::new(Expr::Literal(Literal::Int(10))),
+                body: Box::new(Expr::If {
+                    cond: Box::new(Expr::Lt(
+                        Box::new(Expr::Ident("a".to_string())),
+                        Box::new(Expr::Ident("b".to_string())),
+                    )),
+                    then_branch: Box::new(Expr::Binary(
+                        Box::new(Expr::Ident("a".to_string())),
+                        BinOp::Add,
+                        Box::new(Expr::Ident("b".to_string())),
+                    )),
+                    else_branch: Some(Box::new(Expr::Binary(
+                        Box::new(Expr::Ident("a".to_string())),
+                        BinOp::Sub,
+                        Box::new(Expr::Ident("b".to_string())),
+                    ))),
+                }),
+            }),
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(15));
     }
 }

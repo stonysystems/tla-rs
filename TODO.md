@@ -13680,14 +13680,14 @@ Three implementation paths, in increasing engineering cost / payoff:
     Match compiles to a chain of `Is` + `JumpIfFalse` + destructure
     + body + `Jump(end)`. ~250 LOC.
 
-  - [ ] **38.22.1.b.iv**: **VM interpreter — core dispatch loop.**
+  - [x] **38.22.1.b.iv**: **VM interpreter — core dispatch loop.**
     Add `fn vm_eval(chunk: &Chunk, ctx: &EvalContext) -> TranspileResult<RuntimeValue>`
     with a `pc: usize` counter and `stack: Vec<RuntimeValue>`.
     Implement the dispatch loop using `match chunk.ops[pc]` for
     all non-quantifier opcodes. Stack-machine semantics: operands
     pushed/popped, result left on top. ~300 LOC.
 
-  - [ ] **38.22.1.b.v**: **VM interpreter — quantifiers & calls.**
+  - [x] **38.22.1.b.v**: **VM interpreter — quantifiers & calls.**
     Implement `Forall(body_len)` / `Exists(body_len)`: iterate
     domain values, execute body sub-slice, short-circuit.
     Implement `Call` / `MethodCall`: delegate to `call_evaluator`

@@ -1128,7 +1128,7 @@ where
     Ok(RuntimeValue::Bool(cmp(lhs, rhs)))
 }
 
-fn eval_builtin_method(
+pub fn eval_builtin_method(
     receiver: &RuntimeValue,
     method: &str,
     args: &[RuntimeValue],
@@ -1313,7 +1313,7 @@ fn eval_builtin_method(
     }
 }
 
-fn eval_builtin_static_call(
+pub fn eval_builtin_static_call(
     func: &Path,
     args: &[RuntimeValue],
     bounds: RuntimeCollectionBounds,
@@ -1579,7 +1579,7 @@ fn cast_value(value: RuntimeValue, ty: &Type) -> TranspileResult<RuntimeValue> {
     }
 }
 
-fn eval_binary(lhs: &RuntimeValue, op: BinOp, rhs: &RuntimeValue) -> TranspileResult<RuntimeValue> {
+pub fn eval_binary(lhs: &RuntimeValue, op: BinOp, rhs: &RuntimeValue) -> TranspileResult<RuntimeValue> {
     match op {
         BinOp::Add => Ok(RuntimeValue::Int(
             expect_number(lhs, "addition lhs")? + expect_number(rhs, "addition rhs")?,
@@ -1627,7 +1627,7 @@ fn eval_unary(op: UnaryOp, value: &RuntimeValue) -> TranspileResult<RuntimeValue
     }
 }
 
-fn expect_bool(value: &RuntimeValue, context: &str) -> TranspileResult<bool> {
+pub fn expect_bool(value: &RuntimeValue, context: &str) -> TranspileResult<bool> {
     match value {
         RuntimeValue::Bool(v) => Ok(*v),
         _ => Err(type_error(
@@ -1641,7 +1641,7 @@ fn expect_bool(value: &RuntimeValue, context: &str) -> TranspileResult<bool> {
     }
 }
 
-fn expect_number(value: &RuntimeValue, context: &str) -> TranspileResult<i128> {
+pub fn expect_number(value: &RuntimeValue, context: &str) -> TranspileResult<i128> {
     match value {
         RuntimeValue::Int(v) => Ok(*v),
         RuntimeValue::Nat(v) => Ok((*v).into()),
@@ -1656,7 +1656,7 @@ fn expect_number(value: &RuntimeValue, context: &str) -> TranspileResult<i128> {
     }
 }
 
-fn expect_index(value: &RuntimeValue, context: &str) -> TranspileResult<usize> {
+pub fn expect_index(value: &RuntimeValue, context: &str) -> TranspileResult<usize> {
     let idx = expect_number(value, context)?;
     if idx < 0 {
         return Err(type_error("Index must be non-negative."));
@@ -1698,7 +1698,7 @@ fn normalized_runtime_path_segments(path: &str) -> Vec<String> {
         .collect()
 }
 
-fn split_variant_path(path: &str) -> Option<(String, String)> {
+pub fn split_variant_path(path: &str) -> Option<(String, String)> {
     let mut segments = path.split("::");
     let first = segments.next()?;
     let mut collected = vec![first.to_string()];
@@ -1725,7 +1725,7 @@ fn unsupported_construct(construct: &str) -> TranspileError {
     }
 }
 
-fn type_error(message: &str) -> TranspileError {
+pub fn type_error(message: &str) -> TranspileError {
     TranspileError::Config {
         message: format!("Model-check evaluator error: {}", message),
     }
