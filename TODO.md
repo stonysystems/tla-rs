@@ -13505,10 +13505,12 @@ tiers, ordered biggest-gain-per-effort first.
       from `Cell<u64>` to `AtomicU64` so `RuntimeValue` is `Send + Sync`.
       7 tests (state count parity, invariant violation, deadlock, max
       depth, max states, cycles, 1-worker vs 4-worker). ~250 LOC.
-    - [ ] **38.21.B.i.c**: **Wire parallel BFS into CLI.**
+    - [x] **38.21.B.i.c**: **Wire parallel BFS into CLI.**
       Add `--workers N` flag (default 1 = sequential). When N>1 and
       search mode is BFS, use `explore_bfs_parallel`. Preserve
-      sequential path for deterministic debugging. ~50 LOC.
+      sequential path for deterministic debugging. Uses `SyncRef`
+      wrapper for non-Sync types (proc_macro2::Span, Rc) that are
+      borrowed immutably during exploration. ~80 LOC.
     - [ ] **38.21.B.i.d**: **Tests + benchmarks.**
       Verify parallel BFS produces same state count as sequential on
       all test protocols. Benchmark 1/2/4 workers on Paxos. ~100 LOC.

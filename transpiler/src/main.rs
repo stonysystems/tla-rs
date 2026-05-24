@@ -263,6 +263,12 @@ enum Commands {
         /// Compiles expressions to bytecode on first use and caches the result.
         #[arg(long)]
         bytecode: bool,
+
+        /// Number of parallel worker threads for BFS exploration.
+        /// Default 1 (sequential). When >1 and search mode is BFS,
+        /// uses level-synchronous parallel BFS with rayon.
+        #[arg(long, default_value_t = 1)]
+        workers: usize,
     },
 
     /// Emit a machine-readable JSON report of `assume(...)` sites in generated files.
@@ -3623,6 +3629,7 @@ fn execute_model_check(
     selected_invariants: &[&verus_transpiler::ast::SpecFunction],
     export_parity_debug: Option<&Path>,
     use_bytecode: bool,
+    workers: usize,
 ) -> Result<ModelCheckExecution> {
     use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
@@ -3630,8 +3637,8 @@ fn execute_model_check(
     use verus_transpiler::modelcheck::config::PorHeuristic;
     use verus_transpiler::modelcheck::domain::expand_branch_existentials;
     use verus_transpiler::modelcheck::explorer::{
-        explore_state_space_with_traces_dedup_and_debug, ExplorationLimits, ExplorationStopReason,
-        TracedSuccessor,
+        explore_bfs_parallel, explore_state_space_with_traces_dedup_and_debug,
+        ExplorationLimits, ExplorationStopReason, TracedSuccessor,
     };
     use verus_transpiler::modelcheck::graph::build_explored_graph_index;
     use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
@@ -4141,6 +4148,149 @@ fn execute_model_check(
                 limits,
             )
             .map_err(|e| miette::miette!("{}", e))?
+        } else if workers > 1 && matches!(selected_search, CliSearchMode::Bfs) {
+            // Phase 38.21.B: parallel BFS with rayon.
+            // Uses fresh closures without mutable captures (no successor
+            // cache or telemetry counters) so they are Fn + Sync + Send.
+            //
+            // Safety: bundle, transition, assignments_by_branch, and related
+            // data are borrowed immutably for the duration of exploration.
+            // The types are not Sync only because they contain proc_macro2::Span
+            // and Rc<()> internally, but no mutation occurs.
+            struct SyncRef<T>(T);
+            unsafe impl<T> Sync for SyncRef<T> {}
+            unsafe impl<T> Send for SyncRef<T> {}
+            impl<T> std::ops::Deref for SyncRef<T> {
+                type Target = T;
+                fn deref(&self) -> &T { &self.0 }
+            }
+            let sync_bundle = SyncRef(bundle);
+            let sync_transition = SyncRef(&transition);
+            let sync_assignments = SyncRef(&assignments_by_branch);
+            let sync_por = SyncRef(&por_pruned_branch_labels);
+            let sync_invariants = SyncRef(&owned_invariants);
+            let sync_qde = SyncRef(&quantifier_domain_evaluator);
+            let par_successor_fn = |state: &verus_transpiler::modelcheck::value::RuntimeValue|
+             -> verus_transpiler::error::TranspileResult<Vec<TracedSuccessor>> {
+                let bundle = &*sync_bundle;
+                let transition = &**sync_transition;
+                let assignments_by_branch = &**sync_assignments;
+                let por_pruned = &**sync_por;
+                let qde = &**sync_qde;
+                let mut traced_successors = Vec::new();
+                for branch in &transition.branches {
+                    if por_pruned.contains(&branch.label) {
+                        continue;
+                    }
+                    let branch_assignments = assignments_by_branch
+                        .get(&branch.label)
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]);
+                    let call_evaluator =
+                        |func_path: &verus_transpiler::ast::Path,
+                         args: &[verus_transpiler::modelcheck::value::RuntimeValue]| {
+                            eval_spec_function_call_recursive(
+                                &bundle.spec_functions,
+                                &bundle.schema,
+                                model_config,
+                                func_path,
+                                args,
+                                bounds,
+                                0,
+                            )
+                        };
+                    let predicate_only_branch_solver =
+                        |transition_ir: &verus_transpiler::modelcheck::ir::TransitionIr,
+                         branch_ir: &verus_transpiler::modelcheck::ir::TransitionBranchIr,
+                         current_state: &verus_transpiler::modelcheck::value::RuntimeValue,
+                         constants: Option<&verus_transpiler::modelcheck::value::RuntimeValue>,
+                         existential_assignments:
+                             &[verus_transpiler::modelcheck::domain::ExistentialAssignment],
+                         bounds: verus_transpiler::modelcheck::value::RuntimeCollectionBounds| {
+                            try_solve_predicate_only_helper_branch(
+                                transition_ir,
+                                branch_ir,
+                                current_state,
+                                constants,
+                                existential_assignments,
+                                bundle,
+                                model_config,
+                                bounds,
+                                solver_candidate_states.is_none(),
+                            )
+                        };
+                    let solved = solve_branch_successors_with_candidates_and_telemetry(
+                        transition,
+                        branch,
+                        state,
+                        Some(constants_value),
+                        branch_assignments,
+                        solver_candidate_states,
+                        Some(candidate_eval_guardrail),
+                        bounds,
+                        SolverHooks {
+                            call_evaluator: Some(&call_evaluator),
+                            method_evaluator: None,
+                            quantifier_domain_evaluator: Some(qde),
+                            predicate_only_branch_solver: Some(&predicate_only_branch_solver),
+                            bytecode_cache: None, // bytecode cache not Sync; disabled for parallel
+                        },
+                        None, // no cooperative timeout for parallel workers
+                    )?;
+                    for successor in solved.successors {
+                        traced_successors.push(TracedSuccessor {
+                            action_branch: branch.label.clone(),
+                            state: successor,
+                        });
+                    }
+                }
+                if traced_successors.is_empty()
+                    && matches!(
+                        empty_successor_semantics,
+                        verus_transpiler::modelcheck::solver::EmptySuccessorSemantics::Stuttering
+                    )
+                {
+                    traced_successors.push(TracedSuccessor {
+                        action_branch: "stutter".to_string(),
+                        state: state.clone(),
+                    });
+                }
+                Ok(traced_successors)
+            };
+            explore_bfs_parallel(
+                &initial_states,
+                limits,
+                model_config.properties.check_deadlock,
+                par_successor_fn,
+                |state, _depth| {
+                    let bundle = &*sync_bundle;
+                    let invariants = &**sync_invariants;
+                    let qde = &**sync_qde;
+                    first_invariant_violation(
+                        invariants,
+                        state,
+                        Some(constants_value),
+                        bounds,
+                        InvariantHooks {
+                            call_evaluator: Some(&|func_path, args| {
+                                eval_spec_function_call_recursive(
+                                    &bundle.spec_functions,
+                                    &bundle.schema,
+                                    model_config,
+                                    func_path,
+                                    args,
+                                    bounds,
+                                    0,
+                                )
+                            }),
+                            method_evaluator: None,
+                            quantifier_domain_evaluator: Some(qde),
+                        },
+                    )
+                },
+                workers,
+            )
+            .map_err(|e| miette::miette!("{}", e))?
         } else {
             explore_state_space_with_traces_dedup_and_debug(
             &initial_states,
@@ -4479,6 +4629,7 @@ fn run_model_check_command(
     model: &Path,
     export_parity_debug: Option<&Path>,
     use_bytecode: bool,
+    workers: usize,
 ) -> Result<ModelCheckCommandExecution> {
     use std::time::Instant;
     use verus_transpiler::modelcheck::config::{
@@ -4541,6 +4692,7 @@ fn run_model_check_command(
         &selected_invariants,
         export_parity_debug,
         use_bytecode,
+        workers,
     )?;
     execution.summary.timing.source_ingestion_parsing_ms = source_ingestion_parsing_ms;
     execution.summary.timing.model_config_resolution_ms = model_config_resolution_ms;
@@ -4653,6 +4805,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             export_parity_debug,
             model,
             bytecode,
+            workers,
         } => {
             if cli.verbose {
                 eprintln!("Loading protocol spec: {}", input.display());
@@ -4682,6 +4835,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 model.as_path(),
                 export_parity_debug.as_deref(),
                 *bytecode,
+                *workers,
             )?;
             let search_evidence_mode = classify_search_evidence_mode(&model_config.search);
 
@@ -6705,6 +6859,7 @@ Next(s, s_, c) ==
                 export_parity_debug: _,
                 model,
                 bytecode: _,
+                workers: _,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
                 assert_eq!(types, Some(PathBuf::from("src/protocol/TwoPhase/types.rs")));
@@ -6897,6 +7052,7 @@ invariants = ["LInv"]
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -6982,6 +7138,7 @@ fairness = { weak = ["branch_0"] }
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -7067,6 +7224,7 @@ fairness = { weak = ["branch_typo"], strong = ["branch_missing"] }
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -7155,6 +7313,7 @@ max_states = 1
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -7237,6 +7396,7 @@ timeout_ms = 60000
             model_path.as_path(),
             None,
             false,
+            1,
         )
         .unwrap();
         assert_eq!(baseline.execution.summary.result, "ok");
@@ -7268,6 +7428,7 @@ timeout_ms = 60000
             model_path.as_path(),
             None,
             false,
+            1,
         )
         .unwrap();
         assert_eq!(timeout_run.execution.summary.result, "timeout_reached");
@@ -7303,6 +7464,7 @@ timeout_ms = 60000
             model_path.as_path(),
             None,
             false,
+            1,
         )
         .unwrap();
         assert_eq!(
@@ -7372,6 +7534,7 @@ max = 1
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -7450,6 +7613,7 @@ max = 1
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -7543,6 +7707,7 @@ invariants = ["LInvBad"]
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -7626,6 +7791,7 @@ max = 2
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -7733,6 +7899,7 @@ max_states = 50
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -7846,6 +8013,7 @@ max_states = 50
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -7956,6 +8124,7 @@ max_states = 50
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8063,6 +8232,7 @@ max_states = 50
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8185,6 +8355,7 @@ max_states = 50
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8261,6 +8432,7 @@ max = 2
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap_err();
         assert!(
@@ -8346,6 +8518,7 @@ check_deadlock = true
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8430,6 +8603,7 @@ leads_to = [{ name = "eventual_one", from = "LFrom", to = "LTo" }]
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8530,6 +8704,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8614,6 +8789,7 @@ max = 1
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8728,6 +8904,7 @@ max = 1
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8847,6 +9024,7 @@ max = 1
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -8953,6 +9131,7 @@ max = 1
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -9031,6 +9210,7 @@ max = 1
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -9253,6 +9433,7 @@ max = 1
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -9361,6 +9542,7 @@ max = 1
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -9472,6 +9654,7 @@ max = 10001
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap_err();
 
@@ -9558,6 +9741,7 @@ fairness = { strong = ["branch_2", "branch_3"] }
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -9652,6 +9836,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -9748,6 +9933,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -9835,6 +10021,7 @@ state_dedup = "hash_compaction64"
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -9967,6 +10154,7 @@ symmetry_fields = ["value"]
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -10058,6 +10246,7 @@ invariants = ["LVisibleBound"]
             &selected_invariants,
             None,
             false,
+            1,
         )
         .unwrap();
 
@@ -10128,6 +10317,7 @@ max = 1
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -10205,6 +10395,7 @@ max = 1
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -10294,6 +10485,7 @@ verus! {
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -10352,6 +10544,7 @@ verus! {
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -10435,6 +10628,7 @@ invariants = ["LMissing"]
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -10520,6 +10714,7 @@ invariants = ["LMissing"]
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -10590,6 +10785,7 @@ verus! {
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
@@ -10657,6 +10853,7 @@ verus! {
             export_parity_debug: None,
             model: model_path,
             bytecode: false,
+            workers: 1,
         };
         let cli = Cli {
             command: None,
