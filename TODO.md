@@ -14527,6 +14527,7 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
   HashSet<CPacket>`, `CExecutor.reply_cache: HashMap<EndPoint, CReply>`,
   `CLearner.unexecuted_ops: HashMap<COp, ...>`. Bench each step to measure
   marginal gain. Target: ≥30K ops/s sustained, ≤2% decay.
+  **Analysis (Phase 41.1.b prep)**: Transpiler infrastructure ready — `clone_*` pattern generalized, Block-in-Call printer fix landed. Adding fields to `arc_wrap_fields` TOML works for codegen. However, each field also requires coordinated changes to the hand-written struct definition in `*Impl.rs` (field type → `Arc<T>`, Clone impl, View/valid/abstractable predicates). Verus's `@` operator auto-derefs through `Arc` (confirmed on existing `highest_seqno` field). Key risk: static methods in ProposerImpl.rs take `&HashSet<CPacket>` but with Arc wrapping would receive `&Arc<HashSet<CPacket>>` — Rust auto-deref handles this but Verus verification needs testing. Each field is ~20 LOC change in `*Impl.rs` + TOML config update + Verus re-verification.
 - [ ] **41.1.c**: Repeat on Raft hot fields (`log: Vec<CLogEntry>`,
   `votes_granted: HashSet<u64>`, `match_index/next_index: HashMap<u64, u64>`).
   Deferred — Raft is currently 3.6K ops/s with no measured Phase 40 benefit; whether collection-field Arc helps Raft is unproven. Gate this sub-task on a quick Arc-wrap-log PoC showing ≥5K ops/s before committing to the full set.

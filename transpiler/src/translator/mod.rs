@@ -3662,14 +3662,13 @@ impl Translator {
                     // clone. With Arc wrapping, use s.field.clone() (Arc::clone, O(1))
                     // instead of deep-cloning + Arc::new().
                     ExecExpr::Call { func, args }
-                        if (func.starts_with("clone_hashset")
-                            || func.starts_with("clone_hashmap"))
+                        if func.starts_with("clone_")
                             && args.len() == 1
                             && Self::is_ref_to_field_access(&args[0]) =>
                     {
-                        // Check if the source field is also Arc-wrapped.
-                        // If so (e.g., s.alive → s.alive), use Arc::clone.
-                        // If not (e.g., c.nodes → alive), wrap in Arc::new.
+                        // clone_* helpers (clone_hashset, clone_hashmap, clone_request_queue, etc.)
+                        // applied to an Arc-wrapped field → Arc::clone instead of deep clone.
+                        // If source is not Arc-wrapped, wrap the clone result in Arc::new.
                         let inner = Self::strip_ref(&args[0]);
                         let source_is_arc = match &inner {
                             ExecExpr::Field(_, ref source_field) => {

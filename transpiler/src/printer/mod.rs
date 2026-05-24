@@ -382,7 +382,14 @@ impl Printer {
                     .iter()
                     .map(|a| {
                         let mut p = Printer::new(self.config.clone());
-                        p.print_expr(a);
+                        // Block args need brace-wrapping to form valid Rust expressions
+                        if matches!(a, ExecExpr::Block(_)) {
+                            p.write("{");
+                            p.print_expr(a);
+                            p.write("}");
+                        } else {
+                            p.print_expr(a);
+                        }
                         p.output
                     })
                     .collect();
