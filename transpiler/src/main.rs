@@ -10261,6 +10261,314 @@ invariants = ["LVisibleBound"]
     }
 
     #[test]
+    fn test_parallel_bfs_produces_same_state_count_as_sequential() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        // A protocol with multiple branches and enough state space to exercise
+        // parallel frontier expansion: a 2-counter system with wrap-around.
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub x: int, pub y: int }
+    pub struct LConstants { pub bound: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        s.x == 0 && s.y == 0 && c.bound > 0
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        ||| {
+            &&& s_.x == (s.x + 1) % c.bound
+            &&& s_.y == s.y
+        }
+        ||| {
+            &&& s_.x == s.x
+            &&& s_.y == (s.y + 1) % c.bound
+        }
+    }
+    pub open spec fn LTypeOK(s: LState, c: LConstants) -> bool {
+        0 <= s.x < c.bound && 0 <= s.y < c.bound
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+bound = 3
+
+[quantifiers.int]
+min = 0
+max = 3
+
+[properties]
+invariants = ["LTypeOK"]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+
+        // Sequential (workers=1)
+        let seq_execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+            false,
+            1,
+        )
+        .unwrap();
+
+        // Parallel (workers=2)
+        let par_execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+            false,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(seq_execution.summary.result, "ok");
+        assert_eq!(par_execution.summary.result, "ok");
+        // Both must explore exactly the same number of states
+        assert_eq!(
+            seq_execution.summary.states, par_execution.summary.states,
+            "parallel BFS state count ({}) should match sequential ({})",
+            par_execution.summary.states, seq_execution.summary.states
+        );
+        // 3×3 = 9 states expected
+        assert_eq!(seq_execution.summary.states, 9);
+    }
+
+    #[test]
+    fn test_parallel_bfs_detects_invariant_violation() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        s.value == 0 && c.limit > 0
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value == s.value + 1 && s.value < c.limit
+    }
+    pub open spec fn LInvBad(s: LState, c: LConstants) -> bool {
+        s.value < 2
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.assignments]
+limit = 3
+
+[quantifiers.int]
+min = 0
+max = 4
+
+[properties]
+invariants = ["LInvBad"]
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+
+        // Sequential (workers=1)
+        let seq_execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+            false,
+            1,
+        )
+        .unwrap();
+
+        // Parallel (workers=2)
+        let par_execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+            false,
+            2,
+        )
+        .unwrap();
+
+        // Both should detect the invariant violation
+        assert_eq!(seq_execution.summary.result, "invariant_violated");
+        assert_eq!(par_execution.summary.result, "invariant_violated");
+    }
+
+    #[test]
+    fn test_parallel_bfs_multi_constants_valuations_parity() {
+        use verus_transpiler::modelcheck::config::parse_model_config_file;
+        use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
+        use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+
+        let dir = tempfile::tempdir().unwrap();
+        let types_path = dir.path().join("types.rs");
+        let proto_path = dir.path().join("demo.rs");
+        let model_path = dir.path().join("model.toml");
+
+        std::fs::write(
+            &types_path,
+            r#"
+verus! {
+    pub struct LState { pub value: int }
+    pub struct LConstants { pub limit: int }
+    pub open spec fn LInit(s: LState, c: LConstants) -> bool {
+        s.value == c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &proto_path,
+            r#"
+verus! {
+    pub open spec fn LNext(s: LState, s_: LState, c: LConstants) -> bool {
+        s_.value == s.value && s.value <= c.limit
+    }
+}
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &model_path,
+            r#"
+[constants.domains.limit]
+kind = "int_range"
+min = 1
+max = 3
+
+[quantifiers.int]
+min = 0
+max = 3
+"#,
+        )
+        .unwrap();
+
+        let bundle = ingest_protocol_sources_with_types_and_entrypoints(
+            proto_path.as_path(),
+            Some(types_path.as_path()),
+            "LInit",
+            "LNext",
+        )
+        .unwrap();
+        let model_config = parse_model_config_file(&model_path).unwrap();
+        let selected_invariants = resolve_selected_invariants(
+            &bundle.spec_functions,
+            &model_config.properties.invariants,
+        )
+        .unwrap();
+
+        let seq_execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+            false,
+            1,
+        )
+        .unwrap();
+
+        let par_execution = execute_model_check(
+            &bundle,
+            &model_config,
+            CliSearchMode::Bfs,
+            &selected_invariants,
+            None,
+            false,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(seq_execution.summary.result, "ok");
+        assert_eq!(par_execution.summary.result, "ok");
+        // Multiple constants valuations: each should explore independently
+        assert_eq!(seq_execution.summary.constants_valuations_total, 3);
+        assert_eq!(par_execution.summary.constants_valuations_total, 3);
+        assert_eq!(
+            seq_execution.summary.states, par_execution.summary.states,
+            "parallel BFS state count ({}) should match sequential ({}) across multiple constants valuations",
+            par_execution.summary.states, seq_execution.summary.states
+        );
+    }
+
+    #[test]
     fn test_model_check_command_with_explicit_types_override() {
         let dir = tempfile::tempdir().unwrap();
         let types_path = dir.path().join("custom_types.rs");

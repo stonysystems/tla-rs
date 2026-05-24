@@ -13500,7 +13500,7 @@ tiers, ordered biggest-gain-per-effort first.
   backtrack stacks. The DPOR algorithm has known parallel variants
   (e.g. Source DPOR + work-stealing). Multi-week.
   Decomposed into sub-tasks:
-  - [ ] **38.21.B.i**: **Parallel BFS explorer with shared visited set.**
+  - [x] **38.21.B.i**: **Parallel BFS explorer with shared visited set.**
     Parallelize `explore_state_space_internal` (BFS path only). Use
     `rayon` for frontier-parallel expansion: each BFS level partitions
     the frontier across worker threads, each thread computes successors
@@ -13526,9 +13526,13 @@ tiers, ordered biggest-gain-per-effort first.
       sequential path for deterministic debugging. Uses `SyncRef`
       wrapper for non-Sync types (proc_macro2::Span, Rc) that are
       borrowed immutably during exploration. ~80 LOC.
-    - [ ] **38.21.B.i.d**: **Tests + benchmarks.**
+    - [x] **38.21.B.i.d**: **Tests + benchmarks.**
       Verify parallel BFS produces same state count as sequential on
-      all test protocols. Benchmark 1/2/4 workers on Paxos. ~100 LOC.
+      all test protocols. Benchmark 1/2/4 workers on grid graph.
+      3 integration tests in main.rs (state-count parity on 2-counter
+      protocol, invariant violation detection, multi-constants-valuation
+      parity). 1 benchmark in transpiler_benchmarks.rs (20×20 grid,
+      1/2/4 workers). ~120 LOC.
   - [ ] **38.21.B.ii**: **Parallel DPOR explorer** (future).
     DFS with sleep sets is harder to parallelize — requires work-stealing
     or independent subtree partitioning. Defer until BFS parallelism

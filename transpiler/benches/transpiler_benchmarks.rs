@@ -460,6 +460,78 @@ fn bench_set_repr(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_parallel_bfs(c: &mut Criterion) {
+    use verus_transpiler::modelcheck::explorer::{
+        explore_bfs_parallel, ExplorationLimits, TracedSuccessor,
+    };
+    use verus_transpiler::modelcheck::value::RuntimeValue;
+
+    let mut group = c.benchmark_group("parallel_bfs");
+
+    // Build a grid graph: N×N states with 2 successors each (right, down).
+    // Total states = N*N. This gives enough work to measure parallelism.
+    let grid_size: i128 = 20; // 400 states
+    let make_state = |x: i128, y: i128| -> RuntimeValue {
+        RuntimeValue::struct_value(
+            "S",
+            vec![
+                ("x".to_string(), RuntimeValue::Int(x)),
+                ("y".to_string(), RuntimeValue::Int(y)),
+            ],
+        )
+        .unwrap()
+    };
+    let grid_successor = move |s: &RuntimeValue| -> verus_transpiler::error::TranspileResult<Vec<TracedSuccessor>> {
+        let x = match s.field("x") { Some(RuntimeValue::Int(v)) => *v, _ => 0 };
+        let y = match s.field("y") { Some(RuntimeValue::Int(v)) => *v, _ => 0 };
+        let mut succs = Vec::new();
+        if x + 1 < grid_size {
+            succs.push(TracedSuccessor {
+                action_branch: "right".to_string(),
+                state: make_state(x + 1, y),
+            });
+        }
+        if y + 1 < grid_size {
+            succs.push(TracedSuccessor {
+                action_branch: "down".to_string(),
+                state: make_state(x, y + 1),
+            });
+        }
+        Ok(succs)
+    };
+    let invariant_ok = |_: &RuntimeValue, _: usize| -> verus_transpiler::error::TranspileResult<Option<String>> {
+        Ok(None)
+    };
+    let limits = ExplorationLimits {
+        max_depth: 100,
+        max_states: 10_000,
+        timeout_ms: 60_000,
+    };
+    let init = vec![make_state(0, 0)];
+
+    for &workers in &[1, 2, 4] {
+        group.bench_with_input(
+            BenchmarkId::new("grid_20x20", workers),
+            &workers,
+            |b, &w| {
+                b.iter(|| {
+                    explore_bfs_parallel(
+                        black_box(&init),
+                        limits,
+                        false,
+                        &grid_successor,
+                        &invariant_ok,
+                        w,
+                    )
+                    .unwrap()
+                })
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_parser,
@@ -470,5 +542,6 @@ criterion_group!(
     bench_full_pipeline,
     bench_scaling,
     bench_set_repr,
+    bench_parallel_bfs,
 );
 criterion_main!(benches);
