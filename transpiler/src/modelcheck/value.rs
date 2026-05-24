@@ -2,7 +2,6 @@ use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{CollectionBounds, ModelValue};
 use crate::modelcheck::symbol::Symbol;
 use serde_json::Value as JsonValue;
-use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -104,19 +103,30 @@ impl<'a> IntoIterator for &'a NamedFields {
 /// two `FingerprintCache` values are always equal, and cloning preserves the
 /// cached hash so that a clone of an already-fingerprinted value skips
 /// recomputation.
-#[derive(Debug, Clone)]
-pub(crate) struct FingerprintCache(Cell<u64>);
+///
+/// Uses `AtomicU64` instead of `Cell<u64>` so that `RuntimeValue` is `Send + Sync`,
+/// enabling parallel BFS exploration (Phase 38.21.B).
+#[derive(Debug)]
+pub(crate) struct FingerprintCache(std::sync::atomic::AtomicU64);
 
 /// Sentinel: 0 means "not yet computed".  If a real hash happens to be 0 we
 /// recompute each time — negligible cost in practice.
 const FINGERPRINT_NOT_COMPUTED: u64 = 0;
 
+impl Clone for FingerprintCache {
+    fn clone(&self) -> Self {
+        Self(std::sync::atomic::AtomicU64::new(
+            self.0.load(std::sync::atomic::Ordering::Relaxed),
+        ))
+    }
+}
+
 impl FingerprintCache {
     fn new() -> Self {
-        Self(Cell::new(FINGERPRINT_NOT_COMPUTED))
+        Self(std::sync::atomic::AtomicU64::new(FINGERPRINT_NOT_COMPUTED))
     }
     fn get(&self) -> Option<u64> {
-        let v = self.0.get();
+        let v = self.0.load(std::sync::atomic::Ordering::Relaxed);
         if v != FINGERPRINT_NOT_COMPUTED {
             Some(v)
         } else {
@@ -126,12 +136,12 @@ impl FingerprintCache {
     fn set(&self, hash: u64) {
         // If the real hash is 0, don't store it — we'll recompute next time.
         if hash != FINGERPRINT_NOT_COMPUTED {
-            self.0.set(hash);
+            self.0.store(hash, std::sync::atomic::Ordering::Relaxed);
         }
     }
     /// Invalidate the cached hash (e.g. after mutation).
     fn invalidate(&self) {
-        self.0.set(FINGERPRINT_NOT_COMPUTED);
+        self.0.store(FINGERPRINT_NOT_COMPUTED, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

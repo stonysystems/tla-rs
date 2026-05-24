@@ -26,6 +26,10 @@ clap = { version = "4.4", features = ["derive"] }
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "1.0"
 
+# Parallelism
+rayon = "1.10"
+dashmap = "6.1"
+
 [dev-dependencies]
 pretty_assertions = "1.4"
 tempfile = "3.10"

@@ -805,6 +805,248 @@ fn record_symmetry_collapse(
     inserted && raw_keys.len() > 1
 }
 
+/// Level-synchronous parallel BFS exploration.
+///
+/// Processes the frontier one depth-level at a time using rayon's parallel
+/// iterator. Each worker computes successors and checks invariants
+/// independently; results are merged via a shared `DashSet` for fingerprint
+/// dedup.
+///
+/// Limitations vs the sequential path:
+/// - BFS only (no DFS mode)
+/// - No trace/counterexample reconstruction
+/// - No parity debug export
+/// - No symmetry reduction (uses fingerprint dedup only)
+#[allow(clippy::too_many_arguments)]
+pub fn explore_bfs_parallel<F, I>(
+    initial_states: &[RuntimeValue],
+    limits: ExplorationLimits,
+    check_deadlock: bool,
+    successor_fn: F,
+    invariant_checker: I,
+    num_workers: usize,
+) -> TranspileResult<ExplorationResult>
+where
+    F: Fn(&RuntimeValue) -> TranspileResult<Vec<TracedSuccessor>> + Sync + Send,
+    I: Fn(&RuntimeValue, usize) -> TranspileResult<Option<String>> + Sync + Send,
+{
+    use dashmap::DashSet;
+    use rayon::prelude::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    validate_limits(limits)?;
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(num_workers)
+        .build()
+        .map_err(|e| TranspileError::Config {
+            message: format!("Failed to create thread pool with {num_workers} workers: {e}"),
+        })?;
+
+    let seen = DashSet::<u64>::new();
+    let mut frontier: Vec<FrontierItem> = Vec::new();
+
+    for state in initial_states {
+        let fp = state.fingerprint();
+        if seen.insert(fp) {
+            frontier.push(FrontierItem {
+                key: format!("h{fp:016x}"),
+                state: state.clone(),
+                depth: 0,
+            });
+        }
+    }
+
+    let stats_initial = frontier.len();
+    let stats_successors_considered = AtomicUsize::new(0);
+    let stats_successors_enqueued = AtomicUsize::new(0);
+    let stats_duplicate_successors = AtomicUsize::new(0);
+    let max_frontier_size = AtomicUsize::new(frontier.len());
+    let started = Instant::now();
+
+    let mut explored: Vec<ExploredState> = Vec::new();
+    let violation: Mutex<Option<InvariantViolation>> = Mutex::new(None);
+    let deadlock: Mutex<Option<DeadlockDetection>> = Mutex::new(None);
+    let found_issue = AtomicBool::new(false);
+
+    loop {
+        if frontier.is_empty() {
+            break;
+        }
+
+        if timeout_reached(started, limits.timeout_ms) {
+            let stats = ExplorationStats {
+                initial_states: stats_initial,
+                max_frontier_size: max_frontier_size.load(Ordering::Relaxed),
+                successors_considered: stats_successors_considered.load(Ordering::Relaxed),
+                successors_enqueued: stats_successors_enqueued.load(Ordering::Relaxed),
+                duplicate_successors: stats_duplicate_successors.load(Ordering::Relaxed),
+                ..ExplorationStats::default()
+            };
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::TimeoutReached,
+                seen.len(),
+                frontier.len(),
+                stats,
+                None,
+                None,
+                None,
+            ));
+        }
+
+        if seen.len() >= limits.max_states {
+            let stats = ExplorationStats {
+                initial_states: stats_initial,
+                max_frontier_size: max_frontier_size.load(Ordering::Relaxed),
+                successors_considered: stats_successors_considered.load(Ordering::Relaxed),
+                successors_enqueued: stats_successors_enqueued.load(Ordering::Relaxed),
+                duplicate_successors: stats_duplicate_successors.load(Ordering::Relaxed),
+                ..ExplorationStats::default()
+            };
+            return Ok(finalize_result(
+                explored,
+                ExplorationStopReason::MaxStatesReached,
+                seen.len(),
+                frontier.len(),
+                stats,
+                None,
+                None,
+                None,
+            ));
+        }
+
+        // Process current frontier level in parallel
+        let current_level = std::mem::take(&mut frontier);
+        let current_depth = current_level.first().map(|f| f.depth).unwrap_or(0);
+
+        // Add current level to explored
+        for item in &current_level {
+            explored.push(ExploredState {
+                state: item.state.clone(),
+                depth: item.depth,
+            });
+        }
+
+        // Check invariants + compute successors in parallel
+        if current_depth >= limits.max_depth {
+            // Don't expand states at max depth
+            continue;
+        }
+
+        let next_level: Vec<FrontierItem> = pool.install(|| {
+            current_level
+                .par_iter()
+                .flat_map(|item| {
+                    if found_issue.load(Ordering::Relaxed) {
+                        return Vec::new();
+                    }
+
+                    // Check invariant
+                    match invariant_checker(&item.state, item.depth) {
+                        Ok(Some(invariant_name)) => {
+                            if !found_issue.swap(true, Ordering::Relaxed) {
+                                *violation.lock().unwrap() = Some(InvariantViolation {
+                                    invariant: invariant_name,
+                                    state: item.state.clone(),
+                                    depth: item.depth,
+                                });
+                            }
+                            return Vec::new();
+                        }
+                        Err(_) => return Vec::new(),
+                        Ok(None) => {}
+                    }
+
+                    // Compute successors
+                    let successors = match successor_fn(&item.state) {
+                        Ok(s) => s,
+                        Err(_) => return Vec::new(),
+                    };
+
+                    if check_deadlock && successors.is_empty() {
+                        if !found_issue.swap(true, Ordering::Relaxed) {
+                            *deadlock.lock().unwrap() = Some(DeadlockDetection {
+                                state: item.state.clone(),
+                                depth: item.depth,
+                            });
+                        }
+                        return Vec::new();
+                    }
+
+                    let mut new_items = Vec::new();
+                    for succ in successors {
+                        stats_successors_considered.fetch_add(1, Ordering::Relaxed);
+                        let fp = succ.state.fingerprint();
+                        if seen.insert(fp) {
+                            stats_successors_enqueued.fetch_add(1, Ordering::Relaxed);
+                            new_items.push(FrontierItem {
+                                key: format!("h{fp:016x}"),
+                                state: succ.state,
+                                depth: item.depth + 1,
+                            });
+                        } else {
+                            stats_duplicate_successors.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    new_items
+                })
+                .collect()
+        });
+
+        if found_issue.load(Ordering::Relaxed) {
+            let violation = violation.into_inner().unwrap();
+            let deadlock = deadlock.into_inner().unwrap();
+            let stop_reason = if violation.is_some() {
+                ExplorationStopReason::InvariantViolated
+            } else {
+                ExplorationStopReason::DeadlockDetected
+            };
+            let stats = ExplorationStats {
+                initial_states: stats_initial,
+                max_frontier_size: max_frontier_size.load(Ordering::Relaxed),
+                successors_considered: stats_successors_considered.load(Ordering::Relaxed),
+                successors_enqueued: stats_successors_enqueued.load(Ordering::Relaxed),
+                duplicate_successors: stats_duplicate_successors.load(Ordering::Relaxed),
+                ..ExplorationStats::default()
+            };
+            return Ok(finalize_result(
+                explored,
+                stop_reason,
+                seen.len(),
+                0,
+                stats,
+                violation,
+                deadlock,
+                None,
+            ));
+        }
+
+        frontier = next_level;
+        max_frontier_size.fetch_max(frontier.len(), Ordering::Relaxed);
+    }
+
+    let stats = ExplorationStats {
+        initial_states: stats_initial,
+        max_frontier_size: max_frontier_size.load(Ordering::Relaxed),
+        successors_considered: stats_successors_considered.load(Ordering::Relaxed),
+        successors_enqueued: stats_successors_enqueued.load(Ordering::Relaxed),
+        duplicate_successors: stats_duplicate_successors.load(Ordering::Relaxed),
+        ..ExplorationStats::default()
+    };
+    Ok(finalize_result(
+        explored,
+        ExplorationStopReason::FrontierExhausted,
+        seen.len(),
+        0,
+        stats,
+        None,
+        None,
+        None,
+    ))
+}
+
 /// Phase 38.21.D: public re-export so the DPOR explorer (and any other
 /// out-of-module dedup site) can use the same complete-symmetry
 /// canonicalization the BFS path uses.
@@ -2029,5 +2271,260 @@ mod tests {
             let v: serde_json::Value = serde_json::from_str(line).unwrap();
             assert_eq!(v["branch_label"], "LStep");
         }
+    }
+
+    // --- Parallel BFS tests ---
+
+    #[test]
+    fn test_parallel_bfs_same_state_count_as_sequential() {
+        let graph = BTreeMap::from([
+            (0, vec![1, 2]),
+            (1, vec![3, 4]),
+            (2, vec![4, 5]),
+            (3, vec![]),
+            (4, vec![]),
+            (5, vec![]),
+        ]);
+        let seq = explore_state_space(
+            &[state(0)],
+            SearchMode::Bfs,
+            limits(10, 100),
+            |s| {
+                Ok(graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| state(*i))
+                    .collect())
+            },
+        )
+        .unwrap();
+
+        let par = explore_bfs_parallel(
+            &[state(0)],
+            limits(10, 100),
+            false,
+            |s| {
+                Ok(graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| TracedSuccessor {
+                        action_branch: "Step".to_string(),
+                        state: state(*i),
+                    })
+                    .collect())
+            },
+            |_s, _depth| Ok(None),
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            seq.stats.visited_states, par.stats.visited_states,
+            "parallel and sequential should find same number of states"
+        );
+        assert_eq!(par.stop_reason, ExplorationStopReason::FrontierExhausted);
+    }
+
+    #[test]
+    fn test_parallel_bfs_invariant_violation() {
+        let graph = BTreeMap::from([
+            (0, vec![1, 2]),
+            (1, vec![3]),
+            (2, vec![]),
+            (3, vec![]),
+        ]);
+        let result = explore_bfs_parallel(
+            &[state(0)],
+            limits(10, 100),
+            false,
+            |s| {
+                Ok(graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| TracedSuccessor {
+                        action_branch: "Step".to_string(),
+                        state: state(*i),
+                    })
+                    .collect())
+            },
+            |s, _depth| {
+                if state_id(s) == 3 {
+                    Ok(Some("LSafety".to_string()))
+                } else {
+                    Ok(None)
+                }
+            },
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::InvariantViolated);
+        assert!(result.invariant_violation.is_some());
+        assert_eq!(
+            result.invariant_violation.unwrap().invariant,
+            "LSafety"
+        );
+    }
+
+    #[test]
+    fn test_parallel_bfs_deadlock_detection() {
+        // State 2 has no successors → deadlock
+        let graph = BTreeMap::from([(0, vec![1, 2]), (1, vec![0]), (2, vec![])]);
+        let result = explore_bfs_parallel(
+            &[state(0)],
+            limits(10, 100),
+            true,
+            |s| {
+                Ok(graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| TracedSuccessor {
+                        action_branch: "Step".to_string(),
+                        state: state(*i),
+                    })
+                    .collect())
+            },
+            |_s, _depth| Ok(None),
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::DeadlockDetected);
+        assert!(result.deadlock.is_some());
+    }
+
+    #[test]
+    fn test_parallel_bfs_max_depth() {
+        // Linear chain: 0 → 1 → 2 → 3 → 4
+        let graph = BTreeMap::from([
+            (0, vec![1]),
+            (1, vec![2]),
+            (2, vec![3]),
+            (3, vec![4]),
+            (4, vec![]),
+        ]);
+        let result = explore_bfs_parallel(
+            &[state(0)],
+            limits(2, 100), // max_depth=2
+            false,
+            |s| {
+                Ok(graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| TracedSuccessor {
+                        action_branch: "Step".to_string(),
+                        state: state(*i),
+                    })
+                    .collect())
+            },
+            |_s, _depth| Ok(None),
+            2,
+        )
+        .unwrap();
+
+        // Depth 0: state 0, depth 1: state 1, depth 2: state 2
+        // States 3 and 4 not reached
+        assert_eq!(result.stats.visited_states, 3);
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+    }
+
+    #[test]
+    fn test_parallel_bfs_max_states() {
+        // Wide graph: 0 → {1,2,3,4,5}
+        let graph = BTreeMap::from([
+            (0, vec![1, 2, 3, 4, 5]),
+            (1, vec![]),
+            (2, vec![]),
+            (3, vec![]),
+            (4, vec![]),
+            (5, vec![]),
+        ]);
+        let result = explore_bfs_parallel(
+            &[state(0)],
+            limits(10, 4), // max_states=4
+            false,
+            |s| {
+                Ok(graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| TracedSuccessor {
+                        action_branch: "Step".to_string(),
+                        state: state(*i),
+                    })
+                    .collect())
+            },
+            |_s, _depth| Ok(None),
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(result.stop_reason, ExplorationStopReason::MaxStatesReached);
+    }
+
+    #[test]
+    fn test_parallel_bfs_with_cycles() {
+        // Cyclic graph: 0 → 1 → 2 → 0
+        let graph = BTreeMap::from([(0, vec![1]), (1, vec![2]), (2, vec![0])]);
+        let result = explore_bfs_parallel(
+            &[state(0)],
+            limits(10, 100),
+            false,
+            |s| {
+                Ok(graph
+                    .get(&state_id(s))
+                    .unwrap()
+                    .iter()
+                    .map(|i| TracedSuccessor {
+                        action_branch: "Step".to_string(),
+                        state: state(*i),
+                    })
+                    .collect())
+            },
+            |_s, _depth| Ok(None),
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(result.stats.visited_states, 3);
+        assert_eq!(result.stop_reason, ExplorationStopReason::FrontierExhausted);
+    }
+
+    #[test]
+    fn test_parallel_bfs_single_worker_matches_multi() {
+        let graph = BTreeMap::from([
+            (0, vec![1, 2, 3]),
+            (1, vec![4]),
+            (2, vec![4]),
+            (3, vec![5]),
+            (4, vec![]),
+            (5, vec![]),
+        ]);
+        let succ = |s: &RuntimeValue| -> TranspileResult<Vec<TracedSuccessor>> {
+            Ok(graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| TracedSuccessor {
+                    action_branch: "Step".to_string(),
+                    state: state(*i),
+                })
+                .collect())
+        };
+
+        let r1 = explore_bfs_parallel(&[state(0)], limits(10, 100), false, &succ, |_, _| Ok(None), 1)
+            .unwrap();
+        let r4 = explore_bfs_parallel(&[state(0)], limits(10, 100), false, &succ, |_, _| Ok(None), 4)
+            .unwrap();
+
+        assert_eq!(
+            r1.stats.visited_states, r4.stats.visited_states,
+            "1 worker and 4 workers should find same states"
+        );
     }
 }

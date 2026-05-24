@@ -13484,6 +13484,38 @@ tiers, ordered biggest-gain-per-effort first.
   pool with a lock-free `DashMap<u64, ()>` visited set and per-worker
   backtrack stacks. The DPOR algorithm has known parallel variants
   (e.g. Source DPOR + work-stealing). Multi-week.
+  Decomposed into sub-tasks:
+  - [ ] **38.21.B.i**: **Parallel BFS explorer with shared visited set.**
+    Parallelize `explore_state_space_internal` (BFS path only). Use
+    `rayon` for frontier-parallel expansion: each BFS level partitions
+    the frontier across worker threads, each thread computes successors
+    independently, then results are merged into a shared visited set.
+    Shared state: `DashSet<u64>` for fingerprint dedup (fast path),
+    `Mutex<BTreeSet<String>>` for canonical-key dedup (symmetry path).
+    Statistics use `AtomicUsize` counters. ~300 LOC.
+    Sub-sub-tasks:
+    - [x] **38.21.B.i.a**: **Add `rayon` + `dashmap` dependencies.**
+      Add to `Cargo.toml`, verify build. ~5 LOC.
+    - [x] **38.21.B.i.b**: **Implement `explore_bfs_parallel`.**
+      Level-synchronous BFS: process entire frontier in parallel via
+      `rayon::par_iter()`, collect new states, merge into shared
+      visited set (`DashSet<u64>` for fingerprint dedup). Each worker
+      computes successors + invariant checks independently. Early
+      termination via `AtomicBool`. Also changed `FingerprintCache`
+      from `Cell<u64>` to `AtomicU64` so `RuntimeValue` is `Send + Sync`.
+      7 tests (state count parity, invariant violation, deadlock, max
+      depth, max states, cycles, 1-worker vs 4-worker). ~250 LOC.
+    - [ ] **38.21.B.i.c**: **Wire parallel BFS into CLI.**
+      Add `--workers N` flag (default 1 = sequential). When N>1 and
+      search mode is BFS, use `explore_bfs_parallel`. Preserve
+      sequential path for deterministic debugging. ~50 LOC.
+    - [ ] **38.21.B.i.d**: **Tests + benchmarks.**
+      Verify parallel BFS produces same state count as sequential on
+      all test protocols. Benchmark 1/2/4 workers on Paxos. ~100 LOC.
+  - [ ] **38.21.B.ii**: **Parallel DPOR explorer** (future).
+    DFS with sleep sets is harder to parallelize — requires work-stealing
+    or independent subtree partitioning. Defer until BFS parallelism
+    is proven. Multi-week.
 - [ ] **38.21.C**: **Source DPOR / persistent sets** (1.5-2× more
   transition reduction). Sleep sets are sound but not optimal.
   Source-DPOR (Abdulla et al., POPL '14) provably explores the
