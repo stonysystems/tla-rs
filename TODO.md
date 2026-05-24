@@ -14411,7 +14411,7 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
 
 #### 42.4 Establish a tested regen workflow
 
-- [ ] **42.4.a**: Write `scripts/regenerate_rsl.sh` that:
+- [x] **42.4.a**: Write `scripts/regenerate_rsl.sh` that:
   - Transpiles all 8 RSL modules (including types) into `src/generated/RSL/*_gen.rs`.
   - Verifies `cargo build` succeeds on the result.
   - Verifies `--verify-only-module generated::RSL::*` passes the per-module verification counts that are currently green.

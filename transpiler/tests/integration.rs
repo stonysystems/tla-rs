@@ -23508,3 +23508,52 @@ fn test_phase_38_15_2_d_a_bound_rejection_step_and_postfix_sweep_are_recorded() 
         );
     }
 }
+
+#[test]
+fn test_regenerate_rsl_script_dry_run_succeeds() {
+    let repo_root = resolve_repo_root_for_integration();
+    let script_path = repo_root.join("scripts/regenerate_rsl.sh");
+    assert!(
+        script_path.exists(),
+        "missing regenerate_rsl.sh: {}",
+        script_path.display()
+    );
+
+    let output = std::process::Command::new("bash")
+        .args([script_path.to_str().unwrap(), "--dry-run"])
+        .current_dir(&repo_root)
+        .output()
+        .expect("failed to run regenerate_rsl.sh --dry-run");
+    assert!(
+        output.status.success(),
+        "regenerate_rsl.sh --dry-run should succeed. stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("RSL Regeneration"),
+        "dry-run should print regeneration header"
+    );
+    assert!(
+        stdout.contains("[dry-run]"),
+        "dry-run should print dry-run notice"
+    );
+}
+
+#[test]
+fn test_regenerate_rsl_script_references_regen_workflow_doc() {
+    let repo_root = resolve_repo_root_for_integration();
+    let script_src =
+        std::fs::read_to_string(repo_root.join("scripts/regenerate_rsl.sh")).unwrap();
+    assert!(
+        script_src.contains("REGEN_WORKFLOW.md"),
+        "regenerate_rsl.sh should reference the REGEN_WORKFLOW.md documentation"
+    );
+    let workflow_doc = repo_root.join("transpiler/docs/REGEN_WORKFLOW.md");
+    assert!(
+        workflow_doc.exists(),
+        "REGEN_WORKFLOW.md should exist at {}",
+        workflow_doc.display()
+    );
+}
