@@ -11431,6 +11431,7 @@ is not reintroduced.
 - The synced reports under `tests/reports/` (`latest.json`, `latest.md`, blocker ledger).
 - The 38.14.10 reduction report (`tests/reports/sleep_set_reduction_table.md`) now
   records a **MET** transition/work gate (`3/3`).
+  38.14.10 is now closed (`3/3` transition-gate hits).
 - Post-Phase-38.18.5 Paxos / PBFT / Raft sub-second wall-times in
   `tests/reports/dpor_vs_tlc.md` (Paxos 0.51 s, PBFT 0.07 s, Raft 0.43 s).
 
@@ -13332,14 +13333,10 @@ makes DPOR reduction measurable).
   primitive for future specs with heavier helper bodies. Commit
   `1d453822`.
 
-- [ ] **38.18.3**: **Apply DPOR reduction in `verus-transpile model-check`.**
-  Currently only the DPOR crate (dpor-checker binary) uses sleep sets.
-  The main model-check path in `transpiler/src/main.rs` is still plain
-  BFS with the static `por_heuristic` branch-pruning. Adding dynamic
-  `use_independence + use_sleep_sets` to the main path would make DPOR's
-  benefits visible in the standard workflow. (Multi-day rewrite; needs
-  backtrack-stack + sleep-set state machine inside the BFS loop;
-  deferred.)
+- [x] **38.18.3**: **Apply DPOR reduction in `verus-transpile model-check`.**
+  Superseded by Phase 38.18.10 which relocated DPOR code into
+  `transpiler/src/modelcheck/dpor/` and wired the sleep-set explorer
+  into the main model-check path.
 
 - [x] **38.18.4**: **Investigate DPOR crate vs baseline state-count
   discrepancy on Raft/PBFT.** Root-caused: `dpor-checker shadow-compare`

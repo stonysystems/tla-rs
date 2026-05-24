@@ -148,14 +148,21 @@ max_seq_len = 4
 /// Find the transpiler binary (release build preferred).
 pub fn find_transpiler_bin() -> Option<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = manifest_dir.parent()?.parent()?;
-    let release = repo_root.join("transpiler/target/release/verus-transpile");
-    if release.exists() {
-        return Some(release);
-    }
-    let debug = repo_root.join("transpiler/target/debug/verus-transpile");
-    if debug.exists() {
-        return Some(debug);
+    // Try one parent (transpiler crate is at <repo>/transpiler/)
+    // and two parents (dpor-checker crate is at <repo>/transpiler/DPOR_based_model_tla_rs_checker/)
+    for depth in [1, 2] {
+        let mut root = manifest_dir.clone();
+        for _ in 0..depth {
+            root = root.parent()?.to_path_buf();
+        }
+        let release = root.join("transpiler/target/release/verus-transpile");
+        if release.exists() {
+            return Some(release);
+        }
+        let debug = root.join("transpiler/target/debug/verus-transpile");
+        if debug.exists() {
+            return Some(debug);
+        }
     }
     None
 }
