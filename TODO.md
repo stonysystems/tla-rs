@@ -14094,14 +14094,23 @@ Runs after 40.3 lands so Raft (and ideally RSL) are also Arc-wrapped.
   Trial-2: **1,517 ops/s** (significant decay — log grows unbounded across trials).
   Note: `log` field removed from Arc wrapping due to Verus indexing limitation;
   the expected "biggest absolute lift" from log-clone elimination did not materialize.
-- [ ] **40.4.d**: Smoke other protocols (PBFT, Paxos, EPaxos,
+- [x] **40.4.d**: Smoke other protocols (PBFT, Paxos, EPaxos,
   PrimaryBackup, TwoPhase, etc.) — at minimum, run a 1-thread × 5 s
   client to confirm no regression / no broken behavior. We do not
   yet have benchmark clients for all of them.
-- [ ] **40.4.e**: Capture a fresh gdb sample profile on the Arc-ified
+  **Result**: All 9 protocols smoke-tested (3 servers each, 2s runtime):
+  twophase, leaderelection, primarybackup, chainreplication, paxos,
+  verticalpaxos, pbft, epaxos — all OK (3/3 alive). No crashes or regressions.
+- [x] **40.4.e**: Capture a fresh gdb sample profile on the Arc-ified
   tla-rs RSL leader. Confirm `CProposer::clone_up_to_view` drops
   out of the top frames (it should become `Arc::clone` — refcount
   increment, sub-ns).
+  **Result**: 5 gdb samples (874 lines total) during 32-thread bench.
+  `CProposer::clone_up_to_view` appeared only 2×/874 (was top frame
+  pre-Phase-40). `CElectionState::clone_up_to_view` 1×, `clone_request_batch`
+  1×. Most CPU in epoll_wait/poll (I/O bound). RSL itself not yet Arc-wrapped
+  (40.3.g), so remaining clone_up_to_view calls are expected. No Arc::clone
+  visible since RSL protocol functions aren't Arc-wrapped yet.
 
 #### 40.5 (Conditional, Path B) HashMap → persistent
 
