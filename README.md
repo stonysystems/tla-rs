@@ -166,11 +166,23 @@ The transpiler includes 25+ verified examples in `transpiler/verus_examples/` co
 - Cross-component dispatch (multi-component state transitions)
 - I/O operations (packet construction, broadcast patterns)
 
+### Performance
+
+The transpiler generates code that achieves ~60% of hand-tuned throughput on
+RSL UDP (16.7K vs 28.6K ops/s). The remaining gap is **algorithmic** (batching,
+log compaction, message coalescing), not structural — these require protocol-level
+changes beyond mechanical spec-to-exec translation.
+
+To reduce clone overhead, the transpiler can wrap non-scalar struct fields in
+`Arc<T>` for O(1) clone (refcount bump) instead of O(n) deep copy. Configure
+via `arc_wrap_types` / `arc_wrap_fields` in the protocol's `_transpile.toml`.
+See `transpiler/docs/PATTERNS.md` for details.
+
 ### Documentation
 
 - `transpiler/docs/ANNOTATION_FORMAT.md` - Mode annotation syntax
-- `transpiler/docs/PATTERNS.md` - Supported transformation patterns
-- `transpiler/docs/LIMITATIONS.md` - Known limitations and workarounds
+- `transpiler/docs/PATTERNS.md` - Supported transformation patterns (incl. Arc wrapping)
+- `transpiler/docs/LIMITATIONS.md` - Known limitations, workarounds, and performance analysis
 - `transpiler/docs/MIGRATION_GUIDE.md` - Migration from manual implementations
 
 ## Code Organization

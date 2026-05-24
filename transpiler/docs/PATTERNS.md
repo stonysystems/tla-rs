@@ -200,6 +200,64 @@ ensures
 // Used only in proof context, not in executable code
 ```
 
+## Arc-Wrapping for O(1) Clone (Phase 40)
+
+The transpiler can wrap non-scalar struct fields in `Arc<T>` so that cloning
+the struct is O(1) (refcount increment) instead of O(n) (deep copy). This
+eliminates the major performance bottleneck of spec→exec translation where
+every state transition clones the full state.
+
+### Configuration
+
+In the protocol's `_transpile.toml`:
+
+```toml
+# Structs whose non-scalar fields should be Arc-wrapped
+arc_wrap_types = ["CState"]
+
+# Fine-grained: only wrap specific fields (overrides arc_wrap_types)
+[arc_wrap_fields]
+CState = ["votes_granted", "match_index", "next_index"]
+```
+
+**`arc_wrap_types`** wraps ALL non-scalar fields of the listed structs.
+**`arc_wrap_fields`** gives fine-grained control — only listed fields are
+wrapped. When both are specified, `arc_wrap_fields` takes precedence for
+structs that appear in both.
+
+### What changes
+
+| Without Arc | With Arc |
+|-------------|----------|
+| `pub field: Vec<T>` | `pub field: Arc<Vec<T>>` |
+| `field: v.clone()` (deep copy) | `field: v.clone()` (Arc refcount bump) |
+| `field: HashSet::new()` | `field: Arc::new(HashSet::new())` |
+| `CState { field: x, ..s.clone() }` | `CState { field: Arc::new(x), ..s.clone() }` |
+
+### Struct update syntax
+
+When a function modifies only a few fields via `CState { field: val, ..s.clone() }`,
+unchanged Arc-wrapped fields get `Arc::clone` (O(1)), and only explicitly set
+Arc-wrapped fields get `Arc::new(value)`.
+
+### Limitations
+
+- **Vec indexing**: Verus does not support `[]` indexing on `Arc<Vec<T>>`.
+  If a field is indexed in exec code, exclude it from `arc_wrap_fields`.
+  The `log` field in Raft is an example — it must remain `Vec<CLogEntry>`.
+- **Struct match patterns**: The transpiler appends `..` to struct patterns
+  in match arms to handle partial field binding gracefully.
+- **Helper call field access**: Expressions like `Chelper(&s).field` where
+  `field` is Arc-wrapped are NOT double-wrapped — the transpiler detects
+  this pattern and skips the outer `Arc::new`.
+
+### Performance impact
+
+Benchmarked on Raft (zoo-002, 32 threads × 30s):
+- Pre-Phase-40: 3,400 ops/s baseline
+- Post-Phase-40: 3,804 ops/s (+12%)
+- `CProposer::clone_up_to_view` dropped from top gdb frame to 2/874 samples
+
 ## Unsupported Patterns
 
 The transpiler will report an error for patterns it cannot handle:

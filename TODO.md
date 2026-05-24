@@ -14128,13 +14128,13 @@ Only pursue if 40.4 results show throughput decay still present.
 
 #### 40.6 Document + close the loop
 
-- [ ] **40.6.a**: Update `transpiler/docs/PATTERNS.md` with the new
+- [x] **40.6.a**: Update `transpiler/docs/PATTERNS.md` with the new
   Arc-wrapping pattern and emit examples.
-- [ ] **40.6.b**: Note in `transpiler/docs/LIMITATIONS.md` that the
+- [x] **40.6.b**: Note in `transpiler/docs/LIMITATIONS.md` that the
   remaining gap to hand-tuned implementations (e.g. wasiq's batching
   reorg) is **algorithmic, not structural**, and is out of scope for
   the transpiler.
-- [ ] **40.6.c**: Update README's "Transpiler" section with the new
+- [x] **40.6.c**: Update README's "Transpiler" section with the new
   perf numbers and the auto-gen-vs-handwritten gap.
 
 ### Risk & Mitigation

@@ -173,6 +173,35 @@ If you encounter a limitation not listed here:
 2. Check if it matches any known template
 3. File an issue with the spec code and expected output
 
+## Performance Gap: Auto-Generated vs Hand-Tuned
+
+The transpiler's auto-generated code achieves ~60% of hand-tuned implementations
+(e.g., wasiq-inspect's 28.6K ops/s vs tla-rs auto-gen 16.7K ops/s on RSL UDP).
+The remaining gap is **algorithmic, not structural**:
+
+- **Batching**: Hand-tuned implementations batch multiple requests per Paxos
+  round, amortizing consensus overhead. The transpiler generates 1:1 spec-to-exec
+  code, which processes one request per state transition.
+- **Log compaction**: Hand-tuned implementations truncate committed log entries.
+  The transpiler faithfully preserves the spec's append-only log semantics.
+- **Message coalescing**: Hand-tuned implementations combine multiple heartbeats
+  and append entries. The transpiler generates one message per spec action.
+
+These optimizations require algorithmic changes to the protocol spec or host
+layer — they are out of scope for the transpiler's mechanical spec→exec
+translation. The transpiler's contribution is eliminating **structural overhead**
+(deep clones, unnecessary copies) while preserving verification guarantees.
+
+### Arc<Vec<T>> Indexing Limitation
+
+Verus does not support the `[]` index operator on `Arc<Vec<T>>` in exec code
+(only `Vec`, `array`, and `slice` are supported). This means Vec fields that
+are indexed in exec code (e.g., Raft's `log`) cannot be Arc-wrapped. The
+transpiler detects this case and generates `{ let __arc_ref = &*field; __arc_ref[i] }`
+as a workaround, but this only works when the indexing is in a statement
+context — not inside conditions or complex expressions. For now, exclude
+indexed Vec fields from `arc_wrap_fields`.
+
 ## Future Improvements
 
 The following limitations are planned for future versions:
