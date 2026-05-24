@@ -1664,7 +1664,7 @@ fn expect_index(value: &RuntimeValue, context: &str) -> TranspileResult<usize> {
     usize::try_from(idx).map_err(|_| type_error("Index does not fit into usize."))
 }
 
-fn path_name(path: &Path) -> String {
+pub fn path_name(path: &Path) -> String {
     path.segments.join("::")
 }
 

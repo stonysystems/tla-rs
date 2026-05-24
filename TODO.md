@@ -13662,7 +13662,7 @@ Three implementation paths, in increasing engineering cost / payoff:
     Define `struct Chunk { ops: Vec<Opcode>, constants: Vec<RuntimeValue> }`.
     Add `mod bytecode;` to the modelcheck module. ~150 LOC.
 
-  - [ ] **38.22.1.b.ii**: **Bytecode compiler — expressions.**
+  - [x] **38.22.1.b.ii**: **Bytecode compiler — expressions.**
     Add `fn compile_expr(expr: &Expr, chunk: &mut Chunk, locals: &mut LocalTable)`
     in `bytecode.rs`. Handle the 20 most common `Expr` variants:
     `Literal`, `Ident`, `Field`, `Arrow`, `Index`, `Eq/Ne/Lt/Le/Gt/Ge`,
@@ -13672,7 +13672,7 @@ Three implementation paths, in increasing engineering cost / payoff:
     `LocalTable` maps variable names → slot indices (reuses
     `ScopedBindings` stack from 38.22.1.a.iii). ~300 LOC.
 
-  - [ ] **38.22.1.b.iii**: **Bytecode compiler — quantifiers & let.**
+  - [x] **38.22.1.b.iii**: **Bytecode compiler — quantifiers & let.**
     Handle `Forall`, `Exists`, `Let`, `Match`, `Implies`, `Iff`,
     `Choose`, `Tuple`. Quantifiers compile body to a sub-chunk
     (or inline with `Forall(body_len)`/`Exists(body_len)` skip
