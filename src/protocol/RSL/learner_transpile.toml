@@ -1,6 +1,9 @@
 # Configuration for transpiling RSL learner spec to implementation
 # This configures the transpiler to match the existing RSL codebase conventions
 
+# Arc-wrap collection fields for O(1) clone on unchanged paths
+arc_wrap_fields = { CLearner = ["unexecuted_learner_state"] }
+
 # Primitive types that don't need valid() predicates
 # OperationNumber is remapped to u64 which is a primitive
 primitive_types = [

@@ -554,16 +554,16 @@ verus! {
 
     pub type CLearnerState = HashMap<COperationNumber, CLearnerTuple>;
 
-    pub open spec fn clearnerstate_is_abstractable(m:CLearnerState) -> bool {
+    pub open spec fn clearnerstate_is_abstractable(m: &CLearnerState) -> bool {
         forall |i| #![auto] m@.contains_key(i) ==> COperationNumberIsAbstractable(i) && m@[i].abstractable()
     }
 
-    pub open spec fn clearnerstate_is_valid(m:CLearnerState) -> bool {
+    pub open spec fn clearnerstate_is_valid(m: &CLearnerState) -> bool {
         &&& clearnerstate_is_abstractable(m)
         &&& (forall |i| #![auto] m@.contains_key(i) ==> COperationNumberIsValid(i) && m@[i].valid())
     }
 
-    pub open spec fn abstractify_clearnerstate(m:CLearnerState) -> LearnerState
+    pub open spec fn abstractify_clearnerstate(m: &CLearnerState) -> LearnerState
         recommends clearnerstate_is_abstractable(m)
     {
         Map::new(

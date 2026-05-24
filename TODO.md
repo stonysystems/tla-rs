@@ -14522,12 +14522,11 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
   - `src/generated/RSL/proposer_gen.rs`: add `use std::sync::Arc;`, wrap `HashMap::new()` → `Arc::new(HashMap::new())` at the 2 init sites, swap insert site to `_arc_seqno_insert` helper, add plain-Rust `_arc_seqno_insert` helper outside `verus!{}` block, add `assume_specification` with `ensures res@ == arc@.insert(k, v)`.
   - Verify: `verus --crate-type=lib src/lib.rs --no-verify` builds; `--verify-only-module generated::RSL::proposer_gen` passes (target 125 verified, 0 errors).
   - Bench: ≥28K ops/s sustained, ≤5% decay (matches wasiq).
-- [~] **41.1.b**: Manually Arc-wrap the other hot collection fields on regenerated RSL:
+- [x] **41.1.b**: Manually Arc-wrap the other hot collection fields on regenerated RSL:
   `CProposer.request_queue: Vec<CRequest>` — **DONE** (Phase 42.3.a, commit b4ec5fa),
   `CProposer.received_1b_packets: HashSet<CPacket>` — **DONE** (commit 83bc12f),
   `CExecutor.reply_cache: HashMap<EndPoint, CReply>` — **DONE** (Arc-wrapped, 77 functions verified across 4 modules, 0 errors. Changed lemma_creplycache_get to take &CReplyCache for auto-deref through Arc. Replaced #[derive(Clone)] with manual Clone impl.),
-  `CLearner.unexecuted_ops: HashMap<COp, ...>`. Bench each step to measure
-  marginal gain. Target: ≥30K ops/s sustained, ≤2% decay.
+  `CLearner.unexecuted_learner_state: HashMap<COperationNumber, CLearnerTuple>` — **DONE** (Arc-wrapped, 71 functions verified across 4 modules, 0 errors. Changed clearnerstate_is_abstractable/is_valid/abstractify to take &CLearnerState for auto-deref through Arc. Replaced #[derive(Clone)] with manual Clone impl.).
   **Analysis (Phase 41.1.b prep)**: Transpiler infrastructure ready — `clone_*` pattern generalized, Block-in-Call printer fix landed. Adding fields to `arc_wrap_fields` TOML works for codegen. However, each field also requires coordinated changes to the hand-written struct definition in `*Impl.rs` (field type → `Arc<T>`, Clone impl, View/valid/abstractable predicates). Verus's `@` operator auto-derefs through `Arc` (confirmed on existing `highest_seqno` field). Key risk: static methods in ProposerImpl.rs take `&HashSet<CPacket>` but with Arc wrapping would receive `&Arc<HashSet<CPacket>>` — Rust auto-deref handles this but Verus verification needs testing. Each field is ~20 LOC change in `*Impl.rs` + TOML config update + Verus re-verification.
 - [ ] **41.1.c**: Repeat on Raft hot fields (`log: Vec<CLogEntry>`,
   `votes_granted: HashSet<u64>`, `match_index/next_index: HashMap<u64, u64>`).

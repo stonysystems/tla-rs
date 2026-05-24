@@ -835,11 +835,11 @@ impl CReplica{
         let opn = self.executor.ops_complete;
         match &self.executor.next_op_to_execute {
             COutstandingOperation::COutstandingOpUnknown{} => {
-                assert(clearnerstate_is_valid(self.learner.unexecuted_learner_state));
+                assert(clearnerstate_is_valid(&self.learner.unexecuted_learner_state));
                 // clearnerstate_is_valid provides: forall |i| #![auto] m@.contains_key(i) ==> COperationNumberIsValid(i) && m@[i].valid()
                 // Re-derive with explicit trigger to ensure SMT matches:
                 proof {
-                    let m = self.learner.unexecuted_learner_state;
+                    let m = &self.learner.unexecuted_learner_state;
                     assert forall |i: COperationNumber| m@.contains_key(i) implies COperationNumberIsValid(i) && (#[trigger] m@[i]).valid() by {
                         assert(clearnerstate_is_valid(m));
                         let ghost _ = m@[i];

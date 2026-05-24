@@ -72,7 +72,7 @@ ensures
 }
 
 /// Connects HashMap.contains_key(&key) through abstractify_clearnerstate to spec Map[key as int].
-proof fn lemma_clearnerstate_contains_key(m: CLearnerState, key: u64)
+proof fn lemma_clearnerstate_contains_key(m: &CLearnerState, key: u64)
     requires
         clearnerstate_is_valid(m),
     ensures
@@ -90,7 +90,7 @@ proof fn lemma_clearnerstate_contains_key(m: CLearnerState, key: u64)
 }
 
 /// Connects HashMap[key] through abstractify_clearnerstate to spec Map[key as int] value.
-proof fn lemma_clearnerstate_get(m: CLearnerState, key: u64)
+proof fn lemma_clearnerstate_get(m: &CLearnerState, key: u64)
     requires
         clearnerstate_is_valid(m),
         m@.contains_key(key),
@@ -113,7 +113,7 @@ proof fn lemma_clearnerstate_get(m: CLearnerState, key: u64)
 }
 
 /// Instantiates the clearnerstate_is_valid quantifier at a specific key.
-proof fn lemma_clearnerstate_value_valid(m: CLearnerState, key: u64)
+proof fn lemma_clearnerstate_value_valid(m: &CLearnerState, key: u64)
     requires
         clearnerstate_is_valid(m),
         m@.contains_key(key),
@@ -902,7 +902,7 @@ ensures
     };
     proof {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        lemma_clearnerstate_contains_key(s.learner.unexecuted_learner_state, opn);
+        lemma_clearnerstate_contains_key(&s.learner.unexecuted_learner_state, opn);
     }
     let has_opn = s.learner.unexecuted_learner_state.contains_key(&opn);
     if is_unknown && has_opn {
@@ -911,14 +911,14 @@ ensures
         let quorum_size = s.learner.constants.all.config.CMinQuorumSize() as u64;
         let cond3 = senders_len >= quorum_size;
         proof {
-            lemma_clearnerstate_get(s.learner.unexecuted_learner_state, opn);
+            lemma_clearnerstate_get(&s.learner.unexecuted_learner_state, opn);
             // Bridge HashSet<EndPoint>.len() to Set<AbstractEndPoint>.len() via cardinality lemma
             crate::common::collections::hashsets::lemma_hashset_endpoint_len(&lt.received_2b_message_senders);
         }
         if cond3 {
             proof {
                 // Manually instantiate clearnerstate_is_valid quantifier at opn
-                lemma_clearnerstate_value_valid(s.learner.unexecuted_learner_state, opn);
+                lemma_clearnerstate_value_valid(&s.learner.unexecuted_learner_state, opn);
             }
             let s_executor = crate::generated::RSL::executor_gen::CExecutorGetDecision(
                 &s.executor, &s.learner.max_ballot_seen, &opn, &lt.candidate_learned_value);

@@ -10,6 +10,7 @@ use crate::protocol::RSL::learner::*;
 use crate::protocol::RSL::types::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
@@ -64,7 +65,7 @@ ensures
 
 
 /// If m@ is empty, abstractify_clearnerstate is empty.
-proof fn lemma_abstractify_empty_clearnerstate(m: CLearnerState)
+proof fn lemma_abstractify_empty_clearnerstate(m: &CLearnerState)
 requires
     m@ == Map::<COperationNumber, CLearnerTuple>::empty(),
 ensures
@@ -77,8 +78,8 @@ ensures
 /// If m2@ =~= old@.insert(k, v) and old is abstractable and v is abstractable,
 /// then abstractify on m2 = abstractify on old + insert.
 proof fn lemma_abstractify_clearnerstate_insert(
-    old_m: CLearnerState,
-    m2: CLearnerState,
+    old_m: &CLearnerState,
+    m2: &CLearnerState,
     k: COperationNumber,
     v: CLearnerTuple,
 )
@@ -132,8 +133,8 @@ ensures
 /// If m2@ =~= old@.remove(k) and old is abstractable,
 /// then abstractify on m2 = abstractify on old - remove.
 proof fn lemma_abstractify_clearnerstate_remove(
-    old_m: CLearnerState,
-    m2: CLearnerState,
+    old_m: &CLearnerState,
+    m2: &CLearnerState,
     k: COperationNumber,
 )
 requires
@@ -179,7 +180,7 @@ ensures
 }
 
 /// Singleton: if m@ =~= Map::empty().insert(opn, tup), prove abstractify result.
-proof fn lemma_abstractify_singleton_clearnerstate(m: CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
+proof fn lemma_abstractify_singleton_clearnerstate(m: &CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
 requires
     m@ =~= Map::<COperationNumber, CLearnerTuple>::empty().insert(opn, tup),
     tup.abstractable(),
@@ -222,10 +223,10 @@ ensures
 /// Helper: filter CLearnerState keeping only entries with key >= threshold.
 fn filter_clearnerstate(m: &CLearnerState, threshold: u64) -> (res: CLearnerState)
 requires
-    clearnerstate_is_valid(*m),
+    clearnerstate_is_valid(m),
 ensures
-    clearnerstate_is_valid(res),
-    clearnerstate_is_abstractable(res),
+    clearnerstate_is_valid(&res),
+    clearnerstate_is_abstractable(&res),
     forall |k: COperationNumber| res@.contains_key(k) ==>
         m@.contains_key(k) && k >= threshold && (#[trigger] res@[k]) == m@[k],
     forall |k: COperationNumber| m@.contains_key(k) && k >= threshold ==>
@@ -243,7 +244,7 @@ ensures
     while i < keys.len()
         invariant
             0 <= i <= keys.len(),
-            clearnerstate_is_valid(*m),
+            clearnerstate_is_valid(m),
             forall |k: u64| result@.contains_key(k) ==> m@.contains_key(k),
             forall |k: u64| result@.contains_key(k) ==> (#[trigger] result@[k]) == m@[k],
             forall |k: u64| result@.contains_key(k) ==> k >= threshold,
@@ -301,10 +302,10 @@ ensures
             seqno: 0u64,
             proposer_id: 0u64,
         },
-        unexecuted_learner_state: HashMap::new(),
+        unexecuted_learner_state: Arc::new(HashMap::new()),
     };
     proof {
-        lemma_abstractify_empty_clearnerstate(result.unexecuted_learner_state);
+        lemma_abstractify_empty_clearnerstate(&result.unexecuted_learner_state);
     }
     result
 
@@ -376,7 +377,7 @@ ensures
         CLearner {
             constants: s.constants.clone_up_to_view(),
             max_ballot_seen: bal_2b,
-            unexecuted_learner_state: new_state,
+            unexecuted_learner_state: Arc::new(new_state),
         }
     } else if !s.unexecuted_learner_state.contains_key(&opn_2b) {
         // Branch 3: same ballot, new opn — insert new entry
@@ -411,7 +412,7 @@ ensures
         CLearner {
             constants: s.constants.clone_up_to_view(),
             max_ballot_seen: bal_2b,
-            unexecuted_learner_state: new_state,
+            unexecuted_learner_state: Arc::new(new_state),
         }
     } else {
         let existing = s.unexecuted_learner_state.get(&opn_2b).unwrap();
@@ -452,7 +453,7 @@ ensures
             CLearner {
                 constants: s.constants.clone_up_to_view(),
                 max_ballot_seen: s.max_ballot_seen,
-                unexecuted_learner_state: new_state,
+                unexecuted_learner_state: Arc::new(new_state),
             }
         }
     };
@@ -482,7 +483,7 @@ ensures
             // Branch 2: higher ballot — singleton map
             // tup.valid() was proven inline before HashMap insert
             let ghost tup = result.unexecuted_learner_state@[opn_2b];
-            lemma_abstractify_singleton_clearnerstate(result.unexecuted_learner_state, opn_2b, tup);
+            lemma_abstractify_singleton_clearnerstate(&result.unexecuted_learner_state, opn_2b, tup);
 
             // tup@ matches spec: senders = set![packet@.src], value = msg->val_2b
             assert(Set::<EndPoint>::empty().map(|e: EndPoint| e@) =~= Set::<AbstractEndPoint>::empty());
@@ -497,7 +498,7 @@ ensures
             // Branch 3: same ballot, new opn — insert
             let ghost tup = result.unexecuted_learner_state@[opn_2b];
             lemma_abstractify_clearnerstate_insert(
-                s.unexecuted_learner_state, result.unexecuted_learner_state, opn_2b, tup);
+                &s.unexecuted_learner_state, &result.unexecuted_learner_state, opn_2b, tup);
 
             assert(Set::<EndPoint>::empty().map(|e: EndPoint| e@) =~= Set::<AbstractEndPoint>::empty());
             assert(tup@.received_2b_message_senders =~= set![pp.src]);
@@ -525,7 +526,7 @@ ensures
                 // tup.valid() was proven inline before HashMap insert
                 let ghost tup = result.unexecuted_learner_state@[opn_2b];
                 lemma_abstractify_clearnerstate_insert(
-                    s.unexecuted_learner_state, result.unexecuted_learner_state, opn_2b, tup);
+                    &s.unexecuted_learner_state, &result.unexecuted_learner_state, opn_2b, tup);
 
                 // Senders: old senders + new sender
                 assert(tup@.received_2b_message_senders =~=
@@ -560,7 +561,7 @@ ensures
         CLearner {
             constants: s.constants.clone_up_to_view(),
             max_ballot_seen: s.max_ballot_seen.clone(),
-            unexecuted_learner_state: __unexecuted_learner_state,
+            unexecuted_learner_state: Arc::new(__unexecuted_learner_state),
         }
 
     } else {
@@ -568,7 +569,7 @@ ensures
     };
     proof {
         if s.unexecuted_learner_state@.contains_key(*opn) {
-            lemma_abstractify_clearnerstate_remove(s.unexecuted_learner_state, result.unexecuted_learner_state, *opn)
+            lemma_abstractify_clearnerstate_remove(&s.unexecuted_learner_state, &result.unexecuted_learner_state, *opn)
         };
     }
     result
@@ -588,7 +589,7 @@ ensures
     let result = CLearner {
         constants: s.constants.clone_up_to_view(),
         max_ballot_seen: s.max_ballot_seen,
-        unexecuted_learner_state: filtered,
+        unexecuted_learner_state: Arc::new(filtered),
     };
     proof {
         // Validity: filter_clearnerstate ensures clearnerstate_is_valid(filtered),
@@ -596,8 +597,8 @@ ensures
         assert(result.valid());
 
         // Spec predicate: LLearnerForgetOperationsBefore
-        let abs_filtered = abstractify_clearnerstate(result.unexecuted_learner_state);
-        let abs_orig = abstractify_clearnerstate(s.unexecuted_learner_state);
+        let abs_filtered = abstractify_clearnerstate(&result.unexecuted_learner_state);
+        let abs_orig = abstractify_clearnerstate(&s.unexecuted_learner_state);
 
         // Biconditional containment: filtered abstract map ↔ original filtered by threshold
         assert forall |ak: int| abs_filtered.contains_key(ak) <==>
