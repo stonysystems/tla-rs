@@ -10,6 +10,9 @@ primitive_types = [
 # Functions requiring manual proofs or trusted-enum destructuring
 skip_functions = [
     "LLearnerProcess2b",
+    # Spec uses `forall |k| ... ==>` quantified map filtering — transpiler cannot
+    # auto-generate executable code for this pattern. Hand-written body in learner_gen.rs.
+    "LLearnerForgetOperationsBefore",
 ]
 
 # Field categories for clone dispatch

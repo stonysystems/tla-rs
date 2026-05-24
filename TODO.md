@@ -14393,11 +14393,11 @@ Make RSL transpile→regen idempotent and lossless **without** requiring a post-
 
 Two options for each unsupported pattern; pick per-function based on cost/benefit.
 
-- [ ] **42.2.a**: Decide for `CLearnerForgetOperationsBefore` (quantified map filtering). Options:
+- [x] **42.2.a**: Decide for `CLearnerForgetOperationsBefore` (quantified map filtering). **Decision: Option A** — added to `learner_transpile.toml` `skip_functions`. Options:
   - **Option A**: Add to TOML `skip_functions` and document that `learner_gen.rs` carries a hand-written body for it. Codifies the existing reality; zero transpiler work. Continues the CLAUDE.md violation, but the violation is acknowledged.
   - **Option B**: Implement transpiler support for the `forall ... map filter` pattern (translate to `iter().filter().collect()` for HashMap). Closes the gap properly; ~1 day work.
   - Recommendation: **Option A short-term, Option B as a Phase 41.2 prerequisite if transpiler-emitted code must cover this pattern.**
-- [ ] **42.2.b**: Decide for `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` (existential `exists |opn|`). Options:
+- [x] **42.2.b**: Decide for `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` (existential `exists |opn|`). **Decision: Option A** — added to `replica_transpile.toml` `skip_functions`. Options:
   - **Option A**: Same — `skip_functions` + acknowledge hand-written body.
   - **Option B**: Implement existential-witness inference (substantially harder than 42.2.a; likely needs spec rewrite to a constructive form).
   - Recommendation: **Option A**. This function is rarely on the hot path; transpiler-side existential resolution is out of scope for a quick unblock.

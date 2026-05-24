@@ -39,6 +39,9 @@ skip_functions = [
     "ExtractSentPacketsFromIos",
     "SpontaneousClock",
     "SpontaneousIos",
+    # Spec uses `exists |opn|` existential with complex branching — transpiler cannot
+    # resolve the existential witness. Hand-written body in replica_gen.rs.
+    "LReplicaNextSpontaneousTruncateLogBasedOnCheckpoints",
 ]
 
 # Functions that should NOT generate stubs even with proof_fallback
