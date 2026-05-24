@@ -29,7 +29,7 @@ verus! {
 pub struct CProposer {
     pub constants: CReplicaConstants,
     pub current_state: u64,
-    pub request_queue: Vec<CRequest>,
+    pub request_queue: Arc<Vec<CRequest>>,
     pub max_ballot_i_sent_1a: CBallot,
     pub next_operation_number_to_propose: u64,
     pub received_1b_packets: HashSet<CPacket>,
@@ -68,7 +68,7 @@ impl CProposer{
             result.valid() == self.valid(),
     {
         let constants = self.constants.clone();
-        let request_queue = clone_request_batch_up_to_view(&self.request_queue);
+        let request_queue = clone_arc_request_queue(&self.request_queue);
         let received_1b_packets = clone_hashset(&self.received_1b_packets);
         let highest_seqno = clone_endpoint_seqno_map(&self.highest_seqno_requested_by_client_this_view);
         let incomplete_batch_timer = match self.incomplete_batch_timer {
@@ -154,13 +154,22 @@ impl Clone for CProposer {
     }
 }
 
-/// [EXPERIMENT] Arc-backed shallow clone. Refcount bump only.
+/// Arc-backed shallow clone. Refcount bump only.
 #[verifier::external_body]
 pub fn clone_endpoint_seqno_map(m: &Arc<HashMap<EndPoint, u64>>) -> (res: Arc<HashMap<EndPoint, u64>>)
     ensures
         res@ == m@,
 {
     Arc::clone(m)
+}
+
+/// Arc-backed shallow clone for request queue. Refcount bump only.
+#[verifier::external_body]
+pub fn clone_arc_request_queue(v: &Arc<Vec<CRequest>>) -> (res: Arc<Vec<CRequest>>)
+    ensures
+        res@ == v@,
+{
+    Arc::clone(v)
 }
 
 #[allow(dead_code)]

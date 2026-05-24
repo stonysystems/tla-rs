@@ -1,11 +1,10 @@
 # Configuration for transpiling RSL proposer spec to implementation
 
 # Arc-wrap collection fields for O(1) clone on unchanged paths (Phase 42.3.a / Phase 41)
-# CProposer.highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64> → Arc<HashMap<...>>
-# The struct definition lives in ProposerImpl.rs (hand-written). This config tells the
+# Struct definition lives in ProposerImpl.rs (hand-written). This config tells the
 # transpiler to emit Arc::new() at init/mutation sites and .clone() (Arc::clone) at clone sites.
 # Per-field Arc wrapping: emit Arc::new() at init/mutation, Arc::clone() at clone sites
-arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view"] }
+arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view", "request_queue"] }
 
 # Primitive types that don't need valid() predicates
 # OperationNumber is remapped to u64 which is a primitive

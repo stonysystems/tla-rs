@@ -149,7 +149,7 @@ ensures
         CProposer {
             constants: c.clone(),
             current_state: 0u64,
-            request_queue: vec![],
+            request_queue: Arc::new(vec![]),
             max_ballot_i_sent_1a: CBallot {
                 seqno: 0u64,
                 proposer_id: c.my_index.clone(),
@@ -307,7 +307,7 @@ ensures
             let result = CProposer {
                 constants: s.constants.clone(),
                 current_state: s.current_state,
-                request_queue: concat_vecs(&s.request_queue, &vec![val]),
+                request_queue: Arc::new(concat_vecs(&s.request_queue, &vec![val])),
                 max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
                 next_operation_number_to_propose: s.next_operation_number_to_propose,
                 received_1b_packets: clone_hashset(&s.received_1b_packets),
@@ -400,7 +400,7 @@ ensures
             let result = CProposer {
                 constants: s.constants.clone(),
                 current_state: s.current_state,
-                request_queue: clone_request_queue(&s.request_queue),
+                request_queue: s.request_queue.clone(),
                 max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
                 next_operation_number_to_propose: s.next_operation_number_to_propose,
                 received_1b_packets: clone_hashset(&s.received_1b_packets),
@@ -484,7 +484,7 @@ ensures
         let new_proposer = CProposer {
             constants: s.constants.clone(),
             current_state: 1u64,
-            request_queue: concat_vecs(&s.election_state.requests_received_prev_epochs, &s.election_state.requests_received_this_epoch),
+            request_queue: Arc::new(concat_vecs(&s.election_state.requests_received_prev_epochs, &s.election_state.requests_received_this_epoch)),
             max_ballot_i_sent_1a: s.election_state.current_view,
             next_operation_number_to_propose: s.next_operation_number_to_propose,
             received_1b_packets: HashSet::new(),
@@ -595,7 +595,7 @@ ensures
         let new_proposer = CProposer {
             constants: s.constants.clone(),
             current_state: 2u64,
-            request_queue: clone_request_queue(&s.request_queue),
+            request_queue: s.request_queue.clone(),
             max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
             next_operation_number_to_propose: *log_truncation_point,
             received_1b_packets: clone_hashset(&s.received_1b_packets),
@@ -667,7 +667,7 @@ ensures
     let new_proposer = CProposer {
         constants: s.constants.clone(),
         current_state: s.current_state,
-        request_queue: new_queue,
+        request_queue: Arc::new(new_queue),
         max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
         next_operation_number_to_propose: {
             // opn < max_integer_val (from requires) and max_integer_val: u64 <= u64::MAX
@@ -1001,7 +1001,7 @@ ensures
     let new_proposer = CProposer {
         constants: s.constants.clone(),
         current_state: s.current_state,
-        request_queue: clone_request_queue(&s.request_queue),
+        request_queue: s.request_queue.clone(),
         max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
         next_operation_number_to_propose: {
             // opn < max_integer_val (from requires) and max_integer_val: u64 <= u64::MAX
@@ -1171,7 +1171,7 @@ ensures
         let new_proposer = CProposer {
             constants: s.constants.clone(),
             current_state: s.current_state,
-            request_queue: clone_request_queue(&s.request_queue),
+            request_queue: s.request_queue.clone(),
             max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
             next_operation_number_to_propose: s.next_operation_number_to_propose,
             received_1b_packets: clone_hashset(&s.received_1b_packets),
@@ -1250,7 +1250,7 @@ ensures
         proof { lemma_empty_request_queue_map(); }
         CProposer {
             current_state: 0u64,
-            request_queue: vec![],
+            request_queue: Arc::new(vec![]),
             election_state: s_election_state,
             ..s.clone_up_to_view()
         }
@@ -1289,7 +1289,7 @@ ensures
         proof { lemma_empty_request_queue_map(); }
         CProposer {
             current_state: 0u64,
-            request_queue: vec![],
+            request_queue: Arc::new(vec![]),
             election_state: s_election_state,
             ..s.clone_up_to_view()
         }
