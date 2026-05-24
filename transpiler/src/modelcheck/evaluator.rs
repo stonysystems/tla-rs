@@ -2,8 +2,6 @@ use crate::ast::{BinOp, Binding, Expr, MatchArm, Path, Pattern, Type, UnaryOp};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
-use std::collections::BTreeMap;
-
 pub type CallEvaluator<'a> = dyn Fn(&Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
 pub type MethodEvaluator<'a> =
     dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
@@ -11,9 +9,16 @@ pub type QuantifierDomainEvaluator<'a> =
     dyn Fn(&Binding) -> TranspileResult<Vec<RuntimeValue>> + 'a;
 
 /// Runtime evaluator context for source-first model checking.
+///
+/// Bindings use a flat `Vec` with stack-push semantics instead of `BTreeMap`.
+/// Lookups search from the end (reverse) so newer bindings shadow older ones.
+/// This is faster for small binding counts (3-8 typical) due to:
+/// - No tree node allocations
+/// - Cache-friendly linear scan
+/// - Cheaper clone (single memcpy vs tree rebuild)
 #[derive(Clone)]
 pub struct EvalContext<'a> {
-    bindings: BTreeMap<String, RuntimeValue>,
+    bindings: Vec<(String, RuntimeValue)>,
     bounds: RuntimeCollectionBounds,
     call_evaluator: Option<&'a CallEvaluator<'a>>,
     method_evaluator: Option<&'a MethodEvaluator<'a>>,
@@ -23,7 +28,7 @@ pub struct EvalContext<'a> {
 impl<'a> EvalContext<'a> {
     pub fn new(bounds: RuntimeCollectionBounds) -> Self {
         Self {
-            bindings: BTreeMap::new(),
+            bindings: Vec::new(),
             bounds,
             call_evaluator: None,
             method_evaluator: None,
@@ -31,8 +36,13 @@ impl<'a> EvalContext<'a> {
         }
     }
 
+    /// Look up a binding by name, returning the most recently pushed value.
+    pub fn get_binding(&self, name: &str) -> Option<&RuntimeValue> {
+        self.bindings.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v)
+    }
+
     pub fn with_binding(mut self, name: impl Into<String>, value: RuntimeValue) -> Self {
-        self.bindings.insert(name.into(), value);
+        self.bindings.push((name.into(), value));
         self
     }
 
@@ -56,7 +66,7 @@ impl<'a> EvalContext<'a> {
 
     fn child_with_binding(&self, name: String, value: RuntimeValue) -> Self {
         let mut bindings = self.bindings.clone();
-        bindings.insert(name, value);
+        bindings.push((name, value));
         Self {
             bindings,
             bounds: self.bounds,
@@ -497,7 +507,7 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         Expr::View(inner) => eval_expr(inner, ctx),
         Expr::Cast(inner, ty) => cast_value(eval_expr(inner, ctx)?, ty),
         Expr::Ident(name) => {
-            if let Some(value) = ctx.bindings.get(name) {
+            if let Some(value) = ctx.get_binding(name) {
                 return Ok(value.clone());
             }
             if let Some((ty, variant)) = split_variant_path(name) {
@@ -691,7 +701,7 @@ fn eval_choose_bindings(
             let Pattern::Ident(name) = &vars[0].pattern else {
                 return Err(unsupported_construct("CHOOSE with non-identifier binding"));
             };
-            return ctx.bindings.get(name).cloned().ok_or_else(|| {
+            return ctx.get_binding(name).cloned().ok_or_else(|| {
                 type_error("CHOOSE variable not found in context")
             });
         }
@@ -871,7 +881,7 @@ fn eval_match_expr(
     let scrutinee_value = eval_expr(scrutinee, ctx)?;
 
     for arm in arms {
-        let mut bindings = BTreeMap::new();
+        let mut bindings = Vec::new();
         if !match_pattern(&arm.pattern, &scrutinee_value, &mut bindings)? {
             continue;
         }
@@ -896,15 +906,15 @@ fn eval_match_expr(
 fn match_pattern(
     pattern: &Pattern,
     value: &RuntimeValue,
-    bindings: &mut BTreeMap<String, RuntimeValue>,
+    bindings: &mut Vec<(String, RuntimeValue)>,
 ) -> TranspileResult<bool> {
     match pattern {
         Pattern::Wildcard => Ok(true),
         Pattern::Ident(name) => {
-            if let Some(existing) = bindings.get(name) {
+            if let Some(existing) = bindings.iter().find(|(k, _)| k == name).map(|(_, v)| v) {
                 Ok(existing == value)
             } else {
-                bindings.insert(name.clone(), value.clone());
+                bindings.push((name.clone(), value.clone()));
                 Ok(true)
             }
         }
@@ -969,7 +979,7 @@ fn match_pattern(
 fn match_named_pattern_fields(
     fields: &[(String, Pattern)],
     runtime_fields: &crate::modelcheck::value::NamedFields,
-    bindings: &mut BTreeMap<String, RuntimeValue>,
+    bindings: &mut Vec<(String, RuntimeValue)>,
 ) -> TranspileResult<bool> {
     for (field_name, field_pattern) in fields {
         let sym = Symbol::intern(field_name);
@@ -986,7 +996,7 @@ fn match_named_pattern_fields(
 fn match_variant_pattern_fields(
     fields: &[Pattern],
     runtime_fields: &crate::modelcheck::value::NamedFields,
-    bindings: &mut BTreeMap<String, RuntimeValue>,
+    bindings: &mut Vec<(String, RuntimeValue)>,
 ) -> TranspileResult<bool> {
     if fields.len() != runtime_fields.len() {
         return Ok(false);
@@ -1352,7 +1362,7 @@ fn eval_set_new_with_closure(
     for val in &int_values {
         let rv = RuntimeValue::Int(*val);
         let mut inner_ctx = ctx.clone();
-        inner_ctx.bindings.insert(param_name.to_string(), rv.clone());
+        inner_ctx.bindings.push((param_name.to_string(), rv.clone()));
         match eval_expr(body, &inner_ctx) {
             Ok(RuntimeValue::Bool(true)) => {
                 elements.push(rv);
@@ -1454,7 +1464,7 @@ fn eval_set_map_with_closure(
     let mut result = std::collections::BTreeSet::new();
     for elem in &elements {
         let mut inner_ctx = ctx.clone();
-        inner_ctx.bindings.insert(param_name.to_string(), elem.clone());
+        inner_ctx.bindings.push((param_name.to_string(), elem.clone()));
         let value = eval_expr(body, &inner_ctx)?;
         result.insert(value);
     }
@@ -1489,7 +1499,7 @@ fn eval_map_new_with_closure(
     let mut entries = Vec::new();
     for key in &keys {
         let mut inner_ctx = ctx.clone();
-        inner_ctx.bindings.insert(param_name.to_string(), key.clone());
+        inner_ctx.bindings.push((param_name.to_string(), key.clone()));
         let value = eval_expr(body, &inner_ctx)?;
         entries.push((key.clone(), value));
     }
@@ -2392,5 +2402,46 @@ mod tests {
             eval_expr(&multi_exists, &ctx).unwrap(),
             RuntimeValue::Bool(false)
         );
+    }
+
+    #[test]
+    fn test_vec_binding_shadowing() {
+        // Inner binding should shadow outer binding with the same name
+        let ctx = EvalContext::new(test_bounds())
+            .with_binding("x", RuntimeValue::Int(1));
+        let child = ctx.child_with_binding("x".to_string(), RuntimeValue::Int(42));
+
+        // Child sees shadowed value
+        assert_eq!(child.get_binding("x"), Some(&RuntimeValue::Int(42)));
+        // Parent still sees original
+        assert_eq!(ctx.get_binding("x"), Some(&RuntimeValue::Int(1)));
+    }
+
+    #[test]
+    fn test_vec_binding_multiple_vars() {
+        let ctx = EvalContext::new(test_bounds())
+            .with_binding("a", RuntimeValue::Int(1))
+            .with_binding("b", RuntimeValue::Bool(true))
+            .with_binding("c", RuntimeValue::String("hello".to_string()));
+
+        assert_eq!(ctx.get_binding("a"), Some(&RuntimeValue::Int(1)));
+        assert_eq!(ctx.get_binding("b"), Some(&RuntimeValue::Bool(true)));
+        assert_eq!(
+            ctx.get_binding("c"),
+            Some(&RuntimeValue::String("hello".to_string()))
+        );
+        assert_eq!(ctx.get_binding("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_vec_binding_ident_expr_uses_latest() {
+        // Verify that Expr::Ident resolves to the most recently pushed binding
+        let ctx = EvalContext::new(test_bounds())
+            .with_binding("x", RuntimeValue::Int(10));
+        let child = ctx.child_with_binding("x".to_string(), RuntimeValue::Int(99));
+
+        let ident = Expr::Ident("x".to_string());
+        assert_eq!(eval_expr(&ident, &child).unwrap(), RuntimeValue::Int(99));
+        assert_eq!(eval_expr(&ident, &ctx).unwrap(), RuntimeValue::Int(10));
     }
 }

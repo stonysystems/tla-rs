@@ -13607,8 +13607,8 @@ Three implementation paths, in increasing engineering cost / payoff:
   38.22.1.b/.c):
   1. ~~Constant fold `set![Literal, ...]` → precomputed Set: kills
      ~75% of all calls (Literal + SetLit).~~ **DONE** (38.22.1.a.i).
-  2. Replace `BTreeMap<String, RuntimeValue>` binding lookup with
-     indexed locals: speeds up Ident at 12% by ~10×.
+  2. ~~Replace `BTreeMap<String, RuntimeValue>` binding lookup with
+     indexed locals: speeds up Ident at 12% by ~10×.~~ **DONE** (38.22.1.a.ii).
   3. Static dispatch on `RuntimeValue` Set/Map methods: speeds up
      MethodCall at 10%.
 - [x] **38.22.1.a.i**: **Constant fold literal collections at IR time.**
@@ -13620,6 +13620,14 @@ Three implementation paths, in increasing engineering cost / payoff:
   The evaluator returns these directly (zero computation). Wired into
   all 3 IR-build sites (main.rs, DPOR enabled.rs solver + footprint).
   Kills ~75% of eval_expr calls on Paxos (Literal + SetLit). *DONE.*
+- [x] **38.22.1.a.ii**: **Replace BTreeMap bindings with Vec stack.**
+  Changed `EvalContext.bindings` from `BTreeMap<String, RuntimeValue>` to
+  `Vec<(String, RuntimeValue)>` with stack-push semantics. Lookups use
+  reverse-search (`iter().rev().find()`) for correct shadowing. Benefits:
+  no tree node allocations, cache-friendly linear scan for small binding
+  counts (3-8 typical), cheaper clone (single memcpy vs tree rebuild).
+  Also converted `match_pattern` local bindings from BTreeMap to Vec.
+  Added `get_binding()` helper on EvalContext. 3 new tests. *DONE.*
 - [ ] **38.22.1.b**: **Stack-based bytecode VM.** Compile each spec
   function to a sequence of opcodes (LoadVar, LoadField, SetUnion,
   Eq, JumpIfFalse, …) executed by a tight switch-dispatched loop.
