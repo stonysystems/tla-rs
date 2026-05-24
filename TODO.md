@@ -15,7 +15,9 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 **✅ Phase 31 external_body milestone COMPLETE (2026-05-24).** All 22 `external_body` lemmas in RSL refinement proof eliminated (0 remaining). 104 proof functions verify across 17 modules. Phase 31.9.4 fully closed. Phase 34 (Raft) remains deprecated with 12 assumes (7 blocked on the `d_rli ≤ k` strict-term wall).
 
-**✅ Phase 40 COMPLETE (2026-05-24).** Arc-wrapping landed for 7 small protocols + Raft. Results: RSL +24% (13.5K → 16.7K ops/s), Raft +12% (3.4K → 3.8K ops/s), trial-2 decay 7.1% (within ≤15% target). `CProposer::clone_up_to_view` dropped from top gdb frame to 2/874 samples. RSL Arc-wrapping (40.3.g) deferred — RSL is I/O bound, not CPU bound. HashMap → persistent (40.5) skipped — decay within target. The next active track is **Phase 38** (DPOR model-checker optimization).
+**✅ Phase 40 COMPLETE (2026-05-24).** Arc-wrapping landed for 7 small protocols + Raft. Results: RSL +24% (13.5K → 16.7K ops/s), Raft +12% (3.4K → 3.8K ops/s), trial-2 decay 7.1% (within ≤15% target). `CProposer::clone_up_to_view` dropped from top gdb frame to 2/874 samples. RSL Arc-wrapping (40.3.g) deferred — RSL is I/O bound, not CPU bound. HashMap → persistent (40.5) skipped — decay within target. **Re-evaluated 2026-05-24 evening**: Phase 40 missed the bigger win — see Phase 41.
+
+**🔝 Phase 41 is now TOP PRIORITY (2026-05-24).** Manual PoC (`cb42869`) validated that wrapping a single collection field (`CProposer.highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>` → `Arc<HashMap<…>>`) lifts RSL from 16,341 → **29,745 ops/s (+82%)**, latency from 2.39 → 1.31 ms, decay from -36% → -5%. **Matches wasiq-inspect's hand-tuned reference (28,449).** Verus verifies cleanly (125 / 0 errors) with a 1-line `ensures res@ == arc@.insert(k, v)` on the Arc-mutation helper's `assume_specification`. Phase 41 generalizes this manual fix into a transpiler codegen rule. **Do not revert Phase 40** — Phase 41 is additive (Phase 40 wraps sub-component structs at the outer level; Phase 41 wraps collection fields inside those structs; the two compose cleanly).
 
 Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. Phase 39 (RSL TCP→UDP migration) complete. After **Phase 40** the next priorities are Phase 38 (DPOR prototype, active model-checker track), Phase 36 (exact-state parity follow-up), and Phase 37 (CI/CD recovery).
 The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. Phase 38 is a greenfield prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
@@ -63,7 +65,9 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
 - **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. Remaining DPOR work is acceptance-criteria closure in `38.11`. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
-**Next steps (priority order, updated 2026-05-23):**
+**Next steps (priority order, updated 2026-05-24):**
+0. **Phase 41: Arc-Wrap Collection Fields — TOP PRIORITY** — manual PoC `cb42869` validated +82% RSL throughput from a single field change, matches wasiq hand-tuned. Generalize to transpiler codegen. See [Phase 41](#phase-41-arc-wrap-collection-fields-hashmaphashsetvec-inside-structs--top-priority).
+
 1. **Phase 40: Transpiler-Emitted Impl Efficiency — COMPLETE** — Arc-wrapping landed. RSL +24%, Raft +12%, decay 7.1%. See [Phase 40](#phase-40-transpiler-emitted-impl-efficiency--eliminate-whole-state-functional-clone--complete).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
@@ -14339,3 +14343,206 @@ critical path.
 - Refinement proofs continue to be auto-generated for ≥85% of
   functions. Raft 40.6 may temporarily lower this for the modified
   functions if `reveal()` hints are needed; track per-function.
+
+## Phase 41: Arc-Wrap Collection Fields (HashMap/HashSet/Vec) Inside Structs — TOP PRIORITY
+
+### Motivation
+
+Phase 40 Arc-wrapped sub-component **structs** (`proposer: Arc<CProposer>`,
+etc.). Empirical post-Phase-40 measurement on RSL revealed the dominant
+remaining bottleneck is **collection fields inside those structs being
+deep-cloned** during every functional rebuild. Per-collection deep clone
+costs are O(n) per call and accumulate over time.
+
+### Empirical evidence (RSL, zoo-002, May 24 2026)
+
+- baseline (Phase 40 only): **16,341 ops/s, 2.39 ms, -36% trial-2 decay**
+- wasiq-inspect hand-tuned reference: **28,449 ops/s, 1.37 ms, -1% decay**
+- **after Phase 41 PoC** (single field `CProposer.highest_seqno_requested_by_client_this_view`
+  changed from `HashMap<EndPoint, u64>` to `Arc<HashMap<EndPoint, u64>>`):
+  **29,745 ops/s, 1.31 ms, -5% decay** — closes the 1.7× gap, slightly
+  exceeds wasiq's hand-tuned baseline. PoC commit: `cb42869`. Verus:
+  125 verified, 0 errors.
+
+### Mechanism (why field-level Arc helps where struct-level Arc didn't)
+
+Phase 40 wraps `proposer: Arc<CProposer>` at the CReplica field. But inside
+`CProposer::clone_up_to_view()` (called via Arc::make_mut when CProposer is
+mutated), each collection field still deep-clones:
+
+```rust
+// Phase 40 — still expensive inside Arc::make_mut(proposer)
+fn clone_up_to_view(&self) -> Self {
+    CProposer {
+        highest_seqno_requested_by_client_this_view: clone_endpoint_seqno_map(&self.field),  // O(n) HashMap clone
+        request_queue: clone_request_batch_up_to_view(&self.field),                          // O(n) Vec clone
+        received_1b_packets: clone_hashset(&self.field),                                     // O(n) HashSet clone
+        ...
+    }
+}
+```
+
+Phase 41 makes each of these O(1) refcount bumps:
+
+```rust
+struct CProposer {
+    highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>,
+    request_queue: Arc<Vec<CRequest>>,
+    received_1b_packets: Arc<HashSet<CPacket>>,
+    ...
+}
+
+fn clone_up_to_view(&self) -> Self {
+    CProposer {
+        highest_seqno_requested_by_client_this_view: Arc::clone(&self.field),  // O(1)
+        request_queue: Arc::clone(&self.field),                                 // O(1)
+        received_1b_packets: Arc::clone(&self.field),                           // O(1)
+        ...
+    }
+}
+```
+
+Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
+
+### Plan
+
+#### 41.1 Concrete target & manual baseline
+
+- [x] **41.1.a**: PoC commit `cb42869` validates the pattern on
+  `CProposer.highest_seqno_requested_by_client_this_view` (single field).
+  Result: +82% throughput, decay collapsed to -5%, matches wasiq.
+- [ ] **41.1.b**: Manually Arc-wrap the other hot collection fields:
+  `CProposer.request_queue: Vec<CRequest>`, `CProposer.received_1b_packets:
+  HashSet<CPacket>`, `CExecutor.reply_cache: HashMap<EndPoint, CReply>`,
+  `CLearner.unexecuted_ops: HashMap<COp, ...>`. Bench each step to measure
+  marginal gain. Target: ≥30K ops/s sustained, ≤2% decay.
+- [ ] **41.1.c**: Repeat on Raft hot fields (`log: Vec<CLogEntry>`,
+  `votes_granted: HashSet<u64>`, `match_index/next_index: HashMap<u64, u64>`)
+  once Phase 40.3 (Raft regen) lands.
+
+#### 41.2 Generalize to transpiler
+
+- [ ] **41.2.a**: Extend `transpile.toml` schema with `arc_wrap_collection_fields`:
+
+  ```toml
+  [arc_wrap_collection_fields]
+  CProposer = [
+      "highest_seqno_requested_by_client_this_view",
+      "request_queue",
+      "received_1b_packets",
+  ]
+  CExecutor = ["reply_cache"]
+  CLearner  = ["unexecuted_ops"]
+  ```
+
+  Distinct from Phase 40's `arc_wrap_fields` (which wraps named
+  sub-component structs in the parent struct). 41 wraps named
+  *collection* fields inside a struct.
+
+- [ ] **41.2.b**: Codegen rule in `transpiler/src/codegen/`:
+  - Detect `pub field: HashMap<K,V> | HashSet<T> | Vec<T>` in the listed
+    `arc_wrap_collection_fields`. Emit `pub field: Arc<HashMap<K,V>>` etc.
+  - Auto-inject `use std::sync::Arc;` when any field is collection-wrapped.
+
+- [ ] **41.2.c**: For each collection-wrapped field, emit `clone_*` helper
+  rewrite that calls `Arc::clone(m)`, with `#[verifier::external_body]` and
+  `ensures res@ == m@`. The transpiler already emits `clone_*` helpers per
+  field; this just swaps the body.
+
+- [ ] **41.2.d**: For mutation sites that look like
+  `let mut __f = s.field.clone(); __f.insert(k, v); ... result = Struct {
+  field: __f, ... }`, emit:
+  - Plain-Rust helper outside `verus!{}`:
+    `pub fn _arc_<field>_insert(arc, k, v) -> Arc { let mut a = arc;
+    Arc::make_mut(&mut a).insert(k, v); a }`
+  - `assume_specification` for the helper with
+    `ensures res@ == arc@.insert(k, v)`.
+  - Rewrite the mutation site as a single by-value pipeline:
+    `let __f = _arc_<field>_insert(s.field.clone(), k, v); ...`
+
+  This bypasses Verus's `&mut Arc<...>` restriction (encountered and
+  resolved during the 41.1.a PoC). The pattern is mechanical.
+
+- [ ] **41.2.e**: Similarly for `push` (Vec), `remove`, `insert` (HashSet):
+  generate matching `_arc_<field>_push/remove/insert` helpers + specs.
+
+- [ ] **41.2.f**: Re-generate RSL/Raft/all 10 protocols with the new
+  `arc_wrap_collection_fields` config. Diff against the manual PoC
+  (`cb42869` for the one field) to confirm the transpiler reproduces the
+  same exec code shape.
+
+#### 41.3 Re-run benches
+
+- [ ] **41.3.a**: Re-bench RSL (32 threads × 30 s × 2). Target: ≥28K ops/s
+  (matches wasiq), ≤5% decay. Confirm 41.2 codegen achieves what 41.1
+  manual PoC did (single field) plus the additional fields from 41.1.b.
+
+- [ ] **41.3.b**: Re-bench Raft. Target: ≥10K ops/s (vs 3.4K baseline,
+  vs 5K Phase 40 target). The biggest win — `log: Vec<CLogEntry>` deep
+  clone on every `SendAppendEntries` becomes Arc::clone.
+
+- [ ] **41.3.c**: gdb profile RSL leader. Confirm `clone_endpoint_seqno_map`,
+  `clone_request_batch_up_to_view`, `clone_hashset` drop out of top frames
+  (replaced by `Arc::clone` and `Arc::make_mut`-clone-on-write).
+
+- [ ] **41.3.d**: Smoke-test all other protocols (PBFT, Paxos, EPaxos,
+  PrimaryBackup, TwoPhase, ChainReplication, VerticalPaxos,
+  LeaderElection). Their hot collection fields (if any) should auto-Arc.
+
+#### 41.4 Document + close the loop
+
+- [ ] **41.4.a**: Update `transpiler/docs/EFFICIENT_EMIT.md` with the
+  collection-field Arc pattern. Distinguish from Phase 40's
+  sub-component Arc-wrapping.
+- [ ] **41.4.b**: Add Phase 41 examples to `transpiler/docs/PATTERNS.md`.
+- [ ] **41.4.c**: Update README's Transpiler section with the new
+  perf numbers (RSL 30K, Raft 10K targets).
+
+### Relationship to Phase 40 (DO NOT REVERT)
+
+Phase 41 is **additive** to Phase 40, not a replacement:
+
+| Layer | Phase | Purpose |
+|-------|-------|---------|
+| Struct-level Arc | Phase 40 `arc_wrap_fields` | `CReplica { proposer: Arc<CProposer> }` — skip CProposer deep-copy when CReplica is functionally rebuilt |
+| Field-level Arc | Phase 41 `arc_wrap_collection_fields` | `CProposer { highest_seqno: Arc<HashMap<…>> }` — skip HashMap deep-copy when CProposer is functionally rebuilt |
+
+The two combine: a CReplica clone bumps Arc for proposer (cheap, Phase 40
+benefit). When the proposer needs mutation, `Arc::make_mut(proposer)`
+forces a CProposer clone, and inside that clone, each HashMap field is
+also Arc::clone (cheap, Phase 41 benefit).
+
+**Do not revert Phase 40.** The 7 small protocols already benefit from it.
+The unresolved Phase 40 issues (RSL regen blocked by transpiler regression,
+Raft 40.3 spec refactor) remain; Phase 41 doesn't depend on them.
+
+### Risk & Mitigation
+
+| Risk | Likelihood | Mitigation |
+|------|------------|------------|
+| `assume_specification` semantics drift from real `Map::insert` | Low | Each helper is a thin `Arc::make_mut` + standard `insert`; semantics is mechanically equivalent to spec |
+| Verus rejects `&mut Arc<…>` in user code | High (already hit) | Helpers are plain Rust outside `verus!{}` block + `assume_specification` bridge. Mechanical pattern proven in PoC. |
+| Refcount-2-at-make_mut paths still pay the deep clone | Inherent | Acceptable — they're rare (only write sites). Bench confirms write-path overhead is bounded. |
+| Some collection fields don't have `clone_*` helpers — direct `.clone()` calls instead | Medium | Audit per protocol; either add helpers or also handle direct `.clone()` via codegen rewrite |
+| Memory overhead from Arc headers | Negligible | Single pointer + 16-byte refcount header; modern CPUs prefetch through. |
+
+### Out of Scope
+
+- Mutation analysis emitting `&mut self` (Path C from Phase 40.1) —
+  considered and rejected; Phase 41 closes the gap without needing it.
+- Generalizing to non-collection fields (small scalar-like fields).
+  Arc on scalars adds indirection without saving allocations.
+- Phase 40 leftovers (40.3.g RSL Arc-wrap of sub-components, 40.6
+  transpiler-bug fixes for RSL regen). These are independent and can
+  proceed in parallel.
+
+### Expected outcome
+
+- RSL: 16K → 28-30K ops/s (matches wasiq hand-tuned), decay -5%.
+- Raft: 3.4K → 10-12K ops/s (biggest absolute lift; log Arc-wrap).
+- All 10 protocols: structural perf lift proportional to size of
+  their hot collection fields.
+- Transpiler grows by ~1 config table + ~1 codegen rule + helper-emission
+  pattern; no new ad-hoc paths.
+- Refinement proofs continue to verify (per-PoC: 0 errors with 1-line
+  `ensures res@ == arc@.insert(k, v)` on the assume_specification).
