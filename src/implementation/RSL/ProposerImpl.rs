@@ -16,6 +16,7 @@ use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::{configuration::*, proposer::*};
 use std::collections::HashSet;
 use std::collections::*;
+use std::sync::Arc;
 use vstd::hash_set::HashSetWithView;
 use vstd::invariant;
 use vstd::prelude::*;
@@ -32,7 +33,7 @@ pub struct CProposer {
     pub max_ballot_i_sent_1a: CBallot,
     pub next_operation_number_to_propose: u64,
     pub received_1b_packets: HashSet<CPacket>,
-    pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>,
+    pub highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>,
     pub incomplete_batch_timer: CIncompleteBatchTimer,
     pub election_state: CElectionState,
     pub max_log_truncation_point: COperationNumber,
@@ -153,12 +154,18 @@ impl Clone for CProposer {
     }
 }
 
-/// Clone a HashMap<EndPoint, u64> with verified view preservation.
-/// Uses hashmap_keys_to_vec + while loop pattern (same as clone_creply_cache_up_to_view).
-pub fn clone_endpoint_seqno_map(m: &HashMap<EndPoint, u64>) -> (res: HashMap<EndPoint, u64>)
+/// [EXPERIMENT] Arc-backed shallow clone. Refcount bump only.
+#[verifier::external_body]
+pub fn clone_endpoint_seqno_map(m: &Arc<HashMap<EndPoint, u64>>) -> (res: Arc<HashMap<EndPoint, u64>>)
     ensures
         res@ == m@,
 {
+    Arc::clone(m)
+}
+
+#[allow(dead_code)]
+#[verifier::external_body]
+fn _orig_clone_endpoint_seqno_map_kept_for_reference(m: &HashMap<EndPoint, u64>) -> HashMap<EndPoint, u64> {
     broadcast use vstd::std_specs::hash::group_hash_axioms;
     broadcast use vstd::hash_map::group_hash_map_axioms;
     broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
