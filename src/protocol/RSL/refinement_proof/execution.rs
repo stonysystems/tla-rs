@@ -41,7 +41,6 @@ use crate::common::native::io_s::*;
 use crate::services::RSL::app_state_machine::*;
 
 verus! {
-    #[verifier(external_body)]
     pub proof fn lemma_AppStateAlwaysValid(
         b: Behavior<RslState>,
         c: LConstants,
@@ -56,10 +55,13 @@ verus! {
             IsValidQuorumOf2bsSequence(b[i], qs),
             qs.len() == b[i].replicas[idx].replica.executor.ops_complete,
             b[i].replicas[idx].replica.executor.app == GetAppStateFromRequestBatches(GetSequenceOfRequestBatches(qs)),
-        decreases i,
+        decreases i, 2int,
     {
         if i == 0 {
-            return arbitrary();
+            // Initial state: ops_complete == 0, app == AppInitialize()
+            assert(RslInit(c, b[0]));
+            assert(LSchedulerInit(b[0].replicas[idx], LReplicaConstants{my_index: idx, all: c}));
+            return Seq::empty();
         }
 
         lemma_ReplicaConstantsAllConsistent(b, c, i, idx);
@@ -77,15 +79,172 @@ verus! {
 
         let ios = lemma_ActionThatChangesReplicaIsThatReplicasAction(b, c, i - 1, idx);
         if b[i - 1].replicas[idx].nextActionIndex == 0 {
+            lemma_AppState_action0_facts(b[i - 1], b[i], idx, ios);
             let p = ios[0]->r;
             return lemma_TransferredStateAlwaysValid(b, c, i - 1, p);
         }
 
+        // Action 6 (execute): ops_complete incremented.
+        // Establish that nextActionIndex == 6 and executor state changed via LExecutorExecute
+        lemma_AppState_action6_facts(b[i - 1], b[i], idx, ios);
+
+        // Bridge: action6_facts ensures next_op_to_execute is OutstandingOpKnown at i-1
+        assert(b[i - 1].replicas[idx].replica.executor.next_op_to_execute is OutstandingOpKnown);
+        // Bridge: ops_complete increment
+        assert(s_prime.ops_complete == s.ops_complete + 1);
+
         let prev_qs = lemma_AppStateAlwaysValid(b, c, i - 1, idx);
         let q = lemma_DecidedOperationWasChosen(b, c, i - 1, idx);
+        return lemma_AppState_extend_qs(b, c, i, idx, prev_qs, q);
+    }
+
+    // Helper: extends the quorum sequence by one element and proves the
+    // postconditions hold at step i. Isolates the GetSequenceOfRequestBatches
+    // extensionality proof from the heavy recursive + action-analysis scope.
+    proof fn lemma_AppState_extend_qs(
+        b: Behavior<RslState>,
+        c: LConstants,
+        i: int,
+        idx: int,
+        prev_qs: Seq<QuorumOf2bs>,
+        q: QuorumOf2bs,
+    ) -> (qs: Seq<QuorumOf2bs>)
+        requires
+            IsValidBehaviorPrefix(b, c, i),
+            0 < i,
+            0 <= idx < b[i].replicas.len(),
+            0 <= idx < b[i - 1].replicas.len(),
+            // prev_qs satisfies the invariant at i-1:
+            IsValidQuorumOf2bsSequence(b[i - 1], prev_qs),
+            prev_qs.len() == b[i - 1].replicas[idx].replica.executor.ops_complete,
+            b[i - 1].replicas[idx].replica.executor.app == GetAppStateFromRequestBatches(GetSequenceOfRequestBatches(prev_qs)),
+            // q from lemma_DecidedOperationWasChosen at i-1:
+            IsValidQuorumOf2bs(b[i - 1], q),
+            q.opn == b[i - 1].replicas[idx].replica.executor.ops_complete,
+            q.v == b[i - 1].replicas[idx].replica.executor.next_op_to_execute->v,
+            // Executor state change from LExecutorExecute:
+            b[i].replicas[idx].replica.executor.ops_complete == b[i - 1].replicas[idx].replica.executor.ops_complete + 1,
+            ({
+                let s = b[i - 1].replicas[idx].replica.executor;
+                let batch = s.next_op_to_execute->v;
+                let temp = HandleRequestBatch(s.app, batch);
+                b[i].replicas[idx].replica.executor.app == temp.0[temp.0.len() - 1]
+            }),
+        ensures
+            IsValidQuorumOf2bsSequence(b[i], qs),
+            qs.len() == b[i].replicas[idx].replica.executor.ops_complete,
+            b[i].replicas[idx].replica.executor.app == GetAppStateFromRequestBatches(GetSequenceOfRequestBatches(qs)),
+    {
         let new_qs = prev_qs + seq![q];
-        assert(GetSequenceOfRequestBatches(new_qs) == GetSequenceOfRequestBatches(prev_qs).push(q.v));
-        return new_qs;
+        lemma_IfValidQuorumOf2bsSequenceNowThenNext(b, c, i - 1, prev_qs);
+
+        // Step 1: GetSequenceOfRequestBatches extensionality
+        assert(new_qs.drop_last() =~= prev_qs);
+        assert(new_qs.last() == q);
+        let prev_batches = GetSequenceOfRequestBatches(prev_qs);
+        let new_batches = GetSequenceOfRequestBatches(new_qs);
+        assert(new_batches =~= prev_batches + seq![q.v]);
+
+        // Step 2: GetAppStateFromRequestBatches unfolding
+        // new_batches = prev_batches.push(q.v)
+        // GetAppStateFromRequestBatches(new_batches)
+        //   = HandleRequestBatch(GetAppStateFromRequestBatches(prev_batches), q.v).0.last()
+        assert(new_batches.drop_last() =~= prev_batches);
+        assert(new_batches.last() == q.v);
+        let s = b[i - 1].replicas[idx].replica.executor;
+        // s.app == GetAppStateFromRequestBatches(prev_batches) by precondition
+        // s_.app == HandleRequestBatch(s.app, q.v).0[...len()-1] by executor transition precondition
+
+        new_qs
+    }
+
+    // Helper: when nextActionIndex == 0 and ops_complete changed,
+    // the received packet is an AppStateSupply and is in sentPackets.
+    proof fn lemma_AppState_action0_facts(
+        ps: RslState,
+        ps_: RslState,
+        idx: int,
+        ios: Seq<RslIo>,
+    )
+        requires
+            RslNextOneReplica(ps, ps_, idx, ios),
+            ConstantsAllConsistentInv(ps),
+            ps.replicas[idx].nextActionIndex == 0,
+            ps_.replicas[idx].replica.executor.ops_complete != ps.replicas[idx].replica.executor.ops_complete,
+        ensures
+            ios[0] is Receive,
+            ios[0]->r.msg is RslMessageAppStateSupply,
+            ps.environment.sentPackets.contains(ios[0]->r),
+            ps.constants.config.replica_ids.contains(ios[0]->r.src),
+    {
+        let replica = ps.replicas[idx].replica;
+        let replica_ = ps_.replicas[idx].replica;
+
+        // nextActionIndex == 0 → LReplicaNextProcessPacket
+        assert(LReplicaNextProcessPacket(replica, replica_, ios));
+
+        // ios[0] can't be TimeoutReceive (s_ == s → ops_complete unchanged)
+        assert(ios[0] is Receive);
+
+        // Heartbeat doesn't change executor → must be non-heartbeat
+        // Non-heartbeat → LReplicaNextProcessPacketWithoutReadingClock
+        assert(LReplicaNextProcessPacketWithoutReadingClock(replica, replica_, ios));
+
+        // Only AppStateSupply changes ops_complete among all message types
+        let p = ios[0]->r;
+        let sent_packets = ExtractSentPacketsFromIos(ios);
+        assert(p.msg is RslMessageAppStateSupply);
+        assert(LReplicaNextProcessAppStateSupply(replica, replica_, p, sent_packets));
+
+        // Guard of LReplicaNextProcessAppStateSupply must be true (otherwise s_ == s)
+        assert(replica.executor.constants.all.config.replica_ids.contains(p.src));
+
+        // Received packet is in sentPackets via LEnvironment_PerformIos
+        assert(LEnvironment_Next(ps.environment, ps_.environment));
+        assert(IsValidLEnvStep(ps.environment, ps.environment.nextStep));
+        assert(ios.contains(ios[0]));
+    }
+
+    // Helper: when nextActionIndex != 0 and ops_complete changed,
+    // derives that action 6 was taken and LExecutorExecute holds.
+    proof fn lemma_AppState_action6_facts(
+        ps: RslState,
+        ps_: RslState,
+        idx: int,
+        ios: Seq<RslIo>,
+    )
+        requires
+            RslNextOneReplica(ps, ps_, idx, ios),
+            ps.replicas[idx].nextActionIndex != 0,
+            ps_.replicas[idx].replica.executor.ops_complete != ps.replicas[idx].replica.executor.ops_complete,
+        ensures
+            ps.replicas[idx].nextActionIndex == 6,
+            ps.replicas[idx].replica.executor.next_op_to_execute is OutstandingOpKnown,
+            ({
+                let s = ps.replicas[idx].replica.executor;
+                let s_ = ps_.replicas[idx].replica.executor;
+                let batch = s.next_op_to_execute->v;
+                let temp = HandleRequestBatch(s.app, batch);
+                &&& s_.ops_complete == s.ops_complete + 1
+                &&& s_.app == temp.0[temp.0.len() - 1]
+            }),
+    {
+        let replica = ps.replicas[idx].replica;
+        let replica_ = ps_.replicas[idx].replica;
+        let nai = ps.replicas[idx].nextActionIndex;
+        let sent = ExtractSentPacketsFromIos(ios);
+
+        // LSchedulerNext with nextActionIndex != 0 → LReplicaNoReceiveNext
+        assert(LReplicaNoReceiveNext(replica, nai, replica_, ios));
+
+        // For actions 1-5, 7-9: executor field is s.executor (unchanged).
+        // Since ops_complete changed, nai must be 6.
+        // Z3 should derive this from the if-else chain in LReplicaNoReceiveNext.
+        assert(nai == 6);
+
+        // Unfold action 6
+        assert(LReplicaNextSpontaneousMaybeExecute(replica, replica_, sent));
+        assert(LExecutorExecute(replica.executor, replica_.executor, sent));
     }
 
     pub proof fn lemma_TransferredStateAlwaysValid(
