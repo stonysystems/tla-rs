@@ -14406,7 +14406,7 @@ Two options for each unsupported pattern; pick per-function based on cost/benefi
 
 The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once we set up a proper regen workflow, those edits will be wiped on each regen until Phase 41.2 lands. Two options:
 
-- [ ] **42.3.a (preferred)**: Add a TOML config entry that tells the transpiler to emit `Arc<HashMap<EndPoint, u64>>` for `CProposer.highest_seqno_requested_by_client_this_view`, plus generate the `_arc_seqno_insert` helper + `assume_specification`. This is a **partial Phase 41.2.b implementation** scoped to one field, and survives regen by construction.
+- [x] **42.3.a (preferred)**: Add a TOML config entry that tells the transpiler to emit `Arc<HashMap<EndPoint, u64>>` for `CProposer.highest_seqno_requested_by_client_this_view`, plus generate the `_arc_seqno_insert` helper + `assume_specification`. This is a **partial Phase 41.2.b implementation** scoped to one field, and survives regen by construction. **Done**: added `arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view"] }` to `proposer_transpile.toml` (inline table syntax to avoid TOML section header collision). Transpiler emits Arc::new at 3 init/mutation sites, .clone() at 5 unchanged-path sites. Validation passes (9 functions, matching existing).
 - [x] **42.3.b (fallback)**: Document the manual patch in `transpiler/docs/REGEN_WORKFLOW.md` so anyone running regen knows to re-apply the cb42869 patch. Stopgap until 42.3.a or full Phase 41.2 lands. Covers: Arc-wrap steps (a–i), skip_functions hand-written bodies, verification commands.
 
 #### 42.4 Establish a tested regen workflow
@@ -14517,7 +14517,7 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
 #### 41.1 Concrete target & manual baseline (after Phase 42)
 
 - [x] **41.1.a (original)**: PoC `cb42869` validated the pattern on `CProposer.highest_seqno_requested_by_client_this_view`. +82% throughput, -5% decay, matches wasiq. **Survives Phase 42 iff 42.3.a lands; otherwise needs redo per 41.1.a-redo.**
-- [ ] **41.1.a-redo (conditional on 42.3.a NOT landing)**: Re-apply the Arc-wrap on regenerated RSL files. Two parts:
+- [x] **41.1.a-redo (conditional on 42.3.a NOT landing)**: N/A — 42.3.a landed, Arc-wrap survives regen automatically. Two parts (no longer needed):
   - `src/implementation/RSL/ProposerImpl.rs`: change field type to `Arc<HashMap<EndPoint, u64>>` + `use std::sync::Arc;` + `clone_endpoint_seqno_map` uses `Arc::clone`. (Hand-written file, survives regen — only needs redo if regen workflow runs.)
   - `src/generated/RSL/proposer_gen.rs`: add `use std::sync::Arc;`, wrap `HashMap::new()` → `Arc::new(HashMap::new())` at the 2 init sites, swap insert site to `_arc_seqno_insert` helper, add plain-Rust `_arc_seqno_insert` helper outside `verus!{}` block, add `assume_specification` with `ensures res@ == arc@.insert(k, v)`.
   - Verify: `verus --crate-type=lib src/lib.rs --no-verify` builds; `--verify-only-module generated::RSL::proposer_gen` passes (target 125 verified, 0 errors).
