@@ -13988,51 +13988,136 @@ which produces the observed throughput decay (trial 1 → trial 2:
   Arc-wrapped protocol functions close without manual proof hints.**
   Transpiler lib tests: 1661 pass, 0 fail.
 
-#### 40.3 Bench regression: ensure efficiency lift is real
+#### 40.3 Refactor Raft/RSL spec to unblock re-generation (Phase 34 cascade fix)
 
-- [ ] **40.3.a**: Rebuild `liblib.so` on `~/test/tla-rs` after Phase
-  40.2 lands. Capture timestamp + size.
-- [ ] **40.3.b**: Re-run the RSL UDP bench on zoo-002 / zoo-004 with
+**Context (discovered 2026-05-23 during Phase 40 implementation)**: Raft's
+`raft_gen.rs` is **stale** — it has not been regenerated since
+`1e5ff6b` (pre-Phase 34.8). Phase 34.8 commit `a9545c1` added a
+multi-conjunct existential to `LAdvanceCommitIndex` (quorum-replication
+guard) which the transpiler does not support. An earlier Phase 34.x
+commit introduced inline `if has_entry { 1int } else { 0int }`
+expressions in `LSendAppendEntries` requires that the transpiler's
+printer emits as raw `syn::Expr::If { … }` AST text instead of valid
+Rust.
+
+Because **Phase 34 is deprecated** (no further proof work), the
+spec can be refactored to transpiler-friendly equivalents with
+minimal risk — the residual 12 assumes stay in place; only the
+encoding of a few expressions changes.
+
+**This subsection must land before 40.4 bench** because Raft and RSL
+are the two biggest expected payoffs (Raft `log` clone is the single
+biggest field clone in the project) and bench targets for them
+require regen to succeed first.
+
+##### Concrete edits to `src/protocol/Raft/raft.rs`
+
+- [ ] **40.3.a**: Extract 3 inline `if-expr`s into spec helpers:
+  ```rust
+  pub open spec fn ae_entry_count(has_entry: bool) -> int {
+      if has_entry { 1int } else { 0int }
+  }
+  pub open spec fn step_down_has_voted(s: LState, ae_term: int) -> bool {
+      if ae_term > s.current_term { false } else { s.has_voted }
+  }
+  pub open spec fn step_down_voted_for(s: LState, ae_term: int) -> int {
+      if ae_term > s.current_term { 0int } else { s.voted_for }
+  }
+  ```
+  Call sites: [raft.rs:142](src/protocol/Raft/raft.rs#L142),
+  [raft.rs:183](src/protocol/Raft/raft.rs#L183),
+  [raft.rs:184](src/protocol/Raft/raft.rs#L184).
+- [ ] **40.3.b**: Refactor [raft.rs:274-283](src/protocol/Raft/raft.rs#L274)
+  `LAdvanceCommitIndex` quorum guard from `exists |q| { multi-conjunct }`
+  to a count-based form:
+  ```rust
+  pub open spec fn replicator_count(s: LState, c: LConstants, idx: int) -> int {
+      // |{v ∈ c.servers : v == c.my_id ||
+      //                   (s.match_index.contains_key(v) && s.match_index[v] >= idx)}|
+  }
+  // call site:
+  &&& replicator_count(s, c, new_commit_index) >= c.quorum_size
+  ```
+  This eliminates the existential entirely; the impl can compute by iteration.
+- [ ] **40.3.c**: Confirm `raft_transpile.toml` `arc_wrap_types` /
+  `arc_wrap_fields` config (already present:
+  `["log", "votes_granted", "match_index", "next_index"]`).
+
+##### Validation
+
+- [ ] **40.3.d**: Re-generate
+  `src/generated/Raft/{raft_gen.rs, types_gen.rs}` via
+  `scripts/regenerate_simple_protocols.sh`. **Expected**: zero
+  "Unsupported pattern" errors; zero raw `If { … }` text in output;
+  ≥27 Arc usages present.
+- [ ] **40.3.e**: `verus --crate-type=lib src/lib.rs
+  --verify-only-module 'generated::Raft::raft_gen'
+  --verify-only-module 'generated::Raft::types_gen' --rlimit 40`
+  → target **0 errors**.
+- [ ] **40.3.f**: Verify the **rest** of the Raft proof modules
+  (`refinement_proof::invariants`, `refinement_proof::committed`,
+  etc.) still pass — the deprecated 12 assumes stay as-is, but the
+  ~50 already-verified invariants might need `reveal(ae_entry_count)`
+  or similar hints if they relied on automatic inlining of the
+  original `if-expr`. Track regressions in a small audit table.
+
+##### RSL note (deferred decision)
+
+- [ ] **40.3.g**: Apply the same recipe to RSL **if** RSL regen also
+  hits transpiler-unfriendly patterns. RSL has 9 sub-TOMLs; expected
+  to need `arc_wrap` config in each plus likely 1-2 spec refactors of
+  similar shape to Raft. RSL refinement proof (Phase 31, also
+  deprecated) is also locked, so spec refactor is similarly low-risk.
+  Decision deferred until 40.3.d-f lands and we know how disruptive
+  the proof hint additions in 40.3.f were.
+
+#### 40.4 Bench regression: ensure efficiency lift is real
+
+Runs after 40.3 lands so Raft (and ideally RSL) are also Arc-wrapped.
+
+- [ ] **40.4.a**: Rebuild `liblib.so` on `~/test/tla-rs`. Capture
+  timestamp + size.
+- [ ] **40.4.b**: Re-run the RSL UDP bench on zoo-002 / zoo-004 with
   32 threads × 30 s × 2 trials. Target: **≥18 K ops/s on zoo-002
   trial-1 (+33% vs pre-Phase-40 baseline of 13.5 K)**, and
   **trial-2 ≥ trial-1 × 0.85** (decay reduced from 1.6× to ≤1.18×).
-- [ ] **40.3.c**: Re-run Raft bench (currently `bin/IronRaftClient.dll`
+- [ ] **40.4.c**: Re-run Raft bench (currently `bin/IronRaftClient.dll`
   via `IronProtocolServer` with `protocol=raft`). Target:
   **≥5 K ops/s on zoo-002** (Raft is currently 3.4 K ops/s baseline
   per Phase 26 measurements; log-clone elimination should give the
   biggest absolute lift).
-- [ ] **40.3.d**: Smoke other protocols (PBFT, Paxos, EPaxos,
+- [ ] **40.4.d**: Smoke other protocols (PBFT, Paxos, EPaxos,
   PrimaryBackup, TwoPhase, etc.) — at minimum, run a 1-thread × 5 s
   client to confirm no regression / no broken behavior. We do not
   yet have benchmark clients for all of them.
-- [ ] **40.3.e**: Capture a fresh gdb sample profile on the Arc-ified
+- [ ] **40.4.e**: Capture a fresh gdb sample profile on the Arc-ified
   tla-rs RSL leader. Confirm `CProposer::clone_up_to_view` drops
   out of the top frames (it should become `Arc::clone` — refcount
   increment, sub-ns).
 
-#### 40.4 (Conditional, Path B) HashMap → persistent
+#### 40.5 (Conditional, Path B) HashMap → persistent
 
-Only pursue if 40.3 results show throughput decay still present.
+Only pursue if 40.4 results show throughput decay still present.
 
-- [ ] **40.4.a**: Identify hottest HashMap fields per gdb profile
+- [ ] **40.5.a**: Identify hottest HashMap fields per gdb profile
   (currently `highest_seqno_requested_by_client_this_view`,
   `reply_cache`, `unexecuted_ops`).
-- [ ] **40.4.b**: Write a Verus-compatible adapter for `im::HashMap`
+- [ ] **40.5.b**: Write a Verus-compatible adapter for `im::HashMap`
   with `View == Map<K, V>` (vstd's `Map` is the abstract type).
-- [ ] **40.4.c**: Update transpiler config to emit `im::HashMap` for
+- [ ] **40.5.c**: Update transpiler config to emit `im::HashMap` for
   these flagged fields. Per-protocol, not per-codebase.
-- [ ] **40.4.d**: Re-bench. Target: time decay completely flat
+- [ ] **40.5.d**: Re-bench. Target: time decay completely flat
   (trial-2 within 5% of trial-1).
 
-#### 40.5 Document + close the loop
+#### 40.6 Document + close the loop
 
-- [ ] **40.5.a**: Update `transpiler/docs/PATTERNS.md` with the new
+- [ ] **40.6.a**: Update `transpiler/docs/PATTERNS.md` with the new
   Arc-wrapping pattern and emit examples.
-- [ ] **40.5.b**: Note in `transpiler/docs/LIMITATIONS.md` that the
+- [ ] **40.6.b**: Note in `transpiler/docs/LIMITATIONS.md` that the
   remaining gap to hand-tuned implementations (e.g. wasiq's batching
   reorg) is **algorithmic, not structural**, and is out of scope for
   the transpiler.
-- [ ] **40.5.c**: Update README's "Transpiler" section with the new
+- [ ] **40.6.c**: Update README's "Transpiler" section with the new
   perf numbers and the auto-gen-vs-handwritten gap.
 
 ### Risk & Mitigation
@@ -14044,6 +14129,8 @@ Only pursue if 40.3 results show throughput decay still present.
 | HashMap fields that are mutated frequently incur Arc overhead from `make_mut` clone-on-write | Low | Profile, then selectively un-Arc back to bare field if measurement shows regression |
 | Verus version drift breaks `vstd::sync::Arc` axioms | Low | Pin Verus version; same constraint as [[liblib-so-staleness]] memory |
 | Cache miss from Arc indirection adds latency | Very low | Arc is single pointer + 16-byte refcount header; modern CPU prefetcher handles |
+| **Raft spec refactor (40.6) cascades into proof failures** | **Medium** | The 12 deprecated assumes stay; older verified invariants may need `reveal(helper_fn)` hints. Bounded scope: only 4 sites changed, fallback is to revert per-helper if any specific proof breaks |
+| **RSL needs same spec refactor + 9-sub-TOML config update** | **Medium** | Phase 40.6.h gates this on Raft results first; can be skipped if 40.6.g shows proof disruption was high |
 
 ### Out of Scope (deferred to later phases)
 
@@ -14053,21 +14140,36 @@ Only pursue if 40.3 results show throughput decay still present.
   output.
 - Switching the protocol layer to multi-threaded execution; current
   model is single-threaded per replica.
-- Touching the spec layer at all — Phase 40 is impl-only.
+- ~~Touching the spec layer at all — Phase 40 is impl-only.~~
+  **Amended (2026-05-23)**: Phase 40.6 includes minimal Raft (and
+  possibly RSL) spec refactors to make re-generation possible after
+  the Phase 34.x spec changes broke transpiler compatibility. Scope
+  limited to transpiler-friendly syntactic equivalents; no semantic
+  spec changes.
 - Generic refactors to the C# / .NET I/O layer — orthogonal.
+- Fixing the transpiler to support multi-conjunct exists or
+  if-expression in requires (alternative path to 40.6). Considered
+  but rejected as higher cost / higher risk than the spec refactor.
 
 ### Expected outcome
 
-- **All 10 transpiled protocols** see structural perf lift,
-  proportional to the size of their "rarely-touched" sub-state.
-- tla-rs RSL: 13.5 K → 18-22 K ops/s on zoo-002 (close ~50% of the
-  gap to wasiq).
-- Raft: 3.4 K → 5-7 K ops/s (log-clone removal is the biggest single
-  win; Raft's `log: Vec<CLogEntry>` grows without bound and is
-  cloned on every `SendAppendEntries`).
+**Updated 2026-05-23 after 40.2.f partial completion**:
+
+- **7 small/medium protocols** (TwoPhase, Paxos, LeaderElection,
+  PrimaryBackup, PBFT, VerticalPaxos, EPaxos) successfully Arc-wrapped
+  and verified. 87.5% auto-close rate (7/8 attempted; ChainReplication
+  hit Verus trigger issue, fixable in ~30 min).
+- **Raft + RSL** are blocked by Phase 34.x spec changes that introduced
+  transpiler-unsupported patterns; recovered via Phase 40.6 (minimal
+  spec refactor).
+- After 40.6:
+  - tla-rs RSL: 13.5 K → 18-22 K ops/s on zoo-002 (close ~50% of the
+    gap to wasiq's 28.6 K).
+  - Raft: 3.4 K → 5-7 K ops/s (log-clone removal is the biggest single
+    win; Raft's `log: Vec<CLogEntry>` grows without bound and is
+    cloned on every `SendAppendEntries`).
 - Transpiler complexity grows by ~1 codegen rule (Arc-wrap) + ~1
   proof template (Arc::make_mut), not a new code-gen path.
 - Refinement proofs continue to be auto-generated for ≥85% of
-  functions, same as current state. The remaining edge cases follow
-  the existing Phase 31 / Phase 34 pattern (Claude / human fills in
-  `assert` hints).
+  functions. Raft 40.6 may temporarily lower this for the modified
+  functions if `reveal()` hints are needed; track per-function.
