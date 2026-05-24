@@ -179,6 +179,12 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     };
 
     let mut distinct_states: BTreeSet<String> = BTreeSet::new();
+    // Fast-path dedup via u64 fingerprint (avoids canonical_key String alloc
+    // for already-seen states). When symmetry_fields is empty, fingerprint is
+    // the sole authority; with symmetry, canonical_key is still authoritative
+    // but fingerprint screens out the majority of duplicates cheaply.
+    let mut seen_fingerprints: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let use_symmetry = !symmetry_fields_owned.is_empty();
     let mut traces_explored: usize = 0;
     let mut max_depth: usize = 0;
     let mut transitions_fired: usize = 0;
@@ -227,9 +233,15 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
     // Explore from each initial state
     for initial in &initial_states {
+        let initial_fp = initial.fingerprint();
+        if !seen_fingerprints.insert(initial_fp) {
+            // Fingerprint already seen — definitely a duplicate (no symmetry
+            // can merge two states with identical fingerprints differently).
+            continue;
+        }
         let initial_key = canonical_state_key(initial);
         if !distinct_states.insert(initial_key.clone()) {
-            continue; // Already seen this initial state
+            continue; // Symmetry-merged duplicate
         }
 
         // Check invariants on initial state
@@ -298,7 +310,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
         while !stack.is_empty() {
             // Check limits
-            if distinct_states.len() >= config.max_states {
+            if seen_fingerprints.len() >= config.max_states {
                 break;
             }
 
@@ -405,18 +417,33 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                         continue;
                     };
 
-                    let succ_key = canonical_state_key(&successor);
-                    if should_prune_seen_successor(config.use_sleep_sets, &distinct_states, &succ_key)
-                    {
-                        // Global seen-successor pruning is sleep-mode-only to
-                        // preserve the conservative baseline as the comparison
-                        // anchor for reduction evidence.
-                        sleep_prune_hits += 1;
-                        continue;
+                    // Fast-path: check fingerprint before computing canonical key
+                    let succ_fp = successor.fingerprint();
+                    let fp_is_new = seen_fingerprints.insert(succ_fp);
+                    if !fp_is_new {
+                        if should_prune_seen_successor(config.use_sleep_sets)
+                        {
+                            sleep_prune_hits += 1;
+                            continue;
+                        }
                     }
 
                     transitions_fired += 1;
-                    let is_new = distinct_states.insert(succ_key);
+                    // Compute canonical key only for reporting / symmetry dedup
+                    let is_new = if fp_is_new && !use_symmetry {
+                        // No symmetry: fingerprint is authoritative
+                        let succ_key = canonical_state_key(&successor);
+                        distinct_states.insert(succ_key);
+                        true
+                    } else if fp_is_new {
+                        // Symmetry enabled: fingerprint was new but canonical
+                        // key might merge with existing state
+                        let succ_key = canonical_state_key(&successor);
+                        distinct_states.insert(succ_key)
+                    } else {
+                        // Fingerprint already seen: duplicate
+                        false
+                    };
 
                     let depth = parent_depth + 1;
                     if depth > max_depth {
@@ -842,10 +869,11 @@ fn has_done_successor_fingerprint(
 
 fn should_prune_seen_successor(
     use_sleep_sets: bool,
-    distinct_states: &BTreeSet<String>,
-    successor_state_key: &str,
 ) -> bool {
-    use_sleep_sets && distinct_states.contains(successor_state_key)
+    // When sleep sets are enabled, duplicate successors (detected by
+    // fingerprint) are pruned eagerly. Without sleep sets the conservative
+    // baseline fires the transition but skips exploration (is_new=false).
+    use_sleep_sets
 }
 
 fn transition_sleep_key(transition: &EnabledTransition) -> String {
@@ -2088,24 +2116,18 @@ max_seq_len = 4
     }
 
     #[test]
-    fn test_should_prune_seen_successor_enabled_and_seen() {
-        let distinct: BTreeSet<String> = ["S1".to_string(), "S2".to_string()].into();
+    fn test_should_prune_seen_successor_enabled() {
         assert!(
-            should_prune_seen_successor(true, &distinct, "S2"),
+            should_prune_seen_successor(true),
             "sleep mode should prune already-seen successor states"
         );
     }
 
     #[test]
-    fn test_should_prune_seen_successor_disabled_or_unseen() {
-        let distinct: BTreeSet<String> = ["S1".to_string(), "S2".to_string()].into();
+    fn test_should_prune_seen_successor_disabled() {
         assert!(
-            !should_prune_seen_successor(false, &distinct, "S2"),
+            !should_prune_seen_successor(false),
             "without sleep mode, seen successors should not be pruned"
-        );
-        assert!(
-            !should_prune_seen_successor(true, &distinct, "S3"),
-            "unseen successors should not be pruned"
         );
     }
 

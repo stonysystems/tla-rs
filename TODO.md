@@ -13509,12 +13509,16 @@ tiers, ordered biggest-gain-per-effort first.
   (only one field changes per transition). Currently we deep-clone
   the entire state. With `Arc`, clone becomes refcount bump and
   unchanged fields are shared. Memory + clone-speed win. 3-4 days.
-- [ ] **38.21.F**: **Stateful DPOR** (combine sleep-sets with state-
-  set memoization). Currently DPOR dedups by canonical_key but
-  doesn't propagate "I've seen this state before through a different
-  trace, no need to explore from here." Stateful DPOR formalizes
-  this — would skip whole subtrees that lead only to already-explored
-  states. 2-4 days.
+- [x] **38.21.F**: **Stateful DPOR** — analyzed and implemented.
+  The explorer already had stateful pruning (`is_new` gate on line 455
+  skips re-exploration of seen states). The remaining optimization was
+  **fingerprint-based fast-path dedup**: added `HashSet<u64>`
+  (`seen_fingerprints`) alongside `BTreeSet<String>` (`distinct_states`).
+  Successor fingerprint is checked BEFORE computing the expensive
+  `canonical_state_key()` (symmetry-aware String alloc). When fingerprint
+  is already seen, canonical key computation is skipped entirely.
+  With symmetry enabled, new fingerprints still go through canonical key
+  dedup for correctness. *DONE.*
 
 #### Tier 3 — small wins, quick to implement
 
@@ -13544,10 +13548,10 @@ tiers, ordered biggest-gain-per-effort first.
   per-branch expansions are part of the cached map.
   Measured: Election 58 s → 30 s (1.9×); Paxos 53 s → 35 s (1.5×).
 
-#### Status (2026-04-19)
+#### Status (2026-05-24)
 
-Done: D, J. Analyzed and deferred: G (low ROI without deeper rewrite).
-Remaining: A, B, C, E, F, H, I — each multi-day to multi-week. Default
+Done: D, F, J. Analyzed and deferred: G (low ROI without deeper rewrite).
+Remaining: A, B, C, E, H, I — each multi-day to multi-week. Default
 Paxos run-time at the new bounds is ~35 s with `--search dpor`, well
 within the 10-min budget; further optimization is no longer urgent.
 
