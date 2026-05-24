@@ -8,6 +8,7 @@ use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -58,6 +59,17 @@ ensures
 }
 
 
+/// Helper: clone CRaftMessage preserving view (workaround for missing derive Clone spec).
+#[verifier(external_body)]
+fn clone_msg(r: &CRaftMessage) -> (res: CRaftMessage)
+ensures
+    res@ == r@,
+    res.valid() == r.valid(),
+{
+    r.clone()
+}
+
+
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
     c.valid(),
@@ -69,11 +81,11 @@ ensures
         current_term: 0u64,
         has_voted: false,
         voted_for: 0u64,
-        log: vec![],
+        log: Arc::new(vec![]),
         commit_index: 0u64,
-        votes_granted: HashSet::new(),
-        match_index: HashMap::new(),
-        next_index: HashMap::new(),
+        votes_granted: Arc::new(HashSet::new()),
+        match_index: Arc::new(HashMap::new()),
+        next_index: Arc::new(HashMap::new()),
         role: CServerRole::Follower,
     };
     proof {
@@ -101,9 +113,9 @@ ensures
     current_term: (s.current_term + 1),
     has_voted: true,
     voted_for: c.my_id.clone(),
-    log: clone_log(&s.log),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: __votes_granted,
+    votes_granted: Arc::new(__votes_granted),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Candidate,
@@ -111,11 +123,11 @@ ensures
     term: (s.current_term + 1),
     candidate: c.my_id.clone(),
     last_log_index: (s.log.len() as u64),
-    last_log_term: (if s.log.len() == 0 {
-    0u64
-} else {
-    s.log[s.log.len() - 1].term
-}),
+    last_log_term: if ((s.log.len() as u64) == 0) {
+        0u64
+    } else {
+        s.log[(s.log.len() - 1)].term
+    },
 }])
     };
     proof {
@@ -146,21 +158,25 @@ ensures
     LGrantVote(s@, result.0@, c@, *candidate_term as int, *candidate_last_log_term as int, *candidate_last_log_index as int, *candidate_id as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = (CState {
-    current_term: *candidate_term,
+    current_term: (*candidate_term),
     has_voted: true,
-    voted_for: *candidate_id,
-    log: clone_log(&s.log),
+    voted_for: (*candidate_id),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: clone_hashset_u64(&s.votes_granted),
+    votes_granted: s.votes_granted.clone(),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
 }, vec![CRaftMessage::VoteResponse {
-    term: *candidate_term,
+    term: (*candidate_term),
     granted: true,
     voter: c.my_id.clone(),
-    voter_last_log_index: s.log.len() as u64,
-    voter_last_log_term: if s.log.len() == 0 { 0u64 } else { s.log[s.log.len() - 1].term },
+    voter_last_log_index: (s.log.len() as u64),
+    voter_last_log_term: if ((s.log.len() as u64) == 0) {
+        0u64
+    } else {
+        s.log[(s.log.len() - 1)].term
+    },
 }]);
     proof {
         assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
@@ -190,9 +206,9 @@ ensures
     role: s.role.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: clone_log(&s.log),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: __votes_granted,
+    votes_granted: Arc::new(__votes_granted),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![]) }
@@ -224,11 +240,11 @@ ensures
     current_term: s.current_term.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: clone_log(&s.log),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: clone_hashset_u64(&s.votes_granted),
-    match_index: HashMap::new(),
-    next_index: HashMap::new(),
+    votes_granted: s.votes_granted.clone(),
+    match_index: Arc::new(HashMap::new()),
+    next_index: Arc::new(HashMap::new()),
     role: CServerRole::Leader,
 }, vec![])
     };
@@ -250,10 +266,10 @@ ensures
     LClientRequest(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
-        let mut __log = clone_log(&s.log);
+        let mut __log = (*s.log).clone();
         __log.push(CLogEntry {
     term: s.current_term.clone(),
-    value: *value,
+    value: (*value),
 });
         { proof {
             lemma_empty_msg_map();
@@ -262,16 +278,15 @@ ensures
     role: s.role.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: __log,
+    log: Arc::new(__log),
     commit_index: s.commit_index.clone(),
-    votes_granted: clone_hashset_u64(&s.votes_granted),
+    votes_granted: s.votes_granted.clone(),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![]) }
     };
     proof {
         lemma_empty_log_map();
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value });
         assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
@@ -284,11 +299,11 @@ requires
     c.valid(),
     s.role is Leader,
     c@.servers.contains(*follower as int),
-    // Log-consistency constraints (Phase 34.3)
-    s.log@.len() >= *prev_log_index as int + (if has_entry { 1int } else { 0int }),
-    (*prev_log_index > 0) ==> (s.log@[*prev_log_index as int - 1].term as int == *prev_log_term as int),
-    has_entry ==> (s.log@[*prev_log_index as int].value as int == *entry_value as int),
-    has_entry ==> (s.log@[*prev_log_index as int].term as int == s@.current_term),
+    (*prev_log_index >= 0),
+    (s@.log.len() >= (*prev_log_index + ae_entry_count(has_entry))),
+    ((*prev_log_index > 0) ==> s.log[(prev_log_index - 1)].term == *prev_log_term),
+    (has_entry ==> s.log[prev_log_index].value == *entry_value),
+    (has_entry ==> s.log[prev_log_index].term == s.current_term),
 ensures
     result.0.valid(),
     LSendAppendEntries(s@, result.0@, c@, *follower as int, *entry_value as int, *prev_log_index as int, *prev_log_term as int, has_entry, result.1@.map(|i, p: CRaftMessage| p@)),
@@ -298,17 +313,17 @@ ensures
     role: s.role.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: clone_log(&s.log),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: clone_hashset_u64(&s.votes_granted),
+    votes_granted: s.votes_granted.clone(),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![CRaftMessage::AppendEntries {
     term: s.current_term.clone(),
     leader: c.my_id.clone(),
-    prev_index: *prev_log_index,
-    prev_term: *prev_log_term,
-    value: *entry_value,
+    prev_index: (*prev_log_index),
+    prev_term: (*prev_log_term),
+    value: (*entry_value),
     has_entry: has_entry.clone(),
     leader_commit: s.commit_index.clone(),
 }]);
@@ -332,38 +347,30 @@ ensures
     LFollowerAppendEntries(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
-        let mut __log = clone_log(&s.log);
+        let mut __log = (*s.log).clone();
         if ae_has_entry {
                         __log.push(CLogEntry {
-    term: *ae_term,
-    value: *ae_value,
+    term: (*ae_term),
+    value: (*ae_value),
 });
             
 
         };
         (CState {
-    current_term: *ae_term,
-    has_voted: if (*ae_term > s.current_term) {
-        false
-    } else {
-        s.has_voted.clone()
-    },
-    voted_for: if (*ae_term > s.current_term) {
-        0u64
-    } else {
-        s.voted_for.clone()
-    },
-    log: __log,
-    commit_index: if (*ae_leader_commit > s.commit_index) {
+    current_term: (*ae_term),
+    has_voted: Cstep_down_if_needed(&s, &ae_term).has_voted,
+    voted_for: Cstep_down_if_needed(&s, &ae_term).voted_for,
+    log: Arc::new(__log),
+    commit_index: if ((*ae_leader_commit) > s.commit_index) {
         if ae_has_entry {
-            if (*ae_leader_commit <= ((s.log.len() as u64) + 1)) {
-                *ae_leader_commit
+            if ((*ae_leader_commit) <= ((s.log.len() as u64) + 1)) {
+                (*ae_leader_commit)
             } else {
                 (((s.log.len() as u64) + 1) as u64)
             }
         } else {
-            if (*ae_leader_commit <= (s.log.len() as u64)) {
-                *ae_leader_commit
+            if ((*ae_leader_commit) <= (s.log.len() as u64)) {
+                (*ae_leader_commit)
             } else {
                 (s.log.len() as u64)
             }
@@ -371,28 +378,22 @@ ensures
     } else {
         s.commit_index.clone()
     },
-    votes_granted: if (*ae_term > s.current_term) {
-        HashSet::new()
-    } else {
-        clone_hashset_u64(&s.votes_granted)
-    },
+    votes_granted: Arc::new(Cstep_down_if_needed(&s, &ae_term).votes_granted),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
 }, vec![CRaftMessage::AppendResponse {
-    term: *ae_term,
+    term: (*ae_term),
     success: true,
     match_index: if ae_has_entry {
         ((s.log.len() as u64) + 1)
     } else {
-        (s.log.len() as u64)
+        ((*ae_prev_index) as u64)
     },
     follower: c.my_id.clone(),
 }])
     };
     proof {
-        lemma_empty_set_map();
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: *ae_term, value: *ae_value });
         assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
@@ -414,9 +415,9 @@ ensures
     LHandleAppendResponse(s@, result.0@, c@, *resp_term as int, resp_success, *resp_match_index as int, *resp_follower as int, follower@, new_match_index@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
-        let mut __match_index = s.match_index.clone();
+        let mut __match_index = (*s.match_index).clone();
         __match_index.insert(follower.clone(), new_match_index.clone());
-        let mut __next_index = s.next_index.clone();
+        let mut __next_index = (*s.next_index).clone();
         __next_index.insert(follower.clone(), Cu64_inc(&new_match_index));
         { proof {
             lemma_empty_msg_map();
@@ -425,11 +426,11 @@ ensures
     role: s.role.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: clone_log(&s.log),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: clone_hashset_u64(&s.votes_granted),
-    match_index: __match_index,
-    next_index: __next_index,
+    votes_granted: s.votes_granted.clone(),
+    match_index: Arc::new(__match_index),
+    next_index: Arc::new(__next_index),
 }, vec![]) }
     };
     proof {
@@ -453,7 +454,7 @@ ensures
     LHandleAppendReject(s@, result.0@, c@, *resp_term as int, resp_success, *resp_match_index as int, *resp_follower as int, follower@, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
-        let mut __next_index = s.next_index.clone();
+        let mut __next_index = (*s.next_index).clone();
         if (s.next_index.contains_key(&follower) && (s.next_index.get(&follower).unwrap().clone() > 0)) {
                         __next_index.insert(follower.clone(), Cu64_dec(&s.next_index.get(&follower).unwrap().clone()));
             
@@ -462,14 +463,14 @@ ensures
         { proof {
             lemma_empty_msg_map();
         }; (CState {
-    next_index: __next_index,
+    next_index: Arc::new(__next_index),
     current_term: s.current_term.clone(),
     role: s.role.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: clone_log(&s.log),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: clone_hashset_u64(&s.votes_granted),
+    votes_granted: s.votes_granted.clone(),
     match_index: s.match_index.clone(),
 }, vec![]) }
     };
@@ -490,6 +491,8 @@ requires
     (*new_commit_index > s.commit_index),
     (*new_commit_index <= s@.log.len()),
     s.log[(new_commit_index - 1)].term == s.current_term,
+    c@.servers.finite(),
+    (replicator_count(s@, c@, *new_commit_index) >= c.quorum_size),
     (*new_commit_index as int <= s@.log.len()),
     s.log@[*new_commit_index as int - 1].term == s.current_term,
 ensures
@@ -505,9 +508,9 @@ ensures
     role: s.role.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: clone_log(&s.log),
-    commit_index: *new_commit_index,
-    votes_granted: clone_hashset_u64(&s.votes_granted),
+    log: Arc::new(clone_log(&s.log)),
+    commit_index: (*new_commit_index),
+    votes_granted: s.votes_granted.clone(),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![])
@@ -534,12 +537,12 @@ ensures
             lemma_empty_msg_map();
         }
         (CState {
-    current_term: *new_term,
+    current_term: (*new_term),
     has_voted: false,
     voted_for: 0u64,
-    log: clone_log(&s.log),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: HashSet::new(),
+    votes_granted: Arc::new(HashSet::new()),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
@@ -561,8 +564,8 @@ ensures
     result.valid(),
     result@ == step_down_if_needed(s@, *new_term as int),
 {
-    let result = if (*new_term > s.current_term) {
-        CState { current_term: *new_term, role: CServerRole::Follower, has_voted: false, voted_for: 0u64, votes_granted: HashSet::new(), ..s.clone() }
+    let result = if ((*new_term) > s.current_term) {
+        CState { current_term: (*new_term), role: CServerRole::Follower, has_voted: false, voted_for: 0u64, votes_granted: HashSet::new(), ..s.clone() }
     } else {
         s.clone()
     };
@@ -584,7 +587,7 @@ ensures
     } else {
         s.log[(s.log.len() - 1)].term
     };
-    ((*candidate_last_log_term > my_last_log_term) || ((*candidate_last_log_term == my_last_log_term) && (*candidate_last_log_index >= (s.log.len() as u64))))
+    (((*candidate_last_log_term) > my_last_log_term) || (((*candidate_last_log_term) == my_last_log_term) && ((*candidate_last_log_index) >= (s.log.len() as u64))))
 
 }
 
@@ -597,14 +600,14 @@ ensures
     LHandleRequestVoteMsg(s@, result.0@, c@, *term as int, *candidate_id as int, *last_log_index as int, *last_log_term as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let s_mid = Cstep_down_if_needed(s, term);
-    if (*term < s_mid.current_term) {
+    if ((*term) < s_mid.current_term) {
                 proof {
             lemma_empty_msg_map();
         }
         (s_mid, vec![])
 
     } else {
-        if (s_mid.has_voted && (s_mid.voted_for != *candidate_id)) {
+        if (s_mid.has_voted && (s_mid.voted_for != (*candidate_id))) {
                         proof {
                 lemma_empty_msg_map();
             }
@@ -640,7 +643,7 @@ ensures
     LHandleAppendEntriesMsg(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let s_mid = Cstep_down_if_needed(s, ae_term);
-    if (*ae_term < s_mid.current_term) {
+    if ((*ae_term) < s_mid.current_term) {
                 let _sent_0 = vec![CRaftMessage::AppendResponse {
     term: s_mid.current_term,
     success: false,
@@ -653,19 +656,7 @@ ensures
         (s_mid, _sent_0)
 
     } else {
-        if ((*ae_prev_index > 0) && ((*ae_prev_index > (s_mid.log.len() as u64)) || (s_mid.log[((*ae_prev_index - 1) as usize)].term != *ae_prev_term))) {
-                        let _sent_0 = vec![CRaftMessage::AppendResponse {
-    term: s_mid.current_term,
-    success: false,
-    match_index: 0u64,
-    follower: c.my_id.clone(),
-}];
-            proof {
-                assert(_sent_0@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(_sent_0@[0]@));
-            }
-            (s_mid, _sent_0)
-
-        } else if ae_has_entry && (*ae_prev_index as usize != s_mid.log.len()) {
+        if (((*ae_prev_index) > 0) && (((*ae_prev_index) > (s_mid.log.len() as u64)) || (s_mid.log[(((*ae_prev_index) - 1) as usize)].term != (*ae_prev_term)))) {
                         let _sent_0 = vec![CRaftMessage::AppendResponse {
     term: s_mid.current_term,
     success: false,
@@ -678,12 +669,26 @@ ensures
             (s_mid, _sent_0)
 
         } else {
-                        proof {
-                assert(s_mid@.log =~= s@.log);
-                assert(s_mid@.log.len() == s@.log.len());
-            }
-            CFollowerAppendEntries(&s_mid, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit)
+            if (ae_has_entry && ((*ae_prev_index) != (s_mid.log.len() as u64))) {
+                                let _sent_0 = vec![CRaftMessage::AppendResponse {
+    term: s_mid.current_term,
+    success: false,
+    match_index: 0u64,
+    follower: c.my_id.clone(),
+}];
+                proof {
+                    assert(_sent_0@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(_sent_0@[0]@));
+                }
+                (s_mid, _sent_0)
 
+            } else {
+                                proof {
+                    assert(s_mid@.log =~= s@.log);
+                    assert(s_mid@.log.len() == s@.log.len());
+                }
+                CFollowerAppendEntries(&s_mid, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit)
+
+            }
         }
     }
 
@@ -709,11 +714,11 @@ ensures
     current_term: s.current_term.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: clone_log(&s.log),
+    log: Arc::new(clone_log(&s.log)),
     commit_index: s.commit_index.clone(),
-    votes_granted: __votes_granted,
-    match_index: HashMap::new(),
-    next_index: HashMap::new(),
+    votes_granted: Arc::new(__votes_granted),
+    match_index: Arc::new(HashMap::new()),
+    next_index: Arc::new(HashMap::new()),
     role: CServerRole::Leader,
 }, vec![]) }
     };
@@ -744,51 +749,52 @@ ensures
         }
         (s_mid, vec![])
 
-    } else if *term < s_mid.current_term {
-        // Stale term (vote from a previous election): no-op
-        proof {
-            lemma_empty_msg_map();
-        }
-        (s_mid, vec![])
-
     } else {
-        if !granted {
+        if ((*term) < s_mid.current_term) {
                         proof {
                 lemma_empty_msg_map();
             }
             (s_mid, vec![])
 
         } else {
-            if !c.servers.contains(&voter) {
+            if !granted {
                                 proof {
-                    lemma_set_map_not_contains(c.servers@, *voter);
-                }
-                proof {
                     lemma_empty_msg_map();
                 }
                 (s_mid, vec![])
 
             } else {
-                                proof {
-                    broadcast use vstd::std_specs::hash::group_hash_axioms;
-                    lemma_set_map_contains(c.servers@, *voter);
-                }
-                if {
-                    let __lhs_0 = {
-                        let mut __set_tmp = clone_hashset_u64(&s_mid.votes_granted);
-                        __set_tmp.insert(voter.clone());
-                        proof {
-                            crate::common::collections::hashsets::lemma_hashset_u64_len_eq_mapped(&__set_tmp);
-                        }
-                        (__set_tmp.len() as u64)
-                    };
-                    (__lhs_0 >= c.quorum_size)
-                } {
-                    CReceiveVoteAndBecomeLeader(&s_mid, c, term, granted, voter)
-                } else {
-                    CReceiveVoteGranted(&s_mid, c, term, granted, voter)
-                }
+                if !c.servers.contains(&voter) {
+                                        proof {
+                        lemma_set_map_not_contains(c.servers@, *voter);
+                    }
+                    proof {
+                        lemma_empty_msg_map();
+                    }
+                    (s_mid, vec![])
 
+                } else {
+                                        proof {
+                        broadcast use vstd::std_specs::hash::group_hash_axioms;
+                        lemma_set_map_contains(c.servers@, *voter);
+                    }
+                    if {
+                        let __lhs_0 = {
+                            let mut __set_tmp = clone_hashset_u64(&s_mid.votes_granted);
+                            __set_tmp.insert(voter.clone());
+                            proof {
+                                crate::common::collections::hashsets::lemma_hashset_u64_len_eq_mapped(&__set_tmp);
+                            }
+                            (__set_tmp.len() as u64)
+                        };
+                        (__lhs_0 >= c.quorum_size)
+                    } {
+                        CReceiveVoteAndBecomeLeader(&s_mid, c, term, granted, voter)
+                    } else {
+                        CReceiveVoteGranted(&s_mid, c, term, granted, voter)
+                    }
+
+                }
             }
         }
     }
@@ -827,8 +833,8 @@ ensures
                 lemma_set_map_contains(c.servers@, *follower_id);
             }
             if success {
-                                let follower = (*follower_id as u64);
-                { let new_match_index = (*match_index as u64); if ((new_match_index as u64) > (s_mid.log.len() as u64)) {
+                                let follower = ((*follower_id) as u64);
+                { let new_match_index = ((*match_index) as u64); if ((new_match_index as u64) > (s_mid.log.len() as u64)) {
                                         proof {
                         lemma_empty_msg_map();
                     }
@@ -839,7 +845,7 @@ ensures
                 } }
 
             } else {
-                                let follower = (*follower_id as u64);
+                                let follower = ((*follower_id) as u64);
                 CHandleAppendReject(&s_mid, c, term, success, match_index, follower_id, &follower)
 
             }
@@ -861,7 +867,7 @@ ensures
     result.0.valid(),
     LTryAdvanceCommitIndex(s@, result.0@, c@, *new_commit_index as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
-if (!matches!(s.role, CServerRole::Leader { .. }) || (*new_commit_index <= s.commit_index)) {
+if (!matches!(s.role, CServerRole::Leader { .. }) || ((*new_commit_index) <= s.commit_index)) {
                 proof {
             lemma_empty_msg_map();
         }
@@ -884,9 +890,9 @@ ensures
 {
 match msg {
         CRaftMessage::RequestVote { term: term, candidate: candidate, last_log_index: last_log_index, last_log_term: last_log_term } => CHandleRequestVoteMsg(&s, &c, &term, &candidate, &last_log_index, &last_log_term),
-        CRaftMessage::VoteResponse { term: term, granted: granted, voter: voter, .. } => CHandleVoteResponseMsg(&s, &c, &term, *granted, &voter),
-        CRaftMessage::AppendEntries { term: term, leader: leader, prev_index: prev_index, prev_term: prev_term, value: value, has_entry: has_entry, leader_commit: leader_commit } => CHandleAppendEntriesMsg(&s, &c, &term, &leader, &prev_index, &prev_term, &value, *has_entry, &leader_commit),
-        CRaftMessage::AppendResponse { term: term, success: success, match_index: match_index, follower: follower } => CHandleAppendResponseMsg(&s, &c, &term, *success, &match_index, &follower),
+        CRaftMessage::VoteResponse { term: term, granted: granted, voter: voter } => CHandleVoteResponseMsg(&s, &c, &term, (*granted), &voter),
+        CRaftMessage::AppendEntries { term: term, leader: leader, prev_index: prev_index, prev_term: prev_term, value: value, has_entry: has_entry, leader_commit: leader_commit } => CHandleAppendEntriesMsg(&s, &c, &term, &leader, &prev_index, &prev_term, &value, (*has_entry), &leader_commit),
+        CRaftMessage::AppendResponse { term: term, success: success, match_index: match_index, follower: follower } => CHandleAppendResponseMsg(&s, &c, &term, (*success), &match_index, &follower),
     }
 }
 

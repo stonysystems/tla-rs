@@ -14030,21 +14030,26 @@ require regen to succeed first.
   pattern: Exists quantifier"). Generated code puts `Creplicator_count(...)` in
   requires — caller provides the concrete count. Verified: raft_refinement 6/0,
   message_invariants 1/0, raft_gen 23/2 (same as baseline). Transpiler: 1661/0.
-- [ ] **40.3.c**: Confirm `raft_transpile.toml` `arc_wrap_types` /
-  `arc_wrap_fields` config (already present:
-  `["log", "votes_granted", "match_index", "next_index"]`).
+- [x] **40.3.c**: Confirmed `raft_transpile.toml` config: `arc_wrap_types = ["CState"]`,
+  `arc_wrap_fields.CState = ["log", "votes_granted", "match_index", "next_index"]`.
+  Also added `spec_only_functions = ["replicator_count", "ae_entry_count"]` so spec
+  helpers keep their spec names in requires clauses (not C-prefixed).
+  Fixed VoteResponse TOML to include `voter_last_log_index`, `voter_last_log_term`
+  fields matching the spec type.
 
 ##### Validation
 
-- [ ] **40.3.d**: Re-generate
-  `src/generated/Raft/{raft_gen.rs, types_gen.rs}` via
-  `scripts/regenerate_simple_protocols.sh`. **Expected**: zero
-  "Unsupported pattern" errors; zero raw `If { … }` text in output;
-  ≥27 Arc usages present.
-- [ ] **40.3.e**: `verus --crate-type=lib src/lib.rs
-  --verify-only-module 'generated::Raft::raft_gen'
-  --verify-only-module 'generated::Raft::types_gen' --rlimit 40`
-  → target **0 errors**.
+- [x] **40.3.d**: Re-generated `src/generated/Raft/{raft_gen.rs, types_gen.rs, message.rs}`.
+  Zero "Unsupported pattern" errors; zero raw `If { … }` text; 34 Arc usages
+  (29 in raft_gen + 5 in types_gen). 21 exec functions generated (full coverage).
+- [ ] **40.3.e**: `verus --verify-only-module 'generated::Raft::raft_gen'` → target 0 errors.
+  **Blocked by 5 transpiler bugs** (all pre-existing, exposed by first-ever Raft regen):
+  - (e.1) `spec_only_functions` args not cast to `int` (e.g. `*new_commit_index` → needs `as int`)
+  - (e.2) `Cstep_down_if_needed().votes_granted` returns `Arc<HashSet>` but `arc_wrap_struct_fields` wraps again → double-Arc
+  - (e.3) Vec indexing in requires uses `prev_log_index: &u64` instead of `usize`/`int`
+  - (e.4) VoteResponse match pattern missing `voter_last_log_index`, `voter_last_log_term` fields
+  - (e.5) CRaftMessage construction missing `voter_last_log_index`/`voter_last_log_term` in VoteResponse arms
+  Each is a small transpiler fix (~10-30 LOC). Track as 40.3.e.1–e.5.
 - [ ] **40.3.f**: ~~Verify the rest of Raft refinement proof~~ **SKIP** —
   Phase 34 is deprecated; the refinement proof (`refinement_proof/*`)
   is not maintained. If the spec refactor breaks more of its

@@ -75,25 +75,14 @@ fn read_u64(data: &Vec<u8>, offset: usize) -> u64 {
 impl ProtocolMessage for RaftMessage {
     fn serialize_to_bytes(&self, buf: &mut Vec<u8>) {
         match self {
-            RaftMessage::RequestVote {
-                term,
-                candidate_id,
-                last_log_index,
-                last_log_term,
-            } => {
+            RaftMessage::RequestVote { term, candidate_id, last_log_index, last_log_term } => {
                 buf.extend_from_slice(&TAG_REQUEST_VOTE.to_le_bytes());
                 buf.extend_from_slice(&term.to_le_bytes());
                 buf.extend_from_slice(&candidate_id.to_le_bytes());
                 buf.extend_from_slice(&last_log_index.to_le_bytes());
                 buf.extend_from_slice(&last_log_term.to_le_bytes());
-            }
-            RaftMessage::VoteResponse {
-                term,
-                granted,
-                voter,
-                voter_last_log_index,
-                voter_last_log_term,
-            } => {
+            },
+            RaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } => {
                 buf.extend_from_slice(&TAG_VOTE_RESPONSE.to_le_bytes());
                 buf.extend_from_slice(&term.to_le_bytes());
                 let granted_val: u64 = if *granted { 1 } else { 0 };
@@ -101,16 +90,8 @@ impl ProtocolMessage for RaftMessage {
                 buf.extend_from_slice(&voter.to_le_bytes());
                 buf.extend_from_slice(&voter_last_log_index.to_le_bytes());
                 buf.extend_from_slice(&voter_last_log_term.to_le_bytes());
-            }
-            RaftMessage::AppendEntries {
-                term,
-                leader_id,
-                prev_log_index,
-                prev_log_term,
-                value,
-                has_entry,
-                leader_commit,
-            } => {
+            },
+            RaftMessage::AppendEntries { term, leader_id, prev_log_index, prev_log_term, value, has_entry, leader_commit } => {
                 buf.extend_from_slice(&TAG_APPEND_ENTRIES.to_le_bytes());
                 buf.extend_from_slice(&term.to_le_bytes());
                 buf.extend_from_slice(&leader_id.to_le_bytes());
@@ -120,41 +101,28 @@ impl ProtocolMessage for RaftMessage {
                 let has_entry_val: u64 = if *has_entry { 1 } else { 0 };
                 buf.extend_from_slice(&has_entry_val.to_le_bytes());
                 buf.extend_from_slice(&leader_commit.to_le_bytes());
-            }
-            RaftMessage::AppendResponse {
-                term,
-                success,
-                match_index,
-                follower,
-            } => {
+            },
+            RaftMessage::AppendResponse { term, success, match_index, follower } => {
                 buf.extend_from_slice(&TAG_APPEND_RESPONSE.to_le_bytes());
                 buf.extend_from_slice(&term.to_le_bytes());
                 let success_val: u64 = if *success { 1 } else { 0 };
                 buf.extend_from_slice(&success_val.to_le_bytes());
                 buf.extend_from_slice(&match_index.to_le_bytes());
                 buf.extend_from_slice(&follower.to_le_bytes());
-            }
-            RaftMessage::ClientRequest {
-                client_id,
-                seq_no,
-                value,
-            } => {
+            },
+            RaftMessage::ClientRequest { client_id, seq_no, value } => {
                 buf.extend_from_slice(&TAG_CLIENT_REQUEST.to_le_bytes());
                 buf.extend_from_slice(&client_id.to_le_bytes());
                 buf.extend_from_slice(&seq_no.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            }
-            RaftMessage::ClientResponse {
-                client_id,
-                seq_no,
-                success,
-            } => {
+            },
+            RaftMessage::ClientResponse { client_id, seq_no, success } => {
                 buf.extend_from_slice(&TAG_CLIENT_RESPONSE.to_le_bytes());
                 buf.extend_from_slice(&client_id.to_le_bytes());
                 buf.extend_from_slice(&seq_no.to_le_bytes());
                 let success_val: u64 = if *success { 1 } else { 0 };
                 buf.extend_from_slice(&success_val.to_le_bytes());
-            }
+            },
         }
     }
 
@@ -172,13 +140,8 @@ impl ProtocolMessage for RaftMessage {
                 let candidate_id = read_u64(data, 16);
                 let last_log_index = read_u64(data, 24);
                 let last_log_term = read_u64(data, 32);
-                Some(RaftMessage::RequestVote {
-                    term,
-                    candidate_id,
-                    last_log_index,
-                    last_log_term,
-                })
-            }
+                Some(RaftMessage::RequestVote { term, candidate_id, last_log_index, last_log_term })
+            },
             TAG_VOTE_RESPONSE => {
                 if data.len() < 48 {
                     return None;
@@ -188,14 +151,8 @@ impl ProtocolMessage for RaftMessage {
                 let voter = read_u64(data, 24);
                 let voter_last_log_index = read_u64(data, 32);
                 let voter_last_log_term = read_u64(data, 40);
-                Some(RaftMessage::VoteResponse {
-                    term,
-                    granted,
-                    voter,
-                    voter_last_log_index,
-                    voter_last_log_term,
-                })
-            }
+                Some(RaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term })
+            },
             TAG_APPEND_ENTRIES => {
                 if data.len() < 64 {
                     return None;
@@ -207,16 +164,8 @@ impl ProtocolMessage for RaftMessage {
                 let value = read_u64(data, 40);
                 let has_entry = read_u64(data, 48) != 0;
                 let leader_commit = read_u64(data, 56);
-                Some(RaftMessage::AppendEntries {
-                    term,
-                    leader_id,
-                    prev_log_index,
-                    prev_log_term,
-                    value,
-                    has_entry,
-                    leader_commit,
-                })
-            }
+                Some(RaftMessage::AppendEntries { term, leader_id, prev_log_index, prev_log_term, value, has_entry, leader_commit })
+            },
             TAG_APPEND_RESPONSE => {
                 if data.len() < 40 {
                     return None;
@@ -225,13 +174,8 @@ impl ProtocolMessage for RaftMessage {
                 let success = read_u64(data, 16) != 0;
                 let match_index = read_u64(data, 24);
                 let follower = read_u64(data, 32);
-                Some(RaftMessage::AppendResponse {
-                    term,
-                    success,
-                    match_index,
-                    follower,
-                })
-            }
+                Some(RaftMessage::AppendResponse { term, success, match_index, follower })
+            },
             TAG_CLIENT_REQUEST => {
                 if data.len() < 32 {
                     return None;
@@ -239,12 +183,8 @@ impl ProtocolMessage for RaftMessage {
                 let client_id = read_u64(data, 8);
                 let seq_no = read_u64(data, 16);
                 let value = read_u64(data, 24);
-                Some(RaftMessage::ClientRequest {
-                    client_id,
-                    seq_no,
-                    value,
-                })
-            }
+                Some(RaftMessage::ClientRequest { client_id, seq_no, value })
+            },
             TAG_CLIENT_RESPONSE => {
                 if data.len() < 32 {
                     return None;
@@ -252,12 +192,8 @@ impl ProtocolMessage for RaftMessage {
                 let client_id = read_u64(data, 8);
                 let seq_no = read_u64(data, 16);
                 let success = read_u64(data, 24) != 0;
-                Some(RaftMessage::ClientResponse {
-                    client_id,
-                    seq_no,
-                    success,
-                })
-            }
+                Some(RaftMessage::ClientResponse { client_id, seq_no, success })
+            },
             _ => None,
         }
     }

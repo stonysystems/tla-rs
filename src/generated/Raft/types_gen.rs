@@ -7,6 +7,7 @@ use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -41,11 +42,11 @@ pub struct CState {
     pub role: CServerRole,
     pub has_voted: bool,
     pub voted_for: u64,
-    pub log: Vec<CLogEntry>,
+    pub log: Arc<Vec<CLogEntry>>,
     pub commit_index: u64,
-    pub votes_granted: HashSet<u64>,
-    pub match_index: HashMap<u64, u64>,
-    pub next_index: HashMap<u64, u64>,
+    pub votes_granted: Arc<HashSet<u64>>,
+    pub match_index: Arc<HashMap<u64, u64>>,
+    pub next_index: Arc<HashMap<u64, u64>>,
 }
 
 impl Clone for CState {
@@ -94,6 +95,31 @@ impl View for CState {
             votes_granted: self.votes_granted@.map(|x: u64| x as int),
             match_index: self.match_index@,
             next_index: self.next_index@,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CRaftPacket {
+    pub src: u64,
+    pub dst: u64,
+    pub msg: CRaftMessage,
+}
+
+impl CRaftPacket {
+    pub open spec fn valid(&self) -> bool {
+        &&& self.msg.valid()
+    }
+}
+
+impl View for CRaftPacket {
+    type V = LRaftPacket;
+
+    open spec fn view(&self) -> LRaftPacket {
+        LRaftPacket {
+            src: self.src as int,
+            dst: self.dst as int,
+            msg: self.msg@,
         }
     }
 }
@@ -203,7 +229,7 @@ impl CRaftMessage {
     pub open spec fn valid(&self) -> bool {
         match self {
             CRaftMessage::RequestVote { term, candidate, last_log_index, last_log_term } => true,
-            CRaftMessage::VoteResponse { term, granted, voter, .. } => true,
+            CRaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term } => true,
             CRaftMessage::AppendEntries { term, leader, prev_index, prev_term, value, has_entry, leader_commit } => true,
             CRaftMessage::AppendResponse { term, success, match_index, follower } => true,
         }
