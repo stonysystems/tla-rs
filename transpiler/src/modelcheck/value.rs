@@ -2,6 +2,8 @@ use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{CollectionBounds, ModelValue};
 use crate::modelcheck::symbol::Symbol;
 use serde_json::Value as JsonValue;
+use std::cell::Cell;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 
@@ -97,8 +99,62 @@ impl<'a> IntoIterator for &'a NamedFields {
     }
 }
 
+/// Memoization cell for `fingerprint()`.  Transparent to `Eq`/`Ord`/`Clone`:
+/// two `FingerprintCache` values are always equal, and cloning preserves the
+/// cached hash so that a clone of an already-fingerprinted value skips
+/// recomputation.
+#[derive(Debug, Clone)]
+pub(crate) struct FingerprintCache(Cell<u64>);
+
+/// Sentinel: 0 means "not yet computed".  If a real hash happens to be 0 we
+/// recompute each time — negligible cost in practice.
+const FINGERPRINT_NOT_COMPUTED: u64 = 0;
+
+impl FingerprintCache {
+    fn new() -> Self {
+        Self(Cell::new(FINGERPRINT_NOT_COMPUTED))
+    }
+    fn get(&self) -> Option<u64> {
+        let v = self.0.get();
+        if v != FINGERPRINT_NOT_COMPUTED {
+            Some(v)
+        } else {
+            None
+        }
+    }
+    fn set(&self, hash: u64) {
+        // If the real hash is 0, don't store it — we'll recompute next time.
+        if hash != FINGERPRINT_NOT_COMPUTED {
+            self.0.set(hash);
+        }
+    }
+    /// Invalidate the cached hash (e.g. after mutation).
+    fn invalidate(&self) {
+        self.0.set(FINGERPRINT_NOT_COMPUTED);
+    }
+}
+
+// FingerprintCache is semantically invisible — always equal, always Eq::Equal.
+impl PartialEq for FingerprintCache {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+impl Eq for FingerprintCache {}
+impl PartialOrd for FingerprintCache {
+    fn partial_cmp(&self, _other: &Self) -> Option<Ordering> {
+        Some(Ordering::Equal)
+    }
+}
+impl Ord for FingerprintCache {
+    fn cmp(&self, _other: &Self) -> Ordering {
+        Ordering::Equal
+    }
+}
+
 /// Concrete runtime value used by source-first model checking.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(private_interfaces)]
 pub enum RuntimeValue {
     Unit,
     Bool(bool),
@@ -109,11 +165,15 @@ pub enum RuntimeValue {
         ty: String,
         variant: String,
         fields: NamedFields,
+        #[doc(hidden)]
+        _cache: FingerprintCache,
     },
     Tuple(Vec<RuntimeValue>),
     Struct {
         ty: String,
         fields: NamedFields,
+        #[doc(hidden)]
+        _cache: FingerprintCache,
     },
     Seq(Vec<RuntimeValue>),
     Set(BTreeSet<RuntimeValue>),
@@ -151,6 +211,7 @@ impl RuntimeValue {
             ty: ty.into(),
             variant: variant.into(),
             fields: collect_named_fields(fields)?,
+            _cache: FingerprintCache::new(),
         })
     }
 
@@ -161,6 +222,7 @@ impl RuntimeValue {
         Ok(Self::Struct {
             ty: ty.into(),
             fields: collect_named_fields(fields)?,
+            _cache: FingerprintCache::new(),
         })
     }
 
@@ -177,6 +239,7 @@ impl RuntimeValue {
             ty: ty.into(),
             variant: variant.into(),
             fields: fields.into_iter().collect(),
+            _cache: FingerprintCache::new(),
         }
     }
 
@@ -188,6 +251,7 @@ impl RuntimeValue {
         Self::Struct {
             ty: ty.into(),
             fields: fields.into_iter().collect(),
+            _cache: FingerprintCache::new(),
         }
     }
 
@@ -283,10 +347,44 @@ impl RuntimeValue {
     /// intermediate String. Struct/Enum fields are hashed in intern-id order
     /// (deterministic within a run, zero allocations). For cross-run
     /// deterministic output, use `canonical_key()` instead.
+    ///
+    /// For `Struct` and `Enum` variants the result is memoized: the first call
+    /// computes the hash and subsequent calls return the cached value in O(1).
+    /// The cache is preserved through `Clone`.
     pub fn fingerprint(&self) -> u64 {
+        // Check cache for Struct/Enum variants
+        match self {
+            RuntimeValue::Struct { _cache, .. } | RuntimeValue::Enum { _cache, .. } => {
+                if let Some(cached) = _cache.get() {
+                    return cached;
+                }
+            }
+            _ => {}
+        }
+
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         self.hash_into(&mut hasher);
-        hasher.finish()
+        let hash = hasher.finish();
+
+        // Store in cache for Struct/Enum variants
+        match self {
+            RuntimeValue::Struct { _cache, .. } | RuntimeValue::Enum { _cache, .. } => {
+                _cache.set(hash);
+            }
+            _ => {}
+        }
+
+        hash
+    }
+
+    /// Invalidate the memoized fingerprint hash (call after in-place mutation).
+    pub fn invalidate_fingerprint_cache(&self) {
+        match self {
+            RuntimeValue::Struct { _cache, .. } | RuntimeValue::Enum { _cache, .. } => {
+                _cache.invalidate();
+            }
+            _ => {}
+        }
     }
 
     /// Stream this value into the given hasher for within-run deduplication.
@@ -308,6 +406,7 @@ impl RuntimeValue {
                 ty,
                 variant,
                 fields,
+                ..
             } => {
                 ty.hash(h);
                 variant.hash(h);
@@ -322,7 +421,7 @@ impl RuntimeValue {
                     item.hash_into(h);
                 }
             }
-            RuntimeValue::Struct { ty, fields } => {
+            RuntimeValue::Struct { ty, fields, .. } => {
                 ty.hash(h);
                 for (k, v) in fields.iter() {
                     k.hash(h);
@@ -363,6 +462,7 @@ impl RuntimeValue {
                 ty,
                 variant,
                 fields,
+                ..
             } => {
                 // Sort by field name for deterministic output
                 let mut sorted: Vec<_> = fields.iter().collect();
@@ -382,7 +482,7 @@ impl RuntimeValue {
                     .join(",");
                 format!("tuple:({rendered})")
             }
-            RuntimeValue::Struct { ty, fields } => {
+            RuntimeValue::Struct { ty, fields, .. } => {
                 // Sort by field name for deterministic output
                 let mut sorted: Vec<_> = fields.iter().collect();
                 sorted.sort_by(|(a, _), (b, _)| a.cmp_by_name(b));
@@ -519,6 +619,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modelcheck::symbol::Symbol;
+
+    fn sym(s: &str) -> Symbol {
+        Symbol::intern(s)
+    }
+
+    fn nf(pairs: impl IntoIterator<Item = (Symbol, RuntimeValue)>) -> NamedFields {
+        NamedFields::from_iter(pairs)
+    }
 
     fn bounds() -> RuntimeCollectionBounds {
         RuntimeCollectionBounds {
@@ -677,6 +786,7 @@ mod tests {
             ty: "TMState".to_string(),
             variant: "Committed".to_string(),
             fields: NamedFields::new(),
+            _cache: FingerprintCache::new(),
         };
         assert_eq!(
             val.to_canonical_json(),
@@ -690,6 +800,7 @@ mod tests {
             ty: "TMState".to_string(),
             variant: "Init".to_string(),
             fields: NamedFields::new(),
+            _cache: FingerprintCache::new(),
         };
         let set = RuntimeValue::Set(
             vec![RuntimeValue::Int(1), RuntimeValue::Int(0)]
@@ -819,5 +930,56 @@ mod tests {
         let a = RuntimeValue::Int(1);
         let b = RuntimeValue::Nat(1);
         assert_ne!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn test_fingerprint_cache_returns_same_value() {
+        let s = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(42))]));
+        let first = s.fingerprint();
+        let second = s.fingerprint();
+        assert_eq!(first, second, "cached fingerprint must match first computation");
+    }
+
+    #[test]
+    fn test_fingerprint_cache_preserved_through_clone() {
+        let s = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
+        let _ = s.fingerprint(); // populate cache
+        let cloned = s.clone();
+        // Clone should carry the cached value — same result without recomputation
+        assert_eq!(s.fingerprint(), cloned.fingerprint());
+    }
+
+    #[test]
+    fn test_fingerprint_cache_invalidation() {
+        let s = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
+        let before = s.fingerprint();
+        s.invalidate_fingerprint_cache();
+        let after = s.fingerprint(); // recomputes from scratch
+        assert_eq!(before, after, "same content should produce same hash after invalidation");
+    }
+
+    #[test]
+    fn test_fingerprint_cache_enum_variant() {
+        let e = RuntimeValue::enum_value_sym("Color", "Red", std::iter::empty::<(Symbol, RuntimeValue)>());
+        let first = e.fingerprint();
+        let second = e.fingerprint();
+        assert_eq!(first, second, "enum cached fingerprint must be consistent");
+    }
+
+    #[test]
+    fn test_fingerprint_cache_no_effect_on_equality() {
+        let a = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
+        let b = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
+        // a has cache populated, b does not
+        let _ = a.fingerprint();
+        assert_eq!(a, b, "cache state must not affect equality");
+    }
+
+    #[test]
+    fn test_fingerprint_cache_no_effect_on_ord() {
+        let a = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
+        let b = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
+        let _ = a.fingerprint();
+        assert_eq!(a.cmp(&b), std::cmp::Ordering::Equal, "cache state must not affect ordering");
     }
 }

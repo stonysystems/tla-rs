@@ -994,6 +994,8 @@ fn write_value_at_path(
 
     let head = &path[0];
     let tail = &path[1..];
+    // Invalidate fingerprint cache before mutation (fields will change).
+    value.invalidate_fingerprint_cache();
     match value {
         RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
             let sym = Symbol::intern(head);
@@ -1104,11 +1106,11 @@ fn enum_variant_assignment_value(
 ) -> TranspileResult<RuntimeValue> {
     let current = read_value_at_path(next_state, path)?;
     match current {
-        RuntimeValue::Enum { ty, fields, .. } => Ok(RuntimeValue::Enum {
+        RuntimeValue::Enum { ty, fields, .. } => Ok(RuntimeValue::enum_value_sym(
             ty,
-            variant: variant.to_string(),
+            variant,
             fields,
-        }),
+        )),
         other => Err(TranspileError::Config {
             message: format!(
                 "Failed to evaluate enum-variant next-state assignment in branch `{}` at `s_.{}`: \

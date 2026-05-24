@@ -13718,10 +13718,10 @@ Implementation paths:
   `CANDIDATE_STATE_KEYS_CACHE` (BTreeSet<String>) to
   `CANDIDATE_FINGERPRINT_CACHE` (HashSet<u64>). Eliminates String
   allocation per successor in the BFS solver hot loop.
-- [ ] **38.22.3.b**: **Cache the hash on `RuntimeValue`** (OnceLock
-  field per Struct/Enum). First compute is the same; subsequent
-  lookups (e.g. for re-dedup of an already-emitted state) are free.
-  *2-3 days. Combines with .a.*
+- [x] **38.22.3.b**: **Cache the hash on `RuntimeValue`** (Cell-based
+  `FingerprintCache` field per Struct/Enum). First compute is the same;
+  subsequent lookups are free. Cache is transparent to Eq/Ord/Clone,
+  invalidated on in-place mutation. *DONE.*
 
 #### Recommended starting path
 

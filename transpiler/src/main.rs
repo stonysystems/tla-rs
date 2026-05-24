@@ -3046,7 +3046,7 @@ fn synthesize_constants_candidates_from_assignments(
     let mut seen = BTreeSet::new();
     let mut synthesized = Vec::new();
     for candidate in candidates {
-        let RuntimeValue::Struct { ty, fields } = candidate else {
+        let RuntimeValue::Struct { ty, fields, .. } = candidate else {
             continue;
         };
         let mut rewritten_fields = fields.clone();
@@ -3063,10 +3063,7 @@ fn synthesize_constants_candidates_from_assignments(
             rewritten_fields.insert(sym, replacement);
         }
 
-        let candidate = RuntimeValue::Struct {
-            ty: ty.clone(),
-            fields: rewritten_fields,
-        };
+        let candidate = RuntimeValue::struct_value_sym(ty.clone(), rewritten_fields);
         if constants_candidate_matches_config(&candidate, model_config)? {
             let key = candidate.canonical_key();
             if seen.insert(key) {

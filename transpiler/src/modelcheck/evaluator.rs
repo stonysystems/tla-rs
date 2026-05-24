@@ -775,7 +775,7 @@ fn apply_struct_update(
     updates: Vec<(String, RuntimeValue)>,
 ) -> TranspileResult<RuntimeValue> {
     match base {
-        RuntimeValue::Struct { ty, mut fields } => {
+        RuntimeValue::Struct { ty, mut fields, .. } => {
             validate_struct_update_target(expected_name, &ty, None)?;
             for (field, value) in updates {
                 let sym = Symbol::intern(&field);
@@ -790,12 +790,13 @@ fn apply_struct_update(
                 }
                 fields.insert(sym, value);
             }
-            Ok(RuntimeValue::Struct { ty, fields })
+            Ok(RuntimeValue::struct_value_sym(ty, fields))
         }
         RuntimeValue::Enum {
             ty,
             variant,
             mut fields,
+            ..
         } => {
             validate_struct_update_target(expected_name, &ty, Some(&variant))?;
             for (field, value) in updates {
@@ -811,11 +812,7 @@ fn apply_struct_update(
                 }
                 fields.insert(sym, value);
             }
-            Ok(RuntimeValue::Enum {
-                ty,
-                variant,
-                fields,
-            })
+            Ok(RuntimeValue::enum_value_sym(ty, variant, fields))
         }
         other => Err(type_error(
             format!(
@@ -929,6 +926,7 @@ fn match_pattern(
             RuntimeValue::Struct {
                 ty,
                 fields: runtime_fields,
+                ..
             } => {
                 if !path_matches_runtime_type(name, ty) {
                     return Ok(false);
@@ -939,6 +937,7 @@ fn match_pattern(
                 ty,
                 variant,
                 fields: runtime_fields,
+                ..
             } => {
                 if !path_matches_enum_variant(name, ty, variant) {
                     return Ok(false);
@@ -952,6 +951,7 @@ fn match_pattern(
                 ty,
                 variant,
                 fields: runtime_fields,
+                ..
             } = value
             else {
                 return Ok(false);

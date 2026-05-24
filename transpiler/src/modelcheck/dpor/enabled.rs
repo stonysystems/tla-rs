@@ -1605,10 +1605,7 @@ max_seq_len = 4
                 ),
             ])),
         );
-        let before = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: before_fields,
-        };
+        let before = RuntimeValue::struct_value_sym("S", before_fields);
 
         let mut after_fields = nf([]);
         after_fields.insert(
@@ -1624,10 +1621,7 @@ max_seq_len = 4
                 ),
             ])),
         );
-        let after = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: after_fields,
-        };
+        let after = RuntimeValue::struct_value_sym("S", after_fields);
 
         let inferred = infer_process_id_from_state_delta(&before, &after, "fallback");
         assert_eq!(inferred, ProcessId(0));
@@ -1635,9 +1629,7 @@ max_seq_len = 4
 
     #[test]
     fn test_refine_transition_footprint_process_scoped_map_update() {
-        let before = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+        let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1649,11 +1641,8 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ])),
-            )]),
-        };
-        let after = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+            )]));
+        let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1665,8 +1654,7 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ])),
-            )]),
-        };
+            )]));
 
         let base = TransitionFootprint {
             reads: ["pc".to_string()].into(),
@@ -1682,28 +1670,23 @@ max_seq_len = 4
 
     #[test]
     fn test_refine_transition_footprint_process_scoped_seq_update() {
-        let before = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+        let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("tickets"),
                 RuntimeValue::Seq(vec![
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(0),
                 ]),
-            )]),
-        };
-        let after = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+            )]));
+        let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("tickets"),
                 RuntimeValue::Seq(vec![
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(1),
                     RuntimeValue::Int(0),
                 ]),
-            )]),
-        };
+            )]));
+
 
         let base = TransitionFootprint {
             reads: ["tickets".to_string()].into(),
@@ -1719,26 +1702,21 @@ max_seq_len = 4
 
     #[test]
     fn test_refine_transition_footprint_keeps_coarse_for_ambiguous_map_delta() {
-        let before = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+        let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("flag"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(false)),
                     (RuntimeValue::Int(1), RuntimeValue::Bool(false)),
                 ])),
-            )]),
-        };
-        let after = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+            )]));
+        let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("flag"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(true)),
                     (RuntimeValue::Int(1), RuntimeValue::Bool(true)),
                 ])),
-            )]),
-        };
+            )]));
+
 
         let base = TransitionFootprint {
             reads: ["flag".to_string()].into(),
@@ -1754,20 +1732,14 @@ max_seq_len = 4
 
     #[test]
     fn test_derive_conservative_unknown_footprint_uses_top_level_fields() {
-        let before = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([
+        let before = RuntimeValue::struct_value_sym("S", nf([
                 (sym("x"), RuntimeValue::Int(1)),
                 (sym("y"), RuntimeValue::Int(2)),
-            ]),
-        };
-        let after = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([
+            ]));
+        let after = RuntimeValue::struct_value_sym("S", nf([
                 (sym("x"), RuntimeValue::Int(1)),
                 (sym("y"), RuntimeValue::Int(3)),
-            ]),
-        };
+            ]));
 
         let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
         assert_eq!(derived.reads, ["y".to_string()].into());
@@ -1787,9 +1759,7 @@ max_seq_len = 4
 
     #[test]
     fn test_derive_conservative_unknown_footprint_process_scoped_update_is_keyed() {
-        let before = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+        let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1801,11 +1771,8 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ])),
-            )]),
-        };
-        let after = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+            )]));
+        let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1817,8 +1784,7 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ])),
-            )]),
-        };
+            )]));
         let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
         assert_eq!(derived.reads, ["pc[0]".to_string()].into());
         assert_eq!(derived.writes, ["pc[0]".to_string()].into());
@@ -1826,9 +1792,7 @@ max_seq_len = 4
 
     #[test]
     fn test_derive_conservative_unknown_footprint_ambiguous_update_stays_coarse() {
-        let before = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+        let before = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1840,11 +1804,8 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ])),
-            )]),
-        };
-        let after = RuntimeValue::Struct {
-            ty: "S".to_string(),
-            fields: nf([(
+            )]));
+        let after = RuntimeValue::struct_value_sym("S", nf([(
                 sym("pc"),
                 RuntimeValue::Map(std::collections::BTreeMap::from([
                     (
@@ -1856,8 +1817,8 @@ max_seq_len = 4
                         RuntimeValue::String("wait".to_string()),
                     ),
                 ])),
-            )]),
-        };
+            )]));
+
         let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
         assert_eq!(derived.reads, ["pc".to_string()].into());
         assert_eq!(derived.writes, ["pc".to_string()].into());

@@ -823,7 +823,7 @@ fn canonical_dedup_key(state: &RuntimeValue, symmetry_fields: &BTreeSet<&str>) -
     }
 
     match state {
-        RuntimeValue::Struct { ty, fields } => {
+        RuntimeValue::Struct { ty, fields, .. } => {
             // Phase 38.21.D: complete canonical labeling.
             //
             // Phase 38.18.9 (the previous attempt) used field-walk-order
@@ -1001,14 +1001,14 @@ fn relabeled_canonical_key(value: &RuntimeValue, rank_map: &std::collections::Ha
             parts.sort();
             format!("map:{{{}}}", parts.join(","))
         }
-        RuntimeValue::Struct { ty, fields } => {
+        RuntimeValue::Struct { ty, fields, .. } => {
             let parts: Vec<String> = fields
                 .iter()
                 .map(|(k, v)| format!("{k}:{}", relabeled_canonical_key(v, rank_map)))
                 .collect();
             format!("struct:{ty}{{{}}}", parts.join(","))
         }
-        RuntimeValue::Enum { ty, variant, fields } => {
+        RuntimeValue::Enum { ty, variant, fields, .. } => {
             let parts: Vec<String> = fields
                 .iter()
                 .map(|(k, v)| format!("{k}:{}", relabeled_canonical_key(v, rank_map)))
@@ -1039,11 +1039,13 @@ fn symmetry_normalized_key_with_atoms(
             ty,
             variant,
             fields,
+            ..
         } if fields.is_empty() => symmetry_atom_key(format!("enum:{ty}::{variant}"), atoms),
         RuntimeValue::Enum {
             ty,
             variant,
             fields,
+            ..
         } => {
             let field_parts = fields
                 .iter()
@@ -1052,7 +1054,7 @@ fn symmetry_normalized_key_with_atoms(
                 .join(",");
             format!("enum:{ty}::{variant}{{{field_parts}}}")
         }
-        RuntimeValue::Struct { ty, fields } => {
+        RuntimeValue::Struct { ty, fields, .. } => {
             let field_parts = fields
                 .iter()
                 .map(|(k, v)| format!("{k}:{}", symmetry_normalized_key_with_atoms(v, atoms)))
@@ -1188,10 +1190,12 @@ fn collect_state_diffs(
             RuntimeValue::Struct {
                 ty: b_ty,
                 fields: b_fields,
+                ..
             },
             RuntimeValue::Struct {
                 ty: a_ty,
                 fields: a_fields,
+                ..
             },
         ) if b_ty == a_ty => collect_named_field_diffs(path, b_fields, a_fields, diffs),
         (
@@ -1199,11 +1203,13 @@ fn collect_state_diffs(
                 ty: b_ty,
                 variant: b_variant,
                 fields: b_fields,
+                ..
             },
             RuntimeValue::Enum {
                 ty: a_ty,
                 variant: a_variant,
                 fields: a_fields,
+                ..
             },
         ) if b_ty == a_ty && b_variant == a_variant => {
             collect_named_field_diffs(path, b_fields, a_fields, diffs)

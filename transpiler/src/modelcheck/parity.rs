@@ -195,13 +195,12 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn make_state(fields: Vec<(&str, i128)>) -> RuntimeValue {
-        RuntimeValue::Struct {
-            ty: "LState".to_string(),
-            fields: fields
+        RuntimeValue::struct_value_sym(
+            "LState",
+            fields
                 .into_iter()
-                .map(|(k, v)| (crate::modelcheck::symbol::Symbol::intern(k), RuntimeValue::Int(v)))
-                .collect(),
-        }
+                .map(|(k, v)| (crate::modelcheck::symbol::Symbol::intern(k), RuntimeValue::Int(v))),
+        )
     }
 
     #[test]
@@ -213,11 +212,11 @@ mod tests {
 
     #[test]
     fn test_canonical_json_enum() {
-        let state = RuntimeValue::Enum {
-            ty: "TMState".to_string(),
-            variant: "Init".to_string(),
-            fields: crate::modelcheck::value::NamedFields::new(),
-        };
+        let state = RuntimeValue::enum_value_sym(
+            "TMState",
+            "Init",
+            std::iter::empty::<(crate::modelcheck::symbol::Symbol, RuntimeValue)>(),
+        );
         let json = state.to_canonical_json();
         assert_eq!(json, serde_json::json!({"_variant": "Init"}));
     }
