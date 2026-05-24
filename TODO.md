@@ -14534,54 +14534,51 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
 
 #### 41.2 Generalize to transpiler
 
-- [ ] **41.2.a**: Extend `transpile.toml` schema with `arc_wrap_collection_fields`:
+- [x] **41.2.a**: ~~Extend `transpile.toml` schema~~ **ALREADY EXISTS.** The transpiler
+  already has `arc_wrap_fields` config key (`config.rs:147`) parsed from TOML via serde.
+  Each RSL module's `*_transpile.toml` already has `arc_wrap_fields = { CStruct = ["field1", ...] }`.
+  The originally proposed key name `arc_wrap_collection_fields` was renamed to `arc_wrap_fields`
+  during Phase 40 implementation. No new schema work needed.
 
-  ```toml
-  [arc_wrap_collection_fields]
-  CProposer = [
-      "highest_seqno_requested_by_client_this_view",
-      "request_queue",
-      "received_1b_packets",
-  ]
-  CExecutor = ["reply_cache"]
-  CLearner  = ["unexecuted_ops"]
-  ```
+- [x] **41.2.b**: ~~Codegen rule~~ **ALREADY EXISTS.** `codegen/mod.rs:502` detects
+  Arc-wrapped fields via `should_arc_wrap_named_field()` and emits `pub field: Arc<Type>`.
+  `codegen/mod.rs:1386` auto-injects `use std::sync::Arc;` when arc_wrap_types is active.
+  Translator's `arc_wrap_struct_fields()` (translator/mod.rs:3606) handles construction
+  sites: new values → `Arc::new()`, unchanged clones → `Arc::clone` (O(1)).
 
-  Distinct from Phase 40's `arc_wrap_fields` (which wraps named
-  sub-component structs in the parent struct). 41 wraps named
-  *collection* fields inside a struct.
+- [x] **41.2.c**: ~~Clone helper rewrite~~ **ALREADY EXISTS.** `arc_wrap_struct_fields()`
+  recognizes `clone_up_to_view()`, `clone_hashset()/clone_hashmap()`, and `.clone()` patterns
+  on Arc-wrapped fields and converts them to O(1) `Arc::clone`.
 
-- [ ] **41.2.b**: Codegen rule in `transpiler/src/codegen/`:
-  - Detect `pub field: HashMap<K,V> | HashSet<T> | Vec<T>` in the listed
-    `arc_wrap_collection_fields`. Emit `pub field: Arc<HashMap<K,V>>` etc.
-  - Auto-inject `use std::sync::Arc;` when any field is collection-wrapped.
+- [x] **41.2.d**: ~~Arc::make_mut mutation helpers~~ **NOT NEEDED.** The actual manual
+  pattern in Phase 41.1.b uses `clone_*(&s.field)` → get plain inner value → mutate →
+  `Arc::new(result)`. This is simpler than `Arc::make_mut` and works with Verus verification.
+  The transpiler's `arc_wrap_struct_fields()` already wraps new values in `Arc::new()`.
 
-- [ ] **41.2.c**: For each collection-wrapped field, emit `clone_*` helper
-  rewrite that calls `Arc::clone(m)`, with `#[verifier::external_body]` and
-  `ensures res@ == m@`. The transpiler already emits `clone_*` helpers per
-  field; this just swaps the body.
+- [x] **41.2.e**: ~~push/remove/insert helpers~~ **NOT NEEDED.** Same as 41.2.d — the
+  clone-mutate-wrap pattern handles all mutation operations without needing specialized
+  `Arc::make_mut` wrappers.
 
-- [ ] **41.2.d**: For mutation sites that look like
-  `let mut __f = s.field.clone(); __f.insert(k, v); ... result = Struct {
-  field: __f, ... }`, emit:
-  - Plain-Rust helper outside `verus!{}`:
-    `pub fn _arc_<field>_insert(arc, k, v) -> Arc { let mut a = arc;
-    Arc::make_mut(&mut a).insert(k, v); a }`
-  - `assume_specification` for the helper with
-    `ensures res@ == arc@.insert(k, v)`.
-  - Rewrite the mutation site as a single by-value pipeline:
-    `let __f = _arc_<field>_insert(s.field.clone(), k, v); ...`
+- [~] **41.2.f**: Re-generate RSL with `arc_wrap_fields` config and validate the
+  transpiler reproduces equivalent code to the manual Phase 41.1.b changes.
+  **Validated (2026-05-24)**: `regenerate_rsl.sh --validate-only` passes — all
+  transpiler-emitted functions match, skip_functions preserved. Fresh output confirms
+  transpiler correctly emits `Arc::new()` at construction sites and `use std::sync::Arc;`.
+  **Gap identified**: transpiler-generated proof lemma signatures still use `m: CLearnerState`
+  (by value) instead of `m: &CLearnerState` (by reference). With Arc-wrapped fields,
+  Verus proof functions cannot accept `Arc<T>` for `T` params — must use `&T` for auto-deref.
+  This affects `lemma_abstractify_*_clearnerstate` functions and their call sites.
+  Sub-task 41.2.g below addresses this gap.
 
-  This bypasses Verus's `&mut Arc<...>` restriction (encountered and
-  resolved during the 41.1.a PoC). The pattern is mechanical.
-
-- [ ] **41.2.e**: Similarly for `push` (Vec), `remove`, `insert` (HashSet):
-  generate matching `_arc_<field>_push/remove/insert` helpers + specs.
-
-- [ ] **41.2.f**: Re-generate RSL/Raft/all 10 protocols with the new
-  `arc_wrap_collection_fields` config. Diff against the manual PoC
-  (`cb42869` for the one field) to confirm the transpiler reproduces the
-  same exec code shape.
+- [x] **41.2.g**: Teach the transpiler to emit proof lemma signatures with `&T` instead
+  of `T` for types that appear as Arc-wrapped fields. When `arc_wrap_fields` lists a field
+  of type `CLearnerState`, all generated proof lemmas taking `CLearnerState` should emit
+  `&CLearnerState` instead, and call sites should pass `&expr` instead of `expr`.
+  DONE: Updated `generate_map_proof_lemmas()` in lib.rs (lemma definitions) and
+  `build_proof_block()` in translator/mod.rs (lemma call sites). Both emit `&T` params
+  and `&s.field` args when the field is in `arc_wrap_fields`. Validated via
+  `regenerate_rsl.sh --validate-only` (PARITY) and new test
+  `test_generate_map_proof_lemmas_arc_wrapped`.
 
 #### 41.3 Re-run benches
 

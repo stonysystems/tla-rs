@@ -491,6 +491,7 @@ impl Transpiler {
                 let map_helpers = Self::generate_map_proof_lemmas(
                     &self.config.translator.map_fields,
                     &self.config.translator.verified_clone_fns,
+                    &self.config.translator.arc_wrap_fields,
                 );
                 if !map_helpers.is_empty() {
                     output.push_str(&map_helpers);
@@ -1197,6 +1198,7 @@ impl Transpiler {
                 let map_helpers = Self::generate_map_proof_lemmas(
                     &self.config.translator.map_fields,
                     &self.config.translator.verified_clone_fns,
+                    &self.config.translator.arc_wrap_fields,
                 );
                 if !map_helpers.is_empty() {
                     output.push_str(&map_helpers);
@@ -1623,13 +1625,28 @@ impl Transpiler {
     fn generate_map_proof_lemmas(
         map_fields: &std::collections::HashMap<String, (String, String, String)>,
         verified_clone_fns: &std::collections::HashMap<String, String>,
+        arc_wrap_fields: &std::collections::HashMap<String, std::collections::HashSet<String>>,
     ) -> String {
         let mut output = String::new();
+
+        // Collect all field names that are Arc-wrapped in any struct
+        let arc_wrapped_field_names: std::collections::HashSet<&str> = arc_wrap_fields
+            .values()
+            .flat_map(|fields| fields.iter().map(|f| f.as_str()))
+            .collect();
 
         let mut sorted_fields: Vec<_> = map_fields.iter().collect();
         sorted_fields.sort_by_key(|(k, _)| k.to_string());
 
         for (_field, (exec_type, prefix, value_type)) in &sorted_fields {
+            let is_arc = arc_wrapped_field_names.contains(_field.as_str());
+            // When the field is Arc-wrapped, proof lemmas take &ExecType instead of ExecType
+            // so that auto-deref from &Arc<ExecType> works at call sites.
+            let param_type = if is_arc {
+                format!("&{}", exec_type)
+            } else {
+                exec_type.to_string()
+            };
             // =========================================================
             // lemma_abstractify_empty_{prefix}
             // =========================================================
@@ -1639,7 +1656,7 @@ impl Transpiler {
             ));
             output.push_str(&format!(
                 "proof fn lemma_abstractify_empty_{}(m: {})\n",
-                prefix, exec_type
+                prefix, param_type
             ));
             output.push_str("requires\n");
             output.push_str(&format!(
@@ -1671,7 +1688,7 @@ impl Transpiler {
             output.push_str(&format!("proof fn lemma_abstractify_{}_insert(\n", prefix));
             output.push_str(&format!(
                 "    old_m: {0},\n    m2: {0},\n    k: COperationNumber,\n    v: {1},\n)\n",
-                exec_type, value_type
+                param_type, value_type
             ));
             output.push_str("requires\n");
             output.push_str(&format!("    {}_is_abstractable(old_m),\n", prefix));
@@ -1752,7 +1769,7 @@ impl Transpiler {
             output.push_str(&format!("proof fn lemma_abstractify_{}_remove(\n", prefix));
             output.push_str(&format!(
                 "    old_m: {0},\n    m2: {0},\n    k: COperationNumber,\n)\n",
-                exec_type
+                param_type
             ));
             output.push_str("requires\n");
             output.push_str(&format!("    {}_is_abstractable(old_m),\n", prefix));
@@ -1820,7 +1837,7 @@ impl Transpiler {
             output.push_str("/// Singleton: if m@ =~= Map::empty().insert(opn, tup), prove abstractify result.\n");
             output.push_str(&format!(
                 "proof fn lemma_abstractify_singleton_{}(m: {}, opn: COperationNumber, tup: {})\n",
-                prefix, exec_type, value_type
+                prefix, param_type, value_type
             ));
             output.push_str("requires\n");
             output.push_str(&format!(
@@ -1915,10 +1932,19 @@ impl Transpiler {
                 prefix, exec_type, exec_type
             ));
             output.push_str("requires\n");
-            output.push_str(&format!("    {}_is_valid(*m),\n", prefix));
+            if is_arc {
+                output.push_str(&format!("    {}_is_valid(m),\n", prefix));
+            } else {
+                output.push_str(&format!("    {}_is_valid(*m),\n", prefix));
+            }
             output.push_str("ensures\n");
-            output.push_str(&format!("    {}_is_valid(res),\n", prefix));
-            output.push_str(&format!("    {}_is_abstractable(res),\n", prefix));
+            if is_arc {
+                output.push_str(&format!("    {}_is_valid(&res),\n", prefix));
+                output.push_str(&format!("    {}_is_abstractable(&res),\n", prefix));
+            } else {
+                output.push_str(&format!("    {}_is_valid(res),\n", prefix));
+                output.push_str(&format!("    {}_is_abstractable(res),\n", prefix));
+            }
             output.push_str("    forall |k: COperationNumber| res@.contains_key(k) ==>\n");
             output.push_str("        m@.contains_key(k) && k >= threshold && (#[trigger] res@[k])@ == m@[k]@,\n");
             output.push_str(
@@ -3254,7 +3280,7 @@ mod tests {
             ),
         );
         let output =
-            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new());
+            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new(), &std::collections::HashMap::new());
 
         // Check all 4 proof lemmas are generated
         assert!(
@@ -3303,7 +3329,7 @@ mod tests {
     fn test_generate_map_proof_lemmas_empty() {
         let map_fields = std::collections::HashMap::new();
         let output =
-            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new());
+            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new(), &std::collections::HashMap::new());
         assert!(
             output.is_empty(),
             "Empty map_fields should generate nothing"
@@ -3322,7 +3348,7 @@ mod tests {
             ),
         );
         let output =
-            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new());
+            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new(), &std::collections::HashMap::new());
 
         // Should have filter helper with proper type
         assert!(output.contains("fn filter_cvotes(m: &CVotes, threshold: u64) -> (res: CVotes)"));
@@ -3347,7 +3373,7 @@ mod tests {
             "clearnerstate".to_string(),
             "clone_clearnerstate_up_to_view".to_string(),
         );
-        let output = Transpiler::generate_map_proof_lemmas(&map_fields, &verified_clone_fns);
+        let output = Transpiler::generate_map_proof_lemmas(&map_fields, &verified_clone_fns, &std::collections::HashMap::new());
 
         // Should NOT contain external_body for clone
         assert!(
@@ -3368,6 +3394,54 @@ mod tests {
         assert!(
             output.contains("#[verifier(external_body)]\nfn filter_clearnerstate"),
             "Filter should remain external_body"
+        );
+    }
+
+    #[test]
+    fn test_generate_map_proof_lemmas_arc_wrapped() {
+        let mut map_fields = std::collections::HashMap::new();
+        map_fields.insert(
+            "unexecuted_learner_state".to_string(),
+            (
+                "CLearnerState".to_string(),
+                "clearnerstate".to_string(),
+                "CLearnerTuple".to_string(),
+            ),
+        );
+        let mut arc_wrap_fields: std::collections::HashMap<String, std::collections::HashSet<String>> = std::collections::HashMap::new();
+        let mut fields = std::collections::HashSet::new();
+        fields.insert("unexecuted_learner_state".to_string());
+        arc_wrap_fields.insert("CLearner".to_string(), fields);
+
+        let output = Transpiler::generate_map_proof_lemmas(
+            &map_fields,
+            &std::collections::HashMap::new(),
+            &arc_wrap_fields,
+        );
+
+        // All 4 proof lemmas should take &CLearnerState instead of CLearnerState
+        assert!(
+            output.contains("proof fn lemma_abstractify_empty_clearnerstate(m: &CLearnerState)"),
+            "Empty lemma should take &CLearnerState, got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("    old_m: &CLearnerState,\n    m2: &CLearnerState,"),
+            "Insert lemma should take &CLearnerState"
+        );
+        assert!(
+            output.contains("proof fn lemma_abstractify_singleton_clearnerstate(m: &CLearnerState"),
+            "Singleton lemma should take &CLearnerState"
+        );
+
+        // filter_{prefix} should use _is_valid(m) not _is_valid(*m) for Arc-wrapped
+        assert!(
+            output.contains("clearnerstate_is_valid(m),"),
+            "Filter requires should use _is_valid(m) for Arc, not _is_valid(*m)"
+        );
+        assert!(
+            output.contains("clearnerstate_is_valid(&res),"),
+            "Filter ensures should use _is_valid(&res) for Arc"
         );
     }
 
@@ -3647,7 +3721,7 @@ mod tests {
         );
 
         let output =
-            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new());
+            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new(), &std::collections::HashMap::new());
 
         // Should generate abstractify lemmas for the map field
         assert!(

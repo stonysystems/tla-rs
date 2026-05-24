@@ -701,7 +701,13 @@ impl ProofNeeds {
         &self,
         struct_vec_fields: &HashMap<String, (String, String)>,
         map_fields: &HashMap<String, (String, String, String)>,
+        arc_wrap_fields: &HashMap<String, HashSet<String>>,
     ) -> Option<ExecExpr> {
+        // Collect all field names that are Arc-wrapped in any struct
+        let arc_wrapped_field_names: HashSet<&str> = arc_wrap_fields
+            .values()
+            .flat_map(|fields| fields.iter().map(|f| f.as_str()))
+            .collect();
         let mut stmts = Vec::new();
 
         if self.has_empty_set {
@@ -743,11 +749,13 @@ impl ProofNeeds {
                 // For map_fields, call lemma_abstractify_{prefix}_remove(s.field, result.field, key)
                 // Guard with contains_key: the lemma requires m2@ =~= old@.remove(k),
                 // which only holds when the remove actually happened (key was present).
+                // When the field is Arc-wrapped, prefix with & for auto-deref.
+                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) { "&" } else { "" };
                 let lemma_call = ExecExpr::Call {
                     func: format!("lemma_abstractify_{}_remove", prefix),
                     args: vec![
-                        ExecExpr::Var(format!("s.{}", field_name)),
-                        ExecExpr::Var(format!("result.{}", field_name)),
+                        ExecExpr::Var(format!("{}s.{}", ref_prefix, field_name)),
+                        ExecExpr::Var(format!("{}result.{}", ref_prefix, field_name)),
                         element_expr.clone(),
                     ],
                 };
@@ -815,9 +823,10 @@ impl ProofNeeds {
         // Emit lemma_abstractify_empty_{prefix}(result.field) for map_fields with HashMap::new()
         for field_name in &self.map_field_empty_sites {
             if let Some((_exec_type, prefix, _val_type)) = map_fields.get(field_name) {
+                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) { "&" } else { "" };
                 stmts.push(ExecExpr::Call {
                     func: format!("lemma_abstractify_empty_{}", prefix),
-                    args: vec![ExecExpr::Var(format!("result.{}", field_name))],
+                    args: vec![ExecExpr::Var(format!("{}result.{}", ref_prefix, field_name))],
                 });
             }
         }
@@ -6784,7 +6793,7 @@ impl Translator {
         }
 
         let proof_block = match needs
-            .build_proof_block(&self.config.struct_vec_fields, &self.config.map_fields)
+            .build_proof_block(&self.config.struct_vec_fields, &self.config.map_fields, &self.config.arc_wrap_fields)
         {
             Some(pb) => pb,
             None => return body, // No proofs needed
@@ -21826,7 +21835,7 @@ mod tests {
         let mut needs = ProofNeeds::default();
         needs.has_empty_set = true;
         let block = needs
-            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new())
             .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
@@ -21848,7 +21857,7 @@ mod tests {
         let mut needs = ProofNeeds::default();
         needs.has_set_insert = true;
         let block = needs
-            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new())
             .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
@@ -21870,7 +21879,7 @@ mod tests {
         needs.has_empty_set = true;
         needs.has_set_insert = true;
         let block = needs
-            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new())
             .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
@@ -21892,7 +21901,7 @@ mod tests {
     fn test_build_proof_block_none() {
         let needs = ProofNeeds::default();
         assert!(needs
-            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new())
             .is_none());
     }
 
@@ -22174,7 +22183,7 @@ mod tests {
             field_name: None,
         });
         let block = needs
-            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new())
             .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
@@ -22203,7 +22212,7 @@ mod tests {
             field_name: None,
         });
         let block = needs
-            .build_proof_block(&HashMap::new(), &HashMap::new())
+            .build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new())
             .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
@@ -24877,7 +24886,7 @@ mod tests {
             element: "entry".to_string(),
         });
 
-        let proof_block = needs.build_proof_block(&HashMap::new(), &HashMap::new());
+        let proof_block = needs.build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new());
         assert!(proof_block.is_some());
 
         // Check the proof block structure:
@@ -25754,7 +25763,7 @@ mod tests {
         );
 
         let block = needs
-            .build_proof_block(&HashMap::new(), &map_fields)
+            .build_proof_block(&HashMap::new(), &map_fields, &HashMap::new())
             .unwrap();
         match block {
             ExecExpr::ProofBlock { stmts } => {
@@ -25785,7 +25794,7 @@ mod tests {
 
         let map_fields: HashMap<String, (String, String, String)> = HashMap::new();
         // Empty map_fields config — the field "cache" won't match anything
-        let block = needs.build_proof_block(&HashMap::new(), &map_fields);
+        let block = needs.build_proof_block(&HashMap::new(), &map_fields, &HashMap::new());
         // Should return None since no actual proof statements were emitted
         assert!(block.is_none());
     }
