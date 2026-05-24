@@ -13649,7 +13649,7 @@ Three implementation paths, in increasing engineering cost / payoff:
 
   Decomposed into leaf tasks (~200-400 LOC each):
 
-  - [ ] **38.22.1.b.i**: **Define `Opcode` enum and `Chunk` struct.**
+  - [x] **38.22.1.b.i**: **Define `Opcode` enum and `Chunk` struct.**
     Create `transpiler/src/modelcheck/bytecode.rs`. Define
     `enum Opcode` covering the core instruction set: `LoadConst(u16)`,
     `LoadLocal(u16)`, `StoreLocal(u16)`, `LoadField(Symbol)`,

@@ -15,6 +15,7 @@
 //! - optional deadlock detection while exploring reached states
 //! - counterexample trace emission with action branches + state diffs
 
+pub mod bytecode;
 pub mod config;
 pub mod domain;
 pub mod dpor;
