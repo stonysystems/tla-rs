@@ -14054,12 +14054,12 @@ require regen to succeed first.
   --verify-only-module 'generated::Raft::raft_gen'
   --verify-only-module 'generated::Raft::types_gen' --rlimit 40`
   → target **0 errors**.
-- [ ] **40.3.f**: Verify the **rest** of the Raft proof modules
-  (`refinement_proof::invariants`, `refinement_proof::committed`,
-  etc.) still pass — the deprecated 12 assumes stay as-is, but the
-  ~50 already-verified invariants might need `reveal(ae_entry_count)`
-  or similar hints if they relied on automatic inlining of the
-  original `if-expr`. Track regressions in a small audit table.
+- [ ] **40.3.f**: ~~Verify the rest of Raft refinement proof~~ **SKIP** —
+  Phase 34 is deprecated; the refinement proof (`refinement_proof/*`)
+  is not maintained. If the spec refactor breaks more of its
+  invariants, they just join the 12 existing deprecated assumes.
+  Only `generated::Raft::raft_gen` verify (40.3.e) matters for
+  Phase 40's "impl is correct" guarantee.
 
 ##### RSL note (deferred decision)
 
@@ -14067,9 +14067,9 @@ require regen to succeed first.
   hits transpiler-unfriendly patterns. RSL has 9 sub-TOMLs; expected
   to need `arc_wrap` config in each plus likely 1-2 spec refactors of
   similar shape to Raft. RSL refinement proof (Phase 31, also
-  deprecated) is also locked, so spec refactor is similarly low-risk.
-  Decision deferred until 40.3.d-f lands and we know how disruptive
-  the proof hint additions in 40.3.f were.
+  deprecated) is also locked — same as Raft, don't re-verify the
+  refinement proof if it cascades, just let those join the deprecated
+  assume pool. Decision deferred until 40.3.d-e lands for Raft.
 
 #### 40.4 Bench regression: ensure efficiency lift is real
 
@@ -14129,8 +14129,8 @@ Only pursue if 40.4 results show throughput decay still present.
 | HashMap fields that are mutated frequently incur Arc overhead from `make_mut` clone-on-write | Low | Profile, then selectively un-Arc back to bare field if measurement shows regression |
 | Verus version drift breaks `vstd::sync::Arc` axioms | Low | Pin Verus version; same constraint as [[liblib-so-staleness]] memory |
 | Cache miss from Arc indirection adds latency | Very low | Arc is single pointer + 16-byte refcount header; modern CPU prefetcher handles |
-| **Raft spec refactor (40.6) cascades into proof failures** | **Medium** | The 12 deprecated assumes stay; older verified invariants may need `reveal(helper_fn)` hints. Bounded scope: only 4 sites changed, fallback is to revert per-helper if any specific proof breaks |
-| **RSL needs same spec refactor + 9-sub-TOML config update** | **Medium** | Phase 40.6.h gates this on Raft results first; can be skipped if 40.6.g shows proof disruption was high |
+| **Raft spec refactor (40.3) cascades into proof failures** | **N/A** | Phase 34 deprecated; refinement proof is not maintained. Any new assumes just join the existing 12. No proof regression work required as part of Phase 40 |
+| **RSL needs same spec refactor + 9-sub-TOML config update** | **Medium** | Phase 40.3.g gates this on Raft results first; the proof side is similarly unmaintained (Phase 31 deprecated) |
 
 ### Out of Scope (deferred to later phases)
 
