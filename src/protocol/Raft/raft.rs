@@ -269,16 +269,8 @@ verus! {
         &&& new_commit_index <= s.log.len()
         &&& s.log[new_commit_index - 1].term == s.current_term
         // Quorum replication guard: at least quorum_size servers have the entry
-        &&& exists |quorum: Set<int>| {
-            &&& quorum.subset_of(c.servers)
-            &&& quorum.finite()
-            &&& quorum.len() >= c.quorum_size
-            &&& forall |v: int| quorum.contains(v) ==> (
-                v == c.my_id
-                || (s.match_index.contains_key(v as u64)
-                    && s.match_index[v as u64] as int >= new_commit_index)
-            )
-        }
+        &&& c.servers.finite()
+        &&& replicator_count(s, c, new_commit_index) >= c.quorum_size
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
@@ -319,6 +311,18 @@ verus! {
     /// Spec helper: number of entries in an AppendEntries message.
     pub open spec fn ae_entry_count(has_entry: bool) -> int {
         if has_entry { 1int } else { 0int }
+    }
+
+    /// Spec helper: count of servers that have replicated log up to `idx`.
+    /// The leader itself counts (it has the entry), and followers are tracked
+    /// via match_index. Used as a transpiler-friendly replacement for the
+    /// existential quorum quantifier in LAdvanceCommitIndex.
+    pub open spec fn replicator_count(s: LState, c: LConstants, idx: int) -> int {
+        c.servers.filter(|v: int|
+            v == c.my_id
+            || (s.match_index.contains_key(v as u64)
+                && s.match_index[v as u64] as int >= idx)
+        ).len() as int
     }
 
     /// Spec helper: compute step-down intermediate state.

@@ -14022,18 +14022,14 @@ require regen to succeed first.
   `message_invariants.rs:267`). Verified: 0 regressions in
   `raft_refinement` (6/0), `message_invariants` (1/0), `raft_gen`
   (23/2 — same as baseline). Transpiler tests: 1661/0.
-- [ ] **40.3.b**: Refactor [raft.rs:274-283](src/protocol/Raft/raft.rs#L274)
-  `LAdvanceCommitIndex` quorum guard from `exists |q| { multi-conjunct }`
-  to a count-based form:
-  ```rust
-  pub open spec fn replicator_count(s: LState, c: LConstants, idx: int) -> int {
-      // |{v ∈ c.servers : v == c.my_id ||
-      //                   (s.match_index.contains_key(v) && s.match_index[v] >= idx)}|
-  }
-  // call site:
-  &&& replicator_count(s, c, new_commit_index) >= c.quorum_size
-  ```
-  This eliminates the existential entirely; the impl can compute by iteration.
+- [x] **40.3.b**: Refactor `LAdvanceCommitIndex` quorum guard from
+  `exists |quorum: Set<int>| { multi-conjunct }` to count-based form.
+  Added `replicator_count(s, c, idx) -> int` using `c.servers.filter(pred).len()`.
+  Call site: `c.servers.finite() && replicator_count(s, c, new_commit_index) >= c.quorum_size`.
+  Transpiler now generates all 21 Raft exec functions (was blocked by "Unsupported
+  pattern: Exists quantifier"). Generated code puts `Creplicator_count(...)` in
+  requires — caller provides the concrete count. Verified: raft_refinement 6/0,
+  message_invariants 1/0, raft_gen 23/2 (same as baseline). Transpiler: 1661/0.
 - [ ] **40.3.c**: Confirm `raft_transpile.toml` `arc_wrap_types` /
   `arc_wrap_fields` config (already present:
   `["log", "votes_granted", "match_index", "next_index"]`).
