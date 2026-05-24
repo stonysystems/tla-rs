@@ -2,6 +2,8 @@ use crate::ast::{BinOp, Binding, Expr, MatchArm, Path, Pattern, Type, UnaryOp};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
+use std::cell::RefCell;
+
 pub type CallEvaluator<'a> = dyn Fn(&Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
 pub type MethodEvaluator<'a> =
     dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue> + 'a;
@@ -10,25 +12,48 @@ pub type QuantifierDomainEvaluator<'a> =
 
 /// Runtime evaluator context for source-first model checking.
 ///
-/// Bindings use a flat `Vec` with stack-push semantics instead of `BTreeMap`.
+/// Bindings use a `RefCell<Vec>` with push/pop semantics. Instead of cloning
+/// the entire binding Vec for each quantifier iteration or let-binding,
+/// we push new bindings onto the shared stack and pop them when the scope
+/// ends (via `BindingScope` RAII guard). This eliminates O(N) Vec clones
+/// per quantifier iteration, which is the dominant allocation cost in
+/// quantifier-heavy specs like Paxos.
+///
 /// Lookups search from the end (reverse) so newer bindings shadow older ones.
-/// This is faster for small binding counts (3-8 typical) due to:
-/// - No tree node allocations
-/// - Cache-friendly linear scan
-/// - Cheaper clone (single memcpy vs tree rebuild)
 #[derive(Clone)]
 pub struct EvalContext<'a> {
-    bindings: Vec<(String, RuntimeValue)>,
+    bindings: RefCell<Vec<(String, RuntimeValue)>>,
     bounds: RuntimeCollectionBounds,
     call_evaluator: Option<&'a CallEvaluator<'a>>,
     method_evaluator: Option<&'a MethodEvaluator<'a>>,
     quantifier_domain_evaluator: Option<&'a QuantifierDomainEvaluator<'a>>,
 }
 
+/// RAII guard that restores the binding stack to its saved depth on drop.
+/// Created by `EvalContext::binding_scope()`. Push bindings via `scope.push()`,
+/// and they are automatically popped when the scope is dropped (including on
+/// early return or error propagation via `?`).
+struct BindingScope<'a> {
+    bindings: &'a RefCell<Vec<(String, RuntimeValue)>>,
+    saved_depth: usize,
+}
+
+impl<'a> BindingScope<'a> {
+    fn push(&self, name: String, value: RuntimeValue) {
+        self.bindings.borrow_mut().push((name, value));
+    }
+}
+
+impl Drop for BindingScope<'_> {
+    fn drop(&mut self) {
+        self.bindings.borrow_mut().truncate(self.saved_depth);
+    }
+}
+
 impl<'a> EvalContext<'a> {
     pub fn new(bounds: RuntimeCollectionBounds) -> Self {
         Self {
-            bindings: Vec::new(),
+            bindings: RefCell::new(Vec::new()),
             bounds,
             call_evaluator: None,
             method_evaluator: None,
@@ -36,14 +61,37 @@ impl<'a> EvalContext<'a> {
         }
     }
 
-    /// Look up a binding by name, returning the most recently pushed value.
-    pub fn get_binding(&self, name: &str) -> Option<&RuntimeValue> {
-        self.bindings.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v)
+    /// Look up a binding by name, returning a clone of the most recently pushed value.
+    pub fn get_binding(&self, name: &str) -> Option<RuntimeValue> {
+        self.bindings
+            .borrow()
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
     }
 
-    pub fn with_binding(mut self, name: impl Into<String>, value: RuntimeValue) -> Self {
-        self.bindings.push((name.into(), value));
+    /// Create a binding scope. Push bindings via `scope.push(name, value)`.
+    /// All pushed bindings are automatically popped when the scope is dropped.
+    fn binding_scope(&self) -> BindingScope<'_> {
+        BindingScope {
+            bindings: &self.bindings,
+            saved_depth: self.bindings.borrow().len(),
+        }
+    }
+
+    pub fn with_binding(self, name: impl Into<String>, value: RuntimeValue) -> Self {
+        self.bindings.borrow_mut().push((name.into(), value));
         self
+    }
+
+    /// Create a cloned context with an additional binding.
+    /// Prefer `binding_scope()` + `push()` in hot paths to avoid cloning.
+    #[cfg(test)]
+    fn child_with_binding(&self, name: String, value: RuntimeValue) -> Self {
+        let mut ctx = self.clone();
+        ctx.bindings.borrow_mut().push((name, value));
+        ctx
     }
 
     pub fn with_call_evaluator(mut self, evaluator: &'a CallEvaluator<'a>) -> Self {
@@ -62,18 +110,6 @@ impl<'a> EvalContext<'a> {
     ) -> Self {
         self.quantifier_domain_evaluator = Some(evaluator);
         self
-    }
-
-    fn child_with_binding(&self, name: String, value: RuntimeValue) -> Self {
-        let mut bindings = self.bindings.clone();
-        bindings.push((name, value));
-        Self {
-            bindings,
-            bounds: self.bounds,
-            call_evaluator: self.call_evaluator,
-            method_evaluator: self.method_evaluator,
-            quantifier_domain_evaluator: self.quantifier_domain_evaluator,
-        }
     }
 }
 
@@ -335,8 +371,9 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
             let Pattern::Ident(name) = &binding.pattern else {
                 return Err(unsupported_construct("non-identifier let binding"));
             };
-            let nested = ctx.child_with_binding(name.clone(), value);
-            eval_expr(body, &nested)
+            let scope = ctx.binding_scope();
+            scope.push(name.clone(), value);
+            eval_expr(body, ctx)
         }
         Expr::Eq(lhs, rhs) => {
             let lhs = eval_expr(lhs, ctx)?;
@@ -508,7 +545,7 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         Expr::Cast(inner, ty) => cast_value(eval_expr(inner, ctx)?, ty),
         Expr::Ident(name) => {
             if let Some(value) = ctx.get_binding(name) {
-                return Ok(value.clone());
+                return Ok(value);
             }
             if let Some((ty, variant)) = split_variant_path(name) {
                 return RuntimeValue::enum_value(ty, variant, Vec::new());
@@ -633,8 +670,9 @@ fn eval_quantifier_bindings(
     match kind {
         QuantifierKind::Forall => {
             for value in domain {
-                let nested = ctx.child_with_binding(name.clone(), value);
-                if !eval_quantifier_bindings(vars, idx + 1, body, &nested, kind, domain_evaluator)?
+                let scope = ctx.binding_scope();
+                scope.push(name.clone(), value);
+                if !eval_quantifier_bindings(vars, idx + 1, body, ctx, kind, domain_evaluator)?
                 {
                     return Ok(false);
                 }
@@ -643,8 +681,9 @@ fn eval_quantifier_bindings(
         }
         QuantifierKind::Exists => {
             for value in domain {
-                let nested = ctx.child_with_binding(name.clone(), value);
-                if eval_quantifier_bindings(vars, idx + 1, body, &nested, kind, domain_evaluator)? {
+                let scope = ctx.binding_scope();
+                scope.push(name.clone(), value);
+                if eval_quantifier_bindings(vars, idx + 1, body, ctx, kind, domain_evaluator)? {
                     return Ok(true);
                 }
             }
@@ -701,7 +740,7 @@ fn eval_choose_bindings(
             let Pattern::Ident(name) = &vars[0].pattern else {
                 return Err(unsupported_construct("CHOOSE with non-identifier binding"));
             };
-            return ctx.get_binding(name).cloned().ok_or_else(|| {
+            return ctx.get_binding(name).ok_or_else(|| {
                 type_error("CHOOSE variable not found in context")
             });
         }
@@ -715,10 +754,11 @@ fn eval_choose_bindings(
     let domain = domain_evaluator(binding)?;
 
     for value in domain {
-        let nested = ctx.child_with_binding(name.clone(), value);
-        match eval_choose_bindings(vars, idx + 1, body, &nested, domain_evaluator) {
+        let scope = ctx.binding_scope();
+        scope.push(name.clone(), value);
+        match eval_choose_bindings(vars, idx + 1, body, ctx, domain_evaluator) {
             Ok(result) => return Ok(result),
-            Err(_) => continue, // try next value
+            Err(_) => continue, // try next value; scope drops, binding popped
         }
     }
     Err(type_error("CHOOSE: no satisfying value found in domain"))
@@ -886,18 +926,19 @@ fn eval_match_expr(
             continue;
         }
 
-        let mut nested = ctx.clone();
+        let scope = ctx.binding_scope();
         for (name, value) in bindings {
-            nested = nested.child_with_binding(name, value);
+            scope.push(name, value);
         }
 
         if let Some(guard) = &arm.guard {
-            if !expect_bool(&eval_expr(guard, &nested)?, "match guard")? {
-                continue;
+            if !expect_bool(&eval_expr(guard, ctx)?, "match guard")? {
+                continue; // scope drops, all match bindings popped
             }
         }
 
-        return eval_expr(&arm.body, &nested);
+        return eval_expr(&arm.body, ctx);
+        // scope drops here, but return value is already computed
     }
 
     Err(type_error("match expression has no matching arm."))
@@ -1361,9 +1402,9 @@ fn eval_set_new_with_closure(
     let mut elements = Vec::new();
     for val in &int_values {
         let rv = RuntimeValue::Int(*val);
-        let mut inner_ctx = ctx.clone();
-        inner_ctx.bindings.push((param_name.to_string(), rv.clone()));
-        match eval_expr(body, &inner_ctx) {
+        let scope = ctx.binding_scope();
+        scope.push(param_name.to_string(), rv.clone());
+        match eval_expr(body, ctx) {
             Ok(RuntimeValue::Bool(true)) => {
                 elements.push(rv);
             }
@@ -1463,9 +1504,9 @@ fn eval_set_map_with_closure(
 
     let mut result = std::collections::BTreeSet::new();
     for elem in &elements {
-        let mut inner_ctx = ctx.clone();
-        inner_ctx.bindings.push((param_name.to_string(), elem.clone()));
-        let value = eval_expr(body, &inner_ctx)?;
+        let scope = ctx.binding_scope();
+        scope.push(param_name.to_string(), elem.clone());
+        let value = eval_expr(body, ctx)?;
         result.insert(value);
     }
 
@@ -1498,9 +1539,9 @@ fn eval_map_new_with_closure(
 
     let mut entries = Vec::new();
     for key in &keys {
-        let mut inner_ctx = ctx.clone();
-        inner_ctx.bindings.push((param_name.to_string(), key.clone()));
-        let value = eval_expr(body, &inner_ctx)?;
+        let scope = ctx.binding_scope();
+        scope.push(param_name.to_string(), key.clone());
+        let value = eval_expr(body, ctx)?;
         entries.push((key.clone(), value));
     }
 
@@ -2412,9 +2453,9 @@ mod tests {
         let child = ctx.child_with_binding("x".to_string(), RuntimeValue::Int(42));
 
         // Child sees shadowed value
-        assert_eq!(child.get_binding("x"), Some(&RuntimeValue::Int(42)));
+        assert_eq!(child.get_binding("x"), Some(RuntimeValue::Int(42)));
         // Parent still sees original
-        assert_eq!(ctx.get_binding("x"), Some(&RuntimeValue::Int(1)));
+        assert_eq!(ctx.get_binding("x"), Some(RuntimeValue::Int(1)));
     }
 
     #[test]
@@ -2424,13 +2465,56 @@ mod tests {
             .with_binding("b", RuntimeValue::Bool(true))
             .with_binding("c", RuntimeValue::String("hello".to_string()));
 
-        assert_eq!(ctx.get_binding("a"), Some(&RuntimeValue::Int(1)));
-        assert_eq!(ctx.get_binding("b"), Some(&RuntimeValue::Bool(true)));
+        assert_eq!(ctx.get_binding("a"), Some(RuntimeValue::Int(1)));
+        assert_eq!(ctx.get_binding("b"), Some(RuntimeValue::Bool(true)));
         assert_eq!(
             ctx.get_binding("c"),
-            Some(&RuntimeValue::String("hello".to_string()))
+            Some(RuntimeValue::String("hello".to_string()))
         );
         assert_eq!(ctx.get_binding("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_binding_scope_push_pop() {
+        // Verify that BindingScope correctly pops bindings on drop
+        let ctx = EvalContext::new(test_bounds())
+            .with_binding("x", RuntimeValue::Int(1));
+
+        {
+            let scope = ctx.binding_scope();
+            scope.push("y".to_string(), RuntimeValue::Int(2));
+            scope.push("z".to_string(), RuntimeValue::Int(3));
+            assert_eq!(ctx.get_binding("y"), Some(RuntimeValue::Int(2)));
+            assert_eq!(ctx.get_binding("z"), Some(RuntimeValue::Int(3)));
+        }
+        // After scope drop, y and z are gone
+        assert_eq!(ctx.get_binding("y"), None);
+        assert_eq!(ctx.get_binding("z"), None);
+        // x is still there
+        assert_eq!(ctx.get_binding("x"), Some(RuntimeValue::Int(1)));
+    }
+
+    #[test]
+    fn test_binding_scope_nested() {
+        // Verify nested scopes work correctly (inner scope pops first)
+        let ctx = EvalContext::new(test_bounds())
+            .with_binding("x", RuntimeValue::Int(1));
+
+        {
+            let outer = ctx.binding_scope();
+            outer.push("x".to_string(), RuntimeValue::Int(10));
+            assert_eq!(ctx.get_binding("x"), Some(RuntimeValue::Int(10)));
+
+            {
+                let inner = ctx.binding_scope();
+                inner.push("x".to_string(), RuntimeValue::Int(100));
+                assert_eq!(ctx.get_binding("x"), Some(RuntimeValue::Int(100)));
+            }
+            // inner dropped, back to outer's x=10
+            assert_eq!(ctx.get_binding("x"), Some(RuntimeValue::Int(10)));
+        }
+        // outer dropped, back to original x=1
+        assert_eq!(ctx.get_binding("x"), Some(RuntimeValue::Int(1)));
     }
 
     #[test]

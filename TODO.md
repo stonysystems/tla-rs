@@ -13628,6 +13628,17 @@ Three implementation paths, in increasing engineering cost / payoff:
   counts (3-8 typical), cheaper clone (single memcpy vs tree rebuild).
   Also converted `match_pattern` local bindings from BTreeMap to Vec.
   Added `get_binding()` helper on EvalContext. 3 new tests. *DONE.*
+- [x] **38.22.1.a.iii**: **RefCell push/pop bindings (eliminate clone).**
+  Changed `EvalContext.bindings` from `Vec<(String, RuntimeValue)>` to
+  `RefCell<Vec<(String, RuntimeValue)>>` with `BindingScope` RAII guard.
+  Instead of cloning the entire binding Vec for each quantifier iteration,
+  let-binding, choose loop, or closure evaluation, the new approach pushes
+  bindings onto a shared stack and pops them via `BindingScope::drop()`.
+  This eliminates O(N) Vec clones per quantifier iteration — the dominant
+  allocation cost in quantifier-heavy specs like Paxos. Nested scopes
+  (multi-variable quantifiers) work correctly via truncation to saved
+  depth. Error paths handled via RAII (scope drops on `?` propagation).
+  5 tests (2 new: push/pop correctness, nested scope). *DONE.*
 - [ ] **38.22.1.b**: **Stack-based bytecode VM.** Compile each spec
   function to a sequence of opcodes (LoadVar, LoadField, SetUnion,
   Eq, JumpIfFalse, …) executed by a tight switch-dispatched loop.
