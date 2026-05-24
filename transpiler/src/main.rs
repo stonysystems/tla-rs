@@ -5294,6 +5294,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     generate_unreachable_value_helper,
                     manual_code: None,
                     arc_wrap_types: &file_config.arc_wrap_types,
+                    arc_wrap_fields: &file_config.arc_wrap_fields,
                 },
             );
 

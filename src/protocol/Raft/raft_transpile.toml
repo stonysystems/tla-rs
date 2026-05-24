@@ -20,7 +20,7 @@ set_fields = ["votes_granted", "servers"]
 arc_wrap_types = ["CState"]
 
 [arc_wrap_fields]
-CState = ["log", "votes_granted", "match_index", "next_index"]
+CState = ["votes_granted", "match_index", "next_index"]
 
 # Extra requires clauses per exec function (transpiler can't derive these from spec)
 [extra_requires]
@@ -52,9 +52,11 @@ CState = ["log", "votes_granted", "match_index", "next_index"]
     "*new_match_index < u64::MAX",
 ]
 "CTryAdvanceCommitIndex" = [
+    "c@.servers.finite()",
     """(!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
         *new_commit_index as int <= s@.log.len()
         && s.log@[*new_commit_index as int - 1].term == s.current_term
+        && replicator_count(s@, c@, *new_commit_index as int) >= c.quorum_size
     )""",
 ]
 "CAdvanceCommitIndex" = [

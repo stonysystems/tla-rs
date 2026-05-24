@@ -3686,6 +3686,15 @@ impl Translator {
                             })
                         }
                     }
+                    // Field access on a helper call result (e.g., Cstep_down_if_needed(&s, &ae_term).votes_granted)
+                    // — the helper returns the same struct type with Arc-wrapped fields, so
+                    // the field is already Arc<T>. Don't double-wrap.
+                    ExecExpr::Field(base, ref field_name)
+                        if arc_fields.contains(field_name)
+                            && matches!(base.as_ref(), ExecExpr::Call { .. }) =>
+                    {
+                        (fname, fexpr)
+                    }
                     // New value (local variable, function call result, etc.) → Arc::new(value)
                     _ => (
                         fname,
@@ -3697,6 +3706,20 @@ impl Translator {
                 }
             })
             .collect()
+    }
+
+    /// Check if an expression is a field access on an Arc-wrapped field.
+    /// Returns true if `expr` is `something.field` where `field` is in any
+    /// arc_wrap_fields config entry.
+    fn is_arc_wrapped_field(&self, expr: &ExecExpr) -> bool {
+        if let ExecExpr::Field(_, ref field_name) = expr {
+            self.config
+                .arc_wrap_fields
+                .values()
+                .any(|fields| fields.contains(field_name))
+        } else {
+            false
+        }
     }
 
     /// Check if an expression is a reference to a field access (e.g., `&s.field`).
@@ -8538,8 +8561,15 @@ impl Translator {
                     .iter()
                     .map(|a| {
                         if use_spec_call {
+                            // Struct params: apply @ view at root
                             if let Some(s) = self.try_view_at_root(a, view_params) {
                                 return s;
+                            }
+                            // Scalar params: dereference and cast to int for spec context
+                            if let Expr::Ident(name) = a {
+                                if scalar_params.contains(name.as_str()) {
+                                    return format!("*{} as int", name);
+                                }
                             }
                         }
                         self.expr_to_view_requires_string(a, view_params, scalar_params)
@@ -8590,6 +8620,18 @@ impl Translator {
                 let inner_str =
                     self.expr_to_view_requires_string(inner, view_params, scalar_params);
                 format!("{} as {}", inner_str, ty_str)
+            }
+            // Index expressions: s.log[idx] → s.log@[idx as int] in spec context
+            Expr::Index(base, idx) => {
+                // Lift the base to spec level (apply @)
+                let base_str = if let Some(s) = self.try_view_at_root(base, view_params) {
+                    s
+                } else {
+                    self.expr_to_view_requires_string(base, view_params, scalar_params)
+                };
+                let idx_str =
+                    self.expr_to_spec_requires_string(idx, view_params, scalar_params);
+                format!("{}[{}]", base_str, idx_str)
             }
             _ => self.expr_to_view_simple_string(expr, view_params, scalar_params),
         }
@@ -8823,6 +8865,17 @@ impl Translator {
             Expr::Ident(name) if scalar_params.contains(name) => {
                 // Scalar input param (int/nat → &u64): dereference
                 format!("*{}", name)
+            }
+            // Index expressions: lift base to spec level
+            Expr::Index(base, idx) => {
+                let base_str = if let Some(s) = self.try_view_at_root(base, view_params) {
+                    s
+                } else {
+                    self.expr_to_view_simple_string(base, view_params, scalar_params)
+                };
+                let idx_str =
+                    self.expr_to_spec_requires_string(idx, view_params, scalar_params);
+                format!("{}[{}]", base_str, idx_str)
             }
             // For other expressions, delegate to expr_to_simple_string
             _ => self.expr_to_simple_string(expr),
@@ -9566,11 +9619,36 @@ impl Translator {
                 } else {
                     // Vec/slice indexing: vec[idx as usize]
                     let cast_idx = Self::cast_index_to_usize(idx_expr, ctx);
-                    Ok(ExecExpr::MethodCall {
-                        receiver: Box::new(base_expr),
-                        method: "index".to_string(),
-                        args: vec![cast_idx],
-                    })
+                    // If base is an Arc-wrapped field, bind to a local ref first.
+                    // Verus only supports [] on Vec/array/slice directly, not Arc<Vec<T>>.
+                    // Pattern: { let __arc_ref = &*s.field; __arc_ref[idx] }
+                    if self.is_arc_wrapped_field(&base_expr) {
+                        // Verus can't index through Arc<Vec<T>> — bind to local &Vec ref first
+                        Ok(ExecExpr::Block(vec![
+                            ExecExpr::Let {
+                                pattern: "__arc_ref".to_string(),
+                                ty: None,
+                                value: Box::new(ExecExpr::Unary {
+                                    op: "&".to_string(),
+                                    expr: Box::new(ExecExpr::Unary {
+                                        op: "*".to_string(),
+                                        expr: Box::new(base_expr),
+                                    }),
+                                }),
+                            },
+                            ExecExpr::MethodCall {
+                                receiver: Box::new(ExecExpr::Var("__arc_ref".to_string())),
+                                method: "index".to_string(),
+                                args: vec![cast_idx],
+                            },
+                        ]))
+                    } else {
+                        Ok(ExecExpr::MethodCall {
+                            receiver: Box::new(base_expr),
+                            method: "index".to_string(),
+                            args: vec![cast_idx],
+                        })
+                    }
                 }
             }
 
@@ -9839,6 +9917,8 @@ impl Translator {
                     if has_mutations {
                         let (pre_stmts, new_fields) =
                             self.extract_set_mutations_from_struct(translated_fields, ctx);
+                        // Arc-wrap explicitly set fields in struct-update syntax
+                        let new_fields = self.arc_wrap_struct_fields(&exec_name, new_fields);
                         // Keep as StructUpdate with ..base.clone() so non-mutated fields
                         // are inherited from the base (not dropped).
                         let struct_expr = ExecExpr::StructUpdate {
@@ -9854,6 +9934,8 @@ impl Translator {
                             Ok(ExecExpr::Block(block))
                         }
                     } else {
+                        // Arc-wrap explicitly set fields in struct-update syntax
+                        let translated_fields = self.arc_wrap_struct_fields(&exec_name, translated_fields);
                         Ok(ExecExpr::StructUpdate {
                             name: exec_name,
                             base: Box::new(base_expr),
@@ -13148,8 +13230,9 @@ impl Translator {
                     .collect();
                 // Use translate_path to handle both struct names and enum variant paths
                 // e.g., RslMessage::RslMessage1a -> CMessage::CMessage1a
+                // Always append `..` to allow partial field binding (e.g., VoteResponse { term, granted, voter, .. })
                 format!(
-                    "{} {{ {} }}",
+                    "{} {{ {}, .. }}",
                     self.translate_path(name),
                     field_strs.join(", ")
                 )

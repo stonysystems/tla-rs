@@ -14042,14 +14042,17 @@ require regen to succeed first.
 - [x] **40.3.d**: Re-generated `src/generated/Raft/{raft_gen.rs, types_gen.rs, message.rs}`.
   Zero "Unsupported pattern" errors; zero raw `If { … }` text; 34 Arc usages
   (29 in raft_gen + 5 in types_gen). 21 exec functions generated (full coverage).
-- [ ] **40.3.e**: `verus --verify-only-module 'generated::Raft::raft_gen'` → target 0 errors.
-  **Blocked by 5 transpiler bugs** (all pre-existing, exposed by first-ever Raft regen):
-  - (e.1) `spec_only_functions` args not cast to `int` (e.g. `*new_commit_index` → needs `as int`)
-  - (e.2) `Cstep_down_if_needed().votes_granted` returns `Arc<HashSet>` but `arc_wrap_struct_fields` wraps again → double-Arc
-  - (e.3) Vec indexing in requires uses `prev_log_index: &u64` instead of `usize`/`int`
-  - (e.4) VoteResponse match pattern missing `voter_last_log_index`, `voter_last_log_term` fields
-  - (e.5) CRaftMessage construction missing `voter_last_log_index`/`voter_last_log_term` in VoteResponse arms
-  Each is a small transpiler fix (~10-30 LOC). Track as 40.3.e.1–e.5.
+- [x] **40.3.e**: `verus --verify-only-module 'generated::Raft::raft_gen'` → **25 verified, 0 errors**.
+  Fixed 6 transpiler bugs + 1 config adjustment:
+  - (e.1) `spec_only_functions` args: scalar params now get `*param as int` cast
+  - (e.2) double-Arc: field access on helper call results (e.g. `Cstep_down_if_needed().votes_granted`) no longer wrapped
+  - (e.3) `Expr::Index` in requires: base lifted to spec level with `@` view operator
+  - (e.4) struct match patterns: always append `..` for partial field binding
+  - (e.5) VoteResponse construction already correct (verified, no fix needed)
+  - (e.6) struct-update syntax (`..s.clone()`) now Arc-wraps explicitly set fields
+  - Config: removed `log` from `arc_wrap_fields` (Verus can't index `Arc<Vec<T>>`);
+    added `c@.servers.finite()` + `replicator_count` to `CTryAdvanceCommitIndex` extra_requires.
+  - Added `arc_wrap_fields` support to types codegen (fine-grained per-field control).
 - [ ] **40.3.f**: ~~Verify the rest of Raft refinement proof~~ **SKIP** —
   Phase 34 is deprecated; the refinement proof (`refinement_proof/*`)
   is not maintained. If the spec refactor breaks more of its

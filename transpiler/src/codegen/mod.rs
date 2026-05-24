@@ -76,6 +76,8 @@ pub struct TypeGenerator {
     unit_enums: HashSet<String>,
     /// Exec type names whose non-scalar fields should be wrapped in `Arc<T>`.
     arc_wrap_types: HashSet<String>,
+    /// Fine-grained: specific fields per exec type to Arc-wrap (overrides arc_wrap_types).
+    arc_wrap_fields: HashMap<String, Vec<String>>,
 }
 
 impl TypeGenerator {
@@ -101,6 +103,7 @@ impl TypeGenerator {
             hashset_element_types: HashSet::new(),
             unit_enums: HashSet::new(),
             arc_wrap_types: HashSet::new(),
+            arc_wrap_fields: HashMap::new(),
         }
     }
 
@@ -176,11 +179,30 @@ impl TypeGenerator {
         self.arc_wrap_types = types;
     }
 
+    pub fn set_arc_wrap_fields(&mut self, fields: HashMap<String, Vec<String>>) {
+        self.arc_wrap_fields = fields;
+    }
+
     /// Check if a field should be Arc-wrapped in the given struct.
+    /// When arc_wrap_fields is specified for a struct, only those listed fields are wrapped.
+    /// Otherwise falls back to arc_wrap_types which wraps all non-scalar fields.
     fn should_arc_wrap_field(&self, exec_name: &str, field_ty: &Type) -> bool {
         if !self.arc_wrap_types.contains(exec_name) {
             return false;
         }
+        !self.is_copy_scalar_type_for_clone_up_to_view(field_ty)
+    }
+
+    /// Check if a specific named field should be Arc-wrapped.
+    fn should_arc_wrap_named_field(&self, exec_name: &str, field_name: &str, field_ty: &Type) -> bool {
+        if !self.arc_wrap_types.contains(exec_name) {
+            return false;
+        }
+        // If fine-grained field list exists, use it
+        if let Some(fields) = self.arc_wrap_fields.get(exec_name) {
+            return fields.iter().any(|f| f == field_name);
+        }
+        // Fallback: wrap all non-scalar fields
         !self.is_copy_scalar_type_for_clone_up_to_view(field_ty)
     }
 
@@ -330,7 +352,7 @@ impl TypeGenerator {
                     "{}        {}: self.{},\n",
                     self.indent, field.name, field.name
                 ));
-            } else if self.should_arc_wrap_field(exec_name, &field.ty) {
+            } else if self.should_arc_wrap_named_field(exec_name, &field.name, &field.ty) {
                 // Arc-wrapped field: Arc::clone is O(1) refcount bump
                 code.push_str(&format!(
                     "{}        {}: self.{}.clone(),\n",
@@ -477,7 +499,7 @@ impl TypeGenerator {
         for field in &generated_fields {
             let exec_type = self.translate_type(&field.ty);
             let vis = if field.is_public { "pub " } else { "" };
-            if self.should_arc_wrap_field(&exec_name, &field.ty) {
+            if self.should_arc_wrap_named_field(&exec_name, &field.name, &field.ty) {
                 code.push_str(&format!(
                     "{}{}{}: Arc<{}>,\n",
                     self.indent, vis, field.name, exec_type
@@ -1279,6 +1301,7 @@ pub fn generate_all_types_with_options(
         generate_unreachable_value_helper: false,
         manual_code: None,
         arc_wrap_types: &[],
+        arc_wrap_fields: &HashMap::new(),
     })
 }
 
@@ -1305,6 +1328,8 @@ pub struct TypeGenConfig<'a> {
     /// Exec type names whose non-scalar fields should be wrapped in Arc<T>.
     #[allow(dead_code)]
     pub arc_wrap_types: &'a [String],
+    /// Fine-grained: specific fields per exec type to Arc-wrap.
+    pub arc_wrap_fields: &'a HashMap<String, Vec<String>>,
 }
 
 fn generate_unreachable_value_helper() -> &'static str {
@@ -1347,6 +1372,7 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     }
     generator.set_unit_enums(unit_enums);
     generator.set_arc_wrap_types(cfg.arc_wrap_types.iter().cloned().collect());
+    generator.set_arc_wrap_fields(cfg.arc_wrap_fields.clone());
 
     let mut all_code = String::new();
     let mut all_warnings = Vec::new();
@@ -2426,6 +2452,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2473,6 +2500,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2528,6 +2556,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -2583,6 +2612,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
         let result = generate_all_types_full(&cfg);
         assert!(
@@ -2635,6 +2665,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
         let result = generate_all_types_full(&cfg);
         assert!(
@@ -2683,6 +2714,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
         let result = generate_all_types_full(&cfg);
         assert!(
@@ -2736,6 +2768,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
         let result = generate_all_types_full(&cfg);
         assert!(
@@ -3155,6 +3188,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3213,6 +3247,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3256,6 +3291,7 @@ mod tests {
             generate_unreachable_value_helper: false,
             manual_code: Some(manual),
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3298,6 +3334,7 @@ mod tests {
             generate_unreachable_value_helper: true,
             manual_code: None,
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
@@ -3337,6 +3374,7 @@ mod tests {
             generate_unreachable_value_helper: true,
             manual_code: Some(manual),
             arc_wrap_types: &[],
+            arc_wrap_fields: &HashMap::new(),
         };
 
         let result = generate_all_types_full(&cfg);
