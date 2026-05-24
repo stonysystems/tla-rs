@@ -1547,7 +1547,7 @@ fn test_rsl_types_manual_helpers_component_part2_symbols_present() {
 
     let removed_symbols = [
         "pub struct CProposer {",
-        "pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>",
+        "pub highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>",
         "pub struct CReplica {",
         "pub nextHeartbeatTime: u64",
         "pub struct CScheduler {",
@@ -1583,7 +1583,7 @@ fn test_rsl_types_manual_helpers_component_part2_symbols_present() {
         .expect("Failed to read ProposerImpl.rs");
     for symbol in [
         "pub struct CProposer",
-        "pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>",
+        "pub highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>",
         "impl View for CProposer",
     ] {
         assert!(
@@ -23555,5 +23555,28 @@ fn test_regenerate_rsl_script_references_regen_workflow_doc() {
         workflow_doc.exists(),
         "REGEN_WORKFLOW.md should exist at {}",
         workflow_doc.display()
+    );
+}
+
+#[test]
+fn test_regenerate_rsl_validate_only_passes() {
+    let repo_root = resolve_repo_root_for_integration();
+    let script_path = repo_root.join("scripts/regenerate_rsl.sh");
+
+    let output = std::process::Command::new("bash")
+        .args([script_path.to_str().unwrap(), "--validate-only"])
+        .current_dir(&repo_root)
+        .output()
+        .expect("failed to run regenerate_rsl.sh --validate-only");
+    assert!(
+        output.status.success(),
+        "regenerate_rsl.sh --validate-only should succeed. stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Validation PASSED"),
+        "validate-only should report PASSED when existing files match transpiler output"
     );
 }

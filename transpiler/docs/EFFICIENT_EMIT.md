@@ -171,6 +171,29 @@ per call).
 | C. &mut  | None | In-place | New proof templates | Very high | High |
 | D. None  | O(n) deep clone | N/A | N/A | None | None |
 
+## Post-Implementation Results (Phase 40 + Phase 41)
+
+### Phase 40: Struct-level Arc-wrapping (completed)
+Arc-wrapped sub-component structs (`proposer: Arc<CProposer>`, etc.) for 7 small
+protocols + Raft. **No measured benefit**: Raft re-bench showed 3,613 vs 3,612 ops/s
+(Δ +0.03%, within noise). The 7 small protocols have no client and are unmeasurable.
+The original "+24% RSL / +12% Raft" claims were noise. RSL struct-level wrapping
+(40.3.g) was deferred and is now **WONTFIX**.
+
+### Phase 41: Field-level Arc-wrapping (PoC validated)
+Arc-wrapping individual collection fields inside structs proved far more effective.
+A single field change (`CProposer.highest_seqno_requested_by_client_this_view:
+HashMap<EndPoint, u64>` → `Arc<HashMap<EndPoint, u64>>`) delivered **+82% RSL
+throughput** (16,341 → 29,745 ops/s), matching hand-tuned baselines. This is the
+recommended approach — see TODO.md Phase 41 for the plan to extend to all hot fields
+and automate in the transpiler.
+
+### Conclusion
+**Strategy A (struct-level Arc) has no measured benefit.** The actual win comes from
+**field-level Arc-wrapping of hot collection fields** (a variant of Strategy B's
+insight applied via Arc instead of persistent data structures). Phase 41.2 will
+automate this in the transpiler via TOML config.
+
 ## Implementation Plan
 
-See TODO.md Phase 40.2 for the detailed Arc-wrapping implementation steps.
+See TODO.md Phase 40.2 for struct-level Arc steps (dormant), Phase 41 for field-level Arc steps (active).
