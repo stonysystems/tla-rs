@@ -13791,7 +13791,7 @@ Implementation paths:
     `Arc<SetRepr>` in `RuntimeValue::Set`.** Update all pattern matches
     in evaluator.rs, solver.rs, explorer.rs, dpor/, parity.rs, bytecode.rs.
     ~300 LOC of mechanical changes across ~10 files.
-  - [ ] **38.22.2.d.iv**: **Wire up automatic promotion in `set_bounded`.**
+  - [x] **38.22.2.d.iv**: **Wire up automatic promotion in `set_bounded`.**
     Detect all-integer sets at creation time, use SmallInt path. Add
     benchmark comparing SmallIntSet vs BTreeSet for typical Paxos set
     sizes (4-8 elements). ~100 LOC.

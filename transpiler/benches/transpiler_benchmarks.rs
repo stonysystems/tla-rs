@@ -345,6 +345,121 @@ verus! {{
     )
 }
 
+fn bench_set_repr(c: &mut Criterion) {
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+    use verus_transpiler::modelcheck::small_int_set::SmallIntSet;
+    use verus_transpiler::modelcheck::value::{RuntimeValue, SetRepr};
+
+    let mut group = c.benchmark_group("set_repr");
+
+    // Typical Paxos quorum sizes
+    for &size in &[4u64, 6, 8] {
+        let ints: Vec<i128> = (0..size as i128).collect();
+        let values: Vec<RuntimeValue> = ints.iter().map(|&n| RuntimeValue::Int(n)).collect();
+
+        // Construction: from_values (auto-promotes to SmallInt)
+        group.bench_with_input(
+            BenchmarkId::new("from_values_auto", size),
+            &values,
+            |b, vals| {
+                b.iter(|| SetRepr::from_values(black_box(vals.clone())))
+            },
+        );
+
+        // Construction: BTreeSet baseline
+        group.bench_with_input(
+            BenchmarkId::new("btreeset_collect", size),
+            &values,
+            |b, vals| {
+                b.iter(|| {
+                    let set: BTreeSet<RuntimeValue> = black_box(vals.clone()).into_iter().collect();
+                    set
+                })
+            },
+        );
+
+        // Contains lookup
+        let small_repr = SetRepr::from_values(values.clone());
+        let general_repr = SetRepr::General(values.iter().cloned().collect());
+        let lookup_val = RuntimeValue::Int(size as i128 / 2);
+
+        group.bench_with_input(
+            BenchmarkId::new("contains_smallint", size),
+            &(&small_repr, &lookup_val),
+            |b, &(repr, val)| {
+                b.iter(|| repr.contains(black_box(val)))
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("contains_general", size),
+            &(&general_repr, &lookup_val),
+            |b, &(repr, val)| {
+                b.iter(|| repr.contains(black_box(val)))
+            },
+        );
+
+        // Union of two sets
+        let half = size as i128 / 2;
+        let set_a = SetRepr::from_values((0..half).map(RuntimeValue::Int));
+        let set_b = SetRepr::from_values((half..size as i128).map(RuntimeValue::Int));
+        let gen_a = SetRepr::General((0..half).map(RuntimeValue::Int).collect());
+        let gen_b = SetRepr::General((half..size as i128).map(RuntimeValue::Int).collect());
+
+        group.bench_with_input(
+            BenchmarkId::new("union_smallint", size),
+            &(&set_a, &set_b),
+            |b, &(a, bb)| {
+                b.iter(|| a.union(black_box(bb)))
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("union_general", size),
+            &(&gen_a, &gen_b),
+            |b, &(a, bb)| {
+                b.iter(|| a.union(black_box(bb)))
+            },
+        );
+
+        // Iteration
+        group.bench_with_input(
+            BenchmarkId::new("iter_smallint", size),
+            &small_repr,
+            |b, repr| {
+                b.iter(|| {
+                    let mut sum = 0i128;
+                    for v in black_box(repr).iter() {
+                        if let RuntimeValue::Int(n) = v {
+                            sum += n;
+                        }
+                    }
+                    sum
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("iter_general", size),
+            &general_repr,
+            |b, repr| {
+                b.iter(|| {
+                    let mut sum = 0i128;
+                    for v in black_box(repr).iter() {
+                        if let RuntimeValue::Int(n) = v {
+                            sum += n;
+                        }
+                    }
+                    sum
+                })
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_parser,
@@ -354,5 +469,6 @@ criterion_group!(
     bench_translator,
     bench_full_pipeline,
     bench_scaling,
+    bench_set_repr,
 );
 criterion_main!(benches);

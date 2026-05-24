@@ -276,18 +276,15 @@ impl RuntimeValue {
     where
         I: IntoIterator<Item = RuntimeValue>,
     {
-        let mut repr = SetRepr::new();
-        for value in values {
-            repr.insert(value);
-            if repr.len() > bounds.max_set_len {
-                return Err(TranspileError::Config {
-                    message: format!(
-                        "Model-check Set value size {} exceeds configured max_set_len {}.",
-                        repr.len(),
-                        bounds.max_set_len
-                    ),
-                });
-            }
+        let repr = SetRepr::from_values(values);
+        if repr.len() > bounds.max_set_len {
+            return Err(TranspileError::Config {
+                message: format!(
+                    "Model-check Set value size {} exceeds configured max_set_len {}.",
+                    repr.len(),
+                    bounds.max_set_len
+                ),
+            });
         }
         Ok(Self::Set(Arc::new(repr)))
     }

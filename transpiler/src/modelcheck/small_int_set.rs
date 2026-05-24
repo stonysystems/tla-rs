@@ -13,12 +13,46 @@ use std::fmt;
 /// A compact set of integers stored as a 64-bit bitmap.
 ///
 /// Elements must lie in the range `[offset, offset + 63]`.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 pub struct SmallIntSet {
     /// Bitmap: bit `i` is set iff `(offset + i)` is in the set.
     bits: u64,
     /// The base value.  Element `n` maps to bit `n - offset`.
     offset: i128,
+}
+
+impl PartialEq for SmallIntSet {
+    fn eq(&self, other: &Self) -> bool {
+        if self.bits == 0 && other.bits == 0 {
+            return true; // both empty, offset irrelevant
+        }
+        if self.offset == other.offset {
+            return self.bits == other.bits;
+        }
+        // Different offsets: shift bits to compare
+        let diff = other.offset - self.offset;
+        if diff > 0 && diff < 64 {
+            // self's bits shifted right by diff should match other's bits,
+            // and self must have no bits below the shift
+            self.bits >> diff as u32 == other.bits && self.bits & ((1u64 << diff as u32) - 1) == 0
+        } else if diff < 0 && diff > -64 {
+            let d = (-diff) as u32;
+            other.bits >> d == self.bits && other.bits & ((1u64 << d) - 1) == 0
+        } else {
+            false // offsets too far apart to share elements
+        }
+    }
+}
+
+impl Eq for SmallIntSet {}
+
+impl std::hash::Hash for SmallIntSet {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Normalize: hash based on actual elements
+        for n in self.iter() {
+            n.hash(state);
+        }
+    }
 }
 
 impl SmallIntSet {
