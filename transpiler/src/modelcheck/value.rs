@@ -618,6 +618,267 @@ where
     Ok(out)
 }
 
+// ── SetRepr: dual-representation set ─────────────────────────────────
+
+use crate::modelcheck::small_int_set::SmallIntSet;
+
+/// Dual-representation set: either a general `BTreeSet<RuntimeValue>` or
+/// a bitmap-packed `SmallIntSet` when all elements are small integers.
+///
+/// This is a drop-in replacement for `BTreeSet<RuntimeValue>` in
+/// `RuntimeValue::Set`.  All operations dispatch to the appropriate
+/// representation transparently.
+#[derive(Debug, Clone)]
+pub enum SetRepr {
+    /// General representation: arbitrary `RuntimeValue` elements.
+    General(BTreeSet<RuntimeValue>),
+    /// Packed representation: all elements are `RuntimeValue::Int(n)` and
+    /// fit in a 64-wide bitmap.
+    SmallInt(SmallIntSet),
+}
+
+impl SetRepr {
+    /// Create an empty general set.
+    pub fn new() -> Self {
+        SetRepr::General(BTreeSet::new())
+    }
+
+    /// Try to create a `SmallInt` set from an iterator of `RuntimeValue`.
+    /// Returns `General` if any element is not `Int` or the range exceeds 64.
+    pub fn from_values(values: impl IntoIterator<Item = RuntimeValue>) -> Self {
+        let values: Vec<RuntimeValue> = values.into_iter().collect();
+        // Try SmallInt path: all must be Int and fit in 64-wide range.
+        let ints: Option<Vec<i128>> = values
+            .iter()
+            .map(|v| match v {
+                RuntimeValue::Int(n) => Some(*n),
+                _ => None,
+            })
+            .collect();
+        if let Some(ints) = ints {
+            if let Some(small) = SmallIntSet::try_from_iter(ints) {
+                return SetRepr::SmallInt(small);
+            }
+        }
+        SetRepr::General(values.into_iter().collect())
+    }
+
+    /// Number of elements.
+    pub fn len(&self) -> usize {
+        match self {
+            SetRepr::General(s) => s.len(),
+            SetRepr::SmallInt(s) => s.len(),
+        }
+    }
+
+    /// Whether the set is empty.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            SetRepr::General(s) => s.is_empty(),
+            SetRepr::SmallInt(s) => s.is_empty(),
+        }
+    }
+
+    /// Check membership.
+    pub fn contains(&self, value: &RuntimeValue) -> bool {
+        match (self, value) {
+            (SetRepr::SmallInt(s), RuntimeValue::Int(n)) => s.contains(*n),
+            (SetRepr::SmallInt(_), _) => false,
+            (SetRepr::General(s), _) => s.contains(value),
+        }
+    }
+
+    /// Insert an element. Returns `true` if the element was newly added.
+    ///
+    /// If the current representation is `SmallInt` and the new element
+    /// doesn't fit, the set is promoted to `General`.
+    pub fn insert(&mut self, value: RuntimeValue) -> bool {
+        match self {
+            SetRepr::SmallInt(s) => {
+                if let RuntimeValue::Int(n) = &value {
+                    match s.insert(*n) {
+                        Ok(was_new) => return was_new,
+                        Err(_) => {
+                            // Out of range — promote to General
+                            let mut general: BTreeSet<RuntimeValue> =
+                                s.iter().map(RuntimeValue::Int).collect();
+                            let was_new = general.insert(value);
+                            *self = SetRepr::General(general);
+                            return was_new;
+                        }
+                    }
+                }
+                // Non-int element — promote to General
+                let mut general: BTreeSet<RuntimeValue> =
+                    s.iter().map(RuntimeValue::Int).collect();
+                let was_new = general.insert(value);
+                *self = SetRepr::General(general);
+                was_new
+            }
+            SetRepr::General(s) => s.insert(value),
+        }
+    }
+
+    /// Remove an element. Returns `true` if the element was present.
+    pub fn remove(&mut self, value: &RuntimeValue) -> bool {
+        match (self as &mut SetRepr, value) {
+            (SetRepr::SmallInt(s), RuntimeValue::Int(n)) => s.remove(*n),
+            (SetRepr::SmallInt(_), _) => false,
+            (SetRepr::General(s), _) => s.remove(value),
+        }
+    }
+
+    /// Set union. Returns a new set.
+    pub fn union(&self, other: &SetRepr) -> SetRepr {
+        match (self, other) {
+            (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => {
+                // Try to merge into a single SmallIntSet
+                if let Some(merged) = SmallIntSet::try_from_iter(a.iter().chain(b.iter())) {
+                    return SetRepr::SmallInt(merged);
+                }
+                let combined: BTreeSet<RuntimeValue> =
+                    self.iter().chain(other.iter()).collect();
+                SetRepr::General(combined)
+            }
+            _ => {
+                let combined: BTreeSet<RuntimeValue> =
+                    self.iter().chain(other.iter()).collect();
+                SetRepr::General(combined)
+            }
+        }
+    }
+
+    /// Set difference (self \ other). Returns a new set.
+    pub fn difference(&self, other: &SetRepr) -> SetRepr {
+        match (self, other) {
+            (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => {
+                // Difference can only shrink, so result fits in a's range.
+                // Rebuild with shared offset from a.
+                let result_ints: Vec<i128> = a.iter().filter(|n| !b.contains(*n)).collect();
+                SetRepr::SmallInt(
+                    SmallIntSet::try_from_iter(result_ints).unwrap_or_else(|| SmallIntSet::empty()),
+                )
+            }
+            _ => {
+                let result: BTreeSet<RuntimeValue> = self
+                    .iter()
+                    .filter(|v| !other.contains(v))
+                    .collect();
+                SetRepr::General(result)
+            }
+        }
+    }
+
+    /// Set intersection. Returns a new set.
+    pub fn intersection(&self, other: &SetRepr) -> SetRepr {
+        match (self, other) {
+            (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => {
+                // Intersection can only shrink, fits in either's range.
+                let result_ints: Vec<i128> = a.iter().filter(|n| b.contains(*n)).collect();
+                SetRepr::SmallInt(
+                    SmallIntSet::try_from_iter(result_ints).unwrap_or_else(|| SmallIntSet::empty()),
+                )
+            }
+            _ => {
+                let result: BTreeSet<RuntimeValue> = self
+                    .iter()
+                    .filter(|v| other.contains(v))
+                    .collect();
+                SetRepr::General(result)
+            }
+        }
+    }
+
+    /// Iterate over elements in ascending order.
+    ///
+    /// For `SmallInt`, elements are yielded as `RuntimeValue::Int(n)`.
+    pub fn iter(&self) -> SetReprIter<'_> {
+        match self {
+            SetRepr::General(s) => SetReprIter::General(s.iter()),
+            SetRepr::SmallInt(s) => SetReprIter::SmallInt(s.iter()),
+        }
+    }
+
+    /// Convert to a `BTreeSet<RuntimeValue>` (materializes SmallInt elements).
+    pub fn to_btree_set(&self) -> BTreeSet<RuntimeValue> {
+        match self {
+            SetRepr::General(s) => s.clone(),
+            SetRepr::SmallInt(s) => s.iter().map(RuntimeValue::Int).collect(),
+        }
+    }
+
+    /// Check if a value is representable in the current SmallInt form.
+    /// Always true for General.
+    pub fn is_small_int(&self) -> bool {
+        matches!(self, SetRepr::SmallInt(_))
+    }
+}
+
+impl Default for SetRepr {
+    fn default() -> Self {
+        SetRepr::new()
+    }
+}
+
+impl PartialEq for SetRepr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => a == b,
+            _ => {
+                // Cross-representation or both General: compare element-by-element.
+                self.len() == other.len() && self.iter().eq(other.iter())
+            }
+        }
+    }
+}
+
+impl Eq for SetRepr {}
+
+impl PartialOrd for SetRepr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SetRepr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => a.cmp(b),
+            _ => {
+                // Compare by length first, then element-by-element.
+                self.len().cmp(&other.len())
+                    .then_with(|| self.iter().cmp(other.iter()))
+            }
+        }
+    }
+}
+
+/// Iterator over `SetRepr` elements, yielding `RuntimeValue` in ascending order.
+pub enum SetReprIter<'a> {
+    General(std::collections::btree_set::Iter<'a, RuntimeValue>),
+    SmallInt(crate::modelcheck::small_int_set::SmallIntSetIter),
+}
+
+impl<'a> Iterator for SetReprIter<'a> {
+    type Item = RuntimeValue;
+
+    fn next(&mut self) -> Option<RuntimeValue> {
+        match self {
+            SetReprIter::General(it) => it.next().cloned(),
+            SetReprIter::SmallInt(it) => it.next().map(RuntimeValue::Int),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            SetReprIter::General(it) => it.size_hint(),
+            SetReprIter::SmallInt(it) => it.size_hint(),
+        }
+    }
+}
+
+impl<'a> ExactSizeIterator for SetReprIter<'a> {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -983,5 +1244,192 @@ mod tests {
         let b = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
         let _ = a.fingerprint();
         assert_eq!(a.cmp(&b), std::cmp::Ordering::Equal, "cache state must not affect ordering");
+    }
+
+    // ── SetRepr tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_set_repr_from_values_small_int() {
+        let repr = SetRepr::from_values(vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(3),
+            RuntimeValue::Int(5),
+        ]);
+        assert!(repr.is_small_int());
+        assert_eq!(repr.len(), 3);
+        assert!(repr.contains(&RuntimeValue::Int(3)));
+        assert!(!repr.contains(&RuntimeValue::Int(2)));
+    }
+
+    #[test]
+    fn test_set_repr_from_values_general_mixed() {
+        let repr = SetRepr::from_values(vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Bool(true),
+        ]);
+        assert!(!repr.is_small_int());
+        assert_eq!(repr.len(), 2);
+        assert!(repr.contains(&RuntimeValue::Int(1)));
+        assert!(repr.contains(&RuntimeValue::Bool(true)));
+    }
+
+    #[test]
+    fn test_set_repr_from_values_general_wide_range() {
+        let repr = SetRepr::from_values(vec![
+            RuntimeValue::Int(0),
+            RuntimeValue::Int(100),
+        ]);
+        assert!(!repr.is_small_int());
+        assert_eq!(repr.len(), 2);
+    }
+
+    #[test]
+    fn test_set_repr_from_values_empty() {
+        let repr = SetRepr::from_values(Vec::<RuntimeValue>::new());
+        // Empty all-int → SmallInt
+        assert!(repr.is_small_int());
+        assert!(repr.is_empty());
+    }
+
+    #[test]
+    fn test_set_repr_insert_small_int() {
+        let mut repr = SetRepr::from_values(vec![RuntimeValue::Int(1)]);
+        assert!(repr.is_small_int());
+        assert!(repr.insert(RuntimeValue::Int(2)));
+        assert!(!repr.insert(RuntimeValue::Int(2))); // duplicate
+        assert_eq!(repr.len(), 2);
+        assert!(repr.is_small_int());
+    }
+
+    #[test]
+    fn test_set_repr_insert_promotes_on_non_int() {
+        let mut repr = SetRepr::from_values(vec![RuntimeValue::Int(1)]);
+        assert!(repr.is_small_int());
+        repr.insert(RuntimeValue::Bool(true));
+        assert!(!repr.is_small_int());
+        assert_eq!(repr.len(), 2);
+        assert!(repr.contains(&RuntimeValue::Int(1)));
+        assert!(repr.contains(&RuntimeValue::Bool(true)));
+    }
+
+    #[test]
+    fn test_set_repr_insert_promotes_on_out_of_range() {
+        let mut repr = SetRepr::from_values(vec![RuntimeValue::Int(0)]);
+        assert!(repr.is_small_int());
+        repr.insert(RuntimeValue::Int(100)); // out of 64-wide range
+        assert!(!repr.is_small_int());
+        assert_eq!(repr.len(), 2);
+    }
+
+    #[test]
+    fn test_set_repr_remove() {
+        let mut repr = SetRepr::from_values(vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(2),
+            RuntimeValue::Int(3),
+        ]);
+        assert!(repr.remove(&RuntimeValue::Int(2)));
+        assert!(!repr.remove(&RuntimeValue::Int(2)));
+        assert_eq!(repr.len(), 2);
+        assert!(!repr.contains(&RuntimeValue::Int(2)));
+    }
+
+    #[test]
+    fn test_set_repr_union_small_int() {
+        let a = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]);
+        let b = SetRepr::from_values(vec![RuntimeValue::Int(2), RuntimeValue::Int(3)]);
+        let c = a.union(&b);
+        assert!(c.is_small_int());
+        let elems: Vec<RuntimeValue> = c.iter().collect();
+        assert_eq!(elems, vec![RuntimeValue::Int(1), RuntimeValue::Int(2), RuntimeValue::Int(3)]);
+    }
+
+    #[test]
+    fn test_set_repr_difference_small_int() {
+        let a = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2), RuntimeValue::Int(3)]);
+        let b = SetRepr::from_values(vec![RuntimeValue::Int(2)]);
+        let c = a.difference(&b);
+        assert!(c.is_small_int());
+        let elems: Vec<RuntimeValue> = c.iter().collect();
+        assert_eq!(elems, vec![RuntimeValue::Int(1), RuntimeValue::Int(3)]);
+    }
+
+    #[test]
+    fn test_set_repr_intersection_small_int() {
+        let a = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2), RuntimeValue::Int(3)]);
+        let b = SetRepr::from_values(vec![RuntimeValue::Int(2), RuntimeValue::Int(4)]);
+        let c = a.intersection(&b);
+        assert!(c.is_small_int());
+        let elems: Vec<RuntimeValue> = c.iter().collect();
+        assert_eq!(elems, vec![RuntimeValue::Int(2)]);
+    }
+
+    #[test]
+    fn test_set_repr_union_cross_repr() {
+        let a = SetRepr::from_values(vec![RuntimeValue::Int(1)]);
+        let b = SetRepr::from_values(vec![RuntimeValue::Bool(true)]);
+        let c = a.union(&b);
+        assert!(!c.is_small_int());
+        assert_eq!(c.len(), 2);
+    }
+
+    #[test]
+    fn test_set_repr_iter_ascending() {
+        let repr = SetRepr::from_values(vec![
+            RuntimeValue::Int(5),
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(3),
+        ]);
+        let elems: Vec<RuntimeValue> = repr.iter().collect();
+        assert_eq!(elems, vec![RuntimeValue::Int(1), RuntimeValue::Int(3), RuntimeValue::Int(5)]);
+    }
+
+    #[test]
+    fn test_set_repr_eq_same_repr() {
+        let a = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]);
+        let b = SetRepr::from_values(vec![RuntimeValue::Int(2), RuntimeValue::Int(1)]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_set_repr_eq_cross_repr() {
+        let small = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]);
+        let general = SetRepr::General(
+            vec![RuntimeValue::Int(1), RuntimeValue::Int(2)].into_iter().collect(),
+        );
+        assert!(small.is_small_int());
+        assert!(!general.is_small_int());
+        assert_eq!(small, general);
+    }
+
+    #[test]
+    fn test_set_repr_ord_cross_repr() {
+        let small = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]);
+        let general = SetRepr::General(
+            vec![RuntimeValue::Int(1), RuntimeValue::Int(2)].into_iter().collect(),
+        );
+        assert_eq!(small.cmp(&general), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn test_set_repr_to_btree_set() {
+        let repr = SetRepr::from_values(vec![
+            RuntimeValue::Int(3),
+            RuntimeValue::Int(1),
+        ]);
+        let btree = repr.to_btree_set();
+        assert_eq!(btree.len(), 2);
+        assert!(btree.contains(&RuntimeValue::Int(1)));
+        assert!(btree.contains(&RuntimeValue::Int(3)));
+    }
+
+    #[test]
+    fn test_set_repr_dedup() {
+        let repr = SetRepr::from_values(vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(2),
+        ]);
+        assert_eq!(repr.len(), 2);
     }
 }

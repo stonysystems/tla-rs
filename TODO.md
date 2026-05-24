@@ -13781,7 +13781,7 @@ Implementation paths:
     Operations: new, insert, remove, contains, len, union, intersection,
     difference, is_subset, iter (yields `i128` values). No integration
     with RuntimeValue yet — purely a data structure. ~200 LOC + tests.
-  - [ ] **38.22.2.d.ii**: **Create `SetRepr` dual-representation enum.**
+  - [x] **38.22.2.d.ii**: **Create `SetRepr` dual-representation enum.**
     `enum SetRepr { General(BTreeSet<RuntimeValue>), SmallInt(SmallIntSet) }`.
     Wraps both representations with a unified API matching BTreeSet usage:
     len, contains, insert, remove, union, difference, intersection, iter.
