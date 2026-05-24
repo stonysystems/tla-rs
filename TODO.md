@@ -79,7 +79,9 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 1. **Phase 41: Arc-Wrap Collection Fields — depends on Phase 42 regen workflow** — manual PoC `cb42869` validated +82% RSL throughput from a single field change, matches wasiq hand-tuned. After Phase 42 regen workflow lands, extend to remaining hot fields, then generalize into transpiler codegen. See [Phase 41](#phase-41-arc-wrap-collection-fields-hashmaphashsetvec-inside-structs--depends-on-phase-42).
 
-2. **Phase 40: Transpiler-Emitted Impl Efficiency — RE-EVALUATED, BENEFIT NOT FOUND** — Arc-wrapping landed but re-bench shows zero measured Raft benefit (3,613 vs 3,612 ops/s). Original "+24% RSL / +12% Raft" claims were noise. Disposition decided in [Phase 42.5](#425-phase-40-disposition-separate-from-421424).
+2. **Phase 40: Transpiler-Emitted Impl Efficiency — RE-EVALUATED, BENEFIT NOT FOUND** — Arc-wrapping landed but re-bench shows zero measured Raft benefit (3,613 vs 3,612 ops/s). Original "+24% RSL / +12% Raft" claims were noise. Disposition decided in [Phase 42.5](#425-phase-40-disposition-separate-from-421424). Phase 40's claim for the 7 small protocols remains untested — [Phase 43](#phase-43-enable-throughput-bench-for-epaxos--primarybackup--pbft) adds bench capability for 3 of them (EPaxos, PrimaryBackup, PBFT) to either validate or falsify the claim on protocols we can actually measure.
+
+3. **Phase 43: Enable Throughput Bench for EPaxos / PrimaryBackup / PBFT** — only 2/10 protocols (Raft, RSL) currently benchable. Add a self-driving EPaxos metric output (0.5 day), an IronPrimaryBackupClient (0.5 day), and an IronPBFTClient (1 day). Then re-bench HEAD vs c097da0 on all 3 to settle Phase 40's perf disposition for small protocols. See [Phase 43](#phase-43-enable-throughput-bench-for-epaxos--primarybackup--pbft).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -14665,3 +14667,74 @@ Phase 42.5 decides Phase 40's disposition (keep dormant via config — recommend
   pattern; no new ad-hoc paths.
 - Refinement proofs continue to verify (per-PoC: 0 errors with 1-line
   `ensures res@ == arc@.insert(k, v)` on the assume_specification).
+
+---
+
+## Phase 43: Enable Throughput Bench for EPaxos / PrimaryBackup / PBFT
+
+### Motivation
+
+Phase 40 Arc-wrapped 7 small protocols (TwoPhase, Paxos, LeaderElection, ChainReplication, PBFT, VerticalPaxos, EPaxos, PrimaryBackup) and claimed +24% RSL / +12% Raft. Re-bench (Phase 42.1.a) showed Raft +0% measured; RSL +82% came from Phase 41, not Phase 40. The 8 small protocols' Phase 40 benefit is **unknown** because none of them have bench clients.
+
+Of the 8, only 3 have a meaningful "throughput" model:
+- **EPaxos** — self-driving via `try_propose` + `propose_counter`, no client needed.
+- **PrimaryBackup** — has `ClientRequest{value}` + `Ack`; client like IronRaftClient applies.
+- **PBFT** — has `ClientRequest{digest}` + quorum reply; client like IronRaftClient with f+1 reply collection.
+
+The other 5 are inherently single-shot or have no work model (Paxos / TwoPhase / VerticalPaxos are single-decree/single-txn per cycle; LeaderElection just elects). They cannot produce a throughput number without spec-level redesign, which is out of scope.
+
+### Goal
+
+Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, PrimaryBackup, PBFT on HEAD vs pre-Phase-40 (c097da0), so the Phase 40 Arc-wrap perf claim can be validated or falsified for these protocols.
+
+### Plan
+
+#### 43.1 EPaxos — self-driving, no client (effort: ~0.5 day)
+
+- [ ] **43.1.a**: Inspect EPaxos host's `committed_count` field. Add a periodic stdout flush (e.g., every 1s) that prints `[METRICS] committed=<N> elapsed=<S>` from the server. Or instrument the C# `IronProtocolServer` wrapper to read committed count via existing FFI.
+- [ ] **43.1.b**: Run 3-server EPaxos cluster on 127.0.0.1:4001-4003 for 30s, parse `[METRICS]` lines, compute `committed / elapsed`. No client process needed.
+- [ ] **43.1.c**: Bench on HEAD + on c097da0 baseline (with rebuilt liblib.so per machine). Report delta. Confirms whether Phase 40 Arc-wrap on `CState` helps EPaxos.
+
+#### 43.2 PrimaryBackup — write IronPrimaryBackupClient (effort: ~0.5 day)
+
+- [ ] **43.2.a**: Add `csharp/IronPrimaryBackupClient/` project copying the `IronRaftClient` structure. Adapt wire format:
+  - Send: `[TAG=ClientRequest][client_id][seq_no][value]` per `PrimaryBackupMessage::ClientRequest`'s serialization.
+  - Recv: `[TAG=Ack][client_id][seq_no]` per `PrimaryBackupMessage::Ack`'s serialization.
+  - Always send to primary (server 0).
+- [ ] **43.2.b**: Wire CLI args: `nthreads`, `duration`, `ip1`/`port1` for primary. Output `throughput <N> ops/sec | avg latency ms <X>` matching the Raft client format.
+- [ ] **43.2.c**: Add `bin/IronPrimaryBackupClient.dll` to SCons build (or wrap with `dotnet run`).
+- [ ] **43.2.d**: Bench HEAD vs c097da0. Report delta.
+
+#### 43.3 PBFT — write IronPBFTClient (effort: ~1 day, more complex than PB)
+
+- [ ] **43.3.a**: Copy `IronPrimaryBackupClient` as base. Adapt wire format:
+  - Send: `[TAG=ClientRequest][client_id][seq_no][digest]` per `PBFTMessage::ClientRequest`.
+  - Recv: PBFT reply (need to inspect actual reply message; spec has `ClientRequest` but may have implicit reply via `Commit` broadcast).
+- [ ] **43.3.b**: Implement f+1 reply collection (PBFT requires waiting for at least f+1 matching replies before confirming commit). For n=3, f=1, so 2 matching replies needed.
+- [ ] **43.3.c**: Same args + output format as PrimaryBackup client.
+- [ ] **43.3.d**: Bench HEAD vs c097da0.
+
+#### 43.4 Synthesize Phase 40 verdict for small protocols
+
+- [ ] **43.4.a**: Combine results from 43.1.c, 43.2.d, 43.3.d. Decision table:
+  - For each protocol: HEAD vs c097da0 throughput delta + latency delta.
+  - If any protocol shows ≥10% benefit attributable to Phase 40 Arc-wrap, keep Phase 40 Arc codegen active for it (re-evaluate 42.5.a disposition).
+  - If all 3 show ≤5% delta, Phase 40's struct-level Arc has zero practical value on protocols we can bench — Phase 42.5.b (disable via TOML) becomes attractive.
+- [ ] **43.4.b**: Update README's perf table and EFFICIENT_EMIT.md with the small-protocol bench numbers.
+- [ ] **43.4.c**: Mark Phase 40 as either "Validated experimental" (some protocol benefits) or "Confirmed no benefit, disable via TOML" (all protocols show no delta).
+
+### Out of scope
+
+- **Paxos / TwoPhase / VerticalPaxos**: single-decree / single-txn per cycle. Throughput would require spec-level redesign to start fresh instances repeatedly — that's protocol engineering, not bench engineering.
+- **LeaderElection**: pure leader election, no work model. "elections per second" is meaningless.
+- **ChainReplication**: has 2 verification errors (Phase 42.1.a finding). Fix verify first; bench separately.
+
+### Estimated total effort
+
+~2 days (0.5 + 0.5 + 1) for client work + bench runs. Output is 3 protocols' throughput numbers + a clean Phase 40 verdict.
+
+### Risk
+
+- **R1**: PBFT reply format may not match expectations — spec might use Commit broadcast as implicit reply. Mitigation: read `src/protocol/PBFT/` spec carefully + inspect host.rs send sites before writing client.
+- **R2**: PrimaryBackup `Ack` may be ambiguous (which client/seqno was Ack'd?). Mitigation: confirm Ack carries client_id+seq_no; if not, that's a protocol gap to flag rather than work around.
+- **R3**: EPaxos `committed_count` may not be the right metric (e.g., counts proposals not commits). Mitigation: verify field semantics against spec before reporting.
