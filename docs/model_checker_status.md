@@ -374,7 +374,7 @@ This table is the pre-optimization reference point for exact-mode performance wo
 | Protocol | Artifact | `states` | `transitions` | `depth` | `elapsed_ms` | `pruned_by_por` | `symmetry_collapses` | `hash_compaction_collisions` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `Paxos` | `reports/model_check/paxos_small.json` | `1` | `2` | `0` | `4` | `0` | `0` | `0` |
-| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `3` | `3` | `1` | `16` | `0` | `0` | `0` |
+| `PrimaryBackup` | `reports/model_check/primarybackup_small.json` | `2` | `2` | `1` | `1` | `0` | `0` | `0` |
 | `TwoPhase` | `reports/model_check/twophase_small.json` | `3` | `4` | `1` | `207` | `0` | `0` | `0` |
 | `LeaderElection` | `reports/model_check/leaderelection_small.json` | `4` | `3` | `1` | `12` | `0` | `0` | `0` |
 

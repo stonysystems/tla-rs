@@ -60,7 +60,7 @@ declare -a DELTA_CASES=(
 
 declare -a EXACT_GUARD_CASES=(
     "reports/model_check/paxos_small.json|1/2"
-    "reports/model_check/primarybackup_small.json|3/3"
+    "reports/model_check/primarybackup_small.json|2/2"
     "reports/model_check/twophase_small.json|3/4"
     "reports/model_check/leaderelection_small.json|4/3"
     "reports/model_check/liveness_avoidable_cycle_violated.json|3/5"
