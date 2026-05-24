@@ -194,7 +194,7 @@ ensures
             let r = (s.clone_up_to_view(), sent_packets);
             proof {
                 // Bridge exec HashMap.contains_key → spec abstractify_creplycache.contains_key
-                lemma_creplycache_get(s.executor.reply_cache, received_packet.src);
+                lemma_creplycache_get(&s.executor.reply_cache, received_packet.src);
                 assert(s@.executor.reply_cache.contains_key(received_packet@.src));
                 // Bridge seqno comparison through CReply View
                 assert(s.executor.reply_cache@[received_packet.src]@.seqno == cached_seqno as int);
@@ -232,7 +232,7 @@ ensures
             // Show spec if-condition is false to take else branch
             if has_src {
                 // seqno_req > cached_seqno from exec flow (inner if returned)
-                lemma_creplycache_get(s.executor.reply_cache, received_packet.src);
+                lemma_creplycache_get(&s.executor.reply_cache, received_packet.src);
                 assert(s@.executor.reply_cache.contains_key(received_packet@.src));
                 // But seqno_req > cached value, so spec's <= conjunct is false
             } else {

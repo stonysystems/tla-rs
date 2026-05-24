@@ -26,6 +26,7 @@ use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::{AppInitialize, AppState};
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
@@ -98,7 +99,7 @@ ensures
 
 
 /// Connects HashMap.get(&key) through abstractify_creplycache to spec Map[key@].
-pub proof fn lemma_creplycache_get(cache: CReplyCache, key: EndPoint)
+pub proof fn lemma_creplycache_get(cache: &CReplyCache, key: EndPoint)
     requires
         creplycache_is_valid(&cache),
         cache@.contains_key(key),
@@ -134,7 +135,7 @@ ensures
         },
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
-        reply_cache: HashMap::new(),
+        reply_cache: Arc::new(HashMap::new()),
     }; proof {
         lemma_empty_set_map();
         // Prove abstractify_creplycache on empty HashMap yields empty Map
@@ -205,7 +206,7 @@ ensures
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
         reply_cache: match &m {
-            CMessage::CMessageAppStateSupply { reply_cache, .. } => clone_reply_cache(reply_cache),
+            CMessage::CMessageAppStateSupply { reply_cache, .. } => Arc::new(clone_reply_cache(reply_cache)),
             _  => {
                 proof {
                     assert(false);
@@ -354,13 +355,13 @@ ensures
     proof {
         broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
         assert(r_opt.is_some());
-        lemma_creplycache_get(s.reply_cache, inp.src);
+        lemma_creplycache_get(&s.reply_cache, inp.src);
     }
     let constants_valid = s.constants.CReplicaConstantsValid();
     if r_opt.is_some() && seqno_req == r_opt.unwrap().seqno && constants_valid {
         let r = r_opt.unwrap();
         proof {
-            lemma_creplycache_get(s.reply_cache, inp.src);
+            lemma_creplycache_get(&s.reply_cache, inp.src);
             assert(r@ == ss.reply_cache[sp.src]);
             assert(constants_valid == LReplicaConstantsValid(ss.constants));
         }
@@ -528,7 +529,7 @@ ensures
         ops_complete: (s.ops_complete + 1),
         max_bal_reflected: new_max_bal,
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {},
-        reply_cache: s_reply_cache,
+        reply_cache: Arc::new(s_reply_cache),
     };
 
     let result = (result_executor, sent_packets);

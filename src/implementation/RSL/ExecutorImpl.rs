@@ -17,20 +17,20 @@ use crate::protocol::RSL::message::*;
 use crate::protocol::RSL::environment::RslPacket;
 use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::AbstractEndPoint;
+use std::sync::Arc;
 use vstd::prelude::*;
 // Generated wrappers live in `crate::generated::RSL::executor_gen`.
 // This module owns CExecutor/CIncompleteBatchTimer type infrastructure
 // and CExecutorExecute, which is still called from ReplicaImpl.rs.
 
 verus! {
-#[derive(Clone)]
 pub struct CExecutor {
     pub constants: CReplicaConstants,
     pub app: CAppState,
     pub ops_complete: u64,
     pub max_bal_reflected: CBallot,
     pub next_op_to_execute: COutstandingOperation,
-    pub reply_cache: CReplyCache,
+    pub reply_cache: Arc<CReplyCache>,
 }
 
 impl CExecutor {
@@ -72,8 +72,7 @@ impl CExecutor {
     {
         let constants_clone = self.constants.clone();
         // Clone impl ensures: constants_clone == *self.constants, constants_clone@ == self.constants@
-        let reply_cache_clone = clone_creply_cache_up_to_view(&self.reply_cache);
-        // ensures: reply_cache_clone@ == self.reply_cache@
+        let reply_cache_clone = clone_arc_reply_cache(&self.reply_cache);
         let next_op_clone = match &self.next_op_to_execute {
             COutstandingOperation::COutstandingOpKnown{v, bal} => {
                 let v_clone = clone_request_batch_up_to_view(v);
@@ -93,6 +92,25 @@ impl CExecutor {
             reply_cache: reply_cache_clone,
         }
     }
+}
+
+impl Clone for CExecutor {
+    fn clone(&self) -> (result: Self)
+    ensures
+        result@ == self@,
+        result.valid() == self.valid(),
+    {
+        self.clone_up_to_view()
+    }
+}
+
+/// Arc-backed shallow clone for reply_cache. Refcount bump only.
+#[verifier::external_body]
+pub fn clone_arc_reply_cache(v: &Arc<CReplyCache>) -> (res: Arc<CReplyCache>)
+    ensures
+        res@ == v@,
+{
+    Arc::clone(v)
 }
 
 impl View for CExecutor {
@@ -241,7 +259,7 @@ impl CExecutor{
                 self.ops_complete = self.ops_complete + 1;
                 self.max_bal_reflected = new_max_bal_reflected;
                 self.next_op_to_execute = COutstandingOperation::COutstandingOpUnknown{};
-                self.reply_cache = CUpdateNewCache(&self.reply_cache, &replies);
+                self.reply_cache = Arc::new(CUpdateNewCache(&self.reply_cache, &replies));
                 let pkt_vec = CGetPacketsFromReplies(
                     &self.constants.all.config.replica_ids[self.constants.my_index as usize],
                     &batch,

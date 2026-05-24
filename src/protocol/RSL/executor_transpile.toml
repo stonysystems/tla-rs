@@ -1,5 +1,8 @@
 # Configuration for transpiling RSL executor spec to implementation
 
+# Arc-wrap collection fields for O(1) clone on unchanged paths
+arc_wrap_fields = { CExecutor = ["reply_cache"] }
+
 # Primitive types that don't need valid() predicates
 # OperationNumber is remapped to u64 which is a primitive
 primitive_types = [
