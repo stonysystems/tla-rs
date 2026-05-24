@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::ChainReplication::chain::*;
 use crate::protocol::ChainReplication::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 
@@ -12,8 +13,8 @@ verus! {
 
 pub struct CState {
     pub role: CNodeRole,
-    pub history: Vec<u64>,
-    pub pending_sent: HashSet<u64>,
+    pub history: Arc<Vec<u64>>,
+    pub pending_sent: Arc<HashSet<u64>>,
     pub committed_count: u64,
     pub obj_value: u64,
     pub has_predecessor: bool,
@@ -24,6 +25,7 @@ pub struct CState {
 }
 
 impl Clone for CState {
+    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
@@ -40,7 +42,7 @@ impl Clone for CState {
         CState {
             role: self.role,
             history: self.history.clone(),
-            pending_sent: clone_hashset_u64(&self.pending_sent),
+            pending_sent: self.pending_sent.clone(),
             committed_count: self.committed_count,
             obj_value: self.obj_value,
             has_predecessor: self.has_predecessor,

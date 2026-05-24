@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::EPaxos::epaxos::*;
 use crate::protocol::EPaxos::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -20,13 +21,14 @@ pub struct CState {
     pub is_leader: bool,
     pub committed_count: u64,
     pub executed_count: u64,
-    pub preaccept_senders: HashSet<u64>,
-    pub accept_senders: HashSet<u64>,
+    pub preaccept_senders: Arc<HashSet<u64>>,
+    pub accept_senders: Arc<HashSet<u64>>,
     pub has_conflict: bool,
     pub max_resp_seq: u64,
 }
 
 impl Clone for CState {
+    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
@@ -51,8 +53,8 @@ impl Clone for CState {
             is_leader: self.is_leader,
             committed_count: self.committed_count,
             executed_count: self.executed_count,
-            preaccept_senders: clone_hashset_u64(&self.preaccept_senders),
-            accept_senders: clone_hashset_u64(&self.accept_senders),
+            preaccept_senders: self.preaccept_senders.clone(),
+            accept_senders: self.accept_senders.clone(),
             has_conflict: self.has_conflict,
             max_resp_seq: self.max_resp_seq,
         }

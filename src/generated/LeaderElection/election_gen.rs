@@ -6,6 +6,7 @@ use crate::generated::LeaderElection::types_gen::*;
 use crate::protocol::LeaderElection::election::*;
 use crate::protocol::LeaderElection::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -70,10 +71,10 @@ ensures
     LInit(result@, c@),
 {
     let result = CState {
-        electing: HashSet::new(),
+        electing: Arc::new(HashSet::new()),
         has_leader: false,
         leader: 0u64,
-        alive: clone_hashset_u64(&c.nodes),
+        alive: Arc::new(clone_hashset_u64(&c.nodes)),
         has_highest: false,
         highest_heard: 0u64,
         waiting_answer: false,
@@ -101,16 +102,16 @@ ensures
         let mut __electing = clone_hashset_u64(&s.electing);
         __electing.insert(node.clone());
         (CState {
-    electing: __electing,
+    electing: Arc::new(__electing),
     waiting_answer: true,
-    waiting_node: *node,
+    waiting_node: (*node),
     has_leader: s.has_leader.clone(),
     leader: s.leader.clone(),
-    alive: clone_hashset_u64(&s.alive),
+    alive: s.alive.clone(),
     has_highest: s.has_highest.clone(),
     highest_heard: s.highest_heard.clone(),
 }, vec![CElectionMessage::Election {
-    sender: *node,
+    sender: (*node),
 }])
     };
     proof {
@@ -134,16 +135,16 @@ ensures
         let mut __electing = clone_hashset_u64(&s.electing);
         __electing.insert(node.clone());
         (CState {
-    electing: __electing,
+    electing: Arc::new(__electing),
     has_leader: false,
     leader: 0u64,
     waiting_answer: true,
-    waiting_node: *node,
-    alive: clone_hashset_u64(&s.alive),
+    waiting_node: (*node),
+    alive: s.alive.clone(),
     has_highest: s.has_highest.clone(),
     highest_heard: s.highest_heard.clone(),
 }, vec![CElectionMessage::Election {
-    sender: *node,
+    sender: (*node),
 }])
     };
     proof {
@@ -168,20 +169,20 @@ ensures
         let mut __electing = clone_hashset_u64(&s.electing);
         __electing.insert(node.clone());
         (CState {
-    electing: __electing,
+    electing: Arc::new(__electing),
     has_highest: true,
-    highest_heard: if (!s.has_highest || (*node > s.highest_heard)) {
-        *node
+    highest_heard: if (!s.has_highest || ((*node) > s.highest_heard)) {
+        (*node)
     } else {
         s.highest_heard.clone()
     },
     has_leader: s.has_leader.clone(),
     leader: s.leader.clone(),
-    alive: clone_hashset_u64(&s.alive),
+    alive: s.alive.clone(),
     waiting_answer: s.waiting_answer.clone(),
     waiting_node: s.waiting_node.clone(),
 }, vec![CElectionMessage::Answer {
-    responder: *node,
+    responder: (*node),
 }])
     };
     proof {
@@ -211,16 +212,16 @@ ensures
         }; (CState {
     waiting_answer: false,
     waiting_node: 0u64,
-    electing: __electing,
+    electing: Arc::new(__electing),
     has_leader: s.has_leader.clone(),
     leader: s.leader.clone(),
-    alive: clone_hashset_u64(&s.alive),
+    alive: s.alive.clone(),
     has_highest: s.has_highest.clone(),
     highest_heard: s.highest_heard.clone(),
 }, vec![]) }
     };
     proof {
-        lemma_set_map_remove_commute(s.electing@, *node);
+        lemma_set_map_remove_commute(s.electing@, (*node));
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
     }
@@ -245,19 +246,19 @@ ensures
         __electing.remove(&node);
         (CState {
     has_leader: true,
-    leader: *node,
-    electing: __electing,
+    leader: (*node),
+    electing: Arc::new(__electing),
     waiting_answer: false,
     waiting_node: 0u64,
-    alive: clone_hashset_u64(&s.alive),
+    alive: s.alive.clone(),
     has_highest: s.has_highest.clone(),
     highest_heard: s.highest_heard.clone(),
 }, vec![CElectionMessage::Coordinator {
-    leader: *node,
+    leader: (*node),
 }])
     };
     proof {
-        lemma_set_map_remove_commute(s.electing@, *node);
+        lemma_set_map_remove_commute(s.electing@, (*node));
         assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
@@ -280,9 +281,9 @@ ensures
             lemma_empty_seq_map();
         }; (CState {
     has_leader: true,
-    leader: *leader,
-    electing: __electing,
-    alive: clone_hashset_u64(&s.alive),
+    leader: (*leader),
+    electing: Arc::new(__electing),
+    alive: s.alive.clone(),
     has_highest: s.has_highest.clone(),
     highest_heard: s.highest_heard.clone(),
     waiting_answer: s.waiting_answer.clone(),
@@ -290,7 +291,7 @@ ensures
 }, vec![]) }
     };
     proof {
-        lemma_set_map_remove_commute(s.electing@, *node);
+        lemma_set_map_remove_commute(s.electing@, (*node));
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
     }
@@ -315,24 +316,24 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    alive: __alive,
-    electing: __electing,
-    has_leader: if (s.has_leader && (s.leader == *node)) {
+    alive: Arc::new(__alive),
+    electing: Arc::new(__electing),
+    has_leader: if (s.has_leader && (s.leader == (*node))) {
         false
     } else {
         s.has_leader.clone()
     },
-    leader: if (s.has_leader && (s.leader == *node)) {
+    leader: if (s.has_leader && (s.leader == (*node))) {
         0u64
     } else {
         s.leader.clone()
     },
-    waiting_answer: if (s.waiting_answer && (s.waiting_node == *node)) {
+    waiting_answer: if (s.waiting_answer && (s.waiting_node == (*node))) {
         false
     } else {
         s.waiting_answer.clone()
     },
-    waiting_node: if (s.waiting_answer && (s.waiting_node == *node)) {
+    waiting_node: if (s.waiting_answer && (s.waiting_node == (*node))) {
         0u64
     } else {
         s.waiting_node.clone()
@@ -342,8 +343,8 @@ ensures
 }, vec![]) }
     };
     proof {
-        lemma_set_map_remove_commute(s.alive@, *node);
-        lemma_set_map_remove_commute(s.electing@, *node);
+        lemma_set_map_remove_commute(s.alive@, (*node));
+        lemma_set_map_remove_commute(s.electing@, (*node));
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
     }

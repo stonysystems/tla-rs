@@ -6,6 +6,7 @@ use crate::generated::VerticalPaxos::types_gen::*;
 use crate::protocol::VerticalPaxos::types::*;
 use crate::protocol::VerticalPaxos::vpaxos::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -54,8 +55,8 @@ ensures
         max_val: 0u64,
         has_voted: false,
         is_active: true,
-        promises_rcvd: HashSet::new(),
-        accepts_rcvd: HashSet::new(),
+        promises_rcvd: Arc::new(HashSet::new()),
+        accepts_rcvd: Arc::new(HashSet::new()),
         committed: false,
         committed_val: 0u64,
         witness_val: 0u64,
@@ -85,8 +86,8 @@ ensures
     has_voted: s.has_voted.clone(),
     config_num: s.config_num.clone(),
     is_active: s.is_active.clone(),
-    promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
-    accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+    promises_rcvd: s.promises_rcvd.clone(),
+    accepts_rcvd: s.accepts_rcvd.clone(),
     committed: s.committed.clone(),
     committed_val: s.committed_val.clone(),
     witness_val: s.witness_val.clone(),
@@ -118,8 +119,8 @@ ensures
     has_voted: s.has_voted.clone(),
     config_num: s.config_num.clone(),
     is_active: s.is_active.clone(),
-    promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
-    accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+    promises_rcvd: s.promises_rcvd.clone(),
+    accepts_rcvd: s.accepts_rcvd.clone(),
     committed: s.committed.clone(),
     committed_val: s.committed_val.clone(),
     witness_val: s.witness_val.clone(),
@@ -153,7 +154,7 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    promises_rcvd: __promises_rcvd,
+    promises_rcvd: Arc::new(__promises_rcvd),
     max_v_bal: if (*promise_v_bal > s.max_v_bal) {
         *promise_v_bal
     } else {
@@ -168,7 +169,7 @@ ensures
     has_voted: s.has_voted.clone(),
     config_num: s.config_num.clone(),
     is_active: s.is_active.clone(),
-    accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+    accepts_rcvd: s.accepts_rcvd.clone(),
     committed: s.committed.clone(),
     committed_val: s.committed_val.clone(),
     witness_val: s.witness_val.clone(),
@@ -202,8 +203,8 @@ ensures
     max_bal: s.max_bal.clone(),
     config_num: s.config_num.clone(),
     is_active: s.is_active.clone(),
-    promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
-    accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+    promises_rcvd: s.promises_rcvd.clone(),
+    accepts_rcvd: s.accepts_rcvd.clone(),
     committed: s.committed.clone(),
     committed_val: s.committed_val.clone(),
     witness_val: s.witness_val.clone(),
@@ -236,14 +237,14 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    accepts_rcvd: __accepts_rcvd,
+    accepts_rcvd: Arc::new(__accepts_rcvd),
     max_bal: s.max_bal.clone(),
     max_v_bal: s.max_v_bal.clone(),
     max_val: s.max_val.clone(),
     has_voted: s.has_voted.clone(),
     config_num: s.config_num.clone(),
     is_active: s.is_active.clone(),
-    promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
+    promises_rcvd: s.promises_rcvd.clone(),
     committed: s.committed.clone(),
     committed_val: s.committed_val.clone(),
     witness_val: s.witness_val.clone(),
@@ -283,8 +284,8 @@ ensures
     has_voted: s.has_voted.clone(),
     config_num: s.config_num.clone(),
     is_active: s.is_active.clone(),
-    promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
-    accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+    promises_rcvd: s.promises_rcvd.clone(),
+    accepts_rcvd: s.accepts_rcvd.clone(),
     witness_val: s.witness_val.clone(),
     has_witness: s.has_witness.clone(),
 }, vec![])
@@ -318,8 +319,8 @@ ensures
     max_val: s.max_val.clone(),
     has_voted: false,
     is_active: true,
-    promises_rcvd: HashSet::new(),
-    accepts_rcvd: HashSet::new(),
+    promises_rcvd: Arc::new(HashSet::new()),
+    accepts_rcvd: Arc::new(HashSet::new()),
     committed: s.committed.clone(),
     committed_val: s.committed_val.clone(),
     witness_val: s.witness_val.clone(),
@@ -361,8 +362,8 @@ ensures
     has_voted: s.has_voted.clone(),
     config_num: s.config_num.clone(),
     is_active: s.is_active.clone(),
-    promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
-    accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+    promises_rcvd: s.promises_rcvd.clone(),
+    accepts_rcvd: s.accepts_rcvd.clone(),
     committed: s.committed.clone(),
     committed_val: s.committed_val.clone(),
 }, vec![])
@@ -389,7 +390,20 @@ ensures
         proof {
             lemma_empty_seq_map();
         }
-        (CState { config_num: *new_config, max_bal: 0u64, max_v_bal: 0u64, max_val: *val, has_voted: false, is_active: true, promises_rcvd: HashSet::new(), accepts_rcvd: HashSet::new(), committed: false, committed_val: 0u64, witness_val: 0u64, has_witness: false, ..s.clone() }, vec![])
+        (CState {
+    config_num: *new_config,
+    max_bal: 0u64,
+    max_v_bal: 0u64,
+    max_val: *val,
+    has_voted: false,
+    is_active: true,
+    promises_rcvd: Arc::new(HashSet::new()),
+    accepts_rcvd: Arc::new(HashSet::new()),
+    committed: false,
+    committed_val: 0u64,
+    witness_val: 0u64,
+    has_witness: false,
+}, vec![])
     };
     proof {
         lemma_empty_set_map();
@@ -420,8 +434,8 @@ ensures
     max_v_bal: s.max_v_bal.clone(),
     max_val: s.max_val.clone(),
     has_voted: s.has_voted.clone(),
-    promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
-    accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+    promises_rcvd: s.promises_rcvd.clone(),
+    accepts_rcvd: s.accepts_rcvd.clone(),
     committed: s.committed.clone(),
     committed_val: s.committed_val.clone(),
     witness_val: s.witness_val.clone(),

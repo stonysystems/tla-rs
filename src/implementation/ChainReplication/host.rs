@@ -11,6 +11,7 @@ use crate::generated::ChainReplication::chain_gen;
 use crate::generated::ChainReplication::types_gen::*;
 use crate::implementation::ChainReplication::message::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /// ChainReplication protocol configuration.
 pub struct ChainConfig {
@@ -498,8 +499,8 @@ impl ProtocolHost for ChainHost {
             // Head node: build initial state directly (CInit requires node_id >= 1)
             let state = CState {
                 role: CNodeRole::Head,
-                history: Vec::new(),
-                pending_sent: HashSet::new(),
+                history: Arc::new(Vec::new()),
+                pending_sent: Arc::new(HashSet::new()),
                 committed_count: 0,
                 obj_value: 0,
                 has_predecessor: false,

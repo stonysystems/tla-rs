@@ -3110,6 +3110,24 @@ impl Translator {
         fields: Vec<(String, ExecExpr)>,
         ctx: &TransformContext,
     ) -> (Vec<ExecExpr>, Vec<(String, ExecExpr)>) {
+        self.extract_set_mutations_from_struct_inner(fields, ctx, None)
+    }
+
+    fn extract_set_mutations_from_struct_arc(
+        &self,
+        fields: Vec<(String, ExecExpr)>,
+        ctx: &TransformContext,
+        struct_name: &str,
+    ) -> (Vec<ExecExpr>, Vec<(String, ExecExpr)>) {
+        self.extract_set_mutations_from_struct_inner(fields, ctx, Some(struct_name))
+    }
+
+    fn extract_set_mutations_from_struct_inner(
+        &self,
+        fields: Vec<(String, ExecExpr)>,
+        ctx: &TransformContext,
+        arc_struct_name: Option<&str>,
+    ) -> (Vec<ExecExpr>, Vec<(String, ExecExpr)>) {
         let mut pre_stmts: Vec<ExecExpr> = Vec::new();
         let mut new_fields: Vec<(String, ExecExpr)> = Vec::new();
         let mut has_mutations = false;
@@ -3123,6 +3141,11 @@ impl Translator {
         }
 
         for (fname, fexpr) in fields {
+            // Check if this field is Arc-wrapped (for mutation clone strategy)
+            let is_arc_field = arc_struct_name
+                .and_then(|sn| self.config.arc_wrap_fields.get(sn))
+                .map_or(false, |fields| fields.contains(&fname));
+
             if let Some((recv, method, args)) = Self::extract_mutation_info(&fexpr) {
                 // This field is `receiver.insert(val)`, `receiver.remove(val)`, or `receiver.push(val)`
                 // Generate: let mut __fname = <clone>(receiver); __fname.method(args);
@@ -3132,15 +3155,36 @@ impl Translator {
                 // - struct_vec_fields (push): use clone_<field>(&recv)
                 // - vec_fields (insert on HashMap): use recv.clone()
                 // - collection_fields (insert/remove on HashSet): use clone_hashset(&recv)
+                //
+                // When the field is Arc-wrapped, Vec/struct-vec clones need (*recv).clone()
+                // to get the inner value (Arc::clone would give Arc<Vec>, not Vec).
+                // HashSet/HashMap clone functions accept &Arc<T> via deref coercion.
                 let clone_call = if self.is_struct_vec_field(&fname) {
-                    Self::make_ref_call(format!("clone_{}", fname), recv)
+                    if is_arc_field {
+                        // Arc-wrapped struct vec: (*s.field).clone() to deep-clone inner Vec
+                        ExecExpr::Clone(Box::new(ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: Box::new(recv),
+                        }))
+                    } else {
+                        Self::make_ref_call(format!("clone_{}", fname), recv)
+                    }
                 } else if self.is_map_field(&fname) {
                     let prefix = self.get_map_field_prefix(&fname).unwrap().to_string();
                     Self::make_ref_call(format!("clone_{}", prefix), recv)
                 } else if self.is_vec_field(&fname) {
-                    ExecExpr::Clone(Box::new(recv))
+                    if is_arc_field {
+                        // Arc-wrapped vec: (*s.field).clone() to deep-clone inner Vec
+                        ExecExpr::Clone(Box::new(ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: Box::new(recv),
+                        }))
+                    } else {
+                        ExecExpr::Clone(Box::new(recv))
+                    }
                 } else {
                     // HashSet: clone_hashset_u64(&receiver) or clone_hashset(&receiver)
+                    // Arc-wrapped fields work via deref coercion (&Arc<HashSet> → &HashSet)
                     Self::make_ref_call(self.hashset_clone_fn().to_string(), recv)
                 };
 
@@ -3172,12 +3216,26 @@ impl Translator {
                 let tmp_name = format!("__{}", fname);
 
                 let clone_call = if self.is_struct_vec_field(&fname) {
-                    Self::make_ref_call(format!("clone_{}", fname), recv)
+                    if is_arc_field {
+                        ExecExpr::Clone(Box::new(ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: Box::new(recv),
+                        }))
+                    } else {
+                        Self::make_ref_call(format!("clone_{}", fname), recv)
+                    }
                 } else if self.is_map_field(&fname) {
                     let prefix = self.get_map_field_prefix(&fname).unwrap().to_string();
                     Self::make_ref_call(format!("clone_{}", prefix), recv)
                 } else if self.is_vec_field(&fname) {
-                    ExecExpr::Clone(Box::new(recv))
+                    if is_arc_field {
+                        ExecExpr::Clone(Box::new(ExecExpr::Unary {
+                            op: "*".to_string(),
+                            expr: Box::new(recv),
+                        }))
+                    } else {
+                        ExecExpr::Clone(Box::new(recv))
+                    }
                 } else {
                     Self::make_ref_call(self.hashset_clone_fn().to_string(), recv)
                 };
@@ -3550,6 +3608,7 @@ impl Translator {
         struct_name: &str,
         fields: Vec<(String, ExecExpr)>,
     ) -> Vec<(String, ExecExpr)> {
+
         let arc_fields = match self.config.arc_wrap_fields.get(struct_name) {
             Some(f) => f,
             None => return fields,
@@ -3558,10 +3617,12 @@ impl Translator {
         fields
             .into_iter()
             .map(|(fname, fexpr)| {
+
                 if !arc_fields.contains(&fname) {
                     // Not an Arc-wrapped field — leave as-is (scalar copy)
                     return (fname, fexpr);
                 }
+
 
                 // Check if this is an unchanged field (clone/clone_up_to_view of input).
                 // With Arc wrapping, unchanged fields should use Arc::clone (O(1))
@@ -3576,8 +3637,27 @@ impl Translator {
                             ExecExpr::Clone(Box::new(*receiver.clone())),
                         )
                     }
-                    // s.field.clone() → already correct (Arc::clone)
-                    ExecExpr::Clone(_) => (fname, fexpr),
+                    // s.field.clone() — check if source is an Arc-wrapped field.
+                    // If cloning from a field whose name is in arc_wrap_fields,
+                    // it's Arc::clone (O(1)), leave as-is.
+                    // Otherwise (e.g., c.nodes.clone()), wrap in Arc::new.
+                    ExecExpr::Clone(inner) => {
+                        let source_is_arc = match inner.as_ref() {
+                            ExecExpr::Field(_, ref source_field) => {
+                                arc_fields.contains(source_field)
+                            }
+                            _ => false,
+                        };
+
+                        if source_is_arc {
+                            (fname, fexpr)
+                        } else {
+                            (fname, ExecExpr::Call {
+                                func: "Arc::new".to_string(),
+                                args: vec![fexpr],
+                            })
+                        }
+                    }
                     // clone_hashset(&s.field) / clone_hashmap(&s.field) — unchanged field
                     // clone. With Arc wrapping, use s.field.clone() (Arc::clone, O(1))
                     // instead of deep-cloning + Arc::new().
@@ -3587,9 +3667,24 @@ impl Translator {
                             && args.len() == 1
                             && Self::is_ref_to_field_access(&args[0]) =>
                     {
-                        // Extract s.field from &s.field
+                        // Check if the source field is also Arc-wrapped.
+                        // If so (e.g., s.alive → s.alive), use Arc::clone.
+                        // If not (e.g., c.nodes → alive), wrap in Arc::new.
                         let inner = Self::strip_ref(&args[0]);
-                        (fname, ExecExpr::Clone(Box::new(inner)))
+                        let source_is_arc = match &inner {
+                            ExecExpr::Field(_, ref source_field) => {
+                                arc_fields.contains(source_field)
+                            }
+                            _ => false,
+                        };
+                        if source_is_arc {
+                            (fname, ExecExpr::Clone(Box::new(inner)))
+                        } else {
+                            (fname, ExecExpr::Call {
+                                func: "Arc::new".to_string(),
+                                args: vec![fexpr],
+                            })
+                        }
                     }
                     // New value (local variable, function call result, etc.) → Arc::new(value)
                     _ => (
@@ -9779,8 +9874,15 @@ impl Translator {
                         .collect();
 
                     // Post-process: extract HashSet mutations from struct fields
-                    let (pre_stmts, new_fields) =
-                        self.extract_set_mutations_from_struct(translated_fields?, ctx);
+                    let is_arc_wrapped =
+                        self.config.arc_wrap_fields.contains_key(&exec_name);
+                    let translated_fields = translated_fields?;
+                    let (pre_stmts, new_fields) = if is_arc_wrapped {
+                        self.extract_set_mutations_from_struct_arc(translated_fields, ctx, &exec_name)
+                    } else {
+                        self.extract_set_mutations_from_struct(translated_fields, ctx)
+                    };
+                    let new_fields = self.arc_wrap_struct_fields(&exec_name, new_fields);
 
                     let struct_expr = ExecExpr::Struct {
                         name: exec_name,
@@ -12444,9 +12546,13 @@ impl Translator {
                 let is_arc_wrapped =
                     self.config.arc_wrap_fields.contains_key(&struct_name);
 
+
                 if has_mutations {
-                    let (pre_stmts, new_fields) =
-                        self.extract_set_mutations_from_struct(translated_fields, ctx);
+                    let (pre_stmts, new_fields) = if is_arc_wrapped {
+                        self.extract_set_mutations_from_struct_arc(translated_fields, ctx, &struct_name)
+                    } else {
+                        self.extract_set_mutations_from_struct(translated_fields, ctx)
+                    };
                     let new_fields = self.arc_wrap_struct_fields(&struct_name, new_fields);
                     let struct_expr = ExecExpr::Struct {
                         name: struct_name,
@@ -12462,6 +12568,7 @@ impl Translator {
                 } else if is_arc_wrapped {
                     // Arc-wrapped: always use explicit Struct with Arc wrapping.
                     // First clone input field accesses, then apply Arc wrapping.
+
                     let cloned_fields: Vec<_> = translated_fields
                         .into_iter()
                         .map(|(fname, fexpr)| {
@@ -12591,8 +12698,11 @@ impl Translator {
                                     self.config.arc_wrap_fields.contains_key(&exec_name);
 
                                 if has_mutations {
-                                    let (pre_stmts, new_fields) = self
-                                        .extract_set_mutations_from_struct(translated_fields, ctx);
+                                    let (pre_stmts, new_fields) = if is_arc_wrapped2 {
+                                        self.extract_set_mutations_from_struct_arc(translated_fields, ctx, &exec_name)
+                                    } else {
+                                        self.extract_set_mutations_from_struct(translated_fields, ctx)
+                                    };
                                     let new_fields =
                                         self.arc_wrap_struct_fields(&exec_name, new_fields);
                                     let struct_expr = ExecExpr::Struct {

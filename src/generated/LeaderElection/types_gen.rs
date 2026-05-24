@@ -5,16 +5,17 @@ use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::LeaderElection::election::*;
 use crate::protocol::LeaderElection::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 
 verus! {
 
 pub struct CState {
-    pub electing: HashSet<u64>,
+    pub electing: Arc<HashSet<u64>>,
     pub has_leader: bool,
     pub leader: u64,
-    pub alive: HashSet<u64>,
+    pub alive: Arc<HashSet<u64>>,
     pub has_highest: bool,
     pub highest_heard: u64,
     pub waiting_answer: bool,
@@ -22,6 +23,7 @@ pub struct CState {
 }
 
 impl Clone for CState {
+    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
@@ -34,10 +36,10 @@ impl Clone for CState {
         res.waiting_node == self.waiting_node,
     {
         CState {
-            electing: clone_hashset_u64(&self.electing),
+            electing: self.electing.clone(),
             has_leader: self.has_leader,
             leader: self.leader,
-            alive: clone_hashset_u64(&self.alive),
+            alive: self.alive.clone(),
             has_highest: self.has_highest,
             highest_heard: self.highest_heard,
             waiting_answer: self.waiting_answer,

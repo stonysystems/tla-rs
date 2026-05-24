@@ -6,6 +6,7 @@ use crate::generated::TwoPhase::types_gen::*;
 use crate::protocol::TwoPhase::twophase::*;
 use crate::protocol::TwoPhase::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -46,10 +47,10 @@ ensures
     LInit(result@, c@),
 {
     let result = CState {
-        tm_prepared: HashSet::new(),
-        rm_prepared: HashSet::new(),
-        rm_committed: HashSet::new(),
-        rm_aborted: HashSet::new(),
+        tm_prepared: Arc::new(HashSet::new()),
+        rm_prepared: Arc::new(HashSet::new()),
+        rm_committed: Arc::new(HashSet::new()),
+        rm_aborted: Arc::new(HashSet::new()),
         tm_state: CTMState::Init,
     };
     proof {
@@ -70,10 +71,10 @@ ensures
 {
     let result = (CState {
     tm_state: s.tm_state.clone(),
-    tm_prepared: clone_hashset_u64(&s.tm_prepared),
-    rm_prepared: clone_hashset_u64(&s.rm_prepared),
-    rm_committed: clone_hashset_u64(&s.rm_committed),
-    rm_aborted: clone_hashset_u64(&s.rm_aborted),
+    tm_prepared: s.tm_prepared.clone(),
+    rm_prepared: s.rm_prepared.clone(),
+    rm_committed: s.rm_committed.clone(),
+    rm_aborted: s.rm_aborted.clone(),
 }, vec![CTPCMessage::Prepare]);
     proof {
         assert(result.1@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty().push(result.1@[0]@));
@@ -98,12 +99,12 @@ ensures
         __rm_prepared.insert(rm.clone());
         (CState {
     tm_state: s.tm_state.clone(),
-    tm_prepared: clone_hashset_u64(&s.tm_prepared),
-    rm_prepared: __rm_prepared,
-    rm_committed: clone_hashset_u64(&s.rm_committed),
-    rm_aborted: clone_hashset_u64(&s.rm_aborted),
+    tm_prepared: s.tm_prepared.clone(),
+    rm_prepared: Arc::new(__rm_prepared),
+    rm_committed: s.rm_committed.clone(),
+    rm_aborted: s.rm_aborted.clone(),
 }, vec![CTPCMessage::PreparedVote {
-    rm: *rm,
+    rm: (*rm),
 }])
     };
     proof {
@@ -133,10 +134,10 @@ ensures
             lemma_empty_seq_map();
         }; (CState {
     tm_state: s.tm_state.clone(),
-    tm_prepared: clone_hashset_u64(&s.tm_prepared),
-    rm_prepared: clone_hashset_u64(&s.rm_prepared),
-    rm_committed: clone_hashset_u64(&s.rm_committed),
-    rm_aborted: __rm_aborted,
+    tm_prepared: s.tm_prepared.clone(),
+    rm_prepared: s.rm_prepared.clone(),
+    rm_committed: s.rm_committed.clone(),
+    rm_aborted: Arc::new(__rm_aborted),
 }, vec![]) }
     };
     proof {
@@ -164,10 +165,10 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    tm_prepared: __tm_prepared,
-    rm_prepared: clone_hashset_u64(&s.rm_prepared),
-    rm_committed: clone_hashset_u64(&s.rm_committed),
-    rm_aborted: clone_hashset_u64(&s.rm_aborted),
+    tm_prepared: Arc::new(__tm_prepared),
+    rm_prepared: s.rm_prepared.clone(),
+    rm_committed: s.rm_committed.clone(),
+    rm_aborted: s.rm_aborted.clone(),
     tm_state: CTMState::Init,
 }, vec![]) }
     };
@@ -191,10 +192,10 @@ ensures
     LTMSendCommit(s@, result.0@, c@, result.1@.map(|i, p: CTPCMessage| p@)),
 {
     let result = (CState {
-    tm_prepared: clone_hashset_u64(&s.tm_prepared),
-    rm_prepared: clone_hashset_u64(&s.rm_prepared),
-    rm_committed: clone_hashset_u64(&s.rm_committed),
-    rm_aborted: clone_hashset_u64(&s.rm_aborted),
+    tm_prepared: s.tm_prepared.clone(),
+    rm_prepared: s.rm_prepared.clone(),
+    rm_committed: s.rm_committed.clone(),
+    rm_aborted: s.rm_aborted.clone(),
     tm_state: CTMState::Committed,
 }, vec![CTPCMessage::Commit]);
     proof {
@@ -214,10 +215,10 @@ ensures
     LTMSendAbort(s@, result.0@, c@, result.1@.map(|i, p: CTPCMessage| p@)),
 {
     let result = (CState {
-    tm_prepared: clone_hashset_u64(&s.tm_prepared),
-    rm_prepared: clone_hashset_u64(&s.rm_prepared),
-    rm_committed: clone_hashset_u64(&s.rm_committed),
-    rm_aborted: clone_hashset_u64(&s.rm_aborted),
+    tm_prepared: s.tm_prepared.clone(),
+    rm_prepared: s.rm_prepared.clone(),
+    rm_committed: s.rm_committed.clone(),
+    rm_aborted: s.rm_aborted.clone(),
     tm_state: CTMState::Aborted,
 }, vec![CTPCMessage::Abort]);
     proof {
@@ -245,10 +246,10 @@ ensures
             lemma_empty_seq_map();
         }; (CState {
     tm_state: s.tm_state.clone(),
-    tm_prepared: clone_hashset_u64(&s.tm_prepared),
-    rm_prepared: clone_hashset_u64(&s.rm_prepared),
-    rm_committed: __rm_committed,
-    rm_aborted: clone_hashset_u64(&s.rm_aborted),
+    tm_prepared: s.tm_prepared.clone(),
+    rm_prepared: s.rm_prepared.clone(),
+    rm_committed: Arc::new(__rm_committed),
+    rm_aborted: s.rm_aborted.clone(),
 }, vec![]) }
     };
     proof {
@@ -278,10 +279,10 @@ ensures
             lemma_empty_seq_map();
         }; (CState {
     tm_state: s.tm_state.clone(),
-    tm_prepared: clone_hashset_u64(&s.tm_prepared),
-    rm_prepared: clone_hashset_u64(&s.rm_prepared),
-    rm_committed: clone_hashset_u64(&s.rm_committed),
-    rm_aborted: __rm_aborted,
+    tm_prepared: s.tm_prepared.clone(),
+    rm_prepared: s.rm_prepared.clone(),
+    rm_committed: s.rm_committed.clone(),
+    rm_aborted: Arc::new(__rm_aborted),
 }, vec![]) }
     };
     proof {

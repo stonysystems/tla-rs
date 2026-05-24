@@ -509,8 +509,15 @@ impl Printer {
             }
 
             ExecExpr::Unary { op, expr } => {
-                self.write(op);
-                self.print_expr(expr);
+                if op == "*" {
+                    // Deref needs parens when used as a receiver: (*x).method()
+                    self.write("(*");
+                    self.print_expr(expr);
+                    self.write(")");
+                } else {
+                    self.write(op);
+                    self.print_expr(expr);
+                }
             }
 
             ExecExpr::Range { start, end } => {

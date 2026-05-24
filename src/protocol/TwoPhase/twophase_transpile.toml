@@ -5,6 +5,13 @@ skip_functions = [
     "LNext",
 ]
 
+# Arc-wrap non-scalar fields of CState for O(1) clone (refcount bump)
+arc_wrap_types = ["CState"]
+
+# Fields of CState that are Arc-wrapped (for translator struct construction)
+[arc_wrap_fields]
+CState = ["tm_prepared", "rm_prepared", "rm_committed", "rm_aborted"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

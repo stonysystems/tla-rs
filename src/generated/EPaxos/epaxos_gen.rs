@@ -6,6 +6,7 @@ use crate::generated::EPaxos::types_gen::*;
 use crate::protocol::EPaxos::epaxos::*;
 use crate::protocol::EPaxos::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -56,8 +57,8 @@ ensures
         is_leader: false,
         committed_count: 0u64,
         executed_count: 0u64,
-        preaccept_senders: HashSet::new(),
-        accept_senders: HashSet::new(),
+        preaccept_senders: Arc::new(HashSet::new()),
+        accept_senders: Arc::new(HashSet::new()),
         has_conflict: false,
         max_resp_seq: 0u64,
         phase: CInstancePhase::Empty,
@@ -90,8 +91,8 @@ ensures
     is_leader: true,
     committed_count: s.committed_count.clone(),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: __preaccept_senders,
-    accept_senders: HashSet::new(),
+    preaccept_senders: Arc::new(__preaccept_senders),
+    accept_senders: Arc::new(HashSet::new()),
     has_conflict: false,
     max_resp_seq: 0u64,
     phase: CInstancePhase::PreAccepted,
@@ -127,8 +128,8 @@ ensures
     is_leader: s.is_leader.clone(),
     committed_count: s.committed_count.clone(),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: clone_hashset_u64(&s.preaccept_senders),
-    accept_senders: clone_hashset_u64(&s.accept_senders),
+    preaccept_senders: s.preaccept_senders.clone(),
+    accept_senders: s.accept_senders.clone(),
     has_conflict: s.has_conflict.clone(),
     max_resp_seq: s.max_resp_seq.clone(),
 }, vec![CEPaxosMessage::PreAcceptOk {
@@ -161,7 +162,7 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    preaccept_senders: __preaccept_senders,
+    preaccept_senders: Arc::new(__preaccept_senders),
     has_conflict: if pa_conflict {
         true
     } else {
@@ -188,7 +189,7 @@ ensures
     is_leader: s.is_leader.clone(),
     committed_count: s.committed_count.clone(),
     executed_count: s.executed_count.clone(),
-    accept_senders: clone_hashset_u64(&s.accept_senders),
+    accept_senders: s.accept_senders.clone(),
 }, vec![]) }
     };
     proof {
@@ -221,8 +222,8 @@ ensures
     is_leader: s.is_leader.clone(),
     committed_count: (s.committed_count + 1),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: clone_hashset_u64(&s.preaccept_senders),
-    accept_senders: clone_hashset_u64(&s.accept_senders),
+    preaccept_senders: s.preaccept_senders.clone(),
+    accept_senders: s.accept_senders.clone(),
     has_conflict: s.has_conflict.clone(),
     max_resp_seq: s.max_resp_seq.clone(),
     phase: CInstancePhase::Committed,
@@ -260,8 +261,8 @@ ensures
     is_leader: s.is_leader.clone(),
     committed_count: s.committed_count.clone(),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: clone_hashset_u64(&s.preaccept_senders),
-    accept_senders: __accept_senders,
+    preaccept_senders: s.preaccept_senders.clone(),
+    accept_senders: Arc::new(__accept_senders),
     has_conflict: s.has_conflict.clone(),
     max_resp_seq: s.max_resp_seq.clone(),
     phase: CInstancePhase::Accepted,
@@ -297,8 +298,8 @@ ensures
     is_leader: s.is_leader.clone(),
     committed_count: s.committed_count.clone(),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: clone_hashset_u64(&s.preaccept_senders),
-    accept_senders: clone_hashset_u64(&s.accept_senders),
+    preaccept_senders: s.preaccept_senders.clone(),
+    accept_senders: s.accept_senders.clone(),
     has_conflict: s.has_conflict.clone(),
     max_resp_seq: s.max_resp_seq.clone(),
 }, vec![CEPaxosMessage::AcceptOk {
@@ -328,7 +329,7 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    accept_senders: __accept_senders,
+    accept_senders: Arc::new(__accept_senders),
     ballot: s.ballot.clone(),
     phase: s.phase.clone(),
     cmd: s.cmd.clone(),
@@ -337,7 +338,7 @@ ensures
     is_leader: s.is_leader.clone(),
     committed_count: s.committed_count.clone(),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: clone_hashset_u64(&s.preaccept_senders),
+    preaccept_senders: s.preaccept_senders.clone(),
     has_conflict: s.has_conflict.clone(),
     max_resp_seq: s.max_resp_seq.clone(),
 }, vec![]) }
@@ -371,8 +372,8 @@ ensures
     is_leader: s.is_leader.clone(),
     committed_count: (s.committed_count + 1),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: clone_hashset_u64(&s.preaccept_senders),
-    accept_senders: clone_hashset_u64(&s.accept_senders),
+    preaccept_senders: s.preaccept_senders.clone(),
+    accept_senders: s.accept_senders.clone(),
     has_conflict: s.has_conflict.clone(),
     max_resp_seq: s.max_resp_seq.clone(),
     phase: CInstancePhase::Committed,
@@ -409,8 +410,8 @@ ensures
     is_leader: s.is_leader.clone(),
     committed_count: s.committed_count.clone(),
     executed_count: (s.executed_count + 1),
-    preaccept_senders: clone_hashset_u64(&s.preaccept_senders),
-    accept_senders: clone_hashset_u64(&s.accept_senders),
+    preaccept_senders: s.preaccept_senders.clone(),
+    accept_senders: s.accept_senders.clone(),
     has_conflict: s.has_conflict.clone(),
     max_resp_seq: s.max_resp_seq.clone(),
     phase: CInstancePhase::Executed,
@@ -445,8 +446,8 @@ ensures
     is_leader: true,
     committed_count: s.committed_count.clone(),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: __preaccept_senders,
-    accept_senders: HashSet::new(),
+    preaccept_senders: Arc::new(__preaccept_senders),
+    accept_senders: Arc::new(HashSet::new()),
     has_conflict: false,
     max_resp_seq: 0u64,
     phase: CInstancePhase::PreAccepted,
@@ -486,8 +487,8 @@ ensures
     is_leader: false,
     committed_count: s.committed_count.clone(),
     executed_count: s.executed_count.clone(),
-    preaccept_senders: HashSet::new(),
-    accept_senders: HashSet::new(),
+    preaccept_senders: Arc::new(HashSet::new()),
+    accept_senders: Arc::new(HashSet::new()),
     has_conflict: false,
     max_resp_seq: 0u64,
     phase: CInstancePhase::Empty,

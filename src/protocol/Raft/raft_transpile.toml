@@ -13,6 +13,12 @@ msg_vec_type = ["CRaftMessage", "LRaftMessage"]
 # HashSet fields for cardinality bridge proof injection
 set_fields = ["votes_granted", "servers"]
 
+# Arc-wrap non-scalar fields of CState for O(1) clone
+arc_wrap_types = ["CState"]
+
+[arc_wrap_fields]
+CState = ["log", "votes_granted", "match_index", "next_index"]
+
 # Extra requires clauses per exec function (transpiler can't derive these from spec)
 [extra_requires]
 "CClientRequest" = ["s.role is Leader"]

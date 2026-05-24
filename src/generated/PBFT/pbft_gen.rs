@@ -6,6 +6,7 @@ use crate::generated::PBFT::types_gen::*;
 use crate::protocol::PBFT::pbft::*;
 use crate::protocol::PBFT::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -50,8 +51,8 @@ ensures
 {
     let result = CState {
         view: 0u64,
-        prepare_senders: HashSet::new(),
-        commit_senders: HashSet::new(),
+        prepare_senders: Arc::new(HashSet::new()),
+        commit_senders: Arc::new(HashSet::new()),
         seq_num: 0u64,
         is_primary: true,
         request_digest: 0u64,
@@ -85,8 +86,8 @@ ensures
         __prepare_senders.insert(c.node_id.clone());
         (CState {
     request_digest: *digest,
-    prepare_senders: __prepare_senders,
-    commit_senders: HashSet::new(),
+    prepare_senders: Arc::new(__prepare_senders),
+    commit_senders: Arc::new(HashSet::new()),
     view: s.view.clone(),
     seq_num: s.seq_num.clone(),
     is_primary: s.is_primary.clone(),
@@ -128,8 +129,8 @@ ensures
             lemma_empty_seq_map();
         }; (CState {
     request_digest: *digest,
-    prepare_senders: __prepare_senders,
-    commit_senders: HashSet::new(),
+    prepare_senders: Arc::new(__prepare_senders),
+    commit_senders: Arc::new(HashSet::new()),
     view: s.view.clone(),
     seq_num: *seq,
     is_primary: s.is_primary.clone(),
@@ -166,10 +167,10 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    prepare_senders: __prepare_senders,
+    prepare_senders: Arc::new(__prepare_senders),
     phase: s.phase.clone(),
     view: s.view.clone(),
-    commit_senders: clone_hashset_u64(&s.commit_senders),
+    commit_senders: s.commit_senders.clone(),
     seq_num: s.seq_num.clone(),
     is_primary: s.is_primary.clone(),
     request_digest: s.request_digest.clone(),
@@ -204,9 +205,9 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    commit_senders: __commit_senders,
+    commit_senders: Arc::new(__commit_senders),
     view: s.view.clone(),
-    prepare_senders: clone_hashset_u64(&s.prepare_senders),
+    prepare_senders: s.prepare_senders.clone(),
     seq_num: s.seq_num.clone(),
     is_primary: s.is_primary.clone(),
     request_digest: s.request_digest.clone(),
@@ -243,10 +244,10 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    commit_senders: __commit_senders,
+    commit_senders: Arc::new(__commit_senders),
     phase: s.phase.clone(),
     view: s.view.clone(),
-    prepare_senders: clone_hashset_u64(&s.prepare_senders),
+    prepare_senders: s.prepare_senders.clone(),
     seq_num: s.seq_num.clone(),
     is_primary: s.is_primary.clone(),
     request_digest: s.request_digest.clone(),
@@ -282,8 +283,8 @@ ensures
         }
         (CState {
     seq_num: (s.seq_num + 1),
-    prepare_senders: HashSet::new(),
-    commit_senders: HashSet::new(),
+    prepare_senders: Arc::new(HashSet::new()),
+    commit_senders: Arc::new(HashSet::new()),
     view: s.view.clone(),
     is_primary: s.is_primary.clone(),
     request_digest: s.request_digest.clone(),
@@ -325,8 +326,8 @@ ensures
     high_watermark: (s.seq_num + c.checkpoint_interval),
     view: s.view.clone(),
     phase: s.phase.clone(),
-    prepare_senders: clone_hashset_u64(&s.prepare_senders),
-    commit_senders: clone_hashset_u64(&s.commit_senders),
+    prepare_senders: s.prepare_senders.clone(),
+    commit_senders: s.commit_senders.clone(),
     seq_num: s.seq_num.clone(),
     is_primary: s.is_primary.clone(),
     request_digest: s.request_digest.clone(),
@@ -355,8 +356,8 @@ ensures
         }
         (CState {
     view: (s.view + 1),
-    prepare_senders: HashSet::new(),
-    commit_senders: HashSet::new(),
+    prepare_senders: Arc::new(HashSet::new()),
+    commit_senders: Arc::new(HashSet::new()),
     request_digest: 0u64,
     seq_num: s.seq_num.clone(),
     is_primary: s.is_primary.clone(),
@@ -390,8 +391,8 @@ ensures
             lemma_empty_seq_map();
         }
         (CState {
-    prepare_senders: HashSet::new(),
-    commit_senders: HashSet::new(),
+    prepare_senders: Arc::new(HashSet::new()),
+    commit_senders: Arc::new(HashSet::new()),
     request_digest: 0u64,
     view: s.view.clone(),
     seq_num: s.seq_num.clone(),

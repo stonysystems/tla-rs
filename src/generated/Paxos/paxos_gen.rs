@@ -6,6 +6,7 @@ use crate::generated::Paxos::types_gen::*;
 use crate::protocol::Paxos::paxos::*;
 use crate::protocol::Paxos::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -36,11 +37,11 @@ ensures
         accepted_bal: 0u64,
         accepted_val: 0u64,
         proposer_bal: 0u64,
-        promises_rcvd: HashSet::new(),
+        promises_rcvd: Arc::new(HashSet::new()),
         highest_accepted_bal: 0u64,
         highest_accepted_val: 0u64,
         proposed_val: 0u64,
-        accepts_rcvd: HashSet::new(),
+        accepts_rcvd: Arc::new(HashSet::new()),
         decided_val: 0u64,
         phase: CPhase::Idle,
     };
@@ -62,15 +63,15 @@ ensures
     LSend1a(s@, result@, c@, *b as int),
 {
     let result = CState {
-        proposer_bal: *b,
-        promises_rcvd: HashSet::new(),
+        proposer_bal: (*b),
+        promises_rcvd: Arc::new(HashSet::new()),
         highest_accepted_bal: 0u64,
         highest_accepted_val: 0u64,
         proposed_val: s.proposed_val.clone(),
         promised_bal: s.promised_bal.clone(),
         accepted_bal: s.accepted_bal.clone(),
         accepted_val: s.accepted_val.clone(),
-        accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+        accepts_rcvd: s.accepts_rcvd.clone(),
         decided_val: s.decided_val.clone(),
         phase: CPhase::Phase1,
     };
@@ -91,16 +92,16 @@ ensures
     LSend1b(s@, result@, c@, *b as int),
 {
 CState {
-        promised_bal: *b,
+        promised_bal: (*b),
         accepted_bal: s.accepted_bal.clone(),
         accepted_val: s.accepted_val.clone(),
         proposer_bal: s.proposer_bal.clone(),
         phase: s.phase.clone(),
-        promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
+        promises_rcvd: s.promises_rcvd.clone(),
         highest_accepted_bal: s.highest_accepted_bal.clone(),
         highest_accepted_val: s.highest_accepted_val.clone(),
         proposed_val: s.proposed_val.clone(),
-        accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+        accepts_rcvd: s.accepts_rcvd.clone(),
         decided_val: s.decided_val.clone(),
     }
 }
@@ -122,14 +123,14 @@ ensures
     let mut __promises_rcvd = clone_hashset_u64(&s.promises_rcvd);
     __promises_rcvd.insert(a.clone());
     CState {
-        promises_rcvd: __promises_rcvd,
-        highest_accepted_bal: if (*a_accepted_bal > s.highest_accepted_bal) {
-            *a_accepted_bal
+        promises_rcvd: Arc::new(__promises_rcvd),
+        highest_accepted_bal: if ((*a_accepted_bal) > s.highest_accepted_bal) {
+            (*a_accepted_bal)
         } else {
             s.highest_accepted_bal.clone()
         },
-        highest_accepted_val: if (*a_accepted_bal > s.highest_accepted_bal) {
-            *a_accepted_val
+        highest_accepted_val: if ((*a_accepted_bal) > s.highest_accepted_bal) {
+            (*a_accepted_val)
         } else {
             s.highest_accepted_val.clone()
         },
@@ -138,7 +139,7 @@ ensures
         promised_bal: s.promised_bal.clone(),
         accepted_bal: s.accepted_bal.clone(),
         accepted_val: s.accepted_val.clone(),
-        accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+        accepts_rcvd: s.accepts_rcvd.clone(),
         decided_val: s.decided_val.clone(),
         phase: CPhase::Phase1,
     }
@@ -159,11 +160,11 @@ ensures
         proposed_val: if (s.highest_accepted_bal > 0) {
             s.highest_accepted_val.clone()
         } else {
-            *v
+            (*v)
         },
-        accepts_rcvd: HashSet::new(),
+        accepts_rcvd: Arc::new(HashSet::new()),
         proposer_bal: s.proposer_bal.clone(),
-        promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
+        promises_rcvd: s.promises_rcvd.clone(),
         highest_accepted_bal: s.highest_accepted_bal.clone(),
         highest_accepted_val: s.highest_accepted_val.clone(),
         promised_bal: s.promised_bal.clone(),
@@ -189,16 +190,16 @@ ensures
     LSend2b(s@, result@, c@, *b as int, *v as int),
 {
 CState {
-        promised_bal: *b,
-        accepted_bal: *b,
-        accepted_val: *v,
+        promised_bal: (*b),
+        accepted_bal: (*b),
+        accepted_val: (*v),
         proposer_bal: s.proposer_bal.clone(),
         phase: s.phase.clone(),
-        promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
+        promises_rcvd: s.promises_rcvd.clone(),
         highest_accepted_bal: s.highest_accepted_bal.clone(),
         highest_accepted_val: s.highest_accepted_val.clone(),
         proposed_val: s.proposed_val.clone(),
-        accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+        accepts_rcvd: s.accepts_rcvd.clone(),
         decided_val: s.decided_val.clone(),
     }
 }
@@ -220,9 +221,9 @@ ensures
     let mut __accepts_rcvd = clone_hashset_u64(&s.accepts_rcvd);
     __accepts_rcvd.insert(a.clone());
     CState {
-        accepts_rcvd: __accepts_rcvd,
+        accepts_rcvd: Arc::new(__accepts_rcvd),
         proposer_bal: s.proposer_bal.clone(),
-        promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
+        promises_rcvd: s.promises_rcvd.clone(),
         highest_accepted_bal: s.highest_accepted_bal.clone(),
         highest_accepted_val: s.highest_accepted_val.clone(),
         proposed_val: s.proposed_val.clone(),
@@ -248,11 +249,11 @@ ensures
 CState {
         decided_val: s.proposed_val.clone(),
         proposer_bal: s.proposer_bal.clone(),
-        promises_rcvd: clone_hashset_u64(&s.promises_rcvd),
+        promises_rcvd: s.promises_rcvd.clone(),
         highest_accepted_bal: s.highest_accepted_bal.clone(),
         highest_accepted_val: s.highest_accepted_val.clone(),
         proposed_val: s.proposed_val.clone(),
-        accepts_rcvd: clone_hashset_u64(&s.accepts_rcvd),
+        accepts_rcvd: s.accepts_rcvd.clone(),
         promised_bal: s.promised_bal.clone(),
         accepted_bal: s.accepted_bal.clone(),
         accepted_val: s.accepted_val.clone(),

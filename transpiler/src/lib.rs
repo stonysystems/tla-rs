@@ -357,6 +357,13 @@ impl Transpiler {
                 }
             }
         }
+        // Auto-add Arc import when arc_wrap_fields is configured
+        if !self.config.translator.arc_wrap_fields.is_empty() {
+            let arc_import = "use std::sync::Arc;".to_string();
+            if !sorted_imports.iter().any(|i| i.contains("std::sync::Arc")) {
+                sorted_imports.push(arc_import);
+            }
+        }
         // Auto-add clone_hashset_u64 import when verified hashset clone is active
         if self.config.translator.use_verified_hashset_clone && self.needs_set_helpers() {
             let hashset_import =

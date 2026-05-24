@@ -5,6 +5,12 @@ skip_functions = [
     "LNext",
 ]
 
+# Arc-wrap non-scalar fields of CState for O(1) clone
+arc_wrap_types = ["CState"]
+
+[arc_wrap_fields]
+CState = ["promises_rcvd", "accepts_rcvd"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

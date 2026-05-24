@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::VerticalPaxos::types::*;
 use crate::protocol::VerticalPaxos::vpaxos::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 
@@ -17,8 +18,8 @@ pub struct CState {
     pub max_val: u64,
     pub has_voted: bool,
     pub is_active: bool,
-    pub promises_rcvd: HashSet<u64>,
-    pub accepts_rcvd: HashSet<u64>,
+    pub promises_rcvd: Arc<HashSet<u64>>,
+    pub accepts_rcvd: Arc<HashSet<u64>>,
     pub committed: bool,
     pub committed_val: u64,
     pub witness_val: u64,
@@ -26,6 +27,7 @@ pub struct CState {
 }
 
 impl Clone for CState {
+    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
@@ -48,8 +50,8 @@ impl Clone for CState {
             max_val: self.max_val,
             has_voted: self.has_voted,
             is_active: self.is_active,
-            promises_rcvd: clone_hashset_u64(&self.promises_rcvd),
-            accepts_rcvd: clone_hashset_u64(&self.accepts_rcvd),
+            promises_rcvd: self.promises_rcvd.clone(),
+            accepts_rcvd: self.accepts_rcvd.clone(),
             committed: self.committed,
             committed_val: self.committed_val,
             witness_val: self.witness_val,

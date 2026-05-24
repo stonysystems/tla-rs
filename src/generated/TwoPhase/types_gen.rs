@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::TwoPhase::twophase::*;
 use crate::protocol::TwoPhase::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 
@@ -12,13 +13,14 @@ verus! {
 
 pub struct CState {
     pub tm_state: CTMState,
-    pub tm_prepared: HashSet<u64>,
-    pub rm_prepared: HashSet<u64>,
-    pub rm_committed: HashSet<u64>,
-    pub rm_aborted: HashSet<u64>,
+    pub tm_prepared: Arc<HashSet<u64>>,
+    pub rm_prepared: Arc<HashSet<u64>>,
+    pub rm_committed: Arc<HashSet<u64>>,
+    pub rm_aborted: Arc<HashSet<u64>>,
 }
 
 impl Clone for CState {
+    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
@@ -27,10 +29,10 @@ impl Clone for CState {
     {
         CState {
             tm_state: self.tm_state,
-            tm_prepared: clone_hashset_u64(&self.tm_prepared),
-            rm_prepared: clone_hashset_u64(&self.rm_prepared),
-            rm_committed: clone_hashset_u64(&self.rm_committed),
-            rm_aborted: clone_hashset_u64(&self.rm_aborted),
+            tm_prepared: self.tm_prepared.clone(),
+            rm_prepared: self.rm_prepared.clone(),
+            rm_committed: self.rm_committed.clone(),
+            rm_aborted: self.rm_aborted.clone(),
         }
     }
 }

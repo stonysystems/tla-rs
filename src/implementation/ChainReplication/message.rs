@@ -1,24 +1,21 @@
-//! ChainReplication protocol network messages.
-//!
-//! Maps the spec's shared-state boolean message model to explicit network
-//! messages for distributed deployment. Serialization uses simple u64 tags.
+//! Chain Replication protocol network messages.
 
 use crate::common::framework::protocol_trait::ProtocolMessage;
 
-/// Network messages for the Chain Replication protocol.
-///
-/// Message flow:
-///   Client -> Head: ClientWrite { value } (write request)
-///   Client -> Tail: ClientRead (read request)
-///   Predecessor -> Successor: Forward { value } (replicate update down chain)
-///   Successor -> Predecessor: Ack { value } (acknowledge committed value up chain)
+#[derive(Clone)]
 pub enum ChainMessage {
-    /// Predecessor forwards an update to its successor.
-    Forward { value: u64 },
-    /// Successor acknowledges a committed value to its predecessor.
-    Ack { value: u64 },
+    /// Forward a write to the next node in the chain.
+    Forward {
+        value: u64,
+    },
+    /// Acknowledge a committed write back up the chain.
+    Ack {
+        value: u64,
+    },
     /// Client sends a write request to the head.
-    ClientWrite { value: u64 },
+    ClientWrite {
+        value: u64,
+    },
     /// Client sends a read request to the tail.
     ClientRead,
 }
@@ -29,24 +26,38 @@ const TAG_ACK: u64 = 2;
 const TAG_CLIENT_WRITE: u64 = 3;
 const TAG_CLIENT_READ: u64 = 4;
 
+/// Read a u64 from a byte slice at the given byte offset.
+fn read_u64(data: &Vec<u8>, offset: usize) -> u64 {
+    u64::from_le_bytes([
+        data[offset + 0],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+        data[offset + 4],
+        data[offset + 5],
+        data[offset + 6],
+        data[offset + 7],
+    ])
+}
+
 impl ProtocolMessage for ChainMessage {
     fn serialize_to_bytes(&self, buf: &mut Vec<u8>) {
         match self {
             ChainMessage::Forward { value } => {
                 buf.extend_from_slice(&TAG_FORWARD.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            }
+            },
             ChainMessage::Ack { value } => {
                 buf.extend_from_slice(&TAG_ACK.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            }
+            },
             ChainMessage::ClientWrite { value } => {
                 buf.extend_from_slice(&TAG_CLIENT_WRITE.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
-            }
+            },
             ChainMessage::ClientRead => {
                 buf.extend_from_slice(&TAG_CLIENT_READ.to_le_bytes());
-            }
+            },
         }
     }
 
@@ -54,38 +65,32 @@ impl ProtocolMessage for ChainMessage {
         if data.len() < 8 {
             return None;
         }
-        let tag = u64::from_le_bytes([
-            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-        ]);
+        let tag = read_u64(data, 0);
         match tag {
             TAG_FORWARD => {
                 if data.len() < 16 {
                     return None;
                 }
-                let value = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
-                ]);
+                let value = read_u64(data, 8);
                 Some(ChainMessage::Forward { value })
-            }
+            },
             TAG_ACK => {
                 if data.len() < 16 {
                     return None;
                 }
-                let value = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
-                ]);
+                let value = read_u64(data, 8);
                 Some(ChainMessage::Ack { value })
-            }
+            },
             TAG_CLIENT_WRITE => {
                 if data.len() < 16 {
                     return None;
                 }
-                let value = u64::from_le_bytes([
-                    data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
-                ]);
+                let value = read_u64(data, 8);
                 Some(ChainMessage::ClientWrite { value })
-            }
-            TAG_CLIENT_READ => Some(ChainMessage::ClientRead),
+            },
+            TAG_CLIENT_READ => {
+                Some(ChainMessage::ClientRead)
+            },
             _ => None,
         }
     }

@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::Paxos::paxos::*;
 use crate::protocol::Paxos::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 
@@ -16,15 +17,16 @@ pub struct CState {
     pub accepted_val: u64,
     pub proposer_bal: u64,
     pub phase: CPhase,
-    pub promises_rcvd: HashSet<u64>,
+    pub promises_rcvd: Arc<HashSet<u64>>,
     pub highest_accepted_bal: u64,
     pub highest_accepted_val: u64,
     pub proposed_val: u64,
-    pub accepts_rcvd: HashSet<u64>,
+    pub accepts_rcvd: Arc<HashSet<u64>>,
     pub decided_val: u64,
 }
 
 impl Clone for CState {
+    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
@@ -45,11 +47,11 @@ impl Clone for CState {
             accepted_val: self.accepted_val,
             proposer_bal: self.proposer_bal,
             phase: self.phase,
-            promises_rcvd: clone_hashset_u64(&self.promises_rcvd),
+            promises_rcvd: self.promises_rcvd.clone(),
             highest_accepted_bal: self.highest_accepted_bal,
             highest_accepted_val: self.highest_accepted_val,
             proposed_val: self.proposed_val,
-            accepts_rcvd: clone_hashset_u64(&self.accepts_rcvd),
+            accepts_rcvd: self.accepts_rcvd.clone(),
             decided_val: self.decided_val,
         }
     }

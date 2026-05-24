@@ -6,6 +6,7 @@ use crate::generated::ChainReplication::types_gen::*;
 use crate::protocol::ChainReplication::chain::*;
 use crate::protocol::ChainReplication::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -74,8 +75,8 @@ ensures
     LInit(result@, c@),
 {
     let result = CState {
-        history: vec![],
-        pending_sent: HashSet::new(),
+        history: Arc::new(vec![]),
+        pending_sent: Arc::new(HashSet::new()),
         committed_count: 0u64,
         obj_value: 0u64,
         has_predecessor: (c.node_id > 0),
@@ -121,7 +122,7 @@ ensures
     LHeadReceiveWrite(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CCRMessage| p@)),
 {
     let result = {
-        let mut __history = s.history.clone();
+        let mut __history = (*s.history).clone();
         __history.push(value.clone());
         let mut __pending_sent = clone_hashset_u64(&s.pending_sent);
         __pending_sent.insert(value.clone());
@@ -129,8 +130,8 @@ ensures
             lemma_empty_seq_map();
         }; (CState {
     role: s.role.clone(),
-    history: __history,
-    pending_sent: __pending_sent,
+    history: Arc::new(__history),
+    pending_sent: Arc::new(__pending_sent),
     committed_count: s.committed_count.clone(),
     obj_value: s.obj_value.clone(),
     has_predecessor: s.has_predecessor.clone(),
@@ -143,7 +144,6 @@ ensures
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
         lemma_empty_seq_map();
-        lemma_seq_push_map_commute(s.history@, *value);
         assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
     result
@@ -165,7 +165,7 @@ ensures
     let result = (CState {
     role: s.role.clone(),
     history: s.history.clone(),
-    pending_sent: clone_hashset_u64(&s.pending_sent),
+    pending_sent: s.pending_sent.clone(),
     committed_count: s.committed_count.clone(),
     obj_value: s.obj_value.clone(),
     has_predecessor: s.has_predecessor.clone(),
@@ -174,7 +174,7 @@ ensures
     successor: s.successor.clone(),
     alive: s.alive.clone(),
 }, vec![CCRMessage::Forward {
-    value: *value,
+    value: (*value),
 }]);
     proof {
         assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty().push(result.1@[0]@));
@@ -195,7 +195,7 @@ ensures
     LReceiveUpdate(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CCRMessage| p@)),
 {
     let result = {
-        let mut __history = s.history.clone();
+        let mut __history = (*s.history).clone();
         __history.push(value.clone());
         let mut __pending_sent = clone_hashset_u64(&s.pending_sent);
         match &s.role {
@@ -209,8 +209,8 @@ ensures
             lemma_empty_seq_map();
         }; (CState {
     role: s.role.clone(),
-    history: __history,
-    pending_sent: __pending_sent,
+    history: Arc::new(__history),
+    pending_sent: Arc::new(__pending_sent),
     committed_count: s.committed_count.clone(),
     obj_value: s.obj_value.clone(),
     has_predecessor: s.has_predecessor.clone(),
@@ -223,7 +223,6 @@ ensures
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
         lemma_empty_seq_map();
-        lemma_seq_push_map_commute(s.history@, *value);
         assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
     result
@@ -245,16 +244,16 @@ ensures
     let result = (CState {
     role: s.role.clone(),
     history: s.history.clone(),
-    pending_sent: clone_hashset_u64(&s.pending_sent),
+    pending_sent: s.pending_sent.clone(),
     committed_count: (s.committed_count + 1),
-    obj_value: *value,
+    obj_value: (*value),
     has_predecessor: s.has_predecessor.clone(),
     predecessor: s.predecessor.clone(),
     has_successor: s.has_successor.clone(),
     successor: s.successor.clone(),
     alive: s.alive.clone(),
 }, vec![CCRMessage::Ack {
-    value: *value,
+    value: (*value),
 }]);
     proof {
         assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty().push(result.1@[0]@));
@@ -282,7 +281,7 @@ ensures
         }; (CState {
     role: s.role.clone(),
     history: s.history.clone(),
-    pending_sent: __pending_sent,
+    pending_sent: Arc::new(__pending_sent),
     committed_count: s.committed_count.clone(),
     obj_value: s.obj_value.clone(),
     has_predecessor: s.has_predecessor.clone(),
@@ -293,7 +292,7 @@ ensures
 }, vec![]) }
     };
     proof {
-        lemma_set_map_remove_commute(s.pending_sent@, *value);
+        lemma_set_map_remove_commute(s.pending_sent@, (*value));
         lemma_empty_seq_map();
         assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
@@ -318,7 +317,7 @@ ensures
         (CState {
     role: s.role.clone(),
     history: s.history.clone(),
-    pending_sent: clone_hashset_u64(&s.pending_sent),
+    pending_sent: s.pending_sent.clone(),
     committed_count: s.committed_count.clone(),
     obj_value: s.obj_value.clone(),
     has_predecessor: s.has_predecessor.clone(),
@@ -353,7 +352,7 @@ ensures
     alive: false,
     role: s.role.clone(),
     history: s.history.clone(),
-    pending_sent: clone_hashset_u64(&s.pending_sent),
+    pending_sent: s.pending_sent.clone(),
     committed_count: s.committed_count.clone(),
     obj_value: s.obj_value.clone(),
     has_predecessor: s.has_predecessor.clone(),
@@ -385,12 +384,12 @@ ensures
         }
         (CState {
     has_predecessor: new_has_predecessor.clone(),
-    predecessor: *new_predecessor,
+    predecessor: (*new_predecessor),
     has_successor: new_has_successor.clone(),
-    successor: *new_successor,
+    successor: (*new_successor),
     role: s.role.clone(),
     history: s.history.clone(),
-    pending_sent: clone_hashset_u64(&s.pending_sent),
+    pending_sent: s.pending_sent.clone(),
     committed_count: s.committed_count.clone(),
     obj_value: s.obj_value.clone(),
     alive: s.alive.clone(),

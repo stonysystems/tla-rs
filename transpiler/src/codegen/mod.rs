@@ -217,6 +217,25 @@ impl TypeGenerator {
         clone_strat.to_string()
     }
 
+    /// Like `generate_derives` but never emits `Clone` in the derive list.
+    /// Used for Arc-wrapped types that need a manual external_body Clone impl.
+    fn generate_derives_without_clone(&self, exec_name: &str, code: &mut String) {
+        let mut derives = Vec::new();
+        if self.unit_enums.contains(exec_name) {
+            derives.push("Copy".to_string());
+        }
+        if let Some(custom) = self.custom_derives.get(exec_name) {
+            for d in custom {
+                if d != "Clone" && !derives.contains(d) {
+                    derives.push(d.clone());
+                }
+            }
+        }
+        if !derives.is_empty() {
+            code.push_str(&format!("#[derive({})]\n", derives.join(", ")));
+        }
+    }
+
     /// Generate `#[verifier(external_body)]` Clone impl for types that can't use `#[derive(Clone)]`.
     /// When field information is available, generates a real field-by-field clone body
     /// (copy scalars directly, `.clone()` for non-copy fields).
@@ -309,6 +328,12 @@ impl TypeGenerator {
             if self.is_copy_scalar_type_for_clone_up_to_view(&field.ty) {
                 code.push_str(&format!(
                     "{}        {}: self.{},\n",
+                    self.indent, field.name, field.name
+                ));
+            } else if self.should_arc_wrap_field(exec_name, &field.ty) {
+                // Arc-wrapped field: Arc::clone is O(1) refcount bump
+                code.push_str(&format!(
+                    "{}        {}: self.{}.clone(),\n",
                     self.indent, field.name, field.name
                 ));
             } else if Self::is_hashset_u64(&field.ty) {
@@ -428,7 +453,16 @@ impl TypeGenerator {
         let warnings = Vec::new();
 
         let exec_name = self.get_exec_type(&spec.name);
-        let clone_strat = self.generate_derives(&exec_name, &mut code);
+        let is_arc_wrapped = self.arc_wrap_types.contains(&exec_name);
+
+        // Arc-wrapped types need external_body Clone (no Arc::clone spec in vstd),
+        // so suppress #[derive(Clone)] by temporarily overriding the clone strategy.
+        let clone_strat = if is_arc_wrapped {
+            self.generate_derives_without_clone(&exec_name, &mut code);
+            "external_body".to_string()
+        } else {
+            self.generate_derives(&exec_name, &mut code)
+        };
 
         // Get skip fields for this type
         let skip_fields = self.skip_fields.get(&exec_name);
@@ -437,8 +471,6 @@ impl TypeGenerator {
             .iter()
             .filter(|field| !skip_fields.is_some_and(|skips| skips.contains(&field.name)))
             .collect();
-
-        let _is_arc_wrapped = self.arc_wrap_types.contains(&exec_name);
 
         // Generate struct definition
         code.push_str(&format!("pub struct {} {{\n", exec_name));

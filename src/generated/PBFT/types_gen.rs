@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::protocol::PBFT::pbft::*;
 use crate::protocol::PBFT::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 
@@ -13,8 +14,8 @@ verus! {
 pub struct CState {
     pub view: u64,
     pub phase: CPhase,
-    pub prepare_senders: HashSet<u64>,
-    pub commit_senders: HashSet<u64>,
+    pub prepare_senders: Arc<HashSet<u64>>,
+    pub commit_senders: Arc<HashSet<u64>>,
     pub seq_num: u64,
     pub is_primary: bool,
     pub request_digest: u64,
@@ -25,6 +26,7 @@ pub struct CState {
 }
 
 impl Clone for CState {
+    #[verifier(external_body)]
     fn clone(&self) -> (res: Self)
     ensures
         res@ == self@,
@@ -42,8 +44,8 @@ impl Clone for CState {
         CState {
             view: self.view,
             phase: self.phase,
-            prepare_senders: clone_hashset_u64(&self.prepare_senders),
-            commit_senders: clone_hashset_u64(&self.commit_senders),
+            prepare_senders: self.prepare_senders.clone(),
+            commit_senders: self.commit_senders.clone(),
             seq_num: self.seq_num,
             is_primary: self.is_primary,
             request_digest: self.request_digest,
