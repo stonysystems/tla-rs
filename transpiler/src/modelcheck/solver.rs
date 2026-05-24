@@ -1245,7 +1245,8 @@ fn expr_mentions_identifier(expr: &Expr, ident: &str) -> bool {
                 || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
         }
         Expr::Ident(name) => name == ident,
-        Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Literal(_) => false,
+        Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Literal(_)
+        | Expr::ConstantValue(_) => false,
     }
 }
 

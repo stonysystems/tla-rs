@@ -264,9 +264,11 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
         Expr::StructUpdate { .. } => p.struct_update += 1,
         Expr::Is(_, _) => p.is_check += 1,
         Expr::Match { .. } => p.match_expr += 1,
+        Expr::ConstantValue(_) => p.literal += 1,
         _ => p.other += 1,
     });
     match expr {
+        Expr::ConstantValue(v) => Ok(v.clone()),
         Expr::Conjunction(items) => {
             for item in items {
                 if !expect_bool(&eval_expr(item, ctx)?, "conjunction operand")? {

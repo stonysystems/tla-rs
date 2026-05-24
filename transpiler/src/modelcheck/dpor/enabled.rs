@@ -356,6 +356,7 @@ impl SpecContext {
                     &mut t,
                     &self.bundle.spec_functions,
                 );
+                crate::modelcheck::ir::constant_fold_transition_ir(&mut t);
                 t
             })
             .clone();
@@ -700,6 +701,7 @@ impl SpecContext {
             &mut transition,
             &self.bundle.spec_functions,
         );
+        crate::modelcheck::ir::constant_fold_transition_ir(&mut transition);
         let mut footprints = std::collections::BTreeMap::new();
         for branch in &transition.branches {
             let fp = crate::modelcheck::por::branch_footprint(&transition, branch);

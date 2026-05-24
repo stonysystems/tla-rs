@@ -609,7 +609,8 @@ fn collect_called_functions_from_expr(expr: &verus_transpiler::Expr, out: &mut H
                 collect_called_functions_from_expr(value, out);
             }
         }
-        Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Ident(_) | Expr::Literal(_) => {}
+        Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Ident(_) | Expr::Literal(_)
+        | Expr::ConstantValue(_) => {}
     }
 }
 
@@ -2504,6 +2505,7 @@ fn expr_to_static_runtime_value(
             }
             Some(RuntimeValue::Map(out))
         }
+        Expr::ConstantValue(v) => Some(v.clone()),
         _ => None,
     }
 }
@@ -2626,7 +2628,8 @@ fn expr_mentions_identifier(expr: &verus_transpiler::ast::Expr, ident: &str) -> 
             expr_mentions_identifier(receiver, ident)
                 || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
         }
-        Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty => false,
+        Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty
+        | Expr::ConstantValue(_) => false,
     }
 }
 
@@ -3279,7 +3282,8 @@ fn try_solve_predicate_only_helper_branch(
                         .any(|arg| helper_expr_mentions_identifier(arg, ident))
             }
             Expr::Ident(name) => name == ident,
-            Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Literal(_) => false,
+            Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Literal(_)
+            | Expr::ConstantValue(_) => false,
         }
     }
 
@@ -3662,6 +3666,7 @@ fn execute_model_check(
         &mut transition,
         &bundle.spec_functions,
     );
+    verus_transpiler::modelcheck::ir::constant_fold_transition_ir(&mut transition);
 
     let transition_branch_labels = transition
         .branches

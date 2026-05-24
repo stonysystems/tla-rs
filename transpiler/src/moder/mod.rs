@@ -613,7 +613,8 @@ impl ModeAnalyzer {
             | Expr::Literal(_)
             | Expr::SeqEmpty
             | Expr::SetEmpty
-            | Expr::MapEmpty => false,
+            | Expr::MapEmpty
+            | Expr::ConstantValue(_) => false,
         }
     }
 

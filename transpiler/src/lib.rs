@@ -2194,7 +2194,8 @@ impl Transpiler {
             | Expr::SeqEmpty
             | Expr::MapEmpty
             | Expr::Ident(_)
-            | Expr::Literal(_) => false,
+            | Expr::Literal(_)
+            | Expr::ConstantValue(_) => false,
         }
     }
 

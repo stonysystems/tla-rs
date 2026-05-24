@@ -330,7 +330,8 @@ fn expr_mentions_identifier(expr: &Expr, ident: &str) -> bool {
             expr_mentions_identifier(receiver, ident)
                 || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
         }
-        Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty => false,
+        Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty
+        | Expr::ConstantValue(_) => false,
     }
 }
 
@@ -1052,6 +1053,272 @@ fn extract_segments(expr: &Expr) -> Option<Vec<String>> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Constant folding: replace all-literal SetLit/SeqLit/MapLit with
+// precomputed ConstantValue at IR time.  Eliminates ~75% of eval_expr
+// calls on typical specs (Literal + SetLit variants).
+// ---------------------------------------------------------------------------
+
+use crate::modelcheck::value::RuntimeValue;
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Try to evaluate an expression to a compile-time constant.
+/// Returns `Some(RuntimeValue)` if the expression is fully constant,
+/// `None` if it contains runtime-dependent parts (identifiers, field
+/// accesses, method calls, quantifiers, etc.).
+fn try_eval_constant(expr: &Expr) -> Option<RuntimeValue> {
+    match expr {
+        Expr::Literal(crate::ast::Literal::Bool(v)) => Some(RuntimeValue::Bool(*v)),
+        Expr::Literal(crate::ast::Literal::Int(v)) => Some(RuntimeValue::Int(*v)),
+        Expr::Literal(crate::ast::Literal::String(v)) => Some(RuntimeValue::String(v.clone())),
+        Expr::Unary(crate::ast::UnaryOp::Neg, inner) => match try_eval_constant(inner)? {
+            RuntimeValue::Int(v) => Some(RuntimeValue::Int(-v)),
+            _ => None,
+        },
+        Expr::SetLit(items) => {
+            let mut set = BTreeSet::new();
+            for item in items {
+                set.insert(try_eval_constant(item)?);
+            }
+            Some(RuntimeValue::Set(set))
+        }
+        Expr::SeqLit(items) => {
+            let mut seq = Vec::with_capacity(items.len());
+            for item in items {
+                seq.push(try_eval_constant(item)?);
+            }
+            Some(RuntimeValue::Seq(seq))
+        }
+        Expr::MapLit(entries) => {
+            let mut map = BTreeMap::new();
+            for (k, v) in entries {
+                map.insert(try_eval_constant(k)?, try_eval_constant(v)?);
+            }
+            Some(RuntimeValue::Map(map))
+        }
+        Expr::SeqEmpty => Some(RuntimeValue::Seq(Vec::new())),
+        Expr::SetEmpty => Some(RuntimeValue::Set(BTreeSet::new())),
+        Expr::MapEmpty => Some(RuntimeValue::Map(BTreeMap::new())),
+        Expr::ConstantValue(v) => Some(v.clone()),
+        _ => None,
+    }
+}
+
+/// Recursively fold constant sub-expressions into `ConstantValue` nodes.
+/// Walks the AST bottom-up: first folds children, then checks if the
+/// resulting expression is fully constant.
+fn constant_fold_expr(expr: Expr) -> Expr {
+    // First, try the fast path: if the whole expression is already constant,
+    // fold it immediately without recursing into children.
+    if let Some(val) = try_eval_constant(&expr) {
+        return Expr::ConstantValue(val);
+    }
+
+    // Otherwise, recursively fold children, then check again.
+    match expr {
+        Expr::Conjunction(items) => Expr::Conjunction(
+            items.into_iter().map(constant_fold_expr).collect(),
+        ),
+        Expr::Disjunction(items) => Expr::Disjunction(
+            items.into_iter().map(constant_fold_expr).collect(),
+        ),
+        Expr::SetLit(items) => {
+            let folded: Vec<Expr> = items.into_iter().map(constant_fold_expr).collect();
+            // After folding children, try again
+            if folded.iter().all(|e| matches!(e, Expr::ConstantValue(_))) {
+                let set: BTreeSet<RuntimeValue> = folded
+                    .into_iter()
+                    .map(|e| match e {
+                        Expr::ConstantValue(v) => v,
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                return Expr::ConstantValue(RuntimeValue::Set(set));
+            }
+            Expr::SetLit(folded)
+        }
+        Expr::SeqLit(items) => {
+            let folded: Vec<Expr> = items.into_iter().map(constant_fold_expr).collect();
+            if folded.iter().all(|e| matches!(e, Expr::ConstantValue(_))) {
+                let seq: Vec<RuntimeValue> = folded
+                    .into_iter()
+                    .map(|e| match e {
+                        Expr::ConstantValue(v) => v,
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                return Expr::ConstantValue(RuntimeValue::Seq(seq));
+            }
+            Expr::SeqLit(folded)
+        }
+        Expr::MapLit(entries) => {
+            let folded: Vec<(Expr, Expr)> = entries
+                .into_iter()
+                .map(|(k, v)| (constant_fold_expr(k), constant_fold_expr(v)))
+                .collect();
+            if folded.iter().all(|(k, v)| {
+                matches!(k, Expr::ConstantValue(_)) && matches!(v, Expr::ConstantValue(_))
+            }) {
+                let map: BTreeMap<RuntimeValue, RuntimeValue> = folded
+                    .into_iter()
+                    .map(|(k, v)| match (k, v) {
+                        (Expr::ConstantValue(kv), Expr::ConstantValue(vv)) => (kv, vv),
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                return Expr::ConstantValue(RuntimeValue::Map(map));
+            }
+            Expr::MapLit(folded)
+        }
+        Expr::Implies(lhs, rhs) => Expr::Implies(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Iff(lhs, rhs) => Expr::Iff(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Not(inner) => Expr::Not(Box::new(constant_fold_expr(*inner))),
+        Expr::Eq(lhs, rhs) => Expr::Eq(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Ne(lhs, rhs) => Expr::Ne(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Lt(lhs, rhs) => Expr::Lt(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Le(lhs, rhs) => Expr::Le(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Gt(lhs, rhs) => Expr::Gt(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Ge(lhs, rhs) => Expr::Ge(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Binary(lhs, op, rhs) => Expr::Binary(
+            Box::new(constant_fold_expr(*lhs)),
+            op,
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Unary(op, inner) => {
+            let folded = constant_fold_expr(*inner);
+            if let Expr::ConstantValue(ref v) = folded {
+                if op == crate::ast::UnaryOp::Neg {
+                    if let RuntimeValue::Int(n) = v {
+                        return Expr::ConstantValue(RuntimeValue::Int(-n));
+                    }
+                }
+            }
+            Expr::Unary(op, Box::new(folded))
+        }
+        Expr::Index(lhs, rhs) => Expr::Index(
+            Box::new(constant_fold_expr(*lhs)),
+            Box::new(constant_fold_expr(*rhs)),
+        ),
+        Expr::Field(inner, name) => Expr::Field(Box::new(constant_fold_expr(*inner)), name),
+        Expr::MethodCall { receiver, method, args } => Expr::MethodCall {
+            receiver: Box::new(constant_fold_expr(*receiver)),
+            method,
+            args: args.into_iter().map(constant_fold_expr).collect(),
+        },
+        Expr::Call { func, args } => Expr::Call {
+            func,
+            args: args.into_iter().map(constant_fold_expr).collect(),
+        },
+        Expr::If { cond, then_branch, else_branch } => Expr::If {
+            cond: Box::new(constant_fold_expr(*cond)),
+            then_branch: Box::new(constant_fold_expr(*then_branch)),
+            else_branch: else_branch.map(|e| Box::new(constant_fold_expr(*e))),
+        },
+        Expr::Let { binding, value, body } => Expr::Let {
+            binding,
+            value: Box::new(constant_fold_expr(*value)),
+            body: Box::new(constant_fold_expr(*body)),
+        },
+        Expr::Forall { vars, triggers, body } => Expr::Forall {
+            vars,
+            triggers,
+            body: Box::new(constant_fold_expr(*body)),
+        },
+        Expr::Exists { vars, body } => Expr::Exists {
+            vars,
+            body: Box::new(constant_fold_expr(*body)),
+        },
+        Expr::Closure { params, body } => Expr::Closure {
+            params,
+            body: Box::new(constant_fold_expr(*body)),
+        },
+        Expr::Choose { vars, body } => Expr::Choose {
+            vars,
+            body: Box::new(constant_fold_expr(*body)),
+        },
+        Expr::Match { scrutinee, arms } => Expr::Match {
+            scrutinee: Box::new(constant_fold_expr(*scrutinee)),
+            arms: arms
+                .into_iter()
+                .map(|arm| crate::ast::MatchArm {
+                    pattern: arm.pattern,
+                    guard: arm.guard.map(constant_fold_expr),
+                    body: constant_fold_expr(arm.body),
+                })
+                .collect(),
+        },
+        Expr::Struct { name, fields } => Expr::Struct {
+            name,
+            fields: fields
+                .into_iter()
+                .map(|(n, e)| (n, constant_fold_expr(e)))
+                .collect(),
+        },
+        Expr::StructUpdate { name, base, fields } => Expr::StructUpdate {
+            name,
+            base: Box::new(constant_fold_expr(*base)),
+            fields: fields
+                .into_iter()
+                .map(|(n, e)| (n, constant_fold_expr(e)))
+                .collect(),
+        },
+        Expr::Is(inner, variant) => Expr::Is(Box::new(constant_fold_expr(*inner)), variant),
+        Expr::View(inner) => Expr::View(Box::new(constant_fold_expr(*inner))),
+        Expr::Cast(inner, ty) => Expr::Cast(Box::new(constant_fold_expr(*inner)), ty),
+        Expr::Arrow(inner, field) => Expr::Arrow(
+            Box::new(constant_fold_expr(*inner)),
+            field,
+        ),
+        // Terminals — already constant or identity
+        other @ (Expr::Literal(_)
+        | Expr::Ident(_)
+        | Expr::SeqEmpty
+        | Expr::SetEmpty
+        | Expr::MapEmpty
+        | Expr::ConstantValue(_)) => other,
+    }
+}
+
+/// Apply constant folding to all constraint expressions in a transition IR.
+pub fn constant_fold_transition_ir(ir: &mut TransitionIr) {
+    for branch in &mut ir.branches {
+        for constraint in &mut branch.constraints {
+            match constraint {
+                BranchConstraintIr::Eq { value, .. } => {
+                    *value = constant_fold_expr(value.clone());
+                }
+                BranchConstraintIr::Predicate { expr } => {
+                    *expr = constant_fold_expr(expr.clone());
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1317,5 +1584,141 @@ mod tests {
         assert_eq!(branches.len(), 2);
         assert_eq!(branches[0].constraints.len(), 2);
         assert_eq!(branches[1].constraints.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Constant folding tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_constant_fold_literal_int() {
+        let expr = Expr::Literal(Literal::Int(42));
+        let folded = constant_fold_expr(expr);
+        assert!(matches!(folded, Expr::ConstantValue(RuntimeValue::Int(42))));
+    }
+
+    #[test]
+    fn test_constant_fold_literal_bool() {
+        let expr = Expr::Literal(Literal::Bool(true));
+        let folded = constant_fold_expr(expr);
+        assert!(matches!(folded, Expr::ConstantValue(RuntimeValue::Bool(true))));
+    }
+
+    #[test]
+    fn test_constant_fold_set_of_literals() {
+        let expr = Expr::SetLit(vec![
+            Expr::Literal(Literal::Int(1)),
+            Expr::Literal(Literal::Int(2)),
+            Expr::Literal(Literal::Int(3)),
+        ]);
+        let folded = constant_fold_expr(expr);
+        match folded {
+            Expr::ConstantValue(RuntimeValue::Set(set)) => {
+                assert_eq!(set.len(), 3);
+                assert!(set.contains(&RuntimeValue::Int(1)));
+                assert!(set.contains(&RuntimeValue::Int(2)));
+                assert!(set.contains(&RuntimeValue::Int(3)));
+            }
+            other => panic!("Expected ConstantValue(Set), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_constant_fold_seq_of_literals() {
+        let expr = Expr::SeqLit(vec![
+            Expr::Literal(Literal::Int(10)),
+            Expr::Literal(Literal::Int(20)),
+        ]);
+        let folded = constant_fold_expr(expr);
+        match folded {
+            Expr::ConstantValue(RuntimeValue::Seq(seq)) => {
+                assert_eq!(seq, vec![RuntimeValue::Int(10), RuntimeValue::Int(20)]);
+            }
+            other => panic!("Expected ConstantValue(Seq), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_constant_fold_nested_set_in_method_call() {
+        // set![1,2,3].contains(x) — the set should be folded, but the
+        // overall expression stays a MethodCall since `x` is runtime.
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::SetLit(vec![
+                Expr::Literal(Literal::Int(1)),
+                Expr::Literal(Literal::Int(2)),
+            ])),
+            method: "contains".to_string(),
+            args: vec![Expr::Ident("x".to_string())],
+        };
+        let folded = constant_fold_expr(expr);
+        match folded {
+            Expr::MethodCall { receiver, method, args } => {
+                assert!(matches!(*receiver, Expr::ConstantValue(RuntimeValue::Set(_))));
+                assert_eq!(method, "contains");
+                assert!(matches!(&args[0], Expr::Ident(name) if name == "x"));
+            }
+            other => panic!("Expected MethodCall with folded receiver, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_constant_fold_preserves_runtime_expr() {
+        // An identifier can't be folded
+        let expr = Expr::Ident("x".to_string());
+        let folded = constant_fold_expr(expr);
+        assert!(matches!(folded, Expr::Ident(name) if name == "x"));
+    }
+
+    #[test]
+    fn test_constant_fold_set_with_runtime_element() {
+        // set![1, x] can't be fully folded — but the literal gets folded
+        let expr = Expr::SetLit(vec![
+            Expr::Literal(Literal::Int(1)),
+            Expr::Ident("x".to_string()),
+        ]);
+        let folded = constant_fold_expr(expr);
+        match folded {
+            Expr::SetLit(items) => {
+                assert_eq!(items.len(), 2);
+                assert!(matches!(&items[0], Expr::ConstantValue(RuntimeValue::Int(1))));
+                assert!(matches!(&items[1], Expr::Ident(name) if name == "x"));
+            }
+            other => panic!("Expected SetLit with mixed items, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_constant_fold_empty_set() {
+        let folded = constant_fold_expr(Expr::SetEmpty);
+        match folded {
+            Expr::ConstantValue(RuntimeValue::Set(s)) => assert!(s.is_empty()),
+            other => panic!("Expected empty Set ConstantValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_constant_fold_negation() {
+        let expr = Expr::Unary(
+            crate::ast::UnaryOp::Neg,
+            Box::new(Expr::Literal(Literal::Int(5))),
+        );
+        let folded = constant_fold_expr(expr);
+        assert!(matches!(folded, Expr::ConstantValue(RuntimeValue::Int(-5))));
+    }
+
+    #[test]
+    fn test_constant_fold_map_of_literals() {
+        let expr = Expr::MapLit(vec![
+            (Expr::Literal(Literal::Int(1)), Expr::Literal(Literal::Bool(true))),
+            (Expr::Literal(Literal::Int(2)), Expr::Literal(Literal::Bool(false))),
+        ]);
+        let folded = constant_fold_expr(expr);
+        match folded {
+            Expr::ConstantValue(RuntimeValue::Map(map)) => {
+                assert_eq!(map.len(), 2);
+                assert_eq!(map[&RuntimeValue::Int(1)], RuntimeValue::Bool(true));
+            }
+            other => panic!("Expected ConstantValue(Map), got {:?}", other),
+        }
     }
 }

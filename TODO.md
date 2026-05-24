@@ -13605,12 +13605,21 @@ Three implementation paths, in increasing engineering cost / payoff:
 
   **Highest-leverage codegen targets** (data-driven priorities for
   38.22.1.b/.c):
-  1. Constant fold `set![Literal, ...]` → precomputed Set: kills
-     ~75% of all calls (Literal + SetLit).
+  1. ~~Constant fold `set![Literal, ...]` → precomputed Set: kills
+     ~75% of all calls (Literal + SetLit).~~ **DONE** (38.22.1.a.i).
   2. Replace `BTreeMap<String, RuntimeValue>` binding lookup with
      indexed locals: speeds up Ident at 12% by ~10×.
   3. Static dispatch on `RuntimeValue` Set/Map methods: speeds up
      MethodCall at 10%.
+- [x] **38.22.1.a.i**: **Constant fold literal collections at IR time.**
+  Added `Expr::ConstantValue(RuntimeValue)` variant and
+  `constant_fold_transition_ir()` pass. Walks the AST bottom-up and
+  replaces `SetLit([Literal, ...])`, `SeqLit([Literal, ...])`,
+  `MapLit([(Literal, Literal), ...])`, `SetEmpty`, `SeqEmpty`, `MapEmpty`,
+  and bare `Literal(...)` with precomputed `ConstantValue` nodes.
+  The evaluator returns these directly (zero computation). Wired into
+  all 3 IR-build sites (main.rs, DPOR enabled.rs solver + footprint).
+  Kills ~75% of eval_expr calls on Paxos (Literal + SetLit). *DONE.*
 - [ ] **38.22.1.b**: **Stack-based bytecode VM.** Compile each spec
   function to a sequence of opcodes (LoadVar, LoadField, SetUnion,
   Eq, JumpIfFalse, …) executed by a tight switch-dispatched loop.

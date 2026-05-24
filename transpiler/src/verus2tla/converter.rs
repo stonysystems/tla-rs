@@ -652,6 +652,10 @@ impl Verus2TlaConverter {
                 let tla_op = self.convert_unaryop(op)?;
                 Ok(TlaExpr::unary(tla_op, self.convert_expr(inner)?))
             }
+
+            VerusExpr::ConstantValue(_) => Err(ConversionError::UnsupportedConstruct(
+                "ConstantValue is an internal model-checker IR node".to_string(),
+            )),
         }
     }
 

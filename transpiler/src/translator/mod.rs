@@ -10467,6 +10467,12 @@ impl Translator {
                     help: None,
                 })
             }
+
+            Expr::ConstantValue(_) => Err(TranspileError::UnsupportedPattern {
+                message: "ConstantValue is an internal model-checker IR node".to_string(),
+                span: None,
+                help: None,
+            }),
         }
     }
 

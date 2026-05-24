@@ -311,6 +311,10 @@ pub enum Expr {
     Binary(Box<Expr>, BinOp, Box<Expr>),
     /// Unary operation
     Unary(UnaryOp, Box<Expr>),
+
+    /// Pre-evaluated constant value (produced by constant folding at IR time).
+    /// The evaluator returns this value directly without any computation.
+    ConstantValue(crate::modelcheck::value::RuntimeValue),
 }
 
 /// Variable binding
