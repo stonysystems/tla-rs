@@ -14603,12 +14603,17 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
 
 #### 41.4 Document + close the loop
 
-- [ ] **41.4.a**: Update `transpiler/docs/EFFICIENT_EMIT.md` with the
+- [x] **41.4.a**: Update `transpiler/docs/EFFICIENT_EMIT.md` with the
   collection-field Arc pattern. Distinguish from Phase 40's
-  sub-component Arc-wrapping.
-- [ ] **41.4.b**: Add Phase 41 examples to `transpiler/docs/PATTERNS.md`.
-- [ ] **41.4.c**: Update README's Transpiler section with the new
-  perf numbers (RSL 30K, Raft 10K targets).
+  sub-component Arc-wrapping. DONE: added full 5-field measurement table,
+  transpiler support details, mutation pattern, and struct-vs-field analysis.
+- [x] **41.4.b**: Add Phase 41 examples to `transpiler/docs/PATTERNS.md`.
+  DONE: added full "Field-Level Arc-Wrapping for Collection Fields (Phase 41)"
+  section with config, proof lemma signatures, spec helper patterns, hand-written
+  struct support, and measured performance results.
+- [x] **41.4.c**: Update README's Transpiler section with the new
+  perf numbers. DONE: replaced "~60% of hand-tuned" with measured table
+  showing transpiler+Arc exceeds hand-tuned (32,663 vs 28,449 ops/s).
 
 ### Relationship to Phase 40 (REVISITED — Phase 42.5 disposition)
 

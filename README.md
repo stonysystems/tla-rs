@@ -168,15 +168,24 @@ The transpiler includes 25+ verified examples in `transpiler/verus_examples/` co
 
 ### Performance
 
-The transpiler generates code that achieves ~60% of hand-tuned throughput on
-RSL UDP (16.7K vs 28.6K ops/s). The remaining gap is **algorithmic** (batching,
-log compaction, message coalescing), not structural — these require protocol-level
-changes beyond mechanical spec-to-exec translation.
+With field-level `Arc<T>` wrapping of hot collection fields, the transpiler generates
+code that **matches or exceeds** hand-tuned throughput on RSL UDP:
 
-To reduce clone overhead, the transpiler can wrap non-scalar struct fields in
-`Arc<T>` for O(1) clone (refcount bump) instead of O(n) deep copy. Configure
-via `arc_wrap_types` / `arc_wrap_fields` in the protocol's `_transpile.toml`.
-See `transpiler/docs/PATTERNS.md` for details.
+| Configuration | Throughput | Latency | Decay |
+|--------------|-----------|---------|-------|
+| Pre-Arc baseline | 16,341 ops/s | 2.39 ms | 36% |
+| Hand-tuned (wasiq) | 28,449 ops/s | 1.31 ms | 5% |
+| **Transpiler + Arc (5 fields)** | **32,663 ops/s** | **1.12 ms** | **5%** |
+
+The `arc_wrap_fields` TOML config wraps individual collection fields (`HashMap`,
+`HashSet`, `Vec`) in `Arc<T>` for O(1) clone on unchanged dispatch paths. Configure
+in the protocol's `_transpile.toml`:
+
+```toml
+arc_wrap_fields = { CProposer = ["request_queue", "received_1b_packets"] }
+```
+
+See `transpiler/docs/PATTERNS.md` and `transpiler/docs/EFFICIENT_EMIT.md` for details.
 
 ### Documentation
 

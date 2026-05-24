@@ -180,19 +180,79 @@ protocols + Raft. **No measured benefit**: Raft re-bench showed 3,613 vs 3,612 o
 The original "+24% RSL / +12% Raft" claims were noise. RSL struct-level wrapping
 (40.3.g) was deferred and is now **WONTFIX**.
 
-### Phase 41: Field-level Arc-wrapping (PoC validated)
-Arc-wrapping individual collection fields inside structs proved far more effective.
-A single field change (`CProposer.highest_seqno_requested_by_client_this_view:
-HashMap<EndPoint, u64>` → `Arc<HashMap<EndPoint, u64>>`) delivered **+82% RSL
-throughput** (16,341 → 29,745 ops/s), matching hand-tuned baselines. This is the
-recommended approach — see TODO.md Phase 41 for the plan to extend to all hot fields
-and automate in the transpiler.
+### Phase 41: Field-level Arc-wrapping (complete, measured)
+
+Arc-wrapping individual **collection fields** (HashMap, HashSet, Vec) inside
+sub-component structs proved far more effective than struct-level wrapping.
+
+**Five fields Arc-wrapped in RSL (Phase 41.1.b):**
+
+| Struct | Field | Type |
+|--------|-------|------|
+| `CProposer` | `highest_seqno_requested_by_client_this_view` | `Arc<HashMap<EndPoint, u64>>` |
+| `CProposer` | `request_queue` | `Arc<Vec<CRequest>>` |
+| `CProposer` | `received_1b_packets` | `Arc<HashSet<CPacket>>` |
+| `CExecutor` | `reply_cache` | `Arc<HashMap<EndPoint, CReply>>` |
+| `CLearner` | `unexecuted_learner_state` | `Arc<HashMap<COperationNumber, CLearnerTuple>>` |
+
+**Measured result (2026-05-24, 32 threads x 30s x 2 trials):**
+- Trial 1: **33,503 ops/s**, 1.12 ms latency
+- Trial 2: **31,823 ops/s**, 1.13 ms latency
+- Average: **32,663 ops/s** (exceeds 28K target by 16.7%)
+- Decay: 5.0% (vs 36% pre-Arc)
+- vs pre-Arc baseline (16,341): **+100%** (2x throughput)
+- vs wasiq hand-tuned (28,449): **+14.8%**
+
+**Why field-level works but struct-level doesn't:**
+Struct-level Arc (`proposer: Arc<CProposer>`) saves the clone of CProposer's
+scalars but still deep-clones its internal collections when constructing the
+new CProposer value. The hot fields (HashMaps with hundreds of entries,
+HashSets with accumulated packets) dominate clone time. Field-level Arc
+(`received_1b_packets: Arc<HashSet<CPacket>>`) wraps exactly those hot
+collections, making unchanged-path clone O(1) at the granularity that matters.
+
+### Transpiler support (Phase 41.2)
+
+The transpiler fully supports field-level Arc-wrapping via TOML config:
+
+```toml
+# In <module>_transpile.toml
+arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view", "request_queue", "received_1b_packets"] }
+```
+
+**What the transpiler handles automatically:**
+- Struct field declarations: `pub field: Arc<T>` (codegen/mod.rs)
+- Construction sites: new values wrapped with `Arc::new(value)` (translator/mod.rs)
+- Unchanged clone sites: `field: field.clone()` dispatches to `Arc::clone` (O(1))
+- Proof lemma signatures: `m: &T` instead of `m: T` for auto-deref through `Arc<T>`
+- Proof lemma call sites: `&s.field` for auto-deref (translator/mod.rs build_proof_block)
+- `use std::sync::Arc;` import injection
+
+**What must be hand-written (in `*Impl.rs` files):**
+- Struct definition with `Arc<T>` field type
+- `Clone` impl using `Arc::clone` for wrapped fields
+- `View` impl using `abstractify_*(&self.field)` (auto-deref through Arc)
+- `valid()`/`abstractable()` predicates using `&self.field` (auto-deref)
+- `clone_arc_*` helper for proof-compatible Arc cloning
+
+**Pattern for mutation sites:**
+The transpiler uses a clone-mutate-wrap pattern rather than `Arc::make_mut`:
+```rust
+// Generated code for a mutation site:
+let mut __field = clone_field(&s.field);  // deep clone the inner T
+__field.insert(key, value);               // mutate
+CStruct { field: Arc::new(__field), ..s.clone() }  // wrap new value
+```
+This is simpler than `Arc::make_mut` and works with Verus verification because
+the clone function has `ensures res@ == m@`.
 
 ### Conclusion
+
 **Strategy A (struct-level Arc) has no measured benefit.** The actual win comes from
 **field-level Arc-wrapping of hot collection fields** (a variant of Strategy B's
-insight applied via Arc instead of persistent data structures). Phase 41.2 will
-automate this in the transpiler via TOML config.
+insight — structural sharing — applied via Arc instead of persistent data structures).
+The transpiler automates this via `arc_wrap_fields` TOML config, achieving 2x RSL
+throughput improvement over the baseline.
 
 ## Implementation Plan
 

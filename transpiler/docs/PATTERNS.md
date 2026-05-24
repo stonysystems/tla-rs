@@ -253,10 +253,107 @@ Arc-wrapped fields get `Arc::new(value)`.
 
 ### Performance impact
 
-Benchmarked on Raft (zoo-002, 32 threads × 30s):
-- Pre-Phase-40: 3,400 ops/s baseline
-- Post-Phase-40: 3,804 ops/s (+12%)
-- `CProposer::clone_up_to_view` dropped from top gdb frame to 2/874 samples
+**Note**: Struct-level Arc wrapping (Phase 40) showed **no measured benefit** on
+re-bench (Raft: 3,613 vs 3,612 ops/s, within noise). The original "+12%" claim
+was trial-1 variance. See EFFICIENT_EMIT.md for details.
+
+## Field-Level Arc-Wrapping for Collection Fields (Phase 41)
+
+The **effective** Arc-wrapping strategy wraps individual collection fields
+(`HashMap`, `HashSet`, `Vec`) inside sub-component structs. This targets the
+actual hot spots: large collections that are cloned O(n) on every dispatch but
+change only on specific code paths.
+
+### Configuration
+
+In the protocol's `_transpile.toml`, use `arc_wrap_fields` with inline table syntax:
+
+```toml
+arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view", "request_queue", "received_1b_packets"] }
+```
+
+### What changes
+
+| Without Arc | With Arc |
+|-------------|----------|
+| `pub field: HashMap<K, V>` | `pub field: Arc<HashMap<K, V>>` |
+| `let mut f = clone_map(&s.field);` | `let mut f = clone_map(&s.field);` (auto-deref) |
+| `SType { field: new_map, .. }` | `SType { field: Arc::new(new_map), .. }` |
+| `proof fn lemma(m: MapType)` | `proof fn lemma(m: &MapType)` |
+| `lemma(s.field)` | `lemma(&s.field)` |
+
+### Proof lemma signatures
+
+When a field is Arc-wrapped, proof lemmas that take the field's type as a parameter
+must use `&T` instead of `T` so that Rust's auto-deref from `&Arc<T>` to `&T` works
+at call sites. The transpiler handles this automatically:
+
+```rust
+// Generated for Arc-wrapped CLearnerState field:
+proof fn lemma_abstractify_empty_clearnerstate(m: &CLearnerState)  // &T, not T
+proof fn lemma_abstractify_clearnerstate_insert(
+    old_m: &CLearnerState,    // &T for auto-deref from &Arc<T>
+    m2: &CLearnerState,
+    k: COperationNumber,
+    v: CLearnerTuple,
+)
+
+// Call site in generated exec function:
+proof {
+    lemma_abstractify_clearnerstate_remove(
+        &s.unexecuted_learner_state,      // &Arc<T> auto-derefs to &T
+        &result.unexecuted_learner_state,
+        (*opn)
+    )
+}
+```
+
+### Spec helper signatures
+
+Hand-written spec helpers (`_is_valid`, `_is_abstractable`, `abstractify_*`) must
+also take `&T` instead of `T` for auto-deref to work:
+
+```rust
+// In types_i.rs:
+pub open spec fn clearnerstate_is_valid(m: &CLearnerState) -> bool { ... }
+pub open spec fn abstractify_clearnerstate(m: &CLearnerState) -> LearnerState { ... }
+```
+
+### Hand-written struct support
+
+Each Arc-wrapped field requires coordinated changes in `*Impl.rs`:
+
+```rust
+use std::sync::Arc;
+
+pub struct CLearner {
+    pub constants: CReplicaConstants,
+    pub unexecuted_learner_state: Arc<CLearnerState>,  // Arc-wrapped
+}
+
+impl CLearner {
+    pub fn clone_up_to_view(&self) -> Self {
+        CLearner {
+            constants: self.constants.clone(),
+            unexecuted_learner_state: clone_arc_learner_state(&self.unexecuted_learner_state),
+        }
+    }
+}
+
+// Arc-backed shallow clone helper
+#[verifier::external_body]
+pub fn clone_arc_learner_state(v: &Arc<CLearnerState>) -> (res: Arc<CLearnerState>)
+    ensures res@ == v@,
+{ Arc::clone(v) }
+```
+
+### Performance impact
+
+Measured on RSL (zoo-002, 32 threads x 30s x 2 trials, 5 Arc-wrapped fields):
+- Pre-Arc baseline: 16,341 ops/s, 2.39 ms latency, 36% decay
+- Post-Arc (5 fields): **32,663 ops/s avg**, 1.12 ms latency, 5% decay
+- Improvement: **+100% throughput** (2x), latency halved
+- Exceeds wasiq hand-tuned reference (28,449) by 14.8%
 
 ## Unsupported Patterns
 
