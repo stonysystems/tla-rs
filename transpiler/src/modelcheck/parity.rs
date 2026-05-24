@@ -5,7 +5,7 @@
 //! `docs/cross-engine-state-normalization.md`.
 
 use crate::modelcheck::graph::ExploredGraphIndex;
-use crate::modelcheck::value::RuntimeValue;
+use crate::modelcheck::value::{RuntimeValue, SetRepr};
 use std::collections::BTreeSet;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -224,15 +224,13 @@ mod tests {
 
     #[test]
     fn test_canonical_json_set_sorted() {
-        let set = RuntimeValue::Set(Arc::new(
+        let set = RuntimeValue::Set(Arc::new(SetRepr::from_values(
             vec![
                 RuntimeValue::Int(3),
                 RuntimeValue::Int(1),
                 RuntimeValue::Int(2),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+            ],
+        )));
         let json = set.to_canonical_json();
         assert_eq!(json, serde_json::json!([1, 2, 3]));
     }

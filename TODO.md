@@ -13787,7 +13787,7 @@ Implementation paths:
     len, contains, insert, remove, union, difference, intersection, iter.
     Auto-promote: when all elements are `RuntimeValue::Int(n)` in a 64-wide
     range, use `SmallInt`; otherwise fall back to `General`. ~200 LOC.
-  - [ ] **38.22.2.d.iii**: **Replace `Arc<BTreeSet<RuntimeValue>>` with
+  - [x] **38.22.2.d.iii**: **Replace `Arc<BTreeSet<RuntimeValue>>` with
     `Arc<SetRepr>` in `RuntimeValue::Set`.** Update all pattern matches
     in evaluator.rs, solver.rs, explorer.rs, dpor/, parity.rs, bytecode.rs.
     ~300 LOC of mechanical changes across ~10 files.

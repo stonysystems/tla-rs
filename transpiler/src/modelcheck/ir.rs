@@ -1060,7 +1060,7 @@ fn extract_segments(expr: &Expr) -> Option<Vec<String>> {
 // calls on typical specs (Literal + SetLit variants).
 // ---------------------------------------------------------------------------
 
-use crate::modelcheck::value::RuntimeValue;
+use crate::modelcheck::value::{RuntimeValue, SetRepr};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Try to evaluate an expression to a compile-time constant.
@@ -1077,11 +1077,10 @@ fn try_eval_constant(expr: &Expr) -> Option<RuntimeValue> {
             _ => None,
         },
         Expr::SetLit(items) => {
-            let mut set = BTreeSet::new();
-            for item in items {
-                set.insert(try_eval_constant(item)?);
-            }
-            Some(RuntimeValue::Set(Arc::new(set)))
+            let vals: Vec<RuntimeValue> = items.iter()
+                .map(|item| try_eval_constant(item))
+                .collect::<Option<Vec<_>>>()?;
+            Some(RuntimeValue::Set(Arc::new(SetRepr::from_values(vals))))
         }
         Expr::SeqLit(items) => {
             let mut seq = Vec::with_capacity(items.len());
@@ -1098,7 +1097,7 @@ fn try_eval_constant(expr: &Expr) -> Option<RuntimeValue> {
             Some(RuntimeValue::Map(Arc::new(map)))
         }
         Expr::SeqEmpty => Some(RuntimeValue::Seq(Arc::new(Vec::new()))),
-        Expr::SetEmpty => Some(RuntimeValue::Set(Arc::new(BTreeSet::new()))),
+        Expr::SetEmpty => Some(RuntimeValue::Set(Arc::new(SetRepr::new()))),
         Expr::MapEmpty => Some(RuntimeValue::Map(Arc::new(BTreeMap::new()))),
         Expr::ConstantValue(v) => Some(v.clone()),
         _ => None,
@@ -1127,14 +1126,14 @@ fn constant_fold_expr(expr: Expr) -> Expr {
             let folded: Vec<Expr> = items.into_iter().map(constant_fold_expr).collect();
             // After folding children, try again
             if folded.iter().all(|e| matches!(e, Expr::ConstantValue(_))) {
-                let set: BTreeSet<RuntimeValue> = folded
+                let vals: Vec<RuntimeValue> = folded
                     .into_iter()
                     .map(|e| match e {
                         Expr::ConstantValue(v) => v,
                         _ => unreachable!(),
                     })
                     .collect();
-                return Expr::ConstantValue(RuntimeValue::Set(Arc::new(set)));
+                return Expr::ConstantValue(RuntimeValue::Set(Arc::new(SetRepr::from_values(vals))));
             }
             Expr::SetLit(folded)
         }

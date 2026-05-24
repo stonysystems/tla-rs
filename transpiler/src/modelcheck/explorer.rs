@@ -906,9 +906,9 @@ fn collect_ints_into(value: &RuntimeValue, out: &mut BTreeSet<i128>) {
         RuntimeValue::Int(v) => {
             out.insert(*v);
         }
-        RuntimeValue::Set(items) => {
-            for item in items.iter() {
-                collect_ints_into(item, out);
+        RuntimeValue::Set(repr) => {
+            for item in repr.iter() {
+                collect_ints_into(&item, out);
             }
         }
         RuntimeValue::Seq(items) => {
@@ -944,7 +944,7 @@ fn collect_ints_into(value: &RuntimeValue, out: &mut BTreeSet<i128>) {
 fn value_contains_int(value: &RuntimeValue, target: i128) -> bool {
     match value {
         RuntimeValue::Int(v) => *v == target,
-        RuntimeValue::Set(items) => items.iter().any(|item| value_contains_int(item, target)),
+        RuntimeValue::Set(repr) => repr.iter().any(|item| value_contains_int(&item, target)),
         RuntimeValue::Seq(items) => {
             items.iter().any(|item| value_contains_int(item, target))
         }
@@ -973,10 +973,10 @@ fn relabeled_canonical_key(value: &RuntimeValue, rank_map: &std::collections::Ha
             let relabeled = rank_map.get(v).copied().unwrap_or(*v);
             format!("int:{relabeled}")
         }
-        RuntimeValue::Set(items) => {
-            let mut parts: Vec<String> = items
+        RuntimeValue::Set(repr) => {
+            let mut parts: Vec<String> = repr
                 .iter()
-                .map(|i| relabeled_canonical_key(i, rank_map))
+                .map(|i| relabeled_canonical_key(&i, rank_map))
                 .collect();
             parts.sort();
             format!("set:{{{}}}", parts.join(","))
@@ -1086,10 +1086,10 @@ fn symmetry_normalized_key_with_atoms(
                 .join(",");
             format!("seq:[{parts}]")
         }
-        RuntimeValue::Set(items) => {
-            let mut parts = items
+        RuntimeValue::Set(repr) => {
+            let mut parts = repr
                 .iter()
-                .map(|v| symmetry_normalized_key_with_atoms(v, atoms))
+                .map(|v| symmetry_normalized_key_with_atoms(&v, atoms))
                 .collect::<Vec<_>>();
             parts.sort();
             format!("set:[{}]", parts.join(","))

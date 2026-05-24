@@ -2,7 +2,7 @@ use crate::ast::{Path, Type};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::config::{DomainSpec, ModelConfig, ModelValue};
 use crate::modelcheck::ir::{ExistentialVarIr, TransitionBranchIr};
-use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
+use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue, SetRepr};
 use crate::spec_analyzer::SpecSchema;
 use crate::types::{EnumDef, StructDef, VariantFields};
 use std::collections::{BTreeMap, BTreeSet};
@@ -793,8 +793,8 @@ fn generate_set_values_recursive(
     out: &mut Vec<RuntimeValue>,
 ) -> TranspileResult<()> {
     if current.len() <= max_len {
-        let set = current.iter().cloned().collect::<BTreeSet<_>>();
-        out.push(RuntimeValue::Set(Arc::new(set)));
+        let repr = SetRepr::from_values(current.iter().cloned());
+        out.push(RuntimeValue::Set(Arc::new(repr)));
         if out.len() > expansion_limit {
             return Err(TranspileError::Config {
                 message: format!(

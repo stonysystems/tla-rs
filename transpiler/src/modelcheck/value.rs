@@ -177,7 +177,7 @@ pub enum RuntimeValue {
         _cache: FingerprintCache,
     },
     Seq(Arc<Vec<RuntimeValue>>),
-    Set(Arc<BTreeSet<RuntimeValue>>),
+    Set(Arc<SetRepr>),
     Map(Arc<BTreeMap<RuntimeValue, RuntimeValue>>),
 }
 
@@ -276,20 +276,20 @@ impl RuntimeValue {
     where
         I: IntoIterator<Item = RuntimeValue>,
     {
-        let mut set = BTreeSet::new();
+        let mut repr = SetRepr::new();
         for value in values {
-            set.insert(value);
-            if set.len() > bounds.max_set_len {
+            repr.insert(value);
+            if repr.len() > bounds.max_set_len {
                 return Err(TranspileError::Config {
                     message: format!(
                         "Model-check Set value size {} exceeds configured max_set_len {}.",
-                        set.len(),
+                        repr.len(),
                         bounds.max_set_len
                     ),
                 });
             }
         }
-        Ok(Self::Set(Arc::new(set)))
+        Ok(Self::Set(Arc::new(repr)))
     }
 
     pub fn map_bounded<I>(entries: I, bounds: &RuntimeCollectionBounds) -> TranspileResult<Self>
@@ -436,9 +436,9 @@ impl RuntimeValue {
                     item.hash_into(h);
                 }
             }
-            RuntimeValue::Set(items) => {
-                items.len().hash(h);
-                for item in items.iter() {
+            RuntimeValue::Set(repr) => {
+                repr.len().hash(h);
+                for item in repr.iter() {
                     item.hash_into(h);
                 }
             }
@@ -503,10 +503,10 @@ impl RuntimeValue {
                     .join(",");
                 format!("seq:[{rendered}]")
             }
-            RuntimeValue::Set(items) => {
-                let rendered = items
+            RuntimeValue::Set(repr) => {
+                let rendered = repr
                     .iter()
-                    .map(RuntimeValue::canonical_key)
+                    .map(|v| v.canonical_key())
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("set:{{{rendered}}}")
@@ -560,9 +560,9 @@ impl RuntimeValue {
             RuntimeValue::Seq(items) => {
                 JsonValue::Array(items.iter().map(|v| v.to_canonical_json()).collect())
             }
-            RuntimeValue::Set(items) => {
-                // BTreeSet is already canonically sorted
-                JsonValue::Array(items.iter().map(|v| v.to_canonical_json()).collect())
+            RuntimeValue::Set(repr) => {
+                // SetRepr iter yields elements in ascending order
+                JsonValue::Array(repr.iter().map(|v| v.to_canonical_json()).collect())
             }
             RuntimeValue::Map(entries) => {
                 // BTreeMap is already sorted by key
@@ -1065,11 +1065,9 @@ mod tests {
             fields: NamedFields::new(),
             _cache: FingerprintCache::new(),
         };
-        let set = RuntimeValue::Set(Arc::new(
-            vec![RuntimeValue::Int(1), RuntimeValue::Int(0)]
-                .into_iter()
-                .collect(),
-        ));
+        let set = RuntimeValue::Set(Arc::new(SetRepr::from_values(
+            vec![RuntimeValue::Int(1), RuntimeValue::Int(0)],
+        )));
         let state = RuntimeValue::struct_value(
             "LState",
             vec![

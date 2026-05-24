@@ -19,7 +19,7 @@ use crate::modelcheck::helpers::eval_spec_function_call_recursive;
 use crate::modelcheck::init::{construct_initial_states, InitHooks};
 use crate::modelcheck::ir::build_transition_ir;
 use crate::modelcheck::solver::{solve_branch_successors, SolverHooks};
-use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
+use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue, SetRepr};
 use crate::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
 
 use crate::modelcheck::dpor::types::{EnabledTransition, ProcessId, StateFingerprint, TransitionFootprint};
@@ -199,7 +199,7 @@ impl SpecContext {
                 || matches!(&field.ty, Type::Generic(p, _) if p.last() == Some("Seq"));
 
             let domain = if is_set {
-                vec![RuntimeValue::Set(Arc::new(BTreeSet::new()))]
+                vec![RuntimeValue::Set(Arc::new(SetRepr::new()))]
             } else if is_map {
                 vec![RuntimeValue::Map(Arc::new(BTreeMap::new()))]
             } else if is_seq {

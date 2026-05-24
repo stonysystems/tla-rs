@@ -1,7 +1,7 @@
 use crate::ast::{BinOp, Binding, Expr, MatchArm, Path, Pattern, Type, UnaryOp};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::symbol::Symbol;
-use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue};
+use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue, SetRepr};
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -1202,8 +1202,8 @@ pub fn eval_builtin_method(
             }
             match receiver {
                 RuntimeValue::Map(entries) => {
-                    let keys = entries.keys().cloned().collect();
-                    Ok(Some(RuntimeValue::Set(Arc::new(keys))))
+                    let keys: Vec<RuntimeValue> = entries.keys().cloned().collect();
+                    Ok(Some(RuntimeValue::Set(Arc::new(SetRepr::from_values(keys)))))
                 }
                 other => Err(type_error(
                     format!(
@@ -1216,11 +1216,11 @@ pub fn eval_builtin_method(
         }
         "insert" => {
             match receiver {
-                RuntimeValue::Set(items) => {
+                RuntimeValue::Set(repr) => {
                     if args.len() != 1 {
                         return Err(type_error("Set `.insert(...)` expects one argument."));
                     }
-                    let mut next = (**items).clone();
+                    let mut next = (**repr).clone();
                     next.insert(args[0].clone());
                     Ok(Some(RuntimeValue::Set(Arc::new(next))))
                 }
@@ -1246,8 +1246,8 @@ pub fn eval_builtin_method(
                 return Err(type_error("`.remove(...)` expects one argument."));
             }
             match receiver {
-                RuntimeValue::Set(items) => {
-                    let mut next = (**items).clone();
+                RuntimeValue::Set(repr) => {
+                    let mut next = (**repr).clone();
                     next.remove(&args[0]);
                     Ok(Some(RuntimeValue::Set(Arc::new(next))))
                 }
@@ -1266,7 +1266,7 @@ pub fn eval_builtin_method(
             }
             match (receiver, &args[0]) {
                 (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
-                    let result: std::collections::BTreeSet<_> = a.union(b).cloned().collect();
+                    let result = a.union(b);
                     Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
                 _ => Err(type_error("`.union(...)` expects Set receiver and Set argument.")),
@@ -1278,7 +1278,7 @@ pub fn eval_builtin_method(
             }
             match (receiver, &args[0]) {
                 (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
-                    let result: std::collections::BTreeSet<_> = a.difference(b).cloned().collect();
+                    let result = a.difference(b);
                     Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
                 _ => Err(type_error("`.difference(...)` expects Set receiver and Set argument.")),
@@ -1290,7 +1290,7 @@ pub fn eval_builtin_method(
             }
             match (receiver, &args[0]) {
                 (RuntimeValue::Set(a), RuntimeValue::Set(b)) => {
-                    let result: std::collections::BTreeSet<_> = a.intersection(b).cloned().collect();
+                    let result = a.intersection(b);
                     Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
                 _ => Err(type_error("`.intersect(...)` expects Set receiver and Set argument.")),
@@ -1499,8 +1499,8 @@ fn eval_set_map_with_closure(
     body: &Expr,
     ctx: &EvalContext<'_>,
 ) -> TranspileResult<RuntimeValue> {
-    let elements = match receiver {
-        RuntimeValue::Set(items) => items.iter().cloned().collect::<Vec<_>>(),
+    let elements: Vec<RuntimeValue> = match receiver {
+        RuntimeValue::Set(repr) => repr.iter().collect(),
         _ => {
             return Err(type_error(
                 "`.map(|x| ...)` receiver must be a Set.",
@@ -1516,15 +1516,15 @@ fn eval_set_map_with_closure(
         type_error("`.map(|x| ...)` closure parameter must be a named identifier.")
     })?;
 
-    let mut result = std::collections::BTreeSet::new();
+    let mut result_vals = Vec::new();
     for elem in &elements {
         let scope = ctx.binding_scope();
         scope.push(param_name.to_string(), elem.clone());
         let value = eval_expr(body, ctx)?;
-        result.insert(value);
+        result_vals.push(value);
     }
 
-    Ok(RuntimeValue::Set(Arc::new(result)))
+    Ok(RuntimeValue::Set(Arc::new(SetRepr::from_values(result_vals))))
 }
 
 fn eval_map_new_with_closure(
@@ -1534,8 +1534,8 @@ fn eval_map_new_with_closure(
     ctx: &EvalContext<'_>,
 ) -> TranspileResult<RuntimeValue> {
     // Domain should be a Set
-    let keys = match domain {
-        RuntimeValue::Set(elements) => elements.iter().cloned().collect::<Vec<_>>(),
+    let keys: Vec<RuntimeValue> = match domain {
+        RuntimeValue::Set(repr) => repr.iter().collect(),
         _ => {
             return Err(type_error(
                 "Map::new first argument must be a Set (domain).",
@@ -1855,11 +1855,9 @@ mod tests {
         let insert_out = eval_expr(&insert_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(
             insert_out,
-            RuntimeValue::Set(Arc::new(
-                [RuntimeValue::Int(3), RuntimeValue::Int(4)]
-                    .into_iter()
-                    .collect()
-            ))
+            RuntimeValue::Set(Arc::new(SetRepr::from_values(
+                vec![RuntimeValue::Int(3), RuntimeValue::Int(4)]
+            )))
         );
 
         let remove_expr = Expr::MethodCall {
@@ -1873,7 +1871,7 @@ mod tests {
         let remove_out = eval_expr(&remove_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(
             remove_out,
-            RuntimeValue::Set(Arc::new([RuntimeValue::Int(4)].into_iter().collect()))
+            RuntimeValue::Set(Arc::new(SetRepr::from_values(vec![RuntimeValue::Int(4)])))
         );
 
         let push_expr = Expr::MethodCall {
@@ -2204,7 +2202,7 @@ mod tests {
             &ctx,
         )
         .unwrap();
-        assert_eq!(set_empty, RuntimeValue::Set(Arc::new(Default::default())));
+        assert_eq!(set_empty, RuntimeValue::Set(Arc::new(SetRepr::new())));
 
         let map_empty = eval_expr(
             &Expr::Call {
