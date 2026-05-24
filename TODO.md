@@ -15,9 +15,18 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 **✅ Phase 31 external_body milestone COMPLETE (2026-05-24).** All 22 `external_body` lemmas in RSL refinement proof eliminated (0 remaining). 104 proof functions verify across 17 modules. Phase 31.9.4 fully closed. Phase 34 (Raft) remains deprecated with 12 assumes (7 blocked on the `d_rli ≤ k` strict-term wall).
 
-**✅ Phase 40 COMPLETE (2026-05-24).** Arc-wrapping landed for 7 small protocols + Raft. Results: RSL +24% (13.5K → 16.7K ops/s), Raft +12% (3.4K → 3.8K ops/s), trial-2 decay 7.1% (within ≤15% target). `CProposer::clone_up_to_view` dropped from top gdb frame to 2/874 samples. RSL Arc-wrapping (40.3.g) deferred — RSL is I/O bound, not CPU bound. HashMap → persistent (40.5) skipped — decay within target. **Re-evaluated 2026-05-24 evening**: Phase 40 missed the bigger win — see Phase 41.
+**⚠️ Phase 40 REVISITED (2026-05-24 evening).** Original Phase 40 commit claimed "RSL +24%, Raft +12%" but re-bench with the methodology from the Phase 41 PoC session revealed both numbers were noise:
+- RSL "+24%" was bogus — 40.3.g was deferred, RSL was never actually Arc-wrapped under Phase 40. The +24% trial-1 was unrelated variance; subsequent +82% only landed via Phase 41 PoC (`cb42869`).
+- Raft "+12%" was bogus — measured HEAD vs pre-Phase-40 (c097da0), 32 threads × 30 s × 2 trials each: HEAD = **3,613 ops/s**, baseline = **3,612 ops/s** (Δ +0.03 %, within noise).
+- The 7 small protocols (TwoPhase, Paxos, LeaderElection, ChainReplication, PBFT, VerticalPaxos, EPaxos, PrimaryBackup) have **no client**; their benefit is unknown and unmeasurable without 8 new clients.
+- Phase 40 transpiler also broke RSL regeneration (function-dropping bug; 40.3.g deferred). This blocks Phase 41.2 transpiler automation.
 
-**🔝 Phase 41 is now TOP PRIORITY (2026-05-24).** Manual PoC (`cb42869`) validated that wrapping a single collection field (`CProposer.highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>` → `Arc<HashMap<…>>`) lifts RSL from 16,341 → **29,745 ops/s (+82%)**, latency from 2.39 → 1.31 ms, decay from -36% → -5%. **Matches wasiq-inspect's hand-tuned reference (28,449).** Verus verifies cleanly (125 / 0 errors) with a 1-line `ensures res@ == arc@.insert(k, v)` on the Arc-mutation helper's `assume_specification`. Phase 41 generalizes this manual fix into a transpiler codegen rule. **Do not revert Phase 40** — Phase 41 is additive (Phase 40 wraps sub-component structs at the outer level; Phase 41 wraps collection fields inside those structs; the two compose cleanly).
+**🔝 NEW TOP PRIORITY: Phase 42 → Phase 41 (2026-05-24).** Sequence:
+1. **Phase 42 (NEW)**: Selectively revert Phase 40's Arc-wrap codegen (or disable via TOML config) to unblock RSL regeneration. Salvage Phase 40's independent transpiler bug fixes (e.1, e.3, e.4). Regenerate all 9 protocols cleanly.
+2. **Phase 41.1**: After Phase 42, re-apply the Arc-wrap manually on the freshly-regenerated RSL files (the PoC `cb42869` will be overwritten by regen). Extend to other 4 hot collection fields. Validate ≥28K ops/s sustained.
+3. **Phase 41.2**: Generalize the manual pattern into transpiler codegen rule. Re-bench, document.
+
+PoC (`cb42869`) on a single field (`CProposer.highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>` → `Arc<HashMap<…>>`) lifted RSL from 16,341 → **29,745 ops/s (+82%)**, latency from 2.39 → 1.31 ms, decay from -36% → -5%, matching wasiq-inspect's hand-tuned reference (28,449). Verus verifies (125 / 0 errors). This is the target Phase 41.2 transpiler must hit automatically.
 
 Most transpiler/proof phases are now in good shape. Phase 35 (beginner model-checker architecture survey/tutorial) is complete. Phase 39 (RSL TCP→UDP migration) complete. After **Phase 40** the next priorities are Phase 38 (DPOR prototype, active model-checker track), Phase 36 (exact-state parity follow-up), and Phase 37 (CI/CD recovery).
 The native tla-rs model checker is no longer missing its tutorial/evidence discipline, but it is still product-incomplete: the repo now has checked-in benchmark/TLC-comparison artifacts, matched-cutoff progress tables, release-vs-debug measurements, and beginner architecture docs under `docs/model-checker-architecture/`, yet the benchmark report still shows suspect state-count mismatches, severe performance gaps, and non-finishing exact-mode runs where TLC completes. Current model-check status is tracked in `docs/model_checker_status.md`. Phase 38 is a greenfield prototype under `transpiler/DPOR_based_model_tla_rs_checker/`; that work must stay isolated, build its own 20-case TLA+→tla-rs corpus first, and earn integration only after it has a serious regression story.
@@ -65,10 +74,12 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
 - **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. Remaining DPOR work is acceptance-criteria closure in `38.11`. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
-**Next steps (priority order, updated 2026-05-24):**
-0. **Phase 41: Arc-Wrap Collection Fields — TOP PRIORITY** — manual PoC `cb42869` validated +82% RSL throughput from a single field change, matches wasiq hand-tuned. Generalize to transpiler codegen. See [Phase 41](#phase-41-arc-wrap-collection-fields-hashmaphashsetvec-inside-structs--top-priority).
+**Next steps (priority order, updated 2026-05-24 evening):**
+0. **Phase 42: Unblock RSL Regeneration — TOP PRIORITY** — selectively revert / disable Phase 40 Arc-wrap codegen (zero measured Raft benefit, 7 small protocols unmeasurable, breaks RSL regen). Salvage independent transpiler bug fixes. Regenerate all 9 protocols. See [Phase 42](#phase-42-unblock-rsl-regeneration--selective-phase-40-cleanup--top-priority).
 
-1. **Phase 40: Transpiler-Emitted Impl Efficiency — COMPLETE** — Arc-wrapping landed. RSL +24%, Raft +12%, decay 7.1%. See [Phase 40](#phase-40-transpiler-emitted-impl-efficiency--eliminate-whole-state-functional-clone--complete).
+1. **Phase 41: Arc-Wrap Collection Fields — depends on Phase 42** — manual PoC `cb42869` validated +82% RSL throughput from a single field change, matches wasiq hand-tuned. After Phase 42 regen, re-apply manually on regenerated code, extend to remaining hot fields, then generalize into transpiler codegen. See [Phase 41](#phase-41-arc-wrap-collection-fields-hashmaphashsetvec-inside-structs--top-priority).
+
+2. **Phase 40: Transpiler-Emitted Impl Efficiency — RE-EVALUATED, BENEFIT NOT FOUND** — Arc-wrapping landed but re-bench shows zero measured Raft benefit (3,613 vs 3,612 ops/s). Original "+24% RSL / +12% Raft" claims were noise. To be superseded by Phase 42. See [Phase 40](#phase-40-transpiler-emitted-impl-efficiency--eliminate-whole-state-functional-clone--complete).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -14344,7 +14355,88 @@ critical path.
   functions. Raft 40.6 may temporarily lower this for the modified
   functions if `reveal()` hints are needed; track per-function.
 
-## Phase 41: Arc-Wrap Collection Fields (HashMap/HashSet/Vec) Inside Structs — TOP PRIORITY
+## Phase 42: Unblock RSL Regeneration — Selective Phase 40 Cleanup — TOP PRIORITY
+
+### Motivation
+
+Phase 40 added Arc-wrapping codegen to the transpiler and regenerated Raft, but two findings make most of its runtime work non-pulling-its-weight:
+
+1. **Measured Raft benefit = 0%.** HEAD vs pre-Phase-40 (c097da0), 32 threads × 30 s × 2 trials, zoo-002:
+   - HEAD avg **3,613 ops/s** (3,577 / 3,648)
+   - Baseline avg **3,612 ops/s** (3,625 / 3,598)
+   - Δ +0.03 %, latency identical (9.17 vs 9.18 ms). Phase 40.4.b's "+12 %" claim was trial-1 luck.
+   - RSL "+24 %" was also bogus — 40.3.g was deferred, RSL was never Arc-wrapped under Phase 40. The actual +82 % came from Phase 41 PoC `cb42869`.
+2. **Phase 40 transpiler can't regenerate RSL** (function-dropping bug; 40.3.g deferred). This blocks Phase 41.2 transpiler automation.
+
+The 7 other Phase-40 Arc-wrapped protocols (TwoPhase, Paxos, LeaderElection, ChainReplication, PBFT, VerticalPaxos, EPaxos, PrimaryBackup) have **no client** — only smoke tests, never benched. Their benefit is unknown and unmeasurable without writing 8 clients (days of work).
+
+### Goal
+
+Restore RSL regeneration capability and remove unmeasured-benefit code paths, **without losing** Phase 40's legitimate transpiler bug fixes or the Phase 41 PoC.
+
+### Non-goals
+- Removing Phase 41's hand-edited RSL Arc-wrap (`cb42869`) — that's a measured +82 % win (will be re-applied post-regen).
+- Removing Phase 41's transpiler design — it still proceeds, just on a leaner Phase 40 base.
+- Touching concurrent model-checker / DPOR / bytecode work (Phase 38).
+
+### Plan
+
+#### 42.1 Triage: identify the RSL regen blocker
+
+- [ ] **42.1.a**: On current HEAD, run `transpile` against RSL spec and capture the exact failure mode (which functions dropped, which file, what error). Without this we can't decide whether config-disable suffices.
+- [ ] **42.1.b**: Inspect the 4 transpiler-Arc commits (`8728256`, `6484f5e`, `bd69f03`, `e92d2fe`) to localize the bug. Likely candidates: `bd69f03` (unchanged-field Arc handling) or `6484f5e` (struct-construction Arc wrapping) — both touch the rewrite path that may drop functions when a spec construct doesn't match.
+
+#### 42.2 Decide path (after 42.1)
+
+- **Path A (config-disable, lower risk)**: Set `arc_wrap_types = []` and `arc_wrap_fields = []` in all 9 protocol TOMLs. Keep transpiler code intact (dormant, reusable for Phase 41.2). Regenerate all protocols. If this unblocks RSL regen, ship it.
+- **Path B (transpiler revert, if A doesn't unblock)**: `git revert` the 4 transpiler-Arc commits. Then salvage from `6c4b34c` per 42.3.
+
+#### 42.3 Salvage Phase 40 bug fixes
+
+`6c4b34c` mixes 6 transpiler bug fixes with the `arc_wrap_fields` config feature. Split them:
+
+| Sub-fix | Independent of Arc? | Action |
+|---|---|---|
+| e.1 scalar params get `*param as int` in spec calls | yes | **salvage** |
+| e.2 field access on helper-call results no longer double-Arc-wrapped | Arc-specific | drop |
+| e.3 `Expr::Index` in requires lifted to spec with `@` view | yes | **salvage** |
+| e.4 struct match patterns always append `..` | yes | **salvage** |
+| e.6 struct-update `..s.clone()` Arc-wraps explicit fields | Arc-specific | drop |
+| Arc deref: Vec indexing on Arc-wrapped fields uses local ref binding | Arc-specific | drop |
+
+- [ ] **42.3.a**: Cherry-pick `6c4b34c`, edit out the Arc-specific changes, re-apply as a new commit `transpiler: salvage Phase 40.3.e bug fixes (Phase 42.3)`.
+- [ ] **42.3.b**: `29c2b77` (extract inline if-exprs into spec helpers) is independently useful — **keep as-is**.
+- [ ] **42.3.c**: `d22fa89` (replace `LAdvanceCommitIndex` existential with `replicator_count`) is a Raft spec improvement that eliminates an existential. **Keep**, stands on its own.
+
+#### 42.4 Regenerate all protocols
+
+- [ ] **42.4.a**: Regenerate Raft from cleaned transpiler. Verify `--verify-only-module generated::Raft::raft_gen` still passes (25 verified, 0 errors per Phase 40.3.e).
+- [ ] **42.4.b**: Regenerate RSL — **this is the unblock criterion**. Must produce all functions, no drops. The hand-edited PoC `cb42869` will be overwritten here; Phase 41.1 redoes it on the regenerated code.
+- [ ] **42.4.c**: Regenerate the other 7 protocols. Confirm they compile and existing verification still passes.
+
+#### 42.5 Validate
+
+- [ ] **42.5.a**: Re-bench Raft on cleaned HEAD. Expected: same ~3,600 ops/s (no regression).
+- [ ] **42.5.b**: Confirm RSL builds cleanly from regenerated code (no perf bench yet — that's Phase 41.1.a-redo).
+
+#### 42.6 Cleanup
+
+- [ ] **42.6.a**: Mark Phase 40.3.g, 40.4.d-e, 40.5 as obsolete (folded into Phase 42).
+- [ ] **42.6.b**: Update `transpiler/docs/EFFICIENT_EMIT.md` to reflect that struct-level Arc-wrapping (Phase 40) has no measured benefit and field-level Arc-wrapping (Phase 41) is the actual win.
+
+### Risk register
+
+- **R1**: Path A may not unblock RSL — the bug could be in transpiler logic outside the Arc config gate. → Fall back to Path B.
+- **R2**: Salvaging `6c4b34c` sub-fixes may break Raft regen. → Run `verus --verify-only-module generated::Raft::raft_gen` after each salvaged sub-fix.
+- **R3**: Reverting 4 commits may conflict with later-landed transpiler work (none currently). → Check `git log -- transpiler/` after `20bed02` to confirm.
+
+### Estimated effort
+
+~2 days. 42.1 triage is the unknown — Path A is ~half a day if the bug is config-gated, Path B is ~2 days with salvaging.
+
+---
+
+## Phase 41: Arc-Wrap Collection Fields (HashMap/HashSet/Vec) Inside Structs — depends on Phase 42
 
 ### Motivation
 
@@ -14406,19 +14498,28 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
 
 ### Plan
 
-#### 41.1 Concrete target & manual baseline
+#### 41.0 Prerequisite: Phase 42 complete
 
-- [x] **41.1.a**: PoC commit `cb42869` validates the pattern on
-  `CProposer.highest_seqno_requested_by_client_this_view` (single field).
-  Result: +82% throughput, decay collapsed to -5%, matches wasiq.
-- [ ] **41.1.b**: Manually Arc-wrap the other hot collection fields:
+All 9 protocols must regenerate cleanly first. Phase 42 is the gate.
+
+- The original PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs` against the CLAUDE.md "no hand-edit generated code" rule (necessary at the time because Phase 40 transpiler couldn't regen RSL). Phase 42 fixes that by either disabling Arc codegen via config (Path A) or reverting the 4 Arc commits (Path B). After Phase 42 regenerates RSL, the hand-edits in `proposer_gen.rs` are **overwritten** — Phase 41.1.a must redo them on the regenerated baseline.
+
+#### 41.1 Concrete target & manual baseline (after Phase 42)
+
+- [x] ~~**41.1.a (original)**: PoC `cb42869` validated the pattern on `CProposer.highest_seqno_requested_by_client_this_view` (single field). +82% throughput, -5% decay, matches wasiq.~~ — **overwritten by Phase 42 regen; redo as 41.1.a-redo**.
+- [ ] **41.1.a-redo**: Re-apply the Arc-wrap on the regenerated RSL files. Two parts:
+  - `src/implementation/RSL/ProposerImpl.rs`: change field type to `Arc<HashMap<EndPoint, u64>>` + `use std::sync::Arc;` + `clone_endpoint_seqno_map` uses `Arc::clone`. (This file is hand-written impl, survives regen.)
+  - `src/generated/RSL/proposer_gen.rs`: add `use std::sync::Arc;`, wrap `HashMap::new()` → `Arc::new(HashMap::new())` at the 2 init sites, swap insert site to `_arc_seqno_insert` helper, add plain-Rust `_arc_seqno_insert` helper outside `verus!{}` block, add `assume_specification` with `ensures res@ == arc@.insert(k, v)`.
+  - Verify: `verus --crate-type=lib src/lib.rs --no-verify` builds; `--verify-only-module generated::RSL::proposer_gen` passes (target 125 verified, 0 errors).
+  - Bench: ≥28K ops/s sustained, ≤5% decay (matches wasiq).
+- [ ] **41.1.b**: Manually Arc-wrap the other hot collection fields on regenerated RSL:
   `CProposer.request_queue: Vec<CRequest>`, `CProposer.received_1b_packets:
   HashSet<CPacket>`, `CExecutor.reply_cache: HashMap<EndPoint, CReply>`,
   `CLearner.unexecuted_ops: HashMap<COp, ...>`. Bench each step to measure
   marginal gain. Target: ≥30K ops/s sustained, ≤2% decay.
 - [ ] **41.1.c**: Repeat on Raft hot fields (`log: Vec<CLogEntry>`,
-  `votes_granted: HashSet<u64>`, `match_index/next_index: HashMap<u64, u64>`)
-  once Phase 40.3 (Raft regen) lands.
+  `votes_granted: HashSet<u64>`, `match_index/next_index: HashMap<u64, u64>`).
+  Deferred — Raft is currently 3.6K ops/s with no measured Phase 40 benefit; whether collection-field Arc helps Raft is unproven. Gate this sub-task on a quick Arc-wrap-log PoC showing ≥5K ops/s before committing to the full set.
 
 #### 41.2 Generalize to transpiler
 
@@ -14498,23 +14599,19 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
 - [ ] **41.4.c**: Update README's Transpiler section with the new
   perf numbers (RSL 30K, Raft 10K targets).
 
-### Relationship to Phase 40 (DO NOT REVERT)
+### Relationship to Phase 40 (REVISITED — Phase 42 supersedes)
 
-Phase 41 is **additive** to Phase 40, not a replacement:
+Original framing assumed Phase 40 (struct-level Arc) + Phase 41 (field-level Arc) compose additively. Re-bench (2026-05-24 evening) showed:
+- Phase 40's struct-level Arc has **zero measured benefit on Raft** (3,613 vs 3,612 ops/s).
+- RSL's +82 % came entirely from a single field-level Arc-wrap (`cb42869`), not from struct-level wrapping (40.3.g was deferred).
+- 7 small protocols are unmeasurable (no client). Cannot assert they benefit from struct-level Arc.
 
-| Layer | Phase | Purpose |
+Phase 42 selectively rolls back Phase 40's Arc codegen (or disables via config) to unblock RSL regen. Phase 41 then redoes its field-level Arc work on the regenerated baseline. The transpiler infrastructure from Phase 40.2 (`arc_wrap_types`/`arc_wrap_fields` codegen support) is preserved (dormant in Path A, removed in Path B); Phase 41.2 can re-use or re-introduce the dormant codegen path for field-level wrapping.
+
+| Layer | Phase | Status after Phase 42 |
 |-------|-------|---------|
-| Struct-level Arc | Phase 40 `arc_wrap_fields` | `CReplica { proposer: Arc<CProposer> }` — skip CProposer deep-copy when CReplica is functionally rebuilt |
-| Field-level Arc | Phase 41 `arc_wrap_collection_fields` | `CProposer { highest_seqno: Arc<HashMap<…>> }` — skip HashMap deep-copy when CProposer is functionally rebuilt |
-
-The two combine: a CReplica clone bumps Arc for proposer (cheap, Phase 40
-benefit). When the proposer needs mutation, `Arc::make_mut(proposer)`
-forces a CProposer clone, and inside that clone, each HashMap field is
-also Arc::clone (cheap, Phase 41 benefit).
-
-**Do not revert Phase 40.** The 7 small protocols already benefit from it.
-The unresolved Phase 40 issues (RSL regen blocked by transpiler regression,
-Raft 40.3 spec refactor) remain; Phase 41 doesn't depend on them.
+| Struct-level Arc (`Arc<CProposer>`) | Phase 40 `arc_wrap_fields` | Disabled (Path A) or reverted (Path B). No measured benefit; not pursued unless evidence appears. |
+| Field-level Arc (`Arc<HashMap<…>>`) | Phase 41 `arc_wrap_collection_fields` | The actual perf win. Manual on regenerated code (41.1), then transpiler-automated (41.2). |
 
 ### Risk & Mitigation
 
