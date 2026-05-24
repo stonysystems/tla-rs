@@ -14407,7 +14407,7 @@ Two options for each unsupported pattern; pick per-function based on cost/benefi
 The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once we set up a proper regen workflow, those edits will be wiped on each regen until Phase 41.2 lands. Two options:
 
 - [ ] **42.3.a (preferred)**: Add a TOML config entry that tells the transpiler to emit `Arc<HashMap<EndPoint, u64>>` for `CProposer.highest_seqno_requested_by_client_this_view`, plus generate the `_arc_seqno_insert` helper + `assume_specification`. This is a **partial Phase 41.2.b implementation** scoped to one field, and survives regen by construction.
-- [ ] **42.3.b (fallback)**: Document the manual patch in `transpiler/docs/regen_workflow.md` so anyone running regen knows to re-apply the cb42869 patch. Stopgap until 42.3.a or full Phase 41.2 lands.
+- [x] **42.3.b (fallback)**: Document the manual patch in `transpiler/docs/REGEN_WORKFLOW.md` so anyone running regen knows to re-apply the cb42869 patch. Stopgap until 42.3.a or full Phase 41.2 lands. Covers: Arc-wrap steps (a–i), skip_functions hand-written bodies, verification commands.
 
 #### 42.4 Establish a tested regen workflow
 
