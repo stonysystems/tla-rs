@@ -13640,7 +13640,7 @@ Three implementation paths, in increasing engineering cost / payoff:
   (multi-variable quantifiers) work correctly via truncation to saved
   depth. Error paths handled via RAII (scope drops on `?` propagation).
   5 tests (2 new: push/pop correctness, nested scope). *DONE.*
-- [ ] **38.22.1.b**: **Stack-based bytecode VM.** Compile each spec
+- [x] **38.22.1.b**: **Stack-based bytecode VM.** Compile each spec
   function to a sequence of opcodes (LoadVar, LoadField, SetUnion,
   Eq, JumpIfFalse, …) executed by a tight switch-dispatched loop.
   Inspired by TLC's compiled form. Per-op cost drops from ~µs (AST
