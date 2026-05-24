@@ -14012,21 +14012,16 @@ require regen to succeed first.
 
 ##### Concrete edits to `src/protocol/Raft/raft.rs`
 
-- [ ] **40.3.a**: Extract 3 inline `if-expr`s into spec helpers:
-  ```rust
-  pub open spec fn ae_entry_count(has_entry: bool) -> int {
-      if has_entry { 1int } else { 0int }
-  }
-  pub open spec fn step_down_has_voted(s: LState, ae_term: int) -> bool {
-      if ae_term > s.current_term { false } else { s.has_voted }
-  }
-  pub open spec fn step_down_voted_for(s: LState, ae_term: int) -> int {
-      if ae_term > s.current_term { 0int } else { s.voted_for }
-  }
-  ```
-  Call sites: [raft.rs:142](src/protocol/Raft/raft.rs#L142),
-  [raft.rs:183](src/protocol/Raft/raft.rs#L183),
-  [raft.rs:184](src/protocol/Raft/raft.rs#L184).
+- [x] **40.3.a**: Extract inline `if-expr`s into spec helpers.
+  Added `ae_entry_count(has_entry) -> int` helper (line 142).
+  Replaced `if ae_term > s.current_term { false/0int } else { s.field }`
+  with `step_down_if_needed(s, ae_term).field` for `has_voted`,
+  `voted_for`, and `votes_granted` (lines 183-184, 195) — reuses the
+  existing `step_down_if_needed` helper instead of creating new ones.
+  Also updated proof files (`invariants.rs:7177`,
+  `message_invariants.rs:267`). Verified: 0 regressions in
+  `raft_refinement` (6/0), `message_invariants` (1/0), `raft_gen`
+  (23/2 — same as baseline). Transpiler tests: 1661/0.
 - [ ] **40.3.b**: Refactor [raft.rs:274-283](src/protocol/Raft/raft.rs#L274)
   `LAdvanceCommitIndex` quorum guard from `exists |q| { multi-conjunct }`
   to a count-based form:

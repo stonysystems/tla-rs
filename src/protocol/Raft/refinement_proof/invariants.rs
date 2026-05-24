@@ -7174,7 +7174,7 @@ verus! {
                     &&& prev_index >= 0
                     &&& ds_.server_states[l].current_term >= t
                     &&& ds_.server_states[l].log.len() >= prev_index
-                            + (if has_entry { 1int } else { 0int })
+                            + ae_entry_count(has_entry)
                     &&& (prev_index > 0 ==>
                         ds_.server_states[l].log[prev_index - 1].term == prev_term)
                     &&& (has_entry ==>

@@ -139,7 +139,7 @@ verus! {
         &&& c.servers.contains(follower)
         // Log-consistency constraints: message parameters match the leader's log
         &&& prev_log_index >= 0
-        &&& s.log.len() >= prev_log_index + (if has_entry { 1int } else { 0int })
+        &&& s.log.len() >= prev_log_index + ae_entry_count(has_entry)
         &&& (prev_log_index > 0 ==> s.log[prev_log_index - 1].term == prev_log_term)
         &&& (has_entry ==> s.log[prev_log_index].value == entry_value)
         // Entry term must match leader's current term. This ensures
@@ -180,8 +180,8 @@ verus! {
         // Accept: step down to follower if needed, append entry
         &&& s_.current_term == ae_term
         &&& s_.role is Follower
-        &&& s_.has_voted == (if ae_term > s.current_term { false } else { s.has_voted })
-        &&& s_.voted_for == (if ae_term > s.current_term { 0int } else { s.voted_for })
+        &&& s_.has_voted == step_down_if_needed(s, ae_term).has_voted
+        &&& s_.voted_for == step_down_if_needed(s, ae_term).voted_for
         &&& s_.log == (if ae_has_entry {
             s.log.push(LLogEntry { term: ae_term, value: ae_value })
         } else { s.log })
@@ -192,9 +192,7 @@ verus! {
                 if ae_leader_commit <= s.log.len() { ae_leader_commit } else { s.log.len() as int }
             }
         } else { s.commit_index })
-        &&& s_.votes_granted == (if ae_term > s.current_term {
-            Set::<int>::empty()
-        } else { s.votes_granted })
+        &&& s_.votes_granted == step_down_if_needed(s, ae_term).votes_granted
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::AppendResponse {
@@ -317,6 +315,11 @@ verus! {
     // into a single action, matching the host.rs handler logic.
     // Guard failure yields s_ == s_mid && sent_packets == empty.
     // ---------------------------------------------------------------
+
+    /// Spec helper: number of entries in an AppendEntries message.
+    pub open spec fn ae_entry_count(has_entry: bool) -> int {
+        if has_entry { 1int } else { 0int }
+    }
 
     /// Spec helper: compute step-down intermediate state.
     /// If new_term > current_term, become Follower and reset voting state.
