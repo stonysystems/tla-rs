@@ -13771,7 +13771,7 @@ Implementation paths:
 - [x] **38.22.2.c**: **`Arc<RuntimeValue>` for shared subterms.**
   Implemented as part of 38.21.E. Set/Map/Seq inner collections are
   now `Arc`-wrapped; clone becomes refcount bump. *DONE.*
-- [ ] **38.22.2.d**: **Bit-packed representation for small enum
+- [x] **38.22.2.d**: **Bit-packed representation for small enum
   variants and small integer sets.** Domain-specific; for Paxos's
   Set<int> over {1..8}, a bitmap (u8) is ~32× smaller than
   BTreeSet<RuntimeValue>. *Per-spec design work.*

@@ -578,4 +578,79 @@ mod tests {
         // s is still usable
         assert_eq!(s.len(), 2);
     }
+
+    #[test]
+    fn test_eq_same_offset() {
+        let mut a = SmallIntSet::new(0);
+        a.insert(1).unwrap();
+        a.insert(3).unwrap();
+        let mut b = SmallIntSet::new(0);
+        b.insert(1).unwrap();
+        b.insert(3).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_eq_different_offset_same_elements() {
+        // {4} with offset=3 (e.g. from {3,4}.remove(3))
+        let mut a = SmallIntSet::new(3);
+        a.insert(4).unwrap();
+        // {4} with offset=4
+        let mut b = SmallIntSet::new(4);
+        b.insert(4).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_eq_both_empty_different_offset() {
+        let a = SmallIntSet::new(0);
+        let b = SmallIntSet::new(100);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_ne_different_elements() {
+        let mut a = SmallIntSet::new(0);
+        a.insert(1).unwrap();
+        let mut b = SmallIntSet::new(0);
+        b.insert(2).unwrap();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_eq_offset_shift_multiple_elements() {
+        // {10, 12} with offset=10
+        let mut a = SmallIntSet::new(10);
+        a.insert(10).unwrap();
+        a.insert(12).unwrap();
+        // {10, 12} with offset=8
+        let mut b = SmallIntSet::new(8);
+        b.insert(10).unwrap();
+        b.insert(12).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_hash_consistent_with_eq() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut a = SmallIntSet::new(3);
+        a.insert(4).unwrap();
+        let mut b = SmallIntSet::new(4);
+        b.insert(4).unwrap();
+        assert_eq!(a, b);
+
+        let hash_a = {
+            let mut h = DefaultHasher::new();
+            a.hash(&mut h);
+            h.finish()
+        };
+        let hash_b = {
+            let mut h = DefaultHasher::new();
+            b.hash(&mut h);
+            h.finish()
+        };
+        assert_eq!(hash_a, hash_b, "equal sets must have equal hashes");
+    }
 }
