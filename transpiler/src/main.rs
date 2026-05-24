@@ -258,6 +258,11 @@ enum Commands {
         /// Model-check config (model.toml)
         #[arg(long)]
         model: PathBuf,
+
+        /// Use bytecode VM instead of AST interpreter for expression evaluation.
+        /// Compiles expressions to bytecode on first use and caches the result.
+        #[arg(long)]
+        bytecode: bool,
     },
 
     /// Emit a machine-readable JSON report of `assume(...)` sites in generated files.
@@ -3473,6 +3478,7 @@ fn try_solve_predicate_only_helper_branch(
                 method_evaluator: None,
                 quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                 predicate_only_branch_solver: None,
+                bytecode_cache: None,
             },
             None,
         ) {
@@ -3500,6 +3506,7 @@ fn try_solve_predicate_only_helper_branch(
                                 method_evaluator: None,
                                 quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                                 predicate_only_branch_solver: None,
+                                bytecode_cache: None,
                             },
                             None,
                         )?;
@@ -3615,6 +3622,7 @@ fn execute_model_check(
     selected_search: CliSearchMode,
     selected_invariants: &[&verus_transpiler::ast::SpecFunction],
     export_parity_debug: Option<&Path>,
+    use_bytecode: bool,
 ) -> Result<ModelCheckExecution> {
     use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
@@ -3638,6 +3646,12 @@ fn execute_model_check(
         solve_branch_successors_with_candidates_and_telemetry, SolverHooks,
     };
     use verus_transpiler::modelcheck::value::RuntimeCollectionBounds;
+
+    let bytecode_cache = if use_bytecode {
+        Some(verus_transpiler::modelcheck::bytecode::BytecodeCache::new())
+    } else {
+        None
+    };
 
     let candidate_eval_guardrail = model_config.search.candidate_eval_guardrail;
 
@@ -3994,6 +4008,7 @@ fn execute_model_check(
                             method_evaluator: None,
                             quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
                             predicate_only_branch_solver: Some(&predicate_only_branch_solver),
+                            bytecode_cache: bytecode_cache.as_ref(),
                         },
                         Some(&solve_timeout_reached),
                     )?;
@@ -4463,6 +4478,7 @@ fn run_model_check_command(
     timeout_ms: Option<u64>,
     model: &Path,
     export_parity_debug: Option<&Path>,
+    use_bytecode: bool,
 ) -> Result<ModelCheckCommandExecution> {
     use std::time::Instant;
     use verus_transpiler::modelcheck::config::{
@@ -4524,6 +4540,7 @@ fn run_model_check_command(
         selected_search,
         &selected_invariants,
         export_parity_debug,
+        use_bytecode,
     )?;
     execution.summary.timing.source_ingestion_parsing_ms = source_ingestion_parsing_ms;
     execution.summary.timing.model_config_resolution_ms = model_config_resolution_ms;
@@ -4635,6 +4652,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             export_parity,
             export_parity_debug,
             model,
+            bytecode,
         } => {
             if cli.verbose {
                 eprintln!("Loading protocol spec: {}", input.display());
@@ -4663,6 +4681,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 *timeout_ms,
                 model.as_path(),
                 export_parity_debug.as_deref(),
+                *bytecode,
             )?;
             let search_evidence_mode = classify_search_evidence_mode(&model_config.search);
 
@@ -6685,6 +6704,7 @@ Next(s, s_, c) ==
                 export_parity: _,
                 export_parity_debug: _,
                 model,
+                bytecode: _,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
                 assert_eq!(types, Some(PathBuf::from("src/protocol/TwoPhase/types.rs")));
@@ -6876,6 +6896,7 @@ invariants = ["LInv"]
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -6960,6 +6981,7 @@ fairness = { weak = ["branch_0"] }
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -7044,6 +7066,7 @@ fairness = { weak = ["branch_typo"], strong = ["branch_missing"] }
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -7131,6 +7154,7 @@ max_states = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -7212,6 +7236,7 @@ timeout_ms = 60000
             None,
             model_path.as_path(),
             None,
+            false,
         )
         .unwrap();
         assert_eq!(baseline.execution.summary.result, "ok");
@@ -7242,6 +7267,7 @@ timeout_ms = 60000
             timeout_override,
             model_path.as_path(),
             None,
+            false,
         )
         .unwrap();
         assert_eq!(timeout_run.execution.summary.result, "timeout_reached");
@@ -7276,6 +7302,7 @@ timeout_ms = 60000
             timeout_alias_override,
             model_path.as_path(),
             None,
+            false,
         )
         .unwrap();
         assert_eq!(
@@ -7344,6 +7371,7 @@ max = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -7421,6 +7449,7 @@ max = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -7513,6 +7542,7 @@ invariants = ["LInvBad"]
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -7595,6 +7625,7 @@ max = 2
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -7701,6 +7732,7 @@ max_states = 50
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -7813,6 +7845,7 @@ max_states = 50
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -7922,6 +7955,7 @@ max_states = 50
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8028,6 +8062,7 @@ max_states = 50
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8149,6 +8184,7 @@ max_states = 50
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8224,6 +8260,7 @@ max = 2
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap_err();
         assert!(
@@ -8308,6 +8345,7 @@ check_deadlock = true
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8391,6 +8429,7 @@ leads_to = [{ name = "eventual_one", from = "LFrom", to = "LTo" }]
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8490,6 +8529,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8573,6 +8613,7 @@ max = 1
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8686,6 +8727,7 @@ max = 1
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8804,6 +8846,7 @@ max = 1
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8909,6 +8952,7 @@ max = 1
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -8986,6 +9030,7 @@ max = 1
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -9208,6 +9253,7 @@ max = 1
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -9315,6 +9361,7 @@ max = 1
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -9425,6 +9472,7 @@ max = 10001
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap_err();
 
@@ -9510,6 +9558,7 @@ fairness = { strong = ["branch_2", "branch_3"] }
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -9603,6 +9652,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -9698,6 +9748,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -9784,6 +9835,7 @@ state_dedup = "hash_compaction64"
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -9915,6 +9967,7 @@ symmetry_fields = ["value"]
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -10005,6 +10058,7 @@ invariants = ["LVisibleBound"]
             CliSearchMode::Bfs,
             &selected_invariants,
             None,
+            false,
         )
         .unwrap();
 
@@ -10074,6 +10128,7 @@ max = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -10150,6 +10205,7 @@ max = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -10238,6 +10294,7 @@ verus! {
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -10295,6 +10352,7 @@ verus! {
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -10377,6 +10435,7 @@ invariants = ["LMissing"]
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -10461,6 +10520,7 @@ invariants = ["LMissing"]
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -10530,6 +10590,7 @@ verus! {
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,
@@ -10596,6 +10657,7 @@ verus! {
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
+            bytecode: false,
         };
         let cli = Cli {
             command: None,

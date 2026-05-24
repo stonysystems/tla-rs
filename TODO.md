@@ -13694,7 +13694,7 @@ Three implementation paths, in increasing engineering cost / payoff:
     / `method_evaluator` from `EvalContext` (keeps FFI boundary
     unchanged). ~200 LOC.
 
-  - [ ] **38.22.1.b.vi**: **Compile cache & integration.**
+  - [x] **38.22.1.b.vi**: **Compile cache & integration.**
     Add a `HashMap<PathId, Chunk>` cache in the model checker
     driver (likely `explorer.rs` or `checker.rs`). On first eval
     of a function, compile its body to bytecode and cache.

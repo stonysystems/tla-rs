@@ -541,6 +541,7 @@ impl SpecContext {
                     method_evaluator: None,
                     quantifier_domain_evaluator: Some(&quant_eval),
                     predicate_only_branch_solver: None,
+                    bytecode_cache: None,
                 };
                 match solve_branch_successors(
                     &helper_transition, helper_branch, cur_state, constants,
@@ -560,6 +561,7 @@ impl SpecContext {
             method_evaluator: None,
             quantifier_domain_evaluator: Some(&quant_eval),
             predicate_only_branch_solver: Some(&predicate_solver),
+            bytecode_cache: None,
         };
 
         let mut solved = Vec::new();
@@ -724,6 +726,7 @@ impl SpecContext {
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: None,
+            bytecode_cache: None,
         }
     }
 

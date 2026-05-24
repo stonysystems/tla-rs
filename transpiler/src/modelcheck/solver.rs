@@ -81,6 +81,7 @@ pub struct SolverHooks<'a> {
     pub method_evaluator: Option<&'a MethodEvaluator<'a>>,
     pub quantifier_domain_evaluator: Option<&'a QuantifierDomainEvaluator<'a>>,
     pub predicate_only_branch_solver: Option<&'a PredicateOnlyBranchSolver<'a>>,
+    pub bytecode_cache: Option<&'a crate::modelcheck::bytecode::BytecodeCache>,
 }
 
 /// Semantics to apply when `LNext` yields no enabled successors.
@@ -892,6 +893,24 @@ fn eval_with_environment(
     bounds: RuntimeCollectionBounds,
     hooks: SolverHooks<'_>,
 ) -> TranspileResult<RuntimeValue> {
+    if let Some(bc_cache) = hooks.bytecode_cache {
+        let env_names: Vec<String> = env.keys().cloned().collect();
+        let compiled = bc_cache.get_or_compile(expr, &env_names)?;
+        let vm_ctx = crate::modelcheck::bytecode::VmContext {
+            bounds,
+            call_evaluator: hooks
+                .call_evaluator
+                .map(|f| f as &dyn Fn(&crate::ast::Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>),
+            method_evaluator: hooks
+                .method_evaluator
+                .map(|f| f as &dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue>),
+            quantifier_domain: hooks
+                .quantifier_domain_evaluator
+                .map(|f| f as &dyn Fn(&crate::ast::Binding) -> TranspileResult<Vec<RuntimeValue>>),
+        };
+        return crate::modelcheck::bytecode::vm_eval_with_env(&compiled, env, &vm_ctx);
+    }
+
     let mut ctx = EvalContext::new(bounds);
     for (name, value) in env {
         ctx = ctx.with_binding(name.clone(), value.clone());
@@ -1781,6 +1800,7 @@ mod tests {
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: None,
+            bytecode_cache: None,
         };
 
         let successors = solve_branch_successors_with_candidates(
@@ -1825,6 +1845,7 @@ mod tests {
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: None,
+            bytecode_cache: None,
         };
 
         let result = solve_branch_successors_with_candidates_and_telemetry(
@@ -1922,6 +1943,7 @@ mod tests {
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: None,
+            bytecode_cache: None,
         };
 
         let result = solve_branch_successors_with_candidates_and_telemetry(
@@ -1975,6 +1997,7 @@ mod tests {
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: None,
+            bytecode_cache: None,
         };
         let stop_checks = AtomicUsize::new(0);
         let stop_after_first_candidate = || stop_checks.fetch_add(1, Ordering::Relaxed) >= 2;
@@ -2027,6 +2050,7 @@ mod tests {
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: Some(&predicate_only_solver),
+            bytecode_cache: None,
         };
 
         let result = solve_branch_successors_with_candidates_and_telemetry(
@@ -2169,6 +2193,7 @@ mod tests {
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: Some(&predicate_only_solver),
+            bytecode_cache: None,
         };
 
         let result = solve_branch_successors_with_candidates_and_telemetry(

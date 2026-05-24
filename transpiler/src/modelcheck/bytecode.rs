@@ -12,6 +12,9 @@ use crate::ast::{BinOp, Expr, Literal, Path, Pattern, UnaryOp};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::RuntimeValue;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Index into a `Chunk`'s constant pool.
 pub type ConstIdx = u16;
@@ -1708,6 +1711,309 @@ fn vm_eval_body_slice(
     stack.pop().ok_or_else(|| type_error("VM: body ended without value"))
 }
 
+// ── Bytecode cache & integration ──────────────────────────────────────
+
+/// A compiled expression with pre-allocated environment variable slots.
+pub struct CompiledExpr {
+    pub chunk: Chunk,
+    /// Environment variable name → local slot, for pre-populating locals
+    /// before VM execution.
+    pub env_slots: Vec<(String, LocalIdx)>,
+}
+
+/// Compile an expression with pre-allocated local slots for the given
+/// environment variable names. Returns a `CompiledExpr` whose `env_slots`
+/// records which slot each environment variable was assigned to.
+pub fn compile_with_env(expr: &Expr, env_names: &[String]) -> TranspileResult<CompiledExpr> {
+    let mut chunk = Chunk::new();
+    let mut locals = LocalTable::new();
+    let mut env_slots = Vec::with_capacity(env_names.len());
+    for name in env_names {
+        let slot = chunk.alloc_local();
+        locals.push(name.clone(), slot);
+        env_slots.push((name.clone(), slot));
+    }
+    compile_expr(expr, &mut chunk, &mut locals)?;
+    chunk.emit(Opcode::Return);
+    Ok(CompiledExpr { chunk, env_slots })
+}
+
+/// Cache of compiled bytecode chunks, keyed by expression pointer identity.
+///
+/// The AST is immutable during a model-check run, so pointer identity is
+/// a valid cache key. The cache also keys on the sorted set of environment
+/// variable names, since different call sites may provide different env vars.
+pub struct BytecodeCache {
+    cache: RefCell<HashMap<(usize, Vec<String>), Rc<CompiledExpr>>>,
+}
+
+impl BytecodeCache {
+    pub fn new() -> Self {
+        Self {
+            cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// Get a cached compiled expression, or compile and cache it.
+    pub fn get_or_compile(
+        &self,
+        expr: &Expr,
+        env_names: &[String],
+    ) -> TranspileResult<Rc<CompiledExpr>> {
+        let key = (expr as *const Expr as usize, env_names.to_vec());
+        if let Some(compiled) = self.cache.borrow().get(&key) {
+            return Ok(Rc::clone(compiled));
+        }
+        let compiled = Rc::new(compile_with_env(expr, env_names)?);
+        self.cache
+            .borrow_mut()
+            .insert(key, Rc::clone(&compiled));
+        Ok(compiled)
+    }
+}
+
+/// Execute a compiled expression with a pre-populated environment.
+///
+/// This is the main integration point: given a `CompiledExpr` and a name→value
+/// environment, it populates the VM's local slots and executes the chunk.
+pub fn vm_eval_with_env(
+    compiled: &CompiledExpr,
+    env: &std::collections::BTreeMap<String, RuntimeValue>,
+    ctx: &VmContext<'_>,
+) -> TranspileResult<RuntimeValue> {
+    let mut locals = vec![RuntimeValue::Unit; compiled.chunk.num_locals as usize];
+    for (name, slot) in &compiled.env_slots {
+        if let Some(value) = env.get(name) {
+            locals[*slot as usize] = value.clone();
+        }
+    }
+    vm_eval_with_locals(&compiled.chunk, ctx, locals)
+}
+
+/// Execute a compiled chunk with pre-populated locals array.
+///
+/// This is similar to `vm_eval` but accepts a pre-initialized locals vector,
+/// enabling callers to inject environment bindings into specific slots.
+pub fn vm_eval_with_locals(
+    chunk: &Chunk,
+    ctx: &VmContext<'_>,
+    locals: Vec<RuntimeValue>,
+) -> TranspileResult<RuntimeValue> {
+    // Delegate to vm_eval, but first inject the pre-populated locals.
+    // We do this by creating a patched chunk that starts with StoreLocal
+    // instructions for each pre-populated slot... actually, it's simpler
+    // to just copy the vm_eval logic but use our locals.
+    //
+    // Since vm_eval already handles everything correctly (quantifiers via
+    // vm_eval_quantifier, body slices, etc.), we just need to set up the
+    // locals array before calling it. The trick: vm_eval initializes
+    // locals to Unit, but we need our pre-populated values.
+    //
+    // We can't directly pass locals to vm_eval (it creates its own).
+    // Instead, re-use vm_eval_body_slice which shares a locals array.
+    // But vm_eval_body_slice copies the ops into a sub-chunk...
+    //
+    // Simplest correct approach: inline the main vm_eval loop but with
+    // our locals, delegating quantifiers to vm_eval_quantifier.
+    let mut pc: usize = 0;
+    let mut stack: Vec<RuntimeValue> = Vec::with_capacity(32);
+    let mut locals = locals;
+
+    while pc < chunk.ops.len() {
+        match &chunk.ops[pc] {
+            Opcode::LoadConst(ci) => stack.push(chunk.constants[*ci as usize].clone()),
+            Opcode::LoadLocal(slot) => stack.push(locals[*slot as usize].clone()),
+            Opcode::StoreLocal(slot) => locals[*slot as usize] = stack.pop().unwrap(),
+            Opcode::Pop => { stack.pop(); }
+            Opcode::Dup => { let top = stack.last().unwrap().clone(); stack.push(top); }
+            Opcode::LoadField(sym) => {
+                let base = stack.pop().unwrap();
+                match base.field_sym(*sym).cloned() {
+                    Some(value) => stack.push(value),
+                    None => {
+                        let name = sym.resolve();
+                        if name == "tag" { stack.push(base); }
+                        else {
+                            return Err(type_error(&format!(
+                                "VM: field `.{}` not valid for `{}`", name, base.canonical_key()
+                            )));
+                        }
+                    }
+                }
+            }
+            Opcode::LoadArrow(sym) => {
+                let base = stack.pop().unwrap();
+                stack.push(base.field_sym(*sym).cloned().ok_or_else(|| {
+                    type_error(&format!("VM: arrow `->{}` not valid for `{}`", sym.resolve(), base.canonical_key()))
+                })?);
+            }
+            Opcode::GetIndex => {
+                let idx = stack.pop().unwrap();
+                let base = stack.pop().unwrap();
+                match &base {
+                    RuntimeValue::Seq(items) => {
+                        let pos = expect_index(&idx, "VM seq index")?;
+                        stack.push(items.get(pos).cloned().ok_or_else(|| {
+                            type_error(&format!("VM: index {} out of bounds for len {}", pos, items.len()))
+                        })?);
+                    }
+                    RuntimeValue::Tuple(items) => {
+                        let pos = expect_index(&idx, "VM tuple index")?;
+                        stack.push(items.get(pos).cloned().ok_or_else(|| {
+                            type_error(&format!("VM: index {} out of bounds for tuple len {}", pos, items.len()))
+                        })?);
+                    }
+                    RuntimeValue::Map(entries) => {
+                        stack.push(entries.get(&idx).cloned().ok_or_else(|| {
+                            type_error(&format!("VM: map key `{}` not found", idx.canonical_key()))
+                        })?);
+                    }
+                    other => return Err(type_error(&format!("VM: index on non-indexable `{}`", other.canonical_key()))),
+                }
+            }
+            Opcode::Eq => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(l == r)); }
+            Opcode::Ne => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(l != r)); }
+            Opcode::Lt => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(expect_number(&l, "VM lt lhs")? < expect_number(&r, "VM lt rhs")?)); }
+            Opcode::Le => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(expect_number(&l, "VM le lhs")? <= expect_number(&r, "VM le rhs")?)); }
+            Opcode::Gt => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(expect_number(&l, "VM gt lhs")? > expect_number(&r, "VM gt rhs")?)); }
+            Opcode::Ge => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(expect_number(&l, "VM ge lhs")? >= expect_number(&r, "VM ge rhs")?)); }
+            Opcode::BinaryOp(op) => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(eval_binary(&l, *op, &r)?); }
+            Opcode::UnaryNot => { let v = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(!expect_bool(&v, "VM not")?)); }
+            Opcode::UnaryNeg => { let v = stack.pop().unwrap(); stack.push(RuntimeValue::Int(-expect_number(&v, "VM neg")?)); }
+            Opcode::Is(variant_sym) => {
+                let val = stack.pop().unwrap();
+                let variant_name = variant_sym.resolve();
+                let result = match &val { RuntimeValue::Enum { variant, .. } => *variant == variant_name, _ => false };
+                stack.push(RuntimeValue::Bool(result));
+            }
+            Opcode::SetLit(n) => { let n = *n as usize; let items: Vec<_> = stack.drain(stack.len()-n..).collect(); stack.push(RuntimeValue::set_bounded(items, &ctx.bounds)?); }
+            Opcode::SeqLit(n) => { let n = *n as usize; let items: Vec<_> = stack.drain(stack.len()-n..).collect(); stack.push(RuntimeValue::seq_bounded(items, &ctx.bounds)?); }
+            Opcode::MapLit(n) => {
+                let n = *n as usize;
+                let pairs: Vec<_> = stack.drain(stack.len()-2*n..).collect();
+                let mut entries = std::collections::BTreeMap::new();
+                for pair in pairs.chunks_exact(2) { entries.insert(pair[0].clone(), pair[1].clone()); }
+                stack.push(RuntimeValue::map_bounded(entries, &ctx.bounds)?);
+            }
+            Opcode::StructNew(meta_idx) => {
+                let meta = &chunk.struct_metas[*meta_idx as usize];
+                let n = meta.field_names.len();
+                let values: Vec<_> = stack.drain(stack.len()-n..).collect();
+                let type_name = &meta.type_name;
+                if let Some((ty, variant)) = split_variant_path(type_name) {
+                    let fields: Vec<(String, RuntimeValue)> = meta.field_names.iter().zip(values).map(|(s,v)| (s.resolve(),v)).collect();
+                    stack.push(RuntimeValue::enum_value(ty, variant, fields)?);
+                } else {
+                    let fields: Vec<(String, RuntimeValue)> = meta.field_names.iter().zip(values).map(|(s,v)| (s.resolve(),v)).collect();
+                    stack.push(RuntimeValue::struct_value(type_name.clone(), fields)?);
+                }
+            }
+            Opcode::StructUpdate(meta_idx) => {
+                let meta = &chunk.struct_update_metas[*meta_idx as usize];
+                let n = meta.update_field_names.len();
+                let vals: Vec<_> = stack.drain(stack.len()-n..).collect();
+                let base = stack.pop().unwrap();
+                match base {
+                    RuntimeValue::Struct { ty, mut fields, .. } => {
+                        for (sym, value) in meta.update_field_names.iter().zip(vals) { fields.insert(*sym, value); }
+                        stack.push(RuntimeValue::struct_value_sym(ty, fields));
+                    }
+                    RuntimeValue::Enum { ty, variant, mut fields, .. } => {
+                        for (sym, value) in meta.update_field_names.iter().zip(vals) { fields.insert(*sym, value); }
+                        stack.push(RuntimeValue::enum_value_sym(ty, variant, fields));
+                    }
+                    other => return Err(type_error(&format!("VM: struct update on non-struct `{}`", other.canonical_key()))),
+                }
+            }
+            Opcode::JumpIfFalse(offset) => {
+                let cond = stack.pop().unwrap();
+                if !expect_bool(&cond, "VM jump_if_false")? { pc += *offset as usize; }
+            }
+            Opcode::JumpIfTrue(offset) => {
+                let cond = stack.pop().unwrap();
+                if expect_bool(&cond, "VM jump_if_true")? { pc += *offset as usize; }
+            }
+            Opcode::Jump(offset) => { pc += *offset as usize; }
+            Opcode::Call(target_idx, argc) => {
+                let argc = *argc as usize;
+                let args: Vec<_> = stack.drain(stack.len()-argc..).collect();
+                let func = &chunk.call_targets[*target_idx as usize];
+                if let Some(result) = eval_builtin_static_call(func, &args, ctx.bounds)? {
+                    stack.push(result);
+                } else if let Some(evaluator) = ctx.call_evaluator {
+                    stack.push(evaluator(func, &args)?);
+                } else {
+                    return Err(type_error(&format!(
+                        "VM: call `{}` without call evaluator",
+                        crate::modelcheck::evaluator::path_name(func)
+                    )));
+                }
+            }
+            Opcode::MethodCall(method_sym, argc) => {
+                let argc = *argc as usize;
+                let args: Vec<_> = stack.drain(stack.len()-argc..).collect();
+                let receiver = stack.pop().unwrap();
+                let method_name = method_sym.resolve();
+                if let Some(result) = eval_builtin_method(&receiver, &method_name, &args, ctx.bounds)? {
+                    stack.push(result);
+                } else if let Some(evaluator) = ctx.method_evaluator {
+                    stack.push(evaluator(&receiver, &method_name, &args)?);
+                } else {
+                    return Err(type_error(&format!(
+                        "VM: method `.{}()` not supported on `{}`",
+                        method_name, receiver.canonical_key()
+                    )));
+                }
+            }
+            Opcode::Forall { var, body_len } => {
+                let body_len_val = *body_len as usize;
+                let var_slot = *var as usize;
+                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: forall without domain evaluator")
+                })?;
+                let result = vm_eval_quantifier(
+                    chunk, ctx, &mut locals, pc + 1, body_len_val, var_slot,
+                    QuantifierMode::Forall, domain_eval,
+                )?;
+                stack.push(result);
+                pc += body_len_val;
+            }
+            Opcode::Exists { var, body_len } => {
+                let body_len_val = *body_len as usize;
+                let var_slot = *var as usize;
+                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: exists without domain evaluator")
+                })?;
+                let result = vm_eval_quantifier(
+                    chunk, ctx, &mut locals, pc + 1, body_len_val, var_slot,
+                    QuantifierMode::Exists, domain_eval,
+                )?;
+                stack.push(result);
+                pc += body_len_val;
+            }
+            Opcode::Choose { var, body_len } => {
+                let body_len_val = *body_len as usize;
+                let var_slot = *var as usize;
+                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
+                    type_error("VM: choose without domain evaluator")
+                })?;
+                let result = vm_eval_quantifier(
+                    chunk, ctx, &mut locals, pc + 1, body_len_val, var_slot,
+                    QuantifierMode::Choose, domain_eval,
+                )?;
+                stack.push(result);
+                pc += body_len_val;
+            }
+            Opcode::Return => {
+                return stack.pop().ok_or_else(|| type_error("VM: return on empty stack"));
+            }
+        }
+        pc += 1;
+    }
+
+    stack.pop().ok_or_else(|| type_error("VM: body ended without value"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2867,5 +3173,118 @@ mod tests {
             }),
         };
         assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(15));
+    }
+
+    // ── BytecodeCache and integration tests ──────────────────────────────
+
+    #[test]
+    fn test_compile_with_env_basic() {
+        let env_names = vec!["x".to_string(), "y".to_string()];
+        let expr = Expr::Binary(
+            Box::new(Expr::Ident("x".to_string())),
+            BinOp::Add,
+            Box::new(Expr::Ident("y".to_string())),
+        );
+        let compiled = compile_with_env(&expr, &env_names).unwrap();
+        assert_eq!(compiled.env_slots.len(), 2);
+        assert_eq!(compiled.env_slots[0].0, "x");
+        assert_eq!(compiled.env_slots[1].0, "y");
+        // Both should be LoadLocal, not LoadConst (unresolved)
+        assert!(compiled.chunk.ops.iter().any(|op| matches!(op, Opcode::LoadLocal(_))));
+    }
+
+    #[test]
+    fn test_vm_eval_with_env_basic() {
+        let env_names = vec!["x".to_string(), "y".to_string()];
+        let expr = Expr::Binary(
+            Box::new(Expr::Ident("x".to_string())),
+            BinOp::Add,
+            Box::new(Expr::Ident("y".to_string())),
+        );
+        let compiled = compile_with_env(&expr, &env_names).unwrap();
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("x".to_string(), RuntimeValue::Int(10));
+        env.insert("y".to_string(), RuntimeValue::Int(20));
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: None,
+        };
+        let result = vm_eval_with_env(&compiled, &env, &ctx).unwrap();
+        assert_eq!(result, RuntimeValue::Int(30));
+    }
+
+    #[test]
+    fn test_bytecode_cache_hit() {
+        let cache = BytecodeCache::new();
+        let expr = Expr::Literal(Literal::Int(42));
+        let env_names = vec![];
+        let first = cache.get_or_compile(&expr, &env_names).unwrap();
+        let second = cache.get_or_compile(&expr, &env_names).unwrap();
+        // Same Rc (cached)
+        assert!(Rc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn test_bytecode_cache_different_env() {
+        let cache = BytecodeCache::new();
+        let expr = Expr::Ident("x".to_string());
+        let env1 = vec!["x".to_string()];
+        let env2 = vec!["x".to_string(), "y".to_string()];
+        let first = cache.get_or_compile(&expr, &env1).unwrap();
+        let second = cache.get_or_compile(&expr, &env2).unwrap();
+        // Different env keys → different cache entries
+        assert!(!Rc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn test_vm_eval_with_locals_field_access() {
+        let env_names = vec!["s".to_string()];
+        // s.value
+        let expr = Expr::Field(Box::new(Expr::Ident("s".to_string())), "value".to_string());
+        let compiled = compile_with_env(&expr, &env_names).unwrap();
+
+        let state = RuntimeValue::struct_value(
+            "State".to_string(),
+            vec![("value".to_string(), RuntimeValue::Int(99))],
+        ).unwrap();
+
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("s".to_string(), state);
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: None,
+        };
+        let result = vm_eval_with_env(&compiled, &env, &ctx).unwrap();
+        assert_eq!(result, RuntimeValue::Int(99));
+    }
+
+    #[test]
+    fn test_vm_eval_with_locals_comparison() {
+        let env_names = vec!["s".to_string(), "s_".to_string()];
+        // s.x == s_.x
+        let expr = Expr::Eq(
+            Box::new(Expr::Field(Box::new(Expr::Ident("s".to_string())), "x".to_string())),
+            Box::new(Expr::Field(Box::new(Expr::Ident("s_".to_string())), "x".to_string())),
+        );
+        let compiled = compile_with_env(&expr, &env_names).unwrap();
+
+        let s = RuntimeValue::struct_value("S", vec![("x".to_string(), RuntimeValue::Int(5))]).unwrap();
+        let s_ = RuntimeValue::struct_value("S", vec![("x".to_string(), RuntimeValue::Int(5))]).unwrap();
+
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("s".to_string(), s);
+        env.insert("s_".to_string(), s_);
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: None,
+        };
+        let result = vm_eval_with_env(&compiled, &env, &ctx).unwrap();
+        assert_eq!(result, RuntimeValue::Bool(true));
     }
 }
