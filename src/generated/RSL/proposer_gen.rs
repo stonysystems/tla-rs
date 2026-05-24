@@ -155,7 +155,7 @@ ensures
                 proposer_id: c.my_index.clone(),
             },
             next_operation_number_to_propose: 0u64,
-            received_1b_packets: HashSet::new(),
+            received_1b_packets: Arc::new(HashSet::new()),
             highest_seqno_requested_by_client_this_view: Arc::new(HashMap::new()),
             incomplete_batch_timer: CIncompleteBatchTimer::CIncompleteBatchTimerOff,
             election_state: s_election_state,
@@ -310,7 +310,7 @@ ensures
                 request_queue: Arc::new(concat_vecs(&s.request_queue, &vec![val])),
                 max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
                 next_operation_number_to_propose: s.next_operation_number_to_propose,
-                received_1b_packets: clone_hashset(&s.received_1b_packets),
+                received_1b_packets: s.received_1b_packets.clone(),
                 highest_seqno_requested_by_client_this_view: __highest_seqno_requested_by_client_this_view,
                 incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
                 election_state: s_election_state,
@@ -403,7 +403,7 @@ ensures
                 request_queue: s.request_queue.clone(),
                 max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
                 next_operation_number_to_propose: s.next_operation_number_to_propose,
-                received_1b_packets: clone_hashset(&s.received_1b_packets),
+                received_1b_packets: s.received_1b_packets.clone(),
                 highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
                 incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
                 election_state: s_election_state,
@@ -487,7 +487,7 @@ ensures
             request_queue: Arc::new(concat_vecs(&s.election_state.requests_received_prev_epochs, &s.election_state.requests_received_this_epoch)),
             max_ballot_i_sent_1a: s.election_state.current_view,
             next_operation_number_to_propose: s.next_operation_number_to_propose,
-            received_1b_packets: HashSet::new(),
+            received_1b_packets: Arc::new(HashSet::new()),
             highest_seqno_requested_by_client_this_view: Arc::new(HashMap::new()),
             incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
             election_state: s.election_state.clone(),
@@ -532,7 +532,7 @@ ensures
 {
     let p_cloned = clone_cpacket_preserving_validity(p);
     let mut result = s.clone_up_to_view();
-    result.received_1b_packets = hashset_insert_cpacket(&s.received_1b_packets, p_cloned);
+    result.received_1b_packets = Arc::new(hashset_insert_cpacket(&s.received_1b_packets, p_cloned));
     proof {
         // hashset_insert_cpacket ensures: result.received_1b_packets@ =~= s.received_1b_packets@.insert(p_cloned)
         // Validity: all packets in the new set are valid
@@ -598,7 +598,7 @@ ensures
             request_queue: s.request_queue.clone(),
             max_ballot_i_sent_1a: s.max_ballot_i_sent_1a.clone(),
             next_operation_number_to_propose: *log_truncation_point,
-            received_1b_packets: clone_hashset(&s.received_1b_packets),
+            received_1b_packets: s.received_1b_packets.clone(),
             highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
             incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
             election_state: s.election_state.clone(),
@@ -673,7 +673,7 @@ ensures
             // opn < max_integer_val (from requires) and max_integer_val: u64 <= u64::MAX
             opn + 1
         },
-        received_1b_packets: clone_hashset(&s.received_1b_packets),
+        received_1b_packets: s.received_1b_packets.clone(),
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
         incomplete_batch_timer: timer,
         election_state: s.election_state.clone(),
@@ -1007,7 +1007,7 @@ ensures
             // opn < max_integer_val (from requires) and max_integer_val: u64 <= u64::MAX
             opn + 1
         },
-        received_1b_packets: clone_hashset(&s.received_1b_packets),
+        received_1b_packets: s.received_1b_packets.clone(),
         highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
         incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
         election_state: s.election_state.clone(),
@@ -1174,7 +1174,7 @@ ensures
             request_queue: s.request_queue.clone(),
             max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
             next_operation_number_to_propose: s.next_operation_number_to_propose,
-            received_1b_packets: clone_hashset(&s.received_1b_packets),
+            received_1b_packets: s.received_1b_packets.clone(),
             highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
             incomplete_batch_timer: timer,
             election_state: s.election_state.clone(),

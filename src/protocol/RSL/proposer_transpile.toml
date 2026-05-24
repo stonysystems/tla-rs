@@ -4,7 +4,7 @@
 # Struct definition lives in ProposerImpl.rs (hand-written). This config tells the
 # transpiler to emit Arc::new() at init/mutation sites and .clone() (Arc::clone) at clone sites.
 # Per-field Arc wrapping: emit Arc::new() at init/mutation, Arc::clone() at clone sites
-arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view", "request_queue"] }
+arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view", "request_queue", "received_1b_packets"] }
 
 # Primitive types that don't need valid() predicates
 # OperationNumber is remapped to u64 which is a primitive

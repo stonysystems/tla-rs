@@ -32,7 +32,7 @@ pub struct CProposer {
     pub request_queue: Arc<Vec<CRequest>>,
     pub max_ballot_i_sent_1a: CBallot,
     pub next_operation_number_to_propose: u64,
-    pub received_1b_packets: HashSet<CPacket>,
+    pub received_1b_packets: Arc<HashSet<CPacket>>,
     pub highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>,
     pub incomplete_batch_timer: CIncompleteBatchTimer,
     pub election_state: CElectionState,
@@ -69,7 +69,7 @@ impl CProposer{
     {
         let constants = self.constants.clone();
         let request_queue = clone_arc_request_queue(&self.request_queue);
-        let received_1b_packets = clone_hashset(&self.received_1b_packets);
+        let received_1b_packets = clone_arc_received_1b_packets(&self.received_1b_packets);
         let highest_seqno = clone_endpoint_seqno_map(&self.highest_seqno_requested_by_client_this_view);
         let incomplete_batch_timer = match self.incomplete_batch_timer {
             CIncompleteBatchTimer::CIncompleteBatchTimerOn { when } =>
@@ -166,6 +166,15 @@ pub fn clone_endpoint_seqno_map(m: &Arc<HashMap<EndPoint, u64>>) -> (res: Arc<Ha
 /// Arc-backed shallow clone for request queue. Refcount bump only.
 #[verifier::external_body]
 pub fn clone_arc_request_queue(v: &Arc<Vec<CRequest>>) -> (res: Arc<Vec<CRequest>>)
+    ensures
+        res@ == v@,
+{
+    Arc::clone(v)
+}
+
+/// Arc-backed shallow clone for received_1b_packets. Refcount bump only.
+#[verifier::external_body]
+pub fn clone_arc_received_1b_packets(v: &Arc<HashSet<CPacket>>) -> (res: Arc<HashSet<CPacket>>)
     ensures
         res@ == v@,
 {
