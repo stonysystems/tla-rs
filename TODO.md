@@ -13775,6 +13775,26 @@ Implementation paths:
   variants and small integer sets.** Domain-specific; for Paxos's
   Set<int> over {1..8}, a bitmap (u8) is ~32× smaller than
   BTreeSet<RuntimeValue>. *Per-spec design work.*
+  Decomposed into sub-tasks:
+  - [x] **38.22.2.d.i**: **Create `SmallIntSet` bitmap type.**
+    Self-contained `u64`-backed set for integers in `[offset, offset+63]`.
+    Operations: new, insert, remove, contains, len, union, intersection,
+    difference, is_subset, iter (yields `i128` values). No integration
+    with RuntimeValue yet — purely a data structure. ~200 LOC + tests.
+  - [ ] **38.22.2.d.ii**: **Create `SetRepr` dual-representation enum.**
+    `enum SetRepr { General(BTreeSet<RuntimeValue>), SmallInt(SmallIntSet) }`.
+    Wraps both representations with a unified API matching BTreeSet usage:
+    len, contains, insert, remove, union, difference, intersection, iter.
+    Auto-promote: when all elements are `RuntimeValue::Int(n)` in a 64-wide
+    range, use `SmallInt`; otherwise fall back to `General`. ~200 LOC.
+  - [ ] **38.22.2.d.iii**: **Replace `Arc<BTreeSet<RuntimeValue>>` with
+    `Arc<SetRepr>` in `RuntimeValue::Set`.** Update all pattern matches
+    in evaluator.rs, solver.rs, explorer.rs, dpor/, parity.rs, bytecode.rs.
+    ~300 LOC of mechanical changes across ~10 files.
+  - [ ] **38.22.2.d.iv**: **Wire up automatic promotion in `set_bounded`.**
+    Detect all-integer sets at creation time, use SmallInt path. Add
+    benchmark comparing SmallIntSet vs BTreeSet for typical Paxos set
+    sizes (4-8 elements). ~100 LOC.
 
 #### 38.22.3 — Replace recursive String canonical_key with streaming hash
 

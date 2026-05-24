@@ -30,6 +30,7 @@ pub mod ir;
 pub mod liveness;
 pub mod parity;
 pub mod por;
+pub mod small_int_set;
 pub mod solver;
 pub mod symbol;
 pub mod value;
