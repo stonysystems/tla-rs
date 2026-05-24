@@ -14387,8 +14387,13 @@ Restore RSL regeneration capability and remove unmeasured-benefit code paths, **
 
 #### 42.1 Triage: identify the RSL regen blocker
 
-- [ ] **42.1.a**: On current HEAD, run `transpile` against RSL spec and capture the exact failure mode (which functions dropped, which file, what error). Without this we can't decide whether config-disable suffices.
-- [ ] **42.1.b**: Inspect the 4 transpiler-Arc commits (`8728256`, `6484f5e`, `bd69f03`, `e92d2fe`) to localize the bug. Likely candidates: `bd69f03` (unchanged-field Arc handling) or `6484f5e` (struct-construction Arc wrapping) — both touch the rewrite path that may drop functions when a spec construct doesn't match.
+- [x] **42.1.a**: On current HEAD, run `transpile` against RSL spec and capture the exact failure mode (which functions dropped, which file, what error). Without this we can't decide whether config-disable suffices.
+  **Findings**: All 8 RSL modules transpile successfully (exit 0). Of 16 functions missing from fresh output vs existing generated files: **14 are intentionally in `skip_functions`**. Only **2 are genuinely dropped** (silently, no error):
+  - `CLearnerForgetOperationsBefore` (learner): spec body uses `forall |k| ... ==>` quantified map filtering — transpiler can't auto-generate executable code for this pattern.
+  - `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` (replica): spec body uses `exists |opn|` existential with complex branch — transpiler can't resolve existential witness.
+  Both are **pre-existing transpiler limitations**, NOT caused by Phase 40 Arc codegen. These functions exist in the checked-in generated files because they were **hand-written** (with `assume(false)` bodies). The transpiler never generated them — it silently skips functions it can't translate.
+  **Conclusion**: Phase 42's hypothesis that "Phase 40 transpiler can't regenerate RSL" due to Arc codegen bugs is **wrong for function dropping**. The 2 dropped functions are a transpiler capability gap, not an Arc bug. Phase 42.1.b should check if there are OTHER regen blockers (e.g. compile errors in the output, Arc-related codegen issues, etc.).
+- [ ] **42.1.b**: Inspect the 4 transpiler-Arc commits (`8728256`, `6484f5e`, `bd69f03`, `e92d2fe`) to localize the bug. Likely candidates: `bd69f03` (unchanged-field Arc handling) or `6484f5e` (struct-construction Arc wrapping) — both touch the rewrite path that may drop functions when a spec construct doesn't match. **UPDATE**: Per 42.1.a findings, function dropping is NOT the bug. Need to check: (1) whether fresh transpile output compiles against the rest of the codebase, (2) whether Arc-specific codegen paths produce incorrect code.
 
 #### 42.2 Decide path (after 42.1)
 
