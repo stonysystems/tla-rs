@@ -13646,6 +13646,68 @@ Three implementation paths, in increasing engineering cost / payoff:
   Inspired by TLC's compiled form. Per-op cost drops from ~µs (AST
   match + recursive call) to ~10 ns (table dispatch + register
   load). Estimated 50-100× win on the eval phase. *2-4 weeks.*
+
+  Decomposed into leaf tasks (~200-400 LOC each):
+
+  - [ ] **38.22.1.b.i**: **Define `Opcode` enum and `Chunk` struct.**
+    Create `transpiler/src/modelcheck/bytecode.rs`. Define
+    `enum Opcode` covering the core instruction set: `LoadConst(u16)`,
+    `LoadLocal(u16)`, `StoreLocal(u16)`, `LoadField(Symbol)`,
+    `LoadArrow(String)`, `GetIndex`, `SetLit(u16)`, `MapLit(u16)`,
+    `SeqLit(u16)`, `BinOp(BinOp)`, `UnaryNot`, `Eq`, `Ne`, `Lt`,
+    `Le`, `Gt`, `Ge`, `Is(String)`, `JumpIfFalse(u16)`,
+    `Jump(u16)`, `Call(PathId, u8)`, `MethodCall(Symbol, u8)`,
+    `StructNew(PathId, u8)`, `StructUpdate(PathId, u8)`,
+    `Pop`, `Dup`, `Return`, `Forall(u16)`, `Exists(u16)`.
+    Define `struct Chunk { ops: Vec<Opcode>, constants: Vec<RuntimeValue> }`.
+    Add `mod bytecode;` to the modelcheck module. ~150 LOC.
+
+  - [ ] **38.22.1.b.ii**: **Bytecode compiler — expressions.**
+    Add `fn compile_expr(expr: &Expr, chunk: &mut Chunk, locals: &mut LocalTable)`
+    in `bytecode.rs`. Handle the 20 most common `Expr` variants:
+    `Literal`, `Ident`, `Field`, `Arrow`, `Index`, `Eq/Ne/Lt/Le/Gt/Ge`,
+    `Not`, `BinOp`, `Conjunction`, `Disjunction`, `If`, `Is`,
+    `Struct`, `StructUpdate`, `FnCall`, `MethodCall`,
+    `SetLiteral`, `MapLiteral`, `SeqLiteral`.
+    `LocalTable` maps variable names → slot indices (reuses
+    `ScopedBindings` stack from 38.22.1.a.iii). ~300 LOC.
+
+  - [ ] **38.22.1.b.iii**: **Bytecode compiler — quantifiers & let.**
+    Handle `Forall`, `Exists`, `Let`, `Match`, `Implies`, `Iff`,
+    `Choose`, `Tuple`. Quantifiers compile body to a sub-chunk
+    (or inline with `Forall(body_len)`/`Exists(body_len)` skip
+    offsets). Let compiles value → `StoreLocal` → body → cleanup.
+    Match compiles to a chain of `Is` + `JumpIfFalse` + destructure
+    + body + `Jump(end)`. ~250 LOC.
+
+  - [ ] **38.22.1.b.iv**: **VM interpreter — core dispatch loop.**
+    Add `fn vm_eval(chunk: &Chunk, ctx: &EvalContext) -> TranspileResult<RuntimeValue>`
+    with a `pc: usize` counter and `stack: Vec<RuntimeValue>`.
+    Implement the dispatch loop using `match chunk.ops[pc]` for
+    all non-quantifier opcodes. Stack-machine semantics: operands
+    pushed/popped, result left on top. ~300 LOC.
+
+  - [ ] **38.22.1.b.v**: **VM interpreter — quantifiers & calls.**
+    Implement `Forall(body_len)` / `Exists(body_len)`: iterate
+    domain values, execute body sub-slice, short-circuit.
+    Implement `Call` / `MethodCall`: delegate to `call_evaluator`
+    / `method_evaluator` from `EvalContext` (keeps FFI boundary
+    unchanged). ~200 LOC.
+
+  - [ ] **38.22.1.b.vi**: **Compile cache & integration.**
+    Add a `HashMap<PathId, Chunk>` cache in the model checker
+    driver (likely `explorer.rs` or `checker.rs`). On first eval
+    of a function, compile its body to bytecode and cache.
+    Subsequent evals call `vm_eval`. Wire up so `eval_expr` can
+    be replaced per-function. Add a `--bytecode` CLI flag
+    (default off) for A/B comparison. ~200 LOC.
+
+  - [ ] **38.22.1.b.vii**: **Tests & benchmarks.**
+    Add unit tests in `bytecode.rs` covering: literal round-trip,
+    arithmetic, field access, set/map/seq literals, if-then-else,
+    forall/exists short-circuit, let binding, match, struct
+    update, method calls. Add a benchmark comparing `eval_expr`
+    vs `vm_eval` on a representative Paxos expression. ~300 LOC.
 - [ ] **38.22.1.c**: **Codegen Rust closures via syn / quote.**
   Generate Rust source per spec function, compile to `cdylib` at
   startup via cargo, dlopen at runtime. True native execution; LLVM
