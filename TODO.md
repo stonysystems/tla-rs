@@ -13702,7 +13702,7 @@ Three implementation paths, in increasing engineering cost / payoff:
     be replaced per-function. Add a `--bytecode` CLI flag
     (default off) for A/B comparison. ~200 LOC.
 
-  - [ ] **38.22.1.b.vii**: **Tests & benchmarks.**
+  - [x] **38.22.1.b.vii**: **Tests & benchmarks.**
     Add unit tests in `bytecode.rs` covering: literal round-trip,
     arithmetic, field access, set/map/seq literals, if-then-else,
     forall/exists short-circuit, let binding, match, struct

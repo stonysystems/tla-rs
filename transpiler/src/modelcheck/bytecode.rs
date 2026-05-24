@@ -3287,4 +3287,655 @@ mod tests {
         let result = vm_eval_with_env(&compiled, &env, &ctx).unwrap();
         assert_eq!(result, RuntimeValue::Bool(true));
     }
+
+    // ── End-to-end VM tests (Phase 38.22.1.b.vii) ───────────────────
+
+    #[test]
+    fn test_vm_literal_string() {
+        let expr = Expr::Literal(Literal::String("hello".to_string()));
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_vm_mul() {
+        let expr = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Int(6))),
+            BinOp::Mul,
+            Box::new(Expr::Literal(Literal::Int(7))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
+    }
+
+    #[test]
+    fn test_vm_div() {
+        let expr = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Int(84))),
+            BinOp::Div,
+            Box::new(Expr::Literal(Literal::Int(2))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
+    }
+
+    #[test]
+    fn test_vm_mod() {
+        let expr = Expr::Binary(
+            Box::new(Expr::Literal(Literal::Int(17))),
+            BinOp::Mod,
+            Box::new(Expr::Literal(Literal::Int(5))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(2));
+    }
+
+    #[test]
+    fn test_vm_gt() {
+        let expr = Expr::Gt(
+            Box::new(Expr::Literal(Literal::Int(5))),
+            Box::new(Expr::Literal(Literal::Int(3))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_ge() {
+        let expr = Expr::Ge(
+            Box::new(Expr::Literal(Literal::Int(5))),
+            Box::new(Expr::Literal(Literal::Int(5))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_le() {
+        let expr = Expr::Le(
+            Box::new(Expr::Literal(Literal::Int(3))),
+            Box::new(Expr::Literal(Literal::Int(5))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_is_variant_true() {
+        let enum_val = RuntimeValue::enum_value(
+            "Color", "Red", Vec::<(String, RuntimeValue)>::new(),
+        ).unwrap();
+        let expr = Expr::Is(
+            Box::new(Expr::ConstantValue(enum_val)),
+            "Red".to_string(),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_is_variant_false() {
+        let enum_val = RuntimeValue::enum_value(
+            "Color", "Blue", Vec::<(String, RuntimeValue)>::new(),
+        ).unwrap();
+        let expr = Expr::Is(
+            Box::new(Expr::ConstantValue(enum_val)),
+            "Red".to_string(),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_arrow_access() {
+        // Create struct then access via arrow: (Point { x: 42, y: 0 })->x
+        let s = RuntimeValue::struct_value(
+            "Point",
+            vec![("x".to_string(), RuntimeValue::Int(42)),
+                 ("y".to_string(), RuntimeValue::Int(0))],
+        ).unwrap();
+        let expr = Expr::Arrow(
+            Box::new(Expr::ConstantValue(s)),
+            "x".to_string(),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
+    }
+
+    #[test]
+    fn test_vm_map_index() {
+        // {1 |-> "a", 2 |-> "b"}[2]
+        let expr = Expr::Index(
+            Box::new(Expr::MapLit(vec![
+                (Expr::Literal(Literal::Int(1)), Expr::Literal(Literal::String("a".to_string()))),
+                (Expr::Literal(Literal::Int(2)), Expr::Literal(Literal::String("b".to_string()))),
+            ])),
+            Box::new(Expr::Literal(Literal::Int(2))),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::String("b".to_string()));
+    }
+
+    #[test]
+    fn test_vm_map_multiple_entries() {
+        let expr = Expr::MapLit(vec![
+            (Expr::Literal(Literal::Int(1)), Expr::Literal(Literal::Bool(true))),
+            (Expr::Literal(Literal::Int(2)), Expr::Literal(Literal::Bool(false))),
+            (Expr::Literal(Literal::Int(3)), Expr::Literal(Literal::Bool(true))),
+        ]);
+        let result = eval(&expr).unwrap();
+        match result {
+            RuntimeValue::Map(entries) => {
+                assert_eq!(entries.len(), 3);
+                assert_eq!(entries[&RuntimeValue::Int(2)], RuntimeValue::Bool(false));
+            }
+            _ => panic!("expected Map"),
+        }
+    }
+
+    #[test]
+    fn test_vm_struct_update() {
+        // Point { x: 1, y: 2 } then update x to 99
+        let base = RuntimeValue::struct_value(
+            "Point",
+            vec![("x".to_string(), RuntimeValue::Int(1)),
+                 ("y".to_string(), RuntimeValue::Int(2))],
+        ).unwrap();
+        let expr = Expr::StructUpdate {
+            name: Some(Path::new(vec!["Point".to_string()])),
+            base: Box::new(Expr::ConstantValue(base)),
+            fields: vec![("x".to_string(), Expr::Literal(Literal::Int(99)))],
+        };
+        let result = eval(&expr).unwrap();
+        assert_eq!(result.field("x"), Some(&RuntimeValue::Int(99)));
+        assert_eq!(result.field("y"), Some(&RuntimeValue::Int(2)));
+    }
+
+    #[test]
+    fn test_vm_match_literal() {
+        use crate::ast::MatchArm;
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Literal(Literal::Int(2))),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Literal(Literal::Int(1)),
+                    guard: None,
+                    body: Expr::Literal(Literal::String("one".to_string())),
+                },
+                MatchArm {
+                    pattern: Pattern::Literal(Literal::Int(2)),
+                    guard: None,
+                    body: Expr::Literal(Literal::String("two".to_string())),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: Expr::Literal(Literal::String("other".to_string())),
+                },
+            ],
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::String("two".to_string()));
+    }
+
+    #[test]
+    fn test_vm_match_wildcard() {
+        use crate::ast::MatchArm;
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Literal(Literal::Int(99))),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Literal(Literal::Int(1)),
+                    guard: None,
+                    body: Expr::Literal(Literal::Bool(false)),
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: Expr::Literal(Literal::Bool(true)),
+                },
+            ],
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_match_variant() {
+        use crate::ast::MatchArm;
+        let enum_val = RuntimeValue::enum_value(
+            "Option", "Some", vec![("_0".to_string(), RuntimeValue::Int(42))],
+        ).unwrap();
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::ConstantValue(enum_val)),
+            arms: vec![
+                MatchArm {
+                    pattern: Pattern::Variant {
+                        name: Path::new(vec!["Option".to_string(), "None".to_string()]),
+                        fields: vec![],
+                    },
+                    guard: None,
+                    body: Expr::Literal(Literal::Int(0)),
+                },
+                MatchArm {
+                    pattern: Pattern::Variant {
+                        name: Path::new(vec!["Option".to_string(), "Some".to_string()]),
+                        fields: vec![Pattern::Ident("v".to_string())],
+                    },
+                    guard: None,
+                    body: Expr::Ident("v".to_string()),
+                },
+            ],
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
+    }
+
+    #[test]
+    fn test_vm_match_ident_binding() {
+        use crate::ast::MatchArm;
+        // match 7 { x => x + 1 }
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Literal(Literal::Int(7))),
+            arms: vec![MatchArm {
+                pattern: Pattern::Ident("x".to_string()),
+                guard: None,
+                body: Expr::Binary(
+                    Box::new(Expr::Ident("x".to_string())),
+                    BinOp::Add,
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                ),
+            }],
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(8));
+    }
+
+    #[test]
+    fn test_vm_forall_with_domain() {
+        // forall x in {1,2,3}: x > 0
+        let expr = Expr::Forall {
+            vars: vec![crate::ast::Binding {
+                pattern: Pattern::Ident("x".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            triggers: vec![],
+            body: Box::new(Expr::Gt(
+                Box::new(Expr::Ident("x".to_string())),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            )),
+        };
+        let chunk = compile(&expr).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: Some(&|_binding| {
+                Ok(vec![RuntimeValue::Int(1), RuntimeValue::Int(2), RuntimeValue::Int(3)])
+            }),
+        };
+        assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_forall_short_circuit_false() {
+        // forall x in {1, -1, 2}: x > 0  → should be false
+        let expr = Expr::Forall {
+            vars: vec![crate::ast::Binding {
+                pattern: Pattern::Ident("x".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            triggers: vec![],
+            body: Box::new(Expr::Gt(
+                Box::new(Expr::Ident("x".to_string())),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            )),
+        };
+        let chunk = compile(&expr).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: Some(&|_binding| {
+                Ok(vec![RuntimeValue::Int(1), RuntimeValue::Int(-1), RuntimeValue::Int(2)])
+            }),
+        };
+        assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_exists_with_domain() {
+        // exists x in {-1, -2, 3}: x > 0  → true
+        let expr = Expr::Exists {
+            vars: vec![crate::ast::Binding {
+                pattern: Pattern::Ident("x".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            body: Box::new(Expr::Gt(
+                Box::new(Expr::Ident("x".to_string())),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            )),
+        };
+        let chunk = compile(&expr).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: Some(&|_binding| {
+                Ok(vec![RuntimeValue::Int(-1), RuntimeValue::Int(-2), RuntimeValue::Int(3)])
+            }),
+        };
+        assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_exists_all_false() {
+        // exists x in {-1, -2}: x > 0  → false
+        let expr = Expr::Exists {
+            vars: vec![crate::ast::Binding {
+                pattern: Pattern::Ident("x".to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            }],
+            body: Box::new(Expr::Gt(
+                Box::new(Expr::Ident("x".to_string())),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            )),
+        };
+        let chunk = compile(&expr).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: Some(&|_binding| {
+                Ok(vec![RuntimeValue::Int(-1), RuntimeValue::Int(-2)])
+            }),
+        };
+        assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_call_with_evaluator() {
+        // abs(-5) → 5 via call_evaluator
+        let expr = Expr::Call {
+            func: Path::new(vec!["abs".to_string()]),
+            args: vec![Expr::Literal(Literal::Int(-5))],
+        };
+        let chunk = compile(&expr).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: Some(&|path, args| {
+                let name = path.segments.last().unwrap();
+                if name == "abs" {
+                    if let RuntimeValue::Int(n) = &args[0] {
+                        return Ok(RuntimeValue::Int(n.abs()));
+                    }
+                }
+                Err(type_error(&format!("unknown call: {name}")))
+            }),
+            method_evaluator: None,
+            quantifier_domain: None,
+        };
+        assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::Int(5));
+    }
+
+    #[test]
+    fn test_vm_method_call_with_evaluator() {
+        // "hello".to_upper() → "HELLO" via method_evaluator
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::ConstantValue(RuntimeValue::String("hello".to_string()))),
+            method: "to_upper".to_string(),
+            args: vec![],
+        };
+        let chunk = compile(&expr).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: Some(&|recv, method, _args| {
+                if method == "to_upper" {
+                    if let RuntimeValue::String(s) = recv {
+                        return Ok(RuntimeValue::String(s.to_uppercase()));
+                    }
+                }
+                Err(type_error(&format!("unknown method: {method}")))
+            }),
+            quantifier_domain: None,
+        };
+        assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::String("HELLO".to_string()));
+    }
+
+    #[test]
+    fn test_vm_nested_field_access() {
+        // (Outer { inner: Inner { val: 42 } }).inner.val
+        let inner = RuntimeValue::struct_value(
+            "Inner",
+            vec![("val".to_string(), RuntimeValue::Int(42))],
+        ).unwrap();
+        let outer = RuntimeValue::struct_value(
+            "Outer",
+            vec![("inner".to_string(), inner)],
+        ).unwrap();
+        let expr = Expr::Field(
+            Box::new(Expr::Field(
+                Box::new(Expr::ConstantValue(outer)),
+                "inner".to_string(),
+            )),
+            "val".to_string(),
+        );
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
+    }
+
+    #[test]
+    fn test_vm_if_false_branch() {
+        // if false { 1 } else { 2 }
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(Literal::Bool(false))),
+            then_branch: Box::new(Expr::Literal(Literal::Int(1))),
+            else_branch: Some(Box::new(Expr::Literal(Literal::Int(2)))),
+        };
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(2));
+    }
+
+    #[test]
+    fn test_vm_conjunction_short_circuit_skips_later() {
+        // false && (1/0 > 0) → false, should not evaluate second operand
+        // We test this by having the second operand be a division by zero
+        // which would fail if evaluated. Conjunction short-circuits on false.
+        let expr = Expr::Conjunction(vec![
+            Expr::Literal(Literal::Bool(false)),
+            Expr::Gt(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                    BinOp::Div,
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                )),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            ),
+        ]);
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
+    }
+
+    #[test]
+    fn test_vm_disjunction_short_circuit_skips_later() {
+        // true || (1/0 > 0) → true, should not evaluate second operand
+        let expr = Expr::Disjunction(vec![
+            Expr::Literal(Literal::Bool(true)),
+            Expr::Gt(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                    BinOp::Div,
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                )),
+                Box::new(Expr::Literal(Literal::Int(0))),
+            ),
+        ]);
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
+    }
+
+    #[test]
+    fn test_vm_struct_with_base_update_in_struct_expr() {
+        // Struct expr with `..base`: Point { x: 99, ..base }
+        let base = RuntimeValue::struct_value(
+            "Point",
+            vec![("x".to_string(), RuntimeValue::Int(1)),
+                 ("y".to_string(), RuntimeValue::Int(2))],
+        ).unwrap();
+        let expr = Expr::Struct {
+            name: Path::new(vec!["Point".to_string()]),
+            fields: vec![
+                ("x".to_string(), Expr::Literal(Literal::Int(99))),
+                ("..".to_string(), Expr::ConstantValue(base)),
+            ],
+        };
+        let result = eval(&expr).unwrap();
+        assert_eq!(result.field("x"), Some(&RuntimeValue::Int(99)));
+        assert_eq!(result.field("y"), Some(&RuntimeValue::Int(2)));
+    }
+
+    #[test]
+    fn test_vm_cache_reuse_different_values() {
+        // Same expression shape with different env values → cache hit, different results
+        let cache = BytecodeCache::new();
+        let expr = Expr::Binary(
+            Box::new(Expr::Ident("a".to_string())),
+            BinOp::Add,
+            Box::new(Expr::Ident("b".to_string())),
+        );
+        let env_names = vec!["a".to_string(), "b".to_string()];
+        let compiled = cache.get_or_compile(&expr, &env_names).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: None,
+        };
+        let mut env1 = std::collections::BTreeMap::new();
+        env1.insert("a".to_string(), RuntimeValue::Int(10));
+        env1.insert("b".to_string(), RuntimeValue::Int(20));
+        assert_eq!(vm_eval_with_env(&compiled, &env1, &ctx).unwrap(), RuntimeValue::Int(30));
+
+        let compiled2 = cache.get_or_compile(&expr, &env_names).unwrap();
+        assert!(Rc::ptr_eq(&compiled, &compiled2));
+        let mut env2 = std::collections::BTreeMap::new();
+        env2.insert("a".to_string(), RuntimeValue::Int(100));
+        env2.insert("b".to_string(), RuntimeValue::Int(200));
+        assert_eq!(vm_eval_with_env(&compiled2, &env2, &ctx).unwrap(), RuntimeValue::Int(300));
+    }
+
+    #[test]
+    fn test_vm_complex_protocol_like_expression() {
+        // Simulates a protocol-like expression:
+        // let current_term = 3 in
+        //   let commit_index = 5 in
+        //     let log_len = 10 in
+        //       if log_len > commit_index && current_term > 0 {
+        //         (log_len - commit_index) * current_term
+        //       } else {
+        //         0
+        //       }
+        let mk_let = |name: &str, val: i128, body: Expr| Expr::Let {
+            binding: crate::ast::Binding {
+                pattern: Pattern::Ident(name.to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            },
+            value: Box::new(Expr::Literal(Literal::Int(val))),
+            body: Box::new(body),
+        };
+        let inner = Expr::If {
+            cond: Box::new(Expr::Conjunction(vec![
+                Expr::Gt(
+                    Box::new(Expr::Ident("log_len".to_string())),
+                    Box::new(Expr::Ident("commit_index".to_string())),
+                ),
+                Expr::Gt(
+                    Box::new(Expr::Ident("current_term".to_string())),
+                    Box::new(Expr::Literal(Literal::Int(0))),
+                ),
+            ])),
+            then_branch: Box::new(Expr::Binary(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Ident("log_len".to_string())),
+                    BinOp::Sub,
+                    Box::new(Expr::Ident("commit_index".to_string())),
+                )),
+                BinOp::Mul,
+                Box::new(Expr::Ident("current_term".to_string())),
+            )),
+            else_branch: Some(Box::new(Expr::Literal(Literal::Int(0)))),
+        };
+        let expr = mk_let("current_term", 3,
+            mk_let("commit_index", 5,
+                mk_let("log_len", 10, inner)));
+        // (10 - 5) * 3 = 15
+        assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(15));
+    }
+
+    // ── Benchmark: eval_expr vs vm_eval ──────────────────────────────
+
+    #[test]
+    fn bench_eval_expr_vs_vm_eval() {
+        use std::time::Instant;
+        use crate::modelcheck::evaluator::{eval_expr, EvalContext};
+
+        // Build a moderately complex expression:
+        // let x = 10 in let y = 20 in
+        //   if x < y { (x + y) * (y - x) } else { x * y }
+        let mk_let = |name: &str, val: i128, body: Expr| Expr::Let {
+            binding: crate::ast::Binding {
+                pattern: Pattern::Ident(name.to_string()),
+                ty: None,
+                variable_mode: crate::ast::VariableMode::Exec,
+            },
+            value: Box::new(Expr::Literal(Literal::Int(val))),
+            body: Box::new(body),
+        };
+        let inner = Expr::If {
+            cond: Box::new(Expr::Lt(
+                Box::new(Expr::Ident("x".to_string())),
+                Box::new(Expr::Ident("y".to_string())),
+            )),
+            then_branch: Box::new(Expr::Binary(
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Ident("x".to_string())),
+                    BinOp::Add,
+                    Box::new(Expr::Ident("y".to_string())),
+                )),
+                BinOp::Mul,
+                Box::new(Expr::Binary(
+                    Box::new(Expr::Ident("y".to_string())),
+                    BinOp::Sub,
+                    Box::new(Expr::Ident("x".to_string())),
+                )),
+            )),
+            else_branch: Some(Box::new(Expr::Binary(
+                Box::new(Expr::Ident("x".to_string())),
+                BinOp::Mul,
+                Box::new(Expr::Ident("y".to_string())),
+            ))),
+        };
+        let expr = mk_let("x", 10, mk_let("y", 20, inner));
+
+        // Verify both paths give the same result: (10+20)*(20-10) = 300
+        let bounds = RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 };
+        let ast_ctx = EvalContext::new(bounds);
+        let ast_result = eval_expr(&expr, &ast_ctx).unwrap();
+        let vm_result = eval(&expr).unwrap();
+        assert_eq!(ast_result, vm_result);
+        assert_eq!(vm_result, RuntimeValue::Int(300));
+
+        // Benchmark: N iterations
+        let n = 10_000;
+        let chunk = compile(&expr).unwrap();
+        let vm_ctx = simple_ctx();
+
+        let start_ast = Instant::now();
+        for _ in 0..n {
+            let _ = eval_expr(&expr, &ast_ctx);
+        }
+        let ast_dur = start_ast.elapsed();
+
+        let start_vm = Instant::now();
+        for _ in 0..n {
+            let _ = vm_eval(&chunk, &vm_ctx);
+        }
+        let vm_dur = start_vm.elapsed();
+
+        eprintln!(
+            "[bench] eval_expr: {:?} ({:.0} ns/iter), vm_eval: {:?} ({:.0} ns/iter), speedup: {:.1}x",
+            ast_dur,
+            ast_dur.as_nanos() as f64 / n as f64,
+            vm_dur,
+            vm_dur.as_nanos() as f64 / n as f64,
+            ast_dur.as_nanos() as f64 / vm_dur.as_nanos() as f64,
+        );
+    }
 }
