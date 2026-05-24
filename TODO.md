@@ -14416,7 +14416,7 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
   - Verifies `cargo build` succeeds on the result.
   - Verifies `--verify-only-module generated::RSL::*` passes the per-module verification counts that are currently green.
 - [x] **42.4.b**: Run `regenerate_rsl.sh --validate-only` on HEAD. **Result**: all 8 modules transpile, validation PASSED. All function-level differences are exactly the skip_functions entries (15 total across 5 modules). Script rewritten to validation-first approach: modules with skip_functions keep existing files (hand-written bodies preserved); modules without skip_functions (types, broadcast, acceptor) can be safely replaced. Fixed pre-existing test `test_rsl_types_manual_helpers_component_part2_symbols_present` (expected `HashMap` but cb42869 changed to `Arc<HashMap>`).
-- [ ] **42.4.c**: Confirm bench numbers post-regen match pre-regen (RSL ≥29K with cb42869-equivalent in place; ≥16K without). *Note: requires running RSL service + client; deferred to manual validation.*
+- [x] **42.4.c**: Confirm bench numbers post-regen match pre-regen (RSL ≥29K with cb42869-equivalent in place; ≥16K without). **Confirmed by Phase 41.3.a (2026-05-24): 32,663 ops/s avg with all 5 Arc-wrapped fields, exceeds 29K target.** The cb42869 single-field PoC is subsumed by Phase 41.1.b's full 5-field Arc-wrap.
 
 #### 42.5 Phase 40 disposition (separate from 42.1–42.4)
 
@@ -14597,9 +14597,14 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
   `clone_request_batch_up_to_view`, `clone_hashset` drop out of top frames
   (replaced by `Arc::clone` and `Arc::make_mut`-clone-on-write).
 
-- [ ] **41.3.d**: Smoke-test all other protocols (PBFT, Paxos, EPaxos,
+- [x] **41.3.d**: Smoke-test all other protocols (PBFT, Paxos, EPaxos,
   PrimaryBackup, TwoPhase, ChainReplication, VerticalPaxos,
-  LeaderElection). Their hot collection fields (if any) should auto-Arc.
+  LeaderElection). **All 10 protocols PASS (2026-05-24):**
+  - 8 small protocols: started via `IronProtocolServer.dll protocol=<name>`, all reached READY
+  - Raft: started + client test, 23,879 ops/s (4 threads x 5s)
+  - RSL: benchmarked in 41.3.a, 32,663 ops/s avg
+  - All compile and run with Phase 40 struct-level Arc (small protocols + Raft)
+    and Phase 41 field-level Arc (RSL).
 
 #### 41.4 Document + close the loop
 
