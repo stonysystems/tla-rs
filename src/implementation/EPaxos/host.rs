@@ -675,6 +675,22 @@ impl ProtocolHost for EPaxosHost {
 
         // Handle incoming message
         if let Some(pkt) = packet {
+            // ClientRequest and ClientReply come from external clients,
+            // not from known peers — handle them before sender resolution.
+            match &pkt.msg {
+                EPaxosMessage::ClientRequest { cmd } => {
+                    return self.try_propose(config, *cmd, Some(pkt.src));
+                }
+                EPaxosMessage::ClientReply { .. } => {
+                    // ClientReply is outbound-only; ignore if received
+                    return StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    };
+                }
+                _ => {}
+            }
+
             let sender_id = Self::resolve_sender_index(config, &pkt.src);
             let _sender_id = match sender_id {
                 Some(id) => id,
@@ -701,16 +717,11 @@ impl ProtocolHost for EPaxosHost {
                 }
                 EPaxosMessage::AcceptOk { sender } => self.handle_accept_ok(config, sender),
                 EPaxosMessage::CommitMsg { cmd, seq } => self.handle_commit(config, cmd, seq),
-                EPaxosMessage::ClientRequest { cmd } => {
-                    self.try_propose(config, cmd, Some(pkt.src))
-                }
-                EPaxosMessage::ClientReply { .. } => {
-                    // ClientReply is outbound-only; ignore if received
-                    StepResult {
-                        ok: true,
-                        outbound: GenericOutbound::None,
-                    }
-                }
+                // ClientRequest/ClientReply already handled above
+                _ => StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::None,
+                },
             };
         }
 

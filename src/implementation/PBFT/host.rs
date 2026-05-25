@@ -689,32 +689,46 @@ impl ProtocolHost for PBFTHost {
         // Handle incoming message
         let mut result = None;
         if let Some(pkt) = packet {
-            if Self::resolve_sender_index(config, &pkt.src).is_some() {
-                let src = pkt.src;
-                result = Some(match pkt.msg {
-                    PBFTMessage::ClientRequest { digest } => self.handle_client_request(config, digest, src.clone_up_to_view()),
-                    PBFTMessage::PrePrepare { view, seq, digest } => {
-                        self.handle_pre_prepare(config, view, seq, digest)
+            // ClientRequest and ClientReply come from external clients,
+            // not from known peers — handle them before sender resolution.
+            match &pkt.msg {
+                PBFTMessage::ClientRequest { digest } => {
+                    let src = pkt.src;
+                    result = Some(self.handle_client_request(config, *digest, src.clone_up_to_view()));
+                }
+                PBFTMessage::ClientReply { .. } => {
+                    // ClientReply is outbound-only; ignore if received
+                    result = Some(StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    });
+                }
+                _ => {
+                    if Self::resolve_sender_index(config, &pkt.src).is_some() {
+                        let src = pkt.src;
+                        result = Some(match pkt.msg {
+                            PBFTMessage::PrePrepare { view, seq, digest } => {
+                                self.handle_pre_prepare(config, view, seq, digest)
+                            }
+                            PBFTMessage::Prepare {
+                                view,
+                                seq,
+                                digest: _,
+                                sender,
+                            } => self.handle_prepare(config, view, seq, sender, &src),
+                            PBFTMessage::Commit {
+                                view,
+                                seq,
+                                sender,
+                            } => self.handle_commit(config, view, seq, sender, &src),
+                            // ClientRequest/ClientReply already handled above
+                            _ => StepResult {
+                                ok: true,
+                                outbound: GenericOutbound::None,
+                            },
+                        });
                     }
-                    PBFTMessage::Prepare {
-                        view,
-                        seq,
-                        digest: _,
-                        sender,
-                    } => self.handle_prepare(config, view, seq, sender, &src),
-                    PBFTMessage::Commit {
-                        view,
-                        seq,
-                        sender,
-                    } => self.handle_commit(config, view, seq, sender, &src),
-                    PBFTMessage::ClientReply { .. } => {
-                        // ClientReply is outbound-only; ignore if received
-                        StepResult {
-                            ok: true,
-                            outbound: GenericOutbound::None,
-                        }
-                    }
-                });
+                }
             }
         }
 

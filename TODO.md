@@ -14816,7 +14816,15 @@ For each protocol modified in 44.2:
 
 #### 44.5 Bench with unified client
 
-- [ ] **44.5.a**: Bench all 5 protocols on HEAD: `dotnet bin/IronGenericClient.dll protocol=<name> nthreads=32 duration=30` × 2 trials. Report `throughput / latency / per-thread breakdown`. Numbers are now apples-to-apples (synchronous req-resp for all).
+- [x] **44.5.a**: Benched 4 protocols on HEAD with IronGenericClient (nthreads=32, duration=30, 2 trials). Also fixed EPaxos + PBFT bugs: `resolve_sender_index` rejected ClientRequest from external clients (not in peer list). Fix: dispatch ClientRequest/ClientReply before sender resolution.
+  **Results (synchronous req-resp, apples-to-apples):**
+  | Protocol | Throughput (ops/s) | Avg Latency (ms) | Nodes |
+  |---|---|---|---|
+  | Raft | 3,891–3,893 | 8.54 | 3 |
+  | EPaxos | 3,424–3,456 | 9.60–9.70 | 3 |
+  | PBFT | 2,057–2,064 | 15.96–16.05 | 4 |
+  | PB | 25.5–27.3 | 1,181 | 2 |
+  PB is timeout-bound: serializes 1 request at a time, 50ms client timeout dominates. Server-side commits ~92 ops/s but only ~26 replies/s reach clients. RSL excluded (uses separate transport).
 - [ ] **44.5.b**: Bench on c097da0 baseline. Compute Phase 40 Arc-wrap delta for each protocol.
 - [ ] **44.5.c**: Update Phase 43.4 verdict with apples-to-apples data. Decide Phase 40 disposition (42.5.a "keep dormant" vs 42.5.b "disable via TOML") based on whether ANY protocol shows ≥10% benefit.
 
