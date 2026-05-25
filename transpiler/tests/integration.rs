@@ -1195,6 +1195,130 @@ fn test_raft_regen_matches_checked_in() {
     );
 }
 
+/// Helper: run `generate-types` and compare output against the checked-in types_gen.rs.
+/// Skips RSL (which has extensive manual additions beyond what generate-types produces).
+fn assert_types_regen_matches_checked_in(
+    protocol_dir: &str,    // e.g. "ChainReplication"
+    types_file: &str,      // e.g. "types.rs"
+    toml_file: &str,       // e.g. "chain_transpile.toml"
+) {
+    let repo_root = resolve_repo_root_for_integration();
+    let checked_in_path = repo_root.join(format!("src/generated/{}/types_gen.rs", protocol_dir));
+
+    let output = std::process::Command::new("cargo")
+        .args([
+            "run", "--release", "--",
+            "generate-types",
+            "--input", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, types_file)).to_str().unwrap(),
+            "--config", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, toml_file)).to_str().unwrap(),
+        ])
+        .current_dir(&repo_root.join("transpiler"))
+        .output()
+        .expect("Failed to run transpiler generate-types");
+
+    assert!(
+        output.status.success(),
+        "generate-types failed for {}:\n{}",
+        protocol_dir,
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let fresh_output = String::from_utf8(output.stdout)
+        .expect("Transpiler output is not valid UTF-8");
+    let checked_in = std::fs::read_to_string(&checked_in_path)
+        .unwrap_or_else(|e| panic!("Failed to read checked-in types_gen.rs for {}: {}", protocol_dir, e));
+
+    let fresh_lines: Vec<&str> = fresh_output.trim_end().lines().collect();
+    let checked_lines: Vec<&str> = checked_in.trim_end().lines().collect();
+
+    if fresh_lines != checked_lines {
+        let max_len = fresh_lines.len().max(checked_lines.len());
+        for i in 0..max_len {
+            let fresh_line = fresh_lines.get(i).unwrap_or(&"<EOF>");
+            let checked_line = checked_lines.get(i).unwrap_or(&"<EOF>");
+            if fresh_line != checked_line {
+                panic!(
+                    "types_gen.rs for {} is stale (doesn't match transpiler output).\n\
+                     First difference at line {}:\n\
+                     - checked-in: {}\n\
+                     + transpiler: {}\n\
+                     Re-run: cargo run --release -- generate-types \
+                     --input src/protocol/{}/{} \
+                     --config src/protocol/{}/{} \
+                     --output src/generated/{}/types_gen.rs",
+                    protocol_dir, i + 1, checked_line, fresh_line,
+                    protocol_dir, types_file,
+                    protocol_dir, toml_file,
+                    protocol_dir,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_chain_replication_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "ChainReplication", "types.rs", "chain_transpile.toml",
+    );
+}
+
+#[test]
+fn test_twophase_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "TwoPhase", "types.rs", "twophase_transpile.toml",
+    );
+}
+
+#[test]
+fn test_paxos_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "Paxos", "types.rs", "paxos_transpile.toml",
+    );
+}
+
+#[test]
+fn test_leader_election_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "LeaderElection", "types.rs", "election_transpile.toml",
+    );
+}
+
+#[test]
+fn test_epaxos_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "EPaxos", "types.rs", "epaxos_transpile.toml",
+    );
+}
+
+#[test]
+fn test_pbft_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "PBFT", "types.rs", "pbft_transpile.toml",
+    );
+}
+
+#[test]
+fn test_primarybackup_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "PrimaryBackup", "types.rs", "primarybackup_transpile.toml",
+    );
+}
+
+#[test]
+fn test_vertical_paxos_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "VerticalPaxos", "types.rs", "vpaxos_transpile.toml",
+    );
+}
+
+#[test]
+fn test_raft_types_regen_matches_checked_in() {
+    assert_types_regen_matches_checked_in(
+        "Raft", "types.rs", "raft_transpile.toml",
+    );
+}
+
 #[test]
 fn test_rsl_types_manual_helpers_foundational_symbols_present() {
     let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
