@@ -7,11 +7,10 @@
 
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::value::{RuntimeResult, RuntimeValue};
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 /// A natively compiled eval function loaded from a cdylib.
 ///
@@ -204,9 +203,12 @@ pub fn find_runtime_rlib(runtime_crate_dir: &Path) -> TranspileResult<(PathBuf, 
 }
 
 /// Cache for natively compiled functions, keyed by expression pointer + env names.
+///
+/// Thread-safe: uses `Mutex<HashMap>` + `Arc<NativeFunction>` so it can be
+/// shared across parallel BFS workers.
 pub struct NativeCache {
     /// `None` = compilation failed (cached failure); `Some` = loaded function.
-    cache: RefCell<HashMap<(usize, Vec<String>), Option<Rc<NativeFunction>>>>,
+    cache: Mutex<HashMap<(usize, Vec<String>), Option<Arc<NativeFunction>>>>,
     runtime_rlib_path: PathBuf,
     runtime_deps_dir: PathBuf,
 }
@@ -215,7 +217,7 @@ impl NativeCache {
     /// Create a new cache with pre-resolved runtime paths.
     pub fn new(runtime_rlib_path: PathBuf, runtime_deps_dir: PathBuf) -> Self {
         Self {
-            cache: RefCell::new(HashMap::new()),
+            cache: Mutex::new(HashMap::new()),
             runtime_rlib_path,
             runtime_deps_dir,
         }
@@ -235,7 +237,7 @@ impl NativeCache {
 
     /// Get or compile a native function for the given expression.
     ///
-    /// Returns `Some(Rc<NativeFunction>)` on success, `None` on failure.
+    /// Returns `Some(Arc<NativeFunction>)` on success, `None` on failure.
     /// On compilation failure, caches the failure and returns `None`
     /// (graceful fallback to bytecode/AST).
     pub fn get_or_compile(
@@ -243,32 +245,32 @@ impl NativeCache {
         expr: &crate::ast::Expr,
         env_names: &[String],
         source_gen: impl FnOnce() -> Result<String, crate::modelcheck::native_codegen::CodegenError>,
-    ) -> Option<Rc<NativeFunction>> {
+    ) -> Option<Arc<NativeFunction>> {
         let key = (expr as *const _ as usize, env_names.to_vec());
 
         // Check cache first
         {
-            let cache = self.cache.borrow();
-            if let Some(entry) = cache.get(&key) {
+            let guard = self.cache.lock().unwrap();
+            if let Some(entry) = guard.get(&key) {
                 return entry.clone();
             }
         }
 
-        // Generate source
+        // Generate source (outside lock to avoid holding it during compilation)
         let source = match source_gen() {
             Ok(body) => generate_cdylib_source(&body),
             Err(_) => {
-                self.cache.borrow_mut().insert(key, None);
+                self.cache.lock().unwrap().insert(key, None);
                 return None;
             }
         };
 
-        // Compile and load
+        // Compile and load (expensive — outside lock)
         let result = compile_and_load(&source, &self.runtime_rlib_path, &self.runtime_deps_dir);
 
-        let entry = result.ok().map(Rc::new);
+        let entry = result.ok().map(Arc::new);
         let ret = entry.clone();
-        self.cache.borrow_mut().insert(key, entry);
+        self.cache.lock().unwrap().insert(key, entry);
         ret
     }
 }
@@ -343,6 +345,44 @@ mod tests {
             panic!("source_gen should not be called for cached failure");
         });
         assert!(result2.is_none(), "Should return cached failure");
+    }
+
+    #[test]
+    fn test_native_cache_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<NativeCache>();
+    }
+
+    #[test]
+    fn test_native_function_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<NativeFunction>();
+    }
+
+    #[test]
+    fn test_native_cache_concurrent_codegen_failure() {
+        use std::sync::Arc as StdArc;
+        let cache = StdArc::new(NativeCache::new(
+            PathBuf::from("/nonexistent/test.rlib"),
+            PathBuf::from("/nonexistent/deps"),
+        ));
+        let expr: &'static crate::ast::Expr =
+            Box::leak(Box::new(crate::ast::Expr::Literal(crate::ast::Literal::Int(77))));
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let cache = StdArc::clone(&cache);
+                std::thread::spawn(move || {
+                    cache.get_or_compile(expr, &[], || {
+                        Ok("fn eval(env: &[RuntimeValue]) -> RuntimeResult<RuntimeValue> { Ok(RuntimeValue::Int(77)) }".to_string())
+                    })
+                })
+            })
+            .collect();
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        // All threads should get None (compilation fails with nonexistent rlib)
+        for r in &results {
+            assert!(r.is_none(), "Should fail with nonexistent rlib");
+        }
     }
 
     #[test]

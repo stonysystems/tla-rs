@@ -13516,10 +13516,11 @@ tiers, ordered biggest-gain-per-effort first.
     tier usage summary alongside existing `dump_eval_expr_profile()`.
     3 tests (bytecode_hit, ast_fallback, bytecode_compile_fail_then_ast).
     ~80 LOC.
-  - [ ] **38.21.A.c**: **Make NativeCache thread-safe.** Same pattern as
+  - [x] **38.21.A.c**: **Make NativeCache thread-safe.** Same pattern as
     38.21.B.i.e (BytecodeCache): `RefCell<HashMap<..., Rc<...>>>` →
     `Mutex<HashMap<..., Arc<...>>>`. Enables native codegen (~100-200×)
-    for parallel BFS workers. ~50 LOC.
+    for parallel BFS workers. Wired into parallel BFS path in main.rs.
+    3 tests (Send+Sync assertions, concurrent codegen failure). ~50 LOC.
   - [ ] **38.21.A.d**: **Closure support in bytecode/native.** Handle
     `Expr::Closure` in `compile_expr` and `generate_eval_function`.
     Closures appear in `Set::new(|x| pred)` patterns. ~200 LOC.

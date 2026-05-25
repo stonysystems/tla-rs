@@ -4323,7 +4323,7 @@ fn execute_model_check(
                             quantifier_domain_evaluator: Some(qde),
                             predicate_only_branch_solver: Some(&predicate_only_branch_solver),
                             bytecode_cache: bytecode_cache.as_ref(),
-                            native_cache: None,  // NativeCache not Sync; disabled for parallel
+                            native_cache: native_cache.as_ref(),
                         },
                         None, // no cooperative timeout for parallel workers
                     )?;
