@@ -83,7 +83,9 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 3. **Phase 43: Enable Throughput Bench for EPaxos / PrimaryBackup / PBFT** — only 2/10 protocols (Raft, RSL) currently benchable. Add a self-driving EPaxos metric output (0.5 day), an IronPrimaryBackupClient (0.5 day), and an IronPBFTClient (1 day). Then re-bench HEAD vs c097da0 on all 3 to settle Phase 40's perf disposition for small protocols. **43.1–43.3 done but 43.3.d PBFT result is broken** (0.13 ops/s, repro'd as a bug — see Phase 44). 43.4 verdict pending Phase 44 fix. See [Phase 43](#phase-43-enable-throughput-bench-for-epaxos--primarybackup--pbft).
 
-4. **Phase 44: Fix PBFT Throughput Bug + Unify Client Interface via Spec Changes** — PBFT is benchmarking at <1 ops/s (bug, not protocol overhead). Diagnose + fix (44.1). Then add `ClientReply` to PB / EPaxos / PBFT specs (no proofs to break — 0 refinement proof for these protocols), regenerate impl, verify, and write one unified C# client framework. Yields apples-to-apples bench data across all 5 benchable protocols (~5–7 days). See [Phase 44](#phase-44-fix-pbft-throughput-bug--unify-client-interface-via-spec-changes).
+4. **Phase 44: Fix PBFT Throughput Bug + Unify Client Interface via Spec Changes** — PBFT is benchmarking at <1 ops/s (bug, not protocol overhead). Diagnose + fix (44.1). Then add `ClientReply` to PB / EPaxos / PBFT specs (no proofs to break — 0 refinement proof for these protocols), regenerate impl, verify, and write one unified C# client framework. Yields apples-to-apples bench data across all 5 benchable protocols (~5–7 days). See [Phase 44](#phase-44-fix-pbft-throughput-bug--unify-client-interface-via-spec-changes). **COMPLETED** but reproduction on zoo-004 revealed Phase 44.5.a's PB number is invalid — see Phase 45.
+
+5. **Phase 45: Fix PrimaryBackup Replication Bug** — bench reproduction shows backup `log_length` stays at 0 (primary commits solo); 44.5.a's 25/27/132 numbers reflect timeout dynamics, not replication. Likely 44.2.a `host.rs` refactor skipped the Replicate→Ack wait before sending ClientReply. ~0.5–1 day. See [Phase 45](#phase-45-fix-primarybackup-replication-bug-backup-never-replicates).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -14994,7 +14996,7 @@ For each protocol modified in 44.2:
   | EPaxos | 3,424–3,456 | 9.60–9.70 | 3 |
   | PBFT | 2,057–2,064 | 15.96–16.05 | 4 |
   | PB | 25.5–27.3 | 1,181 | 2 |
-  PB is timeout-bound: serializes 1 request at a time, 50ms client timeout dominates. Server-side commits ~92 ops/s but only ~26 replies/s reach clients. RSL excluded (uses separate transport).
+  PB is timeout-bound: serializes 1 request at a time, 50ms client timeout dominates. Server-side commits ~92 ops/s but only ~26 replies/s reach clients. RSL excluded (uses separate transport). **REVISED 2026-05-25**: reproduction on zoo-004 (32 threads × 30 s × 2 trials) shows backup `log_length` stays at 0 throughout — primary commits solo, replication never happens. The 25/27/132 numbers are invalid (single-replica behavior, not real PB). See [Phase 45](#phase-45-fix-primarybackup-replication-bug-backup-never-replicates) for the fix plan.
 - [x] **44.5.b**: Benched c097da0 baseline (git worktree, rebuilt liblib.so). Only Raft is measurable — PB/EPaxos/PBFT lack client/metrics infrastructure at c097da0 (ClientReply added Phase 44.2, [METRICS] added Phase 43.2).
   **Raft c097da0 baseline (IronGenericClient, 32 threads, 30s, 2 trials):** 3,893.9 / 3,889.9 ops/s (avg latency 8.54–8.55 ms).
   **Phase 40 Arc-wrap delta:**
@@ -15034,3 +15036,64 @@ Most risk in 44.2.b (EPaxos — currently uses internal `try_propose`, needs spe
 - **R2**: PBFT bug might be in spec (e.g., wrong watermark advancement rule), not host. Mitigation: do 44.1.b spec inspection before writing fix; fix may be a spec edit + regen.
 - **R3**: Generic client framework may not handle protocol-specific failure modes (leader rotation, view change, instance retries). Mitigation: each adapter declares its retry policy; framework provides hooks rather than one-size-fits-all.
 - **R4**: New verification might fail if added transition violates some implicit invariant (e.g., PBFT prepare quorum invariant when adding reply). Mitigation: spec changes are small and additive; verification budget per protocol is 1 hour before falling back to weaker spec (e.g., reply as `external_body` / `assume`).
+
+---
+
+## Phase 45: Fix PrimaryBackup Replication Bug (Backup Never Replicates)
+
+### Motivation
+
+Phase 44.5.a noted PB at "25.5–27.3 ops/s (timeout-bound)" but framed it as a client serialization issue. Reproduction on zoo-004 (2026-05-25, 32 threads × 30 s × 2 trials with IronGenericClient) reveals a deeper bug:
+
+```
+Server 1 metrics: role=primary log_length=4659  ← primary committing solo
+Server 2 metrics: role=backup  log_length=0     ← backup never replicates
+```
+
+**Backup `log_length` stays at 0 for the full 30 s**, yet primary commits ~127 ops/s and replies to clients. This means either:
+- Primary `LPrimaryCommit` transition does NOT require backup to ack (spec/host gap), OR
+- Primary host never sends `Replicate{value}` to backup (host wiring gap introduced when 44.2.a added ClientReply path), OR
+- Backup ignores `Replicate` (host handler gap)
+
+Either way: **PrimaryBackup is not actually doing replication** — primary runs as a standalone log with no backup involvement. Bench numbers (122–143 ops/s on zoo-004; 25–27 on zoo-002) reflect client timeout dynamics, not protocol throughput. Cannot use these numbers for any Phase 40 verdict or OSDI poster.
+
+### Goal
+
+PrimaryBackup runs correctly under IronGenericClient: backup `log_length` grows in lockstep with primary; throughput ≥1 K ops/s (Raft-level, since the protocol is simpler); latency back to ~10 ms range.
+
+### Plan
+
+#### 45.1 Reproduce + localize
+
+- [ ] **45.1.a**: Re-run `bash scripts/bench_generic.sh pb 10 1 4` and confirm: primary log_length grows, backup stays at 0. Capture both server stderr logs in full.
+- [ ] **45.1.b**: Inspect `src/protocol/PrimaryBackup/primarybackup.rs`:
+  - Does `LPrimaryCommit` precondition require backup state (ack received)?
+  - Did 44.2.a inadvertently weaken the commit precondition to "primary has value" without "backup ack'd"?
+- [ ] **45.1.c**: Inspect `src/implementation/PrimaryBackup/host.rs`:
+  - On `ClientRequest`, does primary send `Replicate{value}` to backup BEFORE committing?
+  - Does primary store the request as "pending replication" and only commit after `Ack`?
+  - Did 44.2.a's `pending_client` tracking accidentally short-circuit the wait-for-ack step?
+- [ ] **45.1.d**: Add a temporary `[REPL]` log line whenever primary sends `Replicate` and whenever backup receives one. Run bench 10 s. Count send vs recv — confirms whether it's a wire-level packet drop, a host-level skip, or a spec-level guard.
+
+#### 45.2 Fix
+
+- [ ] **45.2.a**: Apply minimal fix based on 45.1 findings. Three likely shapes:
+  - Spec edit: tighten `LPrimaryCommit` to require ack receipt; regen; verify.
+  - Host edit: re-add the "send Replicate before commit" step in primary's `handle_client_request`; ensure commit waits for `LBackupReplicateAck` handler.
+  - Wire edit: confirm `Replicate` and `Ack` TAGs survive Phase 44.2.a refactor.
+- [ ] **45.2.b**: Re-bench. Pass criteria: backup log_length grows; primary log_length ≈ backup log_length within ~10 entries; throughput ≥1 K ops/s; latency <50 ms.
+
+#### 45.3 Validate end-to-end
+
+- [ ] **45.3.a**: 32 threads × 30 s × 2 trials, confirm both trials succeed (no race like PBFT trial-2). If trial-2 fails, file follow-up similar to Phase 44.1's PBFT debugging.
+- [ ] **45.3.b**: Update Phase 44.5.a bench table with corrected PB numbers. Note in commit message that previous 25/27/132 numbers were invalid (single-replica behavior).
+- [ ] **45.3.c**: If poster cites PB throughput, update OSDI briefing doc.
+
+### Estimated effort
+
+~0.5–1 day. The bug is almost certainly in `host.rs` (Phase 44.2.a refactor) — spec was already verified pre-44.2.a, and 15 verified/0 errors after means the spec changes alone didn't change commit precondition logic. Most likely: host's `handle_client_request` was rewritten to send ClientReply immediately, skipping the prior Replicate→Ack step.
+
+### Risk
+
+- **R1**: Fix in host may need new spec invariants (e.g., "primary doesn't commit until ack"). Mitigation: if spec is silent on this, add minimal invariant or document the gap explicitly rather than over-engineering.
+- **R2**: Fixing PB might break the ClientReply path (44.2.a). Mitigation: keep 44.2.a's pending_client tracking; just insert the Replicate→Ack wait before sending ClientReply.
