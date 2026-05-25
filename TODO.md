@@ -43,7 +43,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - Phase 16.2 (spec→exec parsing): ✅ COMPLETE — all 7 TLA-generated specs transpile (string literals, record literals, annotation fixes)
 - Phase 16.3 (verus2tla roundtrip): ✅ COMPLETE — all 7 TLA-generated specs convert back to TLA+ (fixed by shared parser improvements)
 - Phase 16.4 (TLA+→exec pipeline): ✅ COMPLETE — all 7 TLA+ examples pass end-to-end pipeline
-- Full codebase: 627 verified, 0 errors (RSL + TwoPhase + Paxos + LeaderElection + Raft + ChainReplication + PrimaryBackup + PBFT + VerticalPaxos + EPaxos)
+- Full codebase: 1030 verified, 13 errors (all 13 from Raft Phase 34 deprecated assumes; RSL + TwoPhase + Paxos + LeaderElection + ChainReplication + PrimaryBackup + PBFT + VerticalPaxos + EPaxos all 0 errors)
 - Phase 17.1 COMPLETE: All 9 non-RSL protocols at 100% transpiler coverage (only LNext skipped = runtime scheduler)
 - Phase 17.2 COMPLETE: Generic protocol framework (ProtocolHost trait, generic_main, generic_net, generic_host)
 - Phase 17.5 COMPLETE: All 9 non-RSL protocols have runnable implementations (message.rs, host.rs, service entry points)
@@ -14899,7 +14899,7 @@ Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, Pri
 
 - **Paxos / TwoPhase / VerticalPaxos**: single-decree / single-txn per cycle. Throughput would require spec-level redesign to start fresh instances repeatedly — that's protocol engineering, not bench engineering.
 - **LeaderElection**: pure leader election, no work model. "elections per second" is meaningless.
-- **ChainReplication**: has 2 verification errors (Phase 42.1.a finding). Fix verify first; bench separately.
+- **ChainReplication**: ~~has 2 verification errors (Phase 42.1.a finding)~~ **FIXED** — regenerated `chain_gen.rs` from transpiler; 2 missing `lemma_seq_push_map_commute` proof calls restored. 13 verified, 0 errors. Bench separately.
 
 ### Estimated total effort
 
@@ -15010,7 +15010,7 @@ For each protocol modified in 44.2:
 ### Out of scope
 
 - Paxos / TwoPhase / VerticalPaxos / LeaderElection — single-shot or no work model. Adding ClientReply doesn't help because the protocol semantics don't support sustained throughput (covered in Phase 43 "Out of scope").
-- ChainReplication — has 2 verify errors (Phase 42.1.a finding). Fix verify first; unify client separately.
+- ChainReplication — ~~has 2 verify errors~~ **FIXED** (regenerated chain_gen.rs). Unify client separately.
 - Touching Raft/RSL specs — they already have ClientReply, just need wire format adapter for the generic client (handled in 44.4.b).
 
 ### Estimated effort

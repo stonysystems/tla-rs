@@ -144,6 +144,7 @@ ensures
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
         lemma_empty_seq_map();
+        lemma_seq_push_map_commute(s.history@, *value);
         assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
     result
@@ -223,6 +224,7 @@ ensures
     proof {
         broadcast use Set::lemma_set_map_insert_commute;
         lemma_empty_seq_map();
+        lemma_seq_push_map_commute(s.history@, *value);
         assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
     result
