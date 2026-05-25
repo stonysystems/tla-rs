@@ -1063,21 +1063,24 @@ fn test_chain_replication_config_loading() {
     // Remapping is now auto-inferred (Phase 21), not in TOML
 }
 
-/// Regression test: transpiler output for ChainReplication must match the checked-in
-/// chain_gen.rs. Catches stale generated files (e.g., missing proof lemma calls after
-/// Arc-wrap config changes). Uses the full TOML config including arc_wrap_fields.
-#[test]
-fn test_chain_replication_regen_matches_checked_in() {
+/// Helper: verify that transpiler output for a protocol matches the checked-in *_gen.rs.
+/// Catches stale generated files (e.g., missing proof lemma calls after config changes).
+fn assert_regen_matches_checked_in(
+    protocol_dir: &str,    // e.g. "ChainReplication"
+    spec_file: &str,       // e.g. "chain.rs"
+    toml_file: &str,       // e.g. "chain_transpile.toml"
+    automan_file: &str,    // e.g. "chain.automan"
+    gen_file: &str,        // e.g. "chain_gen.rs"
+) {
     let repo_root = resolve_repo_root_for_integration();
-    let checked_in_path = repo_root.join("src/generated/ChainReplication/chain_gen.rs");
+    let checked_in_path = repo_root.join(format!("src/generated/{}/{}", protocol_dir, gen_file));
 
-    // Run transpiler binary with --stdout to get fresh output
     let output = std::process::Command::new("cargo")
         .args([
             "run", "--release", "--",
-            "--input", repo_root.join("src/protocol/ChainReplication/chain.rs").to_str().unwrap(),
-            "--config", repo_root.join("src/protocol/ChainReplication/chain_transpile.toml").to_str().unwrap(),
-            "--annotations", repo_root.join("src/protocol/ChainReplication/chain.automan").to_str().unwrap(),
+            "--input", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, spec_file)).to_str().unwrap(),
+            "--config", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, toml_file)).to_str().unwrap(),
+            "--annotations", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, automan_file)).to_str().unwrap(),
             "--stdout",
         ])
         .current_dir(&repo_root.join("transpiler"))
@@ -1086,14 +1089,15 @@ fn test_chain_replication_regen_matches_checked_in() {
 
     assert!(
         output.status.success(),
-        "Transpiler failed:\n{}",
+        "Transpiler failed for {}:\n{}",
+        protocol_dir,
         String::from_utf8_lossy(&output.stderr)
     );
 
     let fresh_output = String::from_utf8(output.stdout)
         .expect("Transpiler output is not valid UTF-8");
     let checked_in = std::fs::read_to_string(&checked_in_path)
-        .expect("Failed to read checked-in chain_gen.rs");
+        .unwrap_or_else(|e| panic!("Failed to read checked-in {}: {}", gen_file, e));
 
     let fresh_lines: Vec<&str> = fresh_output.trim_end().lines().collect();
     let checked_lines: Vec<&str> = checked_in.trim_end().lines().collect();
@@ -1105,22 +1109,90 @@ fn test_chain_replication_regen_matches_checked_in() {
             let checked_line = checked_lines.get(i).unwrap_or(&"<EOF>");
             if fresh_line != checked_line {
                 panic!(
-                    "chain_gen.rs is stale (doesn't match transpiler output).\n\
+                    "{} is stale (doesn't match transpiler output).\n\
                      First difference at line {}:\n\
                      - checked-in: {}\n\
                      + transpiler: {}\n\
                      Re-run the transpiler to regenerate: \
-                     cargo run --release -- --input src/protocol/ChainReplication/chain.rs \
-                     --config src/protocol/ChainReplication/chain_transpile.toml \
-                     --annotations src/protocol/ChainReplication/chain.automan \
-                     --output src/generated/ChainReplication/chain_gen.rs",
-                    i + 1,
-                    checked_line,
-                    fresh_line,
+                     cargo run --release -- --input src/protocol/{}/{} \
+                     --config src/protocol/{}/{} \
+                     --annotations src/protocol/{}/{} \
+                     --output src/generated/{}/{}",
+                    gen_file, i + 1, checked_line, fresh_line,
+                    protocol_dir, spec_file,
+                    protocol_dir, toml_file,
+                    protocol_dir, automan_file,
+                    protocol_dir, gen_file,
                 );
             }
         }
     }
+}
+
+/// Regression test: transpiler output for ChainReplication must match the checked-in
+/// chain_gen.rs. Catches stale generated files (e.g., missing proof lemma calls after
+/// Arc-wrap config changes). Uses the full TOML config including arc_wrap_fields.
+#[test]
+fn test_chain_replication_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "ChainReplication", "chain.rs", "chain_transpile.toml", "chain.automan", "chain_gen.rs",
+    );
+}
+
+#[test]
+fn test_twophase_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "TwoPhase", "twophase.rs", "twophase_transpile.toml", "twophase.automan", "twophase_gen.rs",
+    );
+}
+
+#[test]
+fn test_paxos_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "Paxos", "paxos.rs", "paxos_transpile.toml", "paxos.automan", "paxos_gen.rs",
+    );
+}
+
+#[test]
+fn test_leader_election_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "LeaderElection", "election.rs", "election_transpile.toml", "election.automan", "election_gen.rs",
+    );
+}
+
+#[test]
+fn test_epaxos_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "EPaxos", "epaxos.rs", "epaxos_transpile.toml", "epaxos.automan", "epaxos_gen.rs",
+    );
+}
+
+#[test]
+fn test_pbft_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "PBFT", "pbft.rs", "pbft_transpile.toml", "pbft.automan", "pbft_gen.rs",
+    );
+}
+
+#[test]
+fn test_primarybackup_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "PrimaryBackup", "primarybackup.rs", "primarybackup_transpile.toml", "primarybackup.automan", "primarybackup_gen.rs",
+    );
+}
+
+#[test]
+fn test_vertical_paxos_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "VerticalPaxos", "vpaxos.rs", "vpaxos_transpile.toml", "vpaxos.automan", "vpaxos_gen.rs",
+    );
+}
+
+#[test]
+fn test_raft_regen_matches_checked_in() {
+    assert_regen_matches_checked_in(
+        "Raft", "raft.rs", "raft_transpile.toml", "raft.automan", "raft_gen.rs",
+    );
 }
 
 #[test]

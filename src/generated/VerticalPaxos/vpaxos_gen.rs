@@ -80,7 +80,7 @@ ensures
     LPrepare(s@, result.0@, c@, *b as int, result.1@.map(|i, p: CVPMessage| p@)),
 {
     let result = (CState {
-    max_bal: *b,
+    max_bal: (*b),
     max_v_bal: s.max_v_bal.clone(),
     max_val: s.max_val.clone(),
     has_voted: s.has_voted.clone(),
@@ -93,7 +93,7 @@ ensures
     witness_val: s.witness_val.clone(),
     has_witness: s.has_witness.clone(),
 }, vec![CVPMessage::Prepare {
-    bal: *b,
+    bal: (*b),
 }]);
     proof {
         assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result.1@[0]@));
@@ -113,7 +113,7 @@ ensures
     LSendPromise(s@, result.0@, c@, *prepare_bal as int, result.1@.map(|i, p: CVPMessage| p@)),
 {
     let result = (CState {
-    max_bal: *prepare_bal,
+    max_bal: (*prepare_bal),
     max_v_bal: s.max_v_bal.clone(),
     max_val: s.max_val.clone(),
     has_voted: s.has_voted.clone(),
@@ -126,7 +126,7 @@ ensures
     witness_val: s.witness_val.clone(),
     has_witness: s.has_witness.clone(),
 }, vec![CVPMessage::Promise {
-    bal: *prepare_bal,
+    bal: (*prepare_bal),
     v_bal: s.max_v_bal.clone(),
     val: s.max_val.clone(),
 }]);
@@ -155,13 +155,13 @@ ensures
             lemma_empty_seq_map();
         }; (CState {
     promises_rcvd: Arc::new(__promises_rcvd),
-    max_v_bal: if (*promise_v_bal > s.max_v_bal) {
-        *promise_v_bal
+    max_v_bal: if ((*promise_v_bal) > s.max_v_bal) {
+        (*promise_v_bal)
     } else {
         s.max_v_bal.clone()
     },
-    max_val: if (*promise_v_bal > s.max_v_bal) {
-        *promise_val
+    max_val: if ((*promise_v_bal) > s.max_v_bal) {
+        (*promise_val)
     } else {
         s.max_val.clone()
     },
@@ -197,8 +197,8 @@ ensures
     LAccept(s@, result.0@, c@, *b as int, *v as int, result.1@.map(|i, p: CVPMessage| p@)),
 {
     let result = (CState {
-    max_v_bal: *b,
-    max_val: *v,
+    max_v_bal: (*b),
+    max_val: (*v),
     has_voted: true,
     max_bal: s.max_bal.clone(),
     config_num: s.config_num.clone(),
@@ -210,8 +210,8 @@ ensures
     witness_val: s.witness_val.clone(),
     has_witness: s.has_witness.clone(),
 }, vec![CVPMessage::Accept {
-    bal: *b,
-    val: *v,
+    bal: (*b),
+    val: (*v),
 }]);
     proof {
         assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result.1@[0]@));
@@ -351,9 +351,9 @@ ensures
         }
         (CState {
     has_witness: true,
-    witness_val: *witness_val,
+    witness_val: (*witness_val),
     max_val: if !s.has_voted {
-        *witness_val
+        (*witness_val)
     } else {
         s.max_val.clone()
     },
@@ -391,10 +391,10 @@ ensures
             lemma_empty_seq_map();
         }
         (CState {
-    config_num: *new_config,
+    config_num: (*new_config),
     max_bal: 0u64,
     max_v_bal: 0u64,
-    max_val: *val,
+    max_val: (*val),
     has_voted: false,
     is_active: true,
     promises_rcvd: Arc::new(HashSet::new()),
