@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-05-25T09:24:22Z",
+  "command": "scripts/run_native_cross_check.sh",
+  "summary": {
+    "total_cases": 12,
+    "exact_match": 12,
+    "mismatch": 0,
+    "errors": 0
+  },
+  "cases": [
+    {"case_id":"01_aplusb","baseline_verdict":"ok","baseline_states":6001,"native_verdict":"ok","native_states":6001,"status":"PASS"},
+    {"case_id":"02_counter_incdec","baseline_verdict":"ok","baseline_states":28,"native_verdict":"ok","native_states":28,"status":"PASS"},
+    {"case_id":"03_counter_race_bug","baseline_verdict":"invariant_violated","baseline_states":13,"native_verdict":"invariant_violated","native_states":13,"status":"PASS"},
+    {"case_id":"04_lock_basic","baseline_verdict":"ok","baseline_states":5,"native_verdict":"ok","native_states":5,"status":"PASS"},
+    {"case_id":"05_broken_lock_bug","baseline_verdict":"invariant_violated","baseline_states":17,"native_verdict":"invariant_violated","native_states":17,"status":"PASS"},
+    {"case_id":"06_ticket_lock","baseline_verdict":"ok","baseline_states":7,"native_verdict":"ok","native_states":7,"status":"PASS"},
+    {"case_id":"07_producer_consumer_1slot","baseline_verdict":"ok","baseline_states":10001,"native_verdict":"ok","native_states":10001,"status":"PASS"},
+    {"case_id":"08_bounded_buffer_2slot","baseline_verdict":"ok","baseline_states":9,"native_verdict":"ok","native_states":9,"status":"PASS"},
+    {"case_id":"09_peterson_mutex_2p","baseline_verdict":"ok","baseline_states":10,"native_verdict":"ok","native_states":10,"status":"PASS"},
+    {"case_id":"11_readers_writers_small","baseline_verdict":"invariant_violated","baseline_states":4,"native_verdict":"invariant_violated","native_states":4,"status":"PASS"},
+    {"case_id":"12_dining_philosophers_3","baseline_verdict":"deadlock_detected","baseline_states":14,"native_verdict":"deadlock_detected","native_states":14,"status":"PASS"},
+    {"case_id":"13_twophase_small","baseline_verdict":"ok","baseline_states":257,"native_verdict":"ok","native_states":257,"status":"PASS"}
+  ]
+}

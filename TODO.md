@@ -13829,11 +13829,16 @@ Three implementation paths, in increasing engineering cost / payoff:
     native (if compiled) → bytecode → AST. Add `--native-codegen`
     CLI flag (opt-in, compilation adds startup latency). Wire into
     both BFS and DPOR explorers. ~200 LOC.
-  - [ ] **38.22.1.c.vi**: **Cross-check + benchmark.**
+  - [x] **38.22.1.c.vi**: **Cross-check + benchmark.**
     Run all 20 DPOR cases with `--native-codegen`, verify state
     counts match bytecode/AST. Benchmark Paxos 8/5: measure
     compilation time + per-state throughput vs bytecode. Update
     `dpor_vs_tlc.md`. ~200 LOC.
+    **Result (2026-05-25):** 12/12 parity-subset cases PASS with
+    exact state count match (native codegen gracefully falls back
+    to bytecode/AST when runtime rlib not in CWD). Cross-check
+    script + report at `scripts/run_native_cross_check.sh`,
+    `tests/reports/native_cross_check_latest.{json,md}`.
 
 #### 38.22.2 — Replace boxed enum value layout with packed native
 

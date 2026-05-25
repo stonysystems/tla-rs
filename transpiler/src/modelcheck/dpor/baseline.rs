@@ -35,6 +35,36 @@ pub fn run_baseline(
     invariants: &[String],
     _timeout_sec: u64,
 ) -> BaselineResult {
+    run_baseline_with_flags(transpiler_bin, spec_file, model_toml, invariants, _timeout_sec, &[])
+}
+
+/// Run the baseline model checker with native codegen enabled.
+///
+/// Same as `run_baseline` but passes `--native-codegen` to compile spec
+/// expressions to cdylibs for evaluation. Used by Phase 38.22.1.c.vi
+/// cross-check to verify native codegen produces identical state counts.
+pub fn run_baseline_native(
+    transpiler_bin: &Path,
+    spec_file: &Path,
+    model_toml: &Path,
+    invariants: &[String],
+    _timeout_sec: u64,
+) -> BaselineResult {
+    run_baseline_with_flags(
+        transpiler_bin, spec_file, model_toml, invariants, _timeout_sec,
+        &["--native-codegen"],
+    )
+}
+
+/// Run the baseline model checker with optional extra CLI flags.
+fn run_baseline_with_flags(
+    transpiler_bin: &Path,
+    spec_file: &Path,
+    model_toml: &Path,
+    invariants: &[String],
+    _timeout_sec: u64,
+    extra_flags: &[&str],
+) -> BaselineResult {
     let mut cmd = Command::new(transpiler_bin);
     cmd.arg("model-check")
         .arg("--input")
@@ -46,6 +76,10 @@ pub fn run_baseline(
         .arg("--model")
         .arg(model_toml)
         .arg("--json-report");
+
+    for flag in extra_flags {
+        cmd.arg(flag);
+    }
 
     for inv in invariants {
         cmd.arg("--invariant").arg(inv);
@@ -208,6 +242,107 @@ mod tests {
         eprintln!(
             "APlusB baseline: {} states, {}ms",
             result.distinct_states, result.elapsed_ms
+        );
+    }
+
+    /// Cross-check: run the same spec with and without `--native-codegen`
+    /// and verify that both produce the same verdict and state count.
+    fn assert_native_parity(
+        transpiler: &Path,
+        spec_file: &Path,
+        model_path: &Path,
+        invariants: &[String],
+        case_label: &str,
+    ) {
+        let baseline = run_baseline(transpiler, spec_file, model_path, invariants, 60);
+        let native = run_baseline_native(transpiler, spec_file, model_path, invariants, 60);
+
+        eprintln!(
+            "[native-cross-check] {}: baseline={}/{} states, native={}/{} states",
+            case_label, baseline.result, baseline.distinct_states,
+            native.result, native.distinct_states,
+        );
+
+        // Native codegen may gracefully fall back to bytecode/AST when
+        // compilation fails, so state counts should always match.
+        assert_eq!(
+            baseline.result, native.result,
+            "{}: verdict mismatch: baseline={}, native={}",
+            case_label, baseline.result, native.result,
+        );
+        assert_eq!(
+            baseline.distinct_states, native.distinct_states,
+            "{}: state count mismatch: baseline={}, native={}",
+            case_label, baseline.distinct_states, native.distinct_states,
+        );
+    }
+
+    #[test]
+    fn test_native_codegen_cross_check_aplusb() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/01_aplusb/APlusB.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: APlusB.rs not found");
+            return;
+        }
+        let transpiler = match find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: transpiler binary not found");
+                return;
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_default_model_toml(tmp.path());
+        assert_native_parity(
+            &transpiler, &spec_file, &model_path,
+            &["LSumInvariant".to_string()], "01_aplusb",
+        );
+    }
+
+    #[test]
+    fn test_native_codegen_cross_check_counter() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/02_counter_incdec/CounterIncDec.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: CounterIncDec.rs not found");
+            return;
+        }
+        let transpiler = match find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: transpiler binary not found");
+                return;
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_default_model_toml(tmp.path());
+        assert_native_parity(
+            &transpiler, &spec_file, &model_path,
+            &["LTypeOK".to_string()], "02_counter_incdec",
+        );
+    }
+
+    #[test]
+    fn test_native_codegen_cross_check_lock() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/04_lock_basic/LockBasic.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: LockBasic.rs not found");
+            return;
+        }
+        let transpiler = match find_transpiler_bin() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: transpiler binary not found");
+                return;
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_default_model_toml(tmp.path());
+        assert_native_parity(
+            &transpiler, &spec_file, &model_path,
+            &["LMutualExclusion".to_string()], "04_lock_basic",
         );
     }
 

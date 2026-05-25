@@ -313,4 +313,57 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert_eq!(cdylib_filename("test"), "libtest.dylib");
     }
+
+    #[test]
+    fn test_native_cache_rlib_paths_roundtrip() {
+        let rlib = PathBuf::from("/tmp/test.rlib");
+        let deps = PathBuf::from("/tmp/deps");
+        let cache = NativeCache::new(rlib.clone(), deps.clone());
+        let (got_rlib, got_deps) = cache.rlib_paths();
+        assert_eq!(got_rlib, rlib);
+        assert_eq!(got_deps, deps);
+    }
+
+    #[test]
+    fn test_native_cache_get_or_compile_caches_failure() {
+        let cache = NativeCache::new(
+            PathBuf::from("/nonexistent/test.rlib"),
+            PathBuf::from("/nonexistent/deps"),
+        );
+        // Use a simple expression that would fail to compile (no rlib)
+        let expr = crate::ast::Expr::Literal(crate::ast::Literal::Int(42));
+        let env_names = vec![];
+        // First call: should attempt compilation, fail, cache None
+        let result1 = cache.get_or_compile(&expr, &env_names, || {
+            Ok("fn eval(env: &[RuntimeValue]) -> RuntimeResult<RuntimeValue> { Ok(RuntimeValue::Int(42)) }".to_string())
+        });
+        assert!(result1.is_none(), "Should fail with nonexistent rlib");
+        // Second call with same expr: should return cached None without re-calling source_gen
+        let result2 = cache.get_or_compile(&expr, &env_names, || {
+            panic!("source_gen should not be called for cached failure");
+        });
+        assert!(result2.is_none(), "Should return cached failure");
+    }
+
+    #[test]
+    fn test_native_cache_get_or_compile_codegen_failure_cached() {
+        let cache = NativeCache::new(
+            PathBuf::from("/nonexistent/test.rlib"),
+            PathBuf::from("/nonexistent/deps"),
+        );
+        let expr = crate::ast::Expr::Literal(crate::ast::Literal::Int(1));
+        let env_names = vec![];
+        // source_gen returns Err → should cache None
+        let result = cache.get_or_compile(&expr, &env_names, || {
+            Err(crate::modelcheck::native_codegen::CodegenError {
+                message: "unsupported".to_string(),
+            })
+        });
+        assert!(result.is_none());
+        // Second call: cached failure, source_gen not called
+        let result2 = cache.get_or_compile(&expr, &env_names, || {
+            panic!("should not be called");
+        });
+        assert!(result2.is_none());
+    }
 }
