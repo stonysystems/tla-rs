@@ -1429,7 +1429,10 @@ mod tests {
             panic!("Expected first conjunct to be assignment, got {:?}", left);
         };
         let TlaExpr::IfThenElse { else_expr, .. } = first_rhs.as_ref() else {
-            panic!("Expected IF expression on first conjunct rhs, got {:?}", first_rhs);
+            panic!(
+                "Expected IF expression on first conjunct rhs, got {:?}",
+                first_rhs
+            );
         };
         assert!(
             !matches!(

@@ -621,7 +621,11 @@ fn collect_called_functions_from_expr(expr: &verus_transpiler::Expr, out: &mut H
                 collect_called_functions_from_expr(value, out);
             }
         }
-        Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Ident(_) | Expr::Literal(_)
+        Expr::SeqEmpty
+        | Expr::SetEmpty
+        | Expr::MapEmpty
+        | Expr::Ident(_)
+        | Expr::Literal(_)
         | Expr::ConstantValue(_) => {}
     }
 }
@@ -2508,6 +2512,7 @@ fn expr_to_static_runtime_value(
             Some(RuntimeValue::Set(Arc::new(SetRepr::from_values(vals))))
         }
         Expr::MapLit(entries) => {
+            #[allow(clippy::mutable_key_type)]
             let mut out = BTreeMap::new();
             for (key, value) in entries {
                 let key_value = expr_to_static_runtime_value(key)?;
@@ -2641,7 +2646,10 @@ fn expr_mentions_identifier(expr: &verus_transpiler::ast::Expr, ident: &str) -> 
             expr_mentions_identifier(receiver, ident)
                 || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
         }
-        Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty
+        Expr::Literal(_)
+        | Expr::SeqEmpty
+        | Expr::SetEmpty
+        | Expr::MapEmpty
         | Expr::ConstantValue(_) => false,
     }
 }
@@ -3295,7 +3303,10 @@ fn try_solve_predicate_only_helper_branch(
                         .any(|arg| helper_expr_mentions_identifier(arg, ident))
             }
             Expr::Ident(name) => name == ident,
-            Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Literal(_)
+            Expr::SeqEmpty
+            | Expr::SetEmpty
+            | Expr::MapEmpty
+            | Expr::Literal(_)
             | Expr::ConstantValue(_) => false,
         }
     }
@@ -3461,10 +3472,8 @@ fn try_solve_predicate_only_helper_branch(
         let mut seen_merged = std::collections::BTreeSet::new();
         merged_assignments.retain(|assignment| seen_merged.insert(assignment_key(assignment)));
 
-        let helper_branch_depends_on_next_state = helper_branch
-            .constraints
-            .iter()
-            .any(|constraint| {
+        let helper_branch_depends_on_next_state =
+            helper_branch.constraints.iter().any(|constraint| {
                 helper_constraint_depends_on_next_state(
                     constraint,
                     helper_transition.next_state_param.as_str(),
@@ -3558,10 +3567,7 @@ fn run_dpor_explorer_as_main_path(
     constants_value: &verus_transpiler::modelcheck::value::RuntimeValue,
     invariants: &[verus_transpiler::ast::SpecFunction],
     limits: verus_transpiler::modelcheck::explorer::ExplorationLimits,
-) -> std::result::Result<
-    verus_transpiler::modelcheck::explorer::ExplorationResult,
-    String,
-> {
+) -> std::result::Result<verus_transpiler::modelcheck::explorer::ExplorationResult, String> {
     use verus_transpiler::modelcheck::dpor::enabled::SpecContext;
     use verus_transpiler::modelcheck::dpor::{explore_dpor, DporConfig};
     use verus_transpiler::modelcheck::explorer::{
@@ -3576,7 +3582,10 @@ fn run_dpor_explorer_as_main_path(
     } else {
         Some(constants_value.clone())
     };
-    let field_schema = verus_transpiler::modelcheck::field_schema::FieldSchemaRegistry::from_spec_schema(&bundle.schema);
+    let field_schema =
+        verus_transpiler::modelcheck::field_schema::FieldSchemaRegistry::from_spec_schema(
+            &bundle.schema,
+        );
     let ctx = SpecContext {
         bundle: bundle.clone(),
         model_config: model_config.clone(),
@@ -3639,8 +3648,8 @@ fn execute_model_check(
     use verus_transpiler::modelcheck::config::PorHeuristic;
     use verus_transpiler::modelcheck::domain::expand_branch_existentials;
     use verus_transpiler::modelcheck::explorer::{
-        explore_bfs_parallel, explore_state_space_with_traces_dedup_and_debug,
-        ExplorationLimits, ExplorationStopReason, TracedSuccessor,
+        explore_bfs_parallel, explore_state_space_with_traces_dedup_and_debug, ExplorationLimits,
+        ExplorationStopReason, TracedSuccessor,
     };
     use verus_transpiler::modelcheck::graph::build_explored_graph_index;
     use verus_transpiler::modelcheck::init::{construct_initial_states, InitHooks};
@@ -3676,10 +3685,7 @@ fn execute_model_check(
     // solver can't extract s_.field assignments from this opaque call,
     // forcing the 500x-slower candidate-enumeration fallback.
     // Use the shared inliner from the library (Phase 38.17.4).
-    verus_transpiler::modelcheck::ir::inline_action_calls(
-        &mut transition,
-        &bundle.spec_functions,
-    );
+    verus_transpiler::modelcheck::ir::inline_action_calls(&mut transition, &bundle.spec_functions);
     // Phase 38.18.2: also inline zero-argument helper calls
     // (e.g. `LAcceptors()` → `set![1, 2, 3]`) so the runtime evaluator
     // never has to re-evaluate them. Eliminates both the
@@ -4065,8 +4071,9 @@ fn execute_model_check(
                         entry.existential_assignment_count = entry
                             .existential_assignment_count
                             .max(branch_assignments.len().max(1));
-                        entry.candidate_state_count =
-                            entry.candidate_state_count.max(solver_candidate_state_count);
+                        entry.candidate_state_count = entry
+                            .candidate_state_count
+                            .max(solver_candidate_state_count);
                         entry.direct_solver_hits = entry
                             .direct_solver_hits
                             .saturating_add(solved.telemetry.direct_assignment_branch_solves);
@@ -4094,9 +4101,8 @@ fn execute_model_check(
                         entry.guard_pruned_assignments = entry
                             .guard_pruned_assignments
                             .saturating_add(solved.telemetry.guard_pruned_assignments);
-                        entry.eq_constraints = entry
-                            .eq_constraints
-                            .max(solved.telemetry.eq_constraints);
+                        entry.eq_constraints =
+                            entry.eq_constraints.max(solved.telemetry.eq_constraints);
                         entry.predicate_constraints = entry
                             .predicate_constraints
                             .max(solved.telemetry.predicate_constraints);
@@ -4164,7 +4170,9 @@ fn execute_model_check(
             unsafe impl<T> Send for SyncRef<T> {}
             impl<T> std::ops::Deref for SyncRef<T> {
                 type Target = T;
-                fn deref(&self) -> &T { &self.0 }
+                fn deref(&self) -> &T {
+                    &self.0
+                }
             }
             let sync_bundle = SyncRef(bundle);
             let sync_transition = SyncRef(&transition);
@@ -4172,8 +4180,9 @@ fn execute_model_check(
             let sync_por = SyncRef(&por_pruned_branch_labels);
             let sync_invariants = SyncRef(&owned_invariants);
             let sync_qde = SyncRef(&quantifier_domain_evaluator);
-            let par_successor_fn = |state: &verus_transpiler::modelcheck::value::RuntimeValue|
-             -> verus_transpiler::error::TranspileResult<Vec<TracedSuccessor>> {
+            let par_successor_fn = |state: &verus_transpiler::modelcheck::value::RuntimeValue| -> verus_transpiler::error::TranspileResult<
+                Vec<TracedSuccessor>,
+            > {
                 let bundle = &*sync_bundle;
                 let transition = &**sync_transition;
                 let assignments_by_branch = &**sync_assignments;
@@ -4295,43 +4304,43 @@ fn execute_model_check(
             .map_err(|e| miette::miette!("{}", e))?
         } else {
             explore_state_space_with_traces_dedup_and_debug(
-            &initial_states,
-            search_mode,
-            limits,
-            model_config.search.state_dedup,
-            &model_config.search.symmetry_fields,
-            model_config.properties.check_deadlock,
-            |state| solve_traced_successors_for_state(state, true),
-            |state, _depth| {
-                let invariant_started = Instant::now();
-                let result = first_invariant_violation(
-                    &owned_invariants,
-                    state,
-                    Some(constants_value),
-                    bounds,
-                    InvariantHooks {
-                        call_evaluator: Some(&|func_path, args| {
-                            eval_spec_function_call_recursive(
-                                &bundle.spec_functions,
-                                &bundle.schema,
-                                model_config,
-                                func_path,
-                                args,
-                                bounds,
-                                0,
-                            )
-                        }),
-                        method_evaluator: None,
-                        quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
-                    },
-                );
-                run_invariant_evaluation_ms = run_invariant_evaluation_ms
-                    .saturating_add(invariant_started.elapsed().as_millis());
-                result
-            },
-            debug_exporter.as_mut(),
-        )
-        .map_err(|e| miette::miette!("{}", e))?
+                &initial_states,
+                search_mode,
+                limits,
+                model_config.search.state_dedup,
+                &model_config.search.symmetry_fields,
+                model_config.properties.check_deadlock,
+                |state| solve_traced_successors_for_state(state, true),
+                |state, _depth| {
+                    let invariant_started = Instant::now();
+                    let result = first_invariant_violation(
+                        &owned_invariants,
+                        state,
+                        Some(constants_value),
+                        bounds,
+                        InvariantHooks {
+                            call_evaluator: Some(&|func_path, args| {
+                                eval_spec_function_call_recursive(
+                                    &bundle.spec_functions,
+                                    &bundle.schema,
+                                    model_config,
+                                    func_path,
+                                    args,
+                                    bounds,
+                                    0,
+                                )
+                            }),
+                            method_evaluator: None,
+                            quantifier_domain_evaluator: Some(&quantifier_domain_evaluator),
+                        },
+                    );
+                    run_invariant_evaluation_ms = run_invariant_evaluation_ms
+                        .saturating_add(invariant_started.elapsed().as_millis());
+                    result
+                },
+                debug_exporter.as_mut(),
+            )
+            .map_err(|e| miette::miette!("{}", e))?
         };
         let exploration_elapsed_ms = exploration_started.elapsed().as_millis();
         if cooperative_timeout_hit.get()
@@ -4527,9 +4536,7 @@ fn execute_model_check(
             aggregate.guard_pruned_assignments = aggregate
                 .guard_pruned_assignments
                 .saturating_add(entry.guard_pruned_assignments);
-            aggregate.eq_constraints = aggregate
-                .eq_constraints
-                .max(entry.eq_constraints);
+            aggregate.eq_constraints = aggregate.eq_constraints.max(entry.eq_constraints);
             aggregate.predicate_constraints = aggregate
                 .predicate_constraints
                 .max(entry.predicate_constraints);
@@ -9142,8 +9149,8 @@ max = 1
     }
 
     #[test]
-    fn test_execute_model_check_helper_solver_skips_statically_disabled_unsupported_subbranches_without_fallback()
-    {
+    fn test_execute_model_check_helper_solver_skips_statically_disabled_unsupported_subbranches_without_fallback(
+    ) {
         use verus_transpiler::modelcheck::config::parse_model_config_file;
         use verus_transpiler::modelcheck::invariant::resolve_selected_invariants;
         use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
@@ -9257,9 +9264,8 @@ max = 1
         use verus_transpiler::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue, SetRepr};
         use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
 
-        let protocol_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
-            "DPOR_based_model_tla_rs_checker/tests/tla-rs/19_epaxos_small/Epaxos.rs",
-        );
+        let protocol_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("DPOR_based_model_tla_rs_checker/tests/tla-rs/19_epaxos_small/Epaxos.rs");
         let bundle = ingest_protocol_sources_with_types_and_entrypoints(
             protocol_path.as_path(),
             None,
@@ -9305,7 +9311,7 @@ max = 1
             &bundle.schema,
             &model_config,
             &Path::single("LInit".to_string()),
-            &[init_state.clone()],
+            std::slice::from_ref(&init_state),
             bounds,
             0,
         )
@@ -9336,11 +9342,7 @@ max = 1
             &bundle.schema,
             &model_config,
             &Path::single("LPropose".to_string()),
-            &[
-                init_state,
-                next_state,
-                RuntimeValue::Int(1),
-            ],
+            &[init_state, next_state, RuntimeValue::Int(1)],
             bounds,
             0,
         )

@@ -16099,8 +16099,7 @@ fn test_model_check_epaxos_blocker_constants_expansion_limit_is_reproducible() {
         stderr
     );
     assert!(
-        stderr.contains("Narrow domains or increase")
-            && stderr.contains("`search.max_states`"),
+        stderr.contains("Narrow domains or increase") && stderr.contains("`search.max_states`"),
         "expected expansion-limit guidance in stderr, got: {}",
         stderr
     );
@@ -20533,9 +20532,8 @@ fn test_phase_38_14_11_integration_gate_reevaluation_is_tracked_with_evidence() 
         );
     }
 
-    let plan_path = repo_root.join(
-        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
-    );
+    let plan_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md");
     let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
         panic!(
             "failed to read DPOR integration migration plan {}: {}",
@@ -20650,9 +20648,8 @@ fn test_phase_38_10_3_a_commit_scope_guard_behavior() {
         );
     }
 
-    let plan_path = repo_root.join(
-        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
-    );
+    let plan_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md");
     let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
         panic!(
             "failed to read DPOR integration migration plan {}: {}",
@@ -20730,10 +20727,7 @@ fn test_phase_38_10_3_a_commit_scope_guard_behavior() {
         "scope guard must reject mixed prototype/mainline path sets by default; {}",
         output_text(&mixed_default)
     );
-    for required_fragment in [
-        "mixed prototype/mainline scope detected",
-        "TODO 38.10.3.a",
-    ] {
+    for required_fragment in ["mixed prototype/mainline scope detected", "TODO 38.10.3.a"] {
         assert!(
             output_text(&mixed_default).contains(required_fragment),
             "mixed default output must include `{}`; {}",
@@ -20835,9 +20829,8 @@ fn test_phase_38_10_3_b_mainline_fix_justification_guard_behavior() {
         );
     }
 
-    let plan_path = repo_root.join(
-        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
-    );
+    let plan_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md");
     let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
         panic!(
             "failed to read DPOR integration migration plan {}: {}",
@@ -20896,10 +20889,7 @@ fn test_phase_38_10_3_b_mainline_fix_justification_guard_behavior() {
         "scope guard must reject mainline-only modelcheck changes without justification; {}",
         output_text(&mainline_without_reason)
     );
-    for required_fragment in [
-        "TODO 38.10.3.b",
-        "PHASE38_MAINLINE_FIX_JUSTIFICATION",
-    ] {
+    for required_fragment in ["TODO 38.10.3.b", "PHASE38_MAINLINE_FIX_JUSTIFICATION"] {
         assert!(
             output_text(&mainline_without_reason).contains(required_fragment),
             "mainline-without-reason output must include `{}`; {}",
@@ -20988,9 +20978,8 @@ fn test_phase_38_10_4_a_shadow_compare_cli_contract() {
         );
     }
 
-    let plan_path = repo_root.join(
-        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
-    );
+    let plan_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md");
     let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
         panic!(
             "failed to read DPOR integration migration plan {}: {}",
@@ -21013,8 +21002,7 @@ fn test_phase_38_10_4_a_shadow_compare_cli_contract() {
         );
     }
 
-    let dpor_manifest =
-        repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml");
+    let dpor_manifest = repo_root.join("transpiler/DPOR_based_model_tla_rs_checker/Cargo.toml");
     let spec_path = repo_root
         .join("transpiler/DPOR_based_model_tla_rs_checker/tests/tla-rs/01_aplusb/APlusB.rs");
     assert!(
@@ -21185,9 +21173,8 @@ fn test_phase_38_10_4_b_shadow_subset_report_script_contract() {
         );
     }
 
-    let plan_path = repo_root.join(
-        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
-    );
+    let plan_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md");
     let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
         panic!(
             "failed to read DPOR integration migration plan {}: {}",
@@ -21353,7 +21340,9 @@ fn test_phase_38_10_4_b_shadow_subset_report_script_contract() {
         pos_exact + pos_mismatch == 1,
         "two-case contract run should include one positive row (exact or state_mismatch); \
          pos_exact={}, pos_mismatch={}, summary={}",
-        pos_exact, pos_mismatch, summary
+        pos_exact,
+        pos_mismatch,
+        summary
     );
 
     let cases = report
@@ -21400,9 +21389,7 @@ fn test_phase_38_10_4_b_shadow_subset_report_script_contract() {
         class_by_case
     );
     assert_eq!(
-        class_by_case
-            .get("03_counter_race_bug")
-            .map(|s| s.as_str()),
+        class_by_case.get("03_counter_race_bug").map(|s| s.as_str()),
         Some("negative_witness_match"),
         "03_counter_race_bug contract row must be negative_witness_match; classes={:?}",
         class_by_case
@@ -21476,9 +21463,8 @@ fn test_phase_38_10_4_c_shadow_report_schema_drift_guard_contract() {
         );
     }
 
-    let plan_path = repo_root.join(
-        "transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md",
-    );
+    let plan_path = repo_root
+        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/integration_migration_plan.md");
     let plan_src = std::fs::read_to_string(&plan_path).unwrap_or_else(|err| {
         panic!(
             "failed to read DPOR integration migration plan {}: {}",
@@ -21536,14 +21522,15 @@ fn test_phase_38_10_4_c_shadow_report_schema_drift_guard_contract() {
             err
         )
     });
-    let mut report_val: serde_json::Value = serde_json::from_str(&report_src).unwrap_or_else(|err| {
-        panic!(
-            "failed to parse checked-in shadow report {}: {}\nreport:\n{}",
-            report_json.display(),
-            err,
-            report_src
-        )
-    });
+    let mut report_val: serde_json::Value =
+        serde_json::from_str(&report_src).unwrap_or_else(|err| {
+            panic!(
+                "failed to parse checked-in shadow report {}: {}\nreport:\n{}",
+                report_json.display(),
+                err,
+                report_src
+            )
+        });
 
     if let Some(summary_obj) = report_val
         .pointer_mut("/summary")
@@ -21718,7 +21705,10 @@ fn test_phase_38_11_2_tla_corpus_case_count_and_order_acceptance_criterion() {
     );
     assert_eq!(
         case_dirs,
-        expected.iter().map(|s| s.to_string()).collect::<Vec<String>>(),
+        expected
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>(),
         "DPOR TLA corpus case directories must match canonical 01..20 ordering",
     );
 
@@ -21789,7 +21779,10 @@ fn test_phase_38_11_3_translated_corpus_and_regeneration_command_acceptance_crit
     ];
     assert_eq!(
         case_dirs,
-        expected.iter().map(|s| s.to_string()).collect::<Vec<String>>(),
+        expected
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>(),
         "DPOR translated corpus case directories must match canonical 01..20 ordering",
     );
 
@@ -21798,7 +21791,10 @@ fn test_phase_38_11_3_translated_corpus_and_regeneration_command_acceptance_crit
         let has_rs = std::fs::read_dir(&case_path)
             .unwrap_or_else(|err| panic!("failed to list {}: {}", case_path.display(), err))
             .filter_map(|entry| entry.ok())
-            .any(|entry| entry.file_type().is_ok_and(|t| t.is_file()) && entry.path().extension().is_some_and(|ext| ext == "rs"));
+            .any(|entry| {
+                entry.file_type().is_ok_and(|t| t.is_file())
+                    && entry.path().extension().is_some_and(|ext| ext == "rs")
+            });
         assert!(
             has_rs,
             "translated case {} must contain at least one generated .rs file",
@@ -21943,8 +21939,7 @@ fn test_phase_38_11_5_baseline_oracle_is_present_and_permanent_acceptance_criter
         );
     }
 
-    let baseline_path =
-        repo_root.join("transpiler/src/modelcheck/dpor/baseline.rs");
+    let baseline_path = repo_root.join("transpiler/src/modelcheck/dpor/baseline.rs");
     let baseline_src = std::fs::read_to_string(&baseline_path).unwrap_or_else(|err| {
         panic!(
             "failed to read baseline explorer source {}: {}",
@@ -21975,8 +21970,13 @@ fn test_phase_38_11_5_baseline_oracle_is_present_and_permanent_acceptance_criter
     );
 
     let dpor_path = repo_root.join("transpiler/src/modelcheck/dpor/explore.rs");
-    let dpor_src = std::fs::read_to_string(&dpor_path)
-        .unwrap_or_else(|err| panic!("failed to read dpor source {}: {}", dpor_path.display(), err));
+    let dpor_src = std::fs::read_to_string(&dpor_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read dpor source {}: {}",
+            dpor_path.display(),
+            err
+        )
+    });
     for required_fragment in [
         "fn compare_baseline_vs_dpor(",
         "fn test_automated_baseline_vs_dpor_comparison()",
@@ -22098,15 +22098,23 @@ fn test_phase_38_11_6_full_suite_command_and_scoreboard_acceptance_criterion() {
             err
         )
     });
-    let report_json: serde_json::Value = serde_json::from_str(&report_json_src).unwrap_or_else(|err| {
-        panic!(
-            "failed to parse report json {}: {}",
-            report_json_path.display(),
-            err
-        )
-    });
+    let report_json: serde_json::Value =
+        serde_json::from_str(&report_json_src).unwrap_or_else(|err| {
+            panic!(
+                "failed to parse report json {}: {}",
+                report_json_path.display(),
+                err
+            )
+        });
 
-    for required_key in ["timestamp", "total", "passed", "vacuous", "known_unimplemented", "cases"] {
+    for required_key in [
+        "timestamp",
+        "total",
+        "passed",
+        "vacuous",
+        "known_unimplemented",
+        "cases",
+    ] {
         assert!(
             report_json.get(required_key).is_some(),
             "report json {} missing required key `{}`",
@@ -22126,7 +22134,12 @@ fn test_phase_38_11_6_full_suite_command_and_scoreboard_acceptance_criterion() {
     let cases = report_json
         .get("cases")
         .and_then(|v| v.as_array())
-        .unwrap_or_else(|| panic!("report json {} missing `cases` array", report_json_path.display()));
+        .unwrap_or_else(|| {
+            panic!(
+                "report json {} missing `cases` array",
+                report_json_path.display()
+            )
+        });
     assert_eq!(
         cases.len(),
         20,
@@ -22281,7 +22294,12 @@ fn test_phase_38_11_7_b_negative_case_coverage_reaches_six_with_case08_promotion
     let cases = report_json
         .get("cases")
         .and_then(|v| v.as_array())
-        .unwrap_or_else(|| panic!("report json {} missing `cases` array", report_json_path.display()));
+        .unwrap_or_else(|| {
+            panic!(
+                "report json {} missing `cases` array",
+                report_json_path.display()
+            )
+        });
     let exercised_negative_count = cases
         .iter()
         .filter(|row| {
@@ -22291,7 +22309,8 @@ fn test_phase_38_11_7_b_negative_case_coverage_reaches_six_with_case08_promotion
         })
         .count();
     assert_eq!(
-        exercised_negative_count, 6,
+        exercised_negative_count,
+        6,
         "38.11.7.b expects current exercised negative outcomes to be 6; report {}",
         report_json_path.display()
     );
@@ -22302,7 +22321,12 @@ fn test_phase_38_11_7_b_negative_case_coverage_reaches_six_with_case08_promotion
                 .and_then(|v| v.as_str())
                 .is_some_and(|id| id == "08_bounded_buffer_2slot")
         })
-        .unwrap_or_else(|| panic!("report {} must contain case 08 row", report_json_path.display()));
+        .unwrap_or_else(|| {
+            panic!(
+                "report {} must contain case 08 row",
+                report_json_path.display()
+            )
+        });
     assert_eq!(
         case08_row.get("result").and_then(|v| v.as_str()),
         Some("invariant_violated"),
@@ -22474,42 +22498,50 @@ fn test_phase_38_11_8_shadow_parity_subset_has_no_verdict_state_or_witness_misma
             )
         });
     assert_eq!(
-        total_cases, 12,
+        total_cases,
+        12,
         "shadow subset json {} must track 12 canonical subset cases",
         shadow_json_path.display()
     );
     assert_eq!(
-        positive_exact, 8,
+        positive_exact,
+        8,
         "shadow subset json {} expected positive_exact=8 for current subset",
         shadow_json_path.display()
     );
     assert_eq!(
-        negative_witness_match, 4,
+        negative_witness_match,
+        4,
         "shadow subset json {} expected negative_witness_match=4 for current subset",
         shadow_json_path.display()
     );
     assert_eq!(
-        positive_state_mismatch, 0,
+        positive_state_mismatch,
+        0,
         "shadow subset json {} must have zero positive_state_mismatch",
         shadow_json_path.display()
     );
     assert_eq!(
-        negative_witness_mismatch, 0,
+        negative_witness_mismatch,
+        0,
         "shadow subset json {} must have zero negative_witness_mismatch",
         shadow_json_path.display()
     );
     assert_eq!(
-        verdict_mismatch, 0,
+        verdict_mismatch,
+        0,
         "shadow subset json {} must have zero verdict_mismatch",
         shadow_json_path.display()
     );
     assert_eq!(
-        other_classifications, 0,
+        other_classifications,
+        0,
         "shadow subset json {} must have zero other_classifications",
         shadow_json_path.display()
     );
     assert_eq!(
-        parity_failures, 0,
+        parity_failures,
+        0,
         "shadow subset json {} must have zero parity_failures",
         shadow_json_path.display()
     );
@@ -22523,7 +22555,12 @@ fn test_phase_38_11_8_shadow_parity_subset_has_no_verdict_state_or_witness_misma
     let cases = shadow_json
         .get("cases")
         .and_then(|v| v.as_array())
-        .unwrap_or_else(|| panic!("shadow subset json {} missing cases array", shadow_json_path.display()));
+        .unwrap_or_else(|| {
+            panic!(
+                "shadow subset json {} missing cases array",
+                shadow_json_path.display()
+            )
+        });
     assert_eq!(
         cases.len() as u64,
         total_cases,
@@ -22536,7 +22573,12 @@ fn test_phase_38_11_8_shadow_parity_subset_has_no_verdict_state_or_witness_misma
         let case_id = row
             .get("case_id")
             .and_then(|v| v.as_str())
-            .unwrap_or_else(|| panic!("shadow subset row missing string case_id in {}", shadow_json_path.display()));
+            .unwrap_or_else(|| {
+                panic!(
+                    "shadow subset row missing string case_id in {}",
+                    shadow_json_path.display()
+                )
+            });
         case_ids.insert(case_id.to_string());
         assert_eq!(
             row.get("verdict_match").and_then(|v| v.as_bool()),
@@ -22590,7 +22632,8 @@ fn test_phase_38_11_8_shadow_parity_subset_has_no_verdict_state_or_witness_misma
     .map(|s| s.to_string())
     .collect();
     assert_eq!(
-        case_ids, expected_case_ids,
+        case_ids,
+        expected_case_ids,
         "shadow subset json {} case ids drifted from canonical parity subset",
         shadow_json_path.display()
     );
@@ -22700,18 +22743,19 @@ fn test_phase_38_11_9_required_hard_cases_are_pinned_and_full_suite_guarded() {
     let cases = latest_json
         .get("cases")
         .and_then(|v| v.as_array())
-        .unwrap_or_else(|| panic!("full-suite report {} missing `cases` array", latest_json_path.display()));
+        .unwrap_or_else(|| {
+            panic!(
+                "full-suite report {} missing `cases` array",
+                latest_json_path.display()
+            )
+        });
     assert_eq!(
         cases.len(),
         20,
         "full-suite report {} must contain 20 case rows",
         latest_json_path.display()
     );
-    for required_case in [
-        "16_primarybackup_small",
-        "17_paxos_small",
-        "20_raft_small",
-    ] {
+    for required_case in ["16_primarybackup_small", "17_paxos_small", "20_raft_small"] {
         let row = cases
             .iter()
             .find(|row| {
@@ -22726,15 +22770,19 @@ fn test_phase_38_11_9_required_hard_cases_are_pinned_and_full_suite_guarded() {
                     required_case
                 )
             });
-        let result = row.get("result").and_then(|v| v.as_str()).unwrap_or_else(|| {
-            panic!(
-                "full-suite report {} row `{}` missing string result",
-                latest_json_path.display(),
-                required_case
-            )
-        });
+        let result = row
+            .get("result")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| {
+                panic!(
+                    "full-suite report {} row `{}` missing string result",
+                    latest_json_path.display(),
+                    required_case
+                )
+            });
         assert_ne!(
-            result, "translation_failed",
+            result,
+            "translation_failed",
             "hard-case row `{}` must not silently drop to translation_failed in {}",
             required_case,
             latest_json_path.display()
@@ -22887,8 +22935,9 @@ fn test_phase_38_15_1_runtime_blocker_reclosure_evidence_and_manifest_sync() {
         );
     }
 
-    let evidence_path = repo_root
-        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md",
+    );
     let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
         panic!(
             "failed to read blocker evidence doc {}: {}",
@@ -22963,8 +23012,9 @@ fn test_phase_38_15_2_a_case15_guardrail_timeout_sweep_evidence_is_recorded() {
         );
     }
 
-    let evidence_path = repo_root
-        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md",
+    );
     let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
         panic!(
             "failed to read blocker evidence doc {}: {}",
@@ -23006,10 +23056,7 @@ fn test_phase_38_15_2_a_case15_guardrail_timeout_sweep_evidence_is_recorded() {
     // After Phase 38.16.2, case 19 (epaxos) was restored from
     // known_unimplemented to "ok". The notes still reference the resolved
     // timeout-window instability for audit trail.
-    for required_fragment in [
-        "id = \"19_epaxos_small\"",
-        "timeout-window instability",
-    ] {
+    for required_fragment in ["id = \"19_epaxos_small\"", "timeout-window instability"] {
         assert!(
             manifest_src.contains(required_fragment),
             "manifest {} must include case-19 runtime-instability fragment `{}`",
@@ -23042,8 +23089,9 @@ fn test_phase_38_15_2_b_case15_low_domain_probe_evidence_is_recorded() {
         );
     }
 
-    let evidence_path = repo_root
-        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md",
+    );
     let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
         panic!(
             "failed to read blocker evidence doc {}: {}",
@@ -23097,8 +23145,9 @@ fn test_phase_38_15_2_c_helper_branch_reduction_evidence_is_recorded() {
         );
     }
 
-    let evidence_path = repo_root
-        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md",
+    );
     let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
         panic!(
             "failed to read blocker evidence doc {}: {}",
@@ -23150,8 +23199,9 @@ fn test_phase_38_15_3_case16_timeout_window_closure_is_recorded() {
         );
     }
 
-    let evidence_path = repo_root
-        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md",
+    );
     let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
         panic!(
             "failed to read blocker evidence doc {}: {}",
@@ -23247,8 +23297,9 @@ fn test_phase_38_15_4_case15_case16_focused_regressions_are_reenabled() {
         );
     }
 
-    let evidence_path = repo_root
-        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md",
+    );
     let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
         panic!(
             "failed to read blocker evidence doc {}: {}",
@@ -23327,8 +23378,9 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
         );
     }
 
-    let evidence_path = repo_root
-        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md",
+    );
     let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
         panic!(
             "failed to read blocker evidence doc {}: {}",
@@ -23384,8 +23436,13 @@ fn test_phase_38_15_2_d_case15_restore_preflight_blocked_status_is_recorded() {
     }
 
     let dpor_src_path = repo_root.join("transpiler/src/modelcheck/dpor/explore.rs");
-    let dpor_src = std::fs::read_to_string(&dpor_src_path)
-        .unwrap_or_else(|err| panic!("failed to read dpor source {}: {}", dpor_src_path.display(), err));
+    let dpor_src = std::fs::read_to_string(&dpor_src_path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read dpor source {}: {}",
+            dpor_src_path.display(),
+            err
+        )
+    });
     for required_fragment in [
         "fn test_case15_chain_replication_is_real_non_vacuous_deadlock()",
         "run_baseline_serial(&transpiler, &spec_file, &model_path, &[], 240);",
@@ -23429,8 +23486,9 @@ fn test_phase_38_15_2_d_a_bound_rejection_step_and_postfix_sweep_are_recorded() 
         );
     }
 
-    let evidence_path = repo_root
-        .join("transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md");
+    let evidence_path = repo_root.join(
+        "transpiler/DPOR_based_model_tla_rs_checker/docs/runtime_blockers_15_16_reclosure.md",
+    );
     let evidence_src = std::fs::read_to_string(&evidence_path).unwrap_or_else(|err| {
         panic!(
             "failed to read blocker evidence doc {}: {}",
@@ -23544,8 +23602,7 @@ fn test_regenerate_rsl_script_dry_run_succeeds() {
 #[test]
 fn test_regenerate_rsl_script_references_regen_workflow_doc() {
     let repo_root = resolve_repo_root_for_integration();
-    let script_src =
-        std::fs::read_to_string(repo_root.join("scripts/regenerate_rsl.sh")).unwrap();
+    let script_src = std::fs::read_to_string(repo_root.join("scripts/regenerate_rsl.sh")).unwrap();
     assert!(
         script_src.contains("REGEN_WORKFLOW.md"),
         "regenerate_rsl.sh should reference the REGEN_WORKFLOW.md documentation"

@@ -30,6 +30,7 @@ thread_local! {
     ///   within the lifetime of the call site.
     /// - Cache entries are cleared at run boundaries via
     ///   `reset_candidate_fingerprint_cache()`.
+    #[allow(clippy::type_complexity)]
     static CANDIDATE_FINGERPRINT_CACHE: RefCell<
         Vec<(usize, usize, Arc<HashSet<u64>>)>,
     > = const { RefCell::new(Vec::new()) };
@@ -53,13 +54,10 @@ fn fingerprints_for_candidates(candidates: &[RuntimeValue]) -> Arc<HashSet<u64>>
     if let Some(keys) = cached {
         return keys;
     }
-    let keys: HashSet<u64> =
-        candidates.iter().map(RuntimeValue::fingerprint).collect();
+    let keys: HashSet<u64> = candidates.iter().map(RuntimeValue::fingerprint).collect();
     let keys = Arc::new(keys);
     CANDIDATE_FINGERPRINT_CACHE.with(|cache| {
-        cache
-            .borrow_mut()
-            .push((ptr, len, Arc::clone(&keys)));
+        cache.borrow_mut().push((ptr, len, Arc::clone(&keys)));
     });
     keys
 }
@@ -289,7 +287,8 @@ pub fn solve_branch_successors_with_candidates_and_telemetry(
                         direct_assignment_branch_solves: 1,
                         direct_assigned_fields: counts.direct_assigned,
                         deferred_constraint_evaluations: counts.deferred,
-                        evaluator_calls: (counts.direct_assigned + counts.deferred) * assignment_count,
+                        evaluator_calls: (counts.direct_assigned + counts.deferred)
+                            * assignment_count,
                         eq_constraints: counts.eq_constraints,
                         predicate_constraints: counts.predicate_constraints,
                         ..Default::default()
@@ -898,12 +897,12 @@ fn eval_with_environment(
         let compiled = bc_cache.get_or_compile(expr, &env_names)?;
         let vm_ctx = crate::modelcheck::bytecode::VmContext {
             bounds,
-            call_evaluator: hooks
-                .call_evaluator
-                .map(|f| f as &dyn Fn(&crate::ast::Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>),
-            method_evaluator: hooks
-                .method_evaluator
-                .map(|f| f as &dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue>),
+            call_evaluator: hooks.call_evaluator.map(|f| {
+                f as &dyn Fn(&crate::ast::Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>
+            }),
+            method_evaluator: hooks.method_evaluator.map(|f| {
+                f as &dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue>
+            }),
             quantifier_domain: hooks
                 .quantifier_domain_evaluator
                 .map(|f| f as &dyn Fn(&crate::ast::Binding) -> TranspileResult<Vec<RuntimeValue>>),
@@ -1125,11 +1124,9 @@ fn enum_variant_assignment_value(
 ) -> TranspileResult<RuntimeValue> {
     let current = read_value_at_path(next_state, path)?;
     match current {
-        RuntimeValue::Enum { ty, fields, .. } => Ok(RuntimeValue::enum_value_sym(
-            ty,
-            variant,
-            fields,
-        )),
+        RuntimeValue::Enum { ty, fields, .. } => {
+            Ok(RuntimeValue::enum_value_sym(ty, variant, fields))
+        }
         other => Err(TranspileError::Config {
             message: format!(
                 "Failed to evaluate enum-variant next-state assignment in branch `{}` at `s_.{}`: \
@@ -1264,7 +1261,10 @@ fn expr_mentions_identifier(expr: &Expr, ident: &str) -> bool {
                 || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
         }
         Expr::Ident(name) => name == ident,
-        Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty | Expr::Literal(_)
+        Expr::SeqEmpty
+        | Expr::SetEmpty
+        | Expr::MapEmpty
+        | Expr::Literal(_)
         | Expr::ConstantValue(_) => false,
     }
 }
@@ -1340,7 +1340,9 @@ mod tests {
             "LState",
             vec![(
                 "history".to_string(),
-                RuntimeValue::Seq(Arc::new(values.into_iter().map(RuntimeValue::Int).collect())),
+                RuntimeValue::Seq(Arc::new(
+                    values.into_iter().map(RuntimeValue::Int).collect(),
+                )),
             )],
         )
         .unwrap()

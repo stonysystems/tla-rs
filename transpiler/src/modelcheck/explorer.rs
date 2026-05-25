@@ -338,7 +338,8 @@ where
             dedup_key_from_canonical(&dedup_canonical, state_dedup)
         };
         if visited.insert(key.clone()) {
-            if !use_fingerprint_fast_path && matches!(state_dedup, StateDedupMode::HashCompaction64) {
+            if !use_fingerprint_fast_path && matches!(state_dedup, StateDedupMode::HashCompaction64)
+            {
                 // In fingerprint fast path, we skip canonical string tracking
                 let canonical = canonical_dedup_key(state, &symmetry_field_set);
                 hash_representatives.insert(key.clone(), canonical);
@@ -490,8 +491,7 @@ where
             let key = if use_fingerprint_fast_path {
                 format!("h{:016x}", successor.state.fingerprint())
             } else {
-                let dedup_canonical =
-                    canonical_dedup_key(&successor.state, &symmetry_field_set);
+                let dedup_canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
                 if !symmetry_field_set.is_empty()
                     && record_symmetry_collapse(
                         &mut symmetry_representatives,
@@ -512,8 +512,7 @@ where
                 if !use_fingerprint_fast_path
                     && matches!(state_dedup, StateDedupMode::HashCompaction64)
                 {
-                    let canonical =
-                        canonical_dedup_key(&successor.state, &symmetry_field_set);
+                    let canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
                     hash_representatives.insert(key.clone(), canonical);
                 }
                 if let Some(ref mut exporter) = debug_exporter {
@@ -1187,12 +1186,8 @@ fn value_contains_int(value: &RuntimeValue, target: i128) -> bool {
     match value {
         RuntimeValue::Int(v) => *v == target,
         RuntimeValue::Set(repr) => repr.iter().any(|item| value_contains_int(&item, target)),
-        RuntimeValue::Seq(items) => {
-            items.iter().any(|item| value_contains_int(item, target))
-        }
-        RuntimeValue::Tuple(items) => {
-            items.iter().any(|item| value_contains_int(item, target))
-        }
+        RuntimeValue::Seq(items) => items.iter().any(|item| value_contains_int(item, target)),
+        RuntimeValue::Tuple(items) => items.iter().any(|item| value_contains_int(item, target)),
         RuntimeValue::Map(entries) => entries
             .iter()
             .any(|(k, v)| value_contains_int(k, target) || value_contains_int(v, target)),
@@ -1209,7 +1204,10 @@ fn value_contains_int(value: &RuntimeValue, target: i128) -> bool {
 /// Phase 38.21.D: emit the canonical key for a value with every `Int`
 /// relabeled by `rank_map`. Falls back to the un-relabeled
 /// `canonical_key()` shape for everything else.
-fn relabeled_canonical_key(value: &RuntimeValue, rank_map: &std::collections::HashMap<i128, i128>) -> String {
+fn relabeled_canonical_key(
+    value: &RuntimeValue,
+    rank_map: &std::collections::HashMap<i128, i128>,
+) -> String {
     match value {
         RuntimeValue::Int(v) => {
             let relabeled = rank_map.get(v).copied().unwrap_or(*v);
@@ -1258,7 +1256,12 @@ fn relabeled_canonical_key(value: &RuntimeValue, rank_map: &std::collections::Ha
                 .collect();
             format!("struct:{ty}{{{}}}", parts.join(","))
         }
-        RuntimeValue::Enum { ty, variant, fields, .. } => {
+        RuntimeValue::Enum {
+            ty,
+            variant,
+            fields,
+            ..
+        } => {
             let parts: Vec<String> = fields
                 .iter()
                 .map(|(k, v)| format!("{k}:{}", relabeled_canonical_key(v, rank_map)))
@@ -1270,11 +1273,13 @@ fn relabeled_canonical_key(value: &RuntimeValue, rank_map: &std::collections::Ha
     }
 }
 
+#[allow(dead_code)]
 fn symmetry_normalized_key(value: &RuntimeValue) -> String {
     let mut atoms = std::collections::BTreeMap::<String, usize>::new();
     symmetry_normalized_key_with_atoms(value, &mut atoms)
 }
 
+#[allow(dead_code)]
 fn symmetry_normalized_key_with_atoms(
     value: &RuntimeValue,
     atoms: &mut std::collections::BTreeMap<String, usize>,
@@ -1353,6 +1358,7 @@ fn symmetry_normalized_key_with_atoms(
     }
 }
 
+#[allow(dead_code)]
 fn symmetry_atom_key(raw: String, atoms: &mut std::collections::BTreeMap<String, usize>) -> String {
     let next = atoms.len();
     let id = *atoms.entry(raw).or_insert(next);
@@ -1494,7 +1500,7 @@ fn collect_state_diffs(
             collect_indexed_diffs(path, b_values, a_values, diffs);
         }
         (RuntimeValue::Seq(b_values), RuntimeValue::Seq(a_values)) => {
-            collect_indexed_diffs(path, &**b_values, &**a_values, diffs);
+            collect_indexed_diffs(path, b_values, a_values, diffs);
         }
         _ => diffs.push(StateDiffSummary {
             path: path.to_string(),
@@ -2285,19 +2291,14 @@ mod tests {
             (4, vec![]),
             (5, vec![]),
         ]);
-        let seq = explore_state_space(
-            &[state(0)],
-            SearchMode::Bfs,
-            limits(10, 100),
-            |s| {
-                Ok(graph
-                    .get(&state_id(s))
-                    .unwrap()
-                    .iter()
-                    .map(|i| state(*i))
-                    .collect())
-            },
-        )
+        let seq = explore_state_space(&[state(0)], SearchMode::Bfs, limits(10, 100), |s| {
+            Ok(graph
+                .get(&state_id(s))
+                .unwrap()
+                .iter()
+                .map(|i| state(*i))
+                .collect())
+        })
         .unwrap();
 
         let par = explore_bfs_parallel(
@@ -2329,12 +2330,7 @@ mod tests {
 
     #[test]
     fn test_parallel_bfs_invariant_violation() {
-        let graph = BTreeMap::from([
-            (0, vec![1, 2]),
-            (1, vec![3]),
-            (2, vec![]),
-            (3, vec![]),
-        ]);
+        let graph = BTreeMap::from([(0, vec![1, 2]), (1, vec![3]), (2, vec![]), (3, vec![])]);
         let result = explore_bfs_parallel(
             &[state(0)],
             limits(10, 100),
@@ -2363,10 +2359,7 @@ mod tests {
 
         assert_eq!(result.stop_reason, ExplorationStopReason::InvariantViolated);
         assert!(result.invariant_violation.is_some());
-        assert_eq!(
-            result.invariant_violation.unwrap().invariant,
-            "LSafety"
-        );
+        assert_eq!(result.invariant_violation.unwrap().invariant, "LSafety");
     }
 
     #[test]
@@ -2517,10 +2510,24 @@ mod tests {
                 .collect())
         };
 
-        let r1 = explore_bfs_parallel(&[state(0)], limits(10, 100), false, &succ, |_, _| Ok(None), 1)
-            .unwrap();
-        let r4 = explore_bfs_parallel(&[state(0)], limits(10, 100), false, &succ, |_, _| Ok(None), 4)
-            .unwrap();
+        let r1 = explore_bfs_parallel(
+            &[state(0)],
+            limits(10, 100),
+            false,
+            succ,
+            |_, _| Ok(None),
+            1,
+        )
+        .unwrap();
+        let r4 = explore_bfs_parallel(
+            &[state(0)],
+            limits(10, 100),
+            false,
+            succ,
+            |_, _| Ok(None),
+            4,
+        )
+        .unwrap();
 
         assert_eq!(
             r1.stats.visited_states, r4.stats.visited_states,

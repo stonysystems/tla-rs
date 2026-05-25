@@ -334,7 +334,7 @@ mod tests {
         let adj = build_adjacency(&graph);
         assert_eq!(adj.get("s0").unwrap().len(), 2);
         assert_eq!(adj.get("s1").unwrap().len(), 1);
-        assert!(adj.get("s2").is_none());
+        assert!(!adj.contains_key("s2"));
     }
 
     #[test]

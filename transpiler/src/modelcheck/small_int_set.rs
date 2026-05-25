@@ -167,8 +167,14 @@ impl SmallIntSet {
     ///
     /// Both sets must have the same offset; panics otherwise.
     pub fn union(&self, other: &Self) -> Self {
-        assert_eq!(self.offset, other.offset, "SmallIntSet::union: offset mismatch");
-        Self { bits: self.bits | other.bits, offset: self.offset }
+        assert_eq!(
+            self.offset, other.offset,
+            "SmallIntSet::union: offset mismatch"
+        );
+        Self {
+            bits: self.bits | other.bits,
+            offset: self.offset,
+        }
     }
 
     /// Set intersection (elements in both sets).
@@ -176,7 +182,10 @@ impl SmallIntSet {
         if self.offset != other.offset {
             return Self::empty();
         }
-        Self { bits: self.bits & other.bits, offset: self.offset }
+        Self {
+            bits: self.bits & other.bits,
+            offset: self.offset,
+        }
     }
 
     /// Set difference (elements in self but not other).
@@ -184,7 +193,10 @@ impl SmallIntSet {
         if self.offset != other.offset {
             return *self;
         }
-        Self { bits: self.bits & !other.bits, offset: self.offset }
+        Self {
+            bits: self.bits & !other.bits,
+            offset: self.offset,
+        }
     }
 
     /// Whether self is a subset of other.
@@ -197,7 +209,10 @@ impl SmallIntSet {
 
     /// Iterate over the elements in ascending order.
     pub fn iter(&self) -> SmallIntSetIter {
-        SmallIntSetIter { remaining: self.bits, offset: self.offset }
+        SmallIntSetIter {
+            remaining: self.bits,
+            offset: self.offset,
+        }
     }
 
     /// Collect elements into a sorted `Vec<i128>`.
@@ -215,7 +230,8 @@ impl PartialOrd for SmallIntSet {
 impl Ord for SmallIntSet {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Compare by sorted element sequences (matches BTreeSet ordering).
-        self.len().cmp(&other.len())
+        self.len()
+            .cmp(&other.len())
             .then_with(|| self.iter().cmp(other.iter()))
     }
 }
@@ -231,7 +247,9 @@ impl fmt::Display for SmallIntSet {
         write!(f, "{{")?;
         let mut first = true;
         for v in self.iter() {
-            if !first { write!(f, ", ")?; }
+            if !first {
+                write!(f, ", ")?;
+            }
             write!(f, "{v}")?;
             first = false;
         }
@@ -273,7 +291,7 @@ impl IntoIterator for SmallIntSet {
     }
 }
 
-impl<'a> IntoIterator for &'a SmallIntSet {
+impl IntoIterator for &SmallIntSet {
     type Item = i128;
     type IntoIter = SmallIntSetIter;
     fn into_iter(self) -> Self::IntoIter {

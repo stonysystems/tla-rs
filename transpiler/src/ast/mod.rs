@@ -211,10 +211,7 @@ pub enum Expr {
 
     /// Choose expression: choose |var| predicate
     /// Returns some value satisfying the predicate, or arbitrary if none exists.
-    Choose {
-        vars: Vec<Binding>,
-        body: Box<Expr>,
-    },
+    Choose { vars: Vec<Binding>, body: Box<Expr> },
 
     // Control flow
     /// Conditional expression

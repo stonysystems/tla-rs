@@ -347,8 +347,6 @@ verus! {{
 
 fn bench_set_repr(c: &mut Criterion) {
     use std::collections::BTreeSet;
-    use std::sync::Arc;
-    use verus_transpiler::modelcheck::small_int_set::SmallIntSet;
     use verus_transpiler::modelcheck::value::{RuntimeValue, SetRepr};
 
     let mut group = c.benchmark_group("set_repr");
@@ -362,9 +360,7 @@ fn bench_set_repr(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("from_values_auto", size),
             &values,
-            |b, vals| {
-                b.iter(|| SetRepr::from_values(black_box(vals.clone())))
-            },
+            |b, vals| b.iter(|| SetRepr::from_values(black_box(vals.clone()))),
         );
 
         // Construction: BTreeSet baseline
@@ -373,6 +369,7 @@ fn bench_set_repr(c: &mut Criterion) {
             &values,
             |b, vals| {
                 b.iter(|| {
+                    #[allow(clippy::mutable_key_type)]
                     let set: BTreeSet<RuntimeValue> = black_box(vals.clone()).into_iter().collect();
                     set
                 })
@@ -387,17 +384,13 @@ fn bench_set_repr(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("contains_smallint", size),
             &(&small_repr, &lookup_val),
-            |b, &(repr, val)| {
-                b.iter(|| repr.contains(black_box(val)))
-            },
+            |b, &(repr, val)| b.iter(|| repr.contains(black_box(val))),
         );
 
         group.bench_with_input(
             BenchmarkId::new("contains_general", size),
             &(&general_repr, &lookup_val),
-            |b, &(repr, val)| {
-                b.iter(|| repr.contains(black_box(val)))
-            },
+            |b, &(repr, val)| b.iter(|| repr.contains(black_box(val))),
         );
 
         // Union of two sets
@@ -410,17 +403,13 @@ fn bench_set_repr(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("union_smallint", size),
             &(&set_a, &set_b),
-            |b, &(a, bb)| {
-                b.iter(|| a.union(black_box(bb)))
-            },
+            |b, &(a, bb)| b.iter(|| a.union(black_box(bb))),
         );
 
         group.bench_with_input(
             BenchmarkId::new("union_general", size),
             &(&gen_a, &gen_b),
-            |b, &(a, bb)| {
-                b.iter(|| a.union(black_box(bb)))
-            },
+            |b, &(a, bb)| b.iter(|| a.union(black_box(bb))),
         );
 
         // Iteration
@@ -481,27 +470,35 @@ fn bench_parallel_bfs(c: &mut Criterion) {
         )
         .unwrap()
     };
-    let grid_successor = move |s: &RuntimeValue| -> verus_transpiler::error::TranspileResult<Vec<TracedSuccessor>> {
-        let x = match s.field("x") { Some(RuntimeValue::Int(v)) => *v, _ => 0 };
-        let y = match s.field("y") { Some(RuntimeValue::Int(v)) => *v, _ => 0 };
-        let mut succs = Vec::new();
-        if x + 1 < grid_size {
-            succs.push(TracedSuccessor {
-                action_branch: "right".to_string(),
-                state: make_state(x + 1, y),
-            });
-        }
-        if y + 1 < grid_size {
-            succs.push(TracedSuccessor {
-                action_branch: "down".to_string(),
-                state: make_state(x, y + 1),
-            });
-        }
-        Ok(succs)
-    };
-    let invariant_ok = |_: &RuntimeValue, _: usize| -> verus_transpiler::error::TranspileResult<Option<String>> {
-        Ok(None)
-    };
+    let grid_successor =
+        move |s: &RuntimeValue| -> verus_transpiler::error::TranspileResult<Vec<TracedSuccessor>> {
+            let x = match s.field("x") {
+                Some(RuntimeValue::Int(v)) => *v,
+                _ => 0,
+            };
+            let y = match s.field("y") {
+                Some(RuntimeValue::Int(v)) => *v,
+                _ => 0,
+            };
+            let mut succs = Vec::new();
+            if x + 1 < grid_size {
+                succs.push(TracedSuccessor {
+                    action_branch: "right".to_string(),
+                    state: make_state(x + 1, y),
+                });
+            }
+            if y + 1 < grid_size {
+                succs.push(TracedSuccessor {
+                    action_branch: "down".to_string(),
+                    state: make_state(x, y + 1),
+                });
+            }
+            Ok(succs)
+        };
+    let invariant_ok =
+        |_: &RuntimeValue, _: usize| -> verus_transpiler::error::TranspileResult<Option<String>> {
+            Ok(None)
+        };
     let limits = ExplorationLimits {
         max_depth: 100,
         max_states: 10_000,
@@ -519,8 +516,8 @@ fn bench_parallel_bfs(c: &mut Criterion) {
                         black_box(&init),
                         limits,
                         false,
-                        &grid_successor,
-                        &invariant_ok,
+                        grid_successor,
+                        invariant_ok,
                         w,
                     )
                     .unwrap()

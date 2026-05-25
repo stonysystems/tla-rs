@@ -824,7 +824,8 @@ impl<'a> ExprTranslator<'a> {
         if Self::type_hint_is_map(&candidate_norm) && Self::type_hint_is_map(&current_norm) {
             return current_norm == "Map<int,int>" && candidate_norm != "Map<int,int>";
         }
-        Self::type_hint_is_record_like(&candidate_norm) && !Self::type_hint_is_record_like(&current_norm)
+        Self::type_hint_is_record_like(&candidate_norm)
+            && !Self::type_hint_is_record_like(&current_norm)
     }
 
     fn update_quantifier_var_hint(&self, best: &mut Option<String>, candidate: &str) {
@@ -2223,7 +2224,7 @@ impl<'a> ExprTranslator<'a> {
                 if self.config.variable_names.is_empty()
                     && (resolved_name == "s"
                         || resolved_name == "s_"
-                        || resolved_name == &self.config.constants_param_name)
+                        || resolved_name == self.config.constants_param_name)
                 {
                     return "arbitrary()".to_string();
                 }
@@ -5617,10 +5618,10 @@ impl ModuleTranslator {
             TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
             TlaExpr::BinOp { left, right, .. } => r(left) || r(right),
             TlaExpr::UnaryOp { operand, .. } => r(operand),
-            TlaExpr::OpApply { op, args } => r(op) || args.iter().any(|a| r(a)),
+            TlaExpr::OpApply { op, args } => r(op) || args.iter().any(&r),
             TlaExpr::Prime(inner) => r(inner),
             TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
-                vars.iter().any(|qb| qb.set.as_ref().is_some_and(|s| r(s))) || r(body)
+                vars.iter().any(|qb| qb.set.as_ref().is_some_and(&r)) || r(body)
             }
             TlaExpr::IfThenElse {
                 cond,
@@ -5630,7 +5631,7 @@ impl ModuleTranslator {
             TlaExpr::Case { arms, other } => {
                 arms.iter().any(|(c, b)| r(c) || r(b)) || other.as_ref().is_some_and(|e| r(e))
             }
-            TlaExpr::SetEnum(elems) | TlaExpr::Tuple(elems) => elems.iter().any(|e| r(e)),
+            TlaExpr::SetEnum(elems) | TlaExpr::Tuple(elems) => elems.iter().any(&r),
             TlaExpr::SetFilter { set, filter, .. } => r(set) || r(filter),
             TlaExpr::SetMap { expr: e, set, .. } => r(set) || r(e),
             TlaExpr::FnApply { func, arg } => r(func) || r(arg),
@@ -5668,10 +5669,10 @@ impl ModuleTranslator {
             TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
             TlaExpr::BinOp { left, right, .. } => r(left) || r(right),
             TlaExpr::UnaryOp { operand, .. } => r(operand),
-            TlaExpr::OpApply { op, args } => r(op) || args.iter().any(|a| r(a)),
+            TlaExpr::OpApply { op, args } => r(op) || args.iter().any(&r),
             TlaExpr::Prime(inner) => r(inner),
             TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
-                vars.iter().any(|qb| qb.set.as_ref().is_some_and(|s| r(s))) || r(body)
+                vars.iter().any(|qb| qb.set.as_ref().is_some_and(&r)) || r(body)
             }
             TlaExpr::IfThenElse {
                 cond,
@@ -5681,7 +5682,7 @@ impl ModuleTranslator {
             TlaExpr::Case { arms, other } => {
                 arms.iter().any(|(c, b)| r(c) || r(b)) || other.as_ref().is_some_and(|e| r(e))
             }
-            TlaExpr::SetEnum(elems) | TlaExpr::Tuple(elems) => elems.iter().any(|e| r(e)),
+            TlaExpr::SetEnum(elems) | TlaExpr::Tuple(elems) => elems.iter().any(&r),
             TlaExpr::SetFilter { set, filter, .. } => r(set) || r(filter),
             TlaExpr::SetMap { expr: e, set, .. } => r(set) || r(e),
             TlaExpr::FnApply { func, arg } => r(func) || r(arg),
@@ -6157,7 +6158,8 @@ impl ModuleTranslator {
         match expr {
             TlaExpr::Record(_) => true,
             TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
-                Self::expr_contains_record_literal(left) || Self::expr_contains_record_literal(right)
+                Self::expr_contains_record_literal(left)
+                    || Self::expr_contains_record_literal(right)
             }
             TlaExpr::UnaryOp { operand, .. }
             | TlaExpr::Prime(operand)

@@ -831,6 +831,7 @@ fn generate_map_domain(
     expansion_limit: usize,
 ) -> TranspileResult<Vec<RuntimeValue>> {
     let mut out = Vec::new();
+    #[allow(clippy::mutable_key_type)]
     let mut current = BTreeMap::new();
     generate_map_values_recursive(
         keys,
@@ -844,6 +845,7 @@ fn generate_map_domain(
     Ok(out)
 }
 
+#[allow(clippy::mutable_key_type)]
 fn generate_map_values_recursive(
     keys: &[RuntimeValue],
     values: &[RuntimeValue],
@@ -1046,6 +1048,7 @@ fn expand_primitive_named_integer_domain(
 }
 
 fn unique_sorted(values: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+    #[allow(clippy::mutable_key_type)]
     let mut set = BTreeSet::new();
     for value in values {
         set.insert(value);

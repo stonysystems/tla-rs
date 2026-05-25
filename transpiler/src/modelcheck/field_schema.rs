@@ -68,11 +68,9 @@ impl FieldSchemaRegistry {
 
         // Register struct field layouts
         for (name, struct_def) in &schema.structs {
-            let syms = struct_def
-                .fields
-                .iter()
-                .map(|f| Symbol::intern(&f.name));
-            reg.layouts.insert(name.clone(), FieldLayout::from_names(syms));
+            let syms = struct_def.fields.iter().map(|f| Symbol::intern(&f.name));
+            reg.layouts
+                .insert(name.clone(), FieldLayout::from_names(syms));
         }
 
         // Register enum variant field layouts
@@ -116,9 +114,9 @@ impl FieldSchemaRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::{Generics, Path, Type};
     use crate::spec_analyzer::SpecSchema;
-    use crate::types::{FieldDef, StructDef, EnumDef, VariantDef, VariantFields};
-    use crate::ast::{Generics, Type, Path};
+    use crate::types::{EnumDef, FieldDef, StructDef, VariantDef, VariantFields};
 
     fn mk_field(name: &str) -> FieldDef {
         FieldDef {

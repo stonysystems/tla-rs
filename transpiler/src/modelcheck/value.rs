@@ -14,7 +14,7 @@ use std::sync::Arc;
 /// former `BTreeMap` representation. Typical struct sizes (3-10 fields)
 /// make linear-scan lookups and insertion-sort cheaper than B-tree node
 /// allocation.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct NamedFields(Vec<(Symbol, RuntimeValue)>);
 
 impl NamedFields {
@@ -141,7 +141,10 @@ impl FingerprintCache {
     }
     /// Invalidate the cached hash (e.g. after mutation).
     fn invalidate(&self) {
-        self.0.store(FINGERPRINT_NOT_COMPUTED, std::sync::atomic::Ordering::Relaxed);
+        self.0.store(
+            FINGERPRINT_NOT_COMPUTED,
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 }
 
@@ -153,8 +156,8 @@ impl PartialEq for FingerprintCache {
 }
 impl Eq for FingerprintCache {}
 impl PartialOrd for FingerprintCache {
-    fn partial_cmp(&self, _other: &Self) -> Option<Ordering> {
-        Some(Ordering::Equal)
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 impl Ord for FingerprintCache {
@@ -238,11 +241,7 @@ impl RuntimeValue {
     }
 
     /// Construct an enum value with pre-interned Symbol keys.
-    pub fn enum_value_sym<I>(
-        ty: impl Into<String>,
-        variant: impl Into<String>,
-        fields: I,
-    ) -> Self
+    pub fn enum_value_sym<I>(ty: impl Into<String>, variant: impl Into<String>, fields: I) -> Self
     where
         I: IntoIterator<Item = (Symbol, RuntimeValue)>,
     {
@@ -299,6 +298,7 @@ impl RuntimeValue {
         Ok(Self::Set(Arc::new(repr)))
     }
 
+    #[allow(clippy::mutable_key_type)]
     pub fn map_bounded<I>(entries: I, bounds: &RuntimeCollectionBounds) -> TranspileResult<Self>
     where
         I: IntoIterator<Item = (RuntimeValue, RuntimeValue)>,
@@ -699,6 +699,7 @@ impl SetRepr {
     ///
     /// If the current representation is `SmallInt` and the new element
     /// doesn't fit, the set is promoted to `General`.
+    #[allow(clippy::mutable_key_type)]
     pub fn insert(&mut self, value: RuntimeValue) -> bool {
         match self {
             SetRepr::SmallInt(s) => {
@@ -716,8 +717,7 @@ impl SetRepr {
                     }
                 }
                 // Non-int element — promote to General
-                let mut general: BTreeSet<RuntimeValue> =
-                    s.iter().map(RuntimeValue::Int).collect();
+                let mut general: BTreeSet<RuntimeValue> = s.iter().map(RuntimeValue::Int).collect();
                 let was_new = general.insert(value);
                 *self = SetRepr::General(general);
                 was_new
@@ -736,6 +736,7 @@ impl SetRepr {
     }
 
     /// Set union. Returns a new set.
+    #[allow(clippy::mutable_key_type)]
     pub fn union(&self, other: &SetRepr) -> SetRepr {
         match (self, other) {
             (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => {
@@ -743,19 +744,18 @@ impl SetRepr {
                 if let Some(merged) = SmallIntSet::try_from_iter(a.iter().chain(b.iter())) {
                     return SetRepr::SmallInt(merged);
                 }
-                let combined: BTreeSet<RuntimeValue> =
-                    self.iter().chain(other.iter()).collect();
+                let combined: BTreeSet<RuntimeValue> = self.iter().chain(other.iter()).collect();
                 SetRepr::General(combined)
             }
             _ => {
-                let combined: BTreeSet<RuntimeValue> =
-                    self.iter().chain(other.iter()).collect();
+                let combined: BTreeSet<RuntimeValue> = self.iter().chain(other.iter()).collect();
                 SetRepr::General(combined)
             }
         }
     }
 
     /// Set difference (self \ other). Returns a new set.
+    #[allow(clippy::mutable_key_type)]
     pub fn difference(&self, other: &SetRepr) -> SetRepr {
         match (self, other) {
             (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => {
@@ -763,34 +763,31 @@ impl SetRepr {
                 // Rebuild with shared offset from a.
                 let result_ints: Vec<i128> = a.iter().filter(|n| !b.contains(*n)).collect();
                 SetRepr::SmallInt(
-                    SmallIntSet::try_from_iter(result_ints).unwrap_or_else(|| SmallIntSet::empty()),
+                    SmallIntSet::try_from_iter(result_ints).unwrap_or_else(SmallIntSet::empty),
                 )
             }
             _ => {
-                let result: BTreeSet<RuntimeValue> = self
-                    .iter()
-                    .filter(|v| !other.contains(v))
-                    .collect();
+                let result: BTreeSet<RuntimeValue> =
+                    self.iter().filter(|v| !other.contains(v)).collect();
                 SetRepr::General(result)
             }
         }
     }
 
     /// Set intersection. Returns a new set.
+    #[allow(clippy::mutable_key_type)]
     pub fn intersection(&self, other: &SetRepr) -> SetRepr {
         match (self, other) {
             (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => {
                 // Intersection can only shrink, fits in either's range.
                 let result_ints: Vec<i128> = a.iter().filter(|n| b.contains(*n)).collect();
                 SetRepr::SmallInt(
-                    SmallIntSet::try_from_iter(result_ints).unwrap_or_else(|| SmallIntSet::empty()),
+                    SmallIntSet::try_from_iter(result_ints).unwrap_or_else(SmallIntSet::empty),
                 )
             }
             _ => {
-                let result: BTreeSet<RuntimeValue> = self
-                    .iter()
-                    .filter(|v| other.contains(v))
-                    .collect();
+                let result: BTreeSet<RuntimeValue> =
+                    self.iter().filter(|v| other.contains(v)).collect();
                 SetRepr::General(result)
             }
         }
@@ -807,6 +804,7 @@ impl SetRepr {
     }
 
     /// Convert to a `BTreeSet<RuntimeValue>` (materializes SmallInt elements).
+    #[allow(clippy::mutable_key_type)]
     pub fn to_btree_set(&self) -> BTreeSet<RuntimeValue> {
         match self {
             SetRepr::General(s) => s.clone(),
@@ -853,7 +851,8 @@ impl Ord for SetRepr {
             (SetRepr::SmallInt(a), SetRepr::SmallInt(b)) => a.cmp(b),
             _ => {
                 // Compare by length first, then element-by-element.
-                self.len().cmp(&other.len())
+                self.len()
+                    .cmp(&other.len())
                     .then_with(|| self.iter().cmp(other.iter()))
             }
         }
@@ -1072,9 +1071,10 @@ mod tests {
             fields: NamedFields::new(),
             _cache: FingerprintCache::new(),
         };
-        let set = RuntimeValue::Set(Arc::new(SetRepr::from_values(
-            vec![RuntimeValue::Int(1), RuntimeValue::Int(0)],
-        )));
+        let set = RuntimeValue::Set(Arc::new(SetRepr::from_values(vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(0),
+        ])));
         let state = RuntimeValue::struct_value(
             "LState",
             vec![
@@ -1145,16 +1145,10 @@ mod tests {
 
     #[test]
     fn test_fingerprint_differs_for_different_values() {
-        let a = RuntimeValue::struct_value(
-            "State",
-            vec![("x".to_string(), RuntimeValue::Int(1))],
-        )
-        .unwrap();
-        let b = RuntimeValue::struct_value(
-            "State",
-            vec![("x".to_string(), RuntimeValue::Int(2))],
-        )
-        .unwrap();
+        let a = RuntimeValue::struct_value("State", vec![("x".to_string(), RuntimeValue::Int(1))])
+            .unwrap();
+        let b = RuntimeValue::struct_value("State", vec![("x".to_string(), RuntimeValue::Int(2))])
+            .unwrap();
         assert_ne!(a.fingerprint(), b.fingerprint());
     }
 
@@ -1205,7 +1199,10 @@ mod tests {
         let s = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(42))]));
         let first = s.fingerprint();
         let second = s.fingerprint();
-        assert_eq!(first, second, "cached fingerprint must match first computation");
+        assert_eq!(
+            first, second,
+            "cached fingerprint must match first computation"
+        );
     }
 
     #[test]
@@ -1223,12 +1220,19 @@ mod tests {
         let before = s.fingerprint();
         s.invalidate_fingerprint_cache();
         let after = s.fingerprint(); // recomputes from scratch
-        assert_eq!(before, after, "same content should produce same hash after invalidation");
+        assert_eq!(
+            before, after,
+            "same content should produce same hash after invalidation"
+        );
     }
 
     #[test]
     fn test_fingerprint_cache_enum_variant() {
-        let e = RuntimeValue::enum_value_sym("Color", "Red", std::iter::empty::<(Symbol, RuntimeValue)>());
+        let e = RuntimeValue::enum_value_sym(
+            "Color",
+            "Red",
+            std::iter::empty::<(Symbol, RuntimeValue)>(),
+        );
         let first = e.fingerprint();
         let second = e.fingerprint();
         assert_eq!(first, second, "enum cached fingerprint must be consistent");
@@ -1248,7 +1252,11 @@ mod tests {
         let a = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
         let b = RuntimeValue::struct_value_sym("T", nf([(sym("x"), RuntimeValue::Int(1))]));
         let _ = a.fingerprint();
-        assert_eq!(a.cmp(&b), std::cmp::Ordering::Equal, "cache state must not affect ordering");
+        assert_eq!(
+            a.cmp(&b),
+            std::cmp::Ordering::Equal,
+            "cache state must not affect ordering"
+        );
     }
 
     // ── SetRepr tests ────────────────────────────────────────────────
@@ -1268,10 +1276,7 @@ mod tests {
 
     #[test]
     fn test_set_repr_from_values_general_mixed() {
-        let repr = SetRepr::from_values(vec![
-            RuntimeValue::Int(1),
-            RuntimeValue::Bool(true),
-        ]);
+        let repr = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Bool(true)]);
         assert!(!repr.is_small_int());
         assert_eq!(repr.len(), 2);
         assert!(repr.contains(&RuntimeValue::Int(1)));
@@ -1280,10 +1285,7 @@ mod tests {
 
     #[test]
     fn test_set_repr_from_values_general_wide_range() {
-        let repr = SetRepr::from_values(vec![
-            RuntimeValue::Int(0),
-            RuntimeValue::Int(100),
-        ]);
+        let repr = SetRepr::from_values(vec![RuntimeValue::Int(0), RuntimeValue::Int(100)]);
         assert!(!repr.is_small_int());
         assert_eq!(repr.len(), 2);
     }
@@ -1346,12 +1348,23 @@ mod tests {
         let c = a.union(&b);
         assert!(c.is_small_int());
         let elems: Vec<RuntimeValue> = c.iter().collect();
-        assert_eq!(elems, vec![RuntimeValue::Int(1), RuntimeValue::Int(2), RuntimeValue::Int(3)]);
+        assert_eq!(
+            elems,
+            vec![
+                RuntimeValue::Int(1),
+                RuntimeValue::Int(2),
+                RuntimeValue::Int(3)
+            ]
+        );
     }
 
     #[test]
     fn test_set_repr_difference_small_int() {
-        let a = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2), RuntimeValue::Int(3)]);
+        let a = SetRepr::from_values(vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(2),
+            RuntimeValue::Int(3),
+        ]);
         let b = SetRepr::from_values(vec![RuntimeValue::Int(2)]);
         let c = a.difference(&b);
         assert!(c.is_small_int());
@@ -1361,7 +1374,11 @@ mod tests {
 
     #[test]
     fn test_set_repr_intersection_small_int() {
-        let a = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2), RuntimeValue::Int(3)]);
+        let a = SetRepr::from_values(vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(2),
+            RuntimeValue::Int(3),
+        ]);
         let b = SetRepr::from_values(vec![RuntimeValue::Int(2), RuntimeValue::Int(4)]);
         let c = a.intersection(&b);
         assert!(c.is_small_int());
@@ -1386,7 +1403,14 @@ mod tests {
             RuntimeValue::Int(3),
         ]);
         let elems: Vec<RuntimeValue> = repr.iter().collect();
-        assert_eq!(elems, vec![RuntimeValue::Int(1), RuntimeValue::Int(3), RuntimeValue::Int(5)]);
+        assert_eq!(
+            elems,
+            vec![
+                RuntimeValue::Int(1),
+                RuntimeValue::Int(3),
+                RuntimeValue::Int(5)
+            ]
+        );
     }
 
     #[test]
@@ -1400,7 +1424,9 @@ mod tests {
     fn test_set_repr_eq_cross_repr() {
         let small = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]);
         let general = SetRepr::General(
-            vec![RuntimeValue::Int(1), RuntimeValue::Int(2)].into_iter().collect(),
+            vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]
+                .into_iter()
+                .collect(),
         );
         assert!(small.is_small_int());
         assert!(!general.is_small_int());
@@ -1411,17 +1437,17 @@ mod tests {
     fn test_set_repr_ord_cross_repr() {
         let small = SetRepr::from_values(vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]);
         let general = SetRepr::General(
-            vec![RuntimeValue::Int(1), RuntimeValue::Int(2)].into_iter().collect(),
+            vec![RuntimeValue::Int(1), RuntimeValue::Int(2)]
+                .into_iter()
+                .collect(),
         );
         assert_eq!(small.cmp(&general), std::cmp::Ordering::Equal);
     }
 
     #[test]
+    #[allow(clippy::mutable_key_type)]
     fn test_set_repr_to_btree_set() {
-        let repr = SetRepr::from_values(vec![
-            RuntimeValue::Int(3),
-            RuntimeValue::Int(1),
-        ]);
+        let repr = SetRepr::from_values(vec![RuntimeValue::Int(3), RuntimeValue::Int(1)]);
         let btree = repr.to_btree_set();
         assert_eq!(btree.len(), 2);
         assert!(btree.contains(&RuntimeValue::Int(1)));

@@ -186,6 +186,7 @@ impl TypeGenerator {
     /// Check if a field should be Arc-wrapped in the given struct.
     /// When arc_wrap_fields is specified for a struct, only those listed fields are wrapped.
     /// Otherwise falls back to arc_wrap_types which wraps all non-scalar fields.
+    #[allow(dead_code)]
     fn should_arc_wrap_field(&self, exec_name: &str, field_ty: &Type) -> bool {
         if !self.arc_wrap_types.contains(exec_name) {
             return false;
@@ -194,7 +195,12 @@ impl TypeGenerator {
     }
 
     /// Check if a specific named field should be Arc-wrapped.
-    fn should_arc_wrap_named_field(&self, exec_name: &str, field_name: &str, field_ty: &Type) -> bool {
+    fn should_arc_wrap_named_field(
+        &self,
+        exec_name: &str,
+        field_name: &str,
+        field_ty: &Type,
+    ) -> bool {
         if !self.arc_wrap_types.contains(exec_name) {
             return false;
         }
@@ -3813,9 +3819,7 @@ mod tests {
     #[test]
     fn test_arc_wrap_types_wraps_non_scalar_fields() {
         let mut generator = TypeGenerator::new(make_config());
-        generator.set_arc_wrap_types(
-            vec!["CReplica".to_string()].into_iter().collect(),
-        );
+        generator.set_arc_wrap_types(vec!["CReplica".to_string()].into_iter().collect());
 
         let spec = StructDef {
             name: "LReplica".to_string(),
@@ -3874,9 +3878,7 @@ mod tests {
     #[test]
     fn test_arc_wrap_types_does_not_affect_unlisted_structs() {
         let mut generator = TypeGenerator::new(make_config());
-        generator.set_arc_wrap_types(
-            vec!["CReplica".to_string()].into_iter().collect(),
-        );
+        generator.set_arc_wrap_types(vec!["CReplica".to_string()].into_iter().collect());
 
         // CAcceptor is NOT in arc_wrap_types
         let spec = StructDef {

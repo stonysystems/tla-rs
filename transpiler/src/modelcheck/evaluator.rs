@@ -90,7 +90,7 @@ impl<'a> EvalContext<'a> {
     /// Prefer `binding_scope()` + `push()` in hot paths to avoid cloning.
     #[cfg(test)]
     fn child_with_binding(&self, name: String, value: RuntimeValue) -> Self {
-        let mut ctx = self.clone();
+        let ctx = self.clone();
         ctx.bindings.borrow_mut().push((name, value));
         ctx
     }
@@ -686,8 +686,7 @@ fn eval_quantifier_bindings(
             for value in domain {
                 let scope = ctx.binding_scope();
                 scope.push(name.clone(), value);
-                if !eval_quantifier_bindings(vars, idx + 1, body, ctx, kind, domain_evaluator)?
-                {
+                if !eval_quantifier_bindings(vars, idx + 1, body, ctx, kind, domain_evaluator)? {
                     return Ok(false);
                 }
             }
@@ -717,9 +716,9 @@ fn eval_choose(
         return Err(unsupported_construct("CHOOSE with no bound variables"));
     }
 
-    let domain_evaluator = ctx.quantifier_domain_evaluator.ok_or_else(|| {
-        unsupported_construct("CHOOSE quantifier without domain resolver hook")
-    })?;
+    let domain_evaluator = ctx
+        .quantifier_domain_evaluator
+        .ok_or_else(|| unsupported_construct("CHOOSE quantifier without domain resolver hook"))?;
 
     // Default untyped choose bindings to `int` (same as quantifier default)
     let vars_with_types: Vec<Binding> = vars
@@ -729,7 +728,7 @@ fn eval_choose(
                 Binding {
                     pattern: b.pattern.clone(),
                     ty: Some(crate::ast::Type::Int),
-                    variable_mode: b.variable_mode.clone(),
+                    variable_mode: b.variable_mode,
                 }
             } else {
                 b.clone()
@@ -754,9 +753,9 @@ fn eval_choose_bindings(
             let Pattern::Ident(name) = &vars[0].pattern else {
                 return Err(unsupported_construct("CHOOSE with non-identifier binding"));
             };
-            return ctx.get_binding(name).ok_or_else(|| {
-                type_error("CHOOSE variable not found in context")
-            });
+            return ctx
+                .get_binding(name)
+                .ok_or_else(|| type_error("CHOOSE variable not found in context"));
         }
         return Err(type_error("CHOOSE: no satisfying value found"));
     }
@@ -1203,7 +1202,9 @@ pub fn eval_builtin_method(
             match receiver {
                 RuntimeValue::Map(entries) => {
                     let keys: Vec<RuntimeValue> = entries.keys().cloned().collect();
-                    Ok(Some(RuntimeValue::Set(Arc::new(SetRepr::from_values(keys)))))
+                    Ok(Some(RuntimeValue::Set(Arc::new(SetRepr::from_values(
+                        keys,
+                    )))))
                 }
                 other => Err(type_error(
                     format!(
@@ -1214,33 +1215,34 @@ pub fn eval_builtin_method(
                 )),
             }
         }
-        "insert" => {
-            match receiver {
-                RuntimeValue::Set(repr) => {
-                    if args.len() != 1 {
-                        return Err(type_error("Set `.insert(...)` expects one argument."));
-                    }
-                    let mut next = (**repr).clone();
-                    next.insert(args[0].clone());
-                    Ok(Some(RuntimeValue::Set(Arc::new(next))))
+        "insert" => match receiver {
+            RuntimeValue::Set(repr) => {
+                if args.len() != 1 {
+                    return Err(type_error("Set `.insert(...)` expects one argument."));
                 }
-                RuntimeValue::Map(entries) => {
-                    if args.len() != 2 {
-                        return Err(type_error("Map `.insert(key, value)` expects two arguments."));
-                    }
-                    let mut next = (**entries).clone();
-                    next.insert(args[0].clone(), args[1].clone());
-                    Ok(Some(RuntimeValue::Map(Arc::new(next))))
-                }
-                other => Err(type_error(
-                    format!(
-                        "`.insert(...)` expects Set or Map receiver, got `{}`.",
-                        other.canonical_key()
-                    )
-                    .as_str(),
-                )),
+                let mut next = (**repr).clone();
+                next.insert(args[0].clone());
+                Ok(Some(RuntimeValue::Set(Arc::new(next))))
             }
-        }
+            RuntimeValue::Map(entries) => {
+                if args.len() != 2 {
+                    return Err(type_error(
+                        "Map `.insert(key, value)` expects two arguments.",
+                    ));
+                }
+                #[allow(clippy::mutable_key_type)]
+                let mut next = (**entries).clone();
+                next.insert(args[0].clone(), args[1].clone());
+                Ok(Some(RuntimeValue::Map(Arc::new(next))))
+            }
+            other => Err(type_error(
+                format!(
+                    "`.insert(...)` expects Set or Map receiver, got `{}`.",
+                    other.canonical_key()
+                )
+                .as_str(),
+            )),
+        },
         "remove" => {
             if args.len() != 1 {
                 return Err(type_error("`.remove(...)` expects one argument."));
@@ -1269,7 +1271,9 @@ pub fn eval_builtin_method(
                     let result = a.union(b);
                     Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
-                _ => Err(type_error("`.union(...)` expects Set receiver and Set argument.")),
+                _ => Err(type_error(
+                    "`.union(...)` expects Set receiver and Set argument.",
+                )),
             }
         }
         "difference" => {
@@ -1281,7 +1285,9 @@ pub fn eval_builtin_method(
                     let result = a.difference(b);
                     Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
-                _ => Err(type_error("`.difference(...)` expects Set receiver and Set argument.")),
+                _ => Err(type_error(
+                    "`.difference(...)` expects Set receiver and Set argument.",
+                )),
             }
         }
         "intersect" | "intersection" => {
@@ -1293,7 +1299,9 @@ pub fn eval_builtin_method(
                     let result = a.intersection(b);
                     Ok(Some(RuntimeValue::Set(Arc::new(result))))
                 }
-                _ => Err(type_error("`.intersect(...)` expects Set receiver and Set argument.")),
+                _ => Err(type_error(
+                    "`.intersect(...)` expects Set receiver and Set argument.",
+                )),
             }
         }
         "push" => {
@@ -1393,12 +1401,14 @@ fn eval_set_new_with_closure(
     ctx: &EvalContext<'_>,
 ) -> TranspileResult<RuntimeValue> {
     if params.is_empty() {
-        return Err(type_error("Set::new closure must have at least one parameter."));
+        return Err(type_error(
+            "Set::new closure must have at least one parameter.",
+        ));
     }
 
-    let param_name = params[0].name().ok_or_else(|| {
-        type_error("Set::new closure parameter must be a named identifier.")
-    })?;
+    let param_name = params[0]
+        .name()
+        .ok_or_else(|| type_error("Set::new closure parameter must be a named identifier."))?;
 
     // Try to determine the domain to enumerate from the closure body.
     // For `|x: int| lo <= x && x <= hi`, we extract lo and hi and enumerate.
@@ -1424,9 +1434,7 @@ fn eval_set_new_with_closure(
             }
             Ok(RuntimeValue::Bool(false)) => {}
             Ok(_) => {
-                return Err(type_error(
-                    "Set::new closure must return bool.",
-                ));
+                return Err(type_error("Set::new closure must return bool."));
             }
             Err(_) => {
                 // If evaluation fails for this value, skip it
@@ -1502,14 +1510,14 @@ fn eval_set_map_with_closure(
     let elements: Vec<RuntimeValue> = match receiver {
         RuntimeValue::Set(repr) => repr.iter().collect(),
         _ => {
-            return Err(type_error(
-                "`.map(|x| ...)` receiver must be a Set.",
-            ));
+            return Err(type_error("`.map(|x| ...)` receiver must be a Set."));
         }
     };
 
     if params.is_empty() {
-        return Err(type_error("`.map(|x| ...)` closure must have at least one parameter."));
+        return Err(type_error(
+            "`.map(|x| ...)` closure must have at least one parameter.",
+        ));
     }
 
     let param_name = params[0].name().ok_or_else(|| {
@@ -1524,7 +1532,9 @@ fn eval_set_map_with_closure(
         result_vals.push(value);
     }
 
-    Ok(RuntimeValue::Set(Arc::new(SetRepr::from_values(result_vals))))
+    Ok(RuntimeValue::Set(Arc::new(SetRepr::from_values(
+        result_vals,
+    ))))
 }
 
 fn eval_map_new_with_closure(
@@ -1544,12 +1554,14 @@ fn eval_map_new_with_closure(
     };
 
     if params.is_empty() {
-        return Err(type_error("Map::new closure must have at least one parameter."));
+        return Err(type_error(
+            "Map::new closure must have at least one parameter.",
+        ));
     }
 
-    let param_name = params[0].name().ok_or_else(|| {
-        type_error("Map::new closure parameter must be a named identifier.")
-    })?;
+    let param_name = params[0]
+        .name()
+        .ok_or_else(|| type_error("Map::new closure parameter must be a named identifier."))?;
 
     let mut entries = Vec::new();
     for key in &keys {
@@ -1579,7 +1591,11 @@ fn cast_value(value: RuntimeValue, ty: &Type) -> TranspileResult<RuntimeValue> {
     }
 }
 
-pub fn eval_binary(lhs: &RuntimeValue, op: BinOp, rhs: &RuntimeValue) -> TranspileResult<RuntimeValue> {
+pub fn eval_binary(
+    lhs: &RuntimeValue,
+    op: BinOp,
+    rhs: &RuntimeValue,
+) -> TranspileResult<RuntimeValue> {
     match op {
         BinOp::Add => Ok(RuntimeValue::Int(
             expect_number(lhs, "addition lhs")? + expect_number(rhs, "addition rhs")?,
@@ -1855,9 +1871,10 @@ mod tests {
         let insert_out = eval_expr(&insert_expr, &EvalContext::new(test_bounds())).unwrap();
         assert_eq!(
             insert_out,
-            RuntimeValue::Set(Arc::new(SetRepr::from_values(
-                vec![RuntimeValue::Int(3), RuntimeValue::Int(4)]
-            )))
+            RuntimeValue::Set(Arc::new(SetRepr::from_values(vec![
+                RuntimeValue::Int(3),
+                RuntimeValue::Int(4)
+            ])))
         );
 
         let remove_expr = Expr::MethodCall {
@@ -2460,8 +2477,7 @@ mod tests {
     #[test]
     fn test_vec_binding_shadowing() {
         // Inner binding should shadow outer binding with the same name
-        let ctx = EvalContext::new(test_bounds())
-            .with_binding("x", RuntimeValue::Int(1));
+        let ctx = EvalContext::new(test_bounds()).with_binding("x", RuntimeValue::Int(1));
         let child = ctx.child_with_binding("x".to_string(), RuntimeValue::Int(42));
 
         // Child sees shadowed value
@@ -2489,8 +2505,7 @@ mod tests {
     #[test]
     fn test_binding_scope_push_pop() {
         // Verify that BindingScope correctly pops bindings on drop
-        let ctx = EvalContext::new(test_bounds())
-            .with_binding("x", RuntimeValue::Int(1));
+        let ctx = EvalContext::new(test_bounds()).with_binding("x", RuntimeValue::Int(1));
 
         {
             let scope = ctx.binding_scope();
@@ -2509,8 +2524,7 @@ mod tests {
     #[test]
     fn test_binding_scope_nested() {
         // Verify nested scopes work correctly (inner scope pops first)
-        let ctx = EvalContext::new(test_bounds())
-            .with_binding("x", RuntimeValue::Int(1));
+        let ctx = EvalContext::new(test_bounds()).with_binding("x", RuntimeValue::Int(1));
 
         {
             let outer = ctx.binding_scope();
@@ -2532,8 +2546,7 @@ mod tests {
     #[test]
     fn test_vec_binding_ident_expr_uses_latest() {
         // Verify that Expr::Ident resolves to the most recently pushed binding
-        let ctx = EvalContext::new(test_bounds())
-            .with_binding("x", RuntimeValue::Int(10));
+        let ctx = EvalContext::new(test_bounds()).with_binding("x", RuntimeValue::Int(10));
         let child = ctx.child_with_binding("x".to_string(), RuntimeValue::Int(99));
 
         let ident = Expr::Ident("x".to_string());

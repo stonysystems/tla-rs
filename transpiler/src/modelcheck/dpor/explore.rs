@@ -214,22 +214,24 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     let invariant_fns = ctx.resolve_invariants(&config.invariants);
 
     // Helper: check invariants and return violation witness if found
-    let check_state =
-        |state: &RuntimeValue, depth: usize, trace: &[WitnessStep]| -> Option<ViolationWitness> {
-            if invariant_fns.is_empty() {
-                return None;
-            }
-            match ctx.check_invariants(state, &invariant_fns) {
-                Ok(Some(violated)) => Some(ViolationWitness {
-                    invariant: violated,
-                    violating_state_key: state.canonical_key(),
-                    violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(state),
-                    depth,
-                    trace: trace.to_vec(),
-                }),
-                _ => None,
-            }
-        };
+    let check_state = |state: &RuntimeValue,
+                       depth: usize,
+                       trace: &[WitnessStep]|
+     -> Option<ViolationWitness> {
+        if invariant_fns.is_empty() {
+            return None;
+        }
+        match ctx.check_invariants(state, &invariant_fns) {
+            Ok(Some(violated)) => Some(ViolationWitness {
+                invariant: violated,
+                violating_state_key: state.canonical_key(),
+                violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(state),
+                depth,
+                trace: trace.to_vec(),
+            }),
+            _ => None,
+        }
+    };
 
     // Explore from each initial state
     for initial in &initial_states {
@@ -279,7 +281,9 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 violation: Some(ViolationWitness {
                     invariant: "__deadlock__".to_string(),
                     violating_state_key: initial.canonical_key(),
-                    violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(initial),
+                    violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(
+                        initial,
+                    ),
                     depth: 0,
                     trace: vec![],
                 }),
@@ -328,29 +332,26 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                         break;
                     }
                     let transition = frame.enabled.iter().find(|t| t.ordering_key == *key);
-                    match transition {
-                        Some(t) => {
-                            if config.use_sleep_sets
-                                && has_done_successor_fingerprint(
-                                    &frame.done,
-                                    &frame.enabled,
-                                    t.successor_fingerprint,
-                                )
-                            {
-                                // If an already explored sibling reaches the same successor
-                                // fingerprint, re-firing this transition is redundant for the
-                                // state-based exploration contract used by this checker.
-                                prunes_this_scan += 1;
-                                continue;
-                            }
-                            if frame.sleep.contains(&transition_sleep_key(t)) {
-                                prunes_this_scan += 1;
-                                continue;
-                            }
-                            next_transition = Some(key.clone());
-                            break;
+                    if let Some(t) = transition {
+                        if config.use_sleep_sets
+                            && has_done_successor_fingerprint(
+                                &frame.done,
+                                &frame.enabled,
+                                t.successor_fingerprint,
+                            )
+                        {
+                            // If an already explored sibling reaches the same successor
+                            // fingerprint, re-firing this transition is redundant for the
+                            // state-based exploration contract used by this checker.
+                            prunes_this_scan += 1;
+                            continue;
                         }
-                        None => {}
+                        if frame.sleep.contains(&transition_sleep_key(t)) {
+                            prunes_this_scan += 1;
+                            continue;
+                        }
+                        next_transition = Some(key.clone());
+                        break;
                     }
                 }
                 sleep_prune_hits += prunes_this_scan;
@@ -410,7 +411,10 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
                     let successor = successors
                         .iter()
-                        .find(|s| crate::modelcheck::dpor::enabled::hash_state(s) == transition.successor_fingerprint)
+                        .find(|s| {
+                            crate::modelcheck::dpor::enabled::hash_state(s)
+                                == transition.successor_fingerprint
+                        })
                         .cloned();
 
                     let Some(successor) = successor else {
@@ -420,12 +424,9 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                     // Fast-path: check fingerprint before computing canonical key
                     let succ_fp = successor.fingerprint();
                     let fp_is_new = seen_fingerprints.insert(succ_fp);
-                    if !fp_is_new {
-                        if should_prune_seen_successor(config.use_sleep_sets)
-                        {
-                            sleep_prune_hits += 1;
-                            continue;
-                        }
+                    if !fp_is_new && should_prune_seen_successor(config.use_sleep_sets) {
+                        sleep_prune_hits += 1;
+                        continue;
                     }
 
                     transitions_fired += 1;
@@ -453,13 +454,13 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                     // Check invariants on the new state
                     if is_new && !invariant_fns.is_empty() {
                         let mut trace: Vec<WitnessStep> = Vec::new();
-                        for i in 0..stack.len() {
-                            if let Some(ch) = &stack[i].chosen {
+                        for frame in &stack {
+                            if let Some(ch) = &frame.chosen {
                                 trace.push(WitnessStep {
-                                    state_fingerprint: stack[i].state_fingerprint,
-                                    state_key: stack[i].state.canonical_key(),
+                                    state_fingerprint: frame.state_fingerprint,
+                                    state_key: frame.state.canonical_key(),
                                     transition_key: ch.ordering_key.clone(),
-                                    depth: stack[i].depth,
+                                    depth: frame.depth,
                                 });
                             }
                         }
@@ -480,22 +481,19 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
                     // Push child frame if depth limit not reached and state is new
                     if depth < config.max_depth && is_new {
-                        let enabled = match ctx.enabled_transitions(&successor) {
-                            Ok(e) => e,
-                            Err(_) => vec![],
-                        };
+                        let enabled = ctx.enabled_transitions(&successor).unwrap_or_default();
 
                         // Deadlock detection: state with zero enabled transitions
                         if config.check_deadlock && enabled.is_empty() {
                             // Build trace from the stack
                             let mut trace: Vec<WitnessStep> = Vec::new();
-                            for i in 0..stack.len() {
-                                if let Some(ch) = &stack[i].chosen {
+                            for frame in &stack {
+                                if let Some(ch) = &frame.chosen {
                                     trace.push(WitnessStep {
-                                        state_fingerprint: stack[i].state_fingerprint,
-                                        state_key: stack[i].state.canonical_key(),
+                                        state_fingerprint: frame.state_fingerprint,
+                                        state_key: frame.state.canonical_key(),
                                         transition_key: ch.ordering_key.clone(),
-                                        depth: stack[i].depth,
+                                        depth: frame.depth,
                                     });
                                 }
                             }
@@ -510,9 +508,8 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 violation: Some(ViolationWitness {
                                     invariant: "__deadlock__".to_string(),
                                     violating_state_key: successor.canonical_key(),
-                                    violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(
-                                        &successor,
-                                    ),
+                                    violating_state_fingerprint:
+                                        crate::modelcheck::dpor::enabled::hash_state(&successor),
                                     depth,
                                     trace,
                                 }),
@@ -729,10 +726,7 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
         };
 
         // Get enabled transitions to match transition_key to a successor
-        let enabled = match ctx.enabled_transitions(&current) {
-            Ok(e) => e,
-            Err(_) => vec![],
-        };
+        let enabled = ctx.enabled_transitions(&current).unwrap_or_default();
 
         // Find the successor via transition_key → successor_fingerprint
         let next_state = if let Some(trans) = enabled
@@ -741,7 +735,9 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
         {
             successors
                 .iter()
-                .find(|s| crate::modelcheck::dpor::enabled::hash_state(s) == trans.successor_fingerprint)
+                .find(|s| {
+                    crate::modelcheck::dpor::enabled::hash_state(s) == trans.successor_fingerprint
+                })
                 .cloned()
         } else {
             // Fallback: if transition_key doesn't match, try to find by index
@@ -772,10 +768,7 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
     // Check the final state: deadlock or invariant violation
     if witness.invariant == "__deadlock__" {
         // Deadlock replay: verify the final state has zero enabled transitions
-        let enabled = match ctx.enabled_transitions(&current) {
-            Ok(e) => e,
-            Err(_) => vec![], // Treat error as no transitions (deadlock)
-        };
+        let enabled = ctx.enabled_transitions(&current).unwrap_or_default();
         let is_deadlocked = enabled.is_empty();
         return ReplayResult {
             confirmed: is_deadlocked,
@@ -798,7 +791,7 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
     }
 
     // Invariant violation replay
-    let invariant_fns = ctx.resolve_invariants(&[witness.invariant.clone()]);
+    let invariant_fns = ctx.resolve_invariants(std::slice::from_ref(&witness.invariant));
     let violated = match ctx.check_invariants(&current, &invariant_fns) {
         Ok(v) => v,
         Err(e) => {
@@ -817,10 +810,7 @@ pub fn replay_witness(ctx: &SpecContext, witness: &ViolationWitness) -> ReplayRe
         Some(format!(
             "Expected violation of '{}' but got {:?}",
             witness.invariant,
-            violated
-                .as_ref()
-                .map(|v| v.as_str())
-                .unwrap_or("no violation")
+            violated.as_deref().unwrap_or("no violation")
         ))
     } else {
         None
@@ -867,9 +857,7 @@ fn has_done_successor_fingerprint(
     })
 }
 
-fn should_prune_seen_successor(
-    use_sleep_sets: bool,
-) -> bool {
+fn should_prune_seen_successor(use_sleep_sets: bool) -> bool {
     // When sleep sets are enabled, duplicate successors (detected by
     // fingerprint) are pruned eagerly. Without sleep sets the conservative
     // baseline fires the transition but skips exploration (is_new=false).
@@ -1078,7 +1066,13 @@ max_seq_len = 4
         let _guard = baseline_run_lock()
             .lock()
             .expect("baseline run lock poisoned");
-        crate::modelcheck::dpor::baseline::run_baseline(transpiler_bin, spec_file, model_toml, invariants, timeout_sec)
+        crate::modelcheck::dpor::baseline::run_baseline(
+            transpiler_bin,
+            spec_file,
+            model_toml,
+            invariants,
+            timeout_sec,
+        )
     }
 
     #[test]
@@ -1570,7 +1564,9 @@ max_seq_len = 4
         );
 
         assert!(
-            conservative.distinct_states.is_subset(&sleep.distinct_states),
+            conservative
+                .distinct_states
+                .is_subset(&sleep.distinct_states),
             "sleep mode must not lose conservative states on Peterson"
         );
         assert_eq!(
@@ -2077,11 +2073,7 @@ max_seq_len = 4
         let enabled = vec![transition_a, transition_b.clone()];
 
         assert!(
-            has_done_successor_fingerprint(
-                &done,
-                &enabled,
-                transition_b.successor_fingerprint
-            ),
+            has_done_successor_fingerprint(&done, &enabled, transition_b.successor_fingerprint),
             "done-set should report a matching successor fingerprint"
         );
     }
@@ -2106,11 +2098,7 @@ max_seq_len = 4
         let enabled = vec![transition_a, transition_b.clone()];
 
         assert!(
-            !has_done_successor_fingerprint(
-                &done,
-                &enabled,
-                transition_b.successor_fingerprint
-            ),
+            !has_done_successor_fingerprint(&done, &enabled, transition_b.successor_fingerprint),
             "done-set should not report a non-matching successor fingerprint"
         );
     }
@@ -2791,7 +2779,8 @@ max_seq_len = 4
         let bl_states = baseline.distinct_states;
         let dp_states = dpor_result.distinct_states.len();
         let baseline_signature = baseline_negative_signature(&baseline);
-        let (dpor_verdict, dpor_signature) = dpor_verdict_and_signature(dpor_result.violation.as_ref());
+        let (dpor_verdict, dpor_signature) =
+            dpor_verdict_and_signature(dpor_result.violation.as_ref());
         let status = classify_parity_status(
             baseline.result.as_str(),
             dpor_verdict,
@@ -3160,7 +3149,9 @@ max_seq_len = 4
             ("18_pbft_small", "PBFT.rs", "LPBFTSafety"),
             ("20_raft_small", "Raft.rs", "LElectionSafety"),
         ];
-        println!("| Case | Cons states | Ind states | Slp states | Cons trans | Ind trans | Slp trans |");
+        println!(
+            "| Case | Cons states | Ind states | Slp states | Cons trans | Ind trans | Slp trans |"
+        );
         for (case_id, filename, _inv) in &cases {
             let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
             if !spec_file.exists() {
@@ -3172,9 +3163,39 @@ max_seq_len = 4
                 Err(_) => continue,
             };
             let configs = [
-                ("cons", DporConfig { max_depth: 30, max_states: 500000, use_independence: false, use_sleep_sets: false, invariants: vec![], check_deadlock: false }),
-                ("ind",  DporConfig { max_depth: 30, max_states: 500000, use_independence: true, use_sleep_sets: false, invariants: vec![], check_deadlock: false }),
-                ("slp",  DporConfig { max_depth: 30, max_states: 500000, use_independence: true, use_sleep_sets: true, invariants: vec![], check_deadlock: false }),
+                (
+                    "cons",
+                    DporConfig {
+                        max_depth: 30,
+                        max_states: 500000,
+                        use_independence: false,
+                        use_sleep_sets: false,
+                        invariants: vec![],
+                        check_deadlock: false,
+                    },
+                ),
+                (
+                    "ind",
+                    DporConfig {
+                        max_depth: 30,
+                        max_states: 500000,
+                        use_independence: true,
+                        use_sleep_sets: false,
+                        invariants: vec![],
+                        check_deadlock: false,
+                    },
+                ),
+                (
+                    "slp",
+                    DporConfig {
+                        max_depth: 30,
+                        max_states: 500000,
+                        use_independence: true,
+                        use_sleep_sets: true,
+                        invariants: vec![],
+                        check_deadlock: false,
+                    },
+                ),
             ];
             let mut states = [0usize; 3];
             let mut trans = [0usize; 3];
@@ -3183,8 +3204,10 @@ max_seq_len = 4
                 states[i] = r.distinct_states.len();
                 trans[i] = r.transitions_fired;
             }
-            println!("| {} | {} | {} | {} | {} | {} | {} |",
-                case_id, states[0], states[1], states[2], trans[0], trans[1], trans[2]);
+            println!(
+                "| {} | {} | {} | {} | {} | {} | {} |",
+                case_id, states[0], states[1], states[2], trans[0], trans[1], trans[2]
+            );
         }
     }
 

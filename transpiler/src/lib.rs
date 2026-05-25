@@ -247,9 +247,7 @@ impl Transpiler {
 
         // Compute arc_wrap_fields from struct definitions even when generate_inline_types is false.
         // This is needed for the translator to emit Arc::new() in struct construction.
-        if !self.config.arc_wrap_types.is_empty()
-            && translator_config.arc_wrap_fields.is_empty()
-        {
+        if !self.config.arc_wrap_types.is_empty() && translator_config.arc_wrap_fields.is_empty() {
             if let Ok(type_defs) = types::parse_types_from_file(spec_path) {
                 let registry = types::build_registry(type_defs);
                 let naming = crate::config::NamingConfig {
@@ -1433,8 +1431,11 @@ impl Transpiler {
                 // clone_<field> — verified loop or external_body wrapper
                 // Check if this field is Arc-wrapped (any struct in arc_wrap_fields
                 // lists this field name).
-                let is_arc_wrapped = arc_wrap_fields.values().any(|fields| fields.contains(&field.to_string()));
-                let use_verified_loop = !is_arc_wrapped && clone_up_to_view_types.contains(exec_type.as_str());
+                let is_arc_wrapped = arc_wrap_fields
+                    .values()
+                    .any(|fields| fields.contains(&field.to_string()));
+                let use_verified_loop =
+                    !is_arc_wrapped && clone_up_to_view_types.contains(exec_type.as_str());
                 output.push_str(&format!(
                     "/// Helper: clone a Vec<{}> preserving both raw and mapped view.\n",
                     exec_type
@@ -1490,9 +1491,7 @@ impl Transpiler {
                     output.push_str("requires\n");
                     output.push_str("    idx < v@.len(),\n");
                     output.push_str("ensures\n");
-                    output.push_str(&format!(
-                        "    res == v@[idx as int],\n"
-                    ));
+                    output.push_str("    res == v@[idx as int],\n");
                     output.push_str("{\n");
                     output.push_str("    (*v)[idx].clone()\n");
                     output.push_str("}\n\n");
@@ -2077,9 +2076,10 @@ impl Transpiler {
             }
             Expr::Call { args, .. } => args.iter().any(Self::spec_uses_remove),
             Expr::Index(base, idx) => Self::spec_uses_remove(base) || Self::spec_uses_remove(idx),
-            Expr::Forall { body, .. } | Expr::Exists { body, .. } | Expr::Closure { body, .. } | Expr::Choose { body, .. } => {
-                Self::spec_uses_remove(body)
-            }
+            Expr::Forall { body, .. }
+            | Expr::Exists { body, .. }
+            | Expr::Closure { body, .. }
+            | Expr::Choose { body, .. } => Self::spec_uses_remove(body),
             _ => false,
         }
     }
@@ -3217,7 +3217,14 @@ mod tests {
         let mut cutv = std::collections::HashSet::new();
         cutv.insert("CRequest".to_string());
         let output = Transpiler::generate_proof_helper_lemmas(
-            true, true, false, &svf, "u64", &cutv, &None, false,
+            true,
+            true,
+            false,
+            &svf,
+            "u64",
+            &cutv,
+            &None,
+            false,
             &std::collections::HashMap::new(),
         );
 
@@ -3274,7 +3281,14 @@ mod tests {
         // CLogEntry is NOT in clone_up_to_view_types — should use external_body
         let cutv = std::collections::HashSet::new();
         let output = Transpiler::generate_proof_helper_lemmas(
-            true, true, false, &svf, "u64", &cutv, &None, false,
+            true,
+            true,
+            false,
+            &svf,
+            "u64",
+            &cutv,
+            &None,
+            false,
             &std::collections::HashMap::new(),
         );
 
@@ -3352,8 +3366,11 @@ mod tests {
                 "CLearnerTuple".to_string(),
             ),
         );
-        let output =
-            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new(), &std::collections::HashMap::new());
+        let output = Transpiler::generate_map_proof_lemmas(
+            &map_fields,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
 
         // Check all 4 proof lemmas are generated
         assert!(
@@ -3401,8 +3418,11 @@ mod tests {
     #[test]
     fn test_generate_map_proof_lemmas_empty() {
         let map_fields = std::collections::HashMap::new();
-        let output =
-            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new(), &std::collections::HashMap::new());
+        let output = Transpiler::generate_map_proof_lemmas(
+            &map_fields,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
         assert!(
             output.is_empty(),
             "Empty map_fields should generate nothing"
@@ -3420,8 +3440,11 @@ mod tests {
                 "CVote".to_string(),
             ),
         );
-        let output =
-            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new(), &std::collections::HashMap::new());
+        let output = Transpiler::generate_map_proof_lemmas(
+            &map_fields,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
 
         // Should have filter helper with proper type
         assert!(output.contains("fn filter_cvotes(m: &CVotes, threshold: u64) -> (res: CVotes)"));
@@ -3446,7 +3469,11 @@ mod tests {
             "clearnerstate".to_string(),
             "clone_clearnerstate_up_to_view".to_string(),
         );
-        let output = Transpiler::generate_map_proof_lemmas(&map_fields, &verified_clone_fns, &std::collections::HashMap::new());
+        let output = Transpiler::generate_map_proof_lemmas(
+            &map_fields,
+            &verified_clone_fns,
+            &std::collections::HashMap::new(),
+        );
 
         // Should NOT contain external_body for clone
         assert!(
@@ -3481,7 +3508,10 @@ mod tests {
                 "CLearnerTuple".to_string(),
             ),
         );
-        let mut arc_wrap_fields: std::collections::HashMap<String, std::collections::HashSet<String>> = std::collections::HashMap::new();
+        let mut arc_wrap_fields: std::collections::HashMap<
+            String,
+            std::collections::HashSet<String>,
+        > = std::collections::HashMap::new();
         let mut fields = std::collections::HashSet::new();
         fields.insert("unexecuted_learner_state".to_string());
         arc_wrap_fields.insert("CLearner".to_string(), fields);
@@ -3794,8 +3824,11 @@ mod tests {
             ),
         );
 
-        let output =
-            Transpiler::generate_map_proof_lemmas(&map_fields, &std::collections::HashMap::new(), &std::collections::HashMap::new());
+        let output = Transpiler::generate_map_proof_lemmas(
+            &map_fields,
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+        );
 
         // Should generate abstractify lemmas for the map field
         assert!(

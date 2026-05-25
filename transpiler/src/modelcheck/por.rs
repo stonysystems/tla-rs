@@ -431,7 +431,11 @@ fn collect_expr_state_reads(
                 );
             }
         }
-        Expr::Ident(_) | Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty
+        Expr::Ident(_)
+        | Expr::Literal(_)
+        | Expr::SeqEmpty
+        | Expr::SetEmpty
+        | Expr::MapEmpty
         | Expr::ConstantValue(_) => {}
     }
 }

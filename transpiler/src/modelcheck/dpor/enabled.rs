@@ -12,9 +12,7 @@ use std::sync::Arc;
 
 use crate::error::TranspileResult;
 use crate::modelcheck::config::parse_model_config_file;
-use crate::modelcheck::domain::{
-    expand_branch_existentials, expand_type_domain_candidates,
-};
+use crate::modelcheck::domain::{expand_branch_existentials, expand_type_domain_candidates};
 use crate::modelcheck::helpers::eval_spec_function_call_recursive;
 use crate::modelcheck::init::{construct_initial_states, InitHooks};
 use crate::modelcheck::ir::build_transition_ir;
@@ -22,7 +20,9 @@ use crate::modelcheck::solver::{solve_branch_successors, SolverHooks};
 use crate::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue, SetRepr};
 use crate::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
 
-use crate::modelcheck::dpor::types::{EnabledTransition, ProcessId, StateFingerprint, TransitionFootprint};
+use crate::modelcheck::dpor::types::{
+    EnabledTransition, ProcessId, StateFingerprint, TransitionFootprint,
+};
 
 /// A loaded spec ready for enabled-set enumeration.
 pub struct SpecContext {
@@ -34,17 +34,13 @@ pub struct SpecContext {
     /// Phase 38.21.J: cache the post-inlining transition IR. The IR is
     /// computed from `bundle.entrypoints.lnext` and is invariant across
     /// the model-check run — no need to rebuild it per state.
-    pub cached_transition_ir:
-        std::sync::OnceLock<crate::modelcheck::ir::TransitionIr>,
+    pub cached_transition_ir: std::sync::OnceLock<crate::modelcheck::ir::TransitionIr>,
     /// Phase 38.21.J: cache the per-branch existential expansions. These
     /// depend on (branch, schema, model_config) which are all run-
     /// invariant; rebuilding them per state was a hot loop on cases
     /// with many existential variables.
     pub cached_branch_assignments: std::sync::OnceLock<
-        std::collections::BTreeMap<
-            String,
-            Vec<crate::modelcheck::domain::ExistentialAssignment>,
-        >,
+        std::collections::BTreeMap<String, Vec<crate::modelcheck::domain::ExistentialAssignment>>,
     >,
     /// Phase 38.22.2.b.ii: field schema registry mapping struct/enum type
     /// names to ordered field layouts with name→index lookup.
@@ -81,9 +77,8 @@ impl SpecContext {
         let constants = resolve_constants_from_config(&bundle, &model_config, &bounds)?;
 
         // Build field schema registry from spec types
-        let field_schema = crate::modelcheck::field_schema::FieldSchemaRegistry::from_spec_schema(
-            &bundle.schema,
-        );
+        let field_schema =
+            crate::modelcheck::field_schema::FieldSchemaRegistry::from_spec_schema(&bundle.schema);
 
         Ok(Self {
             bundle,
@@ -146,14 +141,13 @@ impl SpecContext {
                 0,
             )
         };
-        let quant_eval =
-            |binding: &crate::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                crate::modelcheck::helpers::expand_quantifier_domain_for_binding(
-                    binding,
-                    &self.bundle.schema,
-                    &self.model_config,
-                )
-            };
+        let quant_eval = |binding: &crate::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
+            crate::modelcheck::helpers::expand_quantifier_domain_for_binding(
+                binding,
+                &self.bundle.schema,
+                &self.model_config,
+            )
+        };
         let hooks = InitHooks {
             call_evaluator: Some(&call_eval),
             method_evaluator: None,
@@ -177,9 +171,9 @@ impl SpecContext {
         &self,
         state_ty: &crate::ast::Type,
     ) -> TranspileResult<Vec<RuntimeValue>> {
-        use std::collections::{BTreeMap, BTreeSet};
         use crate::ast::Type;
         use crate::modelcheck::domain::find_struct_definition;
+        use std::collections::BTreeMap;
 
         let struct_def = match state_ty {
             Type::Named(path) => find_struct_definition(&self.bundle.schema, path),
@@ -209,21 +203,17 @@ impl SpecContext {
             } else if is_seq {
                 vec![RuntimeValue::Seq(Arc::new(Vec::new()))]
             } else {
-                match &field.ty {
-                    _ => {
-                        // For scalar types, use normal domain expansion
-                        match crate::modelcheck::domain::expand_type_domain(
-                            &field.ty,
-                            &self.bundle.schema,
-                            &self.model_config,
-                            &self.bounds,
-                            expansion_limit,
-                            0,
-                        ) {
-                            Ok(values) => values,
-                            Err(_) => return Ok(vec![]),
-                        }
-                    }
+                // For scalar types, use normal domain expansion
+                match crate::modelcheck::domain::expand_type_domain(
+                    &field.ty,
+                    &self.bundle.schema,
+                    &self.model_config,
+                    &self.bounds,
+                    expansion_limit,
+                    0,
+                ) {
+                    Ok(values) => values,
+                    Err(_) => return Ok(vec![]),
                 }
             };
             field_domains.push((field.name.clone(), domain));
@@ -312,8 +302,7 @@ impl SpecContext {
             let ordering_key = format!("{:04}", succ_idx);
             let process_id =
                 infer_process_id_from_state_delta(state, successor, &successor.canonical_key());
-            let footprint =
-                derive_conservative_unknown_footprint(state, successor, process_id);
+            let footprint = derive_conservative_unknown_footprint(state, successor, process_id);
             all_enabled.push(EnabledTransition {
                 process_id,
                 branch_label: format!("transition_{}", succ_idx),
@@ -351,25 +340,22 @@ impl SpecContext {
     ) -> TranspileResult<Vec<(String, ProcessId, RuntimeValue)>> {
         // Phase 38.21.J: build the transition IR once per SpecContext,
         // not per state. Same for per-branch existentials.
-        let transition = self
-            .cached_transition_ir
-            .get_or_init(|| {
-                let mut t = build_transition_ir(&self.bundle.entrypoints.lnext)
-                    .expect("build_transition_ir failed in cache init");
-                crate::modelcheck::ir::inline_action_calls(&mut t, &self.bundle.spec_functions);
-                crate::modelcheck::ir::inline_zero_arg_helper_calls(
-                    &mut t,
-                    &self.bundle.spec_functions,
-                );
-                crate::modelcheck::ir::constant_fold_transition_ir(&mut t);
-                t
-            });
+        let transition = self.cached_transition_ir.get_or_init(|| {
+            let mut t = build_transition_ir(&self.bundle.entrypoints.lnext)
+                .expect("build_transition_ir failed in cache init");
+            crate::modelcheck::ir::inline_action_calls(&mut t, &self.bundle.spec_functions);
+            crate::modelcheck::ir::inline_zero_arg_helper_calls(
+                &mut t,
+                &self.bundle.spec_functions,
+            );
+            crate::modelcheck::ir::constant_fold_transition_ir(&mut t);
+            t
+        });
         // Use a reference instead of cloning — keeps expression pointers
         // stable so the BytecodeCache's pointer-based keys work correctly.
         // Cloning the transition would give new addresses for the same
         // expressions, causing cache aliasing when the allocator reuses
         // freed addresses.
-        let transition = transition;
 
         let assignments_by_branch_owned;
         let assignments_by_branch = match self.cached_branch_assignments.get() {
@@ -392,7 +378,6 @@ impl SpecContext {
             }
         };
         let assignments_by_branch = assignments_by_branch.clone();
-        let transition = transition;
 
         let call_eval = |func_path: &crate::ast::Path,
                          args: &[RuntimeValue]|
@@ -407,162 +392,190 @@ impl SpecContext {
                 0,
             )
         };
-        let quant_eval =
-            |binding: &crate::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                crate::modelcheck::helpers::expand_quantifier_domain_for_binding(
-                    binding,
-                    &self.bundle.schema,
-                    &self.model_config,
-                )
-            };
+        let quant_eval = |binding: &crate::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
+            crate::modelcheck::helpers::expand_quantifier_domain_for_binding(
+                binding,
+                &self.bundle.schema,
+                &self.model_config,
+            )
+        };
         // Build the same predicate solver as enabled_transitions
-        let predicate_solver = |
-            transition_ir: &crate::modelcheck::ir::TransitionIr,
-            branch: &crate::modelcheck::ir::TransitionBranchIr,
-            cur_state: &RuntimeValue,
-            constants: Option<&RuntimeValue>,
-            exist_assignments: &[crate::modelcheck::domain::ExistentialAssignment],
-            bounds: RuntimeCollectionBounds,
-        | -> TranspileResult<Option<Vec<RuntimeValue>>> {
-            use crate::modelcheck::ir::BranchConstraintIr;
-            use crate::ast::Expr;
-            use crate::modelcheck::domain::ExistentialAssignment;
+        let predicate_solver =
+            |transition_ir: &crate::modelcheck::ir::TransitionIr,
+             branch: &crate::modelcheck::ir::TransitionBranchIr,
+             cur_state: &RuntimeValue,
+             constants: Option<&RuntimeValue>,
+             exist_assignments: &[crate::modelcheck::domain::ExistentialAssignment],
+             bounds: RuntimeCollectionBounds|
+             -> TranspileResult<Option<Vec<RuntimeValue>>> {
+                use crate::ast::Expr;
+                use crate::modelcheck::domain::ExistentialAssignment;
+                use crate::modelcheck::ir::BranchConstraintIr;
 
-            fn assignment_key(assignment: &ExistentialAssignment) -> String {
-                assignment
-                    .iter()
-                    .map(|(name, value)| format!("{}={}", name, value.canonical_key()))
-                    .collect::<Vec<_>>()
-                    .join("|")
-            }
+                fn assignment_key(assignment: &ExistentialAssignment) -> String {
+                    assignment
+                        .iter()
+                        .map(|(name, value)| format!("{}={}", name, value.canonical_key()))
+                        .collect::<Vec<_>>()
+                        .join("|")
+                }
 
-            if branch.constraints.len() != 1 { return Ok(None); }
-            let BranchConstraintIr::Predicate { expr } = &branch.constraints[0] else { return Ok(None); };
-            let Expr::Call { func, args } = expr else { return Ok(None); };
-
-            let transition_param_arity = if transition_ir.constants_param.is_some() { 3 } else { 2 };
-            if args.len() < transition_param_arity {
-                return Ok(None);
-            }
-            if !matches!(&args[0], Expr::Ident(name) if name == &transition_ir.current_state_param) {
-                return Ok(None);
-            }
-            if !matches!(&args[1], Expr::Ident(name) if name == &transition_ir.next_state_param) {
-                return Ok(None);
-            }
-            if let Some(constants_param_name) = transition_ir.constants_param.as_ref() {
-                if !matches!(&args[2], Expr::Ident(name) if name == constants_param_name) {
+                if branch.constraints.len() != 1 {
                     return Ok(None);
                 }
-                if constants.is_none() {
+                let BranchConstraintIr::Predicate { expr } = &branch.constraints[0] else {
+                    return Ok(None);
+                };
+                let Expr::Call { func, args } = expr else {
+                    return Ok(None);
+                };
+
+                let transition_param_arity = if transition_ir.constants_param.is_some() {
+                    3
+                } else {
+                    2
+                };
+                if args.len() < transition_param_arity {
                     return Ok(None);
                 }
-            }
-
-            let helper_fn = match crate::modelcheck::helpers::resolve_called_spec_function(
-                &self.bundle.spec_functions, func,
-            ) { Ok(f) => f, Err(_) => return Ok(None) };
-            if helper_fn.params.len() != args.len() {
-                return Ok(None);
-            }
-            let helper_transition = match build_transition_ir(helper_fn) { Ok(t) => t, Err(_) => return Ok(None) };
-
-            let source_assignments: Vec<ExistentialAssignment> = if exist_assignments.is_empty() {
-                vec![std::collections::BTreeMap::new()]
-            } else {
-                exist_assignments.to_vec()
-            };
-
-            // Bind helper extra parameters from the outer branch's existential assignment.
-            let mut call_site_assignments = Vec::<ExistentialAssignment>::new();
-            let extra_params = helper_fn.params.iter().skip(transition_param_arity);
-            let extra_args = args.iter().skip(transition_param_arity);
-            for source_assignment in &source_assignments {
-                let mut call_assignment = std::collections::BTreeMap::new();
-                let mut unsupported = false;
-                for (helper_param, arg_expr) in extra_params.clone().zip(extra_args.clone()) {
-                    match arg_expr {
-                        Expr::Ident(name) => {
-                            let Some(value) = source_assignment.get(name).cloned() else {
-                                unsupported = true;
-                                break;
-                            };
-                            call_assignment.insert(helper_param.name.clone(), value);
-                        }
-                        _ => {
-                            unsupported = true;
-                            break;
-                        }
+                if !matches!(&args[0], Expr::Ident(name) if name == &transition_ir.current_state_param)
+                {
+                    return Ok(None);
+                }
+                if !matches!(&args[1], Expr::Ident(name) if name == &transition_ir.next_state_param)
+                {
+                    return Ok(None);
+                }
+                if let Some(constants_param_name) = transition_ir.constants_param.as_ref() {
+                    if !matches!(&args[2], Expr::Ident(name) if name == constants_param_name) {
+                        return Ok(None);
+                    }
+                    if constants.is_none() {
+                        return Ok(None);
                     }
                 }
-                if !unsupported {
-                    call_site_assignments.push(call_assignment);
-                }
-            }
-            if call_site_assignments.is_empty() {
-                return Ok(None);
-            }
-            let mut seen_call_assignments = std::collections::BTreeSet::new();
-            call_site_assignments
-                .retain(|assignment| seen_call_assignments.insert(assignment_key(assignment)));
 
-            let mut all_succs = Vec::new();
-            for helper_branch in &helper_transition.branches {
-                let helper_assigns = expand_branch_existentials(
-                    helper_branch, &self.bundle.schema, &self.model_config,
-                )?;
-                let helper_assigns: Vec<ExistentialAssignment> = if helper_assigns.is_empty() {
+                let helper_fn = match crate::modelcheck::helpers::resolve_called_spec_function(
+                    &self.bundle.spec_functions,
+                    func,
+                ) {
+                    Ok(f) => f,
+                    Err(_) => return Ok(None),
+                };
+                if helper_fn.params.len() != args.len() {
+                    return Ok(None);
+                }
+                let helper_transition = match build_transition_ir(helper_fn) {
+                    Ok(t) => t,
+                    Err(_) => return Ok(None),
+                };
+
+                let source_assignments: Vec<ExistentialAssignment> = if exist_assignments.is_empty()
+                {
                     vec![std::collections::BTreeMap::new()]
                 } else {
-                    helper_assigns
+                    exist_assignments.to_vec()
                 };
 
-                let mut merged_assignments = Vec::<ExistentialAssignment>::new();
-                for call_assignment in &call_site_assignments {
-                    for helper_assignment in &helper_assigns {
-                        let mut merged = call_assignment.clone();
-                        let mut conflict = false;
-                        for (name, value) in helper_assignment {
-                            if let Some(existing) = merged.get(name) {
-                                if existing != value {
-                                    conflict = true;
+                // Bind helper extra parameters from the outer branch's existential assignment.
+                let mut call_site_assignments = Vec::<ExistentialAssignment>::new();
+                let extra_params = helper_fn.params.iter().skip(transition_param_arity);
+                let extra_args = args.iter().skip(transition_param_arity);
+                for source_assignment in &source_assignments {
+                    let mut call_assignment = std::collections::BTreeMap::new();
+                    let mut unsupported = false;
+                    for (helper_param, arg_expr) in extra_params.clone().zip(extra_args.clone()) {
+                        match arg_expr {
+                            Expr::Ident(name) => {
+                                let Some(value) = source_assignment.get(name).cloned() else {
+                                    unsupported = true;
                                     break;
-                                }
-                            } else {
-                                merged.insert(name.clone(), value.clone());
+                                };
+                                call_assignment.insert(helper_param.name.clone(), value);
+                            }
+                            _ => {
+                                unsupported = true;
+                                break;
                             }
                         }
-                        if !conflict {
-                            merged_assignments.push(merged);
-                        }
+                    }
+                    if !unsupported {
+                        call_site_assignments.push(call_assignment);
                     }
                 }
-                if merged_assignments.is_empty() {
-                    continue;
+                if call_site_assignments.is_empty() {
+                    return Ok(None);
                 }
-                let mut seen_merged = std::collections::BTreeSet::new();
-                merged_assignments
-                    .retain(|assignment| seen_merged.insert(assignment_key(assignment)));
+                let mut seen_call_assignments = std::collections::BTreeSet::new();
+                call_site_assignments
+                    .retain(|assignment| seen_call_assignments.insert(assignment_key(assignment)));
 
-                let hooks = SolverHooks {
-                    call_evaluator: Some(&call_eval),
-                    method_evaluator: None,
-                    quantifier_domain_evaluator: Some(&quant_eval),
-                    predicate_only_branch_solver: None,
-                    bytecode_cache: Some(&self.bytecode_cache), // Safe: transition IR is not cloned, so pointers are stable for caching
-                };
-                match solve_branch_successors(
-                    &helper_transition, helper_branch, cur_state, constants,
-                    &merged_assignments, bounds, hooks,
-                ) {
-                    Ok(succs) => all_succs.extend(succs),
-                    Err(_) => continue,
+                let mut all_succs = Vec::new();
+                for helper_branch in &helper_transition.branches {
+                    let helper_assigns = expand_branch_existentials(
+                        helper_branch,
+                        &self.bundle.schema,
+                        &self.model_config,
+                    )?;
+                    let helper_assigns: Vec<ExistentialAssignment> = if helper_assigns.is_empty() {
+                        vec![std::collections::BTreeMap::new()]
+                    } else {
+                        helper_assigns
+                    };
+
+                    let mut merged_assignments = Vec::<ExistentialAssignment>::new();
+                    for call_assignment in &call_site_assignments {
+                        for helper_assignment in &helper_assigns {
+                            let mut merged = call_assignment.clone();
+                            let mut conflict = false;
+                            for (name, value) in helper_assignment {
+                                if let Some(existing) = merged.get(name) {
+                                    if existing != value {
+                                        conflict = true;
+                                        break;
+                                    }
+                                } else {
+                                    merged.insert(name.clone(), value.clone());
+                                }
+                            }
+                            if !conflict {
+                                merged_assignments.push(merged);
+                            }
+                        }
+                    }
+                    if merged_assignments.is_empty() {
+                        continue;
+                    }
+                    let mut seen_merged = std::collections::BTreeSet::new();
+                    merged_assignments
+                        .retain(|assignment| seen_merged.insert(assignment_key(assignment)));
+
+                    let hooks = SolverHooks {
+                        call_evaluator: Some(&call_eval),
+                        method_evaluator: None,
+                        quantifier_domain_evaluator: Some(&quant_eval),
+                        predicate_only_branch_solver: None,
+                        bytecode_cache: Some(&self.bytecode_cache), // Safe: transition IR is not cloned, so pointers are stable for caching
+                    };
+                    match solve_branch_successors(
+                        &helper_transition,
+                        helper_branch,
+                        cur_state,
+                        constants,
+                        &merged_assignments,
+                        bounds,
+                        hooks,
+                    ) {
+                        Ok(succs) => all_succs.extend(succs),
+                        Err(_) => continue,
+                    }
                 }
-            }
-            // Return Some even when empty — means "I handled this, zero successors"
-            // (None means "I can't handle this branch" and triggers fallback)
-            Ok(Some(crate::modelcheck::solver::deduplicate_successors(all_succs)))
-        };
+                // Return Some even when empty — means "I handled this, zero successors"
+                // (None means "I can't handle this branch" and triggers fallback)
+                Ok(Some(crate::modelcheck::solver::deduplicate_successors(
+                    all_succs,
+                )))
+            };
 
         let hooks = SolverHooks {
             call_evaluator: Some(&call_eval),
@@ -581,19 +594,18 @@ impl SpecContext {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
 
-            let assignment_variants: Vec<
-                crate::modelcheck::domain::ExistentialAssignment,
-            > = if branch_assignments.is_empty() {
-                vec![std::collections::BTreeMap::new()]
-            } else {
-                branch_assignments.to_vec()
-            };
+            let assignment_variants: Vec<crate::modelcheck::domain::ExistentialAssignment> =
+                if branch_assignments.is_empty() {
+                    vec![std::collections::BTreeMap::new()]
+                } else {
+                    branch_assignments.to_vec()
+                };
 
             for assignment in assignment_variants {
                 let process_id = infer_process_id(&branch.label, &assignment);
                 let single_assignment = [assignment];
                 let branch_successors = match solve_branch_successors(
-                    &transition,
+                    transition,
                     branch,
                     state,
                     self.constants.as_ref(),
@@ -647,14 +659,13 @@ impl SpecContext {
                 0,
             )
         };
-        let quant_eval =
-            |binding: &crate::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                crate::modelcheck::helpers::expand_quantifier_domain_for_binding(
-                    binding,
-                    &self.bundle.schema,
-                    &self.model_config,
-                )
-            };
+        let quant_eval = |binding: &crate::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
+            crate::modelcheck::helpers::expand_quantifier_domain_for_binding(
+                binding,
+                &self.bundle.schema,
+                &self.model_config,
+            )
+        };
 
         let next_fn = &self.bundle.entrypoints.lnext;
         let mut successors = Vec::new();
@@ -679,13 +690,10 @@ impl SpecContext {
                 .with_call_evaluator(&call_eval)
                 .with_quantifier_domain_evaluator(&quant_eval);
 
-            match eval_expr(&next_fn.body, &ctx) {
-                Ok(RuntimeValue::Bool(true)) => {
-                    if seen.insert(candidate.fingerprint()) {
-                        successors.push(candidate.clone());
-                    }
+            if let Ok(RuntimeValue::Bool(true)) = eval_expr(&next_fn.body, &ctx) {
+                if seen.insert(candidate.fingerprint()) {
+                    successors.push(candidate.clone());
                 }
-                _ => {} // Not a successor
             }
         }
 
@@ -696,16 +704,12 @@ impl SpecContext {
     /// Returns a map from branch_label to Footprint.
     pub fn branch_footprints(
         &self,
-    ) -> TranspileResult<
-        std::collections::BTreeMap<String, crate::modelcheck::por::Footprint>,
-    > {
+    ) -> TranspileResult<std::collections::BTreeMap<String, crate::modelcheck::por::Footprint>>
+    {
         let mut transition = build_transition_ir(&self.bundle.entrypoints.lnext)?;
         // Phase 38.17.4: Inline action calls so branch_footprint can see the
         // real s_.field assignments instead of opaque Predicate(Call(...)).
-        crate::modelcheck::ir::inline_action_calls(
-            &mut transition,
-            &self.bundle.spec_functions,
-        );
+        crate::modelcheck::ir::inline_action_calls(&mut transition, &self.bundle.spec_functions);
         // Phase 38.18.2: inline zero-arg helper calls (consistency with
         // the solver path).
         crate::modelcheck::ir::inline_zero_arg_helper_calls(
@@ -724,10 +728,7 @@ impl SpecContext {
     /// Create solver hooks with a call evaluator bound to this context.
     /// Must be called inline where the returned hooks are used, to satisfy lifetimes.
     pub fn make_solver_hooks_inline<'a>(
-        call_eval: &'a dyn Fn(
-            &crate::ast::Path,
-            &[RuntimeValue],
-        ) -> TranspileResult<RuntimeValue>,
+        call_eval: &'a dyn Fn(&crate::ast::Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>,
         bytecode_cache: Option<&'a crate::modelcheck::bytecode::BytecodeCache>,
     ) -> SolverHooks<'a> {
         SolverHooks {
@@ -775,14 +776,13 @@ impl SpecContext {
                 0,
             )
         };
-        let quant_eval =
-            |binding: &crate::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
-                crate::modelcheck::helpers::expand_quantifier_domain_for_binding(
-                    binding,
-                    &self.bundle.schema,
-                    &self.model_config,
-                )
-            };
+        let quant_eval = |binding: &crate::ast::Binding| -> TranspileResult<Vec<RuntimeValue>> {
+            crate::modelcheck::helpers::expand_quantifier_domain_for_binding(
+                binding,
+                &self.bundle.schema,
+                &self.model_config,
+            )
+        };
 
         let hooks = InvariantHooks {
             call_evaluator: Some(&call_eval),
@@ -891,9 +891,7 @@ pub fn hash_state(state: &RuntimeValue) -> StateFingerprint {
     StateFingerprint(state.fingerprint())
 }
 
-fn convert_por_footprint(
-    footprint: &crate::modelcheck::por::Footprint,
-) -> TransitionFootprint {
+fn convert_por_footprint(footprint: &crate::modelcheck::por::Footprint) -> TransitionFootprint {
     if footprint.reads_whole_state || footprint.writes_whole_state {
         // Keep whole-state branches conservative: empty footprint means
         // "treat as dependent with everything" in DPOR sleep-set propagation.
@@ -1049,9 +1047,7 @@ fn refine_transition_footprint_for_process_update(
 fn top_level_state_field<'a>(state: &'a RuntimeValue, field: &str) -> Option<&'a RuntimeValue> {
     let sym = crate::modelcheck::symbol::Symbol::intern(field);
     match state {
-        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => {
-            fields.get(&sym)
-        }
+        RuntimeValue::Struct { fields, .. } | RuntimeValue::Enum { fields, .. } => fields.get(&sym),
         _ => None,
     }
 }
@@ -1066,7 +1062,7 @@ fn detect_process_scoped_update_field(
     let successor_value = top_level_state_field(successor_state, field)?;
     match (current_value, successor_value) {
         (RuntimeValue::Map(current_entries), RuntimeValue::Map(successor_entries)) => {
-            let changed_pid = single_changed_map_process_key(&current_entries, &successor_entries)?;
+            let changed_pid = single_changed_map_process_key(current_entries, successor_entries)?;
             if changed_pid == process_id {
                 Some(changed_pid)
             } else {
@@ -1074,7 +1070,7 @@ fn detect_process_scoped_update_field(
             }
         }
         (RuntimeValue::Seq(current_items), RuntimeValue::Seq(successor_items)) => {
-            let changed_pid = single_changed_sequence_index(&current_items, &successor_items)?;
+            let changed_pid = single_changed_sequence_index(current_items, successor_items)?;
             if changed_pid == process_id {
                 Some(changed_pid)
             } else {
@@ -1093,6 +1089,7 @@ fn detect_process_scoped_update_field(
     }
 }
 
+#[allow(clippy::mutable_key_type)]
 fn single_changed_map_process_key(
     current_entries: &std::collections::BTreeMap<RuntimeValue, RuntimeValue>,
     successor_entries: &std::collections::BTreeMap<RuntimeValue, RuntimeValue>,
@@ -1263,13 +1260,12 @@ fn collect_process_id_candidates_from_delta(
             },
         ) => {
             for (field, current_value) in current_fields {
-                match successor_fields.get(field) {
-                    Some(successor_value) => collect_process_id_candidates_from_delta(
+                if let Some(successor_value) = successor_fields.get(field) {
+                    collect_process_id_candidates_from_delta(
                         current_value,
                         successor_value,
                         candidates,
-                    ),
-                    None => {}
+                    )
                 }
             }
         }
@@ -1277,7 +1273,7 @@ fn collect_process_id_candidates_from_delta(
             collect_pid_candidates_from_seq_delta(current_items, successor_items, candidates);
         }
         (RuntimeValue::Seq(current_items), RuntimeValue::Seq(successor_items)) => {
-            collect_pid_candidates_from_seq_delta(&current_items, &successor_items, candidates);
+            collect_pid_candidates_from_seq_delta(current_items, successor_items, candidates);
         }
         (RuntimeValue::Map(current_entries), RuntimeValue::Map(successor_entries)) => {
             for (key, current_value) in current_entries.iter() {
@@ -1369,7 +1365,9 @@ mod tests {
         Symbol::intern(s)
     }
 
-    fn nf(pairs: impl IntoIterator<Item = (Symbol, RuntimeValue)>) -> crate::modelcheck::value::NamedFields {
+    fn nf(
+        pairs: impl IntoIterator<Item = (Symbol, RuntimeValue)>,
+    ) -> crate::modelcheck::value::NamedFields {
         pairs.into_iter().collect()
     }
 
@@ -1661,7 +1659,9 @@ max_seq_len = 4
 
     #[test]
     fn test_refine_transition_footprint_process_scoped_map_update() {
-        let before = RuntimeValue::struct_value_sym("S", nf([(
+        let before = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("pc"),
                 RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
@@ -1673,8 +1673,11 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ]))),
-            )]));
-        let after = RuntimeValue::struct_value_sym("S", nf([(
+            )]),
+        );
+        let after = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("pc"),
                 RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
@@ -1686,7 +1689,8 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ]))),
-            )]));
+            )]),
+        );
 
         let base = TransitionFootprint {
             reads: ["pc".to_string()].into(),
@@ -1702,23 +1706,28 @@ max_seq_len = 4
 
     #[test]
     fn test_refine_transition_footprint_process_scoped_seq_update() {
-        let before = RuntimeValue::struct_value_sym("S", nf([(
+        let before = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("tickets"),
                 RuntimeValue::Seq(Arc::new(vec![
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(0),
                 ])),
-            )]));
-        let after = RuntimeValue::struct_value_sym("S", nf([(
+            )]),
+        );
+        let after = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("tickets"),
                 RuntimeValue::Seq(Arc::new(vec![
                     RuntimeValue::Int(0),
                     RuntimeValue::Int(1),
                     RuntimeValue::Int(0),
                 ])),
-            )]));
-
+            )]),
+        );
 
         let base = TransitionFootprint {
             reads: ["tickets".to_string()].into(),
@@ -1734,21 +1743,26 @@ max_seq_len = 4
 
     #[test]
     fn test_refine_transition_footprint_keeps_coarse_for_ambiguous_map_delta() {
-        let before = RuntimeValue::struct_value_sym("S", nf([(
+        let before = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("flag"),
                 RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(false)),
                     (RuntimeValue::Int(1), RuntimeValue::Bool(false)),
                 ]))),
-            )]));
-        let after = RuntimeValue::struct_value_sym("S", nf([(
+            )]),
+        );
+        let after = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("flag"),
                 RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (RuntimeValue::Int(0), RuntimeValue::Bool(true)),
                     (RuntimeValue::Int(1), RuntimeValue::Bool(true)),
                 ]))),
-            )]));
-
+            )]),
+        );
 
         let base = TransitionFootprint {
             reads: ["flag".to_string()].into(),
@@ -1764,14 +1778,20 @@ max_seq_len = 4
 
     #[test]
     fn test_derive_conservative_unknown_footprint_uses_top_level_fields() {
-        let before = RuntimeValue::struct_value_sym("S", nf([
+        let before = RuntimeValue::struct_value_sym(
+            "S",
+            nf([
                 (sym("x"), RuntimeValue::Int(1)),
                 (sym("y"), RuntimeValue::Int(2)),
-            ]));
-        let after = RuntimeValue::struct_value_sym("S", nf([
+            ]),
+        );
+        let after = RuntimeValue::struct_value_sym(
+            "S",
+            nf([
                 (sym("x"), RuntimeValue::Int(1)),
                 (sym("y"), RuntimeValue::Int(3)),
-            ]));
+            ]),
+        );
 
         let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
         assert_eq!(derived.reads, ["y".to_string()].into());
@@ -1791,7 +1811,9 @@ max_seq_len = 4
 
     #[test]
     fn test_derive_conservative_unknown_footprint_process_scoped_update_is_keyed() {
-        let before = RuntimeValue::struct_value_sym("S", nf([(
+        let before = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("pc"),
                 RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
@@ -1803,8 +1825,11 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ]))),
-            )]));
-        let after = RuntimeValue::struct_value_sym("S", nf([(
+            )]),
+        );
+        let after = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("pc"),
                 RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
@@ -1816,7 +1841,8 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ]))),
-            )]));
+            )]),
+        );
         let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
         assert_eq!(derived.reads, ["pc[0]".to_string()].into());
         assert_eq!(derived.writes, ["pc[0]".to_string()].into());
@@ -1824,7 +1850,9 @@ max_seq_len = 4
 
     #[test]
     fn test_derive_conservative_unknown_footprint_ambiguous_update_stays_coarse() {
-        let before = RuntimeValue::struct_value_sym("S", nf([(
+        let before = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("pc"),
                 RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
@@ -1836,8 +1864,11 @@ max_seq_len = 4
                         RuntimeValue::String("idle".to_string()),
                     ),
                 ]))),
-            )]));
-        let after = RuntimeValue::struct_value_sym("S", nf([(
+            )]),
+        );
+        let after = RuntimeValue::struct_value_sym(
+            "S",
+            nf([(
                 sym("pc"),
                 RuntimeValue::Map(Arc::new(std::collections::BTreeMap::from([
                     (
@@ -1849,7 +1880,8 @@ max_seq_len = 4
                         RuntimeValue::String("wait".to_string()),
                     ),
                 ]))),
-            )]));
+            )]),
+        );
 
         let derived = derive_conservative_unknown_footprint(&before, &after, ProcessId(0));
         assert_eq!(derived.reads, ["pc".to_string()].into());

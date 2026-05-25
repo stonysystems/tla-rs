@@ -5,7 +5,7 @@
 //! `docs/cross-engine-state-normalization.md`.
 
 use crate::modelcheck::graph::ExploredGraphIndex;
-use crate::modelcheck::value::{RuntimeValue, SetRepr};
+use crate::modelcheck::value::RuntimeValue;
 use std::collections::BTreeSet;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -192,15 +192,19 @@ impl ParityDebugExporter {
 mod tests {
     use super::*;
     use crate::modelcheck::graph::{GraphEdgeKey, GraphIndexStats, GraphNodeMetadata};
+    use crate::modelcheck::value::SetRepr;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
     fn make_state(fields: Vec<(&str, i128)>) -> RuntimeValue {
         RuntimeValue::struct_value_sym(
             "LState",
-            fields
-                .into_iter()
-                .map(|(k, v)| (crate::modelcheck::symbol::Symbol::intern(k), RuntimeValue::Int(v))),
+            fields.into_iter().map(|(k, v)| {
+                (
+                    crate::modelcheck::symbol::Symbol::intern(k),
+                    RuntimeValue::Int(v),
+                )
+            }),
         )
     }
 
@@ -224,13 +228,11 @@ mod tests {
 
     #[test]
     fn test_canonical_json_set_sorted() {
-        let set = RuntimeValue::Set(Arc::new(SetRepr::from_values(
-            vec![
-                RuntimeValue::Int(3),
-                RuntimeValue::Int(1),
-                RuntimeValue::Int(2),
-            ],
-        )));
+        let set = RuntimeValue::Set(Arc::new(SetRepr::from_values(vec![
+            RuntimeValue::Int(3),
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(2),
+        ])));
         let json = set.to_canonical_json();
         assert_eq!(json, serde_json::json!([1, 2, 3]));
     }

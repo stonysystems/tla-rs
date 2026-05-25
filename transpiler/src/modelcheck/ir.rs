@@ -147,7 +147,10 @@ pub fn discover_lnext_branches(next_fn: &SpecFunction) -> TranspileResult<Vec<Tr
             .filter_map(|binding| {
                 let name = binding.name().unwrap_or("_").to_string();
                 if seen.insert(name.clone()) {
-                    Some(ExistentialVarIr { name, ty: binding.ty })
+                    Some(ExistentialVarIr {
+                        name,
+                        ty: binding.ty,
+                    })
                 } else {
                     None // duplicate name — skip outer binding
                 }
@@ -331,7 +334,10 @@ fn expr_mentions_identifier(expr: &Expr, ident: &str) -> bool {
             expr_mentions_identifier(receiver, ident)
                 || args.iter().any(|arg| expr_mentions_identifier(arg, ident))
         }
-        Expr::Literal(_) | Expr::SeqEmpty | Expr::SetEmpty | Expr::MapEmpty
+        Expr::Literal(_)
+        | Expr::SeqEmpty
+        | Expr::SetEmpty
+        | Expr::MapEmpty
         | Expr::ConstantValue(_) => false,
     }
 }
@@ -407,7 +413,7 @@ fn distribute_conjunction_over_disjunction(items: &[Expr]) -> Option<Vec<Discove
         if branches.len() > 1
             || branches
                 .first()
-                .map_or(false, |b| !b.existential_bindings.is_empty())
+                .is_some_and(|b| !b.existential_bindings.is_empty())
         {
             disjunctive_items.push((idx, branches));
         }
@@ -474,40 +480,41 @@ pub fn inline_action_calls(
         let mut new_constraints = Vec::new();
         let mut any_inlined = false;
         for constraint in &branch.constraints {
-            if let BranchConstraintIr::Predicate { expr } = constraint {
-                if let Expr::Call { func, args } = expr {
-                    let func_name = func.segments.last().map(|s| s.as_str()).unwrap_or("");
-                    if let Some(spec_fn) = spec_functions.iter().find(|f| f.name == func_name) {
-                        let body = substitute_call_args(&spec_fn.body, &spec_fn.params, args);
-                        let (_, conjuncts) = flatten_branch_body(body);
-                        let inlined_constraints: Vec<BranchConstraintIr> = conjuncts
-                            .into_iter()
-                            .map(|c| {
-                                normalize_constraint(
-                                    c,
-                                    &current_state_param,
-                                    &next_state_param,
-                                    constants_param.as_deref(),
-                                )
-                            })
-                            .collect();
-                        let has_next_state_eq = inlined_constraints.iter().any(|c| {
-                            matches!(
+            if let BranchConstraintIr::Predicate {
+                expr: Expr::Call { func, args },
+            } = constraint
+            {
+                let func_name = func.segments.last().map(|s| s.as_str()).unwrap_or("");
+                if let Some(spec_fn) = spec_functions.iter().find(|f| f.name == func_name) {
+                    let body = substitute_call_args(&spec_fn.body, &spec_fn.params, args);
+                    let (_, conjuncts) = flatten_branch_body(body);
+                    let inlined_constraints: Vec<BranchConstraintIr> = conjuncts
+                        .into_iter()
+                        .map(|c| {
+                            normalize_constraint(
                                 c,
-                                BranchConstraintIr::Eq {
-                                    target: ConstraintTarget {
-                                        root: ConstraintRoot::NextState,
-                                        ..
-                                    },
-                                    ..
-                                }
+                                &current_state_param,
+                                &next_state_param,
+                                constants_param.as_deref(),
                             )
-                        });
-                        if has_next_state_eq {
-                            new_constraints.extend(inlined_constraints);
-                            any_inlined = true;
-                            continue;
-                        }
+                        })
+                        .collect();
+                    let has_next_state_eq = inlined_constraints.iter().any(|c| {
+                        matches!(
+                            c,
+                            BranchConstraintIr::Eq {
+                                target: ConstraintTarget {
+                                    root: ConstraintRoot::NextState,
+                                    ..
+                                },
+                                ..
+                            }
+                        )
+                    });
+                    if has_next_state_eq {
+                        new_constraints.extend(inlined_constraints);
+                        any_inlined = true;
+                        continue;
                     }
                 }
             }
@@ -551,16 +558,14 @@ pub fn inline_zero_arg_helper_calls(
         for constraint in &mut branch.constraints {
             match constraint {
                 BranchConstraintIr::Predicate { expr } => {
-                    let (new_expr, count) =
-                        inline_zero_arg_calls_in_expr(expr, &zero_arg_helpers);
+                    let (new_expr, count) = inline_zero_arg_calls_in_expr(expr, &zero_arg_helpers);
                     if count > 0 {
                         *expr = new_expr;
                         inlined_count += count;
                     }
                 }
                 BranchConstraintIr::Eq { value, .. } => {
-                    let (new_expr, count) =
-                        inline_zero_arg_calls_in_expr(value, &zero_arg_helpers);
+                    let (new_expr, count) = inline_zero_arg_calls_in_expr(value, &zero_arg_helpers);
                     if count > 0 {
                         *value = new_expr;
                         inlined_count += count;
@@ -581,27 +586,38 @@ fn contains_call_to_any(expr: &Expr, predicate: &dyn Fn(&str) -> bool) -> bool {
             }
             args.iter().any(|a| contains_call_to_any(a, predicate))
         }
-        Expr::Eq(l, r) | Expr::Ne(l, r) | Expr::Lt(l, r) | Expr::Le(l, r)
-        | Expr::Gt(l, r) | Expr::Ge(l, r) | Expr::Implies(l, r) => {
+        Expr::Eq(l, r)
+        | Expr::Ne(l, r)
+        | Expr::Lt(l, r)
+        | Expr::Le(l, r)
+        | Expr::Gt(l, r)
+        | Expr::Ge(l, r)
+        | Expr::Implies(l, r) => {
             contains_call_to_any(l, predicate) || contains_call_to_any(r, predicate)
         }
         Expr::Binary(l, _, r) => {
             contains_call_to_any(l, predicate) || contains_call_to_any(r, predicate)
         }
-        Expr::Conjunction(items) | Expr::Disjunction(items)
-        | Expr::SetLit(items) | Expr::SeqLit(items) => {
-            items.iter().any(|e| contains_call_to_any(e, predicate))
-        }
+        Expr::Conjunction(items)
+        | Expr::Disjunction(items)
+        | Expr::SetLit(items)
+        | Expr::SeqLit(items) => items.iter().any(|e| contains_call_to_any(e, predicate)),
         Expr::Not(inner) | Expr::View(inner) => contains_call_to_any(inner, predicate),
         Expr::Field(b, _) | Expr::Arrow(b, _) => contains_call_to_any(b, predicate),
         Expr::MethodCall { receiver, args, .. } => {
             contains_call_to_any(receiver, predicate)
                 || args.iter().any(|a| contains_call_to_any(a, predicate))
         }
-        Expr::If { cond, then_branch, else_branch } => {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             contains_call_to_any(cond, predicate)
                 || contains_call_to_any(then_branch, predicate)
-                || else_branch.as_ref().map_or(false, |e| contains_call_to_any(e, predicate))
+                || else_branch
+                    .as_ref()
+                    .is_some_and(|e| contains_call_to_any(e, predicate))
         }
         _ => false,
     }
@@ -675,7 +691,7 @@ fn inline_zero_arg_calls_in_expr(
         Expr::Binary(l, op, r) => {
             let (nl, c1) = inline_zero_arg_calls_in_expr(l, helpers);
             let (nr, c2) = inline_zero_arg_calls_in_expr(r, helpers);
-            (Expr::Binary(Box::new(nl), op.clone(), Box::new(nr)), c1 + c2)
+            (Expr::Binary(Box::new(nl), *op, Box::new(nr)), c1 + c2)
         }
         Expr::Conjunction(items) => {
             let mut total = 0;
@@ -713,7 +729,11 @@ fn inline_zero_arg_calls_in_expr(
             let (n, c) = inline_zero_arg_calls_in_expr(base, helpers);
             (Expr::Arrow(Box::new(n), field.clone()), c)
         }
-        Expr::MethodCall { receiver, method, args } => {
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => {
             let (nr, mut total) = inline_zero_arg_calls_in_expr(receiver, helpers);
             let new_args: Vec<Expr> = args
                 .iter()
@@ -732,7 +752,11 @@ fn inline_zero_arg_calls_in_expr(
                 total,
             )
         }
-        Expr::If { cond, then_branch, else_branch } => {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             let (nc, c1) = inline_zero_arg_calls_in_expr(cond, helpers);
             let (nt, c2) = inline_zero_arg_calls_in_expr(then_branch, helpers);
             let (ne, c3) = match else_branch {
@@ -784,11 +808,7 @@ fn inline_zero_arg_calls_in_expr(
 }
 
 /// Substitute formal parameters with actual argument expressions.
-fn substitute_call_args(
-    body: &Expr,
-    params: &[crate::ast::Parameter],
-    args: &[Expr],
-) -> Expr {
+fn substitute_call_args(body: &Expr, params: &[crate::ast::Parameter], args: &[Expr]) -> Expr {
     let subst: std::collections::BTreeMap<String, &Expr> = params
         .iter()
         .zip(args.iter())
@@ -797,10 +817,7 @@ fn substitute_call_args(
     substitute_expr(body, &subst)
 }
 
-fn substitute_expr(
-    expr: &Expr,
-    subst: &std::collections::BTreeMap<String, &Expr>,
-) -> Expr {
+fn substitute_expr(expr: &Expr, subst: &std::collections::BTreeMap<String, &Expr>) -> Expr {
     match expr {
         Expr::Ident(name) => {
             if let Some(replacement) = subst.get(name.as_str()) {
@@ -833,50 +850,58 @@ fn substitute_expr(
             Box::new(substitute_expr(lhs, subst)),
             Box::new(substitute_expr(rhs, subst)),
         ),
-        Expr::Conjunction(exprs) => Expr::Conjunction(
-            exprs.iter().map(|e| substitute_expr(e, subst)).collect(),
-        ),
-        Expr::Disjunction(exprs) => Expr::Disjunction(
-            exprs.iter().map(|e| substitute_expr(e, subst)).collect(),
-        ),
+        Expr::Conjunction(exprs) => {
+            Expr::Conjunction(exprs.iter().map(|e| substitute_expr(e, subst)).collect())
+        }
+        Expr::Disjunction(exprs) => {
+            Expr::Disjunction(exprs.iter().map(|e| substitute_expr(e, subst)).collect())
+        }
         Expr::Not(inner) => Expr::Not(Box::new(substitute_expr(inner, subst))),
         Expr::Binary(lhs, op, rhs) => Expr::Binary(
             Box::new(substitute_expr(lhs, subst)),
-            op.clone(),
+            *op,
             Box::new(substitute_expr(rhs, subst)),
         ),
-        Expr::Field(base, field) => Expr::Field(
-            Box::new(substitute_expr(base, subst)),
-            field.clone(),
-        ),
-        Expr::Arrow(base, field) => Expr::Arrow(
-            Box::new(substitute_expr(base, subst)),
-            field.clone(),
-        ),
+        Expr::Field(base, field) => {
+            Expr::Field(Box::new(substitute_expr(base, subst)), field.clone())
+        }
+        Expr::Arrow(base, field) => {
+            Expr::Arrow(Box::new(substitute_expr(base, subst)), field.clone())
+        }
         Expr::Call { func, args } => Expr::Call {
             func: func.clone(),
             args: args.iter().map(|a| substitute_expr(a, subst)).collect(),
         },
-        Expr::MethodCall { receiver, method, args } => Expr::MethodCall {
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => Expr::MethodCall {
             receiver: Box::new(substitute_expr(receiver, subst)),
             method: method.clone(),
             args: args.iter().map(|a| substitute_expr(a, subst)).collect(),
         },
-        Expr::If { cond, then_branch, else_branch } => Expr::If {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => Expr::If {
             cond: Box::new(substitute_expr(cond, subst)),
             then_branch: Box::new(substitute_expr(then_branch, subst)),
-            else_branch: else_branch.as_ref().map(|e| Box::new(substitute_expr(e, subst))),
+            else_branch: else_branch
+                .as_ref()
+                .map(|e| Box::new(substitute_expr(e, subst))),
         },
         Expr::Implies(lhs, rhs) => Expr::Implies(
             Box::new(substitute_expr(lhs, subst)),
             Box::new(substitute_expr(rhs, subst)),
         ),
-        Expr::SetLit(exprs) => Expr::SetLit(
-            exprs.iter().map(|e| substitute_expr(e, subst)).collect(),
-        ),
-        Expr::SeqLit(exprs) => Expr::SeqLit(
-            exprs.iter().map(|e| substitute_expr(e, subst)).collect(),
-        ),
+        Expr::SetLit(exprs) => {
+            Expr::SetLit(exprs.iter().map(|e| substitute_expr(e, subst)).collect())
+        }
+        Expr::SeqLit(exprs) => {
+            Expr::SeqLit(exprs.iter().map(|e| substitute_expr(e, subst)).collect())
+        }
         Expr::View(inner) => Expr::View(Box::new(substitute_expr(inner, subst))),
         _ => expr.clone(),
     }
@@ -908,7 +933,11 @@ fn flatten_branch_body_into(
             existential_bindings.extend(vars);
             flatten_branch_body_into(*body, existential_bindings, constraints);
         }
-        Expr::Forall { vars, triggers, body } => {
+        Expr::Forall {
+            vars,
+            triggers,
+            body,
+        } => {
             // Phase 38.18.7: lift q-independent conjuncts out of
             // `forall q : guard(q) ⇒ (A(q) ∧ B)` bodies. The translator
             // emits Bakery's `LEnter` with all `s_.field == expr`
@@ -1061,7 +1090,7 @@ fn extract_segments(expr: &Expr) -> Option<Vec<String>> {
 // ---------------------------------------------------------------------------
 
 use crate::modelcheck::value::{RuntimeValue, SetRepr};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// Try to evaluate an expression to a compile-time constant.
 /// Returns `Some(RuntimeValue)` if the expression is fully constant,
@@ -1077,8 +1106,9 @@ fn try_eval_constant(expr: &Expr) -> Option<RuntimeValue> {
             _ => None,
         },
         Expr::SetLit(items) => {
-            let vals: Vec<RuntimeValue> = items.iter()
-                .map(|item| try_eval_constant(item))
+            let vals: Vec<RuntimeValue> = items
+                .iter()
+                .map(try_eval_constant)
                 .collect::<Option<Vec<_>>>()?;
             Some(RuntimeValue::Set(Arc::new(SetRepr::from_values(vals))))
         }
@@ -1090,6 +1120,7 @@ fn try_eval_constant(expr: &Expr) -> Option<RuntimeValue> {
             Some(RuntimeValue::Seq(Arc::new(seq)))
         }
         Expr::MapLit(entries) => {
+            #[allow(clippy::mutable_key_type)]
             let mut map = BTreeMap::new();
             for (k, v) in entries {
                 map.insert(try_eval_constant(k)?, try_eval_constant(v)?);
@@ -1116,12 +1147,12 @@ fn constant_fold_expr(expr: Expr) -> Expr {
 
     // Otherwise, recursively fold children, then check again.
     match expr {
-        Expr::Conjunction(items) => Expr::Conjunction(
-            items.into_iter().map(constant_fold_expr).collect(),
-        ),
-        Expr::Disjunction(items) => Expr::Disjunction(
-            items.into_iter().map(constant_fold_expr).collect(),
-        ),
+        Expr::Conjunction(items) => {
+            Expr::Conjunction(items.into_iter().map(constant_fold_expr).collect())
+        }
+        Expr::Disjunction(items) => {
+            Expr::Disjunction(items.into_iter().map(constant_fold_expr).collect())
+        }
         Expr::SetLit(items) => {
             let folded: Vec<Expr> = items.into_iter().map(constant_fold_expr).collect();
             // After folding children, try again
@@ -1133,7 +1164,9 @@ fn constant_fold_expr(expr: Expr) -> Expr {
                         _ => unreachable!(),
                     })
                     .collect();
-                return Expr::ConstantValue(RuntimeValue::Set(Arc::new(SetRepr::from_values(vals))));
+                return Expr::ConstantValue(RuntimeValue::Set(Arc::new(SetRepr::from_values(
+                    vals,
+                ))));
             }
             Expr::SetLit(folded)
         }
@@ -1159,6 +1192,7 @@ fn constant_fold_expr(expr: Expr) -> Expr {
             if folded.iter().all(|(k, v)| {
                 matches!(k, Expr::ConstantValue(_)) && matches!(v, Expr::ConstantValue(_))
             }) {
+                #[allow(clippy::mutable_key_type)]
                 let map: BTreeMap<RuntimeValue, RuntimeValue> = folded
                     .into_iter()
                     .map(|(k, v)| match (k, v) {
@@ -1224,7 +1258,11 @@ fn constant_fold_expr(expr: Expr) -> Expr {
             Box::new(constant_fold_expr(*rhs)),
         ),
         Expr::Field(inner, name) => Expr::Field(Box::new(constant_fold_expr(*inner)), name),
-        Expr::MethodCall { receiver, method, args } => Expr::MethodCall {
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => Expr::MethodCall {
             receiver: Box::new(constant_fold_expr(*receiver)),
             method,
             args: args.into_iter().map(constant_fold_expr).collect(),
@@ -1233,17 +1271,29 @@ fn constant_fold_expr(expr: Expr) -> Expr {
             func,
             args: args.into_iter().map(constant_fold_expr).collect(),
         },
-        Expr::If { cond, then_branch, else_branch } => Expr::If {
+        Expr::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => Expr::If {
             cond: Box::new(constant_fold_expr(*cond)),
             then_branch: Box::new(constant_fold_expr(*then_branch)),
             else_branch: else_branch.map(|e| Box::new(constant_fold_expr(*e))),
         },
-        Expr::Let { binding, value, body } => Expr::Let {
+        Expr::Let {
+            binding,
+            value,
+            body,
+        } => Expr::Let {
             binding,
             value: Box::new(constant_fold_expr(*value)),
             body: Box::new(constant_fold_expr(*body)),
         },
-        Expr::Forall { vars, triggers, body } => Expr::Forall {
+        Expr::Forall {
+            vars,
+            triggers,
+            body,
+        } => Expr::Forall {
             vars,
             triggers,
             body: Box::new(constant_fold_expr(*body)),
@@ -1289,10 +1339,7 @@ fn constant_fold_expr(expr: Expr) -> Expr {
         Expr::Is(inner, variant) => Expr::Is(Box::new(constant_fold_expr(*inner)), variant),
         Expr::View(inner) => Expr::View(Box::new(constant_fold_expr(*inner))),
         Expr::Cast(inner, ty) => Expr::Cast(Box::new(constant_fold_expr(*inner)), ty),
-        Expr::Arrow(inner, field) => Expr::Arrow(
-            Box::new(constant_fold_expr(*inner)),
-            field,
-        ),
+        Expr::Arrow(inner, field) => Expr::Arrow(Box::new(constant_fold_expr(*inner)), field),
         // Terminals — already constant or identity
         other @ (Expr::Literal(_)
         | Expr::Ident(_)
@@ -1601,7 +1648,10 @@ mod tests {
     fn test_constant_fold_literal_bool() {
         let expr = Expr::Literal(Literal::Bool(true));
         let folded = constant_fold_expr(expr);
-        assert!(matches!(folded, Expr::ConstantValue(RuntimeValue::Bool(true))));
+        assert!(matches!(
+            folded,
+            Expr::ConstantValue(RuntimeValue::Bool(true))
+        ));
     }
 
     #[test]
@@ -1652,8 +1702,15 @@ mod tests {
         };
         let folded = constant_fold_expr(expr);
         match folded {
-            Expr::MethodCall { receiver, method, args } => {
-                assert!(matches!(*receiver, Expr::ConstantValue(RuntimeValue::Set(_))));
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                assert!(matches!(
+                    *receiver,
+                    Expr::ConstantValue(RuntimeValue::Set(_))
+                ));
                 assert_eq!(method, "contains");
                 assert!(matches!(&args[0], Expr::Ident(name) if name == "x"));
             }
@@ -1680,7 +1737,10 @@ mod tests {
         match folded {
             Expr::SetLit(items) => {
                 assert_eq!(items.len(), 2);
-                assert!(matches!(&items[0], Expr::ConstantValue(RuntimeValue::Int(1))));
+                assert!(matches!(
+                    &items[0],
+                    Expr::ConstantValue(RuntimeValue::Int(1))
+                ));
                 assert!(matches!(&items[1], Expr::Ident(name) if name == "x"));
             }
             other => panic!("Expected SetLit with mixed items, got {:?}", other),
@@ -1709,8 +1769,14 @@ mod tests {
     #[test]
     fn test_constant_fold_map_of_literals() {
         let expr = Expr::MapLit(vec![
-            (Expr::Literal(Literal::Int(1)), Expr::Literal(Literal::Bool(true))),
-            (Expr::Literal(Literal::Int(2)), Expr::Literal(Literal::Bool(false))),
+            (
+                Expr::Literal(Literal::Int(1)),
+                Expr::Literal(Literal::Bool(true)),
+            ),
+            (
+                Expr::Literal(Literal::Int(2)),
+                Expr::Literal(Literal::Bool(false)),
+            ),
         ]);
         let folded = constant_fold_expr(expr);
         match folded {

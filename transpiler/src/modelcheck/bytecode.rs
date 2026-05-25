@@ -117,21 +117,12 @@ pub enum Opcode {
     /// The VM iterates the domain (popped from stack), binds each element
     /// to `LocalIdx`, executes the body, and short-circuits on false.
     /// Pushes the final boolean result.
-    Forall {
-        var: LocalIdx,
-        body_len: JumpOffset,
-    },
+    Forall { var: LocalIdx, body_len: JumpOffset },
     /// Existential quantifier. Same as Forall but short-circuits on true.
-    Exists {
-        var: LocalIdx,
-        body_len: JumpOffset,
-    },
+    Exists { var: LocalIdx, body_len: JumpOffset },
     /// Choose: find a value satisfying the body predicate. Body is the
     /// next `body_len` instructions. Iterates domain, returns first match.
-    Choose {
-        var: LocalIdx,
-        body_len: JumpOffset,
-    },
+    Choose { var: LocalIdx, body_len: JumpOffset },
 
     // ── Termination ───────────────────────────────────────────────────
     /// Return the top-of-stack value from the current chunk.
@@ -174,6 +165,12 @@ pub struct Chunk {
     pub call_targets: Vec<Path>,
     /// Number of local variable slots needed.
     pub num_locals: u16,
+}
+
+impl Default for Chunk {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Chunk {
@@ -251,6 +248,12 @@ pub struct LocalTable {
     entries: Vec<(String, LocalIdx)>,
 }
 
+impl Default for LocalTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LocalTable {
     pub fn new() -> Self {
         Self {
@@ -318,8 +321,11 @@ pub fn compile_expr(
             } else if let Some((ty, variant)) = split_variant_path(name) {
                 // Enum variant path (e.g., "LTPCMessage::Prepare") — resolve
                 // to an Enum value at compile time.
-                let enum_val = RuntimeValue::enum_value(ty, variant, Vec::<(String, RuntimeValue)>::new())
-                    .map_err(|_| type_error(&format!("Failed to construct enum variant `{}`", name)))?;
+                let enum_val =
+                    RuntimeValue::enum_value(ty, variant, Vec::<(String, RuntimeValue)>::new())
+                        .map_err(|_| {
+                            type_error(&format!("Failed to construct enum variant `{}`", name))
+                        })?;
                 let ci = chunk.add_const(enum_val);
                 chunk.emit(Opcode::LoadConst(ci));
             } else {
@@ -597,7 +603,7 @@ pub fn compile_expr(
                 compile_expr(value_expr, chunk, locals)?;
             }
             let meta_idx = chunk.add_struct_update_meta(StructUpdateMeta {
-                type_name: name.as_ref().map(|n| crate::modelcheck::evaluator::path_name(n)),
+                type_name: name.as_ref().map(crate::modelcheck::evaluator::path_name),
                 update_field_names: fields.iter().map(|(f, _)| Symbol::intern(f)).collect(),
             });
             chunk.emit(Opcode::StructUpdate(meta_idx));
@@ -946,6 +952,7 @@ use crate::modelcheck::value::RuntimeCollectionBounds;
 
 /// Context for VM execution. Mirrors `EvalContext` but without the
 /// binding stack (the VM uses local slots instead).
+#[allow(clippy::type_complexity)]
 pub struct VmContext<'a> {
     pub bounds: RuntimeCollectionBounds,
     pub call_evaluator: Option<&'a dyn Fn(&Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>>,
@@ -1038,10 +1045,7 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
                     }
                     RuntimeValue::Map(entries) => {
                         stack.push(entries.get(&idx).cloned().ok_or_else(|| {
-                            type_error(&format!(
-                                "VM: map key `{}` not found",
-                                idx.canonical_key()
-                            ))
+                            type_error(&format!("VM: map key `{}` not found", idx.canonical_key()))
                         })?);
                     }
                     other => {
@@ -1170,9 +1174,7 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
                 let values: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
                 let base = stack.pop().unwrap();
                 match base {
-                    RuntimeValue::Struct {
-                        ty, mut fields, ..
-                    } => {
+                    RuntimeValue::Struct { ty, mut fields, .. } => {
                         for (sym, value) in meta.update_field_names.iter().zip(values) {
                             fields.insert(*sym, value);
                         }
@@ -1262,9 +1264,9 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
                 // quantifier_domain callback (same as the AST evaluator).
                 // For now, the VM cannot directly run quantifiers without
                 // a domain callback. The body is the next `body_len` ops.
-                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: forall without domain evaluator")
-                })?;
+                let domain_eval = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: forall without domain evaluator"))?;
                 // We need the binding info — but the VM doesn't have it.
                 // For now, use a dummy binding. The real integration (b.vi)
                 // will thread binding metadata through.
@@ -1287,9 +1289,9 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
             Opcode::Exists { var, body_len } => {
                 let body_len = *body_len as usize;
                 let var_slot = *var as usize;
-                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: exists without domain evaluator")
-                })?;
+                let domain_eval = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: exists without domain evaluator"))?;
                 let result = vm_eval_quantifier(
                     chunk,
                     ctx,
@@ -1306,9 +1308,9 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
             Opcode::Choose { var, body_len } => {
                 let body_len = *body_len as usize;
                 let var_slot = *var as usize;
-                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: choose without domain evaluator")
-                })?;
+                let domain_eval = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: choose without domain evaluator"))?;
                 let result = vm_eval_quantifier(
                     chunk,
                     ctx,
@@ -1325,14 +1327,18 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
 
             // ── Termination ───────────────────────────────────────────
             Opcode::Return => {
-                return stack.pop().ok_or_else(|| type_error("VM: return on empty stack"));
+                return stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: return on empty stack"));
             }
         }
         pc += 1;
     }
 
     // Fell off the end without Return
-    stack.pop().ok_or_else(|| type_error("VM: ended without value on stack"))
+    stack
+        .pop()
+        .ok_or_else(|| type_error("VM: ended without value on stack"))
 }
 
 enum QuantifierMode {
@@ -1342,6 +1348,7 @@ enum QuantifierMode {
 }
 
 /// Execute a quantifier body sub-slice for each domain value.
+#[allow(clippy::too_many_arguments)]
 fn vm_eval_quantifier(
     chunk: &Chunk,
     ctx: &VmContext<'_>,
@@ -1458,10 +1465,7 @@ fn vm_eval_body_slice(
                         if name == "tag" {
                             stack.push(base);
                         } else {
-                            return Err(type_error(&format!(
-                                "VM: field `.{}` not valid",
-                                name
-                            )));
+                            return Err(type_error(&format!("VM: field `.{}` not valid", name)));
                         }
                     }
                 }
@@ -1601,9 +1605,7 @@ fn vm_eval_body_slice(
                 let values: Vec<RuntimeValue> = stack.drain(stack.len() - n..).collect();
                 let base = stack.pop().unwrap();
                 match base {
-                    RuntimeValue::Struct {
-                        ty, mut fields, ..
-                    } => {
+                    RuntimeValue::Struct { ty, mut fields, .. } => {
                         for (sym, value) in meta.update_field_names.iter().zip(values) {
                             fields.insert(*sym, value);
                         }
@@ -1671,12 +1673,18 @@ fn vm_eval_body_slice(
             Opcode::Forall { var, body_len } => {
                 let bl = *body_len as usize;
                 let vs = *var as usize;
-                let de = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: forall without domain")
-                })?;
+                let de = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: forall without domain"))?;
                 let result = vm_eval_quantifier(
-                    &sub_chunk, ctx, locals, pc + 1, bl, vs,
-                    QuantifierMode::Forall, de,
+                    &sub_chunk,
+                    ctx,
+                    locals,
+                    pc + 1,
+                    bl,
+                    vs,
+                    QuantifierMode::Forall,
+                    de,
                 )?;
                 stack.push(result);
                 pc += bl;
@@ -1684,12 +1692,18 @@ fn vm_eval_body_slice(
             Opcode::Exists { var, body_len } => {
                 let bl = *body_len as usize;
                 let vs = *var as usize;
-                let de = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: exists without domain")
-                })?;
+                let de = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: exists without domain"))?;
                 let result = vm_eval_quantifier(
-                    &sub_chunk, ctx, locals, pc + 1, bl, vs,
-                    QuantifierMode::Exists, de,
+                    &sub_chunk,
+                    ctx,
+                    locals,
+                    pc + 1,
+                    bl,
+                    vs,
+                    QuantifierMode::Exists,
+                    de,
                 )?;
                 stack.push(result);
                 pc += bl;
@@ -1697,24 +1711,34 @@ fn vm_eval_body_slice(
             Opcode::Choose { var, body_len } => {
                 let bl = *body_len as usize;
                 let vs = *var as usize;
-                let de = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: choose without domain")
-                })?;
+                let de = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: choose without domain"))?;
                 let result = vm_eval_quantifier(
-                    &sub_chunk, ctx, locals, pc + 1, bl, vs,
-                    QuantifierMode::Choose, de,
+                    &sub_chunk,
+                    ctx,
+                    locals,
+                    pc + 1,
+                    bl,
+                    vs,
+                    QuantifierMode::Choose,
+                    de,
                 )?;
                 stack.push(result);
                 pc += bl;
             }
             Opcode::Return => {
-                return stack.pop().ok_or_else(|| type_error("VM: return on empty stack"));
+                return stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: return on empty stack"));
             }
         }
         pc += 1;
     }
 
-    stack.pop().ok_or_else(|| type_error("VM: body ended without value"))
+    stack
+        .pop()
+        .ok_or_else(|| type_error("VM: body ended without value"))
 }
 
 // ── Bytecode cache & integration ──────────────────────────────────────
@@ -1749,8 +1773,15 @@ pub fn compile_with_env(expr: &Expr, env_names: &[String]) -> TranspileResult<Co
 /// The AST is immutable during a model-check run, so pointer identity is
 /// a valid cache key. The cache also keys on the sorted set of environment
 /// variable names, since different call sites may provide different env vars.
+#[allow(clippy::type_complexity)]
 pub struct BytecodeCache {
     cache: RefCell<HashMap<(usize, Vec<String>), Rc<CompiledExpr>>>,
+}
+
+impl Default for BytecodeCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BytecodeCache {
@@ -1771,9 +1802,7 @@ impl BytecodeCache {
             return Ok(Rc::clone(compiled));
         }
         let compiled = Rc::new(compile_with_env(expr, env_names)?);
-        self.cache
-            .borrow_mut()
-            .insert(key, Rc::clone(&compiled));
+        self.cache.borrow_mut().insert(key, Rc::clone(&compiled));
         Ok(compiled)
     }
 }
@@ -1830,18 +1859,26 @@ pub fn vm_eval_with_locals(
             Opcode::LoadConst(ci) => stack.push(chunk.constants[*ci as usize].clone()),
             Opcode::LoadLocal(slot) => stack.push(locals[*slot as usize].clone()),
             Opcode::StoreLocal(slot) => locals[*slot as usize] = stack.pop().unwrap(),
-            Opcode::Pop => { stack.pop(); }
-            Opcode::Dup => { let top = stack.last().unwrap().clone(); stack.push(top); }
+            Opcode::Pop => {
+                stack.pop();
+            }
+            Opcode::Dup => {
+                let top = stack.last().unwrap().clone();
+                stack.push(top);
+            }
             Opcode::LoadField(sym) => {
                 let base = stack.pop().unwrap();
                 match base.field_sym(*sym).cloned() {
                     Some(value) => stack.push(value),
                     None => {
                         let name = sym.resolve();
-                        if name == "tag" { stack.push(base); }
-                        else {
+                        if name == "tag" {
+                            stack.push(base);
+                        } else {
                             return Err(type_error(&format!(
-                                "VM: field `.{}` not valid for `{}`", name, base.canonical_key()
+                                "VM: field `.{}` not valid for `{}`",
+                                name,
+                                base.canonical_key()
                             )));
                         }
                     }
@@ -1850,7 +1887,11 @@ pub fn vm_eval_with_locals(
             Opcode::LoadArrow(sym) => {
                 let base = stack.pop().unwrap();
                 stack.push(base.field_sym(*sym).cloned().ok_or_else(|| {
-                    type_error(&format!("VM: arrow `->{}` not valid for `{}`", sym.resolve(), base.canonical_key()))
+                    type_error(&format!(
+                        "VM: arrow `->{}` not valid for `{}`",
+                        sym.resolve(),
+                        base.canonical_key()
+                    ))
                 })?);
             }
             Opcode::GetIndex => {
@@ -1860,13 +1901,21 @@ pub fn vm_eval_with_locals(
                     RuntimeValue::Seq(items) => {
                         let pos = expect_index(&idx, "VM seq index")?;
                         stack.push(items.get(pos).cloned().ok_or_else(|| {
-                            type_error(&format!("VM: index {} out of bounds for len {}", pos, items.len()))
+                            type_error(&format!(
+                                "VM: index {} out of bounds for len {}",
+                                pos,
+                                items.len()
+                            ))
                         })?);
                     }
                     RuntimeValue::Tuple(items) => {
                         let pos = expect_index(&idx, "VM tuple index")?;
                         stack.push(items.get(pos).cloned().ok_or_else(|| {
-                            type_error(&format!("VM: index {} out of bounds for tuple len {}", pos, items.len()))
+                            type_error(&format!(
+                                "VM: index {} out of bounds for tuple len {}",
+                                pos,
+                                items.len()
+                            ))
                         })?);
                     }
                     RuntimeValue::Map(entries) => {
@@ -1874,75 +1923,166 @@ pub fn vm_eval_with_locals(
                             type_error(&format!("VM: map key `{}` not found", idx.canonical_key()))
                         })?);
                     }
-                    other => return Err(type_error(&format!("VM: index on non-indexable `{}`", other.canonical_key()))),
+                    other => {
+                        return Err(type_error(&format!(
+                            "VM: index on non-indexable `{}`",
+                            other.canonical_key()
+                        )))
+                    }
                 }
             }
-            Opcode::Eq => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(l == r)); }
-            Opcode::Ne => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(l != r)); }
-            Opcode::Lt => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(expect_number(&l, "VM lt lhs")? < expect_number(&r, "VM lt rhs")?)); }
-            Opcode::Le => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(expect_number(&l, "VM le lhs")? <= expect_number(&r, "VM le rhs")?)); }
-            Opcode::Gt => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(expect_number(&l, "VM gt lhs")? > expect_number(&r, "VM gt rhs")?)); }
-            Opcode::Ge => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(expect_number(&l, "VM ge lhs")? >= expect_number(&r, "VM ge rhs")?)); }
-            Opcode::BinaryOp(op) => { let r = stack.pop().unwrap(); let l = stack.pop().unwrap(); stack.push(eval_binary(&l, *op, &r)?); }
-            Opcode::UnaryNot => { let v = stack.pop().unwrap(); stack.push(RuntimeValue::Bool(!expect_bool(&v, "VM not")?)); }
-            Opcode::UnaryNeg => { let v = stack.pop().unwrap(); stack.push(RuntimeValue::Int(-expect_number(&v, "VM neg")?)); }
+            Opcode::Eq => {
+                let r = stack.pop().unwrap();
+                let l = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(l == r));
+            }
+            Opcode::Ne => {
+                let r = stack.pop().unwrap();
+                let l = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(l != r));
+            }
+            Opcode::Lt => {
+                let r = stack.pop().unwrap();
+                let l = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(
+                    expect_number(&l, "VM lt lhs")? < expect_number(&r, "VM lt rhs")?,
+                ));
+            }
+            Opcode::Le => {
+                let r = stack.pop().unwrap();
+                let l = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(
+                    expect_number(&l, "VM le lhs")? <= expect_number(&r, "VM le rhs")?,
+                ));
+            }
+            Opcode::Gt => {
+                let r = stack.pop().unwrap();
+                let l = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(
+                    expect_number(&l, "VM gt lhs")? > expect_number(&r, "VM gt rhs")?,
+                ));
+            }
+            Opcode::Ge => {
+                let r = stack.pop().unwrap();
+                let l = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(
+                    expect_number(&l, "VM ge lhs")? >= expect_number(&r, "VM ge rhs")?,
+                ));
+            }
+            Opcode::BinaryOp(op) => {
+                let r = stack.pop().unwrap();
+                let l = stack.pop().unwrap();
+                stack.push(eval_binary(&l, *op, &r)?);
+            }
+            Opcode::UnaryNot => {
+                let v = stack.pop().unwrap();
+                stack.push(RuntimeValue::Bool(!expect_bool(&v, "VM not")?));
+            }
+            Opcode::UnaryNeg => {
+                let v = stack.pop().unwrap();
+                stack.push(RuntimeValue::Int(-expect_number(&v, "VM neg")?));
+            }
             Opcode::Is(variant_sym) => {
                 let val = stack.pop().unwrap();
                 let variant_name = variant_sym.resolve();
-                let result = match &val { RuntimeValue::Enum { variant, .. } => *variant == variant_name, _ => false };
+                let result = match &val {
+                    RuntimeValue::Enum { variant, .. } => *variant == variant_name,
+                    _ => false,
+                };
                 stack.push(RuntimeValue::Bool(result));
             }
-            Opcode::SetLit(n) => { let n = *n as usize; let items: Vec<_> = stack.drain(stack.len()-n..).collect(); stack.push(RuntimeValue::set_bounded(items, &ctx.bounds)?); }
-            Opcode::SeqLit(n) => { let n = *n as usize; let items: Vec<_> = stack.drain(stack.len()-n..).collect(); stack.push(RuntimeValue::seq_bounded(items, &ctx.bounds)?); }
+            Opcode::SetLit(n) => {
+                let n = *n as usize;
+                let items: Vec<_> = stack.drain(stack.len() - n..).collect();
+                stack.push(RuntimeValue::set_bounded(items, &ctx.bounds)?);
+            }
+            Opcode::SeqLit(n) => {
+                let n = *n as usize;
+                let items: Vec<_> = stack.drain(stack.len() - n..).collect();
+                stack.push(RuntimeValue::seq_bounded(items, &ctx.bounds)?);
+            }
             Opcode::MapLit(n) => {
                 let n = *n as usize;
-                let pairs: Vec<_> = stack.drain(stack.len()-2*n..).collect();
+                let pairs: Vec<_> = stack.drain(stack.len() - 2 * n..).collect();
+                #[allow(clippy::mutable_key_type)]
                 let mut entries = std::collections::BTreeMap::new();
-                for pair in pairs.chunks_exact(2) { entries.insert(pair[0].clone(), pair[1].clone()); }
+                for pair in pairs.chunks_exact(2) {
+                    entries.insert(pair[0].clone(), pair[1].clone());
+                }
                 stack.push(RuntimeValue::map_bounded(entries, &ctx.bounds)?);
             }
             Opcode::StructNew(meta_idx) => {
                 let meta = &chunk.struct_metas[*meta_idx as usize];
                 let n = meta.field_names.len();
-                let values: Vec<_> = stack.drain(stack.len()-n..).collect();
+                let values: Vec<_> = stack.drain(stack.len() - n..).collect();
                 let type_name = &meta.type_name;
                 if let Some((ty, variant)) = split_variant_path(type_name) {
-                    let fields: Vec<(String, RuntimeValue)> = meta.field_names.iter().zip(values).map(|(s,v)| (s.resolve(),v)).collect();
+                    let fields: Vec<(String, RuntimeValue)> = meta
+                        .field_names
+                        .iter()
+                        .zip(values)
+                        .map(|(s, v)| (s.resolve(), v))
+                        .collect();
                     stack.push(RuntimeValue::enum_value(ty, variant, fields)?);
                 } else {
-                    let fields: Vec<(String, RuntimeValue)> = meta.field_names.iter().zip(values).map(|(s,v)| (s.resolve(),v)).collect();
+                    let fields: Vec<(String, RuntimeValue)> = meta
+                        .field_names
+                        .iter()
+                        .zip(values)
+                        .map(|(s, v)| (s.resolve(), v))
+                        .collect();
                     stack.push(RuntimeValue::struct_value(type_name.clone(), fields)?);
                 }
             }
             Opcode::StructUpdate(meta_idx) => {
                 let meta = &chunk.struct_update_metas[*meta_idx as usize];
                 let n = meta.update_field_names.len();
-                let vals: Vec<_> = stack.drain(stack.len()-n..).collect();
+                let vals: Vec<_> = stack.drain(stack.len() - n..).collect();
                 let base = stack.pop().unwrap();
                 match base {
                     RuntimeValue::Struct { ty, mut fields, .. } => {
-                        for (sym, value) in meta.update_field_names.iter().zip(vals) { fields.insert(*sym, value); }
+                        for (sym, value) in meta.update_field_names.iter().zip(vals) {
+                            fields.insert(*sym, value);
+                        }
                         stack.push(RuntimeValue::struct_value_sym(ty, fields));
                     }
-                    RuntimeValue::Enum { ty, variant, mut fields, .. } => {
-                        for (sym, value) in meta.update_field_names.iter().zip(vals) { fields.insert(*sym, value); }
+                    RuntimeValue::Enum {
+                        ty,
+                        variant,
+                        mut fields,
+                        ..
+                    } => {
+                        for (sym, value) in meta.update_field_names.iter().zip(vals) {
+                            fields.insert(*sym, value);
+                        }
                         stack.push(RuntimeValue::enum_value_sym(ty, variant, fields));
                     }
-                    other => return Err(type_error(&format!("VM: struct update on non-struct `{}`", other.canonical_key()))),
+                    other => {
+                        return Err(type_error(&format!(
+                            "VM: struct update on non-struct `{}`",
+                            other.canonical_key()
+                        )))
+                    }
                 }
             }
             Opcode::JumpIfFalse(offset) => {
                 let cond = stack.pop().unwrap();
-                if !expect_bool(&cond, "VM jump_if_false")? { pc += *offset as usize; }
+                if !expect_bool(&cond, "VM jump_if_false")? {
+                    pc += *offset as usize;
+                }
             }
             Opcode::JumpIfTrue(offset) => {
                 let cond = stack.pop().unwrap();
-                if expect_bool(&cond, "VM jump_if_true")? { pc += *offset as usize; }
+                if expect_bool(&cond, "VM jump_if_true")? {
+                    pc += *offset as usize;
+                }
             }
-            Opcode::Jump(offset) => { pc += *offset as usize; }
+            Opcode::Jump(offset) => {
+                pc += *offset as usize;
+            }
             Opcode::Call(target_idx, argc) => {
                 let argc = *argc as usize;
-                let args: Vec<_> = stack.drain(stack.len()-argc..).collect();
+                let args: Vec<_> = stack.drain(stack.len() - argc..).collect();
                 let func = &chunk.call_targets[*target_idx as usize];
                 if let Some(result) = eval_builtin_static_call(func, &args, ctx.bounds)? {
                     stack.push(result);
@@ -1957,29 +2097,38 @@ pub fn vm_eval_with_locals(
             }
             Opcode::MethodCall(method_sym, argc) => {
                 let argc = *argc as usize;
-                let args: Vec<_> = stack.drain(stack.len()-argc..).collect();
+                let args: Vec<_> = stack.drain(stack.len() - argc..).collect();
                 let receiver = stack.pop().unwrap();
                 let method_name = method_sym.resolve();
-                if let Some(result) = eval_builtin_method(&receiver, &method_name, &args, ctx.bounds)? {
+                if let Some(result) =
+                    eval_builtin_method(&receiver, &method_name, &args, ctx.bounds)?
+                {
                     stack.push(result);
                 } else if let Some(evaluator) = ctx.method_evaluator {
                     stack.push(evaluator(&receiver, &method_name, &args)?);
                 } else {
                     return Err(type_error(&format!(
                         "VM: method `.{}()` not supported on `{}`",
-                        method_name, receiver.canonical_key()
+                        method_name,
+                        receiver.canonical_key()
                     )));
                 }
             }
             Opcode::Forall { var, body_len } => {
                 let body_len_val = *body_len as usize;
                 let var_slot = *var as usize;
-                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: forall without domain evaluator")
-                })?;
+                let domain_eval = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: forall without domain evaluator"))?;
                 let result = vm_eval_quantifier(
-                    chunk, ctx, &mut locals, pc + 1, body_len_val, var_slot,
-                    QuantifierMode::Forall, domain_eval,
+                    chunk,
+                    ctx,
+                    &mut locals,
+                    pc + 1,
+                    body_len_val,
+                    var_slot,
+                    QuantifierMode::Forall,
+                    domain_eval,
                 )?;
                 stack.push(result);
                 pc += body_len_val;
@@ -1987,12 +2136,18 @@ pub fn vm_eval_with_locals(
             Opcode::Exists { var, body_len } => {
                 let body_len_val = *body_len as usize;
                 let var_slot = *var as usize;
-                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: exists without domain evaluator")
-                })?;
+                let domain_eval = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: exists without domain evaluator"))?;
                 let result = vm_eval_quantifier(
-                    chunk, ctx, &mut locals, pc + 1, body_len_val, var_slot,
-                    QuantifierMode::Exists, domain_eval,
+                    chunk,
+                    ctx,
+                    &mut locals,
+                    pc + 1,
+                    body_len_val,
+                    var_slot,
+                    QuantifierMode::Exists,
+                    domain_eval,
                 )?;
                 stack.push(result);
                 pc += body_len_val;
@@ -2000,24 +2155,34 @@ pub fn vm_eval_with_locals(
             Opcode::Choose { var, body_len } => {
                 let body_len_val = *body_len as usize;
                 let var_slot = *var as usize;
-                let domain_eval = ctx.quantifier_domain.ok_or_else(|| {
-                    type_error("VM: choose without domain evaluator")
-                })?;
+                let domain_eval = ctx
+                    .quantifier_domain
+                    .ok_or_else(|| type_error("VM: choose without domain evaluator"))?;
                 let result = vm_eval_quantifier(
-                    chunk, ctx, &mut locals, pc + 1, body_len_val, var_slot,
-                    QuantifierMode::Choose, domain_eval,
+                    chunk,
+                    ctx,
+                    &mut locals,
+                    pc + 1,
+                    body_len_val,
+                    var_slot,
+                    QuantifierMode::Choose,
+                    domain_eval,
                 )?;
                 stack.push(result);
                 pc += body_len_val;
             }
             Opcode::Return => {
-                return stack.pop().ok_or_else(|| type_error("VM: return on empty stack"));
+                return stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: return on empty stack"));
             }
         }
         pc += 1;
     }
 
-    stack.pop().ok_or_else(|| type_error("VM: body ended without value"))
+    stack
+        .pop()
+        .ok_or_else(|| type_error("VM: body ended without value"))
 }
 
 #[cfg(test)]
@@ -2152,7 +2317,10 @@ mod tests {
     fn test_compile_constant_value() {
         let expr = Expr::ConstantValue(RuntimeValue::String("hello".to_string()));
         let chunk = compile(&expr).unwrap();
-        assert_eq!(chunk.constants[0], RuntimeValue::String("hello".to_string()));
+        assert_eq!(
+            chunk.constants[0],
+            RuntimeValue::String("hello".to_string())
+        );
     }
 
     #[test]
@@ -2175,24 +2343,24 @@ mod tests {
 
     #[test]
     fn test_compile_field_access() {
-        let expr = Expr::Field(
-            Box::new(Expr::Ident("s".to_string())),
-            "name".to_string(),
-        );
+        let expr = Expr::Field(Box::new(Expr::Ident("s".to_string())), "name".to_string());
         let chunk = compile(&expr).unwrap();
         // Ident "s" → LoadConst (unresolved ident), then LoadField
-        let has_load_field = chunk.ops.iter().any(|op| matches!(op, Opcode::LoadField(_)));
+        let has_load_field = chunk
+            .ops
+            .iter()
+            .any(|op| matches!(op, Opcode::LoadField(_)));
         assert!(has_load_field);
     }
 
     #[test]
     fn test_compile_arrow_access() {
-        let expr = Expr::Arrow(
-            Box::new(Expr::Ident("e".to_string())),
-            "value".to_string(),
-        );
+        let expr = Expr::Arrow(Box::new(Expr::Ident("e".to_string())), "value".to_string());
         let chunk = compile(&expr).unwrap();
-        let has_arrow = chunk.ops.iter().any(|op| matches!(op, Opcode::LoadArrow(_)));
+        let has_arrow = chunk
+            .ops
+            .iter()
+            .any(|op| matches!(op, Opcode::LoadArrow(_)));
         assert!(has_arrow);
     }
 
@@ -2271,10 +2439,7 @@ mod tests {
 
     #[test]
     fn test_compile_is() {
-        let expr = Expr::Is(
-            Box::new(Expr::Ident("msg".to_string())),
-            "Data".to_string(),
-        );
+        let expr = Expr::Is(Box::new(Expr::Ident("msg".to_string())), "Data".to_string());
         let chunk = compile(&expr).unwrap();
         let has_is = chunk.ops.iter().any(|op| matches!(op, Opcode::Is(_)));
         assert!(has_is);
@@ -2397,9 +2562,18 @@ mod tests {
 
     #[test]
     fn test_compile_empty_collections() {
-        assert!(compile(&Expr::SetEmpty).unwrap().ops.contains(&Opcode::SetLit(0)));
-        assert!(compile(&Expr::SeqEmpty).unwrap().ops.contains(&Opcode::SeqLit(0)));
-        assert!(compile(&Expr::MapEmpty).unwrap().ops.contains(&Opcode::MapLit(0)));
+        assert!(compile(&Expr::SetEmpty)
+            .unwrap()
+            .ops
+            .contains(&Opcode::SetLit(0)));
+        assert!(compile(&Expr::SeqEmpty)
+            .unwrap()
+            .ops
+            .contains(&Opcode::SeqLit(0)));
+        assert!(compile(&Expr::MapEmpty)
+            .unwrap()
+            .ops
+            .contains(&Opcode::MapLit(0)));
     }
 
     #[test]
@@ -2448,10 +2622,7 @@ mod tests {
             .ops
             .iter()
             .any(|op| matches!(op, Opcode::JumpIfFalse(_)));
-        let has_jmp = chunk
-            .ops
-            .iter()
-            .any(|op| matches!(op, Opcode::Jump(_)));
+        let has_jmp = chunk.ops.iter().any(|op| matches!(op, Opcode::Jump(_)));
         assert!(has_jif);
         assert!(has_jmp);
     }
@@ -3196,7 +3367,11 @@ mod tests {
         assert_eq!(compiled.env_slots[0].0, "x");
         assert_eq!(compiled.env_slots[1].0, "y");
         // Both should be LoadLocal, not LoadConst (unresolved)
-        assert!(compiled.chunk.ops.iter().any(|op| matches!(op, Opcode::LoadLocal(_))));
+        assert!(compiled
+            .chunk
+            .ops
+            .iter()
+            .any(|op| matches!(op, Opcode::LoadLocal(_))));
     }
 
     #[test]
@@ -3212,7 +3387,11 @@ mod tests {
         env.insert("x".to_string(), RuntimeValue::Int(10));
         env.insert("y".to_string(), RuntimeValue::Int(20));
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: None,
@@ -3254,12 +3433,17 @@ mod tests {
         let state = RuntimeValue::struct_value(
             "State".to_string(),
             vec![("value".to_string(), RuntimeValue::Int(99))],
-        ).unwrap();
+        )
+        .unwrap();
 
         let mut env = std::collections::BTreeMap::new();
         env.insert("s".to_string(), state);
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: None,
@@ -3273,19 +3457,31 @@ mod tests {
         let env_names = vec!["s".to_string(), "s_".to_string()];
         // s.x == s_.x
         let expr = Expr::Eq(
-            Box::new(Expr::Field(Box::new(Expr::Ident("s".to_string())), "x".to_string())),
-            Box::new(Expr::Field(Box::new(Expr::Ident("s_".to_string())), "x".to_string())),
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s".to_string())),
+                "x".to_string(),
+            )),
+            Box::new(Expr::Field(
+                Box::new(Expr::Ident("s_".to_string())),
+                "x".to_string(),
+            )),
         );
         let compiled = compile_with_env(&expr, &env_names).unwrap();
 
-        let s = RuntimeValue::struct_value("S", vec![("x".to_string(), RuntimeValue::Int(5))]).unwrap();
-        let s_ = RuntimeValue::struct_value("S", vec![("x".to_string(), RuntimeValue::Int(5))]).unwrap();
+        let s =
+            RuntimeValue::struct_value("S", vec![("x".to_string(), RuntimeValue::Int(5))]).unwrap();
+        let s_ =
+            RuntimeValue::struct_value("S", vec![("x".to_string(), RuntimeValue::Int(5))]).unwrap();
 
         let mut env = std::collections::BTreeMap::new();
         env.insert("s".to_string(), s);
         env.insert("s_".to_string(), s_);
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: None,
@@ -3299,7 +3495,10 @@ mod tests {
     #[test]
     fn test_vm_literal_string() {
         let expr = Expr::Literal(Literal::String("hello".to_string()));
-        assert_eq!(eval(&expr).unwrap(), RuntimeValue::String("hello".to_string()));
+        assert_eq!(
+            eval(&expr).unwrap(),
+            RuntimeValue::String("hello".to_string())
+        );
     }
 
     #[test]
@@ -3361,25 +3560,18 @@ mod tests {
 
     #[test]
     fn test_vm_is_variant_true() {
-        let enum_val = RuntimeValue::enum_value(
-            "Color", "Red", Vec::<(String, RuntimeValue)>::new(),
-        ).unwrap();
-        let expr = Expr::Is(
-            Box::new(Expr::ConstantValue(enum_val)),
-            "Red".to_string(),
-        );
+        let enum_val =
+            RuntimeValue::enum_value("Color", "Red", Vec::<(String, RuntimeValue)>::new()).unwrap();
+        let expr = Expr::Is(Box::new(Expr::ConstantValue(enum_val)), "Red".to_string());
         assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(true));
     }
 
     #[test]
     fn test_vm_is_variant_false() {
-        let enum_val = RuntimeValue::enum_value(
-            "Color", "Blue", Vec::<(String, RuntimeValue)>::new(),
-        ).unwrap();
-        let expr = Expr::Is(
-            Box::new(Expr::ConstantValue(enum_val)),
-            "Red".to_string(),
-        );
+        let enum_val =
+            RuntimeValue::enum_value("Color", "Blue", Vec::<(String, RuntimeValue)>::new())
+                .unwrap();
+        let expr = Expr::Is(Box::new(Expr::ConstantValue(enum_val)), "Red".to_string());
         assert_eq!(eval(&expr).unwrap(), RuntimeValue::Bool(false));
     }
 
@@ -3388,13 +3580,13 @@ mod tests {
         // Create struct then access via arrow: (Point { x: 42, y: 0 })->x
         let s = RuntimeValue::struct_value(
             "Point",
-            vec![("x".to_string(), RuntimeValue::Int(42)),
-                 ("y".to_string(), RuntimeValue::Int(0))],
-        ).unwrap();
-        let expr = Expr::Arrow(
-            Box::new(Expr::ConstantValue(s)),
-            "x".to_string(),
-        );
+            vec![
+                ("x".to_string(), RuntimeValue::Int(42)),
+                ("y".to_string(), RuntimeValue::Int(0)),
+            ],
+        )
+        .unwrap();
+        let expr = Expr::Arrow(Box::new(Expr::ConstantValue(s)), "x".to_string());
         assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(42));
     }
 
@@ -3403,8 +3595,14 @@ mod tests {
         // {1 |-> "a", 2 |-> "b"}[2]
         let expr = Expr::Index(
             Box::new(Expr::MapLit(vec![
-                (Expr::Literal(Literal::Int(1)), Expr::Literal(Literal::String("a".to_string()))),
-                (Expr::Literal(Literal::Int(2)), Expr::Literal(Literal::String("b".to_string()))),
+                (
+                    Expr::Literal(Literal::Int(1)),
+                    Expr::Literal(Literal::String("a".to_string())),
+                ),
+                (
+                    Expr::Literal(Literal::Int(2)),
+                    Expr::Literal(Literal::String("b".to_string())),
+                ),
             ])),
             Box::new(Expr::Literal(Literal::Int(2))),
         );
@@ -3414,9 +3612,18 @@ mod tests {
     #[test]
     fn test_vm_map_multiple_entries() {
         let expr = Expr::MapLit(vec![
-            (Expr::Literal(Literal::Int(1)), Expr::Literal(Literal::Bool(true))),
-            (Expr::Literal(Literal::Int(2)), Expr::Literal(Literal::Bool(false))),
-            (Expr::Literal(Literal::Int(3)), Expr::Literal(Literal::Bool(true))),
+            (
+                Expr::Literal(Literal::Int(1)),
+                Expr::Literal(Literal::Bool(true)),
+            ),
+            (
+                Expr::Literal(Literal::Int(2)),
+                Expr::Literal(Literal::Bool(false)),
+            ),
+            (
+                Expr::Literal(Literal::Int(3)),
+                Expr::Literal(Literal::Bool(true)),
+            ),
         ]);
         let result = eval(&expr).unwrap();
         match result {
@@ -3433,9 +3640,12 @@ mod tests {
         // Point { x: 1, y: 2 } then update x to 99
         let base = RuntimeValue::struct_value(
             "Point",
-            vec![("x".to_string(), RuntimeValue::Int(1)),
-                 ("y".to_string(), RuntimeValue::Int(2))],
-        ).unwrap();
+            vec![
+                ("x".to_string(), RuntimeValue::Int(1)),
+                ("y".to_string(), RuntimeValue::Int(2)),
+            ],
+        )
+        .unwrap();
         let expr = Expr::StructUpdate {
             name: Some(Path::new(vec!["Point".to_string()])),
             base: Box::new(Expr::ConstantValue(base)),
@@ -3469,7 +3679,10 @@ mod tests {
                 },
             ],
         };
-        assert_eq!(eval(&expr).unwrap(), RuntimeValue::String("two".to_string()));
+        assert_eq!(
+            eval(&expr).unwrap(),
+            RuntimeValue::String("two".to_string())
+        );
     }
 
     #[test]
@@ -3497,8 +3710,11 @@ mod tests {
     fn test_vm_match_variant() {
         use crate::ast::MatchArm;
         let enum_val = RuntimeValue::enum_value(
-            "Option", "Some", vec![("_0".to_string(), RuntimeValue::Int(42))],
-        ).unwrap();
+            "Option",
+            "Some",
+            vec![("_0".to_string(), RuntimeValue::Int(42))],
+        )
+        .unwrap();
         let expr = Expr::Match {
             scrutinee: Box::new(Expr::ConstantValue(enum_val)),
             arms: vec![
@@ -3559,11 +3775,19 @@ mod tests {
         };
         let chunk = compile(&expr).unwrap();
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: Some(&|_binding| {
-                Ok(vec![RuntimeValue::Int(1), RuntimeValue::Int(2), RuntimeValue::Int(3)])
+                Ok(vec![
+                    RuntimeValue::Int(1),
+                    RuntimeValue::Int(2),
+                    RuntimeValue::Int(3),
+                ])
             }),
         };
         assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::Bool(true));
@@ -3586,11 +3810,19 @@ mod tests {
         };
         let chunk = compile(&expr).unwrap();
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: Some(&|_binding| {
-                Ok(vec![RuntimeValue::Int(1), RuntimeValue::Int(-1), RuntimeValue::Int(2)])
+                Ok(vec![
+                    RuntimeValue::Int(1),
+                    RuntimeValue::Int(-1),
+                    RuntimeValue::Int(2),
+                ])
             }),
         };
         assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::Bool(false));
@@ -3612,11 +3844,19 @@ mod tests {
         };
         let chunk = compile(&expr).unwrap();
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: Some(&|_binding| {
-                Ok(vec![RuntimeValue::Int(-1), RuntimeValue::Int(-2), RuntimeValue::Int(3)])
+                Ok(vec![
+                    RuntimeValue::Int(-1),
+                    RuntimeValue::Int(-2),
+                    RuntimeValue::Int(3),
+                ])
             }),
         };
         assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::Bool(true));
@@ -3638,7 +3878,11 @@ mod tests {
         };
         let chunk = compile(&expr).unwrap();
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: Some(&|_binding| {
@@ -3657,7 +3901,11 @@ mod tests {
         };
         let chunk = compile(&expr).unwrap();
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: Some(&|path, args| {
                 let name = path.segments.last().unwrap();
                 if name == "abs" {
@@ -3677,13 +3925,19 @@ mod tests {
     fn test_vm_method_call_with_evaluator() {
         // "hello".to_upper() → "HELLO" via method_evaluator
         let expr = Expr::MethodCall {
-            receiver: Box::new(Expr::ConstantValue(RuntimeValue::String("hello".to_string()))),
+            receiver: Box::new(Expr::ConstantValue(RuntimeValue::String(
+                "hello".to_string(),
+            ))),
             method: "to_upper".to_string(),
             args: vec![],
         };
         let chunk = compile(&expr).unwrap();
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: Some(&|recv, method, _args| {
                 if method == "to_upper" {
@@ -3695,20 +3949,20 @@ mod tests {
             }),
             quantifier_domain: None,
         };
-        assert_eq!(vm_eval(&chunk, &ctx).unwrap(), RuntimeValue::String("HELLO".to_string()));
+        assert_eq!(
+            vm_eval(&chunk, &ctx).unwrap(),
+            RuntimeValue::String("HELLO".to_string())
+        );
     }
 
     #[test]
     fn test_vm_nested_field_access() {
         // (Outer { inner: Inner { val: 42 } }).inner.val
-        let inner = RuntimeValue::struct_value(
-            "Inner",
-            vec![("val".to_string(), RuntimeValue::Int(42))],
-        ).unwrap();
-        let outer = RuntimeValue::struct_value(
-            "Outer",
-            vec![("inner".to_string(), inner)],
-        ).unwrap();
+        let inner =
+            RuntimeValue::struct_value("Inner", vec![("val".to_string(), RuntimeValue::Int(42))])
+                .unwrap();
+        let outer =
+            RuntimeValue::struct_value("Outer", vec![("inner".to_string(), inner)]).unwrap();
         let expr = Expr::Field(
             Box::new(Expr::Field(
                 Box::new(Expr::ConstantValue(outer)),
@@ -3771,9 +4025,12 @@ mod tests {
         // Struct expr with `..base`: Point { x: 99, ..base }
         let base = RuntimeValue::struct_value(
             "Point",
-            vec![("x".to_string(), RuntimeValue::Int(1)),
-                 ("y".to_string(), RuntimeValue::Int(2))],
-        ).unwrap();
+            vec![
+                ("x".to_string(), RuntimeValue::Int(1)),
+                ("y".to_string(), RuntimeValue::Int(2)),
+            ],
+        )
+        .unwrap();
         let expr = Expr::Struct {
             name: Path::new(vec!["Point".to_string()]),
             fields: vec![
@@ -3798,7 +4055,11 @@ mod tests {
         let env_names = vec!["a".to_string(), "b".to_string()];
         let compiled = cache.get_or_compile(&expr, &env_names).unwrap();
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 100,
+                max_set_len: 100,
+                max_map_len: 100,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: None,
@@ -3806,14 +4067,20 @@ mod tests {
         let mut env1 = std::collections::BTreeMap::new();
         env1.insert("a".to_string(), RuntimeValue::Int(10));
         env1.insert("b".to_string(), RuntimeValue::Int(20));
-        assert_eq!(vm_eval_with_env(&compiled, &env1, &ctx).unwrap(), RuntimeValue::Int(30));
+        assert_eq!(
+            vm_eval_with_env(&compiled, &env1, &ctx).unwrap(),
+            RuntimeValue::Int(30)
+        );
 
         let compiled2 = cache.get_or_compile(&expr, &env_names).unwrap();
         assert!(Rc::ptr_eq(&compiled, &compiled2));
         let mut env2 = std::collections::BTreeMap::new();
         env2.insert("a".to_string(), RuntimeValue::Int(100));
         env2.insert("b".to_string(), RuntimeValue::Int(200));
-        assert_eq!(vm_eval_with_env(&compiled2, &env2, &ctx).unwrap(), RuntimeValue::Int(300));
+        assert_eq!(
+            vm_eval_with_env(&compiled2, &env2, &ctx).unwrap(),
+            RuntimeValue::Int(300)
+        );
     }
 
     #[test]
@@ -3858,9 +4125,11 @@ mod tests {
             )),
             else_branch: Some(Box::new(Expr::Literal(Literal::Int(0)))),
         };
-        let expr = mk_let("current_term", 3,
-            mk_let("commit_index", 5,
-                mk_let("log_len", 10, inner)));
+        let expr = mk_let(
+            "current_term",
+            3,
+            mk_let("commit_index", 5, mk_let("log_len", 10, inner)),
+        );
         // (10 - 5) * 3 = 15
         assert_eq!(eval(&expr).unwrap(), RuntimeValue::Int(15));
     }
@@ -3869,8 +4138,8 @@ mod tests {
 
     #[test]
     fn bench_eval_expr_vs_vm_eval() {
-        use std::time::Instant;
         use crate::modelcheck::evaluator::{eval_expr, EvalContext};
+        use std::time::Instant;
 
         // Build a moderately complex expression:
         // let x = 10 in let y = 20 in
@@ -3911,7 +4180,11 @@ mod tests {
         let expr = mk_let("x", 10, mk_let("y", 20, inner));
 
         // Verify both paths give the same result: (10+20)*(20-10) = 300
-        let bounds = RuntimeCollectionBounds { max_seq_len: 100, max_set_len: 100, max_map_len: 100 };
+        let bounds = RuntimeCollectionBounds {
+            max_seq_len: 100,
+            max_set_len: 100,
+            max_map_len: 100,
+        };
         let ast_ctx = EvalContext::new(bounds);
         let ast_result = eval_expr(&expr, &ast_ctx).unwrap();
         let vm_result = eval(&expr).unwrap();
@@ -3986,7 +4259,9 @@ mod tests {
         use crate::modelcheck::evaluator::{eval_expr, EvalContext};
         let expr = Expr::Ident("LNodeRole::Primary".to_string());
         let bounds = RuntimeCollectionBounds {
-            max_seq_len: 10, max_set_len: 10, max_map_len: 10,
+            max_seq_len: 10,
+            max_set_len: 10,
+            max_map_len: 10,
         };
         let ast_result = eval_expr(&expr, &EvalContext::new(bounds)).unwrap();
         let vm_result = eval(&expr).unwrap();
@@ -3998,18 +4273,27 @@ mod tests {
         // Reproducer for DPOR bytecode divergence: s.pc[p] == "read"
         // where s = LState{counter:0, local:{1:0,2:0}, pc:{1:"read",2:"read"}}
         // and p = 1
-        use crate::modelcheck::value::NamedFields;
         let pc_map = RuntimeValue::Map(std::sync::Arc::new(
             vec![
-                (RuntimeValue::Int(1), RuntimeValue::String("read".to_string())),
-                (RuntimeValue::Int(2), RuntimeValue::String("read".to_string())),
-            ].into_iter().collect(),
+                (
+                    RuntimeValue::Int(1),
+                    RuntimeValue::String("read".to_string()),
+                ),
+                (
+                    RuntimeValue::Int(2),
+                    RuntimeValue::String("read".to_string()),
+                ),
+            ]
+            .into_iter()
+            .collect(),
         ));
         let local_map = RuntimeValue::Map(std::sync::Arc::new(
             vec![
                 (RuntimeValue::Int(1), RuntimeValue::Int(0)),
                 (RuntimeValue::Int(2), RuntimeValue::Int(0)),
-            ].into_iter().collect(),
+            ]
+            .into_iter()
+            .collect(),
         ));
         let state = RuntimeValue::struct_value(
             "LState".to_string(),
@@ -4018,7 +4302,8 @@ mod tests {
                 ("local".to_string(), local_map),
                 ("pc".to_string(), pc_map),
             ],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Expression: s.pc[p] == View("read")
         // View is pass-through, so View(String("read")) == String("read")
@@ -4041,7 +4326,11 @@ mod tests {
         env.insert("s".to_string(), state);
         env.insert("p".to_string(), RuntimeValue::Int(1));
         let ctx = VmContext {
-            bounds: RuntimeCollectionBounds { max_seq_len: 10, max_set_len: 10, max_map_len: 10 },
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 10,
+                max_set_len: 10,
+                max_map_len: 10,
+            },
             call_evaluator: None,
             method_evaluator: None,
             quantifier_domain: None,

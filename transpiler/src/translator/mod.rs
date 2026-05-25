@@ -629,7 +629,9 @@ impl ProofNeeds {
     /// Given `Unary("&", Field(Var("s"), "pending_sent"))`, returns `"s.pending_sent"`.
     fn extract_field_source(expr: &ExecExpr) -> Option<String> {
         match expr {
-            ExecExpr::Unary { op, expr } if op == "&" || op == "*" => Self::extract_field_source(expr),
+            ExecExpr::Unary { op, expr } if op == "&" || op == "*" => {
+                Self::extract_field_source(expr)
+            }
             ExecExpr::Field(base, field) => {
                 if let ExecExpr::Var(name) = base.as_ref() {
                     Some(format!("{}.{}", name, field))
@@ -750,7 +752,11 @@ impl ProofNeeds {
                 // Guard with contains_key: the lemma requires m2@ =~= old@.remove(k),
                 // which only holds when the remove actually happened (key was present).
                 // When the field is Arc-wrapped, prefix with & for auto-deref.
-                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) { "&" } else { "" };
+                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) {
+                    "&"
+                } else {
+                    ""
+                };
                 let lemma_call = ExecExpr::Call {
                     func: format!("lemma_abstractify_{}_remove", prefix),
                     args: vec![
@@ -823,10 +829,17 @@ impl ProofNeeds {
         // Emit lemma_abstractify_empty_{prefix}(result.field) for map_fields with HashMap::new()
         for field_name in &self.map_field_empty_sites {
             if let Some((_exec_type, prefix, _val_type)) = map_fields.get(field_name) {
-                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) { "&" } else { "" };
+                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) {
+                    "&"
+                } else {
+                    ""
+                };
                 stmts.push(ExecExpr::Call {
                     func: format!("lemma_abstractify_empty_{}", prefix),
-                    args: vec![ExecExpr::Var(format!("{}result.{}", ref_prefix, field_name))],
+                    args: vec![ExecExpr::Var(format!(
+                        "{}result.{}",
+                        ref_prefix, field_name
+                    ))],
                 });
             }
         }
@@ -3153,7 +3166,7 @@ impl Translator {
             // Check if this field is Arc-wrapped (for mutation clone strategy)
             let is_arc_field = arc_struct_name
                 .and_then(|sn| self.config.arc_wrap_fields.get(sn))
-                .map_or(false, |fields| fields.contains(&fname));
+                .is_some_and(|fields| fields.contains(&fname));
 
             if let Some((recv, method, args)) = Self::extract_mutation_info(&fexpr) {
                 // This field is `receiver.insert(val)`, `receiver.remove(val)`, or `receiver.push(val)`
@@ -3613,7 +3626,6 @@ impl Translator {
         struct_name: &str,
         fields: Vec<(String, ExecExpr)>,
     ) -> Vec<(String, ExecExpr)> {
-
         let arc_fields = match self.config.arc_wrap_fields.get(struct_name) {
             Some(f) => f,
             None => return fields,
@@ -3622,12 +3634,10 @@ impl Translator {
         fields
             .into_iter()
             .map(|(fname, fexpr)| {
-
                 if !arc_fields.contains(&fname) {
                     // Not an Arc-wrapped field — leave as-is (scalar copy)
                     return (fname, fexpr);
                 }
-
 
                 // Check if this is an unchanged field (clone/clone_up_to_view of input).
                 // With Arc wrapping, unchanged fields should use Arc::clone (O(1))
@@ -3637,10 +3647,7 @@ impl Translator {
                     ExecExpr::MethodCall {
                         receiver, method, ..
                     } if method == "clone_up_to_view" => {
-                        (
-                            fname,
-                            ExecExpr::Clone(Box::new(*receiver.clone())),
-                        )
+                        (fname, ExecExpr::Clone(Box::new(*receiver.clone())))
                     }
                     // s.field.clone() — check if source is an Arc-wrapped field.
                     // If cloning from a field whose name is in arc_wrap_fields,
@@ -3657,10 +3664,13 @@ impl Translator {
                         if source_is_arc {
                             (fname, fexpr)
                         } else {
-                            (fname, ExecExpr::Call {
-                                func: "Arc::new".to_string(),
-                                args: vec![fexpr],
-                            })
+                            (
+                                fname,
+                                ExecExpr::Call {
+                                    func: "Arc::new".to_string(),
+                                    args: vec![fexpr],
+                                },
+                            )
                         }
                     }
                     // clone_hashset(&s.field) / clone_hashmap(&s.field) — unchanged field
@@ -3686,7 +3696,8 @@ impl Translator {
                         // when Arc-wrapped (see generate_proof_helper_lemmas).
                         // Keep the original call — it handles Arc types correctly.
                         let field_suffix = func.strip_prefix("clone_").unwrap_or("");
-                        let is_struct_vec_clone = self.config.struct_vec_fields.contains_key(field_suffix);
+                        let is_struct_vec_clone =
+                            self.config.struct_vec_fields.contains_key(field_suffix);
                         if source_is_arc && is_struct_vec_clone {
                             // Keep clone_<field>(&s.field) as-is — the helper now
                             // accepts &Arc<Vec<T>> and returns Arc<Vec<T>> (O(1)).
@@ -3694,10 +3705,13 @@ impl Translator {
                         } else if source_is_arc {
                             (fname, ExecExpr::Clone(Box::new(inner)))
                         } else {
-                            (fname, ExecExpr::Call {
-                                func: "Arc::new".to_string(),
-                                args: vec![fexpr],
-                            })
+                            (
+                                fname,
+                                ExecExpr::Call {
+                                    func: "Arc::new".to_string(),
+                                    args: vec![fexpr],
+                                },
+                            )
                         }
                     }
                     // Field access on a helper call result (e.g., Cstep_down_if_needed(&s, &ae_term).votes_granted)
@@ -6798,9 +6812,11 @@ impl Translator {
             }
         }
 
-        let proof_block = match needs
-            .build_proof_block(&self.config.struct_vec_fields, &self.config.map_fields, &self.config.arc_wrap_fields)
-        {
+        let proof_block = match needs.build_proof_block(
+            &self.config.struct_vec_fields,
+            &self.config.map_fields,
+            &self.config.arc_wrap_fields,
+        ) {
             Some(pb) => pb,
             None => return body, // No proofs needed
         };
@@ -8643,8 +8659,7 @@ impl Translator {
                 } else {
                     self.expr_to_view_requires_string(base, view_params, scalar_params)
                 };
-                let idx_str =
-                    self.expr_to_spec_requires_string(idx, view_params, scalar_params);
+                let idx_str = self.expr_to_spec_requires_string(idx, view_params, scalar_params);
                 format!("{}[{}]", base_str, idx_str)
             }
             _ => self.expr_to_view_simple_string(expr, view_params, scalar_params),
@@ -8887,8 +8902,7 @@ impl Translator {
                 } else {
                     self.expr_to_view_simple_string(base, view_params, scalar_params)
                 };
-                let idx_str =
-                    self.expr_to_spec_requires_string(idx, view_params, scalar_params);
+                let idx_str = self.expr_to_spec_requires_string(idx, view_params, scalar_params);
                 format!("{}[{}]", base_str, idx_str)
             }
             // For other expressions, delegate to expr_to_simple_string
@@ -9972,7 +9986,8 @@ impl Translator {
                         }
                     } else {
                         // Arc-wrap explicitly set fields in struct-update syntax
-                        let translated_fields = self.arc_wrap_struct_fields(&exec_name, translated_fields);
+                        let translated_fields =
+                            self.arc_wrap_struct_fields(&exec_name, translated_fields);
                         Ok(ExecExpr::StructUpdate {
                             name: exec_name,
                             base: Box::new(base_expr),
@@ -9993,11 +10008,14 @@ impl Translator {
                         .collect();
 
                     // Post-process: extract HashSet mutations from struct fields
-                    let is_arc_wrapped =
-                        self.config.arc_wrap_fields.contains_key(&exec_name);
+                    let is_arc_wrapped = self.config.arc_wrap_fields.contains_key(&exec_name);
                     let translated_fields = translated_fields?;
                     let (pre_stmts, new_fields) = if is_arc_wrapped {
-                        self.extract_set_mutations_from_struct_arc(translated_fields, ctx, &exec_name)
+                        self.extract_set_mutations_from_struct_arc(
+                            translated_fields,
+                            ctx,
+                            &exec_name,
+                        )
                     } else {
                         self.extract_set_mutations_from_struct(translated_fields, ctx)
                     };
@@ -12668,13 +12686,15 @@ impl Translator {
 
                 // Arc-wrapped structs: force explicit Struct (not StructUpdate)
                 // and wrap non-scalar fields with Arc::new / Arc::clone
-                let is_arc_wrapped =
-                    self.config.arc_wrap_fields.contains_key(&struct_name);
-
+                let is_arc_wrapped = self.config.arc_wrap_fields.contains_key(&struct_name);
 
                 if has_mutations {
                     let (pre_stmts, new_fields) = if is_arc_wrapped {
-                        self.extract_set_mutations_from_struct_arc(translated_fields, ctx, &struct_name)
+                        self.extract_set_mutations_from_struct_arc(
+                            translated_fields,
+                            ctx,
+                            &struct_name,
+                        )
                     } else {
                         self.extract_set_mutations_from_struct(translated_fields, ctx)
                     };
@@ -12696,12 +12716,9 @@ impl Translator {
 
                     let cloned_fields: Vec<_> = translated_fields
                         .into_iter()
-                        .map(|(fname, fexpr)| {
-                            (fname, self.clone_input_field_access(fexpr, ctx))
-                        })
+                        .map(|(fname, fexpr)| (fname, self.clone_input_field_access(fexpr, ctx)))
                         .collect();
-                    let wrapped_fields =
-                        self.arc_wrap_struct_fields(&struct_name, cloned_fields);
+                    let wrapped_fields = self.arc_wrap_struct_fields(&struct_name, cloned_fields);
                     results.push(ExecExpr::Struct {
                         name: struct_name,
                         fields: wrapped_fields,
@@ -12824,9 +12841,16 @@ impl Translator {
 
                                 if has_mutations {
                                     let (pre_stmts, new_fields) = if is_arc_wrapped2 {
-                                        self.extract_set_mutations_from_struct_arc(translated_fields, ctx, &exec_name)
+                                        self.extract_set_mutations_from_struct_arc(
+                                            translated_fields,
+                                            ctx,
+                                            &exec_name,
+                                        )
                                     } else {
-                                        self.extract_set_mutations_from_struct(translated_fields, ctx)
+                                        self.extract_set_mutations_from_struct(
+                                            translated_fields,
+                                            ctx,
+                                        )
                                     };
                                     let new_fields =
                                         self.arc_wrap_struct_fields(&exec_name, new_fields);
@@ -12883,8 +12907,8 @@ impl Translator {
                                         });
                                     }
                                 } else {
-                                    let translated_fields = self
-                                        .arc_wrap_struct_fields(&exec_name, translated_fields);
+                                    let translated_fields =
+                                        self.arc_wrap_struct_fields(&exec_name, translated_fields);
                                     results.push(ExecExpr::Struct {
                                         name: exec_name,
                                         fields: translated_fields,
@@ -24915,7 +24939,8 @@ mod tests {
             element: "entry".to_string(),
         });
 
-        let proof_block = needs.build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new());
+        let proof_block =
+            needs.build_proof_block(&HashMap::new(), &HashMap::new(), &HashMap::new());
         assert!(proof_block.is_some());
 
         // Check the proof block structure:
@@ -28088,11 +28113,21 @@ borrowed_args = [0]
         let translator = Translator::new(config);
 
         let fields = vec![
-            ("proposer".to_string(), ExecExpr::Var("s_proposer".to_string())),
-            ("acceptor".to_string(), ExecExpr::Clone(Box::new(
-                ExecExpr::Field(Box::new(ExecExpr::Var("s".to_string())), "acceptor".to_string()),
-            ))),
-            ("nextHeartbeatTime".to_string(), ExecExpr::Literal("0u64".to_string())),
+            (
+                "proposer".to_string(),
+                ExecExpr::Var("s_proposer".to_string()),
+            ),
+            (
+                "acceptor".to_string(),
+                ExecExpr::Clone(Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var("s".to_string())),
+                    "acceptor".to_string(),
+                ))),
+            ),
+            (
+                "nextHeartbeatTime".to_string(),
+                ExecExpr::Literal("0u64".to_string()),
+            ),
         ];
 
         let result = translator.arc_wrap_struct_fields("CReplica", fields);
@@ -28154,9 +28189,10 @@ borrowed_args = [0]
         let config = TranslatorConfig::default();
         let translator = Translator::new(config);
 
-        let fields = vec![
-            ("proposer".to_string(), ExecExpr::Var("s_proposer".to_string())),
-        ];
+        let fields = vec![(
+            "proposer".to_string(),
+            ExecExpr::Var("s_proposer".to_string()),
+        )];
 
         let result = translator.arc_wrap_struct_fields("CReplica", fields);
 
