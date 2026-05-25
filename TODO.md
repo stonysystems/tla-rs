@@ -13611,7 +13611,7 @@ tiers, ordered biggest-gain-per-effort first.
     suggestions. Added `format_conflict_profile()` public function in
     `explore.rs`. 4 new tests (2 explore.rs, 1 CLI, 1 existing extended).
     ~100 LOC.
-  - [ ] **38.21.I.c**: **Runtime conflict verification.**
+  - [x] **38.21.I.c**: **Runtime conflict verification.**
     After firing a transition, compare pre/post state on statically-
     predicted conflict fields to check whether the conflict actually
     materialized. Track false-positive rate per field pair. ~200 LOC.

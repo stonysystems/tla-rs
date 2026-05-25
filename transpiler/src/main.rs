@@ -3631,6 +3631,7 @@ fn run_dpor_explorer_as_main_path(
     if conflict_profile {
         let report = verus_transpiler::modelcheck::dpor::explore::format_conflict_profile(
             &result.sleep_independence_blockers,
+            &result.runtime_conflict_stats,
         );
         eprintln!("{}", report);
     }

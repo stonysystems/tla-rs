@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::modelcheck::dpor::enabled::SpecContext;
 use crate::modelcheck::dpor::types::*;
 use crate::modelcheck::value::RuntimeValue;
+use transpiler_runtime::Symbol;
 
 /// One frame in the DPOR search stack.
 #[derive(Clone, Debug)]
@@ -54,6 +55,8 @@ pub struct DporResult {
     pub sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats>,
     /// Independence blocker telemetry collected while building child sleep sets.
     pub sleep_independence_blockers: SleepIndependenceBlockers,
+    /// Runtime conflict verification stats: per-write-field false-positive rates.
+    pub runtime_conflict_stats: RuntimeConflictStats,
     /// Violation witness if an invariant violation was found.
     pub violation: Option<ViolationWitness>,
 }
@@ -90,6 +93,23 @@ pub struct SleepIndependenceBlockers {
     /// the number of times this pair caused a footprint conflict block.
     /// Only populated when `blocked_footprint_conflict > 0`.
     pub conflict_field_pairs: BTreeMap<(String, String), usize>,
+}
+
+/// Per-write-field runtime conflict verification stats.
+///
+/// After each transition fires, we compare pre-state and post-state values
+/// for each field in the transition's write footprint. This tells us how
+/// often a "static write" actually changes the field value at runtime.
+/// A field that is statically written but rarely changes is a source of
+/// false-positive conflicts in the independence relation.
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeConflictStats {
+    /// Per write field: `(static_write_count, actual_change_count)`.
+    /// `static_write_count` = number of fired transitions whose footprint
+    /// declares this field as written.
+    /// `actual_change_count` = number of those where the field value
+    /// actually differed between pre-state and post-state.
+    pub write_field_stats: BTreeMap<String, (usize, usize)>,
 }
 
 /// Configuration for the DPOR explorer.
@@ -195,6 +215,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     let mut sleep_prune_hits: usize = 0;
     let mut sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats> = BTreeMap::new();
     let mut sleep_independence_blockers = SleepIndependenceBlockers::default();
+    let mut runtime_conflict_stats = RuntimeConflictStats::default();
 
     // Get initial states
     let initial_states = match ctx.initial_states() {
@@ -209,6 +230,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 sleep_prune_hits: 0,
                 sleep_cardinality_by_depth: BTreeMap::new(),
                 sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                runtime_conflict_stats: RuntimeConflictStats::default(),
                 violation: None,
             };
         }
@@ -260,6 +282,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 sleep_prune_hits: 0,
                 sleep_cardinality_by_depth: BTreeMap::new(),
                 sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                runtime_conflict_stats: RuntimeConflictStats::default(),
                 violation: Some(witness),
             };
         }
@@ -282,6 +305,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 sleep_prune_hits: 0,
                 sleep_cardinality_by_depth: BTreeMap::new(),
                 sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                runtime_conflict_stats: RuntimeConflictStats::default(),
                 violation: Some(ViolationWitness {
                     invariant: "__deadlock__".to_string(),
                     violating_state_key: initial.canonical_key(),
@@ -434,6 +458,13 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                     }
 
                     transitions_fired += 1;
+                    // Runtime conflict verification: check which write fields actually changed
+                    record_runtime_write_stats(
+                        &mut runtime_conflict_stats,
+                        &transition,
+                        &parent_state,
+                        &successor,
+                    );
                     // Compute canonical key only for reporting / symmetry dedup
                     let is_new = if fp_is_new && !use_symmetry {
                         // No symmetry: fingerprint is authoritative
@@ -478,6 +509,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 sleep_prune_hits,
                                 sleep_cardinality_by_depth,
                                 sleep_independence_blockers,
+                                runtime_conflict_stats,
                                 violation: Some(witness),
                             };
                         }
@@ -509,6 +541,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 sleep_prune_hits,
                                 sleep_cardinality_by_depth,
                                 sleep_independence_blockers,
+                                runtime_conflict_stats,
                                 violation: Some(ViolationWitness {
                                     invariant: "__deadlock__".to_string(),
                                     violating_state_key: successor.canonical_key(),
@@ -570,6 +603,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         sleep_prune_hits,
         sleep_cardinality_by_depth,
         sleep_independence_blockers,
+        runtime_conflict_stats,
         violation: None,
     }
 }
@@ -609,7 +643,10 @@ fn format_sleep_cardinality_summary(stats: &BTreeMap<usize, SleepDepthStats>) ->
 /// The report ranks field pairs by conflict frequency and suggests keyed-path
 /// refinement for coarse (un-keyed) field names. Intended for `--conflict-profile`
 /// CLI output to guide POR tuning.
-pub fn format_conflict_profile(stats: &SleepIndependenceBlockers) -> String {
+pub fn format_conflict_profile(
+    stats: &SleepIndependenceBlockers,
+    runtime_stats: &RuntimeConflictStats,
+) -> String {
     let mut lines = Vec::new();
     lines.push("=== Conflict Profile Report ===".to_string());
     lines.push(format!(
@@ -662,6 +699,34 @@ pub fn format_conflict_profile(stats: &SleepIndependenceBlockers) -> String {
             ));
         }
     }
+    // Runtime conflict verification section
+    if !runtime_stats.write_field_stats.is_empty() {
+        lines.push(String::new());
+        lines.push("Runtime write-field verification:".to_string());
+        lines.push(format!(
+            "  {:20} {:>8} {:>8} {:>10}",
+            "WRITE FIELD", "FIRED", "CHANGED", "FP RATE"
+        ));
+        lines.push(format!("  {:-<20} {:->8} {:->8} {:->10}", "", "", "", ""));
+
+        let mut fields: Vec<_> = runtime_stats.write_field_stats.iter().collect();
+        fields.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // sort by static count desc
+
+        for (field, (static_count, actual_count)) in &fields {
+            let sc = *static_count;
+            let ac = *actual_count;
+            let fp_rate = if sc > 0 {
+                (sc - ac) as f64 / sc as f64 * 100.0
+            } else {
+                0.0
+            };
+            lines.push(format!(
+                "  {:20} {:>8} {:>8} {:>8.1}%",
+                field, sc, ac, fp_rate
+            ));
+        }
+    }
+
     lines.push("=== End Conflict Profile ===".to_string());
     lines.join("\n")
 }
@@ -955,6 +1020,66 @@ fn should_prune_seen_successor(use_sleep_sets: bool) -> bool {
 
 fn transition_sleep_key(transition: &EnabledTransition) -> String {
     format!("{}::{}", transition.process_id.0, transition.branch_label)
+}
+
+/// Extract a field value from a RuntimeValue state given a field path.
+///
+/// Supports two forms:
+/// - `"field_name"` → extracts `state.fields["field_name"]`
+/// - `"field_name[key]"` → extracts `state.fields["field_name"]` then indexes by key
+///   (for Seq: numeric index, for Map/Function: string key lookup)
+///
+/// Returns `None` if the state isn't a Struct, the field doesn't exist,
+/// or the index is out of bounds.
+fn extract_field_value<'a>(state: &'a RuntimeValue, field_path: &str) -> Option<&'a RuntimeValue> {
+    let fields = match state {
+        RuntimeValue::Struct { fields, .. } => fields,
+        _ => return None,
+    };
+
+    let (root, selector) = crate::modelcheck::dpor::types::split_field_selector_public(field_path);
+    let sym = Symbol::intern(root);
+    let field_val = fields.get(&sym)?;
+
+    match selector {
+        None => Some(field_val),
+        Some(key) => {
+            // Try numeric index for Seq
+            if let Ok(idx) = key.parse::<usize>() {
+                if let RuntimeValue::Seq(seq) = field_val {
+                    return seq.get(idx);
+                }
+            }
+            // Try map/function lookup by string key
+            if let RuntimeValue::Map(map) = field_val {
+                let key_val = RuntimeValue::String(key.to_string());
+                return map.get(&key_val);
+            }
+            None
+        }
+    }
+}
+
+/// Record per-write-field runtime conflict stats for a fired transition.
+///
+/// For each field in the transition's write footprint, checks whether
+/// the field value actually changed between pre_state and post_state.
+fn record_runtime_write_stats(
+    stats: &mut RuntimeConflictStats,
+    transition: &EnabledTransition,
+    pre_state: &RuntimeValue,
+    post_state: &RuntimeValue,
+) {
+    for write_field in &transition.footprint.writes {
+        let entry = stats.write_field_stats.entry(write_field.clone()).or_insert((0, 0));
+        entry.0 += 1; // static_write_count
+
+        let pre_val = extract_field_value(pre_state, write_field);
+        let post_val = extract_field_value(post_state, write_field);
+        if pre_val != post_val {
+            entry.1 += 1; // actual_change_count
+        }
+    }
 }
 
 fn transition_has_unknown_footprint(transition: &EnabledTransition) -> bool {
@@ -2490,7 +2615,8 @@ max_seq_len = 4
             .conflict_field_pairs
             .insert(("val".to_string(), "log[1]".to_string()), 5);
 
-        let report = format_conflict_profile(&blockers);
+        let runtime_stats = RuntimeConflictStats::default();
+        let report = format_conflict_profile(&blockers, &runtime_stats);
         assert!(report.contains("=== Conflict Profile Report ==="));
         assert!(report.contains("Total candidate pairs evaluated: 100"));
         assert!(report.contains("Independent: 40 (40.0%)"));
@@ -2511,9 +2637,125 @@ max_seq_len = 4
     #[test]
     fn test_format_conflict_profile_empty() {
         let blockers = SleepIndependenceBlockers::default();
-        let report = format_conflict_profile(&blockers);
+        let runtime_stats = RuntimeConflictStats::default();
+        let report = format_conflict_profile(&blockers, &runtime_stats);
         assert!(report.contains("No field-pair conflict data recorded"));
         assert!(report.contains("Total candidate pairs evaluated: 0"));
+    }
+
+    // =========================================================================
+    // Runtime conflict verification tests (Phase 38.21.I.c)
+    // =========================================================================
+
+    fn make_struct_state(fields: Vec<(&str, RuntimeValue)>) -> RuntimeValue {
+        RuntimeValue::struct_value(
+            "State",
+            fields
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_extract_field_value_simple() {
+        let state = make_struct_state(vec![
+            ("pc", RuntimeValue::Int(1)),
+            ("val", RuntimeValue::Int(42)),
+        ]);
+        assert_eq!(extract_field_value(&state, "pc"), Some(&RuntimeValue::Int(1)));
+        assert_eq!(extract_field_value(&state, "val"), Some(&RuntimeValue::Int(42)));
+        assert_eq!(extract_field_value(&state, "nonexistent"), None);
+    }
+
+    #[test]
+    fn test_extract_field_value_keyed_seq() {
+        let seq = RuntimeValue::Seq(std::sync::Arc::new(vec![
+            RuntimeValue::Int(10),
+            RuntimeValue::Int(20),
+            RuntimeValue::Int(30),
+        ]));
+        let state = make_struct_state(vec![("log", seq)]);
+        assert_eq!(extract_field_value(&state, "log[0]"), Some(&RuntimeValue::Int(10)));
+        assert_eq!(extract_field_value(&state, "log[2]"), Some(&RuntimeValue::Int(30)));
+        assert_eq!(extract_field_value(&state, "log[5]"), None);
+    }
+
+    #[test]
+    fn test_extract_field_value_non_struct() {
+        let val = RuntimeValue::Int(42);
+        assert_eq!(extract_field_value(&val, "anything"), None);
+    }
+
+    #[test]
+    fn test_record_runtime_write_stats_field_changed() {
+        let pre = make_struct_state(vec![
+            ("pc", RuntimeValue::Int(0)),
+            ("val", RuntimeValue::Int(10)),
+        ]);
+        let post = make_struct_state(vec![
+            ("pc", RuntimeValue::Int(1)),
+            ("val", RuntimeValue::Int(10)),
+        ]);
+        let transition = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "Step".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0:Step".to_string(),
+            footprint: TransitionFootprint {
+                reads: BTreeSet::new(),
+                writes: BTreeSet::from(["pc".to_string(), "val".to_string()]),
+            },
+        };
+        let mut stats = RuntimeConflictStats::default();
+        record_runtime_write_stats(&mut stats, &transition, &pre, &post);
+
+        // "pc" changed (0→1), "val" did not (10→10)
+        assert_eq!(stats.write_field_stats["pc"], (1, 1));
+        assert_eq!(stats.write_field_stats["val"], (1, 0));
+    }
+
+    #[test]
+    fn test_record_runtime_write_stats_accumulates() {
+        let pre = make_struct_state(vec![("x", RuntimeValue::Int(0))]);
+        let post = make_struct_state(vec![("x", RuntimeValue::Int(1))]);
+        let transition = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "Inc".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "0:Inc".to_string(),
+            footprint: TransitionFootprint {
+                reads: BTreeSet::new(),
+                writes: BTreeSet::from(["x".to_string()]),
+            },
+        };
+        let mut stats = RuntimeConflictStats::default();
+        record_runtime_write_stats(&mut stats, &transition, &pre, &post);
+        record_runtime_write_stats(&mut stats, &transition, &pre, &post);
+        // Fired twice, changed both times
+        assert_eq!(stats.write_field_stats["x"], (2, 2));
+
+        // Fire once with no change
+        record_runtime_write_stats(&mut stats, &transition, &pre, &pre);
+        assert_eq!(stats.write_field_stats["x"], (3, 2));
+    }
+
+    #[test]
+    fn test_format_conflict_profile_with_runtime_stats() {
+        let blockers = SleepIndependenceBlockers::default();
+        let mut runtime_stats = RuntimeConflictStats::default();
+        runtime_stats.write_field_stats.insert("pc".to_string(), (100, 80));
+        runtime_stats.write_field_stats.insert("val".to_string(), (50, 5));
+
+        let report = format_conflict_profile(&blockers, &runtime_stats);
+        assert!(report.contains("Runtime write-field verification:"));
+        assert!(report.contains("WRITE FIELD"));
+        assert!(report.contains("FP RATE"));
+        assert!(report.contains("pc"));
+        assert!(report.contains("val"));
+        // val has 90% false positive rate (50-5)/50
+        assert!(report.contains("90.0%"));
     }
 
     // =========================================================================

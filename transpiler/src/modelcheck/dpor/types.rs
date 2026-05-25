@@ -196,6 +196,12 @@ impl TransitionFootprint {
     }
 }
 
+/// Split a field path like `"pc[0]"` into `("pc", Some("0"))`.
+/// Plain paths like `"pc"` return `("pc", None)`.
+pub fn split_field_selector_public(path: &str) -> (&str, Option<&str>) {
+    split_field_selector(path)
+}
+
 fn split_field_selector(path: &str) -> (&str, Option<&str>) {
     match path.rfind('[') {
         Some(open_idx) if path.ends_with(']') && open_idx > 0 => {
