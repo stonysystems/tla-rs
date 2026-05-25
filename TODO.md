@@ -13783,7 +13783,7 @@ Three implementation paths, in increasing engineering cost / payoff:
   **Also re-enabled bytecode** in the DPOR solver's `SolverHooks` (both inner predicate
   solver and main solver hooks). DPOR now gets the ~2x bytecode speedup.
   1 new test (`test_vm_map_index_guard_cross_check`). 328/328 tests pass. *DONE.*
-- [ ] **38.22.1.c**: **Codegen Rust closures via syn / quote.**
+- [x] **38.22.1.c**: **Codegen Rust closures via syn / quote.** DONE (all 6 sub-tasks complete, 2026-05-25).
   Generate Rust source per spec function, compile to `cdylib` at
   startup via cargo, dlopen at runtime. True native execution; LLVM
   optimizes the closure. ~200× win possible but adds compilation
