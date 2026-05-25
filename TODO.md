@@ -14609,9 +14609,19 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
   CPU. Further optimization requires a different approach (batching, pipelining,
   or reducing per-request network round-trips).
 
-- [ ] **41.3.c**: gdb profile RSL leader. Confirm `clone_endpoint_seqno_map`,
+- [x] **41.3.c**: gdb profile RSL leader. Confirm `clone_endpoint_seqno_map`,
   `clone_request_batch_up_to_view`, `clone_hashset` drop out of top frames
   (replaced by `Arc::clone` and `Arc::make_mut`-clone-on-write).
+  **Done (2026-05-25, perf record -F 999, 30,840 samples, 55,416 ops/s).**
+  All 5 Arc-wrapped clone functions confirmed absent or near-zero:
+  `clone_endpoint_seqno_map` 0.00%, `clone_request_queue` 0.00%,
+  `clone_creplycache` 0.00%, `clone_clearnerstate` <0.01%,
+  `clone_hashset<CPacket>` 0.06%. Remaining top Rust CPU consumers:
+  `CConfiguration::clone_up_to_view` 4.21% (not Arc-wrapped),
+  `clone_vec_u8` 3.11%, `clone_request_batch_up_to_view` 1.76%,
+  `CProposer::clone_up_to_view` 1.22%, `CElectionState::clone_up_to_view` 1.05%.
+  The Arc-wrap strategy is confirmed effective — the 5 target functions
+  dropped from ~35% combined (pre-Arc gdb sampling) to <0.1% total.
 
 - [x] **41.3.d**: Smoke-test all other protocols (PBFT, Paxos, EPaxos,
   PrimaryBackup, TwoPhase, ChainReplication, VerticalPaxos,
