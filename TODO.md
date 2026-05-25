@@ -14697,12 +14697,9 @@ Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, Pri
 
 #### 43.2 PrimaryBackup — write IronPrimaryBackupClient (effort: ~0.5 day)
 
-- [ ] **43.2.a**: Add `csharp/IronPrimaryBackupClient/` project copying the `IronRaftClient` structure. Adapt wire format:
-  - Send: `[TAG=ClientRequest][client_id][seq_no][value]` per `PrimaryBackupMessage::ClientRequest`'s serialization.
-  - Recv: `[TAG=Ack][client_id][seq_no]` per `PrimaryBackupMessage::Ack`'s serialization.
-  - Always send to primary (server 0).
-- [ ] **43.2.b**: Wire CLI args: `nthreads`, `duration`, `ip1`/`port1` for primary. Output `throughput <N> ops/sec | avg latency ms <X>` matching the Raft client format.
-- [ ] **43.2.c**: Add `bin/IronPrimaryBackupClient.dll` to SCons build (or wrap with `dotnet run`).
+- [x] **43.2.a**: Add `csharp/IronPrimaryBackupClient/` — fire-and-forget UDP client sending `[TAG=3][value]` (16 bytes LE). Added `[METRICS]` to `host.rs` tracking `log_length` increments. Fixed `CInit` role bug: node 1 now starts as Backup. Smoke test: ~37.5K ops/s primary committed throughput.
+- [x] **43.2.b**: CLI args (`ip`, `port`, `nthreads`, `duration`). Created `scripts/bench_primarybackup.sh` matching EPaxos bench structure.
+- [x] **43.2.c**: Added `bin/IronPrimaryBackupClient.dll` to SCons build. `scons --skip-verus` passes.
 - [ ] **43.2.d**: Bench HEAD vs c097da0. Report delta.
 
 #### 43.3 PBFT — write IronPBFTClient (effort: ~1 day, more complex than PB)

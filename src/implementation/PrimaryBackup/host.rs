@@ -10,6 +10,7 @@ use crate::common::native::io_s::*;
 use crate::generated::PrimaryBackup::primarybackup_gen;
 use crate::generated::PrimaryBackup::types_gen::*;
 use crate::implementation::PrimaryBackup::message::*;
+use std::time::Instant;
 
 /// PrimaryBackup protocol configuration.
 pub struct PrimaryBackupConfig {
@@ -75,6 +76,10 @@ pub struct PrimaryBackupHost {
     pub state: CState,
     /// Round-robin action index for internal (non-message-driven) actions.
     pub action_index: u64,
+    /// Timestamp of last metrics output (for periodic throughput reporting).
+    last_metrics_time: Instant,
+    /// log_length at last metrics output (for delta computation).
+    last_metrics_log_length: u64,
 }
 
 impl PrimaryBackupHost {
@@ -410,10 +415,19 @@ impl ProtocolHost for PrimaryBackupHost {
     type Cfg = PrimaryBackupConfig;
 
     fn init(config: &Self::Cfg) -> Option<Self> {
-        let state = primarybackup_gen::CInit(&config.constants);
+        let mut state = primarybackup_gen::CInit(&config.constants);
+        // CInit always creates Primary role; override for non-primary nodes.
+        // Index 0 = primary, index 1 = backup, others = inactive.
+        if config.my_index == 1 {
+            state.role = CNodeRole::Backup;
+        } else if config.my_index > 1 {
+            state.role = CNodeRole::Inactive;
+        }
         Some(PrimaryBackupHost {
             state,
             action_index: 0,
+            last_metrics_time: Instant::now(),
+            last_metrics_log_length: 0,
         })
     }
 
@@ -422,6 +436,28 @@ impl ProtocolHost for PrimaryBackupHost {
         config: &Self::Cfg,
         packet: Option<GenericPacket<Self::Msg>>,
     ) -> StepResult<Self::Msg> {
+        // Periodic metrics output (every 1 second)
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_metrics_time);
+        if elapsed.as_secs() >= 1 {
+            let log_len = self.state.log_length;
+            let delta = log_len - self.last_metrics_log_length;
+            let elapsed_secs = elapsed.as_secs_f64();
+            let role = if self.is_primary() {
+                "primary"
+            } else if self.is_backup() {
+                "backup"
+            } else {
+                "inactive"
+            };
+            eprintln!(
+                "[METRICS] role={} log_length={} delta={} elapsed={:.2}s throughput={:.1} ops/s",
+                role, log_len, delta, elapsed_secs, delta as f64 / elapsed_secs,
+            );
+            self.last_metrics_time = now;
+            self.last_metrics_log_length = log_len;
+        }
+
         if self.is_primary() {
             self.primary_step(config, packet)
         } else if self.is_backup() {
