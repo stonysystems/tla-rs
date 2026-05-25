@@ -5172,6 +5172,8 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 // Phase 38.22.1.a: dump eval_expr profile to stderr
                 // when TLARS_EVAL_PROFILE=1.
                 verus_transpiler::modelcheck::evaluator::dump_eval_expr_profile();
+                // Phase 38.21.A.b: dump eval dispatch profile (native/bytecode/AST).
+                verus_transpiler::modelcheck::solver::dump_eval_dispatch_profile();
                 return Ok(());
             }
 

@@ -72,6 +72,78 @@ pub type PredicateOnlyBranchSolver<'a> = dyn Fn(
     ) -> TranspileResult<Option<Vec<RuntimeValue>>>
     + 'a;
 
+/// Phase 38.21.A.b — eval dispatch telemetry. Tracks how often each tier
+/// of the native → bytecode → AST fallback chain is used in
+/// `eval_with_environment`. Gated on `TLARS_EVAL_PROFILE=1`.
+#[derive(Default, Debug)]
+pub struct EvalDispatchProfile {
+    /// Expression evaluated via native cdylib function.
+    pub native_hit: u64,
+    /// Native codegen failed; fell through to bytecode/AST.
+    pub native_compile_fail: u64,
+    /// Expression evaluated via bytecode VM.
+    pub bytecode_hit: u64,
+    /// Bytecode compilation failed; fell through to AST.
+    pub bytecode_compile_fail: u64,
+    /// Expression evaluated via AST interpreter (slowest path).
+    pub ast_fallback: u64,
+}
+
+thread_local! {
+    static EVAL_DISPATCH_PROFILE: RefCell<EvalDispatchProfile> =
+        RefCell::new(EvalDispatchProfile::default());
+    static EVAL_DISPATCH_PROFILE_ENABLED: std::cell::Cell<bool> =
+        std::cell::Cell::new(std::env::var("TLARS_EVAL_PROFILE").is_ok());
+}
+
+#[inline(always)]
+fn bump_dispatch<F: FnOnce(&mut EvalDispatchProfile)>(f: F) {
+    if EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.get()) {
+        EVAL_DISPATCH_PROFILE.with(|p| f(&mut p.borrow_mut()));
+    }
+}
+
+/// Print the accumulated eval dispatch profile to stderr and reset the
+/// counters. Called alongside `dump_eval_expr_profile()` at the end of
+/// a model-check run when `TLARS_EVAL_PROFILE` is set.
+pub fn dump_eval_dispatch_profile() {
+    if !EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.get()) {
+        return;
+    }
+    EVAL_DISPATCH_PROFILE.with(|p| {
+        let p = p.borrow();
+        let total = p.native_hit + p.native_compile_fail + p.bytecode_hit
+            + p.bytecode_compile_fail + p.ast_fallback;
+        if total == 0 {
+            return;
+        }
+        eprintln!("=== eval dispatch profile (Phase 38.21.A.b) ===");
+        eprintln!("total eval_with_environment calls: {}", total);
+        let entries = [
+            ("native_hit", p.native_hit),
+            ("native_compile_fail", p.native_compile_fail),
+            ("bytecode_hit", p.bytecode_hit),
+            ("bytecode_compile_fail", p.bytecode_compile_fail),
+            ("ast_fallback", p.ast_fallback),
+        ];
+        for (name, count) in &entries {
+            if *count > 0 {
+                let pct = 100.0 * (*count as f64) / (total as f64);
+                eprintln!("  {:<24} {:>12}  {:>6.2}%", name, count, pct);
+            }
+        }
+        let fast = p.native_hit + p.bytecode_hit;
+        let pct_fast = if total > 0 {
+            100.0 * (fast as f64) / (total as f64)
+        } else {
+            0.0
+        };
+        eprintln!("  compiled (native+bc):   {:>12}  {:>6.2}%", fast, pct_fast);
+        eprintln!("  AST fallback:           {:>12}  {:>6.2}%", p.ast_fallback,
+            if total > 0 { 100.0 * (p.ast_fallback as f64) / (total as f64) } else { 0.0 });
+    });
+}
+
 /// Optional evaluator hooks used while solving branch constraints.
 #[derive(Clone, Copy, Default)]
 pub struct SolverHooks<'a> {
@@ -904,8 +976,10 @@ fn eval_with_environment(
             crate::modelcheck::native_codegen::generate_eval_function(expr, &env_names)
         });
         if let Some(nf) = native_fn {
+            bump_dispatch(|p| p.native_hit += 1);
             return Ok(nf.call(&env_values)?);
         }
+        bump_dispatch(|p| p.native_compile_fail += 1);
         // Fall through to bytecode/AST
     }
 
@@ -936,15 +1010,18 @@ fn eval_with_environment(
                         f as &dyn Fn(&crate::ast::Binding) -> TranspileResult<Vec<RuntimeValue>>
                     }),
                 };
+                bump_dispatch(|p| p.bytecode_hit += 1);
                 return crate::modelcheck::bytecode::vm_eval_with_env(&compiled, env, &vm_ctx);
             }
             Err(_) => {
+                bump_dispatch(|p| p.bytecode_compile_fail += 1);
                 // Fall through to AST interpreter below
             }
         }
     }
 
     // 3. AST interpreter (baseline, always works)
+    bump_dispatch(|p| p.ast_fallback += 1);
     let mut ctx = EvalContext::new(bounds);
     for (name, value) in env {
         ctx = ctx.with_binding(name.clone(), value.clone());
@@ -2634,5 +2711,95 @@ mod tests {
         assert!(hooks.native_cache.is_none());
         assert!(hooks.bytecode_cache.is_none());
         assert!(hooks.call_evaluator.is_none());
+    }
+
+    #[test]
+    fn test_eval_dispatch_profile_bytecode_hit() {
+        // Enable profiling for this test
+        EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(true));
+        // Reset counters
+        EVAL_DISPATCH_PROFILE.with(|p| *p.borrow_mut() = EvalDispatchProfile::default());
+
+        let expr = Expr::Literal(crate::ast::Literal::Int(42));
+        let env = BTreeMap::new();
+        let bc_cache = crate::modelcheck::bytecode::BytecodeCache::new();
+        let hooks = SolverHooks {
+            bytecode_cache: Some(&bc_cache),
+            ..SolverHooks::default()
+        };
+        let result = eval_with_environment(&expr, &env, bounds(), hooks).unwrap();
+        assert_eq!(result, RuntimeValue::Int(42));
+
+        EVAL_DISPATCH_PROFILE.with(|p| {
+            let p = p.borrow();
+            assert_eq!(p.bytecode_hit, 1, "should record 1 bytecode hit");
+            assert_eq!(p.ast_fallback, 0, "should not fall back to AST");
+            assert_eq!(p.bytecode_compile_fail, 0, "bytecode should compile successfully");
+        });
+
+        // Cleanup: disable profiling
+        EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(false));
+    }
+
+    #[test]
+    fn test_eval_dispatch_profile_ast_fallback() {
+        // Enable profiling for this test
+        EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(true));
+        EVAL_DISPATCH_PROFILE.with(|p| *p.borrow_mut() = EvalDispatchProfile::default());
+
+        // No caches → must fall back to AST
+        let expr = Expr::Literal(crate::ast::Literal::Int(99));
+        let env = BTreeMap::new();
+        let hooks = SolverHooks::default();
+        let result = eval_with_environment(&expr, &env, bounds(), hooks).unwrap();
+        assert_eq!(result, RuntimeValue::Int(99));
+
+        EVAL_DISPATCH_PROFILE.with(|p| {
+            let p = p.borrow();
+            assert_eq!(p.ast_fallback, 1, "should record 1 AST fallback");
+            assert_eq!(p.bytecode_hit, 0);
+        });
+
+        EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(false));
+    }
+
+    #[test]
+    fn test_eval_dispatch_profile_bytecode_compile_fail_then_ast() {
+        // Enable profiling
+        EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(true));
+        EVAL_DISPATCH_PROFILE.with(|p| *p.borrow_mut() = EvalDispatchProfile::default());
+
+        // Closure expression can't be compiled to bytecode
+        let closure_expr = Expr::Call {
+            func: crate::ast::Path::new(vec!["Set".to_string(), "new".to_string()]),
+            args: vec![Expr::Closure {
+                params: vec![crate::ast::Binding {
+                    pattern: crate::ast::Pattern::Ident("x".to_string()),
+                    ty: Some(crate::ast::Type::Int),
+                    variable_mode: crate::ast::VariableMode::default(),
+                }],
+                body: Box::new(Expr::Eq(
+                    Box::new(Expr::Ident("x".to_string())),
+                    Box::new(Expr::Literal(crate::ast::Literal::Int(1))),
+                )),
+            }],
+        };
+
+        let env = BTreeMap::new();
+        let bc_cache = crate::modelcheck::bytecode::BytecodeCache::new();
+        let hooks = SolverHooks {
+            bytecode_cache: Some(&bc_cache),
+            ..SolverHooks::default()
+        };
+        let _result = eval_with_environment(&closure_expr, &env, bounds(), hooks).unwrap();
+
+        EVAL_DISPATCH_PROFILE.with(|p| {
+            let p = p.borrow();
+            assert_eq!(p.bytecode_compile_fail, 1, "closure should fail bytecode compilation");
+            assert_eq!(p.ast_fallback, 1, "should fall back to AST");
+            assert_eq!(p.bytecode_hit, 0, "should not have a bytecode hit");
+        });
+
+        EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(false));
     }
 }

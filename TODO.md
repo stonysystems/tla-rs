@@ -13490,7 +13490,7 @@ tiers, ordered biggest-gain-per-effort first.
 
 #### Tier 1 — biggest theoretical wins (multi-day each)
 
-- [ ] **38.21.A**: **Codegen spec functions to Rust closures or
+- [~] **38.21.A**: **Codegen spec functions to Rust closures or
   compiled IR** (5-20× on solver time). The current evaluator AST-
   interprets every action body via `eval_expr` walking trees and
   cloning `RuntimeValue` structs. At startup, generate Rust closures
@@ -13498,6 +13498,34 @@ tiers, ordered biggest-gain-per-effort first.
   AST. TLC equivalent of compiled form. Profile target: the 91 % of
   Paxos wall-time currently in `successor_solving_ms`. Largest absolute
   remaining gain; multi-week implementation.
+  **Status**: Core infrastructure already exists — bytecode VM (4300 LOC,
+  `bytecode.rs`) and native codegen (370 LOC, `native_compile.rs`) cover
+  30/31 expression types (only closures unsupported). The 3-tier dispatch
+  chain (native → bytecode → AST) is wired in `solver.rs:eval_with_environment`.
+  Remaining work is hardening, telemetry, and thread-safety.
+  Decomposed into sub-tasks:
+  - [x] **38.21.A.a**: **Bytecode VM + native codegen (existing).**
+    Stack-based bytecode VM with ~40 opcodes covers all expression types
+    except closures. Native codegen compiles Expr to Rust source → cdylib
+    → function pointer. Both cached by `(expr_ptr, env_names)` key.
+    `eval_with_environment` dispatches: native → bytecode → AST.
+  - [x] **38.21.A.b**: **Eval dispatch telemetry.** Added
+    `EvalDispatchProfile` with counters for native_hit, bytecode_hit,
+    ast_fallback, native_compile_fail, bytecode_compile_fail. Gated
+    behind `TLARS_EVAL_PROFILE=1`. `dump_eval_dispatch_profile()` prints
+    tier usage summary alongside existing `dump_eval_expr_profile()`.
+    3 tests (bytecode_hit, ast_fallback, bytecode_compile_fail_then_ast).
+    ~80 LOC.
+  - [ ] **38.21.A.c**: **Make NativeCache thread-safe.** Same pattern as
+    38.21.B.i.e (BytecodeCache): `RefCell<HashMap<..., Rc<...>>>` →
+    `Mutex<HashMap<..., Arc<...>>>`. Enables native codegen (~100-200×)
+    for parallel BFS workers. ~50 LOC.
+  - [ ] **38.21.A.d**: **Closure support in bytecode/native.** Handle
+    `Expr::Closure` in `compile_expr` and `generate_eval_function`.
+    Closures appear in `Set::new(|x| pred)` patterns. ~200 LOC.
+  - [ ] **38.21.A.e**: **Profile-driven optimization.** After telemetry
+    lands, identify the top 3 slowest expression patterns and optimize
+    their bytecode/native paths. Data-driven; scope TBD.
 - [ ] **38.21.B**: **Parallelize the explorer** (2-4× on multicore).
   TLC uses 4 workers. DPOR currently single-threaded. Worker-thread
   pool with a lock-free `DashMap<u64, ()>` visited set and per-worker
