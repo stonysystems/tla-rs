@@ -14825,8 +14825,17 @@ For each protocol modified in 44.2:
   | PBFT | 2,057–2,064 | 15.96–16.05 | 4 |
   | PB | 25.5–27.3 | 1,181 | 2 |
   PB is timeout-bound: serializes 1 request at a time, 50ms client timeout dominates. Server-side commits ~92 ops/s but only ~26 replies/s reach clients. RSL excluded (uses separate transport).
-- [ ] **44.5.b**: Bench on c097da0 baseline. Compute Phase 40 Arc-wrap delta for each protocol.
-- [ ] **44.5.c**: Update Phase 43.4 verdict with apples-to-apples data. Decide Phase 40 disposition (42.5.a "keep dormant" vs 42.5.b "disable via TOML") based on whether ANY protocol shows ≥10% benefit.
+- [x] **44.5.b**: Benched c097da0 baseline (git worktree, rebuilt liblib.so). Only Raft is measurable — PB/EPaxos/PBFT lack client/metrics infrastructure at c097da0 (ClientReply added Phase 44.2, [METRICS] added Phase 43.2).
+  **Raft c097da0 baseline (IronGenericClient, 32 threads, 30s, 2 trials):** 3,893.9 / 3,889.9 ops/s (avg latency 8.54–8.55 ms).
+  **Phase 40 Arc-wrap delta:**
+  | Protocol | c097da0 (baseline) | HEAD | Δ | Status |
+  |---|---|---|---|---|
+  | Raft | 3,892 ops/s | 3,892 ops/s | 0% | Measured, within noise |
+  | PB | N/A | 25.5–27.3 ops/s | N/A | c097da0 lacks [METRICS] |
+  | EPaxos | N/A | 3,424–3,456 ops/s | N/A | c097da0 lacks ClientRequest |
+  | PBFT | N/A | 2,057–2,064 ops/s | N/A | c097da0 lacks ClientReply |
+  **Conclusion**: Phase 40 Arc-wrapping shows zero benefit for Raft (confirmed). Other protocols unmeasurable at c097da0.
+- [x] **44.5.c**: Phase 40 disposition decided: **keep dormant (42.5.a)**. No protocol shows ≥10% benefit from struct-level Arc-wrapping. Raft confirmed at 0% delta (3,892 vs 3,892). PB/EPaxos/PBFT unmeasurable at c097da0 (client/metrics infrastructure didn't exist). Phase 43.4 verdict stands unchanged: "struct-level Arc adds refcounting overhead with no measurable gain." The `arc_wrap_fields` TOML codegen stays available for Phase 41.2 field-level wrapping (the actual perf win for RSL).
 
 ### Out of scope
 
