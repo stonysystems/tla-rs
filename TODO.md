@@ -13804,7 +13804,7 @@ Three implementation paths, in increasing engineering cost / payoff:
     Unsupported expressions return `Err` (graceful fallback).
     Unit tests cross-check generated Rust against `eval_expr`
     results on representative expressions. ~300 LOC.
-  - [ ] **38.22.1.c.ii**: **Expr-to-Rust — quantifiers, let, struct.**
+  - [x] **38.22.1.c.ii**: **Expr-to-Rust — quantifiers, let, struct.**
     Extend `expr_to_rust` with `Forall`/`Exists` (iterate domain,
     short-circuit), `Let` (Rust `let` bindings), `Match` (if-let
     chains), `Choose` (iterate + break), `Struct`/`StructUpdate`

@@ -317,19 +317,384 @@ pub fn expr_to_rust(expr: &Expr, ctx: &mut CodegenCtx) -> CodegenResult<String> 
             Ok(format!("{{ let {} = {}; {} }}", tmp, val_code, body_code))
         }
 
-        // Expressions that need Phase 38.22.1.c.ii (quantifiers, struct, method calls)
-        Expr::Struct { .. }
-        | Expr::StructUpdate { .. }
-        | Expr::MethodCall { .. }
-        | Expr::Call { .. }
-        | Expr::Forall { .. }
-        | Expr::Exists { .. }
-        | Expr::Choose { .. }
-        | Expr::Match { .. }
-        | Expr::Closure { .. } => Err(codegen_err(&format!(
-            "unsupported expression type: {}",
-            expr_type_name(expr)
-        ))),
+        // --- Phase 38.22.1.c.ii: struct, method, call, quantifier, match ---
+        Expr::Struct { name, fields } => {
+            let ty_name = path_to_string(name);
+            if let Some((ty, variant)) = split_variant_path(&ty_name) {
+                // Enum variant construction
+                let mut field_parts = Vec::new();
+                for (fname, fexpr) in fields {
+                    if fname == ".." {
+                        return Err(codegen_err("struct spread in enum variant"));
+                    }
+                    let fcode = expr_to_rust_val(fexpr, ctx)?;
+                    field_parts.push(format!("({:?}.to_string(), {})", fname, fcode));
+                }
+                Ok(format!(
+                    "RuntimeValue::enum_value({:?}, {:?}, vec![{}])",
+                    ty,
+                    variant,
+                    field_parts.join(", ")
+                ))
+            } else {
+                // Check for spread (..) base
+                let mut has_spread = false;
+                let mut base_code = String::new();
+                let mut field_parts = Vec::new();
+                for (fname, fexpr) in fields {
+                    if fname == ".." {
+                        has_spread = true;
+                        base_code = expr_to_rust_val(fexpr, ctx)?;
+                    } else {
+                        let fcode = expr_to_rust_val(fexpr, ctx)?;
+                        field_parts.push(format!("({:?}.to_string(), {})", fname, fcode));
+                    }
+                }
+                if has_spread {
+                    Ok(format!(
+                        "rt_struct_update(&{}, vec![{}])",
+                        base_code,
+                        field_parts.join(", ")
+                    ))
+                } else {
+                    Ok(format!(
+                        "RuntimeValue::struct_value({:?}, vec![{}])",
+                        ty_name,
+                        field_parts.join(", ")
+                    ))
+                }
+            }
+        }
+
+        Expr::StructUpdate { name, base, fields } => {
+            let base_code = expr_to_rust_val(base, ctx)?;
+            let mut field_parts = Vec::new();
+            for (fname, fexpr) in fields {
+                let fcode = expr_to_rust_val(fexpr, ctx)?;
+                field_parts.push(format!("({:?}.to_string(), {})", fname, fcode));
+            }
+            if let Some(n) = name {
+                Ok(format!(
+                    "rt_struct_update_named({:?}, &{}, vec![{}])",
+                    path_to_string(n),
+                    base_code,
+                    field_parts.join(", ")
+                ))
+            } else {
+                Ok(format!(
+                    "rt_struct_update(&{}, vec![{}])",
+                    base_code,
+                    field_parts.join(", ")
+                ))
+            }
+        }
+
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => {
+            let recv_code = expr_to_rust_val(receiver, ctx)?;
+            let mut arg_codes = Vec::new();
+            for arg in args {
+                arg_codes.push(expr_to_rust_val(arg, ctx)?);
+            }
+            Ok(format!(
+                "rt_method_call(&{}, {:?}, &[{}], &BOUNDS)",
+                recv_code,
+                method,
+                arg_codes.join(", ")
+            ))
+        }
+
+        Expr::Call { func, args } => {
+            let mut arg_codes = Vec::new();
+            for arg in args {
+                arg_codes.push(expr_to_rust_val(arg, ctx)?);
+            }
+            let func_name = path_to_string(func);
+            Ok(format!(
+                "rt_call({:?}, &[{}], &BOUNDS)",
+                func_name,
+                arg_codes.join(", ")
+            ))
+        }
+
+        Expr::Forall { vars, body, .. } => {
+            quantifier_codegen(vars, body, "true", "false", "&&", ctx)
+        }
+
+        Expr::Exists { vars, body } => quantifier_codegen(vars, body, "false", "true", "||", ctx),
+
+        Expr::Choose { vars, body } => choose_codegen(vars, body, ctx),
+
+        Expr::Match { scrutinee, arms } => match_codegen(scrutinee, arms, ctx),
+
+        // Closures are handled at call sites (Set::new, Map::new)
+        Expr::Closure { .. } => Err(codegen_err("standalone Closure not supported")),
+    }
+}
+
+fn path_to_string(path: &crate::ast::Path) -> String {
+    path.segments.join("::")
+}
+
+/// Generate code for forall/exists quantifiers.
+/// `init` is the initial accumulator ("true" for forall, "false" for exists).
+/// `short` is the short-circuit value ("false" for forall, "true" for exists).
+fn quantifier_codegen(
+    vars: &[crate::ast::Binding],
+    body: &Expr,
+    init: &str,
+    short: &str,
+    _op: &str,
+    ctx: &mut CodegenCtx,
+) -> CodegenResult<String> {
+    if vars.is_empty() {
+        let body_code = expr_to_rust_val(body, ctx)?;
+        return Ok(format!(
+            "Ok(RuntimeValue::Bool(rt_expect_bool(&{})?))",
+            body_code
+        ));
+    }
+
+    // Build nested loops, one per quantified variable
+    let mut code = String::new();
+    let mut tmps = Vec::new();
+    write!(code, "{{ let mut _qr = {}; ", init).unwrap();
+
+    for var in vars {
+        let name = match &var.pattern {
+            crate::ast::Pattern::Ident(n) => n.clone(),
+            _ => return Err(codegen_err("quantifier with non-identifier binding")),
+        };
+        let tmp = ctx.fresh_tmp();
+        // Domain is computed by the runtime via quantifier_domain callback
+        write!(
+            code,
+            "'q{}: for {} in rt_quantifier_domain({})?.iter() {{ ",
+            tmps.len(),
+            tmp,
+            var_binding_index(vars, &name)
+        )
+        .unwrap();
+        ctx.locals.insert(name, tmp.clone());
+        tmps.push(tmp);
+    }
+
+    // Body evaluation
+    let body_code = expr_to_rust_val(body, ctx)?;
+    write!(
+        code,
+        "let _bv = rt_expect_bool(&{})?; if _bv == {} {{ _qr = {}; break 'q0; }}",
+        body_code, short, short
+    )
+    .unwrap();
+
+    // Close all loops
+    for _ in vars {
+        write!(code, " }}").unwrap();
+    }
+    write!(code, " Ok(RuntimeValue::Bool(_qr)) }}").unwrap();
+
+    // Clean up ctx locals (they were temporary)
+    for var in vars {
+        if let crate::ast::Pattern::Ident(n) = &var.pattern {
+            ctx.locals.remove(n);
+        }
+    }
+    Ok(code)
+}
+
+fn var_binding_index(vars: &[crate::ast::Binding], name: &str) -> usize {
+    vars.iter()
+        .position(|v| matches!(&v.pattern, crate::ast::Pattern::Ident(n) if n == name))
+        .unwrap_or(0)
+}
+
+/// Generate code for CHOOSE expressions.
+fn choose_codegen(
+    vars: &[crate::ast::Binding],
+    body: &Expr,
+    ctx: &mut CodegenCtx,
+) -> CodegenResult<String> {
+    if vars.is_empty() {
+        return Err(codegen_err("CHOOSE with no bound variables"));
+    }
+
+    let mut code = String::new();
+    let mut tmps = Vec::new();
+    write!(
+        code,
+        "{{ let mut _choose_result: Option<RuntimeValue> = None; "
+    )
+    .unwrap();
+
+    for (i, var) in vars.iter().enumerate() {
+        let name = match &var.pattern {
+            crate::ast::Pattern::Ident(n) => n.clone(),
+            _ => return Err(codegen_err("CHOOSE with non-identifier binding")),
+        };
+        let tmp = ctx.fresh_tmp();
+        write!(
+            code,
+            "'ch{}: for {} in rt_quantifier_domain({})?.iter() {{ ",
+            i,
+            tmp,
+            var_binding_index(vars, &name)
+        )
+        .unwrap();
+        ctx.locals.insert(name, tmp.clone());
+        tmps.push(tmp);
+    }
+
+    let body_code = expr_to_rust_val(body, ctx)?;
+    write!(
+        code,
+        "if rt_expect_bool(&{})? {{ _choose_result = Some({}.clone()); break 'ch0; }}",
+        body_code, tmps[0]
+    )
+    .unwrap();
+
+    for _ in vars {
+        write!(code, " }}").unwrap();
+    }
+    write!(
+        code,
+        " match _choose_result {{ Some(v) => Ok(v), None => Err(rt_error(\"CHOOSE: no satisfying value\")) }} }}"
+    )
+    .unwrap();
+
+    for var in vars {
+        if let crate::ast::Pattern::Ident(n) = &var.pattern {
+            ctx.locals.remove(n);
+        }
+    }
+    Ok(code)
+}
+
+/// Generate code for match expressions.
+fn match_codegen(
+    scrutinee: &Expr,
+    arms: &[crate::ast::MatchArm],
+    ctx: &mut CodegenCtx,
+) -> CodegenResult<String> {
+    let scrut_code = expr_to_rust_val(scrutinee, ctx)?;
+    let scrut_tmp = ctx.fresh_tmp();
+
+    let mut code = String::new();
+    write!(code, "{{ let {} = {}; ", scrut_tmp, scrut_code).unwrap();
+
+    for (i, arm) in arms.iter().enumerate() {
+        let (condition, bindings) = pattern_to_condition(&arm.pattern, &scrut_tmp, ctx)?;
+
+        if i > 0 {
+            write!(code, " else ").unwrap();
+        }
+        write!(code, "if {} {{ ", condition).unwrap();
+
+        // Add pattern bindings to context
+        let mut inner_ctx = ctx.clone();
+        for (name, expr_str) in &bindings {
+            inner_ctx.locals.insert(name.clone(), expr_str.clone());
+        }
+
+        // Guard
+        if let Some(guard) = &arm.guard {
+            let guard_code = expr_to_rust_val(guard, &mut inner_ctx)?;
+            write!(code, "if rt_expect_bool(&{})? {{ ", guard_code).unwrap();
+            let body_code = expr_to_rust(&arm.body, &mut inner_ctx)?;
+            write!(code, "{} }} else {{ rt_match_fallthrough() }}", body_code).unwrap();
+        } else {
+            let body_code = expr_to_rust(&arm.body, &mut inner_ctx)?;
+            write!(code, "{}", body_code).unwrap();
+        }
+
+        write!(code, " }}").unwrap();
+    }
+
+    write!(
+        code,
+        " else {{ Err(rt_error(\"match: no arm matched\")) }} }}"
+    )
+    .unwrap();
+    Ok(code)
+}
+
+/// Convert a pattern to a boolean condition string and binding list.
+fn pattern_to_condition(
+    pattern: &crate::ast::Pattern,
+    scrutinee: &str,
+    ctx: &mut CodegenCtx,
+) -> CodegenResult<(String, Vec<(String, String)>)> {
+    match pattern {
+        crate::ast::Pattern::Wildcard => Ok(("true".to_string(), Vec::new())),
+
+        crate::ast::Pattern::Ident(name) => Ok((
+            "true".to_string(),
+            vec![(name.clone(), format!("{}.clone()", scrutinee))],
+        )),
+
+        crate::ast::Pattern::Literal(lit) => {
+            let lit_code = match lit {
+                Literal::Bool(b) => format!("RuntimeValue::Bool({})", b),
+                Literal::Int(n) => format!("RuntimeValue::Int({})", n),
+                Literal::String(s) => format!("RuntimeValue::String({:?}.to_string())", s),
+            };
+            Ok((format!("{} == {}", scrutinee, lit_code), Vec::new()))
+        }
+
+        crate::ast::Pattern::Struct { name, fields } => {
+            let ty_name = path_to_string(name);
+            let mut bindings = Vec::new();
+            let mut conditions = vec![format!("rt_is_struct(&{}, {:?})", scrutinee, ty_name)];
+            for (fname, fpat) in fields {
+                let field_access = format!("rt_field_val(&{}, {:?})", scrutinee, fname);
+                let (sub_cond, sub_binds) = pattern_to_condition(fpat, &field_access, ctx)?;
+                if sub_cond != "true" {
+                    conditions.push(sub_cond);
+                }
+                bindings.extend(sub_binds);
+            }
+            Ok((conditions.join(" && "), bindings))
+        }
+
+        crate::ast::Pattern::Variant { name, fields } => {
+            let full_name = path_to_string(name);
+            let variant = name.segments.last().cloned().unwrap_or_default();
+            let mut bindings = Vec::new();
+            let mut conditions = vec![format!("rt_is_variant(&{}, {:?})", scrutinee, variant)];
+            // Positional fields accessed by index
+            for (i, fpat) in fields.iter().enumerate() {
+                let field_access = format!("rt_variant_field(&{}, {})", scrutinee, i);
+                let (sub_cond, sub_binds) = pattern_to_condition(fpat, &field_access, ctx)?;
+                if sub_cond != "true" {
+                    conditions.push(sub_cond);
+                }
+                bindings.extend(sub_binds);
+            }
+            let _ = full_name; // used for error context if needed
+            Ok((conditions.join(" && "), bindings))
+        }
+
+        crate::ast::Pattern::Tuple(patterns) => {
+            let mut bindings = Vec::new();
+            let mut conditions = Vec::new();
+            for (i, pat) in patterns.iter().enumerate() {
+                let elem_access = format!("rt_tuple_field(&{}, {})", scrutinee, i);
+                let (sub_cond, sub_binds) = pattern_to_condition(pat, &elem_access, ctx)?;
+                if sub_cond != "true" {
+                    conditions.push(sub_cond);
+                }
+                bindings.extend(sub_binds);
+            }
+            let cond = if conditions.is_empty() {
+                "true".to_string()
+            } else {
+                conditions.join(" && ")
+            };
+            Ok((cond, bindings))
+        }
     }
 }
 
@@ -560,19 +925,68 @@ fn check_support_recursive(expr: &Expr) -> CodegenResult<()> {
             check_support_recursive(body)
         }
 
-        // Unsupported in Phase 38.22.1.c.i
-        Expr::Struct { .. }
-        | Expr::StructUpdate { .. }
-        | Expr::MethodCall { .. }
-        | Expr::Call { .. }
-        | Expr::Forall { .. }
-        | Expr::Exists { .. }
-        | Expr::Choose { .. }
-        | Expr::Match { .. }
-        | Expr::Closure { .. } => Err(codegen_err(&format!(
-            "unsupported: {}",
-            expr_type_name(expr)
-        ))),
+        // Phase 38.22.1.c.ii: struct, method, call, quantifier, match
+        Expr::Struct { fields, .. } => {
+            for (_, fexpr) in fields {
+                check_support_recursive(fexpr)?;
+            }
+            Ok(())
+        }
+
+        Expr::StructUpdate { base, fields, .. } => {
+            check_support_recursive(base)?;
+            for (_, fexpr) in fields {
+                check_support_recursive(fexpr)?;
+            }
+            Ok(())
+        }
+
+        Expr::MethodCall { receiver, args, .. } => {
+            check_support_recursive(receiver)?;
+            for arg in args {
+                check_support_recursive(arg)?;
+            }
+            Ok(())
+        }
+
+        Expr::Call { args, .. } => {
+            for arg in args {
+                check_support_recursive(arg)?;
+            }
+            Ok(())
+        }
+
+        Expr::Forall { vars, body, .. } | Expr::Exists { vars, body } => {
+            for var in vars {
+                if !matches!(&var.pattern, crate::ast::Pattern::Ident(_)) {
+                    return Err(codegen_err("quantifier with non-identifier binding"));
+                }
+            }
+            check_support_recursive(body)
+        }
+
+        Expr::Choose { vars, body } => {
+            for var in vars {
+                if !matches!(&var.pattern, crate::ast::Pattern::Ident(_)) {
+                    return Err(codegen_err("CHOOSE with non-identifier binding"));
+                }
+            }
+            check_support_recursive(body)
+        }
+
+        Expr::Match { scrutinee, arms } => {
+            check_support_recursive(scrutinee)?;
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    check_support_recursive(guard)?;
+                }
+                check_support_recursive(&arm.body)?;
+            }
+            Ok(())
+        }
+
+        // Closures only supported at call sites, not standalone
+        Expr::Closure { .. } => Err(codegen_err("standalone Closure")),
     }
 }
 
@@ -853,7 +1267,7 @@ mod tests {
     }
 
     #[test]
-    fn test_unsupported_forall_errors() {
+    fn test_forall_empty_vars_returns_body() {
         let expr = Expr::Forall {
             vars: vec![],
             triggers: vec![],
@@ -861,12 +1275,13 @@ mod tests {
         };
         let mut ctx = CodegenCtx::new(&[]);
         let result = expr_to_rust(&expr, &mut ctx);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().message.contains("Forall"));
+        assert!(result.is_ok());
+        let code = result.unwrap();
+        assert!(code.contains("Bool"), "code: {}", code);
     }
 
     #[test]
-    fn test_unsupported_method_call_errors() {
+    fn test_method_call_generates_rt_method_call() {
         let expr = Expr::MethodCall {
             receiver: Box::new(Expr::Ident("s".to_string())),
             method: "contains".to_string(),
@@ -874,7 +1289,10 @@ mod tests {
         };
         let mut ctx = CodegenCtx::new(&["s".to_string()]);
         let result = expr_to_rust(&expr, &mut ctx);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let code = result.unwrap();
+        assert!(code.contains("rt_method_call"), "code: {}", code);
+        assert!(code.contains("contains"), "code: {}", code);
     }
 
     #[test]
@@ -907,28 +1325,38 @@ mod tests {
     }
 
     #[test]
-    fn test_check_codegen_support_rejects_forall() {
+    fn test_check_codegen_support_accepts_forall() {
+        use crate::ast::Binding;
         let expr = Expr::Forall {
-            vars: vec![],
+            vars: vec![Binding {
+                pattern: crate::ast::Pattern::Ident("x".to_string()),
+                ty: None,
+                variable_mode: Default::default(),
+            }],
             triggers: vec![],
             body: Box::new(Expr::Literal(Literal::Bool(true))),
         };
-        assert!(check_codegen_support(&expr).is_err());
+        assert!(check_codegen_support(&expr).is_ok());
     }
 
     #[test]
-    fn test_check_codegen_support_nested() {
-        // If { cond: true, then: Forall{...}, else: 1 } — should fail
+    fn test_check_codegen_support_nested_with_forall() {
+        use crate::ast::Binding;
+        // If { cond: true, then: Forall{...}, else: 1 } — should succeed now
         let expr = Expr::If {
             cond: Box::new(Expr::Literal(Literal::Bool(true))),
             then_branch: Box::new(Expr::Forall {
-                vars: vec![],
+                vars: vec![Binding {
+                    pattern: crate::ast::Pattern::Ident("x".to_string()),
+                    ty: None,
+                    variable_mode: Default::default(),
+                }],
                 triggers: vec![],
                 body: Box::new(Expr::Literal(Literal::Bool(true))),
             }),
             else_branch: Some(Box::new(Expr::Literal(Literal::Int(1)))),
         };
-        assert!(check_codegen_support(&expr).is_err());
+        assert!(check_codegen_support(&expr).is_ok());
     }
 
     #[test]
@@ -984,5 +1412,243 @@ mod tests {
         let mut ctx = CodegenCtx::new(&[]);
         let code = expr_to_rust(&expr, &mut ctx).unwrap();
         assert!(code.contains("rt_negate"), "code: {}", code);
+    }
+
+    // --- Phase 38.22.1.c.ii tests ---
+
+    #[test]
+    fn test_struct_construction() {
+        let expr = Expr::Struct {
+            name: crate::ast::Path::new(vec!["LState".to_string()]),
+            fields: vec![
+                ("x".to_string(), Expr::Literal(Literal::Int(1))),
+                ("y".to_string(), Expr::Literal(Literal::Int(2))),
+            ],
+        };
+        let mut ctx = CodegenCtx::new(&[]);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(code.contains("struct_value"), "code: {}", code);
+        assert!(code.contains("LState"), "code: {}", code);
+    }
+
+    #[test]
+    fn test_enum_variant_construction() {
+        let expr = Expr::Struct {
+            name: crate::ast::Path::new(vec!["Msg".to_string(), "Prepare".to_string()]),
+            fields: vec![("bal".to_string(), Expr::Literal(Literal::Int(1)))],
+        };
+        let mut ctx = CodegenCtx::new(&[]);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(code.contains("enum_value"), "code: {}", code);
+        assert!(code.contains("Msg"), "code: {}", code);
+        assert!(code.contains("Prepare"), "code: {}", code);
+    }
+
+    #[test]
+    fn test_struct_update() {
+        let expr = Expr::StructUpdate {
+            name: Some(crate::ast::Path::new(vec!["LState".to_string()])),
+            base: Box::new(Expr::Ident("s".to_string())),
+            fields: vec![("x".to_string(), Expr::Literal(Literal::Int(42)))],
+        };
+        let names = vec!["s".to_string()];
+        let mut ctx = CodegenCtx::new(&names);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(code.contains("rt_struct_update_named"), "code: {}", code);
+    }
+
+    #[test]
+    fn test_method_call() {
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("s".to_string())),
+            method: "contains".to_string(),
+            args: vec![Expr::Literal(Literal::Int(1))],
+        };
+        let names = vec!["s".to_string()];
+        let mut ctx = CodegenCtx::new(&names);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(code.contains("rt_method_call"), "code: {}", code);
+        assert!(code.contains("contains"), "code: {}", code);
+    }
+
+    #[test]
+    fn test_function_call() {
+        let expr = Expr::Call {
+            func: crate::ast::Path::new(vec!["Helper".to_string(), "compute".to_string()]),
+            args: vec![Expr::Literal(Literal::Int(1))],
+        };
+        let mut ctx = CodegenCtx::new(&[]);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(code.contains("rt_call"), "code: {}", code);
+        assert!(code.contains("Helper::compute"), "code: {}", code);
+    }
+
+    #[test]
+    fn test_forall_quantifier() {
+        let expr = Expr::Forall {
+            vars: vec![Binding {
+                pattern: Pattern::Ident("i".to_string()),
+                ty: Some(crate::ast::Type::Int),
+                variable_mode: VariableMode::default(),
+            }],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        let mut ctx = CodegenCtx::new(&[]);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(code.contains("rt_quantifier_domain"), "code: {}", code);
+        assert!(
+            code.contains("_qr"),
+            "should have quantifier result: {}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_exists_quantifier() {
+        let expr = Expr::Exists {
+            vars: vec![Binding {
+                pattern: Pattern::Ident("x".to_string()),
+                ty: Some(crate::ast::Type::Int),
+                variable_mode: VariableMode::default(),
+            }],
+            body: Box::new(Expr::Eq(
+                Box::new(Expr::Ident("x".to_string())),
+                Box::new(Expr::Literal(Literal::Int(1))),
+            )),
+        };
+        let mut ctx = CodegenCtx::new(&[]);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(
+            code.contains("false"),
+            "exists init should be false: {}",
+            code
+        );
+        assert!(
+            code.contains("true"),
+            "exists short-circuit to true: {}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_choose() {
+        let expr = Expr::Choose {
+            vars: vec![Binding {
+                pattern: Pattern::Ident("v".to_string()),
+                ty: Some(crate::ast::Type::Int),
+                variable_mode: VariableMode::default(),
+            }],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        let mut ctx = CodegenCtx::new(&[]);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(code.contains("_choose_result"), "code: {}", code);
+        assert!(code.contains("rt_quantifier_domain"), "code: {}", code);
+    }
+
+    #[test]
+    fn test_match_simple() {
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Ident("msg".to_string())),
+            arms: vec![crate::ast::MatchArm {
+                pattern: Pattern::Ident("x".to_string()),
+                guard: None,
+                body: Expr::Literal(Literal::Int(1)),
+            }],
+        };
+        let names = vec!["msg".to_string()];
+        let mut ctx = CodegenCtx::new(&names);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(code.contains("if true"), "wildcard-like match: {}", code);
+    }
+
+    #[test]
+    fn test_match_variant_pattern() {
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Ident("msg".to_string())),
+            arms: vec![crate::ast::MatchArm {
+                pattern: Pattern::Variant {
+                    name: crate::ast::Path::new(vec!["Msg".to_string(), "Prepare".to_string()]),
+                    fields: vec![Pattern::Ident("bal".to_string())],
+                },
+                guard: None,
+                body: Expr::Ident("bal".to_string()),
+            }],
+        };
+        let names = vec!["msg".to_string()];
+        let mut ctx = CodegenCtx::new(&names);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(
+            code.contains("rt_is_variant"),
+            "should check variant: {}",
+            code
+        );
+        assert!(code.contains("Prepare"), "should check Prepare: {}", code);
+    }
+
+    #[test]
+    fn test_struct_spread() {
+        // LState { x: 1, ..s }
+        let expr = Expr::Struct {
+            name: crate::ast::Path::new(vec!["LState".to_string()]),
+            fields: vec![
+                ("x".to_string(), Expr::Literal(Literal::Int(1))),
+                ("..".to_string(), Expr::Ident("s".to_string())),
+            ],
+        };
+        let names = vec!["s".to_string()];
+        let mut ctx = CodegenCtx::new(&names);
+        let code = expr_to_rust(&expr, &mut ctx).unwrap();
+        assert!(
+            code.contains("rt_struct_update"),
+            "should use struct update for spread: {}",
+            code
+        );
+    }
+
+    #[test]
+    fn test_check_support_struct() {
+        let expr = Expr::Struct {
+            name: crate::ast::Path::new(vec!["S".to_string()]),
+            fields: vec![("x".to_string(), Expr::Literal(Literal::Int(1)))],
+        };
+        assert!(check_codegen_support(&expr).is_ok());
+    }
+
+    #[test]
+    fn test_check_support_forall() {
+        let expr = Expr::Forall {
+            vars: vec![Binding {
+                pattern: Pattern::Ident("i".to_string()),
+                ty: Some(crate::ast::Type::Int),
+                variable_mode: VariableMode::default(),
+            }],
+            triggers: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        assert!(check_codegen_support(&expr).is_ok());
+    }
+
+    #[test]
+    fn test_check_support_match() {
+        let expr = Expr::Match {
+            scrutinee: Box::new(Expr::Literal(Literal::Int(1))),
+            arms: vec![crate::ast::MatchArm {
+                pattern: Pattern::Wildcard,
+                guard: None,
+                body: Expr::Literal(Literal::Int(2)),
+            }],
+        };
+        assert!(check_codegen_support(&expr).is_ok());
+    }
+
+    #[test]
+    fn test_check_support_closure_rejected() {
+        let expr = Expr::Closure {
+            params: vec![],
+            body: Box::new(Expr::Literal(Literal::Bool(true))),
+        };
+        assert!(check_codegen_support(&expr).is_err());
     }
 }
