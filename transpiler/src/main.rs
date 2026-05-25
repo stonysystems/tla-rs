@@ -259,10 +259,11 @@ enum Commands {
         #[arg(long)]
         model: PathBuf,
 
-        /// Use bytecode VM instead of AST interpreter for expression evaluation.
-        /// Compiles expressions to bytecode on first use and caches the result.
+        /// Disable bytecode VM and fall back to AST interpreter for expression
+        /// evaluation. By default, the bytecode VM is enabled (compiles
+        /// expressions on first use and caches the result for ~2x speedup).
         #[arg(long)]
-        bytecode: bool,
+        no_bytecode: bool,
 
         /// Number of parallel worker threads for BFS exploration.
         /// Default 1 (sequential). When >1 and search mode is BFS,
@@ -3584,6 +3585,7 @@ fn run_dpor_explorer_as_main_path(
         cached_transition_ir: std::sync::OnceLock::new(),
         cached_branch_assignments: std::sync::OnceLock::new(),
         field_schema,
+        bytecode_cache: verus_transpiler::modelcheck::bytecode::BytecodeCache::new(),
     };
     let invariant_names: Vec<String> = invariants.iter().map(|f| f.name.clone()).collect();
     let dpor_config = DporConfig {
@@ -4804,7 +4806,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             export_parity,
             export_parity_debug,
             model,
-            bytecode,
+            no_bytecode,
             workers,
         } => {
             if cli.verbose {
@@ -4834,7 +4836,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 *timeout_ms,
                 model.as_path(),
                 export_parity_debug.as_deref(),
-                *bytecode,
+                !*no_bytecode,
                 *workers,
             )?;
             let search_evidence_mode = classify_search_evidence_mode(&model_config.search);
@@ -6858,7 +6860,7 @@ Next(s, s_, c) ==
                 export_parity: _,
                 export_parity_debug: _,
                 model,
-                bytecode: _,
+                no_bytecode: _,
                 workers: _,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
@@ -7051,7 +7053,7 @@ invariants = ["LInv"]
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -7137,7 +7139,7 @@ fairness = { weak = ["branch_0"] }
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -7223,7 +7225,7 @@ fairness = { weak = ["branch_typo"], strong = ["branch_missing"] }
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -7312,7 +7314,7 @@ max_states = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -7533,7 +7535,7 @@ max = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -7612,7 +7614,7 @@ max = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -10624,7 +10626,7 @@ max = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -10702,7 +10704,7 @@ max = 1
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -10792,7 +10794,7 @@ verus! {
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -10851,7 +10853,7 @@ verus! {
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -10935,7 +10937,7 @@ invariants = ["LMissing"]
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -11021,7 +11023,7 @@ invariants = ["LMissing"]
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -11092,7 +11094,7 @@ verus! {
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {
@@ -11160,7 +11162,7 @@ verus! {
             export_parity: None,
             export_parity_debug: None,
             model: model_path,
-            bytecode: false,
+            no_bytecode: false,
             workers: 1,
         };
         let cli = Cli {

@@ -315,9 +315,15 @@ pub fn compile_expr(
         Expr::Ident(name) => {
             if let Some(slot) = locals.get(name) {
                 chunk.emit(Opcode::LoadLocal(slot));
+            } else if let Some((ty, variant)) = split_variant_path(name) {
+                // Enum variant path (e.g., "LTPCMessage::Prepare") — resolve
+                // to an Enum value at compile time.
+                let enum_val = RuntimeValue::enum_value(ty, variant, Vec::<(String, RuntimeValue)>::new())
+                    .map_err(|_| type_error(&format!("Failed to construct enum variant `{}`", name)))?;
+                let ci = chunk.add_const(enum_val);
+                chunk.emit(Opcode::LoadConst(ci));
             } else {
-                // Unresolved ident — could be an enum variant path.
-                // Encode as a constant placeholder that the VM resolves.
+                // Unresolved ident — encode as a string constant.
                 let ci = chunk.add_const(RuntimeValue::String(name.clone()));
                 chunk.emit(Opcode::LoadConst(ci));
             }
@@ -3937,5 +3943,53 @@ mod tests {
             vm_dur.as_nanos() as f64 / n as f64,
             ast_dur.as_nanos() as f64 / vm_dur.as_nanos() as f64,
         );
+    }
+
+    #[test]
+    fn test_compile_ident_enum_variant_path() {
+        // Ident("LTPCMessage::Prepare") should compile to an Enum value,
+        // not a String. This was the root cause of the TwoPhase state-count
+        // mismatch when bytecode was enabled.
+        let expr = Expr::Ident("LTPCMessage::Prepare".to_string());
+        let result = eval(&expr).unwrap();
+        assert!(
+            matches!(&result, RuntimeValue::Enum { ty, variant, .. }
+                     if ty == "LTPCMessage" && variant == "Prepare"),
+            "Expected Enum variant, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_compile_seqlit_with_enum_variant_ident() {
+        // seq![LTPCMessage::Prepare] should produce a Seq containing an Enum,
+        // not a Seq containing a String.
+        let expr = Expr::SeqLit(vec![Expr::Ident("LTPCMessage::Prepare".to_string())]);
+        let result = eval(&expr).unwrap();
+        match &result {
+            RuntimeValue::Seq(items) => {
+                assert_eq!(items.len(), 1);
+                assert!(
+                    matches!(&items[0], RuntimeValue::Enum { ty, variant, .. }
+                             if ty == "LTPCMessage" && variant == "Prepare"),
+                    "Expected Enum variant in seq, got: {:?}",
+                    items[0]
+                );
+            }
+            other => panic!("Expected Seq, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_compile_ident_enum_variant_matches_ast_evaluator() {
+        // Verify bytecode and AST evaluator agree on enum variant idents.
+        use crate::modelcheck::evaluator::{eval_expr, EvalContext};
+        let expr = Expr::Ident("LNodeRole::Primary".to_string());
+        let bounds = RuntimeCollectionBounds {
+            max_seq_len: 10, max_set_len: 10, max_map_len: 10,
+        };
+        let ast_result = eval_expr(&expr, &EvalContext::new(bounds)).unwrap();
+        let vm_result = eval(&expr).unwrap();
+        assert_eq!(ast_result, vm_result);
     }
 }

@@ -13765,6 +13765,15 @@ Three implementation paths, in increasing engineering cost / payoff:
     forall/exists short-circuit, let binding, match, struct
     update, method calls. Add a benchmark comparing `eval_expr`
     vs `vm_eval` on a representative Paxos expression. ~300 LOC.
+- [x] **38.22.1.b.viii**: **Fix bytecode enum variant bug & enable bytecode by default.**
+  Fixed `Expr::Ident("LTPCMessage::Prepare")` compiling to `RuntimeValue::String`
+  instead of `RuntimeValue::Enum` in the bytecode compiler — added
+  `split_variant_path()` check mirroring the AST evaluator's logic. Changed CLI
+  from `--bytecode` (opt-in) to `--no-bytecode` (opt-out), making bytecode the
+  default for the main `model-check` command. DPOR explorer keeps AST interpreter
+  (bytecode causes state divergence in DPOR's successor computation — separate
+  investigation needed). 3 new tests: enum variant compilation, SeqLit with enum
+  variant, cross-check bytecode vs AST evaluator. 328/328 tests pass. *DONE.*
 - [ ] **38.22.1.c**: **Codegen Rust closures via syn / quote.**
   Generate Rust source per spec function, compile to `cdylib` at
   startup via cargo, dlopen at runtime. True native execution; LLVM

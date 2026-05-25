@@ -49,6 +49,9 @@ pub struct SpecContext {
     /// Phase 38.22.2.b.ii: field schema registry mapping struct/enum type
     /// names to ordered field layouts with name→index lookup.
     pub field_schema: crate::modelcheck::field_schema::FieldSchemaRegistry,
+    /// Phase 38.22.1.b: bytecode compilation cache for faster expression
+    /// evaluation. Single-threaded DPOR explorer can use RefCell-based cache.
+    pub bytecode_cache: crate::modelcheck::bytecode::BytecodeCache,
 }
 
 impl SpecContext {
@@ -90,6 +93,7 @@ impl SpecContext {
             cached_transition_ir: std::sync::OnceLock::new(),
             cached_branch_assignments: std::sync::OnceLock::new(),
             field_schema,
+            bytecode_cache: crate::modelcheck::bytecode::BytecodeCache::new(),
         })
     }
 
@@ -541,7 +545,7 @@ impl SpecContext {
                     method_evaluator: None,
                     quantifier_domain_evaluator: Some(&quant_eval),
                     predicate_only_branch_solver: None,
-                    bytecode_cache: None,
+                    bytecode_cache: None, // DPOR uses AST interpreter (bytecode causes state divergence)
                 };
                 match solve_branch_successors(
                     &helper_transition, helper_branch, cur_state, constants,
@@ -561,7 +565,7 @@ impl SpecContext {
             method_evaluator: None,
             quantifier_domain_evaluator: Some(&quant_eval),
             predicate_only_branch_solver: Some(&predicate_solver),
-            bytecode_cache: None,
+            bytecode_cache: None, // DPOR uses AST interpreter (bytecode causes state divergence)
         };
 
         let mut solved = Vec::new();
@@ -720,13 +724,14 @@ impl SpecContext {
             &crate::ast::Path,
             &[RuntimeValue],
         ) -> TranspileResult<RuntimeValue>,
+        _bytecode_cache: Option<&'a crate::modelcheck::bytecode::BytecodeCache>,
     ) -> SolverHooks<'a> {
         SolverHooks {
             call_evaluator: Some(call_eval),
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: None,
-            bytecode_cache: None,
+            bytecode_cache: None, // DPOR uses AST interpreter
         }
     }
 
