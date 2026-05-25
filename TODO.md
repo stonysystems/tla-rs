@@ -13604,10 +13604,13 @@ tiers, ordered biggest-gain-per-effort first.
     to `SleepIndependenceBlockers`, wired into `record_independence_decision`.
     Top-5 conflict pairs included in formatted summary output.
     10 new tests (6 in types.rs, 4 in explore.rs). ~120 LOC.
-  - [ ] **38.21.I.b**: **Conflict profile CLI report.**
-    Add `--conflict-profile` flag that emits a ranked conflict-pair
-    frequency report after exploration, with suggestions for which
-    pairs could benefit from keyed-path refinement. ~100 LOC.
+  - [x] **38.21.I.b**: **Conflict profile CLI report.** DONE.
+    Added `--conflict-profile` CLI flag to `verus-transpile model-check`.
+    When used with `--search dpor`, emits a ranked conflict-pair frequency
+    report to stderr with per-pair percentages and keyed-path refinement
+    suggestions. Added `format_conflict_profile()` public function in
+    `explore.rs`. 4 new tests (2 explore.rs, 1 CLI, 1 existing extended).
+    ~100 LOC.
   - [ ] **38.21.I.c**: **Runtime conflict verification.**
     After firing a transition, compare pre/post state on statically-
     predicted conflict fields to check whether the conflict actually

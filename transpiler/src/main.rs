@@ -277,6 +277,13 @@ enum Commands {
         /// uses level-synchronous parallel BFS with rayon.
         #[arg(long, default_value_t = 1)]
         workers: usize,
+
+        /// Emit a conflict profile report to stderr after DPOR exploration.
+        /// Shows which field pairs cause the most independence check failures,
+        /// ranked by frequency, with suggestions for keyed-path refinement.
+        /// Only meaningful with `--search dpor` (ignored for BFS/DFS).
+        #[arg(long)]
+        conflict_profile: bool,
     },
 
     /// Emit a machine-readable JSON report of `assume(...)` sites in generated files.
@@ -3577,6 +3584,7 @@ fn run_dpor_explorer_as_main_path(
     invariants: &[verus_transpiler::ast::SpecFunction],
     limits: verus_transpiler::modelcheck::explorer::ExplorationLimits,
     native_rlib_paths: Option<(PathBuf, PathBuf)>,
+    conflict_profile: bool,
 ) -> std::result::Result<verus_transpiler::modelcheck::explorer::ExplorationResult, String> {
     use verus_transpiler::modelcheck::dpor::enabled::SpecContext;
     use verus_transpiler::modelcheck::dpor::{explore_dpor, DporConfig};
@@ -3619,6 +3627,14 @@ fn run_dpor_explorer_as_main_path(
         check_deadlock: model_config.properties.check_deadlock,
     };
     let result = explore_dpor(&ctx, &dpor_config);
+
+    if conflict_profile {
+        let report = verus_transpiler::modelcheck::dpor::explore::format_conflict_profile(
+            &result.sleep_independence_blockers,
+        );
+        eprintln!("{}", report);
+    }
+
     let stop_reason = if result.violation.is_some() {
         ExplorationStopReason::InvariantViolated
     } else {
@@ -3655,6 +3671,7 @@ fn execute_model_check(
     use_bytecode: bool,
     use_native_codegen: bool,
     workers: usize,
+    conflict_profile: bool,
 ) -> Result<ModelCheckExecution> {
     use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
@@ -4212,6 +4229,7 @@ fn execute_model_check(
                 &owned_invariants,
                 limits,
                 native_cache.as_ref().map(|nc| nc.rlib_paths()),
+                conflict_profile,
             )
             .map_err(|e| miette::miette!("{}", e))?
         } else if workers > 1 && matches!(selected_search, CliSearchMode::Bfs) {
@@ -4699,6 +4717,7 @@ fn run_model_check_command(
     use_bytecode: bool,
     use_native_codegen: bool,
     workers: usize,
+    conflict_profile: bool,
 ) -> Result<ModelCheckCommandExecution> {
     use std::time::Instant;
     use verus_transpiler::modelcheck::config::{
@@ -4763,6 +4782,7 @@ fn run_model_check_command(
         use_bytecode,
         use_native_codegen,
         workers,
+        conflict_profile,
     )?;
     execution.summary.timing.source_ingestion_parsing_ms = source_ingestion_parsing_ms;
     execution.summary.timing.model_config_resolution_ms = model_config_resolution_ms;
@@ -4877,6 +4897,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
             no_bytecode,
             native_codegen,
             workers,
+            conflict_profile,
         } => {
             if cli.verbose {
                 eprintln!("Loading protocol spec: {}", input.display());
@@ -4908,6 +4929,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 !*no_bytecode,
                 *native_codegen,
                 *workers,
+                *conflict_profile,
             )?;
             let search_evidence_mode = classify_search_evidence_mode(&model_config.search);
 
@@ -6933,6 +6955,7 @@ Next(s, s_, c) ==
                 no_bytecode: _,
                 native_codegen: _,
                 workers: _,
+                conflict_profile: _,
             }) => {
                 assert_eq!(input, PathBuf::from("src/protocol/TwoPhase/twophase.rs"));
                 assert_eq!(types, Some(PathBuf::from("src/protocol/TwoPhase/types.rs")));
@@ -6991,6 +7014,49 @@ Next(s, s_, c) ==
                 native_codegen, ..
             }) => {
                 assert!(native_codegen, "native_codegen should be true with --native-codegen");
+            }
+            _ => panic!("Expected ModelCheck command"),
+        }
+    }
+
+    #[test]
+    fn test_model_check_cli_conflict_profile_flag() {
+        // Default: conflict_profile is false
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "model-check",
+            "--input",
+            "demo.rs",
+            "--model",
+            "model.toml",
+        ]);
+        match cli.command {
+            Some(Commands::ModelCheck {
+                conflict_profile, ..
+            }) => {
+                assert!(!conflict_profile, "conflict_profile should default to false");
+            }
+            _ => panic!("Expected ModelCheck command"),
+        }
+
+        // With --conflict-profile flag
+        let cli = Cli::parse_from([
+            "verus-transpile",
+            "model-check",
+            "--input",
+            "demo.rs",
+            "--model",
+            "model.toml",
+            "--conflict-profile",
+        ]);
+        match cli.command {
+            Some(Commands::ModelCheck {
+                conflict_profile, ..
+            }) => {
+                assert!(
+                    conflict_profile,
+                    "conflict_profile should be true with --conflict-profile"
+                );
             }
             _ => panic!("Expected ModelCheck command"),
         }
@@ -7170,6 +7236,7 @@ invariants = ["LInv"]
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -7257,6 +7324,7 @@ fairness = { weak = ["branch_0"] }
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -7344,6 +7412,7 @@ fairness = { weak = ["branch_typo"], strong = ["branch_missing"] }
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -7434,6 +7503,7 @@ max_states = 1
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -7518,6 +7588,7 @@ timeout_ms = 60000
             false,
             false,
             1,
+            false,
         )
         .unwrap();
         assert_eq!(baseline.execution.summary.result, "ok");
@@ -7551,6 +7622,7 @@ timeout_ms = 60000
             false,
             false,
             1,
+            false,
         )
         .unwrap();
         assert_eq!(timeout_run.execution.summary.result, "timeout_reached");
@@ -7588,6 +7660,7 @@ timeout_ms = 60000
             false,
             false,
             1,
+            false,
         )
         .unwrap();
         assert_eq!(
@@ -7659,6 +7732,7 @@ max = 1
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -7739,6 +7813,7 @@ max = 1
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -7834,6 +7909,7 @@ invariants = ["LInvBad"]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -7919,6 +7995,7 @@ max = 2
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8028,6 +8105,7 @@ max_states = 50
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8143,6 +8221,7 @@ max_states = 50
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8255,6 +8334,7 @@ max_states = 50
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8364,6 +8444,7 @@ max_states = 50
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8488,6 +8569,7 @@ max_states = 50
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8566,6 +8648,7 @@ max = 2
             false,
             false,
             1,
+            false,
         )
         .unwrap_err();
         assert!(
@@ -8653,6 +8736,7 @@ check_deadlock = true
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8739,6 +8823,7 @@ leads_to = [{ name = "eventual_one", from = "LFrom", to = "LTo" }]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8841,6 +8926,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -8927,6 +9013,7 @@ max = 1
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -9043,6 +9130,7 @@ max = 1
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -9164,6 +9252,7 @@ max = 1
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -9272,6 +9361,7 @@ max = 1
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -9352,6 +9442,7 @@ max = 1
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -9571,6 +9662,7 @@ max = 1
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -9681,6 +9773,7 @@ max = 1
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -9794,6 +9887,7 @@ max = 10001
             false,
             false,
             1,
+            false,
         )
         .unwrap_err();
 
@@ -9882,6 +9976,7 @@ fairness = { strong = ["branch_2", "branch_3"] }
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -9978,6 +10073,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -10076,6 +10172,7 @@ leads_to = [{ from = "LFrom", to = "LTo" }]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -10165,6 +10262,7 @@ state_dedup = "hash_compaction64"
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -10299,6 +10397,7 @@ symmetry_fields = ["value"]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -10392,6 +10491,7 @@ invariants = ["LVisibleBound"]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -10492,6 +10592,7 @@ invariants = ["LTypeOK"]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -10505,6 +10606,7 @@ invariants = ["LTypeOK"]
             false,
             false,
             2,
+            false,
         )
         .unwrap();
 
@@ -10598,6 +10700,7 @@ invariants = ["LInvBad"]
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -10611,6 +10714,7 @@ invariants = ["LInvBad"]
             false,
             false,
             2,
+            false,
         )
         .unwrap();
 
@@ -10692,6 +10796,7 @@ max = 3
             false,
             false,
             1,
+            false,
         )
         .unwrap();
 
@@ -10704,6 +10809,7 @@ max = 3
             false,
             false,
             2,
+            false,
         )
         .unwrap();
 
@@ -10778,6 +10884,7 @@ max = 1
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -10857,6 +10964,7 @@ max = 1
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -10948,6 +11056,7 @@ verus! {
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -11008,6 +11117,7 @@ verus! {
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -11093,6 +11203,7 @@ invariants = ["LMissing"]
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -11180,6 +11291,7 @@ invariants = ["LMissing"]
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -11252,6 +11364,7 @@ verus! {
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,
@@ -11321,6 +11434,7 @@ verus! {
             no_bytecode: false,
             native_codegen: false,
             workers: 1,
+            conflict_profile: false,
         };
         let cli = Cli {
             command: None,

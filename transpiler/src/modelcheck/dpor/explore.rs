@@ -604,6 +604,79 @@ fn format_sleep_cardinality_summary(stats: &BTreeMap<usize, SleepDepthStats>) ->
         .join(";")
 }
 
+/// Format a human-readable conflict profile report from independence blocker stats.
+///
+/// The report ranks field pairs by conflict frequency and suggests keyed-path
+/// refinement for coarse (un-keyed) field names. Intended for `--conflict-profile`
+/// CLI output to guide POR tuning.
+pub fn format_conflict_profile(stats: &SleepIndependenceBlockers) -> String {
+    let mut lines = Vec::new();
+    lines.push("=== Conflict Profile Report ===".to_string());
+    lines.push(format!(
+        "Total candidate pairs evaluated: {}",
+        stats.candidates_considered
+    ));
+    lines.push(format!(
+        "  Independent: {} ({:.1}%)",
+        stats.independent_candidates,
+        if stats.candidates_considered > 0 {
+            stats.independent_candidates as f64 / stats.candidates_considered as f64 * 100.0
+        } else {
+            0.0
+        }
+    ));
+    lines.push(format!(
+        "  Blocked (same process): {}",
+        stats.blocked_same_process
+    ));
+    lines.push(format!(
+        "  Blocked (unknown footprint): {}",
+        stats.blocked_unknown_footprint
+    ));
+    lines.push(format!(
+        "  Blocked (footprint conflict): {}",
+        stats.blocked_footprint_conflict
+    ));
+
+    if stats.conflict_field_pairs.is_empty() {
+        lines.push("  No field-pair conflict data recorded.".to_string());
+    } else {
+        lines.push(String::new());
+        lines.push("Field-pair conflict frequency (ranked):".to_string());
+        lines.push(format!(
+            "  {:30} {:>8} {:>7}  {}",
+            "FIELD PAIR", "COUNT", "PCT", "SUGGESTION"
+        ));
+        lines.push(format!("  {:-<30} {:->8} {:->7}  {:-<20}", "", "", "", ""));
+
+        let mut pairs: Vec<_> = stats.conflict_field_pairs.iter().collect();
+        pairs.sort_by(|a, b| b.1.cmp(a.1));
+
+        let total_conflicts = stats.blocked_footprint_conflict.max(1);
+        for ((left, right), count) in &pairs {
+            let pct = **count as f64 / total_conflicts as f64 * 100.0;
+            let suggestion = suggest_refinement(left, right);
+            lines.push(format!(
+                "  ({:12}, {:12})  {:>6}  {:>5.1}%  {}",
+                left, right, count, pct, suggestion
+            ));
+        }
+    }
+    lines.push("=== End Conflict Profile ===".to_string());
+    lines.join("\n")
+}
+
+/// Suggest keyed-path refinement for a conflicting field pair.
+fn suggest_refinement(left: &str, right: &str) -> &'static str {
+    let left_keyed = left.contains('[');
+    let right_keyed = right.contains('[');
+    match (left_keyed, right_keyed) {
+        (false, false) => "try process-scoped keying (e.g., field[pid])",
+        (true, true) => "already keyed — true conflict",
+        _ => "partially keyed — check coarse side",
+    }
+}
+
 #[cfg(test)]
 fn format_independence_blockers_summary(stats: &SleepIndependenceBlockers) -> String {
     let mut summary = format!(
@@ -2397,6 +2470,50 @@ max_seq_len = 4
             pc_pos < ab_pos,
             "higher-frequency pair should appear first in summary"
         );
+    }
+
+    #[test]
+    fn test_format_conflict_profile_report() {
+        let mut blockers = SleepIndependenceBlockers::default();
+        blockers.candidates_considered = 100;
+        blockers.independent_candidates = 40;
+        blockers.blocked_same_process = 20;
+        blockers.blocked_unknown_footprint = 10;
+        blockers.blocked_footprint_conflict = 30;
+        blockers
+            .conflict_field_pairs
+            .insert(("pc".to_string(), "pc".to_string()), 15);
+        blockers
+            .conflict_field_pairs
+            .insert(("pc[0]".to_string(), "pc[0]".to_string()), 10);
+        blockers
+            .conflict_field_pairs
+            .insert(("val".to_string(), "log[1]".to_string()), 5);
+
+        let report = format_conflict_profile(&blockers);
+        assert!(report.contains("=== Conflict Profile Report ==="));
+        assert!(report.contains("Total candidate pairs evaluated: 100"));
+        assert!(report.contains("Independent: 40 (40.0%)"));
+        assert!(report.contains("Blocked (same process): 20"));
+        assert!(report.contains("Blocked (footprint conflict): 30"));
+        assert!(report.contains("Field-pair conflict frequency"));
+        // Verify ordering: pc,pc (15) before pc[0],pc[0] (10)
+        let pc_pos = report.find("pc  ").expect("should contain pc field");
+        let keyed_pos = report.find("pc[0]").expect("should contain pc[0]");
+        assert!(pc_pos < keyed_pos, "higher-freq pair first");
+        // Verify suggestions
+        assert!(report.contains("try process-scoped keying"));
+        assert!(report.contains("already keyed"));
+        assert!(report.contains("partially keyed"));
+        assert!(report.contains("=== End Conflict Profile ==="));
+    }
+
+    #[test]
+    fn test_format_conflict_profile_empty() {
+        let blockers = SleepIndependenceBlockers::default();
+        let report = format_conflict_profile(&blockers);
+        assert!(report.contains("No field-pair conflict data recorded"));
+        assert!(report.contains("Total candidate pairs evaluated: 0"));
     }
 
     // =========================================================================
