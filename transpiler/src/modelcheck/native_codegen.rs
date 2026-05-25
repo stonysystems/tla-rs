@@ -821,13 +821,16 @@ fn const_placeholder(v: &crate::modelcheck::value::RuntimeValue) -> String {
 ///
 /// The generated function has the signature:
 /// ```ignore
-/// fn eval(env: &[RuntimeValue]) -> TranspileResult<RuntimeValue>
+/// fn eval(env: &[RuntimeValue]) -> RuntimeResult<RuntimeValue>
 /// ```
+///
+/// The output is suitable for wrapping with `native_compile::generate_cdylib_source`
+/// to produce a complete compilable Rust source file.
 pub fn generate_eval_function(expr: &Expr, env_names: &[String]) -> CodegenResult<String> {
     let mut ctx = CodegenCtx::new(env_names);
     let body = expr_to_rust(expr, &mut ctx)?;
     Ok(format!(
-        "fn eval(env: &[RuntimeValue]) -> TranspileResult<RuntimeValue> {{\n    {}\n}}",
+        "fn eval(env: &[RuntimeValue]) -> RuntimeResult<RuntimeValue> {{\n    {}\n}}",
         body
     ))
 }
@@ -1309,7 +1312,7 @@ mod tests {
             code
         );
         assert!(
-            code.contains("TranspileResult<RuntimeValue>"),
+            code.contains("RuntimeResult<RuntimeValue>"),
             "code: {}",
             code
         );

@@ -29,6 +29,9 @@ thiserror = "1.0"
 # Runtime value types (shared with native-codegen output)
 transpiler-runtime = { path = "runtime" }
 
+# Dynamic library loading for native codegen
+libloading = "0.8"
+
 # Parallelism
 rayon = "1.10"
 dashmap = "6.1"

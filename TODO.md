@@ -13818,7 +13818,7 @@ Three implementation paths, in increasing engineering cost / payoff:
     The main transpiler depends on `transpiler-runtime`. Generated
     code only needs this thin crate as dependency, avoiding the full
     transpiler dependency tree. ~400 LOC (mostly moving code).
-  - [ ] **38.22.1.c.iv**: **Compile + load infrastructure.**
+  - [x] **38.22.1.c.iv**: **Compile + load infrastructure.**
     Create `fn compile_and_load(rust_source: &str, runtime_crate_path: &Path) -> Result<NativeFunction>`.
     Write source to temp dir, invoke `rustc --crate-type=cdylib`
     with `transpiler-runtime` as dependency, load via `libloading`.
