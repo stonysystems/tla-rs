@@ -14810,15 +14810,9 @@ For each protocol modified in 44.2:
 
 #### 44.4 Unified client framework
 
-- [ ] **44.4.a**: Write `csharp/IronGenericClient/` — a generic synchronous client framework that takes:
-  - Wire format encoder (request bytes from client_id + seq_no + value)
-  - Wire format decoder (parse `ClientReply` → extract client_id + seq_no)
-  - Server endpoint resolution (which node to send to: leader, primary, any-replica, all)
-  - Reply-collection policy (single reply, f+1 quorum, any-of)
-  - Standard CLI args: `nthreads`, `duration`, `ip1`/`port1`, ..., `clientport`
-  - Standard output: `throughput <N> ops/sec | avg latency ms <X>`
-- [ ] **44.4.b**: Per-protocol adapters under `csharp/IronGenericClient/adapters/` for Raft, RSL, PB, EPaxos, PBFT. Each is ~50-100 lines (just wire format + policy).
-- [ ] **44.4.c**: Add `bin/IronGenericClient.dll` to SCons build. Deprecate `IronRaftClient`, `IronRSLClient`, `IronPrimaryBackupClient`, `IronPBFTClient` (keep them for one release for backward compat, then remove).
+- [x] **44.4.a**: Created `csharp/IronGenericClient/` — generic synchronous client framework with `IProtocolAdapter` interface, `SyncClient` core (send/recv/timeout/server-rotation loop), CLI arg parsing (`protocol=<name> ip1..N port1..N nthreads duration clientport leader`), multi-thread benchmark harness, and standard output format (`throughput <N> ops/sec | avg latency ms <X>`). ~250 LOC total.
+- [x] **44.4.b**: Per-protocol adapters built into `SyncClient.cs`: `RaftAdapter` (TAG=5/6, client_id+seq_no matching, success flag), `PBAdapter` (TAG=3/4), `PBFTAdapter` (TAG=4/5), `EPaxosAdapter` (TAG=6/7). PB/PBFT/EPaxos accept any reply with correct tag (no client_id/seq_no in wire format). RSL excluded — uses separate `RSLClient` class with different transport. ~30 LOC each.
+- [x] **44.4.c**: Added `bin/IronGenericClient.dll` to SCons build. Old clients (`IronRaftClient`, `IronPrimaryBackupClient`, `IronPBFTClient`) kept for backward compat.
 
 #### 44.5 Bench with unified client
 
