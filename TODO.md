@@ -81,7 +81,9 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 2. **Phase 40: Transpiler-Emitted Impl Efficiency — RE-EVALUATED, BENEFIT NOT FOUND** — Arc-wrapping landed but re-bench shows zero measured Raft benefit (3,613 vs 3,612 ops/s). Original "+24% RSL / +12% Raft" claims were noise. Disposition decided in [Phase 42.5](#425-phase-40-disposition-separate-from-421424). Phase 40's claim for the 7 small protocols remains untested — [Phase 43](#phase-43-enable-throughput-bench-for-epaxos--primarybackup--pbft) adds bench capability for 3 of them (EPaxos, PrimaryBackup, PBFT) to either validate or falsify the claim on protocols we can actually measure.
 
-3. **Phase 43: Enable Throughput Bench for EPaxos / PrimaryBackup / PBFT** — only 2/10 protocols (Raft, RSL) currently benchable. Add a self-driving EPaxos metric output (0.5 day), an IronPrimaryBackupClient (0.5 day), and an IronPBFTClient (1 day). Then re-bench HEAD vs c097da0 on all 3 to settle Phase 40's perf disposition for small protocols. See [Phase 43](#phase-43-enable-throughput-bench-for-epaxos--primarybackup--pbft).
+3. **Phase 43: Enable Throughput Bench for EPaxos / PrimaryBackup / PBFT** — only 2/10 protocols (Raft, RSL) currently benchable. Add a self-driving EPaxos metric output (0.5 day), an IronPrimaryBackupClient (0.5 day), and an IronPBFTClient (1 day). Then re-bench HEAD vs c097da0 on all 3 to settle Phase 40's perf disposition for small protocols. **43.1–43.3 done but 43.3.d PBFT result is broken** (0.13 ops/s, repro'd as a bug — see Phase 44). 43.4 verdict pending Phase 44 fix. See [Phase 43](#phase-43-enable-throughput-bench-for-epaxos--primarybackup--pbft).
+
+4. **Phase 44: Fix PBFT Throughput Bug + Unify Client Interface via Spec Changes** — PBFT is benchmarking at <1 ops/s (bug, not protocol overhead). Diagnose + fix (44.1). Then add `ClientReply` to PB / EPaxos / PBFT specs (no proofs to break — 0 refinement proof for these protocols), regenerate impl, verify, and write one unified C# client framework. Yields apples-to-apples bench data across all 5 benchable protocols (~5–7 days). See [Phase 44](#phase-44-fix-pbft-throughput-bug--unify-client-interface-via-spec-changes).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -14738,3 +14740,108 @@ Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, Pri
 - **R1**: PBFT reply format may not match expectations — spec might use Commit broadcast as implicit reply. Mitigation: read `src/protocol/PBFT/` spec carefully + inspect host.rs send sites before writing client.
 - **R2**: PrimaryBackup `Ack` may be ambiguous (which client/seqno was Ack'd?). Mitigation: confirm Ack carries client_id+seq_no; if not, that's a protocol gap to flag rather than work around.
 - **R3**: EPaxos `committed_count` may not be the right metric (e.g., counts proposals not commits). Mitigation: verify field semantics against spec before reporting.
+
+---
+
+## Phase 44: Fix PBFT Throughput Bug + Unify Client Interface via Spec Changes
+
+### Motivation
+
+Two issues exposed by Phase 43:
+
+1. **PBFT throughput is broken** (43.3.d). Reproduced 2026-05-25: 4 nodes, 15 s run, client injecting 230 K sends/s — primary `seq_num` reaches only 2 (≈0.13 commits/s, 25,000× lower than EPaxos / 30,000× lower than Raft). TODO 43.3.d's diagnosis ("3-phase consensus + UDP polling = 1000× overhead") is **wrong** — real PBFT does 10 K+ ops/s on commodity hardware. Likely root causes: high_watermark too small (commit blocks until checkpoint advances watermark), `request_digest` semantics mismatched between fire-and-forget client (sends different digest each request) and primary (expects same digest re-sent until commit), or quorum count off-by-one in prepare/commit phases. 43.3.d's "SKIP baseline comparison" was premature — bug must be fixed before any Phase 40 conclusion can be drawn from PBFT.
+
+2. **Client interfaces are inconsistent across protocols** (see Phase 43 client-style table). Raft/RSL clients do synchronous req-resp; PrimaryBackup/PBFT clients are fire-and-forget (no ClientReply message in spec); EPaxos has no external client (uses internal `try_propose`). Effect: bench numbers are not apples-to-apples (PB's "32K ops/s" is server commit rate vs Raft's "3.6K ops/s" RTT-bound). To get comparable data and reduce per-protocol client duplication, **add `ClientRequest` + `ClientReply{client_id, seq_no}` to specs of PB / EPaxos / PBFT**, regenerate impl, verify, and bench with a unified synchronous client.
+
+These 8 small protocols have **zero proof code** (no `refinement_proof/`, no `common_proof/`). Spec changes only need to pass basic verification (`--verify-only-module generated::<proto>` currently passes 9–15 verified, 0 errors). No refinement-relation work needed.
+
+### Goal
+
+- PBFT throughput moves from <1 ops/s to a realistic number (target ≥1 K ops/s with synchronous client).
+- PB / EPaxos / PBFT specs all have `ClientReply` so they support synchronous req-resp clients.
+- One unified C# client template works for all 5 benchable protocols (Raft, RSL, PB, EPaxos, PBFT), with per-protocol adapters only for wire format.
+- Phase 43.4 verdict (Phase 40 disposition for small protocols) can be drawn from comparable bench data.
+
+### Plan
+
+#### 44.1 Diagnose + fix PBFT throughput bug
+
+- [ ] **44.1.a**: Instrument `src/implementation/PBFT/host.rs` to log per-phase progress: `[PHASE] node=N seq=S phase=<PrePrepare|Prepare|Commit> action=<sent|received|skipped>`. Run 10 s, count how many requests reach each phase. Identifies whether bug is in client→primary handoff, prepare quorum, commit quorum, or seq_num advancement.
+- [ ] **44.1.b**: Check spec values:
+  - `low_watermark` / `high_watermark` initial values and how they advance. If high_watermark is too small (e.g., 2), commit blocks immediately.
+  - `request_digest` semantics — does spec require the same digest until commit, or does it accept fresh digest per request?
+  - Quorum thresholds in `CReceivePrepare` / `CReceiveCommit` (for n=4, need 2f+1 = 3 matching).
+- [ ] **44.1.c**: Apply minimal fix. Options:
+  - If watermark issue: relax watermark window or auto-advance after commit.
+  - If digest issue: adjust client to send each digest until ack'd, OR adjust primary to accept fresh digests.
+  - If quorum issue: fix off-by-one.
+- [ ] **44.1.d**: Re-bench. Target: ≥1 K ops/s sustained (single-threaded fire-and-forget). If still <100 ops/s, deepen instrumentation.
+
+#### 44.2 Spec changes: add ClientReply to PB / EPaxos / PBFT
+
+For each protocol, add to spec:
+- `ClientRequest{client_id, seq_no, value}` (if not already present)
+- `ClientReply{client_id, seq_no, value}` message variant
+- A transition rule: when a request commits at a node responsible for replying (primary in PB/PBFT, command leader in EPaxos), send `ClientReply` to the requesting client_id.
+
+- [ ] **44.2.a — PrimaryBackup**: Add `ClientReply{client_id, seq_no, value}` to `PrimaryBackupMessage` in `src/protocol/PrimaryBackup/primarybackup.rs`. Add transition: after `LPrimaryReceiveAck` commits (backup ack'd the replicate), primary sends `ClientReply` to the request's source. Spec change ~30-50 lines.
+- [ ] **44.2.b — EPaxos**: Replace internal `try_propose` self-firing with externally-driven `ClientRequest` handling. Add `ClientRequest{client_id, seq_no, value}` and `ClientReply{client_id, seq_no}`. Transition: when an instance reaches `Committed` phase, the command leader sends `ClientReply` back. Spec change ~50-100 lines (largest of the 3).
+- [ ] **44.2.c — PBFT**: Inspect `src/protocol/PBFT/pbft.rs` to check whether spec already models a client reply. If yes, ensure it's exposed via wire format. If no, add `ClientReply{client_id, seq_no, value}` and a transition triggered when a node has collected f+1 matching commits. Spec change ~30-80 lines.
+
+Each spec change also needs:
+- `.automan` mode annotation for the new transition function (input/output param tagging).
+- `transpile.toml` updated if message_variant list is enumerated there.
+- `types.rs` if any new types introduced.
+
+#### 44.3 Regenerate impl + verify
+
+For each protocol modified in 44.2:
+- [ ] **44.3.a — PB**: Run `verus-transpile -i <spec> -a <automan> -c <toml> > src/generated/PrimaryBackup/primarybackup_gen.rs`. Verify `--verify-only-module generated::PrimaryBackup::primarybackup_gen` passes (≥11 verified, 0 errors). Update `src/implementation/PrimaryBackup/{message.rs, host.rs}` for new wire format + reply sending.
+- [ ] **44.3.b — EPaxos**: Same as 44.3.a. Verify target: ≥15 verified, 0 errors. Update `src/implementation/EPaxos/host.rs` — replace `try_propose` self-firing with `handle_client_request` driven by client traffic.
+- [ ] **44.3.c — PBFT**: Same. Verify target: ≥13 verified, 0 errors. Integrate fix from 44.1.
+
+#### 44.4 Unified client framework
+
+- [ ] **44.4.a**: Write `csharp/IronGenericClient/` — a generic synchronous client framework that takes:
+  - Wire format encoder (request bytes from client_id + seq_no + value)
+  - Wire format decoder (parse `ClientReply` → extract client_id + seq_no)
+  - Server endpoint resolution (which node to send to: leader, primary, any-replica, all)
+  - Reply-collection policy (single reply, f+1 quorum, any-of)
+  - Standard CLI args: `nthreads`, `duration`, `ip1`/`port1`, ..., `clientport`
+  - Standard output: `throughput <N> ops/sec | avg latency ms <X>`
+- [ ] **44.4.b**: Per-protocol adapters under `csharp/IronGenericClient/adapters/` for Raft, RSL, PB, EPaxos, PBFT. Each is ~50-100 lines (just wire format + policy).
+- [ ] **44.4.c**: Add `bin/IronGenericClient.dll` to SCons build. Deprecate `IronRaftClient`, `IronRSLClient`, `IronPrimaryBackupClient`, `IronPBFTClient` (keep them for one release for backward compat, then remove).
+
+#### 44.5 Bench with unified client
+
+- [ ] **44.5.a**: Bench all 5 protocols on HEAD: `dotnet bin/IronGenericClient.dll protocol=<name> nthreads=32 duration=30` × 2 trials. Report `throughput / latency / per-thread breakdown`. Numbers are now apples-to-apples (synchronous req-resp for all).
+- [ ] **44.5.b**: Bench on c097da0 baseline. Compute Phase 40 Arc-wrap delta for each protocol.
+- [ ] **44.5.c**: Update Phase 43.4 verdict with apples-to-apples data. Decide Phase 40 disposition (42.5.a "keep dormant" vs 42.5.b "disable via TOML") based on whether ANY protocol shows ≥10% benefit.
+
+### Out of scope
+
+- Paxos / TwoPhase / VerticalPaxos / LeaderElection — single-shot or no work model. Adding ClientReply doesn't help because the protocol semantics don't support sustained throughput (covered in Phase 43 "Out of scope").
+- ChainReplication — has 2 verify errors (Phase 42.1.a finding). Fix verify first; unify client separately.
+- Touching Raft/RSL specs — they already have ClientReply, just need wire format adapter for the generic client (handled in 44.4.b).
+
+### Estimated effort
+
+| Task | Effort |
+|---|---|
+| 44.1 PBFT bug diagnose + fix | 0.5–1 day |
+| 44.2.a PB spec change | 0.5 day |
+| 44.2.b EPaxos spec change | 1–2 days |
+| 44.2.c PBFT spec change | 0.5–1 day |
+| 44.3 regen + verify (3 protocols) | 0.5 day |
+| 44.4 generic client framework + adapters | 1.5–2 days |
+| 44.5 bench + verdict | 0.5 day |
+| **Total** | **~5–7 days** |
+
+Most risk in 44.2.b (EPaxos — currently uses internal `try_propose`, needs spec restructure to accept external client input).
+
+### Risk
+
+- **R1**: EPaxos spec restructure may break the `try_propose` self-driving path that 43.1 depends on. Mitigation: keep both modes (external ClientRequest **and** internal `try_propose`) initially; remove `try_propose` only after generic client works end-to-end.
+- **R2**: PBFT bug might be in spec (e.g., wrong watermark advancement rule), not host. Mitigation: do 44.1.b spec inspection before writing fix; fix may be a spec edit + regen.
+- **R3**: Generic client framework may not handle protocol-specific failure modes (leader rotation, view change, instance retries). Mitigation: each adapter declares its retry policy; framework provides hooks rather than one-size-fits-all.
+- **R4**: New verification might fail if added transition violates some implicit invariant (e.g., PBFT prepare quorum invariant when adding reply). Mitigation: spec changes are small and additive; verification budget per protocol is 1 hour before falling back to weaker spec (e.g., reply as `external_body` / `assume`).
