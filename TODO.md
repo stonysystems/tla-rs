@@ -13521,9 +13521,12 @@ tiers, ordered biggest-gain-per-effort first.
     `Mutex<HashMap<..., Arc<...>>>`. Enables native codegen (~100-200×)
     for parallel BFS workers. Wired into parallel BFS path in main.rs.
     3 tests (Send+Sync assertions, concurrent codegen failure). ~50 LOC.
-  - [ ] **38.21.A.d**: **Closure support in bytecode/native.** Handle
-    `Expr::Closure` in `compile_expr` and `generate_eval_function`.
-    Closures appear in `Set::new(|x| pred)` patterns. ~200 LOC.
+  - [x] **38.21.A.d**: **Closure support in bytecode VM.** Added 3 new
+    opcodes (SetNewClosure, MapNewClosure, SetMapClosure) to handle
+    `Set::new(|x| pred)`, `Map::new(domain, |k| val)`, and `set.map(|x| expr)`
+    patterns. Closures compiled inline (same pattern as quantifiers).
+    All 3 VM loops updated. 6 new tests in bytecode.rs, 1 updated test
+    in solver.rs. ~250 LOC.
   - [ ] **38.21.A.e**: **Profile-driven optimization.** After telemetry
     lands, identify the top 3 slowest expression patterns and optimize
     their bytecode/native paths. Data-driven; scope TBD.

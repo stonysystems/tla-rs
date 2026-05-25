@@ -123,6 +123,21 @@ pub enum Opcode {
     /// next `body_len` instructions. Iterates domain, returns first match.
     Choose { var: LocalIdx, body_len: JumpOffset },
 
+    // ── Closure-based collection constructors ────────────────────────
+    /// `Set::new(|x| pred)`: Iterate int domain, bind each to `var`,
+    /// evaluate the body (next `body_len` ops) as a bool predicate.
+    /// Collect elements where predicate is true into a Set.
+    SetNewClosure { var: LocalIdx, body_len: JumpOffset },
+    /// `Map::new(domain, |key| val)`: Pop a Set domain from the stack,
+    /// iterate its elements, bind each to `var`, evaluate the body (next
+    /// `body_len` ops) as the value expression. Collect (key, value) pairs
+    /// into a Map.
+    MapNewClosure { var: LocalIdx, body_len: JumpOffset },
+    /// `set.map(|x| expr)`: Pop a Set from the stack, iterate its elements,
+    /// bind each to `var`, evaluate the body (next `body_len` ops).
+    /// Collect results into a new Set.
+    SetMapClosure { var: LocalIdx, body_len: JumpOffset },
+
     // ── Termination ───────────────────────────────────────────────────
     /// Return the top-of-stack value from the current chunk.
     Return,
@@ -650,6 +665,22 @@ pub fn compile_expr(
 
         // ── Function / method calls ───────────────────────────────────
         Expr::Call { func, args } => {
+            let func_name = crate::modelcheck::evaluator::path_name(func);
+            // Special case: Set::new(|x| pred) → SetNewClosure opcode
+            if func_name == "Set::new" && args.len() == 1 {
+                if let Expr::Closure { params, body } = &args[0] {
+                    compile_closure_opcode(params, body, chunk, locals, ClosureOp::SetNew)?;
+                    return Ok(());
+                }
+            }
+            // Special case: Map::new(domain_set, |key| val) → MapNewClosure opcode
+            if func_name == "Map::new" && args.len() == 2 {
+                if let Expr::Closure { params, body } = &args[1] {
+                    compile_expr(&args[0], chunk, locals)?; // push domain set
+                    compile_closure_opcode(params, body, chunk, locals, ClosureOp::MapNew)?;
+                    return Ok(());
+                }
+            }
             for arg in args {
                 compile_expr(arg, chunk, locals)?;
             }
@@ -661,6 +692,14 @@ pub fn compile_expr(
             method,
             args,
         } => {
+            // Special case: set.map(|x| expr) → SetMapClosure opcode
+            if method == "map" && args.len() == 1 {
+                if let Expr::Closure { params, body } = &args[0] {
+                    compile_expr(receiver, chunk, locals)?; // push receiver set
+                    compile_closure_opcode(params, body, chunk, locals, ClosureOp::SetMap)?;
+                    return Ok(());
+                }
+            }
             compile_expr(receiver, chunk, locals)?;
             for arg in args {
                 compile_expr(arg, chunk, locals)?;
@@ -782,6 +821,84 @@ fn compile_quantifier(
             ..
         }
         | Opcode::Choose {
+            body_len: ref mut bl,
+            ..
+        } => *bl = body_len,
+        _ => unreachable!(),
+    }
+
+    locals.restore(saved);
+    Ok(())
+}
+
+enum ClosureOp {
+    SetNew,
+    MapNew,
+    SetMap,
+}
+
+/// Compile a closure-based collection constructor. Same pattern as
+/// `compile_quantifier`: allocate a local for the closure parameter,
+/// emit a placeholder opcode, compile the body inline, patch body_len.
+///
+/// For `SetNew`: no stack input needed (iterates int domain).
+/// For `MapNew` and `SetMap`: expects a Set on top of the stack.
+fn compile_closure_opcode(
+    params: &[crate::ast::Binding],
+    body: &Expr,
+    chunk: &mut Chunk,
+    locals: &mut LocalTable,
+    op: ClosureOp,
+) -> TranspileResult<()> {
+    if params.is_empty() {
+        return Err(TranspileError::UnsupportedPattern {
+            message: "closure must have at least one parameter".to_string(),
+            span: None,
+            help: None,
+        });
+    }
+    let Pattern::Ident(name) = &params[0].pattern else {
+        return Err(TranspileError::UnsupportedPattern {
+            message: "closure parameter must be a named identifier".to_string(),
+            span: None,
+            help: None,
+        });
+    };
+
+    let slot = chunk.alloc_local();
+    let saved = locals.save_depth();
+    locals.push(name.clone(), slot);
+
+    let op_idx = match op {
+        ClosureOp::SetNew => chunk.emit(Opcode::SetNewClosure {
+            var: slot,
+            body_len: 0,
+        }),
+        ClosureOp::MapNew => chunk.emit(Opcode::MapNewClosure {
+            var: slot,
+            body_len: 0,
+        }),
+        ClosureOp::SetMap => chunk.emit(Opcode::SetMapClosure {
+            var: slot,
+            body_len: 0,
+        }),
+    };
+
+    let body_start = chunk.ops.len();
+    compile_expr(body, chunk, locals)?;
+    let body_len = (chunk.ops.len() - body_start) as JumpOffset;
+
+    // Patch the body_len
+    match &mut chunk.ops[op_idx] {
+        Opcode::SetNewClosure {
+            body_len: ref mut bl,
+            ..
+        }
+        | Opcode::MapNewClosure {
+            body_len: ref mut bl,
+            ..
+        }
+        | Opcode::SetMapClosure {
             body_len: ref mut bl,
             ..
         } => *bl = body_len,
@@ -1324,6 +1441,37 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
                 pc += body_len;
             }
 
+            // ── Closure-based collection constructors ─────────────────
+            Opcode::SetNewClosure { var, body_len } => {
+                let body_len = *body_len as usize;
+                let var_slot = *var as usize;
+                let result = vm_eval_set_new_closure(
+                    chunk, ctx, &mut locals, pc + 1, body_len, var_slot,
+                )?;
+                stack.push(result);
+                pc += body_len;
+            }
+            Opcode::MapNewClosure { var, body_len } => {
+                let body_len = *body_len as usize;
+                let var_slot = *var as usize;
+                let domain_set = stack.pop().ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
+                let result = vm_eval_map_new_closure(
+                    chunk, ctx, &mut locals, pc + 1, body_len, var_slot, &domain_set,
+                )?;
+                stack.push(result);
+                pc += body_len;
+            }
+            Opcode::SetMapClosure { var, body_len } => {
+                let body_len = *body_len as usize;
+                let var_slot = *var as usize;
+                let receiver_set = stack.pop().ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
+                let result = vm_eval_set_map_closure(
+                    chunk, ctx, &mut locals, pc + 1, body_len, var_slot, &receiver_set,
+                )?;
+                stack.push(result);
+                pc += body_len;
+            }
+
             // ── Termination ───────────────────────────────────────────
             Opcode::Return => {
                 return stack
@@ -1408,6 +1556,88 @@ fn vm_eval_quantifier(
             Err(type_error("VM: choose found no satisfying value"))
         }
     }
+}
+
+/// Execute `Set::new(|x| pred)`: iterate int domain, collect elements
+/// where pred returns true.
+fn vm_eval_set_new_closure(
+    chunk: &Chunk,
+    ctx: &VmContext<'_>,
+    locals: &mut [RuntimeValue],
+    body_start: usize,
+    body_len: usize,
+    var_slot: usize,
+) -> TranspileResult<RuntimeValue> {
+    // Use same fallback domain as the AST evaluator (-10..=100)
+    let int_values: Vec<i128> = (-10..=100).collect();
+    let mut elements = Vec::new();
+    for val in &int_values {
+        let rv = RuntimeValue::Int(*val);
+        locals[var_slot] = rv.clone();
+        match vm_eval_body_slice(chunk, ctx, locals, body_start, body_len) {
+            Ok(RuntimeValue::Bool(true)) => elements.push(rv),
+            Ok(RuntimeValue::Bool(false)) => {}
+            Ok(_) => {
+                return Err(type_error("VM: Set::new closure must return bool"));
+            }
+            Err(_) => {} // skip values that fail evaluation
+        }
+    }
+    Ok(RuntimeValue::set_bounded(elements, &ctx.bounds)?)
+}
+
+/// Execute `Map::new(domain, |key| val)`: iterate domain set elements,
+/// evaluate body for each, collect (key, value) pairs into a Map.
+fn vm_eval_map_new_closure(
+    chunk: &Chunk,
+    ctx: &VmContext<'_>,
+    locals: &mut [RuntimeValue],
+    body_start: usize,
+    body_len: usize,
+    var_slot: usize,
+    domain: &RuntimeValue,
+) -> TranspileResult<RuntimeValue> {
+    let keys: Vec<RuntimeValue> = match domain {
+        RuntimeValue::Set(repr) => repr.iter().collect(),
+        _ => {
+            return Err(type_error(
+                "VM: Map::new first argument must be a Set (domain)",
+            ));
+        }
+    };
+    let mut entries = Vec::new();
+    for key in keys {
+        locals[var_slot] = key.clone();
+        let value = vm_eval_body_slice(chunk, ctx, locals, body_start, body_len)?;
+        entries.push((key, value));
+    }
+    Ok(RuntimeValue::map_bounded(entries, &ctx.bounds)?)
+}
+
+/// Execute `set.map(|x| expr)`: iterate receiver set elements, evaluate
+/// body for each, collect results into a new Set.
+fn vm_eval_set_map_closure(
+    chunk: &Chunk,
+    ctx: &VmContext<'_>,
+    locals: &mut [RuntimeValue],
+    body_start: usize,
+    body_len: usize,
+    var_slot: usize,
+    receiver: &RuntimeValue,
+) -> TranspileResult<RuntimeValue> {
+    let elements: Vec<RuntimeValue> = match receiver {
+        RuntimeValue::Set(repr) => repr.iter().collect(),
+        _ => {
+            return Err(type_error("VM: .map(|x| ...) receiver must be a Set"));
+        }
+    };
+    let mut results = Vec::new();
+    for elem in elements {
+        locals[var_slot] = elem;
+        let result = vm_eval_body_slice(chunk, ctx, locals, body_start, body_len)?;
+        results.push(result);
+    }
+    Ok(RuntimeValue::set_bounded(results, &ctx.bounds)?)
 }
 
 /// Execute a sub-slice of a chunk's opcodes using the shared locals array.
@@ -1723,6 +1953,29 @@ fn vm_eval_body_slice(
                     QuantifierMode::Choose,
                     de,
                 )?;
+                stack.push(result);
+                pc += bl;
+            }
+            Opcode::SetNewClosure { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let result = vm_eval_set_new_closure(&sub_chunk, ctx, locals, pc + 1, bl, vs)?;
+                stack.push(result);
+                pc += bl;
+            }
+            Opcode::MapNewClosure { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let domain = stack.pop().ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
+                let result = vm_eval_map_new_closure(&sub_chunk, ctx, locals, pc + 1, bl, vs, &domain)?;
+                stack.push(result);
+                pc += bl;
+            }
+            Opcode::SetMapClosure { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let recv = stack.pop().ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
+                let result = vm_eval_set_map_closure(&sub_chunk, ctx, locals, pc + 1, bl, vs, &recv)?;
                 stack.push(result);
                 pc += bl;
             }
@@ -2171,6 +2424,29 @@ pub fn vm_eval_with_locals(
                 )?;
                 stack.push(result);
                 pc += body_len_val;
+            }
+            Opcode::SetNewClosure { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let result = vm_eval_set_new_closure(chunk, ctx, &mut locals, pc + 1, bl, vs)?;
+                stack.push(result);
+                pc += bl;
+            }
+            Opcode::MapNewClosure { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let domain = stack.pop().ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
+                let result = vm_eval_map_new_closure(chunk, ctx, &mut locals, pc + 1, bl, vs, &domain)?;
+                stack.push(result);
+                pc += bl;
+            }
+            Opcode::SetMapClosure { var, body_len } => {
+                let bl = *body_len as usize;
+                let vs = *var as usize;
+                let recv = stack.pop().ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
+                let result = vm_eval_set_map_closure(chunk, ctx, &mut locals, pc + 1, bl, vs, &recv)?;
+                stack.push(result);
+                pc += bl;
             }
             Opcode::Return => {
                 return stack
@@ -2835,6 +3111,177 @@ mod tests {
             body: Box::new(Expr::Literal(Literal::Int(1))),
         };
         assert!(compile(&expr).is_err());
+    }
+
+    #[test]
+    fn test_compile_set_new_closure() {
+        // Set::new(|x| x == 1)
+        let expr = Expr::Call {
+            func: Path::new(vec!["Set".to_string(), "new".to_string()]),
+            args: vec![Expr::Closure {
+                params: vec![crate::ast::Binding {
+                    pattern: Pattern::Ident("x".to_string()),
+                    ty: Some(crate::ast::Type::Int),
+                    variable_mode: crate::ast::VariableMode::default(),
+                }],
+                body: Box::new(Expr::Eq(
+                    Box::new(Expr::Ident("x".to_string())),
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+            }],
+        };
+        // Should compile successfully (not error like standalone closure)
+        let chunk = compile(&expr).unwrap();
+        let has_set_new = chunk
+            .ops
+            .iter()
+            .any(|op| matches!(op, Opcode::SetNewClosure { .. }));
+        assert!(has_set_new, "should emit SetNewClosure opcode");
+    }
+
+    #[test]
+    fn test_compile_map_new_closure() {
+        // Map::new(domain, |k| k + 1)
+        let expr = Expr::Call {
+            func: Path::new(vec!["Map".to_string(), "new".to_string()]),
+            args: vec![
+                Expr::Ident("domain".to_string()),
+                Expr::Closure {
+                    params: vec![crate::ast::Binding {
+                        pattern: Pattern::Ident("k".to_string()),
+                        ty: None,
+                        variable_mode: crate::ast::VariableMode::default(),
+                    }],
+                    body: Box::new(Expr::Binary(
+                        Box::new(Expr::Ident("k".to_string())),
+                        crate::ast::BinOp::Add,
+                        Box::new(Expr::Literal(Literal::Int(1))),
+                    )),
+                },
+            ],
+        };
+        let chunk = compile(&expr).unwrap();
+        let has_map_new = chunk
+            .ops
+            .iter()
+            .any(|op| matches!(op, Opcode::MapNewClosure { .. }));
+        assert!(has_map_new, "should emit MapNewClosure opcode");
+    }
+
+    #[test]
+    fn test_compile_set_map_closure() {
+        // s.map(|x| x + 1)
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("s".to_string())),
+            method: "map".to_string(),
+            args: vec![Expr::Closure {
+                params: vec![crate::ast::Binding {
+                    pattern: Pattern::Ident("x".to_string()),
+                    ty: None,
+                    variable_mode: crate::ast::VariableMode::default(),
+                }],
+                body: Box::new(Expr::Binary(
+                    Box::new(Expr::Ident("x".to_string())),
+                    crate::ast::BinOp::Add,
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+            }],
+        };
+        let chunk = compile(&expr).unwrap();
+        let has_set_map = chunk
+            .ops
+            .iter()
+            .any(|op| matches!(op, Opcode::SetMapClosure { .. }));
+        assert!(has_set_map, "should emit SetMapClosure opcode");
+    }
+
+    #[test]
+    fn test_vm_set_new_closure_execution() {
+        // Set::new(|x| x == 1) should yield {1}
+        let expr = Expr::Call {
+            func: Path::new(vec!["Set".to_string(), "new".to_string()]),
+            args: vec![Expr::Closure {
+                params: vec![crate::ast::Binding {
+                    pattern: Pattern::Ident("x".to_string()),
+                    ty: Some(crate::ast::Type::Int),
+                    variable_mode: crate::ast::VariableMode::default(),
+                }],
+                body: Box::new(Expr::Eq(
+                    Box::new(Expr::Ident("x".to_string())),
+                    Box::new(Expr::Literal(Literal::Int(1))),
+                )),
+            }],
+        };
+        let compiled = compile_with_env(&expr, &[]).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 1024,
+                max_set_len: 1024,
+                max_map_len: 1024,
+            },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: None,
+        };
+        let env = std::collections::BTreeMap::new();
+        let result = vm_eval_with_env(&compiled, &env, &ctx).unwrap();
+        match result {
+            RuntimeValue::Set(s) => {
+                assert!(s.contains(&RuntimeValue::Int(1)), "Set should contain 1");
+                assert_eq!(s.len(), 1, "Set should have exactly 1 element");
+            }
+            other => panic!("Expected Set, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_vm_set_map_closure_execution() {
+        // Given set {1, 2, 3}, s.map(|x| x + 10) should yield {11, 12, 13}
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::Ident("s".to_string())),
+            method: "map".to_string(),
+            args: vec![Expr::Closure {
+                params: vec![crate::ast::Binding {
+                    pattern: Pattern::Ident("x".to_string()),
+                    ty: None,
+                    variable_mode: crate::ast::VariableMode::default(),
+                }],
+                body: Box::new(Expr::Binary(
+                    Box::new(Expr::Ident("x".to_string())),
+                    crate::ast::BinOp::Add,
+                    Box::new(Expr::Literal(Literal::Int(10))),
+                )),
+            }],
+        };
+        let env_names = vec!["s".to_string()];
+        let compiled = compile_with_env(&expr, &env_names).unwrap();
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds {
+                max_seq_len: 1024,
+                max_set_len: 1024,
+                max_map_len: 1024,
+            },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: None,
+        };
+        let input_set = RuntimeValue::Set(std::sync::Arc::new(transpiler_runtime::SetRepr::from_values(vec![
+            RuntimeValue::Int(1),
+            RuntimeValue::Int(2),
+            RuntimeValue::Int(3),
+        ])));
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("s".to_string(), input_set);
+        let result = vm_eval_with_env(&compiled, &env, &ctx).unwrap();
+        match result {
+            RuntimeValue::Set(s) => {
+                assert_eq!(s.len(), 3);
+                assert!(s.contains(&RuntimeValue::Int(11)));
+                assert!(s.contains(&RuntimeValue::Int(12)));
+                assert!(s.contains(&RuntimeValue::Int(13)));
+            }
+            other => panic!("Expected Set, got {:?}", other),
+        }
     }
 
     #[test]

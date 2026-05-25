@@ -2764,12 +2764,12 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_dispatch_profile_bytecode_compile_fail_then_ast() {
+    fn test_eval_dispatch_profile_set_new_closure_via_bytecode() {
         // Enable profiling
         EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(true));
         EVAL_DISPATCH_PROFILE.with(|p| *p.borrow_mut() = EvalDispatchProfile::default());
 
-        // Closure expression can't be compiled to bytecode
+        // Set::new(|x| ...) now compiles to bytecode via SetNewClosure opcode
         let closure_expr = Expr::Call {
             func: crate::ast::Path::new(vec!["Set".to_string(), "new".to_string()]),
             args: vec![Expr::Closure {
@@ -2795,11 +2795,12 @@ mod tests {
 
         EVAL_DISPATCH_PROFILE.with(|p| {
             let p = p.borrow();
-            assert_eq!(p.bytecode_compile_fail, 1, "closure should fail bytecode compilation");
-            assert_eq!(p.ast_fallback, 1, "should fall back to AST");
-            assert_eq!(p.bytecode_hit, 0, "should not have a bytecode hit");
+            assert_eq!(p.bytecode_hit, 1, "Set::new closure should compile and run via bytecode");
+            assert_eq!(p.bytecode_compile_fail, 0, "should not fail bytecode compilation");
+            assert_eq!(p.ast_fallback, 0, "should not fall back to AST");
         });
 
         EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(false));
     }
+
 }
