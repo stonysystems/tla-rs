@@ -5277,6 +5277,10 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 );
             }
 
+            // Phase 38.21.A.e: dump eval profiles to stderr (non-JSON path).
+            verus_transpiler::modelcheck::evaluator::dump_eval_expr_profile();
+            verus_transpiler::modelcheck::solver::dump_eval_dispatch_profile();
+
             Ok(())
         }
         Commands::ReportAssumes { input_dir, output } => {

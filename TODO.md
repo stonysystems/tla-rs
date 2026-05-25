@@ -13490,14 +13490,13 @@ tiers, ordered biggest-gain-per-effort first.
 
 #### Tier 1 — biggest theoretical wins (multi-day each)
 
-- [~] **38.21.A**: **Codegen spec functions to Rust closures or
-  compiled IR** (5-20× on solver time). The current evaluator AST-
-  interprets every action body via `eval_expr` walking trees and
-  cloning `RuntimeValue` structs. At startup, generate Rust closures
-  (or compile to a faster internal IR) so the runtime never walks the
-  AST. TLC equivalent of compiled form. Profile target: the 91 % of
-  Paxos wall-time currently in `successor_solving_ms`. Largest absolute
-  remaining gain; multi-week implementation.
+- [x] **38.21.A**: **Codegen spec functions to Rust closures or
+  compiled IR** — COMPLETE. Bytecode VM (4300 LOC) + native codegen
+  (370 LOC) now cover ALL expression types including closures (A.d).
+  Profiling (A.e) shows 100% bytecode hit rate, but solver evaluation
+  is only 3.4% of total time — the bottleneck has shifted to candidate
+  generation (39%) and dedup hashing (31%). Further bytecode/native
+  optimization yields diminishing returns.
   **Status**: Core infrastructure already exists — bytecode VM (4300 LOC,
   `bytecode.rs`) and native codegen (370 LOC, `native_compile.rs`) cover
   30/31 expression types (only closures unsupported). The 3-tier dispatch
@@ -13527,9 +13526,20 @@ tiers, ordered biggest-gain-per-effort first.
     patterns. Closures compiled inline (same pattern as quantifiers).
     All 3 VM loops updated. 6 new tests in bytecode.rs, 1 updated test
     in solver.rs. ~250 LOC.
-  - [ ] **38.21.A.e**: **Profile-driven optimization.** After telemetry
-    lands, identify the top 3 slowest expression patterns and optimize
-    their bytecode/native paths. Data-driven; scope TBD.
+  - [x] **38.21.A.e**: **Profile-driven optimization — DONE (data collected,
+    conclusion: bytecode is not the bottleneck).** Ran Paxos (3-node,
+    570 states, 382ms) with `TLARS_EVAL_PROFILE=1`. Results:
+    - Eval dispatch: **100% bytecode hit** (21,142 calls), 0% AST fallback.
+    - Eval expr: Ident 22%, Field 22%, Eq 22%, Literal 21%, Conjunction 11%.
+    - Timing: successor_solving=13ms (3.4%), candidate_generation=148ms (39%),
+      dedup_hashing=120ms (31%), initial_state=101ms (26%).
+    - **Conclusion**: Bytecode VM handles all expressions, solver evaluation is
+      only 3.4% of total time. Further bytecode/native optimization yields
+      diminishing returns. Real bottlenecks: candidate generation and dedup
+      hashing (in `explore_state_space` path, not evaluator).
+    - **Fix**: Added `dump_eval_expr_profile()` + `dump_eval_dispatch_profile()`
+      to the non-JSON model-check output path (was only emitted in `--json-report`
+      mode). ~5 LOC.
 - [ ] **38.21.B**: **Parallelize the explorer** (2-4× on multicore).
   TLC uses 4 workers. DPOR currently single-threaded. Worker-thread
   pool with a lock-free `DashMap<u64, ()>` visited set and per-worker
