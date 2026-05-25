@@ -13597,6 +13597,25 @@ tiers, ordered biggest-gain-per-effort first.
   treats branches with overlapping write-sets as conflicting. Many
   of those "conflicts" never materialize at runtime. Record actual
   runtime conflicts, narrow the relation on subsequent runs.
+  Decomposed into sub-tasks:
+  - [x] **38.21.I.a**: **Per-field-pair conflict frequency tracking.** DONE.
+    Added `conflicting_field_pairs()` method to `TransitionFootprint` in
+    `types.rs`, added `conflict_field_pairs: BTreeMap<(String, String), usize>`
+    to `SleepIndependenceBlockers`, wired into `record_independence_decision`.
+    Top-5 conflict pairs included in formatted summary output.
+    10 new tests (6 in types.rs, 4 in explore.rs). ~120 LOC.
+  - [ ] **38.21.I.b**: **Conflict profile CLI report.**
+    Add `--conflict-profile` flag that emits a ranked conflict-pair
+    frequency report after exploration, with suggestions for which
+    pairs could benefit from keyed-path refinement. ~100 LOC.
+  - [ ] **38.21.I.c**: **Runtime conflict verification.**
+    After firing a transition, compare pre/post state on statically-
+    predicted conflict fields to check whether the conflict actually
+    materialized. Track false-positive rate per field pair. ~200 LOC.
+  - [ ] **38.21.I.d**: **Dynamic independence narrowing.**
+    Use runtime conflict data to narrow the independence relation for
+    subsequent exploration — field pairs with 0% runtime conflict rate
+    are reclassified as independent. ~300 LOC.
 - [x] **38.21.J**: **SpecContext lazy-init cache** for the post-
   inlining transition IR and per-branch existential expansions —
   DONE (commit `208bbf0e`). Added two `OnceLock` fields on
@@ -13608,8 +13627,8 @@ tiers, ordered biggest-gain-per-effort first.
 
 #### Status (2026-05-24)
 
-Done: D, F, J. Analyzed and deferred: G (low ROI without deeper rewrite).
-Remaining: A, B, C, E, H, I — each multi-day to multi-week. Default
+Done: D, E, F, J. Analyzed and deferred: G (low ROI without deeper rewrite).
+Remaining: A, B, C, H, I — each multi-day to multi-week. Default
 Paxos run-time at the new bounds is ~35 s with `--search dpor`, well
 within the 10-min budget; further optimization is no longer urgent.
 

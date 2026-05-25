@@ -86,6 +86,10 @@ pub struct SleepIndependenceBlockers {
     pub blocked_unknown_footprint: usize,
     /// Candidate pairs blocked due to read/write footprint conflict.
     pub blocked_footprint_conflict: usize,
+    /// Per-field-pair conflict frequency: maps `(left_field, right_field)` to
+    /// the number of times this pair caused a footprint conflict block.
+    /// Only populated when `blocked_footprint_conflict > 0`.
+    pub conflict_field_pairs: BTreeMap<(String, String), usize>,
 }
 
 /// Configuration for the DPOR explorer.
@@ -602,7 +606,7 @@ fn format_sleep_cardinality_summary(stats: &BTreeMap<usize, SleepDepthStats>) ->
 
 #[cfg(test)]
 fn format_independence_blockers_summary(stats: &SleepIndependenceBlockers) -> String {
-    format!(
+    let mut summary = format!(
         "early_off={} chosen_unknown={} cand={} ind={} same={} unknown={} conflict={}",
         stats.early_exit_independence_disabled,
         stats.early_exit_chosen_unknown_footprint,
@@ -611,7 +615,19 @@ fn format_independence_blockers_summary(stats: &SleepIndependenceBlockers) -> St
         stats.blocked_same_process,
         stats.blocked_unknown_footprint,
         stats.blocked_footprint_conflict
-    )
+    );
+    if !stats.conflict_field_pairs.is_empty() {
+        let mut pairs: Vec<_> = stats.conflict_field_pairs.iter().collect();
+        pairs.sort_by(|a, b| b.1.cmp(a.1));
+        let top_n = 5;
+        let top_pairs: Vec<String> = pairs
+            .iter()
+            .take(top_n)
+            .map(|((l, r), count)| format!("({},{})::{}", l, r, count))
+            .collect();
+        summary.push_str(&format!(" top_conflicts=[{}]", top_pairs.join(", ")));
+    }
+    summary
 }
 
 #[cfg(test)]
@@ -907,6 +923,8 @@ fn classify_transition_independence(
 fn record_independence_decision(
     blockers: &mut SleepIndependenceBlockers,
     decision: IndependenceDecision,
+    left: &EnabledTransition,
+    right: &EnabledTransition,
 ) -> bool {
     blockers.candidates_considered += 1;
     match decision {
@@ -924,6 +942,9 @@ fn record_independence_decision(
         }
         IndependenceDecision::BlockedFootprintConflict => {
             blockers.blocked_footprint_conflict += 1;
+            for pair in left.footprint.conflicting_field_pairs(&right.footprint) {
+                *blockers.conflict_field_pairs.entry(pair).or_insert(0) += 1;
+            }
             false
         }
     }
@@ -958,6 +979,8 @@ fn compute_child_sleep_set(
             if record_independence_decision(
                 blockers,
                 classify_transition_independence(sleeping_trans, chosen, use_independence),
+                sleeping_trans,
+                chosen,
             ) {
                 child_sleep.insert(sleeping_key.clone());
             }
@@ -976,6 +999,8 @@ fn compute_child_sleep_set(
             if record_independence_decision(
                 blockers,
                 classify_transition_independence(done_trans, chosen, use_independence),
+                done_trans,
+                chosen,
             ) {
                 child_sleep.insert(transition_sleep_key(done_trans));
             }
@@ -996,6 +1021,8 @@ fn compute_child_sleep_set(
         if record_independence_decision(
             blockers,
             classify_transition_independence(candidate, chosen, use_independence),
+            candidate,
+            chosen,
         ) {
             child_sleep.insert(transition_sleep_key(candidate));
         }
@@ -2234,12 +2261,141 @@ max_seq_len = 4
         assert_eq!(blockers.blocked_unknown_footprint, 1);
         assert_eq!(blockers.blocked_footprint_conflict, 1);
 
+        // Verify per-field-pair conflict tracking (Phase 38.21.I.a)
+        assert!(
+            !blockers.conflict_field_pairs.is_empty(),
+            "conflict_field_pairs should be populated when footprint conflict occurs"
+        );
+        // The conflict transition reads "x", chosen writes "x" → pair ("x", "x")
+        assert!(
+            blockers.conflict_field_pairs.contains_key(&("x".to_string(), "x".to_string())),
+            "should record (x, x) conflict pair, got: {:?}",
+            blockers.conflict_field_pairs
+        );
+
         let summary = format_independence_blockers_summary(&blockers);
         assert!(
             summary
                 .contains("early_off=0 chosen_unknown=0 cand=4 ind=1 same=1 unknown=1 conflict=1"),
             "summary should include blocker counts, got {}",
             summary
+        );
+        assert!(
+            summary.contains("top_conflicts="),
+            "summary should include top conflicts, got {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn test_conflict_field_pairs_accumulate_across_decisions() {
+        let mut blockers = SleepIndependenceBlockers::default();
+
+        let t1 = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "a".to_string(),
+            successor_fingerprint: StateFingerprint(0),
+            ordering_key: "0".to_string(),
+            footprint: TransitionFootprint {
+                reads: BTreeSet::new(),
+                writes: ["pc".to_string(), "val".to_string()].into(),
+            },
+        };
+        let t2 = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "b".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "1".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["pc".to_string()].into(),
+                writes: ["val".to_string()].into(),
+            },
+        };
+
+        // Record conflict twice to test accumulation
+        let decision = classify_transition_independence(&t1, &t2, true);
+        assert_eq!(decision, IndependenceDecision::BlockedFootprintConflict);
+        record_independence_decision(&mut blockers, decision, &t1, &t2);
+        record_independence_decision(&mut blockers, decision, &t1, &t2);
+
+        assert_eq!(blockers.blocked_footprint_conflict, 2);
+        // t1 writes "pc", t2 reads "pc" → ("pc", "pc")
+        // t1 writes "pc", t2 writes "val" → no conflict (different roots)
+        // t1 writes "val", t2 reads "pc" → no conflict (different roots)
+        // t1 writes "val", t2 writes "val" → ("val", "val")
+        assert_eq!(
+            blockers.conflict_field_pairs.get(&("pc".to_string(), "pc".to_string())),
+            Some(&2),
+            "pc-pc pair should be counted twice"
+        );
+        assert_eq!(
+            blockers.conflict_field_pairs.get(&("val".to_string(), "val".to_string())),
+            Some(&2),
+            "val-val pair should be counted twice"
+        );
+        assert_eq!(
+            blockers.conflict_field_pairs.len(),
+            2,
+            "should have exactly 2 distinct field pairs"
+        );
+    }
+
+    #[test]
+    fn test_conflict_field_pairs_empty_when_no_footprint_conflict() {
+        let mut blockers = SleepIndependenceBlockers::default();
+
+        let t1 = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "a".to_string(),
+            successor_fingerprint: StateFingerprint(0),
+            ordering_key: "0".to_string(),
+            footprint: TransitionFootprint {
+                reads: BTreeSet::new(),
+                writes: ["x".to_string()].into(),
+            },
+        };
+        let t2 = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "b".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "1".to_string(),
+            footprint: TransitionFootprint {
+                reads: ["y".to_string()].into(),
+                writes: BTreeSet::new(),
+            },
+        };
+
+        let decision = classify_transition_independence(&t1, &t2, true);
+        assert_eq!(decision, IndependenceDecision::Independent);
+        record_independence_decision(&mut blockers, decision, &t1, &t2);
+
+        assert_eq!(blockers.independent_candidates, 1);
+        assert!(
+            blockers.conflict_field_pairs.is_empty(),
+            "no field pairs should be recorded for independent transitions"
+        );
+    }
+
+    #[test]
+    fn test_format_summary_top_conflicts_ordering() {
+        let mut blockers = SleepIndependenceBlockers::default();
+        blockers.blocked_footprint_conflict = 30;
+        blockers.candidates_considered = 30;
+        // Insert field pairs with different frequencies
+        blockers.conflict_field_pairs.insert(("a".to_string(), "b".to_string()), 5);
+        blockers.conflict_field_pairs.insert(("pc".to_string(), "pc".to_string()), 20);
+        blockers.conflict_field_pairs.insert(("val".to_string(), "val".to_string()), 3);
+        blockers.conflict_field_pairs.insert(("x".to_string(), "y".to_string()), 2);
+
+        let summary = format_independence_blockers_summary(&blockers);
+        // Top-N should be ordered by frequency descending
+        assert!(summary.contains("top_conflicts="));
+        // pc,pc (20) should appear before a,b (5)
+        let pc_pos = summary.find("(pc,pc)::20").expect("should contain pc,pc::20");
+        let ab_pos = summary.find("(a,b)::5").expect("should contain a,b::5");
+        assert!(
+            pc_pos < ab_pos,
+            "higher-frequency pair should appear first in summary"
         );
     }
 

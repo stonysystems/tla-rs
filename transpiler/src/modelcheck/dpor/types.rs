@@ -169,6 +169,31 @@ impl TransitionFootprint {
         }
         true
     }
+
+    /// Return the specific field pairs that conflict between two footprints.
+    /// Each pair is `(left_field, right_field)` where the conflict type is:
+    /// - write-read: left writes, right reads
+    /// - write-write: left writes, right writes
+    /// - read-write: left reads, right writes
+    /// Returns an empty vec if footprints are independent.
+    pub fn conflicting_field_pairs(&self, other: &TransitionFootprint) -> Vec<(String, String)> {
+        let mut pairs = Vec::new();
+        for left in &self.writes {
+            for right in other.reads.iter().chain(other.writes.iter()) {
+                if field_paths_conflict(left, right) {
+                    pairs.push((left.clone(), right.clone()));
+                }
+            }
+        }
+        for left in &self.reads {
+            for right in &other.writes {
+                if field_paths_conflict(left, right) {
+                    pairs.push((left.clone(), right.clone()));
+                }
+            }
+        }
+        pairs
+    }
 }
 
 fn split_field_selector(path: &str) -> (&str, Option<&str>) {
@@ -462,5 +487,104 @@ mod tests {
         };
         assert_eq!(step.depth, 0);
         assert_eq!(step.enabled.len(), 1);
+    }
+
+    #[test]
+    fn test_conflicting_field_pairs_independent() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::from(["x".to_string()]),
+            writes: BTreeSet::from(["y".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::from(["a".to_string()]),
+            writes: BTreeSet::from(["b".to_string()]),
+        };
+        assert!(fp1.independent_of(&fp2));
+        assert!(fp1.conflicting_field_pairs(&fp2).is_empty());
+    }
+
+    #[test]
+    fn test_conflicting_field_pairs_write_read() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["pc".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::from(["pc".to_string()]),
+            writes: BTreeSet::new(),
+        };
+        assert!(!fp1.independent_of(&fp2));
+        let pairs = fp1.conflicting_field_pairs(&fp2);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0], ("pc".to_string(), "pc".to_string()));
+    }
+
+    #[test]
+    fn test_conflicting_field_pairs_write_write() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["counter".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["counter".to_string()]),
+        };
+        assert!(!fp1.independent_of(&fp2));
+        let pairs = fp1.conflicting_field_pairs(&fp2);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0], ("counter".to_string(), "counter".to_string()));
+    }
+
+    #[test]
+    fn test_conflicting_field_pairs_keyed_independent() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["pc[0]".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["pc[1]".to_string()]),
+        };
+        assert!(fp1.independent_of(&fp2));
+        assert!(fp1.conflicting_field_pairs(&fp2).is_empty());
+    }
+
+    #[test]
+    fn test_conflicting_field_pairs_keyed_conflict() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["pc[0]".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::from(["pc[0]".to_string()]),
+            writes: BTreeSet::new(),
+        };
+        assert!(!fp1.independent_of(&fp2));
+        let pairs = fp1.conflicting_field_pairs(&fp2);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0], ("pc[0]".to_string(), "pc[0]".to_string()));
+    }
+
+    #[test]
+    fn test_conflicting_field_pairs_multiple() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::from(["val".to_string()]),
+            writes: BTreeSet::from(["pc".to_string(), "val".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::from(["pc".to_string(), "val".to_string()]),
+            writes: BTreeSet::from(["val".to_string()]),
+        };
+        let pairs = fp1.conflicting_field_pairs(&fp2);
+        // pc writes -> pc reads, pc writes -> val reads (no, different roots),
+        // val writes -> pc reads (no), val writes -> val reads, val writes -> val writes,
+        // val reads -> val writes
+        // Exact: (pc, pc), (val, val)×read, (val, val)×write, (val, val)×read-write
+        assert!(pairs.len() >= 3);
+        // All pairs should involve either "pc" or "val"
+        for (l, r) in &pairs {
+            assert!(l == "pc" || l == "val");
+            assert!(r == "pc" || r == "val");
+        }
     }
 }
