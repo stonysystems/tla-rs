@@ -102,6 +102,8 @@ pub struct PBFTHost {
     /// round's PrePrepare unsticks lagging backups.
     cur_pre_prepare: Option<(u64, u64, u64)>,
     prev_pre_prepare: Option<(u64, u64, u64)>,
+    /// Client endpoint for the current pending request (if any).
+    pending_client: Option<EndPoint>,
 }
 
 impl PBFTHost {
@@ -143,6 +145,7 @@ impl PBFTHost {
         &mut self,
         config: &PBFTConfig,
         digest: u64,
+        client_ep: EndPoint,
     ) -> StepResult<PBFTMessage> {
         if !self.is_primary() {
             return StepResult {
@@ -151,8 +154,9 @@ impl PBFTHost {
             };
         }
 
-        // Buffer the digest
+        // Buffer the digest and track the client endpoint
         self.pending_digest = Some(digest);
+        self.pending_client = Some(client_ep);
 
         // Inline PrePrepare: the timer path may never fire during client
         // flooding (148K packets/sec), so try to start a new round here.
@@ -401,6 +405,9 @@ impl PBFTHost {
         // Check if we have enough commits to execute and reply.
         let threshold = 2 * config.constants.f + 1;
         if self.state.commit_senders.len() as u64 >= threshold && self.state.seq_num < u64::MAX {
+            let digest = self.state.request_digest;
+            let client_ep = self.pending_client.take();
+
             let (new_state, _sent) = pbft_gen::CExecuteReply(&self.state, &config.constants);
             self.state = new_state;
             // Advance to PrePrepare immediately so we're ready for the next round.
@@ -409,6 +416,17 @@ impl PBFTHost {
             // from racing a full round ahead of backups.
             let _ = self.try_checkpoint(config);
             let _ = self.try_new_round(config);
+
+            // Send ClientReply to the requesting client (primary only)
+            if let Some(dst) = client_ep {
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::Send {
+                        dst,
+                        msg: PBFTMessage::ClientReply { digest },
+                    },
+                };
+            }
         }
 
         StepResult {
@@ -643,6 +661,7 @@ impl ProtocolHost for PBFTHost {
             last_catchup_time: Instant::now(),
             cur_pre_prepare: None,
             prev_pre_prepare: None,
+            pending_client: None,
         })
     }
 
@@ -673,7 +692,7 @@ impl ProtocolHost for PBFTHost {
             if Self::resolve_sender_index(config, &pkt.src).is_some() {
                 let src = pkt.src;
                 result = Some(match pkt.msg {
-                    PBFTMessage::ClientRequest { digest } => self.handle_client_request(config, digest),
+                    PBFTMessage::ClientRequest { digest } => self.handle_client_request(config, digest, src.clone_up_to_view()),
                     PBFTMessage::PrePrepare { view, seq, digest } => {
                         self.handle_pre_prepare(config, view, seq, digest)
                     }
@@ -688,6 +707,13 @@ impl ProtocolHost for PBFTHost {
                         seq,
                         sender,
                     } => self.handle_commit(config, view, seq, sender, &src),
+                    PBFTMessage::ClientReply { .. } => {
+                        // ClientReply is outbound-only; ignore if received
+                        StepResult {
+                            ok: true,
+                            outbound: GenericOutbound::None,
+                        }
+                    }
                 });
             }
         }

@@ -85,7 +85,7 @@ ensures
         let mut __prepare_senders = clone_hashset_u64(&HashSet::new());
         __prepare_senders.insert(c.node_id.clone());
         (CState {
-    request_digest: *digest,
+    request_digest: (*digest),
     prepare_senders: Arc::new(__prepare_senders),
     commit_senders: Arc::new(HashSet::new()),
     view: s.view.clone(),
@@ -99,7 +99,7 @@ ensures
 }, vec![CPBFTMessage::PrePrepare {
     view: s.view.clone(),
     seq: s.seq_num.clone(),
-    digest: *digest,
+    digest: (*digest),
 }])
     };
     proof {
@@ -128,11 +128,11 @@ ensures
         { proof {
             lemma_empty_seq_map();
         }; (CState {
-    request_digest: *digest,
+    request_digest: (*digest),
     prepare_senders: Arc::new(__prepare_senders),
     commit_senders: Arc::new(HashSet::new()),
     view: s.view.clone(),
-    seq_num: *seq,
+    seq_num: (*seq),
     is_primary: s.is_primary.clone(),
     checkpoint_seq: s.checkpoint_seq.clone(),
     checkpoint_digest: s.checkpoint_digest.clone(),
@@ -277,11 +277,7 @@ ensures
     result.0.valid(),
     LExecuteReply(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
 {
-    let result = {
-        proof {
-            lemma_empty_seq_map();
-        }
-        (CState {
+    let result = (CState {
     seq_num: (s.seq_num + 1),
     prepare_senders: Arc::new(HashSet::new()),
     commit_senders: Arc::new(HashSet::new()),
@@ -293,12 +289,12 @@ ensures
     low_watermark: s.low_watermark.clone(),
     high_watermark: s.high_watermark.clone(),
     phase: CPhase::Replied,
-}, vec![])
-    };
+}, vec![CPBFTMessage::ClientReply {
+    digest: s.request_digest.clone(),
+}]);
     proof {
         lemma_empty_set_map();
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
@@ -321,7 +317,7 @@ ensures
         }
         (CState {
     checkpoint_seq: s.seq_num.clone(),
-    checkpoint_digest: *digest,
+    checkpoint_digest: (*digest),
     low_watermark: s.seq_num.clone(),
     high_watermark: (s.seq_num + c.checkpoint_interval),
     view: s.view.clone(),

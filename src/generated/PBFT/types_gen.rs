@@ -149,12 +149,16 @@ pub enum CPBFTMessage {
         seq: u64,
         digest: u64,
     },
+    ClientReply {
+        digest: u64,
+    },
 }
 
 impl CPBFTMessage {
     pub open spec fn valid(&self) -> bool {
         match self {
             CPBFTMessage::PrePrepare { view, seq, digest } => true,
+            CPBFTMessage::ClientReply { digest } => true,
         }
     }
 }
@@ -165,6 +169,7 @@ impl View for CPBFTMessage {
     open spec fn view(&self) -> LPBFTMessage {
         match self {
             CPBFTMessage::PrePrepare { view, seq, digest } => LPBFTMessage::PrePrepare { view: *view as int, seq: *seq as int, digest: *digest as int },
+            CPBFTMessage::ClientReply { digest } => LPBFTMessage::ClientReply { digest: *digest as int },
         }
     }
 }

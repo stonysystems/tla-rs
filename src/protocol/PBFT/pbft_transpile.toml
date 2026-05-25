@@ -58,6 +58,11 @@ fields = [["view", "u64"], ["seq", "u64"], ["sender", "u64"]]
 name = "ClientRequest"
 doc = "Client sends a request to the primary."
 fields = [["digest", "u64"]]
+
+[[messages.variants]]
+name = "ClientReply"
+doc = "Reply sent to client after executing a committed request."
+fields = [["digest", "u64"]]
 # Auto-generated from LNext — 9 actions
 [scheduler]
 next_fn = "LNext"

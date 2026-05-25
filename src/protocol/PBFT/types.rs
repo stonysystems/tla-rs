@@ -18,6 +18,8 @@ pub enum LPhase {
 /// PBFT protocol network messages (spec-level).
 pub enum LPBFTMessage {
     PrePrepare { view: int, seq: int, digest: int },
+    /// Reply sent to client after executing a committed request
+    ClientReply { digest: int },
 }
 
 /// State of a single PBFT replica

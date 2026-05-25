@@ -175,8 +175,8 @@ pub open spec fn LExecuteReply(
     &&& s_.checkpoint_digest == s.checkpoint_digest
     &&& s_.low_watermark == s.low_watermark
     &&& s_.high_watermark == s.high_watermark
-    // No messages sent
-    &&& sent_packets == Seq::<LPBFTMessage>::empty()
+    // Send ClientReply to the requesting client
+    &&& sent_packets == seq![LPBFTMessage::ClientReply { digest: s.request_digest }]
 }
 
 /// Create a stable checkpoint after processing K requests.

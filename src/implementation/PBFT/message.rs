@@ -27,6 +27,10 @@ pub enum PBFTMessage {
     ClientRequest {
         digest: u64,
     },
+    /// Reply sent to client after executing a committed request.
+    ClientReply {
+        digest: u64,
+    },
 }
 
 // Message tags for serialization
@@ -34,6 +38,7 @@ const TAG_PRE_PREPARE: u64 = 1;
 const TAG_PREPARE: u64 = 2;
 const TAG_COMMIT: u64 = 3;
 const TAG_CLIENT_REQUEST: u64 = 4;
+const TAG_CLIENT_REPLY: u64 = 5;
 
 /// Read a u64 from a byte slice at the given byte offset.
 fn read_u64(data: &Vec<u8>, offset: usize) -> u64 {
@@ -73,6 +78,10 @@ impl ProtocolMessage for PBFTMessage {
             },
             PBFTMessage::ClientRequest { digest } => {
                 buf.extend_from_slice(&TAG_CLIENT_REQUEST.to_le_bytes());
+                buf.extend_from_slice(&digest.to_le_bytes());
+            },
+            PBFTMessage::ClientReply { digest } => {
+                buf.extend_from_slice(&TAG_CLIENT_REPLY.to_le_bytes());
                 buf.extend_from_slice(&digest.to_le_bytes());
             },
         }
@@ -118,6 +127,13 @@ impl ProtocolMessage for PBFTMessage {
                 }
                 let digest = read_u64(data, 8);
                 Some(PBFTMessage::ClientRequest { digest })
+            },
+            TAG_CLIENT_REPLY => {
+                if data.len() < 16 {
+                    return None;
+                }
+                let digest = read_u64(data, 8);
+                Some(PBFTMessage::ClientReply { digest })
             },
             _ => None,
         }

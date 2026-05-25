@@ -14794,7 +14794,7 @@ For each protocol, add to spec:
 
 - [x] **44.2.a — PrimaryBackup**: Added `ClientReply { val: int }` to `LPBMessage` in `types.rs`. Modified `LPrimaryCommit` to emit `seq![LPBMessage::ClientReply { val: s.pending_value }]`. Updated `transpile.toml` with ClientReply message variant. Regenerated `types_gen.rs` + `primarybackup_gen.rs` via transpiler. Added ClientReply wire format to `message.rs` (TAG=4, serialize/deserialize). Updated `host.rs`: tracks `pending_client: Option<EndPoint>` from ClientRequest source, sends ClientReply to client after commit. 15 verified, 0 errors. All 2,479 transpiler tests pass.
 - [x] **44.2.b — EPaxos**: Added `ClientReply { cmd: int }` to `LEPaxosMessage`. Modified `LExecute` to emit ClientReply unconditionally. Changed `LPropose` from timer_driven to message_driven (ClientRequest). Added ClientRequest/ClientReply wire format. Host.rs: `try_propose` takes client endpoint, `try_execute` sends ClientReply, timer round-robin reduced to 6 actions. 18 verified, 0 errors.
-- [ ] **44.2.c — PBFT**: Inspect `src/protocol/PBFT/pbft.rs` to check whether spec already models a client reply. If yes, ensure it's exposed via wire format. If no, add `ClientReply{client_id, seq_no, value}` and a transition triggered when a node has collected f+1 matching commits. Spec change ~30-80 lines.
+- [x] **44.2.c — PBFT**: Added `ClientReply { digest: int }` to `LPBFTMessage`. Modified `LExecuteReply` to emit ClientReply with request_digest after 2f+1 commits. Added ClientReply (TAG=5) wire format. Host.rs: tracks `pending_client` from ClientRequest source, sends ClientReply after execute. 16 verified, 0 errors.
 
 Each spec change also needs:
 - `.automan` mode annotation for the new transition function (input/output param tagging).
@@ -14806,7 +14806,7 @@ Each spec change also needs:
 For each protocol modified in 44.2:
 - [x] **44.3.a — PB**: Done as part of 44.2.a. Regenerated via transpiler, verified (15 verified, 0 errors), updated message.rs + host.rs.
 - [x] **44.3.b — EPaxos**: Done as part of 44.2.b. Regenerated via transpiler, verified (18 verified, 0 errors), updated message.rs + host.rs.
-- [ ] **44.3.c — PBFT**: Same. Verify target: ≥13 verified, 0 errors. Integrate fix from 44.1.
+- [x] **44.3.c — PBFT**: Done as part of 44.2.c. Regenerated via transpiler, verified (16 verified, 0 errors), updated message.rs + host.rs.
 
 #### 44.4 Unified client framework
 
