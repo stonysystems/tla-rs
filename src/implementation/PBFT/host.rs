@@ -12,6 +12,7 @@ use crate::generated::PBFT::pbft_gen;
 use crate::generated::PBFT::types_gen::*;
 use crate::implementation::PBFT::message::*;
 use std::collections::HashSet;
+use std::time::Instant;
 
 /// PBFT protocol configuration.
 pub struct PBFTConfig {
@@ -83,6 +84,10 @@ pub struct PBFTHost {
     pub state: CState,
     /// Round-robin action index for timer-driven actions.
     pub action_index: u64,
+    /// Timestamp of last metrics output (for periodic throughput reporting).
+    last_metrics_time: Instant,
+    /// seq_num at last metrics output (for delta computation).
+    last_metrics_seq_num: u64,
 }
 
 impl PBFTHost {
@@ -443,10 +448,15 @@ impl ProtocolHost for PBFTHost {
     type Cfg = PBFTConfig;
 
     fn init(config: &Self::Cfg) -> Option<Self> {
-        let state = pbft_gen::CInit(&config.constants);
+        let mut state = pbft_gen::CInit(&config.constants);
+        // CInit always sets is_primary=true; override for non-primary nodes.
+        // Primary is the node whose index equals view % n (initially view=0, so node 0).
+        state.is_primary = config.my_index == (state.view % config.constants.n);
         Some(PBFTHost {
             state,
             action_index: 0,
+            last_metrics_time: Instant::now(),
+            last_metrics_seq_num: 0,
         })
     }
 
@@ -455,6 +465,22 @@ impl ProtocolHost for PBFTHost {
         config: &Self::Cfg,
         packet: Option<GenericPacket<Self::Msg>>,
     ) -> StepResult<Self::Msg> {
+        // Periodic metrics output (every 1 second)
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_metrics_time);
+        if elapsed.as_secs() >= 1 {
+            let seq = self.state.seq_num;
+            let delta = seq - self.last_metrics_seq_num;
+            let elapsed_secs = elapsed.as_secs_f64();
+            let role = if self.is_primary() { "primary" } else { "replica" };
+            eprintln!(
+                "[METRICS] role={} seq_num={} delta={} elapsed={:.2}s throughput={:.1} ops/s",
+                role, seq, delta, elapsed_secs, delta as f64 / elapsed_secs,
+            );
+            self.last_metrics_time = now;
+            self.last_metrics_seq_num = seq;
+        }
+
         // Handle incoming message
         if let Some(pkt) = packet {
             let sender_id = Self::resolve_sender_index(config, &pkt.src);
@@ -488,11 +514,13 @@ impl ProtocolHost for PBFTHost {
             };
         }
 
-        // No message -- run timer-driven actions round-robin
-        let result = match self.action_index % 4 {
+        // No message -- run timer-driven actions round-robin.
+        // Note: view change is disabled in normal operation (it resets all
+        // progress). In a real system, view change would be triggered by a
+        // timeout detecting a failed primary, not by round-robin polling.
+        let result = match self.action_index % 3 {
             0 => self.try_pre_prepare_and_new_round(config),
             1 => self.try_checkpoint(config),
-            2 => self.try_view_change(config),
             _ => self.try_new_round(config),
         };
         self.action_index = self.action_index.wrapping_add(1);

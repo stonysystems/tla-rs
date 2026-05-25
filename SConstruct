@@ -156,6 +156,7 @@ if not GetOption('skip_dotnet'):
   env.DotnetBuild('bin/IronProtocolServer.dll', 'csharp/IronProtocolServer/IronProtocolServer.csproj')
   env.DotnetBuild('bin/IronRaftClient.dll', 'csharp/IronRaftClient/IronRaftClient.csproj')
   env.DotnetBuild('bin/IronPrimaryBackupClient.dll', 'csharp/IronPrimaryBackupClient/IronPrimaryBackupClient.csproj')
+  env.DotnetBuild('bin/IronPBFTClient.dll', 'csharp/IronPBFTClient/IronPBFTClient.csproj')
 
 if not GetOption('skip_verus'):
   env.VerusBuild('liblib.so', 'src/lib.rs')

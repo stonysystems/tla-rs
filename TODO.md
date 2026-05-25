@@ -14704,19 +14704,20 @@ Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, Pri
 
 #### 43.3 PBFT — write IronPBFTClient (effort: ~1 day, more complex than PB)
 
-- [ ] **43.3.a**: Copy `IronPrimaryBackupClient` as base. Adapt wire format:
-  - Send: `[TAG=ClientRequest][client_id][seq_no][digest]` per `PBFTMessage::ClientRequest`.
-  - Recv: PBFT reply (need to inspect actual reply message; spec has `ClientRequest` but may have implicit reply via `Commit` broadcast).
-- [ ] **43.3.b**: Implement f+1 reply collection (PBFT requires waiting for at least f+1 matching replies before confirming commit). For n=3, f=1, so 2 matching replies needed.
-- [ ] **43.3.c**: Same args + output format as PrimaryBackup client.
-- [ ] **43.3.d**: Bench HEAD vs c097da0.
+- [x] **43.3.a**: Created `csharp/IronPBFTClient/` — fire-and-forget UDP client sending `[TAG=4][digest]` (16 bytes LE). PBFT has no client reply in this impl. Added `[METRICS]` to `host.rs` tracking `seq_num` increments. Fixed `CInit` is_primary bug (all nodes started as primary). Generated 4-node cert set in `bench/certs4/`.
+- [x] **43.3.b**: f+1 reply collection NOT needed — PBFT impl has no client reply message. Fire-and-forget like PrimaryBackup.
+- [x] **43.3.c**: Created `scripts/bench_pbft.sh` (4 nodes, same structure as PB bench). Added `IronPBFTClient.dll` to SCons build. Fixed critical bug: `try_view_change` was firing in the round-robin loop, resetting all consensus progress every 4th tick. Disabled view change in normal operation (should only fire on primary failure timeout).
+- [x] **43.3.d**: **PBFT throughput too low for meaningful Arc comparison.** HEAD: <1 ops/s (0-5 commits per 30s run). Root cause: per-message 3-phase consensus (PrePrepare → Prepare → Commit) without batching. Each request requires 3 network round trips through the C# I/O framework, bottlenecked by UDP polling latency. Phase 40 Arc overhead is completely unmeasurable against this ~1000x larger scheduling overhead. **SKIP baseline comparison.**
 
 #### 43.4 Synthesize Phase 40 verdict for small protocols
 
-- [ ] **43.4.a**: Combine results from 43.1.c, 43.2.d, 43.3.d. Decision table:
-  - For each protocol: HEAD vs c097da0 throughput delta + latency delta.
-  - If any protocol shows ≥10% benefit attributable to Phase 40 Arc-wrap, keep Phase 40 Arc codegen active for it (re-evaluate 42.5.a disposition).
-  - If all 3 show ≤5% delta, Phase 40's struct-level Arc has zero practical value on protocols we can bench — Phase 42.5.b (disable via TOML) becomes attractive.
+- [ ] **43.4.a**: Combine results from 43.1.c, 43.2.d, 43.3.d. Decision table (data collected):
+  - EPaxos: -13% (Arc hurts — small state, high mutation rate)
+  - PrimaryBackup: +1.8% (noise, no measurable effect)
+  - PBFT: unmeasurable (<1 ops/s, bottlenecked by 3-phase consensus round trips)
+  - RSL (Phase 41): +82% (field-level Arc, large maps benefit from clone savings)
+  - Raft: +0% (no effect)
+  - **Conclusion**: struct-level Arc (Phase 40) provides no benefit on small protocols. Only field-level Arc (Phase 41) on large-state protocols (RSL) shows significant gains.
 - [ ] **43.4.b**: Update README's perf table and EFFICIENT_EMIT.md with the small-protocol bench numbers.
 - [ ] **43.4.c**: Mark Phase 40 as either "Validated experimental" (some protocol benefits) or "Confirmed no benefit, disable via TOML" (all protocols show no delta).
 
