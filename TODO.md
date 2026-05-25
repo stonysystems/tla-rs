@@ -14693,7 +14693,7 @@ Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, Pri
 
 - [x] **43.1.a**: Added periodic `[METRICS]` output to `EPaxosHost::next()` in `src/implementation/EPaxos/host.rs`. Every 1s, prints `[METRICS] committed=<N> delta=<D> elapsed=<S>s throughput=<T> ops/s` to stderr. Added `last_metrics_time: Instant` and `last_metrics_committed: u64` fields. ~20 LOC.
 - [x] **43.1.b**: Smoke-tested 3-node EPaxos cluster (10s). **Result: ~5,500-6,300 commits/s per node** (self-driving, no client needed). Added `scripts/bench_epaxos.sh` for repeatable bench (configurable duration/trials, parses `[METRICS]`, reports per-node + aggregate throughput).
-- [ ] **43.1.c**: Bench on HEAD + on c097da0 baseline (with rebuilt liblib.so per machine). Report delta. Confirms whether Phase 40 Arc-wrap on `CState` helps EPaxos.
+- [x] **43.1.c**: Bench on HEAD vs c097da0 baseline (30s x 2 trials, 3 nodes, rebuilt liblib.so each). **Result: Phase 40 Arc-wrap HURTS EPaxos by ~13%.** HEAD avg 4,066 commits/node/s vs baseline avg 4,680 commits/node/s (Δ = -13%). EPaxos state is small and mutates every step, so Arc refcounting adds pure overhead with no clone savings. This is the first protocol where Phase 40 shows measurable negative impact.
 
 #### 43.2 PrimaryBackup — write IronPrimaryBackupClient (effort: ~0.5 day)
 
