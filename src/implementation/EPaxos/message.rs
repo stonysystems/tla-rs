@@ -31,6 +31,14 @@ pub enum EPaxosMessage {
         cmd: u64,
         seq: u64,
     },
+    /// Client sends a command request to a replica.
+    ClientRequest {
+        cmd: u64,
+    },
+    /// Leader replies to client after executing a committed command.
+    ClientReply {
+        cmd: u64,
+    },
 }
 
 // Message tags for serialization
@@ -39,6 +47,8 @@ const TAG_PRE_ACCEPT_OK: u64 = 2;
 const TAG_ACCEPT: u64 = 3;
 const TAG_ACCEPT_OK: u64 = 4;
 const TAG_COMMIT_MSG: u64 = 5;
+const TAG_CLIENT_REQUEST: u64 = 6;
+const TAG_CLIENT_REPLY: u64 = 7;
 
 /// Read a u64 from a byte slice at the given byte offset.
 fn read_u64(data: &Vec<u8>, offset: usize) -> u64 {
@@ -84,6 +94,14 @@ impl ProtocolMessage for EPaxosMessage {
                 buf.extend_from_slice(&TAG_COMMIT_MSG.to_le_bytes());
                 buf.extend_from_slice(&cmd.to_le_bytes());
                 buf.extend_from_slice(&seq.to_le_bytes());
+            },
+            EPaxosMessage::ClientRequest { cmd } => {
+                buf.extend_from_slice(&TAG_CLIENT_REQUEST.to_le_bytes());
+                buf.extend_from_slice(&cmd.to_le_bytes());
+            },
+            EPaxosMessage::ClientReply { cmd } => {
+                buf.extend_from_slice(&TAG_CLIENT_REPLY.to_le_bytes());
+                buf.extend_from_slice(&cmd.to_le_bytes());
             },
         }
     }
@@ -135,6 +153,20 @@ impl ProtocolMessage for EPaxosMessage {
                 let cmd = read_u64(data, 8);
                 let seq = read_u64(data, 16);
                 Some(EPaxosMessage::CommitMsg { cmd, seq })
+            },
+            TAG_CLIENT_REQUEST => {
+                if data.len() < 16 {
+                    return None;
+                }
+                let cmd = read_u64(data, 8);
+                Some(EPaxosMessage::ClientRequest { cmd })
+            },
+            TAG_CLIENT_REPLY => {
+                if data.len() < 16 {
+                    return None;
+                }
+                let cmd = read_u64(data, 8);
+                Some(EPaxosMessage::ClientReply { cmd })
             },
             _ => None,
         }

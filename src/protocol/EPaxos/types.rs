@@ -74,6 +74,8 @@ pub enum LEPaxosMessage {
     Accept { ballot: int, cmd: int, seq: int },
     AcceptOk { sender: int },
     Commit { cmd: int, seq: int },
+    /// Leader replies to client after executing a committed command
+    ClientReply { cmd: int },
 }
 
 } // verus!

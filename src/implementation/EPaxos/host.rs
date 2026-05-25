@@ -104,6 +104,8 @@ pub struct EPaxosHost {
     last_metrics_time: Instant,
     /// Committed count at last metrics output (for delta computation).
     last_metrics_committed: u64,
+    /// Client endpoint for the current pending command (if any).
+    pending_client: Option<EndPoint>,
 }
 
 impl EPaxosHost {
@@ -314,9 +316,9 @@ impl EPaxosHost {
     // Timer-driven actions (called on timeout, round-robin)
     // ---------------------------------------------------------------
 
-    /// Timer action: Propose a new command.
-    /// Only fires when the instance is Empty and the node is not already a leader.
-    fn try_propose(&mut self, config: &EPaxosConfig) -> StepResult<EPaxosMessage> {
+    /// Propose a new command, driven by a ClientRequest.
+    /// Only fires when the instance is Empty.
+    fn try_propose(&mut self, config: &EPaxosConfig, value: u64, client_ep: Option<EndPoint>) -> StepResult<EPaxosMessage> {
         // Guard: phase must be Empty
         if !matches!(self.state.phase, CInstancePhase::Empty) {
             return StepResult {
@@ -333,9 +335,7 @@ impl EPaxosHost {
             };
         }
 
-        // Generate a proposal value
-        self.propose_counter = self.propose_counter.wrapping_add(1);
-        let value = self.propose_counter;
+        self.pending_client = client_ep;
 
         let (new_state, _sent) = epaxos_gen::CPropose(&self.state, &config.constants, &value);
         self.state = new_state;
@@ -543,6 +543,9 @@ impl EPaxosHost {
             };
         }
 
+        let cmd = self.state.cmd;
+        let client_ep = if self.state.is_leader { self.pending_client.take() } else { None };
+
         let (new_state, _sent) = epaxos_gen::CExecute(&self.state, &config.constants);
         self.state = new_state;
 
@@ -551,9 +554,19 @@ impl EPaxosHost {
             self.state.cmd, self.state.seq
         );
 
-        StepResult {
-            ok: true,
-            outbound: GenericOutbound::None,
+        // Leader sends ClientReply to the requesting client
+        match client_ep {
+            Some(dst) => StepResult {
+                ok: true,
+                outbound: GenericOutbound::Send {
+                    dst,
+                    msg: EPaxosMessage::ClientReply { cmd },
+                },
+            },
+            None => StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            },
         }
     }
 
@@ -633,6 +646,7 @@ impl ProtocolHost for EPaxosHost {
             propose_counter: 0,
             last_metrics_time: Instant::now(),
             last_metrics_committed: 0,
+            pending_client: None,
         })
     }
 
@@ -687,19 +701,29 @@ impl ProtocolHost for EPaxosHost {
                 }
                 EPaxosMessage::AcceptOk { sender } => self.handle_accept_ok(config, sender),
                 EPaxosMessage::CommitMsg { cmd, seq } => self.handle_commit(config, cmd, seq),
+                EPaxosMessage::ClientRequest { cmd } => {
+                    self.try_propose(config, cmd, Some(pkt.src))
+                }
+                EPaxosMessage::ClientReply { .. } => {
+                    // ClientReply is outbound-only; ignore if received
+                    StepResult {
+                        ok: true,
+                        outbound: GenericOutbound::None,
+                    }
+                }
             };
         }
 
         // No message -- run timer-driven actions round-robin
-        // Cycle through: Propose, FastCommit, StartAccept, SlowCommit,
+        // Cycle through: FastCommit, StartAccept, SlowCommit,
         //                Execute, NewInstance, Recover
-        let result = match self.action_index % 7 {
-            0 => self.try_propose(config),
-            1 => self.try_fast_commit(config),
-            2 => self.try_start_accept(config),
-            3 => self.try_slow_commit(config),
-            4 => self.try_execute(config),
-            5 => self.try_new_instance(config),
+        // (Propose is now message-driven via ClientRequest)
+        let result = match self.action_index % 6 {
+            0 => self.try_fast_commit(config),
+            1 => self.try_start_accept(config),
+            2 => self.try_slow_commit(config),
+            3 => self.try_execute(config),
+            4 => self.try_new_instance(config),
             _ => self.try_recover(config),
         };
         self.action_index = self.action_index.wrapping_add(1);

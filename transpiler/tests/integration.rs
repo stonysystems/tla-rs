@@ -5881,8 +5881,8 @@ fn test_exact_action_counts_per_protocol() {
             toml_path: "../src/protocol/EPaxos/epaxos_transpile.toml",
             protocol: "EPaxos",
             total: 11,
-            msg_driven: 4,
-            timer_driven: 7,
+            msg_driven: 5,
+            timer_driven: 6,
         },
     ];
 

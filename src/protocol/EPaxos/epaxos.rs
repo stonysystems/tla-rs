@@ -235,6 +235,7 @@ pub open spec fn LSlowCommit(s: LState, s_: LState, c: LConstants, sent_packets:
 }
 
 /// Execute: Execute a committed command.
+/// If this replica is the command leader, send ClientReply to the requesting client.
 pub open spec fn LExecute(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LEPaxosMessage>) -> bool {
     &&& s.phase is Committed
     // State update: mark as executed
@@ -250,8 +251,8 @@ pub open spec fn LExecute(s: LState, s_: LState, c: LConstants, sent_packets: Se
     &&& s_.accept_senders == s.accept_senders
     &&& s_.has_conflict == s.has_conflict
     &&& s_.max_resp_seq == s.max_resp_seq
-    // No messages sent
-    &&& sent_packets == Seq::<LEPaxosMessage>::empty()
+    // Send ClientReply with the executed command value
+    &&& sent_packets == seq![LEPaxosMessage::ClientReply { cmd: s.cmd }]
 }
 
 /// Recover: Another replica takes over recovery of a stalled instance.

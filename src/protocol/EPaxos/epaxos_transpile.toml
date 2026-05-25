@@ -64,6 +64,16 @@ fields = [["sender", "u64"]]
 name = "CommitMsg"
 doc = "Commit notification broadcast to all replicas."
 fields = [["cmd", "u64"], ["seq", "u64"]]
+
+[[messages.variants]]
+name = "ClientRequest"
+doc = "Client sends a command request to a replica."
+fields = [["cmd", "u64"]]
+
+[[messages.variants]]
+name = "ClientReply"
+doc = "Leader replies to client after executing a committed command."
+fields = [["cmd", "u64"]]
 # Auto-generated from LNext — 11 actions
 [scheduler]
 next_fn = "LNext"
@@ -75,7 +85,8 @@ message_response_overrides = ["SendPreAcceptOk", "SendAcceptOk"]
 [[scheduler.actions]]
 spec_name = "LPropose"
 exec_name = "CPropose"
-kind = "timer_driven"
+kind = "message_driven"
+message_variant = "ClientRequest"
 existential_params = [["value", "int"], ["sent_packets", "Seq<LEPaxosMessage>"]]
 
 [[scheduler.actions]]

@@ -174,6 +174,9 @@ pub enum CEPaxosMessage {
         cmd: u64,
         seq: u64,
     },
+    ClientReply {
+        cmd: u64,
+    },
 }
 
 impl CEPaxosMessage {
@@ -184,6 +187,7 @@ impl CEPaxosMessage {
             CEPaxosMessage::Accept { ballot, cmd, seq } => true,
             CEPaxosMessage::AcceptOk { sender } => true,
             CEPaxosMessage::Commit { cmd, seq } => true,
+            CEPaxosMessage::ClientReply { cmd } => true,
         }
     }
 }
@@ -198,6 +202,7 @@ impl View for CEPaxosMessage {
             CEPaxosMessage::Accept { ballot, cmd, seq } => LEPaxosMessage::Accept { ballot: *ballot as int, cmd: *cmd as int, seq: *seq as int },
             CEPaxosMessage::AcceptOk { sender } => LEPaxosMessage::AcceptOk { sender: *sender as int },
             CEPaxosMessage::Commit { cmd, seq } => LEPaxosMessage::Commit { cmd: *cmd as int, seq: *seq as int },
+            CEPaxosMessage::ClientReply { cmd } => LEPaxosMessage::ClientReply { cmd: *cmd as int },
         }
     }
 }

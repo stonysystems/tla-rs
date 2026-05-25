@@ -85,7 +85,7 @@ ensures
         __preaccept_senders.insert(c.my_id.clone());
         (CState {
     ballot: s.ballot.clone(),
-    cmd: *value,
+    cmd: (*value),
     seq: (s.committed_count + 1),
     dep_count: 0u64,
     is_leader: true,
@@ -98,7 +98,7 @@ ensures
     phase: CInstancePhase::PreAccepted,
 }, vec![CEPaxosMessage::PreAccept {
     ballot: s.ballot.clone(),
-    cmd: *value,
+    cmd: (*value),
     seq: (s.committed_count + 1),
 }])
     };
@@ -134,7 +134,7 @@ ensures
     max_resp_seq: s.max_resp_seq.clone(),
 }, vec![CEPaxosMessage::PreAcceptOk {
     sender: c.my_id.clone(),
-    seq: *local_seq,
+    seq: (*local_seq),
     conflict: local_conflict.clone(),
 }]);
     proof {
@@ -173,13 +173,13 @@ ensures
     } else {
         s.dep_count.clone()
     },
-    max_resp_seq: if (*pa_seq > s.max_resp_seq) {
-        *pa_seq
+    max_resp_seq: if ((*pa_seq) > s.max_resp_seq) {
+        (*pa_seq)
     } else {
         s.max_resp_seq.clone()
     },
-    seq: if (*pa_seq > s.seq) {
-        *pa_seq
+    seq: if ((*pa_seq) > s.seq) {
+        (*pa_seq)
     } else {
         s.seq.clone()
     },
@@ -398,11 +398,7 @@ ensures
     result.0.valid(),
     LExecute(s@, result.0@, c@, result.1@.map(|i, p: CEPaxosMessage| p@)),
 {
-    let result = {
-        proof {
-            lemma_empty_seq_map();
-        }
-        (CState {
+    let result = (CState {
     ballot: s.ballot.clone(),
     cmd: s.cmd.clone(),
     seq: s.seq.clone(),
@@ -415,11 +411,11 @@ ensures
     has_conflict: s.has_conflict.clone(),
     max_resp_seq: s.max_resp_seq.clone(),
     phase: CInstancePhase::Executed,
-}, vec![])
-    };
+}, vec![CEPaxosMessage::ClientReply {
+    cmd: s.cmd.clone(),
+}]);
     proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty());
+        assert(result.1@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 
@@ -439,7 +435,7 @@ ensures
         let mut __preaccept_senders = clone_hashset_u64(&HashSet::new());
         __preaccept_senders.insert(c.my_id.clone());
         (CState {
-    ballot: *new_ballot,
+    ballot: (*new_ballot),
     cmd: s.cmd.clone(),
     seq: s.seq.clone(),
     dep_count: 0u64,
@@ -452,7 +448,7 @@ ensures
     max_resp_seq: 0u64,
     phase: CInstancePhase::PreAccepted,
 }, vec![CEPaxosMessage::PreAccept {
-    ballot: *new_ballot,
+    ballot: (*new_ballot),
     cmd: s.cmd.clone(),
     seq: s.seq.clone(),
 }])

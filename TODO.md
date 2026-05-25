@@ -14793,7 +14793,7 @@ For each protocol, add to spec:
 - A transition rule: when a request commits at a node responsible for replying (primary in PB/PBFT, command leader in EPaxos), send `ClientReply` to the requesting client_id.
 
 - [x] **44.2.a — PrimaryBackup**: Added `ClientReply { val: int }` to `LPBMessage` in `types.rs`. Modified `LPrimaryCommit` to emit `seq![LPBMessage::ClientReply { val: s.pending_value }]`. Updated `transpile.toml` with ClientReply message variant. Regenerated `types_gen.rs` + `primarybackup_gen.rs` via transpiler. Added ClientReply wire format to `message.rs` (TAG=4, serialize/deserialize). Updated `host.rs`: tracks `pending_client: Option<EndPoint>` from ClientRequest source, sends ClientReply to client after commit. 15 verified, 0 errors. All 2,479 transpiler tests pass.
-- [ ] **44.2.b — EPaxos**: Replace internal `try_propose` self-firing with externally-driven `ClientRequest` handling. Add `ClientRequest{client_id, seq_no, value}` and `ClientReply{client_id, seq_no}`. Transition: when an instance reaches `Committed` phase, the command leader sends `ClientReply` back. Spec change ~50-100 lines (largest of the 3).
+- [x] **44.2.b — EPaxos**: Added `ClientReply { cmd: int }` to `LEPaxosMessage`. Modified `LExecute` to emit ClientReply unconditionally. Changed `LPropose` from timer_driven to message_driven (ClientRequest). Added ClientRequest/ClientReply wire format. Host.rs: `try_propose` takes client endpoint, `try_execute` sends ClientReply, timer round-robin reduced to 6 actions. 18 verified, 0 errors.
 - [ ] **44.2.c — PBFT**: Inspect `src/protocol/PBFT/pbft.rs` to check whether spec already models a client reply. If yes, ensure it's exposed via wire format. If no, add `ClientReply{client_id, seq_no, value}` and a transition triggered when a node has collected f+1 matching commits. Spec change ~30-80 lines.
 
 Each spec change also needs:
@@ -14805,7 +14805,7 @@ Each spec change also needs:
 
 For each protocol modified in 44.2:
 - [x] **44.3.a — PB**: Done as part of 44.2.a. Regenerated via transpiler, verified (15 verified, 0 errors), updated message.rs + host.rs.
-- [ ] **44.3.b — EPaxos**: Same as 44.3.a. Verify target: ≥15 verified, 0 errors. Update `src/implementation/EPaxos/host.rs` — replace `try_propose` self-firing with `handle_client_request` driven by client traffic.
+- [x] **44.3.b — EPaxos**: Done as part of 44.2.b. Regenerated via transpiler, verified (18 verified, 0 errors), updated message.rs + host.rs.
 - [ ] **44.3.c — PBFT**: Same. Verify target: ≥13 verified, 0 errors. Integrate fix from 44.1.
 
 #### 44.4 Unified client framework
