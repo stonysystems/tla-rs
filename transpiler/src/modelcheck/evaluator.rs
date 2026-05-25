@@ -478,25 +478,25 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
                 .iter()
                 .map(|item| eval_expr(item, ctx))
                 .collect::<TranspileResult<Vec<_>>>()?;
-            RuntimeValue::seq_bounded(values, &ctx.bounds)
+            Ok(RuntimeValue::seq_bounded(values, &ctx.bounds)?)
         }
         Expr::SetLit(items) => {
             let values = items
                 .iter()
                 .map(|item| eval_expr(item, ctx))
                 .collect::<TranspileResult<Vec<_>>>()?;
-            RuntimeValue::set_bounded(values, &ctx.bounds)
+            Ok(RuntimeValue::set_bounded(values, &ctx.bounds)?)
         }
         Expr::MapLit(entries) => {
             let values = entries
                 .iter()
                 .map(|(key, value)| Ok((eval_expr(key, ctx)?, eval_expr(value, ctx)?)))
                 .collect::<TranspileResult<Vec<_>>>()?;
-            RuntimeValue::map_bounded(values, &ctx.bounds)
+            Ok(RuntimeValue::map_bounded(values, &ctx.bounds)?)
         }
-        Expr::SeqEmpty => RuntimeValue::seq_bounded(Vec::new(), &ctx.bounds),
-        Expr::SetEmpty => RuntimeValue::set_bounded(Vec::new(), &ctx.bounds),
-        Expr::MapEmpty => RuntimeValue::map_bounded(Vec::new(), &ctx.bounds),
+        Expr::SeqEmpty => Ok(RuntimeValue::seq_bounded(Vec::new(), &ctx.bounds)?),
+        Expr::SetEmpty => Ok(RuntimeValue::set_bounded(Vec::new(), &ctx.bounds)?),
+        Expr::MapEmpty => Ok(RuntimeValue::map_bounded(Vec::new(), &ctx.bounds)?),
         Expr::Call { func, args } => {
             // Special case: Set::new(|x| predicate) — evaluate predicate over int domain
             if path_name(func) == "Set::new" && args.len() == 1 {
@@ -562,7 +562,7 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext<'_>) -> TranspileResult<RuntimeV
                 return Ok(value);
             }
             if let Some((ty, variant)) = split_variant_path(name) {
-                return RuntimeValue::enum_value(ty, variant, Vec::new());
+                return Ok(RuntimeValue::enum_value(ty, variant, Vec::new())?);
             }
             Err(type_error(
                 format!("Unknown evaluator variable `{}`.", name).as_str(),
@@ -809,9 +809,9 @@ fn eval_struct_expr(
 
     let ty_or_variant = path_name(name);
     if let Some((ty, variant)) = split_variant_path(&ty_or_variant) {
-        RuntimeValue::enum_value(ty, variant, resolved)
+        Ok(RuntimeValue::enum_value(ty, variant, resolved)?)
     } else {
-        RuntimeValue::struct_value(ty_or_variant, resolved)
+        Ok(RuntimeValue::struct_value(ty_or_variant, resolved)?)
     }
 }
 
@@ -1442,7 +1442,7 @@ fn eval_set_new_with_closure(
         }
     }
 
-    RuntimeValue::set_bounded(elements, &ctx.bounds)
+    Ok(RuntimeValue::set_bounded(elements, &ctx.bounds)?)
 }
 
 /// Try to extract constant range bounds from a Set::new closure like `|x: int| lo <= x && x <= hi`.
@@ -1571,7 +1571,7 @@ fn eval_map_new_with_closure(
         entries.push((key.clone(), value));
     }
 
-    RuntimeValue::map_bounded(entries, &ctx.bounds)
+    Ok(RuntimeValue::map_bounded(entries, &ctx.bounds)?)
 }
 
 fn cast_value(value: RuntimeValue, ty: &Type) -> TranspileResult<RuntimeValue> {

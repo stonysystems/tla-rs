@@ -1,0 +1,8 @@
+[package]
+name = "transpiler-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Runtime value types for the verus-transpiler model checker"
+
+[dependencies]
+serde_json = "1.0"

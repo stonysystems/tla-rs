@@ -13811,7 +13811,7 @@ Three implementation paths, in increasing engineering cost / payoff:
     (NamedFields construction), `MethodCall` (Set/Map/Seq operations
     mapped to RuntimeValue methods), `FnCall` (delegate to callback).
     ~300 LOC.
-  - [ ] **38.22.1.c.iii**: **Runtime crate extraction.**
+  - [x] **38.22.1.c.iii**: **Runtime crate extraction.**
     Extract `RuntimeValue`, `NamedFields`, `SetRepr`, `SmallIntSet`,
     `Symbol`, `RuntimeCollectionBounds`, and core operations into a
     separate `transpiler-runtime` crate under `transpiler/runtime/`.

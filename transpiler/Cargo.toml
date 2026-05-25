@@ -26,6 +26,9 @@ clap = { version = "4.4", features = ["derive"] }
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "1.0"
 
+# Runtime value types (shared with native-codegen output)
+transpiler-runtime = { path = "runtime" }
+
 # Parallelism
 rayon = "1.10"
 dashmap = "6.1"
