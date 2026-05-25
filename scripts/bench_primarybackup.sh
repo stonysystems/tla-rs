@@ -70,17 +70,28 @@ for trial in $(seq 1 "$TRIALS"); do
     kill $CLIENT_PID "${PIDS[@]}" 2>/dev/null || true
     wait $CLIENT_PID "${PIDS[@]}" 2>/dev/null || true
 
-    # Parse [METRICS] lines from primary (node 1)
+    # Parse [METRICS] lines from each node
     echo ""
     for i in $(seq 1 $NUM_NODES); do
         idx=$((i - 1))
         metric_file="${METRIC_FILES[$idx]}"
-        last_line=$(grep '\[METRICS\]' "$metric_file" | tail -1 || echo "")
-        if [ -n "$last_line" ]; then
+        metric_lines=$(grep '\[METRICS\]' "$metric_file" || echo "")
+        if [ -n "$metric_lines" ]; then
+            last_line=$(echo "$metric_lines" | tail -1)
             role=$(echo "$last_line" | sed 's/.*role=\([a-z]*\).*/\1/')
             log_length=$(echo "$last_line" | sed 's/.*log_length=\([0-9]*\).*/\1/')
-            throughput=$(echo "$last_line" | sed 's/.*throughput=\([0-9.]*\).*/\1/')
-            echo "  Node $i ($role): log_length=$log_length (last-second throughput=${throughput} ops/s)"
+            # Compute average throughput from all lines (skip first/last which may be partial)
+            num_lines=$(echo "$metric_lines" | wc -l)
+            if [ "$num_lines" -gt 2 ]; then
+                avg_throughput=$(echo "$metric_lines" | head -n $((num_lines - 1)) | tail -n +2 | \
+                    sed 's/.*throughput=\([0-9.]*\).*/\1/' | \
+                    awk '{sum+=$1; n++} END {if(n>0) printf "%.1f", sum/n; else print "0.0"}')
+            else
+                avg_throughput=$(echo "$metric_lines" | \
+                    sed 's/.*throughput=\([0-9.]*\).*/\1/' | \
+                    awk '{sum+=$1; n++} END {if(n>0) printf "%.1f", sum/n; else print "0.0"}')
+            fi
+            echo "  Node $i ($role): log_length=$log_length avg_throughput=${avg_throughput} ops/s ($num_lines samples)"
         else
             echo "  Node $i: no [METRICS] output found"
             if [ -s "$metric_file" ]; then

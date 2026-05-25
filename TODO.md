@@ -14700,7 +14700,7 @@ Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, Pri
 - [x] **43.2.a**: Add `csharp/IronPrimaryBackupClient/` — fire-and-forget UDP client sending `[TAG=3][value]` (16 bytes LE). Added `[METRICS]` to `host.rs` tracking `log_length` increments. Fixed `CInit` role bug: node 1 now starts as Backup. Smoke test: ~37.5K ops/s primary committed throughput.
 - [x] **43.2.b**: CLI args (`ip`, `port`, `nthreads`, `duration`). Created `scripts/bench_primarybackup.sh` matching EPaxos bench structure.
 - [x] **43.2.c**: Added `bin/IronPrimaryBackupClient.dll` to SCons build. `scons --skip-verus` passes.
-- [ ] **43.2.d**: Bench HEAD vs c097da0. Report delta.
+- [x] **43.2.d**: Bench HEAD vs c097da0 (30s x 3 trials each). **Result: Phase 40 Arc-wrap has NO measurable effect on PrimaryBackup.** HEAD avg 32,769 ops/s vs baseline avg 32,186 ops/s (Δ = +1.8%, within noise). High per-trial variance (~±15%) dominates. Also increased `max_log_len` to 100M (was 1M, saturated at ~27s) and improved bench script to report average throughput across all metric samples.
 
 #### 43.3 PBFT — write IronPBFTClient (effort: ~1 day, more complex than PB)
 

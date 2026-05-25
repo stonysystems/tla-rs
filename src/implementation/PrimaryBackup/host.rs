@@ -55,7 +55,7 @@ impl ProtocolConfig for PrimaryBackupConfig {
 
         // Default max_log_len; could be made configurable via extra args.
         let constants = CConstants {
-            max_log_len: 1_000_000,
+            max_log_len: 100_000_000,
         };
 
         Some(PrimaryBackupConfig {
