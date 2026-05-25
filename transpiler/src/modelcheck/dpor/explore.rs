@@ -112,6 +112,47 @@ pub struct RuntimeConflictStats {
     pub write_field_stats: BTreeMap<String, (usize, usize)>,
 }
 
+/// Set of write fields that runtime profiling has determined never actually
+/// change state. These fields are excluded from conflict checks, effectively
+/// narrowing the independence relation to reduce false-positive dependencies.
+///
+/// Built from `RuntimeConflictStats::compute_overrides()` after a profiling
+/// exploration pass.
+#[derive(Clone, Debug, Default)]
+pub struct RuntimeIndependenceOverrides {
+    /// Write fields with 0% runtime conflict rate (statically declared as
+    /// written but never actually changed in the profiling pass).
+    /// When a conflict pair involves one of these fields as the write side,
+    /// it is treated as non-conflicting.
+    pub non_writing_fields: BTreeSet<String>,
+    /// Number of field pairs that were narrowed (for telemetry).
+    pub narrowed_count: usize,
+}
+
+impl RuntimeConflictStats {
+    /// Compute independence overrides from runtime conflict data.
+    ///
+    /// A write field is classified as "non-writing" (can be overridden to
+    /// independent) if:
+    /// 1. It has at least `min_samples` static write observations
+    /// 2. Its actual change count is 0 (never changed at runtime)
+    ///
+    /// `min_samples` prevents premature conclusions from too few observations.
+    pub fn compute_overrides(&self, min_samples: usize) -> RuntimeIndependenceOverrides {
+        let mut non_writing_fields = BTreeSet::new();
+        for (field, (static_count, actual_count)) in &self.write_field_stats {
+            if *static_count >= min_samples && *actual_count == 0 {
+                non_writing_fields.insert(field.clone());
+            }
+        }
+        let narrowed_count = non_writing_fields.len();
+        RuntimeIndependenceOverrides {
+            non_writing_fields,
+            narrowed_count,
+        }
+    }
+}
+
 /// Configuration for the DPOR explorer.
 #[derive(Clone, Debug)]
 pub struct DporConfig {
@@ -130,6 +171,10 @@ pub struct DporConfig {
     pub invariants: Vec<String>,
     /// If true, detect deadlocked states (states with zero enabled transitions).
     pub check_deadlock: bool,
+    /// Runtime independence overrides from a prior profiling pass.
+    /// When set, write fields listed in `non_writing_fields` are excluded from
+    /// conflict checks, narrowing the independence relation.
+    pub runtime_overrides: Option<RuntimeIndependenceOverrides>,
 }
 
 /// A recorded step in a violation witness trace.
@@ -169,6 +214,7 @@ impl Default for DporConfig {
             use_sleep_sets: false,
             invariants: vec![],
             check_deadlock: false,
+            runtime_overrides: None,
         }
     }
 }
@@ -561,6 +607,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 &parent_enabled,
                                 config.use_independence,
                                 &mut sleep_independence_blockers,
+                                config.runtime_overrides.as_ref(),
                             )
                         } else {
                             BTreeSet::new()
@@ -1098,6 +1145,7 @@ fn classify_transition_independence(
     left: &EnabledTransition,
     right: &EnabledTransition,
     use_independence: bool,
+    overrides: Option<&RuntimeIndependenceOverrides>,
 ) -> IndependenceDecision {
     if !use_independence {
         return IndependenceDecision::BlockedFootprintConflict;
@@ -1111,7 +1159,15 @@ fn classify_transition_independence(
     if transition_has_unknown_footprint(left) || transition_has_unknown_footprint(right) {
         return IndependenceDecision::BlockedUnknownFootprint;
     }
-    if left.footprint.independent_of(&right.footprint) {
+    // Check independence: with overrides if available, else static-only.
+    let independent = match overrides {
+        Some(ov) if !ov.non_writing_fields.is_empty() => {
+            left.footprint
+                .independent_of_with_overrides(&right.footprint, &ov.non_writing_fields)
+        }
+        _ => left.footprint.independent_of(&right.footprint),
+    };
+    if independent {
         IndependenceDecision::Independent
     } else {
         IndependenceDecision::BlockedFootprintConflict
@@ -1155,6 +1211,7 @@ fn compute_child_sleep_set(
     parent_enabled: &[EnabledTransition],
     use_independence: bool,
     blockers: &mut SleepIndependenceBlockers,
+    overrides: Option<&RuntimeIndependenceOverrides>,
 ) -> BTreeSet<String> {
     let mut child_sleep = BTreeSet::new();
 
@@ -1176,7 +1233,7 @@ fn compute_child_sleep_set(
             // If independent of chosen, keep asleep
             if record_independence_decision(
                 blockers,
-                classify_transition_independence(sleeping_trans, chosen, use_independence),
+                classify_transition_independence(sleeping_trans, chosen, use_independence, overrides),
                 sleeping_trans,
                 chosen,
             ) {
@@ -1196,7 +1253,7 @@ fn compute_child_sleep_set(
         if let Some(done_trans) = parent_enabled.iter().find(|t| t.ordering_key == *done_key) {
             if record_independence_decision(
                 blockers,
-                classify_transition_independence(done_trans, chosen, use_independence),
+                classify_transition_independence(done_trans, chosen, use_independence, overrides),
                 done_trans,
                 chosen,
             ) {
@@ -1218,7 +1275,7 @@ fn compute_child_sleep_set(
         }
         if record_independence_decision(
             blockers,
-            classify_transition_independence(candidate, chosen, use_independence),
+            classify_transition_independence(candidate, chosen, use_independence, overrides),
             candidate,
             chosen,
         ) {
@@ -1573,6 +1630,7 @@ max_seq_len = 4
             use_sleep_sets: false,
             invariants: vec![],
             check_deadlock: false,
+            runtime_overrides: None,
         };
         let with_independence = DporConfig {
             max_depth: 20,
@@ -1581,6 +1639,7 @@ max_seq_len = 4
             use_sleep_sets: false,
             invariants: vec![],
             check_deadlock: false,
+            runtime_overrides: None,
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -1619,6 +1678,7 @@ max_seq_len = 4
             use_sleep_sets: false,
             invariants: vec![],
             check_deadlock: false,
+            runtime_overrides: None,
         };
         let with_sleep = DporConfig {
             max_depth: 20,
@@ -1627,6 +1687,7 @@ max_seq_len = 4
             use_sleep_sets: true,
             invariants: vec![],
             check_deadlock: false,
+            runtime_overrides: None,
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -1685,6 +1746,7 @@ max_seq_len = 4
                 use_sleep_sets: false,
                 invariants: vec![],
                 check_deadlock: false,
+                runtime_overrides: None,
             };
             let with_independence = DporConfig {
                 max_depth: 20,
@@ -1693,6 +1755,7 @@ max_seq_len = 4
                 use_sleep_sets: false,
                 invariants: vec![],
                 check_deadlock: false,
+                runtime_overrides: None,
             };
             let with_sleep = DporConfig {
                 max_depth: 20,
@@ -1701,6 +1764,7 @@ max_seq_len = 4
                 use_sleep_sets: true,
                 invariants: vec![],
                 check_deadlock: false,
+                runtime_overrides: None,
             };
 
             let result_conservative = explore_dpor(&ctx, &without_sleep);
@@ -1774,6 +1838,7 @@ max_seq_len = 4
                 use_sleep_sets: false,
                 invariants: vec![],
                 check_deadlock: false,
+                runtime_overrides: None,
             },
         );
         let sleep = explore_dpor(
@@ -1785,6 +1850,7 @@ max_seq_len = 4
                 use_sleep_sets: true,
                 invariants: vec![],
                 check_deadlock: false,
+                runtime_overrides: None,
             },
         );
 
@@ -1852,6 +1918,7 @@ max_seq_len = 4
                     use_sleep_sets: false,
                     invariants: vec![],
                     check_deadlock: false,
+                    runtime_overrides: None,
                 },
             );
             let independence = explore_dpor(
@@ -1863,6 +1930,7 @@ max_seq_len = 4
                     use_sleep_sets: false,
                     invariants: vec![],
                     check_deadlock: false,
+                    runtime_overrides: None,
                 },
             );
             let sleep = explore_dpor(
@@ -1874,6 +1942,7 @@ max_seq_len = 4
                     use_sleep_sets: true,
                     invariants: vec![],
                     check_deadlock: false,
+                    runtime_overrides: None,
                 },
             );
 
@@ -2005,6 +2074,7 @@ max_seq_len = 4
             &parent_enabled,
             true,
             &mut blockers,
+            None,
         );
         assert!(
             child_sleep.is_empty(),
@@ -2059,6 +2129,7 @@ max_seq_len = 4
             &parent_enabled,
             true,
             &mut blockers,
+            None,
         );
         assert!(
             child_sleep.contains(&transition_sleep_key(&indep)),
@@ -2103,6 +2174,7 @@ max_seq_len = 4
             &parent_enabled,
             true,
             &mut blockers,
+            None,
         );
         assert!(
             child_sleep.is_empty(),
@@ -2162,6 +2234,7 @@ max_seq_len = 4
             &parent_enabled,
             true,
             &mut blockers,
+            None,
         );
         assert!(
             child_sleep.contains(&transition_sleep_key(&done_independent)),
@@ -2234,6 +2307,7 @@ max_seq_len = 4
             &parent_enabled,
             true,
             &mut blockers,
+            None,
         );
         assert!(
             child_sleep.contains(&transition_sleep_key(&pre_indep)),
@@ -2441,6 +2515,7 @@ max_seq_len = 4
             &parent_enabled,
             true,
             &mut blockers,
+            None,
         );
         assert!(
             child_sleep.contains(&transition_sleep_key(&independent)),
@@ -2511,7 +2586,7 @@ max_seq_len = 4
         };
 
         // Record conflict twice to test accumulation
-        let decision = classify_transition_independence(&t1, &t2, true);
+        let decision = classify_transition_independence(&t1, &t2, true, None);
         assert_eq!(decision, IndependenceDecision::BlockedFootprintConflict);
         record_independence_decision(&mut blockers, decision, &t1, &t2);
         record_independence_decision(&mut blockers, decision, &t1, &t2);
@@ -2563,7 +2638,7 @@ max_seq_len = 4
             },
         };
 
-        let decision = classify_transition_independence(&t1, &t2, true);
+        let decision = classify_transition_independence(&t1, &t2, true, None);
         assert_eq!(decision, IndependenceDecision::Independent);
         record_independence_decision(&mut blockers, decision, &t1, &t2);
 
@@ -2756,6 +2831,124 @@ max_seq_len = 4
         assert!(report.contains("val"));
         // val has 90% false positive rate (50-5)/50
         assert!(report.contains("90.0%"));
+    }
+
+    // =========================================================================
+    // Dynamic independence narrowing tests (Phase 38.21.I.d)
+    // =========================================================================
+
+    #[test]
+    fn test_compute_overrides_zero_conflict_fields() {
+        let mut stats = RuntimeConflictStats::default();
+        stats.write_field_stats.insert("pc".to_string(), (100, 0)); // never changed
+        stats.write_field_stats.insert("val".to_string(), (50, 25)); // 50% changed
+        stats.write_field_stats.insert("log".to_string(), (200, 0)); // never changed
+        stats.write_field_stats.insert("rare".to_string(), (3, 0)); // too few samples
+
+        let overrides = stats.compute_overrides(10);
+        assert!(overrides.non_writing_fields.contains("pc"));
+        assert!(overrides.non_writing_fields.contains("log"));
+        assert!(!overrides.non_writing_fields.contains("val"), "50% conflict rate");
+        assert!(!overrides.non_writing_fields.contains("rare"), "below min_samples");
+        assert_eq!(overrides.narrowed_count, 2);
+    }
+
+    #[test]
+    fn test_compute_overrides_empty_stats() {
+        let stats = RuntimeConflictStats::default();
+        let overrides = stats.compute_overrides(10);
+        assert!(overrides.non_writing_fields.is_empty());
+        assert_eq!(overrides.narrowed_count, 0);
+    }
+
+    #[test]
+    fn test_independent_of_with_overrides_narrows_conflict() {
+        // fp1 writes "pc", fp2 reads "pc" → normally dependent
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["pc".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::from(["pc".to_string()]),
+            writes: BTreeSet::new(),
+        };
+        assert!(!fp1.independent_of(&fp2), "statically dependent");
+
+        // With "pc" in overrides → independent
+        let overrides = BTreeSet::from(["pc".to_string()]);
+        assert!(
+            fp1.independent_of_with_overrides(&fp2, &overrides),
+            "override should narrow to independent"
+        );
+    }
+
+    #[test]
+    fn test_independent_of_with_overrides_preserves_real_conflicts() {
+        // fp1 writes "pc" and "val", fp2 reads "val"
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["pc".to_string(), "val".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::from(["val".to_string()]),
+            writes: BTreeSet::new(),
+        };
+        // Override only "pc" — "val" still conflicts
+        let overrides = BTreeSet::from(["pc".to_string()]);
+        assert!(
+            !fp1.independent_of_with_overrides(&fp2, &overrides),
+            "val conflict should remain"
+        );
+    }
+
+    #[test]
+    fn test_classify_with_runtime_overrides() {
+        let t1 = EnabledTransition {
+            process_id: ProcessId(0),
+            branch_label: "a".to_string(),
+            successor_fingerprint: StateFingerprint(0),
+            ordering_key: "0".to_string(),
+            footprint: TransitionFootprint {
+                reads: BTreeSet::new(),
+                writes: BTreeSet::from(["pc".to_string()]),
+            },
+        };
+        let t2 = EnabledTransition {
+            process_id: ProcessId(1),
+            branch_label: "b".to_string(),
+            successor_fingerprint: StateFingerprint(1),
+            ordering_key: "1".to_string(),
+            footprint: TransitionFootprint {
+                reads: BTreeSet::from(["pc".to_string()]),
+                writes: BTreeSet::new(),
+            },
+        };
+        // Without overrides: dependent
+        let decision = classify_transition_independence(&t1, &t2, true, None);
+        assert_eq!(decision, IndependenceDecision::BlockedFootprintConflict);
+
+        // With "pc" overridden: independent
+        let overrides = RuntimeIndependenceOverrides {
+            non_writing_fields: BTreeSet::from(["pc".to_string()]),
+            narrowed_count: 1,
+        };
+        let decision = classify_transition_independence(&t1, &t2, true, Some(&overrides));
+        assert_eq!(decision, IndependenceDecision::Independent);
+    }
+
+    #[test]
+    fn test_overrides_write_write_both_sides() {
+        // Both sides write "pc" — if both are overridden, independent
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["pc".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["pc".to_string()]),
+        };
+        let overrides = BTreeSet::from(["pc".to_string()]);
+        assert!(fp1.independent_of_with_overrides(&fp2, &overrides));
     }
 
     // =========================================================================
@@ -3687,6 +3880,7 @@ max_seq_len = 4
                         use_sleep_sets: false,
                         invariants: vec![],
                         check_deadlock: false,
+                        runtime_overrides: None,
                     },
                 ),
                 (
@@ -3698,6 +3892,7 @@ max_seq_len = 4
                         use_sleep_sets: false,
                         invariants: vec![],
                         check_deadlock: false,
+                        runtime_overrides: None,
                     },
                 ),
                 (
@@ -3709,6 +3904,7 @@ max_seq_len = 4
                         use_sleep_sets: true,
                         invariants: vec![],
                         check_deadlock: false,
+                        runtime_overrides: None,
                     },
                 ),
             ];

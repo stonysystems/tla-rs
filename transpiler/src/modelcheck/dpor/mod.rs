@@ -25,8 +25,8 @@ pub mod types;
 pub mod witness;
 
 pub use explore::{
-    explore_dpor, DporConfig, DporResult, RuntimeConflictStats, SleepDepthStats,
-    SleepIndependenceBlockers, ViolationWitness, WitnessStep,
+    explore_dpor, DporConfig, DporResult, RuntimeConflictStats, RuntimeIndependenceOverrides,
+    SleepDepthStats, SleepIndependenceBlockers, ViolationWitness, WitnessStep,
 };
 pub use types::{
     ActionId, BacktrackInfo, EnabledTransition, Event, ExecutionPrefix, ProcessId,

@@ -170,6 +170,42 @@ impl TransitionFootprint {
         true
     }
 
+    /// Like `independent_of`, but treats write fields listed in `non_writing_overrides`
+    /// as non-conflicting. A conflict pair `(write_field, read_or_write_field)` is
+    /// skipped if `write_field` is in the override set.
+    pub fn independent_of_with_overrides(
+        &self,
+        other: &TransitionFootprint,
+        non_writing_overrides: &BTreeSet<String>,
+    ) -> bool {
+        for left in &self.writes {
+            if non_writing_overrides.contains(left) {
+                continue;
+            }
+            if other
+                .reads
+                .iter()
+                .any(|right| field_paths_conflict(left, right))
+                || other
+                    .writes
+                    .iter()
+                    .any(|right| !non_writing_overrides.contains(right) && field_paths_conflict(left, right))
+            {
+                return false;
+            }
+        }
+        for left in &self.reads {
+            if other
+                .writes
+                .iter()
+                .any(|right| !non_writing_overrides.contains(right) && field_paths_conflict(left, right))
+            {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Return the specific field pairs that conflict between two footprints.
     /// Each pair is `(left_field, right_field)` where the conflict type is:
     /// - write-read: left writes, right reads
@@ -592,5 +628,43 @@ mod tests {
             assert!(l == "pc" || l == "val");
             assert!(r == "pc" || r == "val");
         }
+    }
+
+    #[test]
+    fn test_independent_of_with_overrides_basic() {
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["x".to_string(), "y".to_string()]),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::from(["x".to_string()]),
+            writes: BTreeSet::new(),
+        };
+        // Statically dependent (x write → x read)
+        assert!(!fp1.independent_of(&fp2));
+
+        // Override x → independent
+        let overrides = BTreeSet::from(["x".to_string()]);
+        assert!(fp1.independent_of_with_overrides(&fp2, &overrides));
+
+        // Empty overrides → still dependent
+        let empty = BTreeSet::new();
+        assert!(!fp1.independent_of_with_overrides(&fp2, &empty));
+    }
+
+    #[test]
+    fn test_independent_of_with_overrides_read_write_direction() {
+        // fp1 reads "x", fp2 writes "x" → dependent
+        let fp1 = TransitionFootprint {
+            reads: BTreeSet::from(["x".to_string()]),
+            writes: BTreeSet::new(),
+        };
+        let fp2 = TransitionFootprint {
+            reads: BTreeSet::new(),
+            writes: BTreeSet::from(["x".to_string()]),
+        };
+        // Override "x" (write side = fp2.writes) → independent
+        let overrides = BTreeSet::from(["x".to_string()]);
+        assert!(fp1.independent_of_with_overrides(&fp2, &overrides));
     }
 }

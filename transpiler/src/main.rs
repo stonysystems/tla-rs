@@ -3625,6 +3625,7 @@ fn run_dpor_explorer_as_main_path(
         use_sleep_sets: true,
         invariants: invariant_names,
         check_deadlock: model_config.properties.check_deadlock,
+        runtime_overrides: None,
     };
     let result = explore_dpor(&ctx, &dpor_config);
 

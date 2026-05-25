@@ -250,6 +250,7 @@ fn run_shadow_compare(args: &ShadowCompareArgs) -> Result<ShadowCompareReport, S
         use_sleep_sets: true,
         invariants: args.invariants.clone(),
         check_deadlock: args.check_deadlock,
+        runtime_overrides: None,
     };
 
     let dpor_start = Instant::now();

@@ -13593,7 +13593,7 @@ tiers, ordered biggest-gain-per-effort first.
   Cases like 09 Peterson have small bounded state (a few booleans +
   tiny ints). Packing into a `u64` would make dedup near-free. Per-
   spec change.
-- [ ] **38.21.I**: **Profile-guided POR**. Static POR currently
+- [x] **38.21.I**: **Profile-guided POR**. Static POR currently
   treats branches with overlapping write-sets as conflicting. Many
   of those "conflicts" never materialize at runtime. Record actual
   runtime conflicts, narrow the relation on subsequent runs.
@@ -13615,10 +13615,13 @@ tiers, ordered biggest-gain-per-effort first.
     After firing a transition, compare pre/post state on statically-
     predicted conflict fields to check whether the conflict actually
     materialized. Track false-positive rate per field pair. ~200 LOC.
-  - [ ] **38.21.I.d**: **Dynamic independence narrowing.**
-    Use runtime conflict data to narrow the independence relation for
-    subsequent exploration — field pairs with 0% runtime conflict rate
-    are reclassified as independent. ~300 LOC.
+  - [x] **38.21.I.d**: **Dynamic independence narrowing.** DONE.
+    Added `RuntimeIndependenceOverrides` struct (set of write fields with
+    0% runtime conflict), `compute_overrides(min_samples)` on
+    `RuntimeConflictStats`, `independent_of_with_overrides()` on
+    `TransitionFootprint`, threaded `runtime_overrides: Option<...>` through
+    `DporConfig` → `classify_transition_independence` → `compute_child_sleep_set`.
+    8 new tests (6 explore.rs, 2 types.rs). ~200 LOC.
 - [x] **38.21.J**: **SpecContext lazy-init cache** for the post-
   inlining transition IR and per-branch existential expansions —
   DONE (commit `208bbf0e`). Added two `OnceLock` fields on
