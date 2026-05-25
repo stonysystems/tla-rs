@@ -752,50 +752,6 @@ fn binop_to_str(op: BinOp) -> &'static str {
     }
 }
 
-fn expr_type_name(expr: &Expr) -> &'static str {
-    match expr {
-        Expr::Conjunction(_) => "Conjunction",
-        Expr::Disjunction(_) => "Disjunction",
-        Expr::Implies(_, _) => "Implies",
-        Expr::Iff(_, _) => "Iff",
-        Expr::Not(_) => "Not",
-        Expr::Forall { .. } => "Forall",
-        Expr::Exists { .. } => "Exists",
-        Expr::Closure { .. } => "Closure",
-        Expr::Choose { .. } => "Choose",
-        Expr::If { .. } => "If",
-        Expr::Match { .. } => "Match",
-        Expr::Let { .. } => "Let",
-        Expr::Eq(_, _) => "Eq",
-        Expr::Ne(_, _) => "Ne",
-        Expr::Lt(_, _) => "Lt",
-        Expr::Le(_, _) => "Le",
-        Expr::Gt(_, _) => "Gt",
-        Expr::Ge(_, _) => "Ge",
-        Expr::Is(_, _) => "Is",
-        Expr::Field(_, _) => "Field",
-        Expr::Index(_, _) => "Index",
-        Expr::Arrow(_, _) => "Arrow",
-        Expr::Struct { .. } => "Struct",
-        Expr::StructUpdate { .. } => "StructUpdate",
-        Expr::SeqLit(_) => "SeqLit",
-        Expr::SetLit(_) => "SetLit",
-        Expr::MapLit(_) => "MapLit",
-        Expr::SeqEmpty => "SeqEmpty",
-        Expr::SetEmpty => "SetEmpty",
-        Expr::MapEmpty => "MapEmpty",
-        Expr::Call { .. } => "Call",
-        Expr::MethodCall { .. } => "MethodCall",
-        Expr::View(_) => "View",
-        Expr::Cast(_, _) => "Cast",
-        Expr::Ident(_) => "Ident",
-        Expr::Literal(_) => "Literal",
-        Expr::Binary(_, _, _) => "Binary",
-        Expr::Unary(_, _) => "Unary",
-        Expr::ConstantValue(_) => "ConstantValue",
-    }
-}
-
 /// Check if a name like "LTPCMessage::Prepare" is an enum variant path.
 fn split_variant_path(name: &str) -> Option<(&str, &str)> {
     let idx = name.find("::")?;
