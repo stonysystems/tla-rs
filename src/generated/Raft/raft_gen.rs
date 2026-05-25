@@ -41,14 +41,34 @@ ensures
 }
 
 /// Helper: clone a Vec<CLogEntry> preserving both raw and mapped view.
-/// Verus doesn't automatically derive v.clone()@.map(f) =~= v@.map(f) from clone ensures.
 #[verifier(external_body)]
-fn clone_log(v: &Vec<CLogEntry>) -> (res: Vec<CLogEntry>)
+fn clone_log(v: &Arc<Vec<CLogEntry>>) -> (res: Arc<Vec<CLogEntry>>) 
 ensures
     res@ == v@,
     res@.map(|i: int, e: CLogEntry| e@) =~= v@.map(|i: int, e: CLogEntry| e@),
 {
     v.clone()
+}
+
+/// Helper: deep-clone inner Vec from Arc<Vec<CLogEntry>> for mutation.
+#[verifier(external_body)]
+fn clone_log_inner(v: &Arc<Vec<CLogEntry>>) -> (res: Vec<CLogEntry>) 
+ensures
+    res@ == v@,
+    res@.map(|i: int, e: CLogEntry| e@) =~= v@.map(|i: int, e: CLogEntry| e@),
+{
+    (**v).clone()
+}
+
+/// Helper: index into Arc<Vec<CLogEntry>> with verified postcondition.
+#[verifier(external_body)]
+fn index_log(v: &Arc<Vec<CLogEntry>>, idx: usize) -> (res: CLogEntry) 
+requires
+    idx < v@.len(),
+ensures
+    res == v@[idx as int],
+{
+    (*v)[idx].clone()
 }
 
 /// Helper proof: mapping over an empty Vec<CRaftMessage> yields an empty seq.
@@ -81,7 +101,7 @@ ensures
         current_term: 0u64,
         has_voted: false,
         voted_for: 0u64,
-        log: vec![],
+        log: Arc::new(vec![]),
         commit_index: 0u64,
         votes_granted: Arc::new(HashSet::new()),
         match_index: Arc::new(HashMap::new()),
@@ -126,7 +146,7 @@ ensures
     last_log_term: if ((s.log.len() as u64) == 0) {
         0u64
     } else {
-        s.log[(s.log.len() - 1)].term
+        index_log(&s.log, (s.log.len() - 1)).term
     },
 }])
     };
@@ -175,7 +195,7 @@ ensures
     voter_last_log_term: if ((s.log.len() as u64) == 0) {
         0u64
     } else {
-        s.log[(s.log.len() - 1)].term
+        index_log(&s.log, (s.log.len() - 1)).term
     },
 }]);
     proof {
@@ -266,7 +286,7 @@ ensures
     LClientRequest(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
-        let mut __log = clone_log(&s.log);
+        let mut __log = clone_log_inner(&s.log);
         __log.push(CLogEntry {
     term: s.current_term.clone(),
     value: (*value),
@@ -278,7 +298,7 @@ ensures
     role: s.role.clone(),
     has_voted: s.has_voted.clone(),
     voted_for: s.voted_for.clone(),
-    log: __log,
+    log: Arc::new(__log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
     match_index: s.match_index.clone(),
@@ -348,7 +368,7 @@ ensures
     LFollowerAppendEntries(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = {
-        let mut __log = clone_log(&s.log);
+        let mut __log = clone_log_inner(&s.log);
         if ae_has_entry {
                         __log.push(CLogEntry {
     term: (*ae_term),
@@ -361,7 +381,7 @@ ensures
     current_term: (*ae_term),
     has_voted: Cstep_down_if_needed(&s, &ae_term).has_voted,
     voted_for: Cstep_down_if_needed(&s, &ae_term).voted_for,
-    log: __log,
+    log: Arc::new(__log),
     commit_index: if ((*ae_leader_commit) > s.commit_index) {
         if ae_has_entry {
             if ((*ae_leader_commit) <= ((s.log.len() as u64) + 1)) {
@@ -587,7 +607,7 @@ ensures
     let my_last_log_term = if ((s.log.len() as u64) == 0) {
         0
     } else {
-        s.log[(s.log.len() - 1)].term
+        index_log(&s.log, (s.log.len() - 1)).term
     };
     (((*candidate_last_log_term) > my_last_log_term) || (((*candidate_last_log_term) == my_last_log_term) && ((*candidate_last_log_index) >= (s.log.len() as u64))))
 
@@ -658,7 +678,7 @@ ensures
         (s_mid, _sent_0)
 
     } else {
-        if (((*ae_prev_index) > 0) && (((*ae_prev_index) > (s_mid.log.len() as u64)) || (s_mid.log[(((*ae_prev_index) - 1) as usize)].term != (*ae_prev_term)))) {
+        if (((*ae_prev_index) > 0) && (((*ae_prev_index) > (s_mid.log.len() as u64)) || (index_log(&s_mid.log, (((*ae_prev_index) - 1) as usize)).term != (*ae_prev_term)))) {
                         let _sent_0 = vec![CRaftMessage::AppendResponse {
     term: s_mid.current_term,
     success: false,
@@ -901,3 +921,4 @@ match msg {
 }
 
 } // verus!
+

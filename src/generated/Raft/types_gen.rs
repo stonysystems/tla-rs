@@ -42,7 +42,7 @@ pub struct CState {
     pub role: CServerRole,
     pub has_voted: bool,
     pub voted_for: u64,
-    pub log: Vec<CLogEntry>,
+    pub log: Arc<Vec<CLogEntry>>,
     pub commit_index: u64,
     pub votes_granted: Arc<HashSet<u64>>,
     pub match_index: Arc<HashMap<u64, u64>>,

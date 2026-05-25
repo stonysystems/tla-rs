@@ -14532,9 +14532,15 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
   `CExecutor.reply_cache: HashMap<EndPoint, CReply>` — **DONE** (Arc-wrapped, 77 functions verified across 4 modules, 0 errors. Changed lemma_creplycache_get to take &CReplyCache for auto-deref through Arc. Replaced #[derive(Clone)] with manual Clone impl.),
   `CLearner.unexecuted_learner_state: HashMap<COperationNumber, CLearnerTuple>` — **DONE** (Arc-wrapped, 71 functions verified across 4 modules, 0 errors. Changed clearnerstate_is_abstractable/is_valid/abstractify to take &CLearnerState for auto-deref through Arc. Replaced #[derive(Clone)] with manual Clone impl.).
   **Analysis (Phase 41.1.b prep)**: Transpiler infrastructure ready — `clone_*` pattern generalized, Block-in-Call printer fix landed. Adding fields to `arc_wrap_fields` TOML works for codegen. However, each field also requires coordinated changes to the hand-written struct definition in `*Impl.rs` (field type → `Arc<T>`, Clone impl, View/valid/abstractable predicates). Verus's `@` operator auto-derefs through `Arc` (confirmed on existing `highest_seqno` field). Key risk: static methods in ProposerImpl.rs take `&HashSet<CPacket>` but with Arc wrapping would receive `&Arc<HashSet<CPacket>>` — Rust auto-deref handles this but Verus verification needs testing. Each field is ~20 LOC change in `*Impl.rs` + TOML config update + Verus re-verification.
-- [ ] **41.1.c**: Repeat on Raft hot fields (`log: Vec<CLogEntry>`,
+- [x] **41.1.c**: Repeat on Raft hot fields (`log: Vec<CLogEntry>`,
   `votes_granted: HashSet<u64>`, `match_index/next_index: HashMap<u64, u64>`).
-  Deferred — Raft is currently 3.6K ops/s with no measured Phase 40 benefit; whether collection-field Arc helps Raft is unproven. Gate this sub-task on a quick Arc-wrap-log PoC showing ≥5K ops/s before committing to the full set.
+  **DONE (2026-05-25)**: Arc-wrapped `log` field added to `raft_transpile.toml`
+  (`votes_granted`, `match_index`, `next_index` were already Arc-wrapped).
+  Required 3 transpiler fixes: (1) `extract_field_source` now handles `*` deref
+  for push-site detection on Arc-wrapped fields, (2) `index_<field>` verified
+  helper replaces block+clone pattern for Arc<Vec<T>> indexing, (3) `clone_<field>_inner`
+  verified helper for mutation-site deep cloning. 25 verified, 0 errors.
+  Benchmark gated — need to measure if ≥5K ops/s before further optimization.
 
 #### 41.2 Generalize to transpiler
 

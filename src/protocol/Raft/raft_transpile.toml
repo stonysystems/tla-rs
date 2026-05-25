@@ -20,7 +20,7 @@ set_fields = ["votes_granted", "servers"]
 arc_wrap_types = ["CState"]
 
 [arc_wrap_fields]
-CState = ["votes_granted", "match_index", "next_index"]
+CState = ["log", "votes_granted", "match_index", "next_index"]
 
 # Extra requires clauses per exec function (transpiler can't derive these from spec)
 [extra_requires]

@@ -340,7 +340,15 @@ impl Printer {
             }
 
             ExecExpr::Field(base, field) => {
-                self.print_expr(base);
+                // Block sub-expressions need brace-wrapping (e.g., Arc-wrapped
+                // field indexing: { let __arc_ref = &*s.log; __arc_ref[i] }.term)
+                if matches!(base.as_ref(), ExecExpr::Block(_)) {
+                    self.write("{");
+                    self.print_expr(base);
+                    self.write("}");
+                } else {
+                    self.print_expr(base);
+                }
                 self.write(".");
                 self.write(field);
             }
@@ -353,12 +361,24 @@ impl Printer {
                 // Special case: .index(idx) in exec code should use bracket indexing
                 // In Verus spec, .index() is valid, but in Rust exec code we use []
                 if method == "index" && args.len() == 1 {
-                    self.print_expr(receiver);
+                    if matches!(receiver.as_ref(), ExecExpr::Block(_)) {
+                        self.write("{");
+                        self.print_expr(receiver);
+                        self.write("}");
+                    } else {
+                        self.print_expr(receiver);
+                    }
                     self.write("[");
                     self.print_expr(&args[0]);
                     self.write("]");
                 } else {
-                    self.print_expr(receiver);
+                    if matches!(receiver.as_ref(), ExecExpr::Block(_)) {
+                        self.write("{");
+                        self.print_expr(receiver);
+                        self.write("}");
+                    } else {
+                        self.print_expr(receiver);
+                    }
                     self.write(".");
                     self.write(method);
                     self.write("(");
@@ -506,11 +526,26 @@ impl Printer {
                     self.print_expr(rhs);
                 } else {
                     self.write("(");
-                    self.print_expr(lhs);
+                    // Block sub-expressions need brace-wrapping to form valid
+                    // Rust expressions (e.g., Arc-wrapped field indexing via
+                    // `let __arc_ref` inside a binary condition).
+                    if matches!(lhs.as_ref(), ExecExpr::Block(_)) {
+                        self.write("{");
+                        self.print_expr(lhs);
+                        self.write("}");
+                    } else {
+                        self.print_expr(lhs);
+                    }
                     self.write(" ");
                     self.write(op);
                     self.write(" ");
-                    self.print_expr(rhs);
+                    if matches!(rhs.as_ref(), ExecExpr::Block(_)) {
+                        self.write("{");
+                        self.print_expr(rhs);
+                        self.write("}");
+                    } else {
+                        self.print_expr(rhs);
+                    }
                     self.write(")");
                 }
             }

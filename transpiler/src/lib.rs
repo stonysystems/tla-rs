@@ -472,6 +472,7 @@ impl Transpiler {
                 &self.config.translator.clone_up_to_view_types,
                 &self.config.msg_vec_type,
                 self.config.translator.use_verified_hashset_clone,
+                &self.config.translator.arc_wrap_fields,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -512,6 +513,7 @@ impl Transpiler {
                 &self.config.translator.clone_up_to_view_types,
                 &None,
                 self.config.translator.use_verified_hashset_clone,
+                &self.config.translator.arc_wrap_fields,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -1179,6 +1181,7 @@ impl Transpiler {
                 &self.config.translator.clone_up_to_view_types,
                 &self.config.msg_vec_type,
                 self.config.translator.use_verified_hashset_clone,
+                &self.config.translator.arc_wrap_fields,
             );
             if !helpers.is_empty() {
                 output.push_str(&helpers);
@@ -1309,6 +1312,7 @@ impl Transpiler {
         clone_up_to_view_types: &std::collections::HashSet<String>,
         msg_vec_type: &Option<(String, String)>,
         use_verified_hashset_clone: bool,
+        arc_wrap_fields: &std::collections::HashMap<String, std::collections::HashSet<String>>,
     ) -> String {
         let mut output = String::new();
 
@@ -1427,12 +1431,72 @@ impl Transpiler {
                 output.push_str("}\n\n");
 
                 // clone_<field> — verified loop or external_body wrapper
-                let use_verified_loop = clone_up_to_view_types.contains(exec_type.as_str());
+                // Check if this field is Arc-wrapped (any struct in arc_wrap_fields
+                // lists this field name).
+                let is_arc_wrapped = arc_wrap_fields.values().any(|fields| fields.contains(&field.to_string()));
+                let use_verified_loop = !is_arc_wrapped && clone_up_to_view_types.contains(exec_type.as_str());
                 output.push_str(&format!(
                     "/// Helper: clone a Vec<{}> preserving both raw and mapped view.\n",
                     exec_type
                 ));
-                if use_verified_loop {
+                if is_arc_wrapped {
+                    // Arc-wrapped: clone_<field> accepts &Arc<Vec<T>> and does
+                    // Arc::clone (O(1)), declared as external_body for Verus.
+                    output.push_str("#[verifier(external_body)]\n");
+                    output.push_str(&format!(
+                        "fn clone_{}(v: &Arc<Vec<{}>>) -> (res: Arc<Vec<{}>>) \n",
+                        field, exec_type, exec_type
+                    ));
+                    output.push_str("ensures\n");
+                    output.push_str("    res@ == v@,\n");
+                    output.push_str(&format!(
+                        "    res@.map(|i: int, e: {}| e@) =~= v@.map(|i: int, e: {}| e@),\n",
+                        exec_type, exec_type
+                    ));
+                    output.push_str("{\n");
+                    output.push_str("    v.clone()\n");
+                    output.push_str("}\n\n");
+
+                    // clone_<field>_inner — deep clone inner Vec from Arc for mutation sites
+                    output.push_str(&format!(
+                        "/// Helper: deep-clone inner Vec from Arc<Vec<{}>> for mutation.\n",
+                        exec_type
+                    ));
+                    output.push_str("#[verifier(external_body)]\n");
+                    output.push_str(&format!(
+                        "fn clone_{}_inner(v: &Arc<Vec<{}>>) -> (res: Vec<{}>) \n",
+                        field, exec_type, exec_type
+                    ));
+                    output.push_str("ensures\n");
+                    output.push_str("    res@ == v@,\n");
+                    output.push_str(&format!(
+                        "    res@.map(|i: int, e: {}| e@) =~= v@.map(|i: int, e: {}| e@),\n",
+                        exec_type, exec_type
+                    ));
+                    output.push_str("{\n");
+                    output.push_str("    (**v).clone()\n");
+                    output.push_str("}\n\n");
+
+                    // index_<field> — trusted indexing helper for Arc<Vec<T>>
+                    output.push_str(&format!(
+                        "/// Helper: index into Arc<Vec<{}>> with verified postcondition.\n",
+                        exec_type
+                    ));
+                    output.push_str("#[verifier(external_body)]\n");
+                    output.push_str(&format!(
+                        "fn index_{}(v: &Arc<Vec<{}>>, idx: usize) -> (res: {}) \n",
+                        field, exec_type, exec_type
+                    ));
+                    output.push_str("requires\n");
+                    output.push_str("    idx < v@.len(),\n");
+                    output.push_str("ensures\n");
+                    output.push_str(&format!(
+                        "    res == v@[idx as int],\n"
+                    ));
+                    output.push_str("{\n");
+                    output.push_str("    (*v)[idx].clone()\n");
+                    output.push_str("}\n\n");
+                } else if use_verified_loop {
                     output.push_str(&format!(
                         "fn clone_{}(v: &Vec<{}>) -> (res: Vec<{}>)\n",
                         field, exec_type, exec_type
@@ -2980,6 +3044,7 @@ mod tests {
             &std::collections::HashSet::new(),
             &None,
             false,
+            &std::collections::HashMap::new(),
         );
 
         // Verify lemma_empty_set_map
@@ -3021,6 +3086,7 @@ mod tests {
             &std::collections::HashSet::new(),
             &None,
             false,
+            &std::collections::HashMap::new(),
         );
         assert!(!output_no_remove.contains("lemma_set_map_remove_commute"));
 
@@ -3034,6 +3100,7 @@ mod tests {
             &std::collections::HashSet::new(),
             &None,
             false,
+            &std::collections::HashMap::new(),
         );
         assert!(!output_no_sets.contains("lemma_empty_set_map"));
         assert!(!output_no_sets.contains("lemma_set_map_remove_commute"));
@@ -3054,6 +3121,7 @@ mod tests {
             &std::collections::HashSet::new(),
             &None,
             false,
+            &std::collections::HashMap::new(),
         );
         assert!(output_i64.contains("Set::<i64>::empty()"));
         assert!(output_i64.contains("|x: i64| x as int"));
@@ -3069,6 +3137,7 @@ mod tests {
             &std::collections::HashSet::new(),
             &None,
             false,
+            &std::collections::HashMap::new(),
         );
         assert!(output_u64.contains("Set::<u64>::empty()"));
         assert!(output_u64.contains("|x: u64| x as int"));
@@ -3086,6 +3155,7 @@ mod tests {
             &std::collections::HashSet::new(),
             &None,
             false,
+            &std::collections::HashMap::new(),
         );
 
         // Set lemmas should be present when has_set_fields=true
@@ -3113,6 +3183,7 @@ mod tests {
             &std::collections::HashSet::new(),
             &None,
             false,
+            &std::collections::HashMap::new(),
         );
 
         // Set lemmas should be present when has_set_fields=true
@@ -3147,6 +3218,7 @@ mod tests {
         cutv.insert("CRequest".to_string());
         let output = Transpiler::generate_proof_helper_lemmas(
             true, true, false, &svf, "u64", &cutv, &None, false,
+            &std::collections::HashMap::new(),
         );
 
         // Should generate clone_request_queue with verified loop, NOT external_body
@@ -3203,6 +3275,7 @@ mod tests {
         let cutv = std::collections::HashSet::new();
         let output = Transpiler::generate_proof_helper_lemmas(
             true, true, false, &svf, "u64", &cutv, &None, false,
+            &std::collections::HashMap::new(),
         );
 
         assert!(
@@ -3694,6 +3767,7 @@ mod tests {
             &config.translator.clone_up_to_view_types,
             &None,
             false,
+            &std::collections::HashMap::new(),
         );
 
         // Should generate clone_log helper for struct_vec_fields

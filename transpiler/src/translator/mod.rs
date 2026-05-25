@@ -629,7 +629,7 @@ impl ProofNeeds {
     /// Given `Unary("&", Field(Var("s"), "pending_sent"))`, returns `"s.pending_sent"`.
     fn extract_field_source(expr: &ExecExpr) -> Option<String> {
         match expr {
-            ExecExpr::Unary { op, expr } if op == "&" => Self::extract_field_source(expr),
+            ExecExpr::Unary { op, expr } if op == "&" || op == "*" => Self::extract_field_source(expr),
             ExecExpr::Field(base, field) => {
                 if let ExecExpr::Var(name) = base.as_ref() {
                     Some(format!("{}.{}", name, field))
@@ -3170,11 +3170,9 @@ impl Translator {
                 // HashSet/HashMap clone functions accept &Arc<T> via deref coercion.
                 let clone_call = if self.is_struct_vec_field(&fname) {
                     if is_arc_field {
-                        // Arc-wrapped struct vec: (*s.field).clone() to deep-clone inner Vec
-                        ExecExpr::Clone(Box::new(ExecExpr::Unary {
-                            op: "*".to_string(),
-                            expr: Box::new(recv),
-                        }))
+                        // Arc-wrapped struct vec: clone_<field>_inner(&s.field)
+                        // Uses verified helper instead of (*s.field).clone()
+                        Self::make_ref_call(format!("clone_{}_inner", fname), recv)
                     } else {
                         Self::make_ref_call(format!("clone_{}", fname), recv)
                     }
@@ -3226,10 +3224,8 @@ impl Translator {
 
                 let clone_call = if self.is_struct_vec_field(&fname) {
                     if is_arc_field {
-                        ExecExpr::Clone(Box::new(ExecExpr::Unary {
-                            op: "*".to_string(),
-                            expr: Box::new(recv),
-                        }))
+                        // Arc-wrapped struct vec: clone_<field>_inner(&s.field)
+                        Self::make_ref_call(format!("clone_{}_inner", fname), recv)
                     } else {
                         Self::make_ref_call(format!("clone_{}", fname), recv)
                     }
@@ -3685,7 +3681,17 @@ impl Translator {
                             }
                             _ => false,
                         };
-                        if source_is_arc {
+                        // For struct_vec_fields (e.g. clone_log), the helper
+                        // function signature is updated to accept/return Arc<Vec<T>>
+                        // when Arc-wrapped (see generate_proof_helper_lemmas).
+                        // Keep the original call — it handles Arc types correctly.
+                        let field_suffix = func.strip_prefix("clone_").unwrap_or("");
+                        let is_struct_vec_clone = self.config.struct_vec_fields.contains_key(field_suffix);
+                        if source_is_arc && is_struct_vec_clone {
+                            // Keep clone_<field>(&s.field) as-is — the helper now
+                            // accepts &Arc<Vec<T>> and returns Arc<Vec<T>> (O(1)).
+                            (fname, fexpr)
+                        } else if source_is_arc {
                             (fname, ExecExpr::Clone(Box::new(inner)))
                         } else {
                             (fname, ExecExpr::Call {
@@ -9631,7 +9637,30 @@ impl Translator {
                     // Verus only supports [] on Vec/array/slice directly, not Arc<Vec<T>>.
                     // Pattern: { let __arc_ref = &*s.field; __arc_ref[idx] }
                     if self.is_arc_wrapped_field(&base_expr) {
-                        // Verus can't index through Arc<Vec<T>> — bind to local &Vec ref first
+                        // Arc<Vec<T>> indexing for struct_vec_fields:
+                        // Use index_<field>(&s.field, idx) helper with verified postcondition.
+                        // For other Arc-wrapped Vecs: block+clone pattern.
+                        let field_name = if let ExecExpr::Field(_, ref f) = base_expr {
+                            Some(f.clone())
+                        } else {
+                            None
+                        };
+                        if let Some(ref fname) = field_name {
+                            if self.is_struct_vec_field(fname) {
+                                // index_<field>(&s.field, idx) — verified helper
+                                return Ok(ExecExpr::Call {
+                                    func: format!("index_{}", fname),
+                                    args: vec![
+                                        ExecExpr::Unary {
+                                            op: "&".to_string(),
+                                            expr: Box::new(base_expr),
+                                        },
+                                        cast_idx,
+                                    ],
+                                });
+                            }
+                        }
+                        // Fallback: block+clone pattern for non-struct_vec Arc fields
                         Ok(ExecExpr::Block(vec![
                             ExecExpr::Let {
                                 pattern: "__arc_ref".to_string(),
@@ -9644,11 +9673,11 @@ impl Translator {
                                     }),
                                 }),
                             },
-                            ExecExpr::MethodCall {
+                            ExecExpr::Clone(Box::new(ExecExpr::MethodCall {
                                 receiver: Box::new(ExecExpr::Var("__arc_ref".to_string())),
                                 method: "index".to_string(),
                                 args: vec![cast_idx],
-                            },
+                            })),
                         ]))
                     } else {
                         Ok(ExecExpr::MethodCall {
