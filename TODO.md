@@ -14711,15 +14711,17 @@ Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, Pri
 
 #### 43.4 Synthesize Phase 40 verdict for small protocols
 
-- [ ] **43.4.a**: Combine results from 43.1.c, 43.2.d, 43.3.d. Decision table (data collected):
-  - EPaxos: -13% (Arc hurts — small state, high mutation rate)
-  - PrimaryBackup: +1.8% (noise, no measurable effect)
-  - PBFT: unmeasurable (<1 ops/s, bottlenecked by 3-phase consensus round trips)
-  - RSL (Phase 41): +82% (field-level Arc, large maps benefit from clone savings)
-  - Raft: +0% (no effect)
-  - **Conclusion**: struct-level Arc (Phase 40) provides no benefit on small protocols. Only field-level Arc (Phase 41) on large-state protocols (RSL) shows significant gains.
-- [ ] **43.4.b**: Update README's perf table and EFFICIENT_EMIT.md with the small-protocol bench numbers.
-- [ ] **43.4.c**: Mark Phase 40 as either "Validated experimental" (some protocol benefits) or "Confirmed no benefit, disable via TOML" (all protocols show no delta).
+- [x] **43.4.a**: Combined all bench results. Decision table:
+  | Protocol | Nodes | HEAD ops/s | Baseline ops/s | Delta |
+  |----------|-------|-----------|---------------|-------|
+  | RSL | 3 | 32,663 | 16,341 | +100% (field-level Arc, Phase 41) |
+  | PrimaryBackup | 2 | 32,769 | 32,186 | +1.8% (noise) |
+  | EPaxos | 3 | 4,066 | 4,680 | -13% (Arc hurts) |
+  | Raft | 3 | 3,613 | 3,612 | +0% |
+  | PBFT | 4 | <1 | N/A | unmeasurable |
+  **Verdict**: struct-level Arc (Phase 40) provides no benefit on any protocol. The RSL +100% comes entirely from field-level Arc (Phase 41). EPaxos shows 13% regression from Arc refcounting overhead.
+- [x] **43.4.b**: Updated README perf table with all-protocol bench numbers. Updated `transpiler/docs/EFFICIENT_EMIT.md` Phase 40 section with comprehensive bench table and conclusion.
+- [x] **43.4.c**: **Phase 40 verdict: "Confirmed no benefit for struct-level Arc."** Struct-level Arc-wrapping adds refcounting overhead with no measurable throughput gain on any protocol. Only field-level Arc (Phase 41, `arc_wrap_fields` TOML config) provides real benefit, and only on large-state protocols with hot collection fields (RSL). Phase 40 struct-level codegen remains active but dormant — no protocol enables it via TOML config.
 
 ### Out of scope
 

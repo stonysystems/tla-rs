@@ -177,6 +177,16 @@ code that **matches or exceeds** hand-tuned throughput on RSL UDP:
 | Hand-tuned (wasiq) | 28,449 ops/s | 1.31 ms | 5% |
 | **Transpiler + Arc (5 fields)** | **32,663 ops/s** | **1.12 ms** | **5%** |
 
+All benchable protocols (Phase 43, HEAD vs pre-Arc baseline c097da0):
+
+| Protocol | Nodes | Throughput | vs Baseline |
+|----------|-------|-----------|-------------|
+| RSL (field-level Arc) | 3 | 32,663 ops/s | +100% |
+| PrimaryBackup | 2 | 32,769 ops/s | +1.8% (noise) |
+| EPaxos | 3 | 4,066 ops/s | -13% |
+| Raft | 3 | 3,613 ops/s | +0% |
+| PBFT | 4 | <1 ops/s | N/A |
+
 The `arc_wrap_fields` TOML config wraps individual collection fields (`HashMap`,
 `HashSet`, `Vec`) in `Arc<T>` for O(1) clone on unchanged dispatch paths. Configure
 in the protocol's `_transpile.toml`:

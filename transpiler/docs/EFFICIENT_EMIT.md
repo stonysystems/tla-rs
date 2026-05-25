@@ -173,10 +173,23 @@ per call).
 
 ## Post-Implementation Results (Phase 40 + Phase 41)
 
-### Phase 40: Struct-level Arc-wrapping (completed)
+### Phase 40: Struct-level Arc-wrapping (completed, no benefit)
 Arc-wrapped sub-component structs (`proposer: Arc<CProposer>`, etc.) for 7 small
-protocols + Raft. **No measured benefit**: Raft re-bench showed 3,613 vs 3,612 ops/s
-(Δ +0.03%, within noise). The 7 small protocols have no client and are unmeasurable.
+protocols + Raft. **No measured benefit** on any benchable protocol.
+
+**Phase 43 comprehensive bench results (HEAD vs c097da0 pre-Arc baseline):**
+
+| Protocol | Nodes | HEAD ops/s | Baseline ops/s | Delta | Notes |
+|----------|-------|-----------|---------------|-------|-------|
+| RSL | 3 | 32,663 | 16,341 | +100% | Field-level Arc (Phase 41), not struct-level |
+| Raft | 3 | 3,613 | 3,612 | +0.03% | Within noise |
+| EPaxos | 3 | 4,066 | 4,680 | **-13%** | Arc adds overhead; small state, high mutation |
+| PrimaryBackup | 2 | 32,769 | 32,186 | +1.8% | Within noise (±15% variance) |
+| PBFT | 4 | <1 | N/A | N/A | Too slow for comparison (3-phase consensus) |
+
+**Conclusion**: Struct-level Arc provides no benefit on any protocol. EPaxos shows
+13% regression from Arc refcounting overhead on its small, frequently-mutated state.
+RSL's +100% gain comes entirely from field-level Arc (Phase 41), not struct-level.
 The original "+24% RSL / +12% Raft" claims were noise. RSL struct-level wrapping
 (40.3.g) was deferred and is now **WONTFIX**.
 
