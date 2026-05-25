@@ -13537,6 +13537,12 @@ tiers, ordered biggest-gain-per-effort first.
       protocol, invariant violation detection, multi-constants-valuation
       parity). 1 benchmark in transpiler_benchmarks.rs (20×20 grid,
       1/2/4 workers). ~120 LOC.
+  - [x] **38.21.B.i.e**: **Enable bytecode VM in parallel BFS.**
+    Made `BytecodeCache` thread-safe (`RefCell<HashMap<..., Rc<...>>>` →
+    `Mutex<HashMap<..., Arc<...>>>`). Parallel BFS workers now use the
+    bytecode VM (~2× faster than AST interpreter) instead of falling
+    back to AST-only. Added `test_bytecode_cache_is_send_sync` and
+    `test_bytecode_cache_concurrent_access` tests. ~40 LOC.
   - [ ] **38.21.B.ii**: **Parallel DPOR explorer** (future).
     DFS with sleep sets is harder to parallelize — requires work-stealing
     or independent subtree partitioning. Defer until BFS parallelism

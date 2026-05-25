@@ -12,9 +12,8 @@ use crate::ast::{BinOp, Expr, Literal, Path, Pattern, UnaryOp};
 use crate::error::{TranspileError, TranspileResult};
 use crate::modelcheck::symbol::Symbol;
 use crate::modelcheck::value::RuntimeValue;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 /// Index into a `Chunk`'s constant pool.
 pub type ConstIdx = u16;
@@ -1775,7 +1774,7 @@ pub fn compile_with_env(expr: &Expr, env_names: &[String]) -> TranspileResult<Co
 /// variable names, since different call sites may provide different env vars.
 #[allow(clippy::type_complexity)]
 pub struct BytecodeCache {
-    cache: RefCell<HashMap<(usize, Vec<String>), Rc<CompiledExpr>>>,
+    cache: Mutex<HashMap<(usize, Vec<String>), Arc<CompiledExpr>>>,
 }
 
 impl Default for BytecodeCache {
@@ -1787,7 +1786,7 @@ impl Default for BytecodeCache {
 impl BytecodeCache {
     pub fn new() -> Self {
         Self {
-            cache: RefCell::new(HashMap::new()),
+            cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1796,13 +1795,15 @@ impl BytecodeCache {
         &self,
         expr: &Expr,
         env_names: &[String],
-    ) -> TranspileResult<Rc<CompiledExpr>> {
+    ) -> TranspileResult<Arc<CompiledExpr>> {
         let key = (expr as *const Expr as usize, env_names.to_vec());
-        if let Some(compiled) = self.cache.borrow().get(&key) {
-            return Ok(Rc::clone(compiled));
+        let guard = self.cache.lock().unwrap();
+        if let Some(compiled) = guard.get(&key) {
+            return Ok(Arc::clone(compiled));
         }
-        let compiled = Rc::new(compile_with_env(expr, env_names)?);
-        self.cache.borrow_mut().insert(key, Rc::clone(&compiled));
+        drop(guard);
+        let compiled = Arc::new(compile_with_env(expr, env_names)?);
+        self.cache.lock().unwrap().insert(key, Arc::clone(&compiled));
         Ok(compiled)
     }
 }
@@ -3401,14 +3402,45 @@ mod tests {
     }
 
     #[test]
+    fn test_bytecode_cache_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<BytecodeCache>();
+    }
+
+    #[test]
+    fn test_bytecode_cache_concurrent_access() {
+        use std::sync::Arc as StdArc;
+        let cache = StdArc::new(BytecodeCache::new());
+        // Leaked pointer is &'static Expr, which is Copy + Send.
+        let expr: &'static Expr = Box::leak(Box::new(Expr::Literal(Literal::Int(99))));
+        let env_names: Vec<String> = vec![];
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let cache = StdArc::clone(&cache);
+                let env = env_names.clone();
+                let expr_ref = expr;
+                std::thread::spawn(move || cache.get_or_compile(expr_ref, &env).unwrap())
+            })
+            .collect();
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        // All threads produce a valid compiled expression (may or may not
+        // be the same Arc due to benign compile races, but the chunks are
+        // equivalent).
+        assert_eq!(results.len(), 4);
+        for r in &results {
+            assert_eq!(r.chunk.ops.len(), results[0].chunk.ops.len());
+        }
+    }
+
+    #[test]
     fn test_bytecode_cache_hit() {
         let cache = BytecodeCache::new();
         let expr = Expr::Literal(Literal::Int(42));
         let env_names = vec![];
         let first = cache.get_or_compile(&expr, &env_names).unwrap();
         let second = cache.get_or_compile(&expr, &env_names).unwrap();
-        // Same Rc (cached)
-        assert!(Rc::ptr_eq(&first, &second));
+        // Same Arc (cached)
+        assert!(Arc::ptr_eq(&first, &second));
     }
 
     #[test]
@@ -3420,7 +3452,7 @@ mod tests {
         let first = cache.get_or_compile(&expr, &env1).unwrap();
         let second = cache.get_or_compile(&expr, &env2).unwrap();
         // Different env keys → different cache entries
-        assert!(!Rc::ptr_eq(&first, &second));
+        assert!(!Arc::ptr_eq(&first, &second));
     }
 
     #[test]
@@ -4073,7 +4105,7 @@ mod tests {
         );
 
         let compiled2 = cache.get_or_compile(&expr, &env_names).unwrap();
-        assert!(Rc::ptr_eq(&compiled, &compiled2));
+        assert!(Arc::ptr_eq(&compiled, &compiled2));
         let mut env2 = std::collections::BTreeMap::new();
         env2.insert("a".to_string(), RuntimeValue::Int(100));
         env2.insert("b".to_string(), RuntimeValue::Int(200));
