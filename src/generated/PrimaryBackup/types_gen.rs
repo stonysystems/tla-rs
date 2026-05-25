@@ -102,6 +102,9 @@ pub enum CPBMessage {
         val: u64,
     },
     Ack,
+    ClientReply {
+        val: u64,
+    },
 }
 
 impl CPBMessage {
@@ -109,6 +112,7 @@ impl CPBMessage {
         match self {
             CPBMessage::Replicate { val } => true,
             CPBMessage::Ack => true,
+            CPBMessage::ClientReply { val } => true,
         }
     }
 }
@@ -120,6 +124,7 @@ impl View for CPBMessage {
         match self {
             CPBMessage::Replicate { val } => LPBMessage::Replicate { val: *val as int },
             CPBMessage::Ack => LPBMessage::Ack,
+            CPBMessage::ClientReply { val } => LPBMessage::ClientReply { val: *val as int },
         }
     }
 }

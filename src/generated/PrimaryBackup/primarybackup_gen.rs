@@ -62,7 +62,7 @@ ensures
         }
         (CState {
     has_pending: true,
-    pending_value: *val,
+    pending_value: (*val),
     acked: false,
     role: s.role.clone(),
     log_length: s.log_length.clone(),
@@ -129,7 +129,7 @@ ensures
         }
         (CState {
     backup_log_length: (s.backup_log_length + 1),
-    backup_last_value: *val,
+    backup_last_value: (*val),
     backup_synced: true,
     role: s.role.clone(),
     log_length: s.log_length.clone(),
@@ -224,11 +224,7 @@ ensures
     result.0.valid(),
     LPrimaryCommit(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
 {
-    let result = {
-        proof {
-            lemma_empty_seq_map();
-        }
-        (CState {
+    let result = (CState {
     log_length: (s.log_length + 1),
     last_value: s.pending_value.clone(),
     has_pending: false,
@@ -239,11 +235,11 @@ ensures
     backup_last_value: s.backup_last_value.clone(),
     backup_synced: s.backup_synced.clone(),
     view: s.view.clone(),
-}, vec![])
-    };
+}, vec![CPBMessage::ClientReply {
+    val: s.pending_value.clone(),
+}]);
     proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
+        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
 

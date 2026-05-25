@@ -14,12 +14,17 @@ pub enum PrimaryBackupMessage {
     ClientRequest {
         value: u64,
     },
+    /// Primary replies to client after commit.
+    ClientReply {
+        value: u64,
+    },
 }
 
 // Message tags for serialization
 const TAG_REPLICATE: u64 = 1;
 const TAG_ACK: u64 = 2;
 const TAG_CLIENT_REQUEST: u64 = 3;
+const TAG_CLIENT_REPLY: u64 = 4;
 
 /// Read a u64 from a byte slice at the given byte offset.
 fn read_u64(data: &Vec<u8>, offset: usize) -> u64 {
@@ -49,6 +54,10 @@ impl ProtocolMessage for PrimaryBackupMessage {
                 buf.extend_from_slice(&TAG_CLIENT_REQUEST.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
             },
+            PrimaryBackupMessage::ClientReply { value } => {
+                buf.extend_from_slice(&TAG_CLIENT_REPLY.to_le_bytes());
+                buf.extend_from_slice(&value.to_le_bytes());
+            },
         }
     }
 
@@ -74,6 +83,13 @@ impl ProtocolMessage for PrimaryBackupMessage {
                 }
                 let value = read_u64(data, 8);
                 Some(PrimaryBackupMessage::ClientRequest { value })
+            },
+            TAG_CLIENT_REPLY => {
+                if data.len() < 16 {
+                    return None;
+                }
+                let value = read_u64(data, 8);
+                Some(PrimaryBackupMessage::ClientReply { value })
             },
             _ => None,
         }

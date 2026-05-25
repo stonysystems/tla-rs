@@ -80,6 +80,8 @@ pub struct PrimaryBackupHost {
     last_metrics_time: Instant,
     /// log_length at last metrics output (for delta computation).
     last_metrics_log_length: u64,
+    /// Client endpoint for the current pending request (if any).
+    pending_client: Option<EndPoint>,
 }
 
 impl PrimaryBackupHost {
@@ -117,6 +119,7 @@ impl PrimaryBackupHost {
         &mut self,
         config: &PrimaryBackupConfig,
         value: u64,
+        client_ep: EndPoint,
     ) -> StepResult<PrimaryBackupMessage> {
         // Guards from CPrimaryWrite requires:
         //   s.role is Primary, s.acked == true, s.has_pending == false,
@@ -135,6 +138,7 @@ impl PrimaryBackupHost {
         let (new_state, _sent) =
             primarybackup_gen::CPrimaryWrite(&self.state, &config.constants, &value);
         self.state = new_state;
+        self.pending_client = Some(client_ep);
 
         // After writing, immediately attempt to send replicate to backup.
         self.primary_try_send_replicate(config)
@@ -213,12 +217,25 @@ impl PrimaryBackupHost {
             };
         }
 
+        let committed_value = self.state.pending_value;
+        let client_ep = self.pending_client.take();
+
         let (new_state, _sent) = primarybackup_gen::CPrimaryCommit(&self.state, &config.constants);
         self.state = new_state;
 
-        StepResult {
-            ok: true,
-            outbound: GenericOutbound::None,
+        // Send ClientReply to the requesting client
+        match client_ep {
+            Some(dst) => StepResult {
+                ok: true,
+                outbound: GenericOutbound::Send {
+                    dst,
+                    msg: PrimaryBackupMessage::ClientReply { value: committed_value },
+                },
+            },
+            None => StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            },
         }
     }
 
@@ -336,7 +353,7 @@ impl PrimaryBackupHost {
         if let Some(pkt) = packet {
             match pkt.msg {
                 PrimaryBackupMessage::ClientRequest { value } => {
-                    return self.primary_handle_client_request(config, value);
+                    return self.primary_handle_client_request(config, value, pkt.src);
                 }
                 PrimaryBackupMessage::Ack => {
                     return self.primary_receive_ack(config);
@@ -428,6 +445,7 @@ impl ProtocolHost for PrimaryBackupHost {
             action_index: 0,
             last_metrics_time: Instant::now(),
             last_metrics_log_length: 0,
+            pending_client: None,
         })
     }
 

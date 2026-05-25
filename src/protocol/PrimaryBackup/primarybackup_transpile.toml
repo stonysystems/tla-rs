@@ -44,6 +44,11 @@ doc = "Backup acknowledges replication."
 name = "ClientRequest"
 doc = "Client sends write request."
 fields = [["value", "u64"]]
+
+[[messages.variants]]
+name = "ClientReply"
+doc = "Primary replies to client after commit."
+fields = [["value", "u64"]]
 # Auto-generated from LNext — 8 actions
 [scheduler]
 next_fn = "LNext"

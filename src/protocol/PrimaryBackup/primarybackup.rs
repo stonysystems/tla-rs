@@ -119,6 +119,7 @@ pub open spec fn LPrimaryReceiveAck(s: LState, s_: LState, c: LConstants, sent_p
 }
 
 /// Primary commits the pending write to the log after receiving ack
+/// and sends a ClientReply back to the requesting client.
 pub open spec fn LPrimaryCommit(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LPBMessage>) -> bool {
     &&& s.role is Primary
     &&& s.acked == true
@@ -135,8 +136,8 @@ pub open spec fn LPrimaryCommit(s: LState, s_: LState, c: LConstants, sent_packe
     &&& s_.backup_last_value == s.backup_last_value
     &&& s_.backup_synced == s.backup_synced
     &&& s_.view == s.view
-    // No messages sent
-    &&& sent_packets == Seq::<LPBMessage>::empty()
+    // Send ClientReply with the committed value
+    &&& sent_packets == seq![LPBMessage::ClientReply { val: s.pending_value }]
 }
 
 /// Primary fails: becomes inactive, pending writes are lost

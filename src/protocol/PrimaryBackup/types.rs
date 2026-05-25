@@ -15,6 +15,8 @@ pub enum LPBMessage {
     Replicate { val: int },
     /// Backup acknowledges replication
     Ack,
+    /// Primary replies to client after committing a write
+    ClientReply { val: int },
 }
 
 /// State of the primary-backup system (global perspective)

@@ -14792,7 +14792,7 @@ For each protocol, add to spec:
 - `ClientReply{client_id, seq_no, value}` message variant
 - A transition rule: when a request commits at a node responsible for replying (primary in PB/PBFT, command leader in EPaxos), send `ClientReply` to the requesting client_id.
 
-- [ ] **44.2.a — PrimaryBackup**: Add `ClientReply{client_id, seq_no, value}` to `PrimaryBackupMessage` in `src/protocol/PrimaryBackup/primarybackup.rs`. Add transition: after `LPrimaryReceiveAck` commits (backup ack'd the replicate), primary sends `ClientReply` to the request's source. Spec change ~30-50 lines.
+- [x] **44.2.a — PrimaryBackup**: Added `ClientReply { val: int }` to `LPBMessage` in `types.rs`. Modified `LPrimaryCommit` to emit `seq![LPBMessage::ClientReply { val: s.pending_value }]`. Updated `transpile.toml` with ClientReply message variant. Regenerated `types_gen.rs` + `primarybackup_gen.rs` via transpiler. Added ClientReply wire format to `message.rs` (TAG=4, serialize/deserialize). Updated `host.rs`: tracks `pending_client: Option<EndPoint>` from ClientRequest source, sends ClientReply to client after commit. 15 verified, 0 errors. All 2,479 transpiler tests pass.
 - [ ] **44.2.b — EPaxos**: Replace internal `try_propose` self-firing with externally-driven `ClientRequest` handling. Add `ClientRequest{client_id, seq_no, value}` and `ClientReply{client_id, seq_no}`. Transition: when an instance reaches `Committed` phase, the command leader sends `ClientReply` back. Spec change ~50-100 lines (largest of the 3).
 - [ ] **44.2.c — PBFT**: Inspect `src/protocol/PBFT/pbft.rs` to check whether spec already models a client reply. If yes, ensure it's exposed via wire format. If no, add `ClientReply{client_id, seq_no, value}` and a transition triggered when a node has collected f+1 matching commits. Spec change ~30-80 lines.
 
@@ -14804,7 +14804,7 @@ Each spec change also needs:
 #### 44.3 Regenerate impl + verify
 
 For each protocol modified in 44.2:
-- [ ] **44.3.a — PB**: Run `verus-transpile -i <spec> -a <automan> -c <toml> > src/generated/PrimaryBackup/primarybackup_gen.rs`. Verify `--verify-only-module generated::PrimaryBackup::primarybackup_gen` passes (≥11 verified, 0 errors). Update `src/implementation/PrimaryBackup/{message.rs, host.rs}` for new wire format + reply sending.
+- [x] **44.3.a — PB**: Done as part of 44.2.a. Regenerated via transpiler, verified (15 verified, 0 errors), updated message.rs + host.rs.
 - [ ] **44.3.b — EPaxos**: Same as 44.3.a. Verify target: ≥15 verified, 0 errors. Update `src/implementation/EPaxos/host.rs` — replace `try_propose` self-firing with `handle_client_request` driven by client traffic.
 - [ ] **44.3.c — PBFT**: Same. Verify target: ≥13 verified, 0 errors. Integrate fix from 44.1.
 
