@@ -1063,6 +1063,66 @@ fn test_chain_replication_config_loading() {
     // Remapping is now auto-inferred (Phase 21), not in TOML
 }
 
+/// Regression test: transpiler output for ChainReplication must match the checked-in
+/// chain_gen.rs. Catches stale generated files (e.g., missing proof lemma calls after
+/// Arc-wrap config changes). Uses the full TOML config including arc_wrap_fields.
+#[test]
+fn test_chain_replication_regen_matches_checked_in() {
+    let repo_root = resolve_repo_root_for_integration();
+    let checked_in_path = repo_root.join("src/generated/ChainReplication/chain_gen.rs");
+
+    // Run transpiler binary with --stdout to get fresh output
+    let output = std::process::Command::new("cargo")
+        .args([
+            "run", "--release", "--",
+            "--input", repo_root.join("src/protocol/ChainReplication/chain.rs").to_str().unwrap(),
+            "--config", repo_root.join("src/protocol/ChainReplication/chain_transpile.toml").to_str().unwrap(),
+            "--annotations", repo_root.join("src/protocol/ChainReplication/chain.automan").to_str().unwrap(),
+            "--stdout",
+        ])
+        .current_dir(&repo_root.join("transpiler"))
+        .output()
+        .expect("Failed to run transpiler");
+
+    assert!(
+        output.status.success(),
+        "Transpiler failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let fresh_output = String::from_utf8(output.stdout)
+        .expect("Transpiler output is not valid UTF-8");
+    let checked_in = std::fs::read_to_string(&checked_in_path)
+        .expect("Failed to read checked-in chain_gen.rs");
+
+    let fresh_lines: Vec<&str> = fresh_output.trim_end().lines().collect();
+    let checked_lines: Vec<&str> = checked_in.trim_end().lines().collect();
+
+    if fresh_lines != checked_lines {
+        let max_len = fresh_lines.len().max(checked_lines.len());
+        for i in 0..max_len {
+            let fresh_line = fresh_lines.get(i).unwrap_or(&"<EOF>");
+            let checked_line = checked_lines.get(i).unwrap_or(&"<EOF>");
+            if fresh_line != checked_line {
+                panic!(
+                    "chain_gen.rs is stale (doesn't match transpiler output).\n\
+                     First difference at line {}:\n\
+                     - checked-in: {}\n\
+                     + transpiler: {}\n\
+                     Re-run the transpiler to regenerate: \
+                     cargo run --release -- --input src/protocol/ChainReplication/chain.rs \
+                     --config src/protocol/ChainReplication/chain_transpile.toml \
+                     --annotations src/protocol/ChainReplication/chain.automan \
+                     --output src/generated/ChainReplication/chain_gen.rs",
+                    i + 1,
+                    checked_line,
+                    fresh_line,
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn test_rsl_types_manual_helpers_foundational_symbols_present() {
     let source = std::fs::read_to_string("../src/protocol/RSL/types_manual_helpers.rs")
