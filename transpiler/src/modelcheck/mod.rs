@@ -28,6 +28,7 @@ pub mod init;
 pub mod invariant;
 pub mod ir;
 pub mod liveness;
+pub mod native_codegen;
 pub mod parity;
 pub mod por;
 pub mod small_int_set;

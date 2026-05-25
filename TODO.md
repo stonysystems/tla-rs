@@ -13790,6 +13790,51 @@ Three implementation paths, in increasing engineering cost / payoff:
   latency (cargo invocation per run). *4-8 weeks; biggest absolute
   win but slowest to land.*
 
+  Decomposed into leaf tasks (~200-400 LOC each):
+
+  - [x] **38.22.1.c.i**: **Expr-to-Rust source generator — foundation.** DONE (commit pending).
+    Create `transpiler/src/modelcheck/native_codegen.rs`. Implement
+    `fn expr_to_rust(expr: &Expr, locals: &HashMap<String, String>) -> Result<String>`
+    that translates a single `Expr` AST node to Rust source code
+    operating on `RuntimeValue` values. Cover the 15 most common
+    expression types: `Literal` (Int/Bool/String), `ConstantValue`,
+    `Ident`, `Field`, `Arrow`, `BinOp` (+,-,*,/,%), `Eq`/`Ne`,
+    `Lt`/`Le`/`Gt`/`Ge`, `Not`, `Conjunction`/`Disjunction`,
+    `If`/`Implies`, `SetLiteral`/`SeqLiteral`/`MapLiteral`.
+    Unsupported expressions return `Err` (graceful fallback).
+    Unit tests cross-check generated Rust against `eval_expr`
+    results on representative expressions. ~300 LOC.
+  - [ ] **38.22.1.c.ii**: **Expr-to-Rust — quantifiers, let, struct.**
+    Extend `expr_to_rust` with `Forall`/`Exists` (iterate domain,
+    short-circuit), `Let` (Rust `let` bindings), `Match` (if-let
+    chains), `Choose` (iterate + break), `Struct`/`StructUpdate`
+    (NamedFields construction), `MethodCall` (Set/Map/Seq operations
+    mapped to RuntimeValue methods), `FnCall` (delegate to callback).
+    ~300 LOC.
+  - [ ] **38.22.1.c.iii**: **Runtime crate extraction.**
+    Extract `RuntimeValue`, `NamedFields`, `SetRepr`, `SmallIntSet`,
+    `Symbol`, `RuntimeCollectionBounds`, and core operations into a
+    separate `transpiler-runtime` crate under `transpiler/runtime/`.
+    The main transpiler depends on `transpiler-runtime`. Generated
+    code only needs this thin crate as dependency, avoiding the full
+    transpiler dependency tree. ~400 LOC (mostly moving code).
+  - [ ] **38.22.1.c.iv**: **Compile + load infrastructure.**
+    Create `fn compile_and_load(rust_source: &str, runtime_crate_path: &Path) -> Result<NativeFunction>`.
+    Write source to temp dir, invoke `rustc --crate-type=cdylib`
+    with `transpiler-runtime` as dependency, load via `libloading`.
+    Add `libloading` to Cargo.toml. Cache compiled functions by
+    expression pointer (like BytecodeCache). ~200 LOC.
+  - [ ] **38.22.1.c.v**: **Integration with eval_with_environment.**
+    Add `NativeCache` to `SolverHooks`. Dispatch chain becomes:
+    native (if compiled) → bytecode → AST. Add `--native-codegen`
+    CLI flag (opt-in, compilation adds startup latency). Wire into
+    both BFS and DPOR explorers. ~200 LOC.
+  - [ ] **38.22.1.c.vi**: **Cross-check + benchmark.**
+    Run all 20 DPOR cases with `--native-codegen`, verify state
+    counts match bytecode/AST. Benchmark Paxos 8/5: measure
+    compilation time + per-state throughput vs bytecode. Update
+    `dpor_vs_tlc.md`. ~200 LOC.
+
 #### 38.22.2 — Replace boxed enum value layout with packed native
 
 `RuntimeValue::Struct { ty: String, fields: BTreeMap<String, RuntimeValue> }`
