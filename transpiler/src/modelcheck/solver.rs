@@ -894,20 +894,36 @@ fn eval_with_environment(
 ) -> TranspileResult<RuntimeValue> {
     if let Some(bc_cache) = hooks.bytecode_cache {
         let env_names: Vec<String> = env.keys().cloned().collect();
-        let compiled = bc_cache.get_or_compile(expr, &env_names)?;
-        let vm_ctx = crate::modelcheck::bytecode::VmContext {
-            bounds,
-            call_evaluator: hooks.call_evaluator.map(|f| {
-                f as &dyn Fn(&crate::ast::Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>
-            }),
-            method_evaluator: hooks.method_evaluator.map(|f| {
-                f as &dyn Fn(&RuntimeValue, &str, &[RuntimeValue]) -> TranspileResult<RuntimeValue>
-            }),
-            quantifier_domain: hooks
-                .quantifier_domain_evaluator
-                .map(|f| f as &dyn Fn(&crate::ast::Binding) -> TranspileResult<Vec<RuntimeValue>>),
-        };
-        return crate::modelcheck::bytecode::vm_eval_with_env(&compiled, env, &vm_ctx);
+        // Bytecode compilation may fail for expressions containing unsupported
+        // constructs (e.g., closures in Set::new). Fall back to AST interpreter
+        // gracefully instead of aborting the entire model check.
+        match bc_cache.get_or_compile(expr, &env_names) {
+            Ok(compiled) => {
+                let vm_ctx = crate::modelcheck::bytecode::VmContext {
+                    bounds,
+                    call_evaluator: hooks.call_evaluator.map(|f| {
+                        f as &dyn Fn(
+                            &crate::ast::Path,
+                            &[RuntimeValue],
+                        ) -> TranspileResult<RuntimeValue>
+                    }),
+                    method_evaluator: hooks.method_evaluator.map(|f| {
+                        f as &dyn Fn(
+                            &RuntimeValue,
+                            &str,
+                            &[RuntimeValue],
+                        ) -> TranspileResult<RuntimeValue>
+                    }),
+                    quantifier_domain: hooks.quantifier_domain_evaluator.map(|f| {
+                        f as &dyn Fn(&crate::ast::Binding) -> TranspileResult<Vec<RuntimeValue>>
+                    }),
+                };
+                return crate::modelcheck::bytecode::vm_eval_with_env(&compiled, env, &vm_ctx);
+            }
+            Err(_) => {
+                // Fall through to AST interpreter below
+            }
+        }
     }
 
     let mut ctx = EvalContext::new(bounds);
@@ -2524,5 +2540,52 @@ mod tests {
 
         assert_eq!(result.successors.len(), 0);
         assert_eq!(result.telemetry.guard_pruned_assignments, 3);
+    }
+
+    #[test]
+    fn test_eval_with_environment_falls_back_to_ast_when_bytecode_fails() {
+        // Expressions containing closures (e.g., Set::new(|x| pred)) can't be
+        // compiled to bytecode. eval_with_environment should fall back to the
+        // AST interpreter instead of aborting.
+        use crate::modelcheck::bytecode::BytecodeCache;
+
+        // Build an expression that uses a closure: Set::new(|x: int| x == 1)
+        let closure_expr = Expr::Call {
+            func: crate::ast::Path::new(vec!["Set".to_string(), "new".to_string()]),
+            args: vec![Expr::Closure {
+                params: vec![crate::ast::Binding {
+                    pattern: crate::ast::Pattern::Ident("x".to_string()),
+                    ty: Some(crate::ast::Type::Int),
+                    variable_mode: crate::ast::VariableMode::default(),
+                }],
+                body: Box::new(Expr::Eq(
+                    Box::new(Expr::Ident("x".to_string())),
+                    Box::new(Expr::Literal(crate::ast::Literal::Int(1))),
+                )),
+            }],
+        };
+
+        let env = BTreeMap::new();
+        let bc_cache = BytecodeCache::new();
+        let hooks = SolverHooks {
+            bytecode_cache: Some(&bc_cache),
+            ..SolverHooks::default()
+        };
+
+        // This should succeed via AST fallback, not fail with "Closure cannot be compiled"
+        let result = eval_with_environment(&closure_expr, &env, bounds(), hooks);
+        assert!(
+            result.is_ok(),
+            "Should fall back to AST: {:?}",
+            result.err()
+        );
+        // Set::new(|x: int| x == 1) with default int bounds [0..10] should yield {1}
+        match result.unwrap() {
+            RuntimeValue::Set(s) => {
+                assert!(s.contains(&RuntimeValue::Int(1)), "Set should contain 1");
+                assert_eq!(s.len(), 1, "Set should have exactly 1 element");
+            }
+            other => panic!("Expected Set, got {:?}", other),
+        }
     }
 }
