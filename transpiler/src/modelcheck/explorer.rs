@@ -320,10 +320,37 @@ where
     // is active and hash compaction is enabled.
     let use_fingerprint_fast_path =
         symmetry_field_set.is_empty() && matches!(state_dedup, StateDedupMode::HashCompaction64);
+    // When fingerprint fast-path is active, use HashSet<u64> for O(1) dedup
+    // instead of BTreeSet<String> with format! allocation.
+    let mut seen_fingerprints = std::collections::HashSet::<u64>::new();
+    macro_rules! visited_count {
+        () => {
+            if use_fingerprint_fast_path { seen_fingerprints.len() } else { visited.len() }
+        };
+    }
 
     for state in initial_states {
-        let key = if use_fingerprint_fast_path {
-            format!("h{:016x}", state.fingerprint())
+        if use_fingerprint_fast_path {
+            let fp = state.fingerprint();
+            if seen_fingerprints.insert(fp) {
+                let key = format!("h{fp:016x}");
+                if let Some(ref mut exporter) = debug_exporter {
+                    let _ = exporter.record_generated(
+                        &key, state, 0, true, None, None, "accepted_distinct",
+                    );
+                    let _ = exporter.record_distinct(&key, state, 0, true, None, None);
+                }
+                states_by_key.insert(key.clone(), state.clone());
+                frontier.push_back(FrontierItem {
+                    key,
+                    state: state.clone(),
+                    depth: 0,
+                });
+            } else if let Some(ref mut exporter) = debug_exporter {
+                let key = format!("h{fp:016x}");
+                let _ =
+                    exporter.record_generated(&key, state, 0, true, None, None, "duplicate");
+            }
         } else {
             let dedup_canonical = canonical_dedup_key(state, &symmetry_field_set);
             if !symmetry_field_set.is_empty()
@@ -335,35 +362,28 @@ where
             {
                 stats.symmetry_collapses += 1;
             }
-            dedup_key_from_canonical(&dedup_canonical, state_dedup)
-        };
-        if visited.insert(key.clone()) {
-            if !use_fingerprint_fast_path && matches!(state_dedup, StateDedupMode::HashCompaction64)
-            {
-                // In fingerprint fast path, we skip canonical string tracking
-                let canonical = canonical_dedup_key(state, &symmetry_field_set);
-                hash_representatives.insert(key.clone(), canonical);
+            let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
+            if visited.insert(key.clone()) {
+                if matches!(state_dedup, StateDedupMode::HashCompaction64) {
+                    let canonical = canonical_dedup_key(state, &symmetry_field_set);
+                    hash_representatives.insert(key.clone(), canonical);
+                }
+                if let Some(ref mut exporter) = debug_exporter {
+                    let _ = exporter.record_generated(
+                        &key, state, 0, true, None, None, "accepted_distinct",
+                    );
+                    let _ = exporter.record_distinct(&key, state, 0, true, None, None);
+                }
+                states_by_key.insert(key.clone(), state.clone());
+                frontier.push_back(FrontierItem {
+                    key,
+                    state: state.clone(),
+                    depth: 0,
+                });
+            } else if let Some(ref mut exporter) = debug_exporter {
+                let _ =
+                    exporter.record_generated(&key, state, 0, true, None, None, "duplicate");
             }
-            if let Some(ref mut exporter) = debug_exporter {
-                let _ = exporter.record_generated(
-                    &key,
-                    state,
-                    0,
-                    true,
-                    None,
-                    None,
-                    "accepted_distinct",
-                );
-                let _ = exporter.record_distinct(&key, state, 0, true, None, None);
-            }
-            states_by_key.insert(key.clone(), state.clone());
-            frontier.push_back(FrontierItem {
-                key,
-                state: state.clone(),
-                depth: 0,
-            });
-        } else if let Some(ref mut exporter) = debug_exporter {
-            let _ = exporter.record_generated(&key, state, 0, true, None, None, "duplicate");
         }
     }
 
@@ -377,7 +397,7 @@ where
             return Ok(finalize_result(
                 explored,
                 ExplorationStopReason::TimeoutReached,
-                visited.len(),
+                visited_count!(),
                 frontier.len(),
                 stats,
                 None,
@@ -400,7 +420,7 @@ where
             return Ok(finalize_result(
                 explored,
                 ExplorationStopReason::InvariantViolated,
-                visited.len(),
+                visited_count!(),
                 frontier.len(),
                 stats,
                 Some(InvariantViolation {
@@ -417,7 +437,7 @@ where
             return Ok(finalize_result(
                 explored,
                 ExplorationStopReason::TimeoutReached,
-                visited.len(),
+                visited_count!(),
                 frontier.len(),
                 stats,
                 None,
@@ -435,7 +455,7 @@ where
             return Ok(finalize_result(
                 explored,
                 ExplorationStopReason::TimeoutReached,
-                visited.len(),
+                visited_count!(),
                 frontier.len(),
                 stats,
                 None,
@@ -448,7 +468,7 @@ where
             return Ok(finalize_result(
                 explored,
                 ExplorationStopReason::DeadlockDetected,
-                visited.len(),
+                visited_count!(),
                 frontier.len(),
                 stats,
                 None,
@@ -466,7 +486,7 @@ where
                 return Ok(finalize_result(
                     explored,
                     ExplorationStopReason::TimeoutReached,
-                    visited.len(),
+                    visited_count!(),
                     frontier.len(),
                     stats,
                     None,
@@ -475,11 +495,11 @@ where
                 ));
             }
             stats.successors_considered += 1;
-            if visited.len() >= limits.max_states {
+            if visited_count!() >= limits.max_states {
                 return Ok(finalize_result(
                     explored,
                     ExplorationStopReason::MaxStatesReached,
-                    visited.len(),
+                    visited_count!(),
                     frontier.len(),
                     stats,
                     None,
@@ -488,10 +508,75 @@ where
                 ));
             }
 
-            let key = if use_fingerprint_fast_path {
-                format!("h{:016x}", successor.state.fingerprint())
+            let branch_label = if successor.action_branch.is_empty() {
+                None
             } else {
-                let dedup_canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
+                Some(successor.action_branch.as_str())
+            };
+
+            if use_fingerprint_fast_path {
+                let fp = successor.state.fingerprint();
+                if seen_fingerprints.insert(fp) {
+                    let key = format!("h{fp:016x}");
+                    if let Some(ref mut exporter) = debug_exporter {
+                        let _ = exporter.record_generated(
+                            &key,
+                            &successor.state,
+                            item.depth + 1,
+                            false,
+                            Some(&item.key),
+                            branch_label,
+                            "accepted_distinct",
+                        );
+                        let _ = exporter.record_distinct(
+                            &key,
+                            &successor.state,
+                            item.depth + 1,
+                            false,
+                            Some(&item.key),
+                            branch_label,
+                        );
+                        if let Some(label) = branch_label {
+                            let _ =
+                                exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                        }
+                    }
+                    states_by_key.insert(key.clone(), successor.state.clone());
+                    parents.insert(
+                        key.clone(),
+                        TraceParent {
+                            parent_key: item.key.clone(),
+                            action_branch: successor.action_branch,
+                        },
+                    );
+                    to_enqueue.push(FrontierItem {
+                        key,
+                        state: successor.state,
+                        depth: item.depth + 1,
+                    });
+                    stats.successors_enqueued += 1;
+                } else {
+                    if let Some(ref mut exporter) = debug_exporter {
+                        let key = format!("h{fp:016x}");
+                        let _ = exporter.record_generated(
+                            &key,
+                            &successor.state,
+                            item.depth + 1,
+                            false,
+                            Some(&item.key),
+                            branch_label,
+                            "duplicate",
+                        );
+                        if let Some(label) = branch_label {
+                            let _ =
+                                exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                        }
+                    }
+                    stats.duplicate_successors += 1;
+                }
+            } else {
+                let dedup_canonical =
+                    canonical_dedup_key(&successor.state, &symmetry_field_set);
                 if !symmetry_field_set.is_empty()
                     && record_symmetry_collapse(
                         &mut symmetry_representatives,
@@ -501,79 +586,73 @@ where
                 {
                     stats.symmetry_collapses += 1;
                 }
-                dedup_key_from_canonical(&dedup_canonical, state_dedup)
-            };
-            let branch_label = if successor.action_branch.is_empty() {
-                None
-            } else {
-                Some(successor.action_branch.as_str())
-            };
-            if visited.insert(key.clone()) {
-                if !use_fingerprint_fast_path
-                    && matches!(state_dedup, StateDedupMode::HashCompaction64)
-                {
-                    let canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
-                    hash_representatives.insert(key.clone(), canonical);
-                }
-                if let Some(ref mut exporter) = debug_exporter {
-                    let _ = exporter.record_generated(
-                        &key,
-                        &successor.state,
-                        item.depth + 1,
-                        false,
-                        Some(&item.key),
-                        branch_label,
-                        "accepted_distinct",
-                    );
-                    let _ = exporter.record_distinct(
-                        &key,
-                        &successor.state,
-                        item.depth + 1,
-                        false,
-                        Some(&item.key),
-                        branch_label,
-                    );
-                    if let Some(label) = branch_label {
-                        let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
+                if visited.insert(key.clone()) {
+                    if matches!(state_dedup, StateDedupMode::HashCompaction64) {
+                        let canonical =
+                            canonical_dedup_key(&successor.state, &symmetry_field_set);
+                        hash_representatives.insert(key.clone(), canonical);
                     }
-                }
-                states_by_key.insert(key.clone(), successor.state.clone());
-                parents.insert(
-                    key.clone(),
-                    TraceParent {
-                        parent_key: item.key.clone(),
-                        action_branch: successor.action_branch,
-                    },
-                );
-                to_enqueue.push(FrontierItem {
-                    key,
-                    state: successor.state,
-                    depth: item.depth + 1,
-                });
-                stats.successors_enqueued += 1;
-            } else {
-                if let Some(ref mut exporter) = debug_exporter {
-                    let _ = exporter.record_generated(
-                        &key,
-                        &successor.state,
-                        item.depth + 1,
-                        false,
-                        Some(&item.key),
-                        branch_label,
-                        "duplicate",
-                    );
-                    if let Some(label) = branch_label {
-                        let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                    if let Some(ref mut exporter) = debug_exporter {
+                        let _ = exporter.record_generated(
+                            &key,
+                            &successor.state,
+                            item.depth + 1,
+                            false,
+                            Some(&item.key),
+                            branch_label,
+                            "accepted_distinct",
+                        );
+                        let _ = exporter.record_distinct(
+                            &key,
+                            &successor.state,
+                            item.depth + 1,
+                            false,
+                            Some(&item.key),
+                            branch_label,
+                        );
+                        if let Some(label) = branch_label {
+                            let _ =
+                                exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                        }
                     }
-                }
-                if !use_fingerprint_fast_path {
+                    states_by_key.insert(key.clone(), successor.state.clone());
+                    parents.insert(
+                        key.clone(),
+                        TraceParent {
+                            parent_key: item.key.clone(),
+                            action_branch: successor.action_branch,
+                        },
+                    );
+                    to_enqueue.push(FrontierItem {
+                        key,
+                        state: successor.state,
+                        depth: item.depth + 1,
+                    });
+                    stats.successors_enqueued += 1;
+                } else {
+                    if let Some(ref mut exporter) = debug_exporter {
+                        let _ = exporter.record_generated(
+                            &key,
+                            &successor.state,
+                            item.depth + 1,
+                            false,
+                            Some(&item.key),
+                            branch_label,
+                            "duplicate",
+                        );
+                        if let Some(label) = branch_label {
+                            let _ =
+                                exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                        }
+                    }
                     let dedup_canonical =
                         canonical_dedup_key(&successor.state, &symmetry_field_set);
                     if is_hash_collision(&hash_representatives, &key, &dedup_canonical) {
                         stats.hash_compaction_collisions += 1;
                     }
+                    stats.duplicate_successors += 1;
                 }
-                stats.duplicate_successors += 1;
             }
         }
         push_successors(&mut frontier, mode, to_enqueue);
@@ -586,7 +665,7 @@ where
     Ok(finalize_result(
         explored,
         ExplorationStopReason::FrontierExhausted,
-        visited.len(),
+        visited_count!(),
         frontier.len(),
         stats,
         None,

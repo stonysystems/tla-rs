@@ -13540,6 +13540,13 @@ tiers, ordered biggest-gain-per-effort first.
     - **Fix**: Added `dump_eval_expr_profile()` + `dump_eval_dispatch_profile()`
       to the non-JSON model-check output path (was only emitted in `--json-report`
       mode). ~5 LOC.
+  - [x] **38.21.A.f**: **HashSet<u64> dedup fast-path in sequential BFS explorer.**
+    When `use_fingerprint_fast_path` is active (no symmetry + hash compaction),
+    replaced `BTreeSet<String>` dedup (O(log n) string comparisons + format!
+    allocation per successor) with `HashSet<u64>` (O(1) amortized integer
+    hashing). String keys are only created lazily when a state is actually new
+    (for trace/debug/counterexample). Eliminates ~31% dedup overhead identified
+    in 38.21.A.e profiling. ~80 LOC net delta.
 - [ ] **38.21.B**: **Parallelize the explorer** (2-4× on multicore).
   TLC uses 4 workers. DPOR currently single-threaded. Worker-thread
   pool with a lock-free `DashMap<u64, ()>` visited set and per-worker
