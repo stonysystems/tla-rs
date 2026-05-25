@@ -14599,9 +14599,15 @@ Mutation paths use `Arc::make_mut(&mut field).insert(...)` (CoW).
   - vs pre-Arc baseline (16,341): **+100%** — 2× throughput improvement
   - Confirms Phase 41.1.b (5 Arc-wrapped fields) achieves the target.
 
-- [ ] **41.3.b**: Re-bench Raft. Target: ≥10K ops/s (vs 3.4K baseline,
+- [x] **41.3.b**: Re-bench Raft. Target: ≥10K ops/s (vs 3.4K baseline,
   vs 5K Phase 40 target). The biggest win — `log: Vec<CLogEntry>` deep
   clone on every `SendAppendEntries` becomes Arc::clone.
+  **Result (2026-05-25, 32 threads × 30s × 2 trials):** 3,923 / 3,922 ops/s
+  (avg latency 8.47 ms). Δ = +0.8% vs baseline 3,892 — within noise.
+  **Target NOT met.** Raft is network/latency-bound, not clone-bound.
+  The log is typically short (few entries), so Arc-wrapping saves negligible
+  CPU. Further optimization requires a different approach (batching, pipelining,
+  or reducing per-request network round-trips).
 
 - [ ] **41.3.c**: gdb profile RSL leader. Confirm `clone_endpoint_seqno_map`,
   `clone_request_batch_up_to_view`, `clone_hashset` drop out of top frames
