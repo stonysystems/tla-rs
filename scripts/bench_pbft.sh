@@ -54,7 +54,7 @@ for trial in $(seq 1 "$TRIALS"); do
     done
 
     # Wait for servers to initialize
-    sleep 3
+    sleep 5
 
     # Start client (fire-and-forget UDP to primary on port 4001)
     client_out=$(mktemp /tmp/pbft_client_XXXXXX)

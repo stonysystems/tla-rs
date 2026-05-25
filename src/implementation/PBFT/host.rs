@@ -11,7 +11,6 @@ use crate::common::native::io_s::*;
 use crate::generated::PBFT::pbft_gen;
 use crate::generated::PBFT::types_gen::*;
 use crate::implementation::PBFT::message::*;
-use std::collections::HashSet;
 use std::time::Instant;
 
 /// PBFT protocol configuration.
@@ -88,6 +87,21 @@ pub struct PBFTHost {
     last_metrics_time: Instant,
     /// seq_num at last metrics output (for delta computation).
     last_metrics_seq_num: u64,
+    /// Buffered client digest: avoids dropping client requests when not in
+    /// PrePrepare phase. The timer-driven pre-prepare uses this instead of
+    /// a synthetic digest, so client flooding doesn't starve the protocol.
+    pending_digest: Option<u64>,
+    /// Timestamp of last PrePrepare send (for rate-limiting retransmits).
+    last_pre_prepare_time: Instant,
+    /// Timestamp of last Prepare/Commit resend (for backup-side retransmit).
+    last_resend_time: Instant,
+    /// Timestamp of last catch-up Commit sent (rate-limits catch-up responses).
+    last_catchup_time: Instant,
+    /// Current and previous round's PrePrepare params (view, seq, digest).
+    /// The primary may be 1 round ahead of backups; retransmitting the previous
+    /// round's PrePrepare unsticks lagging backups.
+    cur_pre_prepare: Option<(u64, u64, u64)>,
+    prev_pre_prepare: Option<(u64, u64, u64)>,
 }
 
 impl PBFTHost {
@@ -107,15 +121,6 @@ impl PBFTHost {
         others
     }
 
-    /// Collect all peer endpoints for broadcasting (including self).
-    fn all_peers(config: &PBFTConfig) -> Vec<EndPoint> {
-        let mut all = Vec::new();
-        for i in 0..config.peers.len() {
-            all.push(config.peers[i].clone_up_to_view());
-        }
-        all
-    }
-
     /// Resolve the sender's node index from their endpoint.
     fn resolve_sender_index(config: &PBFTConfig, src: &EndPoint) -> Option<u64> {
         for i in 0..config.peers.len() {
@@ -131,8 +136,9 @@ impl PBFTHost {
     // ---------------------------------------------------------------
 
     /// Primary: receive a ClientRequest and call CPrePrepare.
-    /// Guards: phase is PrePrepare, is_primary, seq >= low_watermark,
-    ///         seq < high_watermark.
+    /// If in Replied phase, proactively advances through Checkpoint→NewRound→PrePrepare
+    /// in a single call to avoid client flooding starvation (the framework's timeout=0
+    /// receive means timer ticks never fire while client packets are queued).
     fn handle_client_request(
         &mut self,
         config: &PBFTConfig,
@@ -144,41 +150,18 @@ impl PBFTHost {
                 outbound: GenericOutbound::None,
             };
         }
-        if !matches!(self.state.phase, CPhase::PrePrepare) {
-            return StepResult {
-                ok: true,
-                outbound: GenericOutbound::None,
-            };
-        }
-        if self.state.seq_num < self.state.low_watermark
-            || self.state.seq_num >= self.state.high_watermark
-        {
-            return StepResult {
-                ok: true,
-                outbound: GenericOutbound::None,
-            };
-        }
 
-        let (new_state, _sent) = pbft_gen::CPrePrepare(&self.state, &config.constants, &digest);
-        self.state = new_state;
+        // Buffer the digest
+        self.pending_digest = Some(digest);
 
-        // Broadcast PrePrepare to all other replicas
-        let others = Self::other_peers(config);
-        StepResult {
-            ok: true,
-            outbound: GenericOutbound::Broadcast {
-                dsts: others,
-                msg: PBFTMessage::PrePrepare {
-                    view: self.state.view,
-                    seq: self.state.seq_num,
-                    digest,
-                },
-            },
-        }
+        // Inline PrePrepare: the timer path may never fire during client
+        // flooding (148K packets/sec), so try to start a new round here.
+        self.try_pre_prepare_and_new_round(config)
     }
 
     /// Non-primary: receive a PrePrepare and call CReceivePrePrepare.
     /// Guards: phase is PrePrepare, not primary, view matches current view.
+    /// If in Replied phase, proactively advances to PrePrepare first.
     fn handle_pre_prepare(
         &mut self,
         config: &PBFTConfig,
@@ -192,6 +175,38 @@ impl PBFTHost {
                 outbound: GenericOutbound::None,
             };
         }
+
+        // If in Replied phase when PrePrepare arrives, advance to PrePrepare
+        // so we can accept this round. This is safe: triggered by a real
+        // PrePrepare from the primary, not a timer.
+        if matches!(self.state.phase, CPhase::Replied) {
+            let _ = self.try_checkpoint(config);
+            let _ = self.try_new_round(config);
+        }
+
+        // If already in Prepare or Commit for this round and receiving a retransmit
+        // PrePrepare, re-send our Prepare. Other backups may have missed it
+        // because they hadn't entered Prepare yet when we first sent it.
+        // We always resend Prepare (not Commit) because lagging backups need
+        // the Prepare to reach their 2f+1 threshold and enter Commit.
+        if (matches!(self.state.phase, CPhase::Prepare) || matches!(self.state.phase, CPhase::Commit))
+            && view == self.state.view && seq == self.state.seq_num
+        {
+            let others = Self::other_peers(config);
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::Broadcast {
+                    dsts: others,
+                    msg: PBFTMessage::Prepare {
+                        view: self.state.view,
+                        seq: self.state.seq_num,
+                        digest: self.state.request_digest,
+                        sender: config.constants.node_id,
+                    },
+                },
+            };
+        }
+
         if !matches!(self.state.phase, CPhase::PrePrepare) {
             return StepResult {
                 ok: true,
@@ -199,8 +214,8 @@ impl PBFTHost {
             };
         }
 
-        // Guard: view must equal current view
-        if view != self.state.view {
+        // Guard: view must equal current view, seq must match our seq_num
+        if view != self.state.view || seq != self.state.seq_num {
             return StepResult {
                 ok: true,
                 outbound: GenericOutbound::None,
@@ -210,6 +225,7 @@ impl PBFTHost {
         let (new_state, _sent) =
             pbft_gen::CReceivePrePrepare(&self.state, &config.constants, &view, &seq, &digest);
         self.state = new_state;
+        self.last_resend_time = Instant::now();
 
         // Broadcast Prepare to all peers
         let others = Self::other_peers(config);
@@ -228,8 +244,58 @@ impl PBFTHost {
     }
 
     /// Receive a Prepare message and call CReceivePrepare.
-    /// Guards: phase is Prepare, sender not already in prepare_senders.
-    fn handle_prepare(&mut self, config: &PBFTConfig, sender: u64) -> StepResult<PBFTMessage> {
+    /// Guards: phase is Prepare, view/seq match, sender not already in prepare_senders.
+    fn handle_prepare(&mut self, config: &PBFTConfig, view: u64, seq: u64, sender: u64, src: &EndPoint) -> StepResult<PBFTMessage> {
+        // If we already completed this round, help the stuck sender catch up
+        // by sending our Prepare for their round (they need Prepares to enter
+        // Commit). Rate-limited to 1/ms to avoid flooding.
+        if view == self.state.view && seq < self.state.seq_num {
+            let now = Instant::now();
+            if now.duration_since(self.last_catchup_time).as_millis() >= 1 {
+                self.last_catchup_time = now;
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::Send {
+                        dst: src.clone_up_to_view(),
+                        msg: PBFTMessage::Prepare {
+                            view,
+                            seq,
+                            digest: 0, // digest is not checked by receiver
+                            sender: config.constants.node_id,
+                        },
+                    },
+                };
+            }
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
+        }
+
+        // Reject stale or future messages from different rounds
+        if view != self.state.view || seq != self.state.seq_num {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
+        }
+        // If already in Commit phase and receiving a Prepare for this round,
+        // resend our Commit. The sender may not have entered Commit yet.
+        if matches!(self.state.phase, CPhase::Commit) {
+            let others = Self::other_peers(config);
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::Broadcast {
+                    dsts: others,
+                    msg: PBFTMessage::Commit {
+                        view: self.state.view,
+                        seq: self.state.seq_num,
+                        sender: config.constants.node_id,
+                    },
+                },
+            };
+        }
+
         if !matches!(self.state.phase, CPhase::Prepare) {
             return StepResult {
                 ok: true,
@@ -247,6 +313,7 @@ impl PBFTHost {
 
         let (new_state, _sent) = pbft_gen::CReceivePrepare(&self.state, &config.constants, &sender);
         self.state = new_state;
+        self.last_resend_time = Instant::now();
 
         // Check if we have enough prepares to enter commit phase.
         // Guard for CEnterCommit: phase is Prepare, prepare_senders.len() >= 2f+1.
@@ -254,6 +321,7 @@ impl PBFTHost {
         if self.state.prepare_senders.len() as u64 >= threshold {
             let (new_state, _sent) = pbft_gen::CEnterCommit(&self.state, &config.constants);
             self.state = new_state;
+            self.last_resend_time = Instant::now();
 
             // Broadcast Commit to all peers
             let others = Self::other_peers(config);
@@ -278,7 +346,39 @@ impl PBFTHost {
 
     /// Receive a Commit message and call CReceiveCommit.
     /// Guards: phase is Commit, sender not already in commit_senders.
-    fn handle_commit(&mut self, config: &PBFTConfig, sender: u64) -> StepResult<PBFTMessage> {
+    /// After reaching Replied, immediately advances through Checkpoint→NewRound
+    /// so the node is ready for the next PrePrepare without waiting for a timer tick.
+    fn handle_commit(&mut self, config: &PBFTConfig, view: u64, seq: u64, sender: u64, src: &EndPoint) -> StepResult<PBFTMessage> {
+        // If we already completed this round, help the stuck sender catch up.
+        if view == self.state.view && seq < self.state.seq_num {
+            let now = Instant::now();
+            if now.duration_since(self.last_catchup_time).as_millis() >= 1 {
+                self.last_catchup_time = now;
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::Send {
+                        dst: src.clone_up_to_view(),
+                        msg: PBFTMessage::Commit {
+                            view,
+                            seq,
+                            sender: config.constants.node_id,
+                        },
+                    },
+                };
+            }
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
+        }
+
+        // Reject stale or future messages from different rounds
+        if view != self.state.view || seq != self.state.seq_num {
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::None,
+            };
+        }
         if !matches!(self.state.phase, CPhase::Commit) {
             return StepResult {
                 ok: true,
@@ -296,18 +396,19 @@ impl PBFTHost {
 
         let (new_state, _sent) = pbft_gen::CReceiveCommit(&self.state, &config.constants, &sender);
         self.state = new_state;
+        self.last_resend_time = Instant::now();
 
         // Check if we have enough commits to execute and reply.
-        // Guard for CExecuteReply: phase is Commit, commit_senders.len() >= 2f+1,
-        //                          seq_num < u64::MAX.
         let threshold = 2 * config.constants.f + 1;
         if self.state.commit_senders.len() as u64 >= threshold && self.state.seq_num < u64::MAX {
             let (new_state, _sent) = pbft_gen::CExecuteReply(&self.state, &config.constants);
             self.state = new_state;
-            eprintln!(
-                "PBFT: COMMITTED seq={} digest={}",
-                self.state.seq_num, self.state.request_digest
-            );
+            // Advance to PrePrepare immediately so we're ready for the next round.
+            // Do NOT call CPrePrepare here — let the timer-driven
+            // try_pre_prepare_and_new_round handle it. This prevents the primary
+            // from racing a full round ahead of backups.
+            let _ = self.try_checkpoint(config);
+            let _ = self.try_new_round(config);
         }
 
         StepResult {
@@ -392,8 +493,10 @@ impl PBFTHost {
         }
     }
 
-    /// Primary timer action: attempt CPrePrepare with a synthetic digest
-    /// followed by CNewRound to advance through rounds.
+    /// Primary timer action: attempt CPrePrepare with a buffered or synthetic
+    /// digest, preceded by CNewRound to advance through rounds.
+    /// Also re-sends the current PrePrepare if stuck in Prepare phase
+    /// (backups may have missed the original due to timing).
     fn try_pre_prepare_and_new_round(&mut self, config: &PBFTConfig) -> StepResult<PBFTMessage> {
         // First try new round if in Replied phase
         if matches!(self.state.phase, CPhase::Replied) {
@@ -401,13 +504,74 @@ impl PBFTHost {
             self.state = new_state;
         }
 
-        // Then try pre-prepare if primary and in PrePrepare phase
         if !self.is_primary() {
             return StepResult {
                 ok: true,
                 outbound: GenericOutbound::None,
             };
         }
+
+        // If stuck in Prepare or Commit waiting for backups, retransmit
+        // PrePrepare at most once per 1ms. Also retransmit the PREVIOUS round's
+        // PrePrepare, since backups may be 1 round behind.
+        if matches!(self.state.phase, CPhase::Prepare | CPhase::Commit) {
+            let now = Instant::now();
+            if now.duration_since(self.last_pre_prepare_time).as_millis() >= 1 {
+                self.last_pre_prepare_time = now;
+                let others = Self::other_peers(config);
+                let src = config.peers[config.my_index as usize].clone_up_to_view();
+
+                let mut packets = Vec::new();
+                // Send current round's PrePrepare
+                for peer in &others {
+                    packets.push(GenericPacket {
+                        dst: peer.clone_up_to_view(),
+                        src: src.clone_up_to_view(),
+                        msg: PBFTMessage::PrePrepare {
+                            view: self.state.view,
+                            seq: self.state.seq_num,
+                            digest: self.state.request_digest,
+                        },
+                    });
+                }
+                // In Commit phase, also resend our own Commit (peers may have
+                // missed the original due to UDP drops).
+                if matches!(self.state.phase, CPhase::Commit) {
+                    for peer in &others {
+                        packets.push(GenericPacket {
+                            dst: peer.clone_up_to_view(),
+                            src: src.clone_up_to_view(),
+                            msg: PBFTMessage::Commit {
+                                view: self.state.view,
+                                seq: self.state.seq_num,
+                                sender: config.constants.node_id,
+                            },
+                        });
+                    }
+                }
+                // Also send previous round's PrePrepare (backups may be 1 behind)
+                if let Some((pv, ps, pd)) = self.prev_pre_prepare {
+                    if ps < self.state.seq_num {
+                        for peer in &others {
+                            packets.push(GenericPacket {
+                                dst: peer.clone_up_to_view(),
+                                src: src.clone_up_to_view(),
+                                msg: PBFTMessage::PrePrepare {
+                                    view: pv,
+                                    seq: ps,
+                                    digest: pd,
+                                },
+                            });
+                        }
+                    }
+                }
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::Sequence { packets },
+                };
+            }
+        }
+
         if !matches!(self.state.phase, CPhase::PrePrepare) {
             return StepResult {
                 ok: true,
@@ -423,10 +587,26 @@ impl PBFTHost {
             };
         }
 
-        // Use action_index as a synthetic digest for timer-driven proposals
-        let digest = self.action_index;
+        // Pace new rounds: wait at least 300μs since the last PrePrepare.
+        // This prevents the primary from outrunning backups during the burst.
+        {
+            let now = Instant::now();
+            if now.duration_since(self.last_pre_prepare_time).as_micros() < 500 {
+                return StepResult {
+                    ok: true,
+                    outbound: GenericOutbound::None,
+                };
+            }
+        }
+
+        // Use buffered client digest if available, otherwise synthetic
+        let digest = self.pending_digest.take().unwrap_or(self.action_index);
+        // Shift current → prev before starting new round
+        self.prev_pre_prepare = self.cur_pre_prepare.take();
+        self.cur_pre_prepare = Some((self.state.view, self.state.seq_num, digest));
         let (new_state, _sent) = pbft_gen::CPrePrepare(&self.state, &config.constants, &digest);
         self.state = new_state;
+        self.last_pre_prepare_time = Instant::now();
 
         let others = Self::other_peers(config);
         StepResult {
@@ -457,6 +637,12 @@ impl ProtocolHost for PBFTHost {
             action_index: 0,
             last_metrics_time: Instant::now(),
             last_metrics_seq_num: 0,
+            pending_digest: None,
+            last_pre_prepare_time: Instant::now(),
+            last_resend_time: Instant::now(),
+            last_catchup_time: Instant::now(),
+            cur_pre_prepare: None,
+            prev_pre_prepare: None,
         })
     }
 
@@ -470,7 +656,7 @@ impl ProtocolHost for PBFTHost {
         let elapsed = now.duration_since(self.last_metrics_time);
         if elapsed.as_secs() >= 1 {
             let seq = self.state.seq_num;
-            let delta = seq - self.last_metrics_seq_num;
+            let delta = seq.wrapping_sub(self.last_metrics_seq_num);
             let elapsed_secs = elapsed.as_secs_f64();
             let role = if self.is_primary() { "primary" } else { "replica" };
             eprintln!(
@@ -482,42 +668,69 @@ impl ProtocolHost for PBFTHost {
         }
 
         // Handle incoming message
+        let mut result = None;
         if let Some(pkt) = packet {
-            let sender_id = Self::resolve_sender_index(config, &pkt.src);
-            let sender_id = match sender_id {
-                Some(id) => id,
-                None => {
-                    // Unknown sender, ignore
-                    return StepResult {
-                        ok: true,
-                        outbound: GenericOutbound::None,
-                    };
+            if Self::resolve_sender_index(config, &pkt.src).is_some() {
+                let src = pkt.src;
+                result = Some(match pkt.msg {
+                    PBFTMessage::ClientRequest { digest } => self.handle_client_request(config, digest),
+                    PBFTMessage::PrePrepare { view, seq, digest } => {
+                        self.handle_pre_prepare(config, view, seq, digest)
+                    }
+                    PBFTMessage::Prepare {
+                        view,
+                        seq,
+                        digest: _,
+                        sender,
+                    } => self.handle_prepare(config, view, seq, sender, &src),
+                    PBFTMessage::Commit {
+                        view,
+                        seq,
+                        sender,
+                    } => self.handle_commit(config, view, seq, sender, &src),
+                });
+            }
+        }
+
+        // If the handler produced no outbound (e.g. client request buffered, or
+        // duplicate message), check if we should piggyback a periodic resend.
+        // This ensures resends fire even when the socket is flooded with client
+        // packets that would otherwise prevent the timer path from executing.
+        let has_outbound = result.as_ref().map_or(false, |r| !matches!(r.outbound, GenericOutbound::None));
+        if !has_outbound
+            && (matches!(self.state.phase, CPhase::Prepare) || matches!(self.state.phase, CPhase::Commit))
+            && now.duration_since(self.last_resend_time).as_millis() >= 1
+        {
+            self.last_resend_time = now;
+            let others = Self::other_peers(config);
+            let msg = if matches!(self.state.phase, CPhase::Prepare) {
+                PBFTMessage::Prepare {
+                    view: self.state.view,
+                    seq: self.state.seq_num,
+                    digest: self.state.request_digest,
+                    sender: config.constants.node_id,
+                }
+            } else {
+                PBFTMessage::Commit {
+                    view: self.state.view,
+                    seq: self.state.seq_num,
+                    sender: config.constants.node_id,
                 }
             };
-
-            return match pkt.msg {
-                PBFTMessage::ClientRequest { digest } => self.handle_client_request(config, digest),
-                PBFTMessage::PrePrepare { view, seq, digest } => {
-                    self.handle_pre_prepare(config, view, seq, digest)
-                }
-                PBFTMessage::Prepare {
-                    view: _,
-                    seq: _,
-                    digest: _,
-                    sender,
-                } => self.handle_prepare(config, sender),
-                PBFTMessage::Commit {
-                    view: _,
-                    seq: _,
-                    sender,
-                } => self.handle_commit(config, sender),
+            return StepResult {
+                ok: true,
+                outbound: GenericOutbound::Broadcast {
+                    dsts: others,
+                    msg,
+                },
             };
         }
 
+        if let Some(r) = result {
+            return r;
+        }
+
         // No message -- run timer-driven actions round-robin.
-        // Note: view change is disabled in normal operation (it resets all
-        // progress). In a real system, view change would be triggered by a
-        // timeout detecting a failed primary, not by round-robin polling.
         let result = match self.action_index % 3 {
             0 => self.try_pre_prepare_and_new_round(config),
             1 => self.try_checkpoint(config),

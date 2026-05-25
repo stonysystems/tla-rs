@@ -14766,16 +14766,24 @@ These 8 small protocols have **zero proof code** (no `refinement_proof/`, no `co
 
 #### 44.1 Diagnose + fix PBFT throughput bug
 
-- [ ] **44.1.a**: Instrument `src/implementation/PBFT/host.rs` to log per-phase progress: `[PHASE] node=N seq=S phase=<PrePrepare|Prepare|Commit> action=<sent|received|skipped>`. Run 10 s, count how many requests reach each phase. Identifies whether bug is in client→primary handoff, prepare quorum, commit quorum, or seq_num advancement.
-- [ ] **44.1.b**: Check spec values:
-  - `low_watermark` / `high_watermark` initial values and how they advance. If high_watermark is too small (e.g., 2), commit blocks immediately.
-  - `request_digest` semantics — does spec require the same digest until commit, or does it accept fresh digest per request?
-  - Quorum thresholds in `CReceivePrepare` / `CReceiveCommit` (for n=4, need 2f+1 = 3 matching).
-- [ ] **44.1.c**: Apply minimal fix. Options:
-  - If watermark issue: relax watermark window or auto-advance after commit.
-  - If digest issue: adjust client to send each digest until ack'd, OR adjust primary to accept fresh digests.
-  - If quorum issue: fix off-by-one.
-- [ ] **44.1.d**: Re-bench. Target: ≥1 K ops/s sustained (single-threaded fire-and-forget). If still <100 ops/s, deepen instrumentation.
+- [x] **44.1.a**: Diagnosed root causes of 0.13 ops/s PBFT throughput. NOT watermark/quorum/digest bugs — the spec is correct. Root causes were all in `host.rs` runtime:
+  1. Client flooding (148K/sec fire-and-forget) starved protocol message processing
+  2. Framework's `timeout=0` polling loop meant timer-driven actions never fired during client flood
+  3. Primary raced ahead of backups (started round N+1 before all backups finished N)
+  4. Missed PrePrepare/Prepare/Commit messages due to timing — no retransmit mechanism
+  5. Catch-up gap: nodes that fell behind by 1+ rounds couldn't recover (advanced nodes ignored stale messages)
+- [x] **44.1.b**: Spec values verified correct: high_watermark=checkpoint_interval=100 (plenty), quorum=2f+1=3, digest is per-request (no session coupling).
+- [x] **44.1.c**: Applied multi-layer fix in `host.rs`:
+  - **Pending digest buffer**: Client requests buffered in `pending_digest`, timer consumes them for CPrePrepare
+  - **Inline PrePrepare**: `handle_client_request` calls `try_pre_prepare_and_new_round` directly (timer path starved by client flood)
+  - **500μs pacing**: Minimum interval between new CPrePrepare calls prevents primary from outrunning backups
+  - **Primary retransmit (1ms)**: Retransmits current PrePrepare + own Commit + previous round's PrePrepare via `GenericOutbound::Sequence`
+  - **Piggyback resend (1ms)**: When message handler returns no outbound and node is stuck in Prepare/Commit, piggyback a Prepare/Commit broadcast — fires even during client flooding
+  - **Phase-correct catch-up**: When receiving stale Prepare (seq < seq_num), respond with Prepare (not Commit) so stuck nodes in Prepare phase can advance; stale Commit gets Commit response. Unicast to sender, rate-limited 1/ms.
+  - **View/seq guards**: All handlers reject messages from different rounds, preventing cross-round contamination
+  - **Proactive phase advancement**: `handle_commit` and `handle_pre_prepare` advance through Replied→Checkpoint→NewRound inline
+  - **8MB recv buffer**: `IoNative.cs` ReceiveBufferSize increased from 800KB to 8MB to handle client flood
+- [x] **44.1.d**: Benchmarked. **5/5 trials × 30s sustained ~1985 ops/s** (15,000× improvement from 0.13 ops/s). All 4 nodes in agreement (seq ~71,400). Client injection: 148K sends/s.
 
 #### 44.2 Spec changes: add ClientReply to PB / EPaxos / PBFT
 

@@ -99,7 +99,7 @@ namespace IoNative {
           try
           {
               udp = new UdpClient(new UClient(localEP.endpoint));
-              udp.client.Client.ReceiveBufferSize = 8192 * 100;
+              udp.client.Client.ReceiveBufferSize = 8192 * 1024;
               ok = true;
           }
           catch (Exception e)
