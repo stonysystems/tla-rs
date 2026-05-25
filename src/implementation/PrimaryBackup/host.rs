@@ -458,16 +458,18 @@ impl ProtocolHost for PrimaryBackupHost {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_metrics_time);
         if elapsed.as_secs() >= 1 {
-            let log_len = self.state.log_length;
+            // The spec models a shared state: `log_length` is the primary's log
+            // counter, `backup_log_length` is the backup's. Each node reports
+            // the field relevant to its role.
+            let (role, log_len) = if self.is_primary() {
+                ("primary", self.state.log_length)
+            } else if self.is_backup() {
+                ("backup", self.state.backup_log_length)
+            } else {
+                ("inactive", self.state.log_length)
+            };
             let delta = log_len - self.last_metrics_log_length;
             let elapsed_secs = elapsed.as_secs_f64();
-            let role = if self.is_primary() {
-                "primary"
-            } else if self.is_backup() {
-                "backup"
-            } else {
-                "inactive"
-            };
             eprintln!(
                 "[METRICS] role={} log_length={} delta={} elapsed={:.2}s throughput={:.1} ops/s",
                 role, log_len, delta, elapsed_secs, delta as f64 / elapsed_secs,

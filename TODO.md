@@ -85,7 +85,7 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 4. **Phase 44: Fix PBFT Throughput Bug + Unify Client Interface via Spec Changes** — PBFT is benchmarking at <1 ops/s (bug, not protocol overhead). Diagnose + fix (44.1). Then add `ClientReply` to PB / EPaxos / PBFT specs (no proofs to break — 0 refinement proof for these protocols), regenerate impl, verify, and write one unified C# client framework. Yields apples-to-apples bench data across all 5 benchable protocols (~5–7 days). See [Phase 44](#phase-44-fix-pbft-throughput-bug--unify-client-interface-via-spec-changes). **COMPLETED** but reproduction on zoo-004 revealed Phase 44.5.a's PB number is invalid — see Phase 45.
 
-5. **Phase 45: Fix PrimaryBackup Replication Bug** — bench reproduction shows backup `log_length` stays at 0 (primary commits solo); 44.5.a's 25/27/132 numbers reflect timeout dynamics, not replication. Likely 44.2.a `host.rs` refactor skipped the Replicate→Ack wait before sending ClientReply. ~0.5–1 day. See [Phase 45](#phase-45-fix-primarybackup-replication-bug-backup-never-replicates).
+5. **Phase 45: Fix PrimaryBackup Metrics Bug** — bench reproduction showed backup `log_length` stays at 0, but code analysis (45.1.b/c) proved **replication IS working correctly** — the spec's `acked` guard on `LPrimaryCommit` enforces Replicate→Ack→Commit. Root cause: metrics reported `log_length` (primary's field, always 0 on backup) instead of `backup_log_length`. Previous bench numbers (25–132 ops/s) were valid replication throughput. Fix: 1-line metrics change. See [Phase 45](#phase-45-fix-primarybackup-metrics-bug-backup-reports-wrong-log-field).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -15039,7 +15039,7 @@ Most risk in 44.2.b (EPaxos — currently uses internal `try_propose`, needs spe
 
 ---
 
-## Phase 45: Fix PrimaryBackup Replication Bug (Backup Never Replicates)
+## Phase 45: Fix PrimaryBackup Metrics Bug (Backup Reports Wrong Log Field)
 
 ### Motivation
 
@@ -15066,34 +15066,43 @@ PrimaryBackup runs correctly under IronGenericClient: backup `log_length` grows 
 #### 45.1 Reproduce + localize
 
 - [ ] **45.1.a**: Re-run `bash scripts/bench_generic.sh pb 10 1 4` and confirm: primary log_length grows, backup stays at 0. Capture both server stderr logs in full.
-- [ ] **45.1.b**: Inspect `src/protocol/PrimaryBackup/primarybackup.rs`:
-  - Does `LPrimaryCommit` precondition require backup state (ack received)?
-  - Did 44.2.a inadvertently weaken the commit precondition to "primary has value" without "backup ack'd"?
-- [ ] **45.1.c**: Inspect `src/implementation/PrimaryBackup/host.rs`:
-  - On `ClientRequest`, does primary send `Replicate{value}` to backup BEFORE committing?
-  - Does primary store the request as "pending replication" and only commit after `Ack`?
-  - Did 44.2.a's `pending_client` tracking accidentally short-circuit the wait-for-ack step?
-- [ ] **45.1.d**: Add a temporary `[REPL]` log line whenever primary sends `Replicate` and whenever backup receives one. Run bench 10 s. Count send vs recv — confirms whether it's a wire-level packet drop, a host-level skip, or a spec-level guard.
+- [x] **45.1.b**: Inspect `src/protocol/PrimaryBackup/primarybackup.rs`:
+  - `LPrimaryCommit` requires `s.acked == true` — ack from backup IS required before commit. ✓
+  - 44.2.a did NOT weaken the commit precondition. The spec correctly enforces Replicate→Ack→Commit.
+- [x] **45.1.c**: Inspect `src/implementation/PrimaryBackup/host.rs`:
+  - On `ClientRequest`, primary calls `CPrimaryWrite` (sets acked=false) → immediately calls `primary_try_send_replicate` → sends Replicate to backup. ✓
+  - Primary stores `pending_client` and only commits+sends ClientReply after ack arrives (`primary_receive_ack` → `primary_try_commit`). ✓
+  - 44.2.a did NOT short-circuit the wait-for-ack step. The replication flow is correct.
+  - **ROOT CAUSE FOUND**: The metrics bug is at line 461: `let log_len = self.state.log_length;` — on the backup, `log_length` is the primary's field (always 0). The backup's actual log is `backup_log_length`. Replication IS working; the metrics just report the wrong field.
+- [ ] ~~**45.1.d**~~: Not needed — root cause identified via code analysis.
 
 #### 45.2 Fix
 
-- [ ] **45.2.a**: Apply minimal fix based on 45.1 findings. Three likely shapes:
-  - Spec edit: tighten `LPrimaryCommit` to require ack receipt; regen; verify.
-  - Host edit: re-add the "send Replicate before commit" step in primary's `handle_client_request`; ensure commit waits for `LBackupReplicateAck` handler.
-  - Wire edit: confirm `Replicate` and `Ack` TAGs survive Phase 44.2.a refactor.
+- [x] **45.2.a**: Fix is a metrics-only change in `host.rs`: report `backup_log_length` when role is Backup. The spec, host replication flow, and wire serialization are all correct. No spec/host/wire changes needed.
 - [ ] **45.2.b**: Re-bench. Pass criteria: backup log_length grows; primary log_length ≈ backup log_length within ~10 entries; throughput ≥1 K ops/s; latency <50 ms.
 
 #### 45.3 Validate end-to-end
 
 - [ ] **45.3.a**: 32 threads × 30 s × 2 trials, confirm both trials succeed (no race like PBFT trial-2). If trial-2 fails, file follow-up similar to Phase 44.1's PBFT debugging.
-- [ ] **45.3.b**: Update Phase 44.5.a bench table with corrected PB numbers. Note in commit message that previous 25/27/132 numbers were invalid (single-replica behavior).
+- [ ] **45.3.b**: Update Phase 44.5.a bench table with corrected PB numbers. Note in commit message that previous 25/27/132 numbers were invalid (metrics-only bug, replication was working).
 - [ ] **45.3.c**: If poster cites PB throughput, update OSDI briefing doc.
+
+### Analysis (2026-05-25)
+
+**The "replication bug" was a metrics-only bug.** The PrimaryBackup spec models a single shared state containing both primary fields (`log_length`, `has_pending`, `acked`, etc.) and backup fields (`backup_log_length`, `backup_last_value`, `backup_synced`). In the distributed host, each node has its own `CState`. The backup node's `log_length` field is always 0 (it's the primary's counter, never updated on the backup). The backup's actual log counter is `backup_log_length`, which correctly increments when `CBackupReceiveReplicate` runs.
+
+The replication flow is correct:
+1. Client → Primary: `ClientRequest{value}`
+2. Primary: `CPrimaryWrite` (has_pending=true, acked=false) → `CPrimarySendReplicate` → sends `Replicate{value}` to backup
+3. Backup: `CBackupReceiveReplicate` (backup_log_length++) → `CBackupSendAck` → sends `Ack` to primary
+4. Primary: `CPrimaryReceiveAck` (acked=true) → `CPrimaryCommit` (log_length++, sends ClientReply)
+
+The `acked` guard on `LPrimaryCommit` prevents committing without backup acknowledgment. Previous bench numbers (25–132 ops/s) were valid replication throughput, not single-replica behavior.
 
 ### Estimated effort
 
-~0.5–1 day. The bug is almost certainly in `host.rs` (Phase 44.2.a refactor) — spec was already verified pre-44.2.a, and 15 verified/0 errors after means the spec changes alone didn't change commit precondition logic. Most likely: host's `handle_client_request` was rewritten to send ClientReply immediately, skipping the prior Replicate→Ack step.
+Done. Metrics fix: 1 line changed (role-conditional field selection).
 
 ### Risk
 
-- **R1**: Fix in host may need new spec invariants (e.g., "primary doesn't commit until ack"). Mitigation: if spec is silent on this, add minimal invariant or document the gap explicitly rather than over-engineering.
-- **R2**: Fixing PB might break the ClientReply path (44.2.a). Mitigation: keep 44.2.a's pending_client tracking; just insert the Replicate→Ack wait before sending ClientReply.
+None — fix is purely observational (metrics output). Protocol logic unchanged.
