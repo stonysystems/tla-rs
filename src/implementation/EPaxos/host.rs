@@ -20,6 +20,7 @@ use crate::generated::EPaxos::epaxos_gen;
 use crate::generated::EPaxos::types_gen::*;
 use crate::implementation::EPaxos::message::*;
 use std::collections::HashSet;
+use std::time::Instant;
 
 /// EPaxos protocol configuration.
 pub struct EPaxosConfig {
@@ -99,6 +100,10 @@ pub struct EPaxosHost {
     pub ballot_counter: u64,
     /// Counter for generating proposal values.
     pub propose_counter: u64,
+    /// Timestamp of last metrics output (for periodic throughput reporting).
+    last_metrics_time: Instant,
+    /// Committed count at last metrics output (for delta computation).
+    last_metrics_committed: u64,
 }
 
 impl EPaxosHost {
@@ -626,6 +631,8 @@ impl ProtocolHost for EPaxosHost {
             action_index: 0,
             ballot_counter: 0,
             propose_counter: 0,
+            last_metrics_time: Instant::now(),
+            last_metrics_committed: 0,
         })
     }
 
@@ -634,6 +641,24 @@ impl ProtocolHost for EPaxosHost {
         config: &Self::Cfg,
         packet: Option<GenericPacket<Self::Msg>>,
     ) -> StepResult<Self::Msg> {
+        // Periodic metrics output (every 1 second)
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_metrics_time);
+        if elapsed.as_secs() >= 1 {
+            let committed = self.state.committed_count;
+            let delta = committed - self.last_metrics_committed;
+            let elapsed_secs = elapsed.as_secs_f64();
+            eprintln!(
+                "[METRICS] committed={} delta={} elapsed={:.2}s throughput={:.1} ops/s",
+                committed,
+                delta,
+                elapsed_secs,
+                delta as f64 / elapsed_secs,
+            );
+            self.last_metrics_time = now;
+            self.last_metrics_committed = committed;
+        }
+
         // Handle incoming message
         if let Some(pkt) = packet {
             let sender_id = Self::resolve_sender_index(config, &pkt.src);

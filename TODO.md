@@ -14691,8 +14691,8 @@ Get measured throughput numbers (32 threads × 30 s × 2 trials) for EPaxos, Pri
 
 #### 43.1 EPaxos — self-driving, no client (effort: ~0.5 day)
 
-- [ ] **43.1.a**: Inspect EPaxos host's `committed_count` field. Add a periodic stdout flush (e.g., every 1s) that prints `[METRICS] committed=<N> elapsed=<S>` from the server. Or instrument the C# `IronProtocolServer` wrapper to read committed count via existing FFI.
-- [ ] **43.1.b**: Run 3-server EPaxos cluster on 127.0.0.1:4001-4003 for 30s, parse `[METRICS]` lines, compute `committed / elapsed`. No client process needed.
+- [x] **43.1.a**: Added periodic `[METRICS]` output to `EPaxosHost::next()` in `src/implementation/EPaxos/host.rs`. Every 1s, prints `[METRICS] committed=<N> delta=<D> elapsed=<S>s throughput=<T> ops/s` to stderr. Added `last_metrics_time: Instant` and `last_metrics_committed: u64` fields. ~20 LOC.
+- [x] **43.1.b**: Smoke-tested 3-node EPaxos cluster (10s). **Result: ~5,500-6,300 commits/s per node** (self-driving, no client needed). Added `scripts/bench_epaxos.sh` for repeatable bench (configurable duration/trials, parses `[METRICS]`, reports per-node + aggregate throughput).
 - [ ] **43.1.c**: Bench on HEAD + on c097da0 baseline (with rebuilt liblib.so per machine). Report delta. Confirms whether Phase 40 Arc-wrap on `CState` helps EPaxos.
 
 #### 43.2 PrimaryBackup — write IronPrimaryBackupClient (effort: ~0.5 day)
