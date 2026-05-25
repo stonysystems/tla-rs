@@ -48,6 +48,9 @@ pub struct SpecContext {
     /// Phase 38.22.1.b: bytecode compilation cache for faster expression
     /// evaluation. Single-threaded DPOR explorer can use RefCell-based cache.
     pub bytecode_cache: crate::modelcheck::bytecode::BytecodeCache,
+    /// Phase 38.22.1.c.v: native codegen cache for compiled cdylib functions.
+    /// Optional — enabled via `--native-codegen` CLI flag.
+    pub native_cache: Option<crate::modelcheck::native_compile::NativeCache>,
 }
 
 impl SpecContext {
@@ -89,6 +92,7 @@ impl SpecContext {
             cached_branch_assignments: std::sync::OnceLock::new(),
             field_schema,
             bytecode_cache: crate::modelcheck::bytecode::BytecodeCache::new(),
+            native_cache: None,
         })
     }
 
@@ -555,7 +559,8 @@ impl SpecContext {
                         method_evaluator: None,
                         quantifier_domain_evaluator: Some(&quant_eval),
                         predicate_only_branch_solver: None,
-                        bytecode_cache: Some(&self.bytecode_cache), // Safe: transition IR is not cloned, so pointers are stable for caching
+                        bytecode_cache: Some(&self.bytecode_cache),
+                        native_cache: self.native_cache.as_ref(),
                     };
                     match solve_branch_successors(
                         &helper_transition,
@@ -583,6 +588,7 @@ impl SpecContext {
             quantifier_domain_evaluator: Some(&quant_eval),
             predicate_only_branch_solver: Some(&predicate_solver),
             bytecode_cache: Some(&self.bytecode_cache),
+            native_cache: self.native_cache.as_ref(),
         };
 
         let mut solved = Vec::new();
@@ -730,6 +736,7 @@ impl SpecContext {
     pub fn make_solver_hooks_inline<'a>(
         call_eval: &'a dyn Fn(&crate::ast::Path, &[RuntimeValue]) -> TranspileResult<RuntimeValue>,
         bytecode_cache: Option<&'a crate::modelcheck::bytecode::BytecodeCache>,
+        native_cache: Option<&'a crate::modelcheck::native_compile::NativeCache>,
     ) -> SolverHooks<'a> {
         SolverHooks {
             call_evaluator: Some(call_eval),
@@ -737,6 +744,7 @@ impl SpecContext {
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: None,
             bytecode_cache,
+            native_cache,
         }
     }
 

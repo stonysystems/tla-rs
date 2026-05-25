@@ -221,6 +221,12 @@ impl NativeCache {
         }
     }
 
+    /// Return the (rlib_path, deps_dir) pair for constructing a second cache
+    /// with the same pre-built runtime (avoids a second `cargo build`).
+    pub fn rlib_paths(&self) -> (PathBuf, PathBuf) {
+        (self.runtime_rlib_path.clone(), self.runtime_deps_dir.clone())
+    }
+
     /// Try to initialize by building the runtime crate.
     pub fn try_new(runtime_crate_dir: &Path) -> TranspileResult<Self> {
         let (rlib, deps) = find_runtime_rlib(runtime_crate_dir)?;

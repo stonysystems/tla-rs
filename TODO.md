@@ -13824,7 +13824,7 @@ Three implementation paths, in increasing engineering cost / payoff:
     with `transpiler-runtime` as dependency, load via `libloading`.
     Add `libloading` to Cargo.toml. Cache compiled functions by
     expression pointer (like BytecodeCache). ~200 LOC.
-  - [ ] **38.22.1.c.v**: **Integration with eval_with_environment.**
+  - [x] **38.22.1.c.v**: **Integration with eval_with_environment.**
     Add `NativeCache` to `SolverHooks`. Dispatch chain becomes:
     native (if compiled) → bytecode → AST. Add `--native-codegen`
     CLI flag (opt-in, compilation adds startup latency). Wire into
