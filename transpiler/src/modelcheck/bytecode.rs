@@ -3992,4 +3992,61 @@ mod tests {
         let vm_result = eval(&expr).unwrap();
         assert_eq!(ast_result, vm_result);
     }
+
+    #[test]
+    fn test_vm_map_index_guard_cross_check() {
+        // Reproducer for DPOR bytecode divergence: s.pc[p] == "read"
+        // where s = LState{counter:0, local:{1:0,2:0}, pc:{1:"read",2:"read"}}
+        // and p = 1
+        use crate::modelcheck::value::NamedFields;
+        let pc_map = RuntimeValue::Map(std::sync::Arc::new(
+            vec![
+                (RuntimeValue::Int(1), RuntimeValue::String("read".to_string())),
+                (RuntimeValue::Int(2), RuntimeValue::String("read".to_string())),
+            ].into_iter().collect(),
+        ));
+        let local_map = RuntimeValue::Map(std::sync::Arc::new(
+            vec![
+                (RuntimeValue::Int(1), RuntimeValue::Int(0)),
+                (RuntimeValue::Int(2), RuntimeValue::Int(0)),
+            ].into_iter().collect(),
+        ));
+        let state = RuntimeValue::struct_value(
+            "LState".to_string(),
+            vec![
+                ("counter".to_string(), RuntimeValue::Int(0)),
+                ("local".to_string(), local_map),
+                ("pc".to_string(), pc_map),
+            ],
+        ).unwrap();
+
+        // Expression: s.pc[p] == View("read")
+        // View is pass-through, so View(String("read")) == String("read")
+        let expr = Expr::Eq(
+            Box::new(Expr::Index(
+                Box::new(Expr::Field(
+                    Box::new(Expr::Ident("s".to_string())),
+                    "pc".to_string(),
+                )),
+                Box::new(Expr::Ident("p".to_string())),
+            )),
+            Box::new(Expr::View(Box::new(Expr::ConstantValue(
+                RuntimeValue::String("read".to_string()),
+            )))),
+        );
+
+        let env_names = vec!["p".to_string(), "s".to_string()];
+        let compiled = compile_with_env(&expr, &env_names).unwrap();
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("s".to_string(), state);
+        env.insert("p".to_string(), RuntimeValue::Int(1));
+        let ctx = VmContext {
+            bounds: RuntimeCollectionBounds { max_seq_len: 10, max_set_len: 10, max_map_len: 10 },
+            call_evaluator: None,
+            method_evaluator: None,
+            quantifier_domain: None,
+        };
+        let result = vm_eval_with_env(&compiled, &env, &ctx).unwrap();
+        assert_eq!(result, RuntimeValue::Bool(true), "s.pc[1] should be 'read'");
+    }
 }

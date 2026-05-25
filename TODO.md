@@ -13770,10 +13770,19 @@ Three implementation paths, in increasing engineering cost / payoff:
   instead of `RuntimeValue::Enum` in the bytecode compiler — added
   `split_variant_path()` check mirroring the AST evaluator's logic. Changed CLI
   from `--bytecode` (opt-in) to `--no-bytecode` (opt-out), making bytecode the
-  default for the main `model-check` command. DPOR explorer keeps AST interpreter
-  (bytecode causes state divergence in DPOR's successor computation — separate
-  investigation needed). 3 new tests: enum variant compilation, SeqLit with enum
-  variant, cross-check bytecode vs AST evaluator. 328/328 tests pass. *DONE.*
+  default for the main `model-check` command. 3 new tests. *DONE.*
+- [x] **38.22.1.b.ix**: **Fix bytecode cache pointer-aliasing bug & enable bytecode for DPOR.**
+  Root cause of DPOR bytecode divergence: `BytecodeCache` keyed by `expr as *const Expr`
+  (pointer address). The DPOR `solve_successors_with_branch_labels` cloned the cached
+  `TransitionIr` on each call — `.clone()` allocated new `Expr` nodes that, after the
+  previous clone was freed, reused the same addresses. Stale cache entries returned
+  bytecode compiled for a DIFFERENT expression at the same address.
+  **Fix**: Stop cloning the transition IR in the DPOR solver — use a reference to the
+  `OnceLock`-cached version directly (the transition is never mutated). Expression pointers
+  are now stable across calls, so the pointer-based cache works correctly.
+  **Also re-enabled bytecode** in the DPOR solver's `SolverHooks` (both inner predicate
+  solver and main solver hooks). DPOR now gets the ~2x bytecode speedup.
+  1 new test (`test_vm_map_index_guard_cross_check`). 328/328 tests pass. *DONE.*
 - [ ] **38.22.1.c**: **Codegen Rust closures via syn / quote.**
   Generate Rust source per spec function, compile to `cdylib` at
   startup via cargo, dlopen at runtime. True native execution; LLVM

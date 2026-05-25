@@ -363,8 +363,13 @@ impl SpecContext {
                 );
                 crate::modelcheck::ir::constant_fold_transition_ir(&mut t);
                 t
-            })
-            .clone();
+            });
+        // Use a reference instead of cloning — keeps expression pointers
+        // stable so the BytecodeCache's pointer-based keys work correctly.
+        // Cloning the transition would give new addresses for the same
+        // expressions, causing cache aliasing when the allocator reuses
+        // freed addresses.
+        let transition = transition;
 
         let assignments_by_branch_owned;
         let assignments_by_branch = match self.cached_branch_assignments.get() {
@@ -386,9 +391,8 @@ impl SpecContext {
                 self.cached_branch_assignments.get().unwrap()
             }
         };
-        // (Pull a usable mutable name into the rest of the function below.)
         let assignments_by_branch = assignments_by_branch.clone();
-        let mut transition = transition;
+        let transition = transition;
 
         let call_eval = |func_path: &crate::ast::Path,
                          args: &[RuntimeValue]|
@@ -545,7 +549,7 @@ impl SpecContext {
                     method_evaluator: None,
                     quantifier_domain_evaluator: Some(&quant_eval),
                     predicate_only_branch_solver: None,
-                    bytecode_cache: None, // DPOR uses AST interpreter (bytecode causes state divergence)
+                    bytecode_cache: Some(&self.bytecode_cache), // Safe: transition IR is not cloned, so pointers are stable for caching
                 };
                 match solve_branch_successors(
                     &helper_transition, helper_branch, cur_state, constants,
@@ -565,7 +569,7 @@ impl SpecContext {
             method_evaluator: None,
             quantifier_domain_evaluator: Some(&quant_eval),
             predicate_only_branch_solver: Some(&predicate_solver),
-            bytecode_cache: None, // DPOR uses AST interpreter (bytecode causes state divergence)
+            bytecode_cache: Some(&self.bytecode_cache),
         };
 
         let mut solved = Vec::new();
@@ -724,14 +728,14 @@ impl SpecContext {
             &crate::ast::Path,
             &[RuntimeValue],
         ) -> TranspileResult<RuntimeValue>,
-        _bytecode_cache: Option<&'a crate::modelcheck::bytecode::BytecodeCache>,
+        bytecode_cache: Option<&'a crate::modelcheck::bytecode::BytecodeCache>,
     ) -> SolverHooks<'a> {
         SolverHooks {
             call_evaluator: Some(call_eval),
             method_evaluator: None,
             quantifier_domain_evaluator: None,
             predicate_only_branch_solver: None,
-            bytecode_cache: None, // DPOR uses AST interpreter
+            bytecode_cache,
         }
     }
 
