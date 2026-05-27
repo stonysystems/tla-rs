@@ -15547,10 +15547,10 @@ Validation on TwoPhase revealed 3 gaps in the pipeline. Fixed below:
   references (`result.N@` → `self@` / renumbered). 2 new printer tests.
   End-to-end validated on TwoPhase: all 8 action functions produce correct
   `&mut self` output with field assignments and proof blocks.
-- [ ] **48.5.e**: Add `mut_self_types = ["CState"]` to TwoPhase TOML,
+- [x] **48.5.e**: Add `mut_self_types = ["CState"]` to TwoPhase TOML,
   regenerate checked-in `twophase_gen.rs`, update `host.rs` callers to use
   `self.state.CStep(...)` instead of `let (new_state, sent) = CStep(&self.state, ...)`.
-  Verify the full pipeline compiles.
+  7 call sites updated. CInit remains free function (constructor).
 
 #### 48.6 Apply to RSL + bench (~100 LOC)
 

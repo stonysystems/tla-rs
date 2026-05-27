@@ -129,8 +129,7 @@ impl TwoPhaseHost {
             };
         }
 
-        let (new_state, _sent) = twophase_gen::CTMSendPrepare(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CTMSendPrepare(&config.constants);
 
         // Broadcast Prepare to all RMs
         let rm_endpoints: Vec<EndPoint> = config.peers[1..]
@@ -166,17 +165,13 @@ impl TwoPhaseHost {
         // in the shared-state simulation.
         if !self.state.rm_prepared.contains(&rm_id) {
             if config.constants.rm.contains(&rm_id) && !self.state.rm_aborted.contains(&rm_id) {
-                let (new_state, _sent) =
-                    twophase_gen::CRMReceivePrepare(&self.state, &config.constants, &rm_id);
-                self.state = new_state;
+                let _sent = self.state.CRMReceivePrepare(&config.constants, &rm_id);
             }
         }
 
         // Now TM can process the prepared vote
         if self.state.rm_prepared.contains(&rm_id) && !self.state.tm_prepared.contains(&rm_id) {
-            let (new_state, _sent) =
-                twophase_gen::CTMRcvPrepared(&self.state, &config.constants, &rm_id);
-            self.state = new_state;
+            let _sent = self.state.CTMRcvPrepared(&config.constants, &rm_id);
         }
 
         StepResult {
@@ -213,8 +208,7 @@ impl TwoPhaseHost {
             }
         }
 
-        let (new_state, _sent) = twophase_gen::CTMSendCommit(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CTMSendCommit(&config.constants);
 
         let rm_endpoints: Vec<EndPoint> = config.peers[1..]
             .iter()
@@ -289,9 +283,7 @@ impl TwoPhaseHost {
             };
         }
 
-        let (new_state, _sent) =
-            twophase_gen::CRMReceivePrepare(&self.state, &config.constants, &rm_id);
-        self.state = new_state;
+        let _sent = self.state.CRMReceivePrepare(&config.constants, &rm_id);
 
         // Send PreparedVote back to TM (index 0)
         let tm_endpoint = config.peers[0].clone_up_to_view();
@@ -320,9 +312,7 @@ impl TwoPhaseHost {
             };
         }
 
-        let (new_state, _sent) =
-            twophase_gen::CRMReceiveCommit(&self.state, &config.constants, &rm_id);
-        self.state = new_state;
+        let _sent = self.state.CRMReceiveCommit(&config.constants, &rm_id);
 
         StepResult {
             ok: true,
@@ -346,9 +336,7 @@ impl TwoPhaseHost {
             };
         }
 
-        let (new_state, _sent) =
-            twophase_gen::CRMReceiveAbort(&self.state, &config.constants, &rm_id);
-        self.state = new_state;
+        let _sent = self.state.CRMReceiveAbort(&config.constants, &rm_id);
 
         StepResult {
             ok: true,

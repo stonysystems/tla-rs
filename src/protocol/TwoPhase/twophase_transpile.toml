@@ -8,6 +8,9 @@ skip_functions = [
 # Arc-wrap non-scalar fields of CState for O(1) clone (refcount bump)
 arc_wrap_types = ["CState"]
 
+# Emit &mut self calling convention for CState methods (Phase 48)
+mut_self_types = ["CState"]
+
 # Fields of CState that are Arc-wrapped (for translator struct construction)
 [arc_wrap_fields]
 CState = ["tm_prepared", "rm_prepared", "rm_committed", "rm_aborted"]
