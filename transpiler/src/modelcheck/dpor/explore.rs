@@ -7,12 +7,66 @@
 //!
 //! Reference: source-DPOR from Nidhugg (DPORDriver + TraceBuilder pattern).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::Mutex;
 
 use crate::modelcheck::dpor::enabled::SpecContext;
 use crate::modelcheck::dpor::types::*;
 use crate::modelcheck::value::RuntimeValue;
 use transpiler_runtime::Symbol;
+
+/// Thread-safe state dedup store for DPOR exploration.
+///
+/// Wraps the visited-state fingerprint set and the canonical-key distinct
+/// state set behind `Mutex` guards. Designed so that `explore_dpor` can be
+/// refactored into per-worker functions sharing a single `SharedStateStore`
+/// via `Arc` (Phase 38.18.1.c/d).
+///
+/// The two-tier dedup strategy is preserved:
+/// 1. **Fingerprint** (u64 hash): fast-path screen. If the fingerprint is
+///    already known, the state is definitely a duplicate (no canonical key
+///    computation needed).
+/// 2. **Canonical key** (String): authoritative dedup when symmetry fields
+///    are in use (different fingerprints can map to the same canonical key
+///    after field relabeling).
+pub struct SharedStateStore {
+    fingerprints: Mutex<HashSet<u64>>,
+    states: Mutex<BTreeSet<String>>,
+}
+
+impl SharedStateStore {
+    pub fn new() -> Self {
+        Self {
+            fingerprints: Mutex::new(HashSet::new()),
+            states: Mutex::new(BTreeSet::new()),
+        }
+    }
+
+    /// Insert a fingerprint. Returns `true` if the fingerprint was new.
+    pub fn insert_fingerprint(&self, fp: u64) -> bool {
+        self.fingerprints.lock().unwrap().insert(fp)
+    }
+
+    /// Insert a canonical state key. Returns `true` if the key was new.
+    pub fn insert_state(&self, key: String) -> bool {
+        self.states.lock().unwrap().insert(key)
+    }
+
+    /// Number of distinct fingerprints seen (used for limit checks).
+    pub fn fingerprint_count(&self) -> usize {
+        self.fingerprints.lock().unwrap().len()
+    }
+
+    /// Clone the current distinct states set (for early returns).
+    pub fn clone_states(&self) -> BTreeSet<String> {
+        self.states.lock().unwrap().clone()
+    }
+
+    /// Consume the store and return the distinct states set.
+    pub fn into_states(self) -> BTreeSet<String> {
+        self.states.into_inner().unwrap()
+    }
+}
 
 /// One frame in the DPOR search stack.
 #[derive(Clone, Debug)]
@@ -248,12 +302,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         )
     };
 
-    let mut distinct_states: BTreeSet<String> = BTreeSet::new();
-    // Fast-path dedup via u64 fingerprint (avoids canonical_key String alloc
-    // for already-seen states). When symmetry_fields is empty, fingerprint is
-    // the sole authority; with symmetry, canonical_key is still authoritative
-    // but fingerprint screens out the majority of duplicates cheaply.
-    let mut seen_fingerprints: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let store = SharedStateStore::new();
     let use_symmetry = !symmetry_fields_owned.is_empty();
     let mut traces_explored: usize = 0;
     let mut max_depth: usize = 0;
@@ -269,7 +318,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         Err(e) => {
             eprintln!("DPOR: failed to get initial states: {}", e);
             return DporResult {
-                distinct_states,
+                distinct_states: store.into_states(),
                 traces_explored: 0,
                 max_depth: 0,
                 transitions_fired: 0,
@@ -308,20 +357,20 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     // Explore from each initial state
     for initial in &initial_states {
         let initial_fp = initial.fingerprint();
-        if !seen_fingerprints.insert(initial_fp) {
+        if !store.insert_fingerprint(initial_fp) {
             // Fingerprint already seen — definitely a duplicate (no symmetry
             // can merge two states with identical fingerprints differently).
             continue;
         }
         let initial_key = canonical_state_key(initial);
-        if !distinct_states.insert(initial_key.clone()) {
+        if !store.insert_state(initial_key.clone()) {
             continue; // Symmetry-merged duplicate
         }
 
         // Check invariants on initial state
         if let Some(witness) = check_state(initial, 0, &[]) {
             return DporResult {
-                distinct_states,
+                distinct_states: store.into_states(),
                 traces_explored: 0,
                 max_depth: 0,
                 transitions_fired: 0,
@@ -344,7 +393,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         // Deadlock on initial state (unlikely but possible)
         if config.check_deadlock && enabled.is_empty() {
             return DporResult {
-                distinct_states,
+                distinct_states: store.into_states(),
                 traces_explored: 0,
                 max_depth: 0,
                 transitions_fired: 0,
@@ -388,7 +437,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
         while !stack.is_empty() {
             // Check limits
-            if seen_fingerprints.len() >= config.max_states {
+            if store.fingerprint_count() >= config.max_states {
                 break;
             }
 
@@ -497,7 +546,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
                     // Fast-path: check fingerprint before computing canonical key
                     let succ_fp = successor.fingerprint();
-                    let fp_is_new = seen_fingerprints.insert(succ_fp);
+                    let fp_is_new = store.insert_fingerprint(succ_fp);
                     if !fp_is_new && should_prune_seen_successor(config.use_sleep_sets) {
                         sleep_prune_hits += 1;
                         continue;
@@ -515,13 +564,13 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                     let is_new = if fp_is_new && !use_symmetry {
                         // No symmetry: fingerprint is authoritative
                         let succ_key = canonical_state_key(&successor);
-                        distinct_states.insert(succ_key);
+                        store.insert_state(succ_key);
                         true
                     } else if fp_is_new {
                         // Symmetry enabled: fingerprint was new but canonical
                         // key might merge with existing state
                         let succ_key = canonical_state_key(&successor);
-                        distinct_states.insert(succ_key)
+                        store.insert_state(succ_key)
                     } else {
                         // Fingerprint already seen: duplicate
                         false
@@ -548,7 +597,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
 
                         if let Some(witness) = check_state(&successor, depth, &trace) {
                             return DporResult {
-                                distinct_states,
+                                distinct_states: store.into_states(),
                                 traces_explored,
                                 max_depth,
                                 transitions_fired,
@@ -580,7 +629,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 }
                             }
                             return DporResult {
-                                distinct_states,
+                                distinct_states: store.into_states(),
                                 traces_explored,
                                 max_depth,
                                 transitions_fired,
@@ -643,7 +692,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     }
 
     DporResult {
-        distinct_states,
+        distinct_states: store.into_states(),
         traces_explored,
         max_depth,
         transitions_fired,
@@ -1296,6 +1345,32 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
     use std::sync::{Mutex, OnceLock};
+
+    #[test]
+    fn test_shared_state_store_basic() {
+        let store = SharedStateStore::new();
+        // First insert is new
+        assert!(store.insert_fingerprint(42));
+        assert!(store.insert_state("state_a".to_string()));
+        // Duplicate fingerprint
+        assert!(!store.insert_fingerprint(42));
+        // New fingerprint, duplicate state key
+        assert!(store.insert_fingerprint(99));
+        assert!(!store.insert_state("state_a".to_string()));
+        // New state
+        assert!(store.insert_state("state_b".to_string()));
+        assert_eq!(store.fingerprint_count(), 2);
+        let states = store.into_states();
+        assert_eq!(states.len(), 2);
+        assert!(states.contains("state_a"));
+        assert!(states.contains("state_b"));
+    }
+
+    #[test]
+    fn test_shared_state_store_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<SharedStateStore>();
+    }
 
     fn create_model_toml(dir: &Path) -> std::path::PathBuf {
         let model_path = dir.join("model.toml");

@@ -13363,11 +13363,15 @@ makes DPOR reduction measurable).
     All span fields are set to `None` in practice (never `Some`), so the change
     is purely type-level. `BytecodeCache` and `NativeCache` already use `Mutex`.
     Added `spec_context_is_send_sync` compile-time test. ~40 LOC.
-  - [ ] **38.18.1.b**: **Replace visited-state sets with concurrent containers.**
-    `distinct_states: BTreeSet<String>` → `DashSet<String>` (or
-    `Arc<Mutex<HashSet<String>>>`). `seen_fingerprints: HashSet<u64>` →
-    `DashSet<u64>`. Extract state-dedup into a `SharedStateStore` struct
-    with `insert_if_new(fingerprint, canonical_key) -> bool`. ~100-150 LOC.
+  - [x] **38.18.1.b**: **Replace visited-state sets with concurrent containers.**
+    Added `SharedStateStore` struct wrapping `Mutex<HashSet<u64>>` (fingerprints)
+    and `Mutex<BTreeSet<String>>` (canonical keys). API: `insert_fingerprint`,
+    `insert_state`, `fingerprint_count`, `clone_states`, `into_states`.
+    Replaced all 6 return sites in `explore_dpor` with `store.into_states()`.
+    Added `test_shared_state_store_basic` + `test_shared_state_store_is_send_sync`.
+    ~80 LOC (struct + migration). `SharedStateStore` is `Send + Sync` by
+    construction (Mutex wrapping). Ready for `Arc<SharedStateStore>` sharing
+    in 38.18.1.c/d.
   - [ ] **38.18.1.c**: **Extract `explore_dpor_from_state` worker function.**
     Refactor core DFS loop into `explore_dpor_from_state(ctx, config,
     initial_state, shared_store) -> WorkerResult` that takes a single
