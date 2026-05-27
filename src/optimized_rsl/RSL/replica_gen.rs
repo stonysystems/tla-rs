@@ -496,7 +496,9 @@ ensures
             },
         };
         { let op_learnable = ((s.executor.ops_complete < opn) || ((s.executor.ops_complete == opn) && matches!(s.executor.next_op_to_execute, COutstandingOperation::COutstandingOpUnknown { .. }))); if op_learnable {
-                        let s_learner = crate::optimized_rsl::RSL::learner_gen::CLearnerProcess2b(&s.learner, &received_packet);
+                        // Phase 47.3.a.2: use &mut self on cloned learner
+                        let mut s_learner = s.learner.clone_up_to_view();
+                        s_learner.CLearnerProcess2b(&received_packet);
             (CReplica {
                 constants: s.constants.clone_up_to_view(),
                 nextHeartbeatTime: s.nextHeartbeatTime,
@@ -560,7 +562,9 @@ ensures
             unreachable_value()
         },
     } > s.executor.ops_complete)) {
-                let s_learner = crate::optimized_rsl::RSL::learner_gen::CLearnerForgetOperationsBefore(&s.learner, &match &received_packet.msg {
+                // Phase 47.3.a.2: use &mut self on cloned learner
+                let mut s_learner = s.learner.clone_up_to_view();
+                s_learner.CLearnerForgetOperationsBefore(&match &received_packet.msg {
     CMessage::CMessageAppStateSupply { opn_state_supply, .. } => opn_state_supply.clone(),
     _  => {
         proof {
@@ -983,7 +987,9 @@ ensures
             if cond2 && cond3 {
                 let batch = clone_request_batch_up_to_view(v);
                 let (new_executor, sent_packets) = crate::optimized_rsl::RSL::executor_gen::CExecutorExecute(&s.executor);
-                let new_learner = crate::optimized_rsl::RSL::learner_gen::CLearnerForgetDecision(&s.learner, &s.executor.ops_complete);
+                // Phase 47.3.a.2: use &mut self on cloned learner
+                let mut new_learner = s.learner.clone_up_to_view();
+                new_learner.CLearnerForgetDecision(&s.executor.ops_complete);
                 let new_proposer = crate::optimized_rsl::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &batch);
                 let new_replica = CReplica {
                     constants: s.constants.clone(),
