@@ -329,7 +329,9 @@ ensures
     if src_in_config && bal_eq && state_is_1 && samesrc
     {
         // All 4 conditions met: dispatch to proposer and acceptor
-        let s_proposer = CProposerProcess1b(&s.proposer, received_packet);
+        // Phase 47.3.a.4: use &mut self on cloned proposer
+        let mut s_proposer = s.proposer.clone_up_to_view();
+        s_proposer.CProposerProcess1b(received_packet);
         // Phase 47.3.a.1: use &mut self on cloned acceptor
         let mut s_acceptor = s.acceptor.clone_up_to_view();
         s_acceptor.CAcceptorTruncateLog(&log_truncation_point);
@@ -661,7 +663,9 @@ ensures
     LReplicaNextProcessHeartbeat(s@, result.0@, received_packet@, *clock as int, result.1@.map(|i, p: CPacket| p@)),
 {
     // Phase 47.3.a.1: use &mut self on cloned acceptor
-    { let s_proposer = crate::optimized_rsl::RSL::proposer_gen::CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
+    { // Phase 47.3.a.4: use &mut self on cloned proposer
+    let mut s_proposer = s.proposer.clone_up_to_view();
+    s_proposer.CProposerProcessHeartbeat(&received_packet, &clock);
     let mut s_acceptor = s.acceptor.clone_up_to_view();
     s_acceptor.CAcceptorProcessHeartbeat(&received_packet);
     let result = (CReplica {
@@ -694,7 +698,10 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    { let (s_proposer, sent_packets) = crate::optimized_rsl::RSL::proposer_gen::CProposerMaybeEnterNewViewAndSend1a(&s.proposer); (CReplica {
+    { // Phase 47.3.a.4: use &mut self on cloned proposer
+    let mut s_proposer = s.proposer.clone_up_to_view();
+    let sent_packets = s_proposer.CProposerMaybeEnterNewViewAndSend1a();
+    (CReplica {
     constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
@@ -714,7 +721,10 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextSpontaneousMaybeEnterPhase2(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
 {
-    { let (s_proposer, sent_packets) = crate::optimized_rsl::RSL::proposer_gen::CProposerMaybeEnterPhase2(&s.proposer, &s.acceptor.log_truncation_point); (CReplica {
+    { // Phase 47.3.a.4: use &mut self on cloned proposer
+    let mut s_proposer = s.proposer.clone_up_to_view();
+    let sent_packets = s_proposer.CProposerMaybeEnterPhase2(&s.acceptor.log_truncation_point);
+    (CReplica {
     constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s_proposer,
@@ -735,14 +745,17 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextReadClockMaybeNominateValueAndSend2a(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
-    { let (s_proposer, sent_packets) = crate::optimized_rsl::RSL::proposer_gen::CProposerMaybeNominateValueAndSend2a(&s.proposer, &clock.t, &s.acceptor.log_truncation_point); (CReplica {
-    constants: s.constants.clone(),
-    nextHeartbeatTime: s.nextHeartbeatTime,
-    proposer: s_proposer,
-    acceptor: s.acceptor.clone_up_to_view(),
-    learner: s.learner.clone_up_to_view(),
-    executor: s.executor.clone_up_to_view(),
-}, sent_packets) }
+    // Phase 47.3.a.4: use &mut self on cloned proposer
+    let mut s_proposer = s.proposer.clone_up_to_view();
+    let sent_packets = s_proposer.CProposerMaybeNominateValueAndSend2a(&clock.t, &s.acceptor.log_truncation_point);
+    (CReplica {
+        constants: s.constants.clone(),
+        nextHeartbeatTime: s.nextHeartbeatTime,
+        proposer: s_proposer,
+        acceptor: s.acceptor.clone_up_to_view(),
+        learner: s.learner.clone_up_to_view(),
+        executor: s.executor.clone_up_to_view(),
+    }, sent_packets)
 
 }
 
@@ -998,7 +1011,9 @@ ensures
                 // Phase 47.3.a.2: use &mut self on cloned learner
                 let mut new_learner = s.learner.clone_up_to_view();
                 new_learner.CLearnerForgetDecision(&s.executor.ops_complete);
-                let new_proposer = crate::optimized_rsl::RSL::proposer_gen::CProposerResetViewTimerDueToExecution(&s.proposer, &batch);
+                // Phase 47.3.a.4: use &mut self on cloned proposer
+                let mut new_proposer = s.proposer.clone_up_to_view();
+                new_proposer.CProposerResetViewTimerDueToExecution(&batch);
                 let new_replica = CReplica {
                     constants: s.constants.clone(),
                     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -1121,7 +1136,9 @@ ensures
     LReplicaNextReadClockCheckForViewTimeout(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
     { let result = {
-        let s_proposer = crate::optimized_rsl::RSL::proposer_gen::CProposerCheckForViewTimeout(&s.proposer, &clock.t);
+        // Phase 47.3.a.4: use &mut self on cloned proposer
+        let mut s_proposer = s.proposer.clone_up_to_view();
+        s_proposer.CProposerCheckForViewTimeout(&clock.t);
         (CReplica {
     constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -1148,7 +1165,9 @@ ensures
     LReplicaNextReadClockCheckForQuorumOfViewSuspicions(s@, result.0@, clock@, result.1@.map(|i, p: CPacket| p@)),
 {
     { let result = {
-        let s_proposer = crate::optimized_rsl::RSL::proposer_gen::CProposerCheckForQuorumOfViewSuspicions(&s.proposer, &clock.t);
+        // Phase 47.3.a.4: use &mut self on cloned proposer
+        let mut s_proposer = s.proposer.clone_up_to_view();
+        s_proposer.CProposerCheckForQuorumOfViewSuspicions(&clock.t);
         (CReplica {
     constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
