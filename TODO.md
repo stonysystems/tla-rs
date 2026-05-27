@@ -13671,11 +13671,14 @@ tiers, ordered biggest-gain-per-effort first.
       grab the next state. No new dependency needed (uses std Mutex).
       2 new tests (`test_work_stealing_frontier_state_parity`,
       `test_work_stealing_violation_propagation`). ~50 LOC net. *DONE.*
-    - [ ] **38.21.B.ii.c**: **Per-subtree DFS work-stealing.** When a
+    - [x] **38.21.B.ii.c**: **Per-subtree DFS work-stealing.** When a
       worker's DFS stack empties, steal unexplored backtrack entries from
-      another worker's stack. Requires shared backtrack sets with locking.
-      Most complex — ~400 LOC. Defer until b proves the work-stealing
-      pattern works.
+      another worker's stack. Implemented via `StealPool` shared queue:
+      workers donate excess backtrack entries when idle workers exist;
+      idle workers try the steal pool before terminating. Conservative
+      sleep-set approach (no inheritance) ensures soundness. ~120 LOC +
+      2 tests (`test_dfs_work_stealing_state_parity`,
+      `test_steal_pool_basic_ops`). *DONE.*
     - [x] **38.21.B.ii.d**: **Benchmarks + validation.** Run sequential
       vs parallel DPOR on all 20 corpus cases, measure speedup and
       validate state-count parity. Document results. ~100 LOC.

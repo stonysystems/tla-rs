@@ -8,7 +8,7 @@
 //! Reference: source-DPOR from Nidhugg (DPORDriver + TraceBuilder pattern).
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use crate::modelcheck::dpor::enabled::SpecContext;
@@ -91,6 +91,56 @@ pub struct StackFrame {
     pub chosen: Option<EnabledTransition>,
     /// Depth in the search (0 = initial state).
     pub depth: usize,
+}
+
+/// A work item stolen from another worker's DFS backtrack set.
+///
+/// Represents an unexplored transition from a known state. The thief fires
+/// the transition, gets the successor, and starts a fresh DFS from there.
+/// Sleep set propagation is conservative (not inherited) — the thief's DFS
+/// may explore more transitions than the donor would have, but won't miss states.
+#[derive(Clone)]
+struct StealableWork {
+    /// The parent state from which the transition should be fired.
+    state: RuntimeValue,
+    /// The transition to fire.
+    transition: EnabledTransition,
+    /// Depth of the parent frame.
+    depth: usize,
+}
+
+/// Shared steal pool for per-subtree DFS work-stealing.
+///
+/// When a worker's DFS frame has multiple unexplored backtrack entries and
+/// other workers are idle, excess entries are pushed here. Idle workers
+/// pick these up to start fresh DFS subtrees.
+pub(crate) struct StealPool {
+    queue: Mutex<std::collections::VecDeque<StealableWork>>,
+    idle_workers: AtomicUsize,
+}
+
+impl StealPool {
+    fn new() -> Self {
+        Self {
+            queue: Mutex::new(std::collections::VecDeque::new()),
+            idle_workers: AtomicUsize::new(0),
+        }
+    }
+
+    /// Push a stealable work item.
+    fn push(&self, work: StealableWork) {
+        self.queue.lock().unwrap().push_back(work);
+    }
+
+    /// Try to pop a stealable work item.
+    fn try_pop(&self) -> Option<StealableWork> {
+        self.queue.lock().unwrap().pop_front()
+    }
+
+    /// Returns true if there are idle workers waiting for work.
+    fn has_idle_workers(&self) -> bool {
+        self.idle_workers.load(Ordering::Relaxed) > 0
+    }
 }
 
 /// Result of a DPOR exploration run.
@@ -423,7 +473,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         if store.fingerprint_count() >= config.max_states {
             break;
         }
-        let result = explore_dpor_from_state(ctx, config, initial, &store, &stop_flag);
+        let result = explore_dpor_from_state(ctx, config, initial, &store, &stop_flag, None);
         merged.merge(result);
     }
 
@@ -661,7 +711,11 @@ pub fn explore_dpor_parallel(
     // Shared stop flag for early termination on invariant violation
     let stop_flag = AtomicBool::new(false);
 
-    // Phase 3: Spawn worker threads — each pulls from shared frontier queue
+    // Shared steal pool for per-subtree DFS work-stealing (Phase 38.21.B.ii.c)
+    let steal_pool = StealPool::new();
+
+    // Phase 3: Spawn worker threads — each pulls from shared frontier queue,
+    // then falls back to the steal pool for per-subtree work-stealing.
     let worker_results: Vec<WorkerResult> = std::thread::scope(|s| {
         let handles: Vec<_> = (0..num_workers)
             .map(|_| {
@@ -670,6 +724,7 @@ pub fn explore_dpor_parallel(
                 let ctx_ref = ctx;
                 let config_ref = config;
                 let flag_ref = &stop_flag;
+                let pool_ref = &steal_pool;
                 s.spawn(move || {
                     let mut local_result = WorkerResult {
                         traces_explored: 0,
@@ -692,22 +747,59 @@ pub fn explore_dpor_parallel(
                         if store_ref.fingerprint_count() >= config_ref.max_states {
                             break;
                         }
-                        // Pop next frontier state from shared queue
-                        let state = {
+                        // Try frontier queue first, then steal pool
+                        let frontier_state = {
                             let mut q = queue_ref.lock().unwrap();
                             q.pop_front()
                         };
-                        let state = match state {
-                            Some(s) => s,
-                            None => break, // Queue exhausted
-                        };
-                        let r = explore_dpor_from_state(
-                            ctx_ref, config_ref, &state, store_ref, flag_ref,
-                        );
-                        if r.violation.is_some() {
-                            flag_ref.store(true, Ordering::Relaxed);
+                        if let Some(state) = frontier_state {
+                            let r = explore_dpor_from_state(
+                                ctx_ref, config_ref, &state, store_ref, flag_ref,
+                                Some(pool_ref),
+                            );
+                            if r.violation.is_some() {
+                                flag_ref.store(true, Ordering::Relaxed);
+                            }
+                            local_result.merge(r);
+                            continue;
                         }
-                        local_result.merge(r);
+                        // Frontier exhausted — try steal pool
+                        if let Some(work) = pool_ref.try_pop() {
+                            let r = execute_stolen_work(
+                                ctx_ref, config_ref, work, store_ref, flag_ref, pool_ref,
+                            );
+                            if r.violation.is_some() {
+                                flag_ref.store(true, Ordering::Relaxed);
+                            }
+                            local_result.merge(r);
+                            continue;
+                        }
+                        // Nothing available — mark idle and spin briefly
+                        pool_ref.idle_workers.fetch_add(1, Ordering::Relaxed);
+                        // Spin a few times to check for new stolen work
+                        let mut found = false;
+                        for _ in 0..64 {
+                            std::hint::spin_loop();
+                            if flag_ref.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            if let Some(work) = pool_ref.try_pop() {
+                                pool_ref.idle_workers.fetch_sub(1, Ordering::Relaxed);
+                                let r = execute_stolen_work(
+                                    ctx_ref, config_ref, work, store_ref, flag_ref, pool_ref,
+                                );
+                                if r.violation.is_some() {
+                                    flag_ref.store(true, Ordering::Relaxed);
+                                }
+                                local_result.merge(r);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            pool_ref.idle_workers.fetch_sub(1, Ordering::Relaxed);
+                            break; // No more work available
+                        }
                     }
                     local_result
                 })
@@ -754,12 +846,13 @@ pub fn explore_dpor_parallel(
 /// a shared state store, and runs an iterative DFS from that state. Designed
 /// to be callable from parallel threads in Phase 38.18.1.d (each thread gets
 /// a different initial state and the same `Arc<SharedStateStore>`).
-pub fn explore_dpor_from_state(
+pub(crate) fn explore_dpor_from_state(
     ctx: &SpecContext,
     config: &DporConfig,
     initial: &RuntimeValue,
     store: &SharedStateStore,
     stop_flag: &AtomicBool,
+    steal_pool: Option<&StealPool>,
 ) -> WorkerResult {
     // Set up symmetry-aware canonical key closure
     let symmetry_fields_owned: Vec<String> = ctx.model_config.search.symmetry_fields.clone();
@@ -991,6 +1084,50 @@ pub fn explore_dpor_from_state(
         };
         // Mutable borrow of `frame` is released here
 
+        // Per-subtree work-stealing: donate excess backtrack entries to idle workers.
+        // After choosing one transition, if there are more unexplored entries at this
+        // frame and idle workers exist, push them to the steal pool as independent work.
+        if action.is_some() {
+            if let Some(pool) = steal_pool {
+                if pool.has_idle_workers() {
+                    let frame = stack.last_mut().unwrap();
+                    let mut donated = Vec::new();
+                    for key in &frame.backtrack {
+                        if frame.done.contains(key) {
+                            continue;
+                        }
+                        let transition = frame.enabled.iter().find(|t| t.ordering_key == *key);
+                        if let Some(t) = transition {
+                            if config.use_sleep_sets {
+                                if has_done_successor_fingerprint(
+                                    &frame.done,
+                                    &frame.enabled,
+                                    t.successor_fingerprint,
+                                ) {
+                                    continue;
+                                }
+                                if frame.sleep.contains(&transition_sleep_key(t)) {
+                                    continue;
+                                }
+                            }
+                            donated.push(StealableWork {
+                                state: frame.state.clone(),
+                                transition: t.clone(),
+                                depth: frame.depth,
+                            });
+                        }
+                    }
+                    for work in &donated {
+                        // Mark donated entries as done so we don't re-explore them
+                        frame.done.insert(work.transition.ordering_key.clone());
+                    }
+                    for work in donated {
+                        pool.push(work);
+                    }
+                }
+            }
+        }
+
         match action {
             Some((
                 _key,
@@ -1175,6 +1312,75 @@ pub fn explore_dpor_from_state(
         runtime_conflict_stats,
         violation: None,
     }
+}
+
+/// Execute a stolen work item: fire the transition, get the successor,
+/// and start a fresh DFS from the successor state.
+fn execute_stolen_work(
+    ctx: &SpecContext,
+    config: &DporConfig,
+    work: StealableWork,
+    store: &SharedStateStore,
+    stop_flag: &AtomicBool,
+    steal_pool: &StealPool,
+) -> WorkerResult {
+    // Fire the transition to get the successor state
+    let successors = match ctx.full_successors(&work.state) {
+        Ok(s) => s,
+        Err(_) => {
+            return WorkerResult {
+                traces_explored: 0,
+                max_depth: 0,
+                transitions_fired: 0,
+                sleep_prune_hits: 0,
+                sleep_cardinality_by_depth: BTreeMap::new(),
+                sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                runtime_conflict_stats: RuntimeConflictStats::default(),
+                violation: None,
+            };
+        }
+    };
+    let successor = successors
+        .iter()
+        .find(|s| {
+            crate::modelcheck::dpor::enabled::hash_state(s)
+                == work.transition.successor_fingerprint
+        })
+        .cloned();
+    let Some(successor) = successor else {
+        return WorkerResult {
+            traces_explored: 0,
+            max_depth: 0,
+            transitions_fired: 0,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: None,
+        };
+    };
+
+    // Dedup the successor via the shared store
+    let succ_fp = successor.fingerprint();
+    if !store.insert_fingerprint(succ_fp) {
+        return WorkerResult {
+            traces_explored: 1,
+            max_depth: work.depth + 1,
+            transitions_fired: 1,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: None,
+        };
+    }
+
+    // Insert canonical key
+    let succ_key = successor.canonical_key();
+    store.insert_state(succ_key);
+
+    // Start a fresh DFS from the successor
+    explore_dpor_from_state(ctx, config, &successor, store, stop_flag, Some(steal_pool))
 }
 
 fn record_sleep_cardinality(
@@ -4958,14 +5164,14 @@ max_seq_len = 4
         let no_stop = AtomicBool::new(false);
         let initial_states = ctx.initial_states().unwrap();
         let normal = explore_dpor_from_state(
-            &ctx, &config, &initial_states[0], &store_normal, &no_stop,
+            &ctx, &config, &initial_states[0], &store_normal, &no_stop, None,
         );
 
         // Pre-stopped run: flag is already set before exploration
         let store_stopped = SharedStateStore::new();
         let pre_stop = AtomicBool::new(true);
         let stopped = explore_dpor_from_state(
-            &ctx, &config, &initial_states[0], &store_stopped, &pre_stop,
+            &ctx, &config, &initial_states[0], &store_stopped, &pre_stop, None,
         );
 
         // Stopped run should fire far fewer transitions
@@ -5519,5 +5725,98 @@ max_seq_len = 4
                 case_id, sequential.distinct_states.len()
             );
         }
+    }
+
+    /// Test that per-subtree DFS work-stealing maintains state-count parity.
+    /// Uses a small frontier depth to force more work into DFS subtrees,
+    /// increasing the chance of work-stealing being triggered.
+    #[test]
+    fn test_dfs_work_stealing_state_parity() {
+        let (spec_dir, model_dir) = match dpor_corpus_dirs() {
+            Some(d) => d,
+            None => {
+                eprintln!("Skipping: DPOR corpus not found");
+                return;
+            }
+        };
+
+        // Use peterson which has enough depth for work-stealing to trigger
+        let spec_file = spec_dir.join("09_peterson_mutex_2p/PetersonMutex.rs");
+        if !spec_file.exists() { return; }
+        let model_path = model_dir.join("09_peterson_mutex_2p.toml");
+        if !model_path.exists() { return; }
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        // Small frontier depth to push more work into DFS, increasing steal opportunity
+        let config = DporConfig {
+            max_depth: 15,
+            max_states: 1_000,
+            use_independence: true,
+            use_sleep_sets: true,
+            min_frontier_per_worker: 1, // Very small: only 1 frontier state per worker
+            max_frontier_depth: 2,      // Shallow frontier → deep DFS
+            ..Default::default()
+        };
+
+        let sequential = explore_dpor(&ctx, &config);
+        assert!(
+            sequential.distinct_states.len() > 0,
+            "sequential should find states"
+        );
+
+        // Run with many workers to increase idle workers → trigger stealing
+        for workers in [2, 4, 8] {
+            let parallel = explore_dpor_parallel(&ctx, &config, workers);
+            for state in &sequential.distinct_states {
+                assert!(
+                    parallel.distinct_states.contains(state),
+                    "workers={}: missing state from sequential set", workers
+                );
+            }
+            eprintln!(
+                "DFS work-stealing parity: workers={}, seq={}, par={} — ok",
+                workers, sequential.distinct_states.len(), parallel.distinct_states.len()
+            );
+        }
+    }
+
+    /// Test that the StealPool basic operations work correctly.
+    #[test]
+    fn test_steal_pool_basic_ops() {
+        use crate::modelcheck::dpor::enabled::hash_state;
+
+        let pool = StealPool::new();
+
+        // Initially empty
+        assert!(pool.try_pop().is_none());
+        assert!(!pool.has_idle_workers());
+
+        // Push and pop
+        let dummy_state = RuntimeValue::Bool(true);
+        let dummy_transition = EnabledTransition {
+            ordering_key: "test".to_string(),
+            process_id: ProcessId(0),
+            branch_label: "b1".to_string(),
+            successor_fingerprint: hash_state(&dummy_state),
+            footprint: TransitionFootprint::default(),
+        };
+        pool.push(StealableWork {
+            state: dummy_state.clone(),
+            transition: dummy_transition,
+            depth: 0,
+        });
+
+        let work = pool.try_pop();
+        assert!(work.is_some());
+        assert!(pool.try_pop().is_none());
+
+        // Idle counter
+        pool.idle_workers.fetch_add(1, Ordering::Relaxed);
+        assert!(pool.has_idle_workers());
+        pool.idle_workers.fetch_sub(1, Ordering::Relaxed);
+        assert!(!pool.has_idle_workers());
     }
 }
