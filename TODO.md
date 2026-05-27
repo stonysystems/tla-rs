@@ -87,7 +87,9 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 5. **Phase 45: Fix PrimaryBackup Metrics Bug** — bench reproduction showed backup `log_length` stays at 0, but code analysis (45.1.b/c) proved **replication IS working correctly** — the spec's `acked` guard on `LPrimaryCommit` enforces Replicate→Ack→Commit. Root cause: metrics reported `log_length` (primary's field, always 0 on backup) instead of `backup_log_length`. Previous bench numbers (25–132 ops/s) were valid replication throughput. Fix: 1-line metrics change. See [Phase 45](#phase-45-fix-primarybackup-metrics-bug-backup-reports-wrong-log-field).
 
-6. **Phase 46: Port Sushant's 5 RSL Hot-Path Optimizations to AutoMan-V** — vary-client bench (2026-05-25) shows AutoMan-V auto peaks 38K ops/s while Sushant's hand-tuned (P3.1–P3.5 patterns: in-place mutation, Vec preallocate, single-pass loop fusion) peaks 61K. Pure-impl LOC audit shows the gap is **~30 impl LOC + ~250 proof LOC**. Plan: copy `generated/RSL/` to a fresh `optimized_rsl/RSL/` (preserves auto baseline), apply 5 patterns one at a time with LLM-assisted proofs, gate behind `--features=optimized_rsl`, re-bench. Validates "transpiler + LLM absorbs the manual-opt gap" claim. ~5–6 days. See [Phase 46](#phase-46-port-sushants-5-rsl-hot-path-optimizations-to-automan-v).
+6. **Phase 46: Port Sushant's 5 RSL Hot-Path Optimizations — DONE but only +0.6%** — completed port of P3.1–P3.5 to `optimized_rsl/RSL/`, 27 impl LOC + 52 proof LOC (LLM 100%). Bench result: **36,313 ops/s vs 36,091 baseline = +0.6% (noise)**. The 5 patterns are absorbed by Arc-wrap (Phase 41); the 36K → 60K gap is structural, not pattern-level. See [Phase 46](#phase-46-port-sushants-5-rsl-hot-path-optimizations-to-automan-v).
+
+7. **Phase 47: Close the 36K → 60K Gap via `&mut self` Calling Convention** — Phase 46 audit identifies the real gap: AutoMan-V uses `fn step(&CProposer, args) → CProposer` (functional rebuild + Arc allocs every transition); Sushant uses `fn step(&mut self, args)` (in-place mutation, 0 allocs). Plan: convert hot-path exec functions in `optimized_rsl/RSL/` to `&mut self` end-to-end, complete `old(self)@`-shaped proofs (LLM-assisted using Sushant's commits as templates). Target ≥55K ops/s. If miss target, self-explore with perf flamegraph + iterate. ~7–10 days. See [Phase 47](#phase-47-close-the-36k--60k-gap--mut-self-calling-convention-for-automan-v).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -15275,3 +15277,107 @@ For each step, use LLM (the same proof-completion pipeline as the main transpile
 - Generalizing the 5 patterns into transpiler codegen rules (that's Phase 41.5 / future Phase 47). This phase only proves the patterns work on AutoMan-V output.
 - Porting any of the 5 patterns to Raft / EPaxos / PBFT (different protocols, different hot paths).
 - Removing the original `src/generated/RSL/` — keep as auto baseline for OSDI poster and ongoing transpiler dev.
+
+---
+
+## Phase 47: Close the 36K → 60K Gap — `&mut self` Calling Convention for AutoMan-V
+
+### Motivation (post-Phase-46 audit, 2026-05-27)
+
+Phase 46 ported Sushant's 5 P3 optimizations to AutoMan-V's auto-generated RSL. Result: **+0.6%** (within noise), 36K vs Sushant's 60K — the 1.7× gap unchanged. Even though 46.5 reported "LLM contribution 100%" and "P3.4/P3.5 already captured", **the perf gap closed by these 5 patterns is essentially zero**.
+
+Root cause of the residual gap is **architectural, not pattern-level**:
+
+| Aspect | AutoMan-V (current) | Sushant (60K) |
+|---|---|---|
+| exec function shape | `fn step(&CProposer, args) → CProposer` (functional rebuild) | `fn step(&mut self, args)` (in-place mutation) |
+| Per state transition | new outer struct + Arc::clone each field + Arc atomic incr | mutate in place, 0 allocations, 0 refcount ops |
+| Spec call convention | `LSpec(s@, result@, args@)` | `LSpec(old(self)@, self@, args@)` |
+| Allocations / commit | ~10 Arc objects + 1 outer struct rebuild | ~0 |
+| Verus proof shape | symmetric, transpiler-friendly | needs `old()`, more invariants |
+
+Phase 46's 5 leaf-function `&mut` ports (P3.1/P3.2) were absorbed by the still-functional caller chain — new `&mut` helpers returned values that were then placed into freshly-rebuilt outer structs, defeating the optimization.
+
+Closing the gap requires changing the **calling convention end-to-end**: every hot exec function returns nothing (void) and mutates `&mut self`. This is a structural change, not a per-function port.
+
+### Goal
+
+Hit **≥55K ops/s @ 32 clients** in `optimized_rsl/RSL/` (within 10% of Sushant 60K). If hit: validates the "calling convention is the gap" hypothesis and gives transpiler a clear roadmap (future Phase 48: emit `&mut self` by default).
+
+### Plan
+
+#### 47.1 Audit: identify changes needed
+
+- [ ] **47.1.a**: Pick one hot function (e.g. `CProposerProcessRequest`). Sketch the `&mut self` version:
+  - exec signature: `fn CProposerProcessRequest(&mut self, packet: &CPacket)` (no return)
+  - requires: `old(self).valid() ∧ packet.valid()`
+  - ensures: `self.valid() ∧ LProposerProcessRequest(old(self)@, self@, packet@)`
+- [ ] **47.1.b**: Verify Verus accepts `&mut self` on a struct containing `Arc<T>` fields. If `&mut Arc<T>` blocks us at exec level (not just `Arc::make_mut`), this is a fundamental blocker — decide between: drop Arc on hot fields entirely (matches Sushant), or keep functional.
+- [ ] **47.1.c**: Inventory the call graph: which exec functions live in the hot loop (`ReplicaHost::next()` per request)? Estimate count (likely 10–15 in RSL).
+
+#### 47.2 Pilot: convert one function end-to-end
+
+- [ ] **47.2.a**: In `optimized_rsl/RSL/`, convert `CProposerProcessRequest` to `&mut self`. Update its single caller in `replica_gen.rs`. Complete the proof (LLM-assisted; Sushant's `&mut` proof of `CAddVoteAndRemoveOldOnes` is the template).
+- [ ] **47.2.b**: Verify: `--verify-only-module optimized_rsl::RSL::proposer_gen` passes with 0 errors.
+- [ ] **47.2.c**: Smoke bench (10 s × 1 trial). Expected: marginal change because one function in isolation can't unblock the caller chain. Document as "pilot proves Verus accepts the shape".
+
+#### 47.3 Full convert: all hot-path exec functions
+
+- [ ] **47.3.a**: List all `CProposer*`, `CAcceptor*`, `CLearner*`, `CExecutor*`, `CReplica*Process*`, `CReplica*Spontaneous*` exec functions. For each: change signature, port body, update callers, complete proof.
+- [ ] **47.3.b**: Top-level `CSchedulerNext` / `CReplicaNoReceiveNext` (hand-written in implementation/) needs corresponding conversion. C# IronRSLServerUDP wire unchanged — only Rust internals.
+- [ ] **47.3.c**: Decide Arc-wrap disposition. Two paths, pick after pilot bench:
+  - **Path A (keep Arc + use `&mut self`)**: `&mut self` removes outer struct allocation; Arc::make_mut still does inner field CoW for shared cases. Best of both, but more proof complexity.
+  - **Path B (drop Arc on hot fields)**: matches Sushant exactly; minimal refcount overhead; need to audit zero-sharing assumption.
+
+#### 47.4 Bench
+
+- [ ] **47.4.a**: Use `bench_vary_clients.sh --optimized` (already wired) to run full 7-point sweep (1–64 clients). Append `rsl-opt` rows to CSV.
+- [ ] **47.4.b**: Compare against `AutoMan-V(gen)` (current Arc baseline) and `AutoMan-V(opt)` (Sushant). Target: **peak ≥55K @ 32 clients** (90% of Sushant).
+- [ ] **47.4.c**: If peak ≥55K: success. Update OSDI briefing with the new comparison plot (gen / +&mut convert / Sushant / AutoMan baselines).
+
+#### 47.5 Self-explore (fallback if 47.4 doesn't hit 55K)
+
+If after 47.3-47.4 the throughput is still <55K (<90% of Sushant), **the gap is somewhere else we haven't identified**. Investigate autonomously — don't wait for further user prompts:
+
+- [ ] **47.5.a**: `perf record` + flamegraph on both `optimized_rsl` and Sushant binaries under identical bench load (32 clients × 30 s). Compare top-10 functions side-by-side. Identify cycles spent in: allocations (heap), atomic operations (Arc), HashMap ops, serialization, syscalls, scheduler dispatch.
+- [ ] **47.5.b**: For each top-3 divergence, hypothesize root cause and test:
+  - Sushant has special-cased datastructure (e.g., bitmap instead of HashSet)? Audit Sushant's CState definition.
+  - Different framework polling cadence? Compare IronRSLServerUDP host loops between repos.
+  - Allocator pressure? Try `MALLOC_ARENA_MAX=1` or jemalloc on our binary.
+  - Cache locality of CState layout?
+  - Inlining hints / link-time optimization differences?
+- [ ] **47.5.c**: Apply highest-ROI fix. Re-bench. Iterate.
+- [ ] **47.5.d**: After **3 iterations of 47.5.a–c** (or 2 days of self-explore, whichever first):
+  - If hit ≥55K → done, document the final fix.
+  - If still <55K → write `docs/perf_gap_residual.md` describing what was tried, what each thing gave, and the hypothesized residual attribution. Stop here.
+
+#### 47.6 Documentation
+
+- [ ] **47.6.a**: Update `docs/osdi26_poster_briefing.md` with the corrected story: P3 patterns are absorbed by Arc; the real gap was calling convention; we converted and hit X ops/s.
+- [ ] **47.6.b**: Update Phase 46 "Why" / "Outcome" section in TODO.md to reference Phase 47's actual finding (P3 patterns redundant on Arc baseline; gap was structural).
+- [ ] **47.6.c**: If 47 succeeded (≥55K), add follow-up Phase 48: "transpiler emits `&mut self` calling convention by default" (the codegen automation).
+
+### Estimated effort
+
+| Task | Effort |
+|---|---|
+| 47.1 audit (Verus &mut self acceptance) | 0.5 day |
+| 47.2 pilot one function | 1 day |
+| 47.3 full convert (10–15 hot exec fns) | 3–5 days |
+| 47.4 bench | 0.5 day |
+| 47.5 self-explore (if needed) | 2 days max |
+| 47.6 docs | 0.5 day |
+| **Total** | **~7–10 days** |
+
+### Risk
+
+- **R1**: Verus may reject `&mut self` on a struct containing `Arc<T>` fields. Mitigation: try Path B (drop Arc on `&mut` fields); fall back to keeping Arc only on read-mostly fields.
+- **R2**: `old(self)@` ensures shape may be substantially harder to prove than current `result@` shape; LLM may stall. Mitigation: Sushant's `&mut` proof commits (`CAddVoteAndRemoveOldOnes`) are direct templates — adapt rather than synthesize.
+- **R3**: Even after `&mut self` conversion, gap may persist (data-structure differences, framework polling, etc.). 47.5 is the safety net.
+- **R4**: Bot may run out of iterations in 47.5 and stop at, say, 45K. Acceptable — we'll have honest data + a residual-gap doc, which is itself a poster-worthy finding.
+
+### Out of scope
+
+- Generalizing `&mut self` into transpiler codegen (that's Phase 48 if 47 succeeds).
+- Porting to Raft / EPaxos / PBFT.
+- Touching `src/generated/RSL/` (auto baseline stays untouched for comparison).
