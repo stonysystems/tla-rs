@@ -15657,23 +15657,20 @@ Affected fields (from Phase 41):
 
 For each:
 
-- [ ] **49.2.a**: Change field type `Arc<X> → X` in:
-  - `src/protocol/<...>/types.rs` (spec, if Arc was declared there)
-  - `src/generated/RSL/types_gen.rs`
-  - `src/implementation/RSL/types_i.rs`
-- [ ] **49.2.b**: Remove `Arc::new(...)` wraps at init/construction sites in `src/generated/RSL/*_gen.rs`. Convert to direct values.
-- [ ] **49.2.c**: Remove `Arc::get_mut(&mut self.field).insert(...)` patterns; use `self.field.insert(...)` directly.
-- [ ] **49.2.d**: Delete now-unneeded plain-Rust helpers (`_arc_seqno_insert` etc.) and their `assume_specification` blocks.
-- [ ] **49.2.e**: Update `clone_*_up_to_view` helper signatures: `&Arc<X> → &X`. Bodies likely identical (they already do per-element clone).
-- [ ] **49.2.f**: Update `arc_wrap_fields` TOML config: remove 5 fields. Regenerate to confirm transpiler no longer emits Arc.
-- [ ] **49.2.g**: Verify: `--verify-only-module generated::RSL::*` passes (target same counts as current). LLM-assisted for any proof gaps (most likely none — change is type-level, not logic).
+- [x] **49.2.a**: Change field type `Arc<X> → X` in ProposerImpl.rs (3 fields), ExecutorImpl.rs (1 field), learnerimpl.rs (1 field). Types were NOT in types.rs or types_gen.rs — only in hand-written impl files.
+- [x] **49.2.b**: Remove `Arc::new(...)` wraps at init/construction sites in proposer_gen.rs (3 sites), executor_gen.rs (1 site), learner_gen.rs (1 site). Also removed `Arc::new` in ExecutorImpl.rs line 262.
+- [x] **49.2.c**: Replaced 8 `Arc::get_mut` helpers with direct mutation helpers in proposer_gen.rs, 2 in executor_gen.rs, 4 in learner_gen.rs. All call sites updated (renamed `arc_*` → direct names).
+- [x] **49.2.d**: Deleted 3 Arc-backed shallow clone helpers from ProposerImpl.rs + 1 from ExecutorImpl.rs + 1 from learnerimpl.rs. Also removed dead functional `hashset_insert_cpacket` and `_orig_clone_endpoint_seqno_map_kept_for_reference`.
+- [x] **49.2.e**: clone_up_to_view now calls deep clone functions directly: `clone_request_batch_up_to_view`, `clone_hashset`, `clone_endpoint_seqno_map` (ProposerImpl), `clone_creply_cache_up_to_view` (ExecutorImpl), `clone_clearnerstate_up_to_view` (learnerimpl). All `&Arc<X>` signatures → `&X`.
+- [x] **49.2.f**: Cleared `arc_wrap_fields` in 3 RSL TOMLs (proposer, executor, learner). Removed `use std::sync::Arc;` from custom_imports.
+- [x] **49.2.g**: Verified: 73 verified, 0 errors across 5 RSL modules (proposer_gen 21, executor_gen 16, learner_gen 13, ProposerImpl 16, ExecutorImpl 5, learnerimpl 2). Transpiler tests: 346 passed, 0 failed. Commit `b118f21`.
 
 #### 49.3 Bench + iterate (~0.5 day)
 
-- [ ] **49.3.a**: 32 clients × 30s × 2 trials on zoo-002. Same script as `bench_both.sh` for direct comparison.
-- [ ] **49.3.b**: Target: AutoMan-V ≥ 58K ops/s (97% of Sushant's 60K).
-- [ ] **49.3.c**: If hit: write up — "dropping Arc closed the 20% gap; transpiler auto = manual hand-tune perf". Update `docs/osdi26_poster_briefing.md`.
-- [ ] **49.3.d**: If still <55K: **self-explore (3-iteration max)**. Re-profile, identify next bottleneck (HashMap construction? framework polling? CState layout?), test one fix, re-bench. If still gap after 3 iterations, document in `docs/perf_gap_post_phase49.md`.
+- [x] **49.3.a**: 32 clients × 30s × 2 trials on zoo-002. Results: Trial 1: 54,000 ops/s, Trial 2: 54,849 ops/s. Avg: **54,424 ops/s**, 0.72 ms latency.
+- [ ] **49.3.b**: Target: AutoMan-V ≥ 58K ops/s (97% of Sushant's 60K). **NOT MET** — 54.4K is 91% of Sushant's 60K. However, the improvement from Phase 49.1 (clone_hashset removal, 48.6K → 54.4K = +12%) is real. Arc removal (49.2) itself had no measurable impact, as profiling predicted.
+- [ ] **49.3.c**: N/A — target not hit. The remaining ~10% gap (54.4K vs 60K) is in libc malloc/free overhead (21.5% vs 15.5%) and HashSet hashing, not Arc indirection.
+- [ ] **49.3.d**: Remaining gap analysis: self-explore iteration needed to close the final 10%.
 
 #### 49.4 Transpiler integration (~0.5 day)
 
