@@ -15334,13 +15334,23 @@ Hit **≥55K ops/s @ 32 clients** in `optimized_rsl/RSL/` (within 10% of Sushant
 
 #### 47.2 Pilot: convert one function end-to-end
 
-- [ ] **47.2.a**: In `optimized_rsl/RSL/`, convert `CProposerProcessRequest` to `&mut self`. Update its single caller in `replica_gen.rs`. Complete the proof (LLM-assisted; Sushant's `&mut` proof of `CAddVoteAndRemoveOldOnes` is the template).
-- [ ] **47.2.b**: Verify: `--verify-only-module optimized_rsl::RSL::proposer_gen` passes with 0 errors.
-- [ ] **47.2.c**: Smoke bench (10 s × 1 trial). Expected: marginal change because one function in isolation can't unblock the caller chain. Document as "pilot proves Verus accepts the shape".
+- [x] **47.2.a**: In `optimized_rsl/RSL/`, convert `CProposerProcessRequest` to `&mut self`. Update its single caller in `replica_gen.rs`. Complete the proof (LLM-assisted; Sushant's `&mut` proof of `CAddVoteAndRemoveOldOnes` is the template).
+  - **DONE by 47.1.a** (2026-05-27): Already implemented and verified.
+- [x] **47.2.b**: Verify: `--verify-only-module optimized_rsl::RSL::proposer_gen` passes with 0 errors.
+  - **DONE by 47.1.a** (2026-05-27): 51 verified, 0 errors (proposer_gen + replica_gen).
+- [x] **47.2.c**: Smoke bench (10 s × 1 trial). Expected: marginal change because one function in isolation can't unblock the caller chain. Document as "pilot proves Verus accepts the shape".
+  - **DONE (2026-05-27)**: 64,486 ops/s (32 threads × 5s effective, single trial). Number is warm-up-biased due to short bench; comparable baseline at same duration not run. The point is confirmed: Verus accepts the `&mut self` shape, the binary runs correctly, and the approach is validated. Full chain conversion needed for real perf signal (Phase 47.3).
 
 #### 47.3 Full convert: all hot-path exec functions
 
-- [ ] **47.3.a**: List all `CProposer*`, `CAcceptor*`, `CLearner*`, `CExecutor*`, `CReplica*Process*`, `CReplica*Spontaneous*` exec functions. For each: change signature, port body, update callers, complete proof.
+- [ ] **47.3.a**: Convert all hot-path exec functions to `&mut self`. Broken down by component (see `docs/phase47_hot_loop_inventory.md`):
+  - [x] **47.3.a.1**: Acceptor (4 functions, ~386 LOC): `CAcceptorProcess1a`, `CAcceptorProcess2a`, `CAcceptorProcessHeartbeat`, `CAcceptorTruncateLog`. Convert to `impl CAcceptor { &mut self }`, update callers in replica_gen.rs.
+    - **DONE (2026-05-27)**: All 4 acceptor functions converted. Key improvements: `CAcceptorProcessHeartbeat` now mutates `last_checkpointed_operation` in-place via `Vec::set()` (0 clones); `CAcceptorProcess2a` mutates `self.votes` directly via existing `CAddVoteAndRemoveOldOnes_mut`; `CAcceptorTruncateLog` mutates in-place; `CAcceptorProcess1a` only mutates `self.max_bal`. CAcceptor has no Arc fields — all mutations are direct. 39 verified, 0 errors.
+  - [ ] **47.3.a.2**: Learner (3 functions, ~350 LOC): `CLearnerProcess2b`, `CLearnerForgetDecision`, `CLearnerForgetOperationsBefore`. Convert to `impl CLearner { &mut self }`, update callers.
+  - [ ] **47.3.a.3**: Executor (4 hot functions, ~460 LOC): `CExecutorProcessRequest`, `CExecutorGetDecision`, `CExecutorExecute`, `CExecutorProcessStartingPhase2`. Convert to `impl CExecutor { &mut self }`, update callers.
+  - [ ] **47.3.a.4**: Proposer remaining (8 functions, ~1050 LOC): `CProposerProcess1b`, `CProposerMaybeEnterPhase2`, `CProposerNominateNewValueAndSend2a`, `CProposerNominateOldValueAndSend2a`, `CProposerMaybeNominateValueAndSend2a`, `CProposerProcessHeartbeat`, `CProposerMaybeEnterNewViewAndSend1a`, `CProposerResetViewTimerDueToExecution`. Convert to `impl CProposer { &mut self }`, update callers. (~2 sub-batches of ~4 functions each to keep changes reviewable.)
+  - [ ] **47.3.a.5**: Election helpers (6 functions, ~575 LOC): `CElectionStateProcessHeartbeat`, `CElectionStateReflectReceivedRequest`, `CElectionStateReflectExecutedRequestBatch`, `CElectionStateCheckForViewTimeout`, `CElectionStateCheckForQuorumOfViewSuspicions`. Convert to `impl CElectionState { &mut self }`, update callers in proposer_gen.rs.
+  - [ ] **47.3.a.6**: Replica wrappers (~15 functions, ~1080 LOC): Convert all `CReplicaNext*` in replica_gen.rs to `impl CReplica { &mut self }`. This is the final layer that eliminates CReplica struct rebuilds. Depends on 47.3.a.1-5.
 - [ ] **47.3.b**: Top-level `CSchedulerNext` / `CReplicaNoReceiveNext` (hand-written in implementation/) needs corresponding conversion. C# IronRSLServerUDP wire unchanged — only Rust internals.
 - [ ] **47.3.c**: Decide Arc-wrap disposition. Two paths, pick after pilot bench:
   - **Path A (keep Arc + use `&mut self`)**: `&mut self` removes outer struct allocation; Arc::make_mut still does inner field CoW for shared cases. Best of both, but more proof complexity.

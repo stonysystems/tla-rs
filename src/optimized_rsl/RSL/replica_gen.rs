@@ -278,7 +278,10 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcess1a(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    { let (s_acceptor, sent_packets) = crate::optimized_rsl::RSL::acceptor_gen::CAcceptorProcess1a(&s.acceptor, &received_packet); (CReplica {
+    // Phase 47.3.a.1: use &mut self on cloned acceptor
+    { let mut s_acceptor = s.acceptor.clone_up_to_view();
+    let sent_packets = s_acceptor.CAcceptorProcess1a(&received_packet);
+    (CReplica {
         constants: s.constants.clone(),
         nextHeartbeatTime: s.nextHeartbeatTime,
         proposer: s.proposer.clone_up_to_view(),
@@ -326,7 +329,9 @@ ensures
     {
         // All 4 conditions met: dispatch to proposer and acceptor
         let s_proposer = CProposerProcess1b(&s.proposer, received_packet);
-        let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &log_truncation_point);
+        // Phase 47.3.a.1: use &mut self on cloned acceptor
+        let mut s_acceptor = s.acceptor.clone_up_to_view();
+        s_acceptor.CAcceptorTruncateLog(&log_truncation_point);
         let result_replica = CReplica {
             constants: s.constants.clone(),
             nextHeartbeatTime: s.nextHeartbeatTime,
@@ -430,7 +435,9 @@ ensures
         assert(opn_in_bound == LeqUpperBound(received_packet@.msg->opn_2a, s@.acceptor.constants.all.params.max_integer_val));
     }
     if src_in_config && bal_leq && opn_in_bound {
-        let (s_acceptor, sent_packets) = crate::optimized_rsl::RSL::acceptor_gen::CAcceptorProcess2a(&s.acceptor, &received_packet);
+        // Phase 47.3.a.1: use &mut self on cloned acceptor
+        let mut s_acceptor = s.acceptor.clone_up_to_view();
+        let sent_packets = s_acceptor.CAcceptorProcess2a(&received_packet);
         let result_replica = CReplica {
             constants: s.constants.clone(),
             nextHeartbeatTime: s.nextHeartbeatTime,
@@ -644,8 +651,10 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessHeartbeat(s@, result.0@, received_packet@, *clock as int, result.1@.map(|i, p: CPacket| p@)),
 {
+    // Phase 47.3.a.1: use &mut self on cloned acceptor
     { let s_proposer = crate::optimized_rsl::RSL::proposer_gen::CProposerProcessHeartbeat(&s.proposer, &received_packet, &clock);
-    let s_acceptor = crate::optimized_rsl::RSL::acceptor_gen::CAcceptorProcessHeartbeat(&s.acceptor, &received_packet);
+    let mut s_acceptor = s.acceptor.clone_up_to_view();
+    s_acceptor.CAcceptorProcessHeartbeat(&received_packet);
     let result = (CReplica {
         constants: s.constants.clone_up_to_view(),
         nextHeartbeatTime: s.nextHeartbeatTime,
@@ -800,7 +809,9 @@ ensures
                 target as int, ss.acceptor.last_checkpointed_operation, ss.constants.all.config));
             assert(target as int > ss.acceptor.log_truncation_point);
         }
-        let s_acceptor = CAcceptorTruncateLog(&s.acceptor, &target);
+        // Phase 47.3.a.1: use &mut self on cloned acceptor
+        let mut s_acceptor = s.acceptor.clone_up_to_view();
+        s_acceptor.CAcceptorTruncateLog(&target);
         let result_replica = CReplica {
             constants: s.constants.clone(),
             nextHeartbeatTime: s.nextHeartbeatTime,
