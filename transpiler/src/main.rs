@@ -272,9 +272,10 @@ enum Commands {
         #[arg(long)]
         native_codegen: bool,
 
-        /// Number of parallel worker threads for BFS exploration.
-        /// Default 1 (sequential). When >1 and search mode is BFS,
-        /// uses level-synchronous parallel BFS with rayon.
+        /// Number of parallel worker threads for exploration.
+        /// Default 1 (sequential). When >1: BFS uses level-synchronous
+        /// parallel BFS with rayon; DPOR collects frontier states at
+        /// depth 2 then dispatches to worker threads via std::thread::scope.
         #[arg(long, default_value_t = 1)]
         workers: usize,
 
@@ -3585,9 +3586,10 @@ fn run_dpor_explorer_as_main_path(
     limits: verus_transpiler::modelcheck::explorer::ExplorationLimits,
     native_rlib_paths: Option<(PathBuf, PathBuf)>,
     conflict_profile: bool,
+    num_workers: usize,
 ) -> std::result::Result<verus_transpiler::modelcheck::explorer::ExplorationResult, String> {
     use verus_transpiler::modelcheck::dpor::enabled::SpecContext;
-    use verus_transpiler::modelcheck::dpor::{explore_dpor, DporConfig};
+    use verus_transpiler::modelcheck::dpor::{explore_dpor, explore_dpor_parallel, DporConfig};
     use verus_transpiler::modelcheck::explorer::{
         ExplorationResult, ExplorationStats, ExplorationStopReason,
     };
@@ -3627,7 +3629,11 @@ fn run_dpor_explorer_as_main_path(
         check_deadlock: model_config.properties.check_deadlock,
         runtime_overrides: None,
     };
-    let result = explore_dpor(&ctx, &dpor_config);
+    let result = if num_workers > 1 {
+        explore_dpor_parallel(&ctx, &dpor_config, num_workers)
+    } else {
+        explore_dpor(&ctx, &dpor_config)
+    };
 
     if conflict_profile {
         let report = verus_transpiler::modelcheck::dpor::explore::format_conflict_profile(
@@ -4232,6 +4238,7 @@ fn execute_model_check(
                 limits,
                 native_cache.as_ref().map(|nc| nc.rlib_paths()),
                 conflict_profile,
+                workers,
             )
             .map_err(|e| miette::miette!("{}", e))?
         } else if workers > 1 && matches!(selected_search, CliSearchMode::Bfs) {

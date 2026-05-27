@@ -13377,7 +13377,7 @@ makes DPOR reduction measurable).
     initial_state, shared_store) -> WorkerResult` that takes a single
     start state and shared store. The existing `explore_dpor` becomes a
     thin wrapper calling this for each initial state. ~200 LOC refactor.
-  - [ ] **38.18.1.d**: **Add frontier collection + thread spawning.**
+  - [x] **38.18.1.d**: **Add frontier collection + thread spawning.**
     `explore_dpor_parallel(ctx, config, num_workers)`: sequential DFS to
     depth D (configurable, default 2-3), collect frontier states, spawn
     `num_workers` threads via `std::thread::scope`, each calling

@@ -427,6 +427,240 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     }
 }
 
+/// Run the DPOR DFS exploration with multiple worker threads.
+///
+/// Strategy: sequential BFS to `frontier_depth` (default 2) to collect
+/// frontier states, then partition them across `num_workers` threads.
+/// Each thread calls `explore_dpor_from_state` for its assigned frontier
+/// states, sharing a single `SharedStateStore` via reference (using
+/// `std::thread::scope`). Results are merged at the end.
+///
+/// Falls back to sequential `explore_dpor` when `num_workers <= 1`.
+pub fn explore_dpor_parallel(
+    ctx: &SpecContext,
+    config: &DporConfig,
+    num_workers: usize,
+) -> DporResult {
+    if num_workers <= 1 {
+        return explore_dpor(ctx, config);
+    }
+
+    crate::modelcheck::helpers::reset_zero_arg_helper_cache();
+
+    let store = SharedStateStore::new();
+
+    // Get initial states
+    let initial_states = match ctx.initial_states() {
+        Ok(states) => states,
+        Err(e) => {
+            eprintln!("DPOR: failed to get initial states: {}", e);
+            return DporResult {
+                distinct_states: store.into_states(),
+                traces_explored: 0,
+                max_depth: 0,
+                transitions_fired: 0,
+                sleep_prune_hits: 0,
+                sleep_cardinality_by_depth: BTreeMap::new(),
+                sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                runtime_conflict_stats: RuntimeConflictStats::default(),
+                violation: None,
+            };
+        }
+    };
+
+    // Resolve invariant functions for initial-state checking
+    let invariant_fns = ctx.resolve_invariants(&config.invariants);
+
+    // Phase 1: Shallow BFS to collect frontier states.
+    // We explore depth 0 (initial) and depth 1 sequentially, collecting
+    // all states at depth <= frontier_depth as frontier candidates for
+    // parallel DFS. States discovered during this phase are inserted
+    // into the shared store so workers won't re-explore them.
+    let frontier_depth: usize = 2;
+    let mut frontier: Vec<RuntimeValue> = Vec::new();
+    let mut bfs_queue: std::collections::VecDeque<(RuntimeValue, usize)> =
+        std::collections::VecDeque::new();
+
+    for initial in &initial_states {
+        let fp = initial.fingerprint();
+        if !store.insert_fingerprint(fp) {
+            continue;
+        }
+        let key = initial.canonical_key();
+        if !store.insert_state(key) {
+            continue;
+        }
+        // Check invariants on initial state
+        if !invariant_fns.is_empty() {
+            if let Ok(Some(violated)) = ctx.check_invariants(initial, &invariant_fns) {
+                return DporResult {
+                    distinct_states: store.into_states(),
+                    traces_explored: 0,
+                    max_depth: 0,
+                    transitions_fired: 0,
+                    sleep_prune_hits: 0,
+                    sleep_cardinality_by_depth: BTreeMap::new(),
+                    sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                    runtime_conflict_stats: RuntimeConflictStats::default(),
+                    violation: Some(ViolationWitness {
+                        invariant: violated,
+                        violating_state_key: initial.canonical_key(),
+                        violating_state_fingerprint:
+                            crate::modelcheck::dpor::enabled::hash_state(initial),
+                        depth: 0,
+                        trace: vec![],
+                    }),
+                };
+            }
+        }
+        bfs_queue.push_back((initial.clone(), 0));
+    }
+
+    let mut bfs_transitions_fired: usize = 0;
+    while let Some((state, depth)) = bfs_queue.pop_front() {
+        if depth >= frontier_depth {
+            // This state is at the frontier — hand off to parallel workers
+            frontier.push(state);
+            continue;
+        }
+        // Expand children
+        let successors = match ctx.full_successors(&state) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for succ in successors {
+            let fp = succ.fingerprint();
+            if !store.insert_fingerprint(fp) {
+                continue;
+            }
+            let key = succ.canonical_key();
+            if !store.insert_state(key) {
+                continue;
+            }
+            bfs_transitions_fired += 1;
+            // Check invariants
+            if !invariant_fns.is_empty() {
+                if let Ok(Some(violated)) = ctx.check_invariants(&succ, &invariant_fns) {
+                    return DporResult {
+                        distinct_states: store.into_states(),
+                        traces_explored: 0,
+                        max_depth: 0,
+                        transitions_fired: bfs_transitions_fired,
+                        sleep_prune_hits: 0,
+                        sleep_cardinality_by_depth: BTreeMap::new(),
+                        sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                        runtime_conflict_stats: RuntimeConflictStats::default(),
+                        violation: Some(ViolationWitness {
+                            invariant: violated,
+                            violating_state_key: succ.canonical_key(),
+                            violating_state_fingerprint:
+                                crate::modelcheck::dpor::enabled::hash_state(&succ),
+                            depth: depth + 1,
+                            trace: vec![],
+                        }),
+                    };
+                }
+            }
+            bfs_queue.push_back((succ, depth + 1));
+        }
+    }
+
+    if frontier.is_empty() {
+        // All states explored within frontier_depth — nothing to parallelize
+        return DporResult {
+            distinct_states: store.into_states(),
+            traces_explored: 0,
+            max_depth: frontier_depth,
+            transitions_fired: bfs_transitions_fired,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: None,
+        };
+    }
+
+    eprintln!(
+        "DPOR parallel: {} frontier states at depth {}, dispatching to {} workers",
+        frontier.len(),
+        frontier_depth,
+        num_workers
+    );
+
+    // Phase 2: Partition frontier states across workers (round-robin)
+    let mut partitions: Vec<Vec<RuntimeValue>> = (0..num_workers).map(|_| Vec::new()).collect();
+    for (i, state) in frontier.into_iter().enumerate() {
+        partitions[i % num_workers].push(state);
+    }
+
+    // Phase 3: Spawn worker threads
+    let worker_results: Vec<WorkerResult> = std::thread::scope(|s| {
+        let handles: Vec<_> = partitions
+            .into_iter()
+            .map(|partition| {
+                let store_ref = &store;
+                let ctx_ref = ctx;
+                let config_ref = config;
+                s.spawn(move || {
+                    let mut local_result = WorkerResult {
+                        traces_explored: 0,
+                        max_depth: 0,
+                        transitions_fired: 0,
+                        sleep_prune_hits: 0,
+                        sleep_cardinality_by_depth: BTreeMap::new(),
+                        sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                        runtime_conflict_stats: RuntimeConflictStats::default(),
+                        violation: None,
+                    };
+                    for state in &partition {
+                        if local_result.violation.is_some() {
+                            break;
+                        }
+                        if store_ref.fingerprint_count() >= config_ref.max_states {
+                            break;
+                        }
+                        let r = explore_dpor_from_state(ctx_ref, config_ref, state, store_ref);
+                        local_result.merge(r);
+                    }
+                    local_result
+                })
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("DPOR worker thread panicked"))
+            .collect()
+    });
+
+    // Phase 4: Merge all worker results
+    let mut merged = WorkerResult {
+        traces_explored: 0,
+        max_depth: 0,
+        transitions_fired: bfs_transitions_fired,
+        sleep_prune_hits: 0,
+        sleep_cardinality_by_depth: BTreeMap::new(),
+        sleep_independence_blockers: SleepIndependenceBlockers::default(),
+        runtime_conflict_stats: RuntimeConflictStats::default(),
+        violation: None,
+    };
+    for wr in worker_results {
+        merged.merge(wr);
+    }
+
+    DporResult {
+        distinct_states: store.into_states(),
+        traces_explored: merged.traces_explored,
+        max_depth: merged.max_depth,
+        transitions_fired: merged.transitions_fired,
+        sleep_prune_hits: merged.sleep_prune_hits,
+        sleep_cardinality_by_depth: merged.sleep_cardinality_by_depth,
+        sleep_independence_blockers: merged.sleep_independence_blockers,
+        runtime_conflict_stats: merged.runtime_conflict_stats,
+        violation: merged.violation,
+    }
+}
+
 /// Explore a single initial state's DFS subtree.
 ///
 /// This is the core DPOR worker function. It takes a single initial state and
@@ -4336,6 +4570,198 @@ max_seq_len = 4
             results.iter().filter(|(_, _, _, s)| *s == "baseline_error").count(),
             results.iter().filter(|(_, _, _, s)| *s == "load_failed").count(),
             parity_failures,
+        );
+    }
+
+    #[test]
+    fn test_worker_result_merge() {
+        let mut a = WorkerResult {
+            traces_explored: 10,
+            max_depth: 5,
+            transitions_fired: 100,
+            sleep_prune_hits: 3,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: None,
+        };
+        let b = WorkerResult {
+            traces_explored: 20,
+            max_depth: 8,
+            transitions_fired: 200,
+            sleep_prune_hits: 7,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers {
+                candidates_considered: 5,
+                blocked_same_process: 2,
+                ..Default::default()
+            },
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: None,
+        };
+        a.merge(b);
+        assert_eq!(a.traces_explored, 30);
+        assert_eq!(a.max_depth, 8);
+        assert_eq!(a.transitions_fired, 300);
+        assert_eq!(a.sleep_prune_hits, 10);
+        assert_eq!(a.sleep_independence_blockers.candidates_considered, 5);
+        assert_eq!(a.sleep_independence_blockers.blocked_same_process, 2);
+    }
+
+    #[test]
+    fn test_worker_result_merge_keeps_first_violation() {
+        let w1 = ViolationWitness {
+            invariant: "Inv1".to_string(),
+            violating_state_key: "s1".to_string(),
+            violating_state_fingerprint: StateFingerprint(111),
+            depth: 3,
+            trace: vec![],
+        };
+        let w2 = ViolationWitness {
+            invariant: "Inv2".to_string(),
+            violating_state_key: "s2".to_string(),
+            violating_state_fingerprint: StateFingerprint(222),
+            depth: 5,
+            trace: vec![],
+        };
+        let mut a = WorkerResult {
+            traces_explored: 0,
+            max_depth: 0,
+            transitions_fired: 0,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: Some(w1),
+        };
+        let b = WorkerResult {
+            traces_explored: 0,
+            max_depth: 0,
+            transitions_fired: 0,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: Some(w2),
+        };
+        a.merge(b);
+        assert_eq!(a.violation.as_ref().unwrap().invariant, "Inv1");
+    }
+
+    #[test]
+    fn test_parallel_dpor_single_worker_matches_sequential() {
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: APlusB.rs not found");
+                return;
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 1000,
+            ..Default::default()
+        };
+        let sequential = explore_dpor(&ctx, &config);
+        let parallel_1 = explore_dpor_parallel(&ctx, &config, 1);
+        assert_eq!(
+            sequential.distinct_states, parallel_1.distinct_states,
+            "parallel with 1 worker should match sequential"
+        );
+    }
+
+    #[test]
+    fn test_parallel_dpor_multi_worker_state_parity() {
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: APlusB.rs not found");
+                return;
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 1000,
+            ..Default::default()
+        };
+        let sequential = explore_dpor(&ctx, &config);
+        let parallel_2 = explore_dpor_parallel(&ctx, &config, 2);
+        let parallel_4 = explore_dpor_parallel(&ctx, &config, 4);
+        // Parallel should find the same or superset of states
+        // (due to shared store dedup, frontier BFS + worker DFS covers
+        // at least everything sequential DFS covers)
+        assert!(
+            parallel_2.distinct_states.len() >= sequential.distinct_states.len(),
+            "parallel(2) found {} states, sequential found {}",
+            parallel_2.distinct_states.len(),
+            sequential.distinct_states.len()
+        );
+        assert!(
+            parallel_4.distinct_states.len() >= sequential.distinct_states.len(),
+            "parallel(4) found {} states, sequential found {}",
+            parallel_4.distinct_states.len(),
+            sequential.distinct_states.len()
+        );
+        // The sequential states should be a subset of parallel states
+        for state in &sequential.distinct_states {
+            assert!(
+                parallel_2.distinct_states.contains(state),
+                "parallel(2) missing state from sequential: {}",
+                state
+            );
+        }
+        eprintln!(
+            "Parallel parity: seq={}, par2={}, par4={}",
+            sequential.distinct_states.len(),
+            parallel_2.distinct_states.len(),
+            parallel_4.distinct_states.len(),
+        );
+    }
+
+    #[test]
+    fn test_parallel_dpor_peterson_mutex_parity() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/09_peterson_mutex_2p/PetersonMutex.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: PetersonMutex.rs not found");
+            return;
+        }
+        let model_path = case_model_config("09_peterson_mutex_2p");
+        let ctx =
+            SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext").unwrap();
+        let config = DporConfig {
+            max_depth: 30,
+            max_states: 10000,
+            use_independence: true,
+            use_sleep_sets: true,
+            ..Default::default()
+        };
+        let sequential = explore_dpor(&ctx, &config);
+        let parallel = explore_dpor_parallel(&ctx, &config, 4);
+        // Sequential states should be subset of parallel
+        for state in &sequential.distinct_states {
+            assert!(
+                parallel.distinct_states.contains(state),
+                "parallel missing state: {}",
+                state
+            );
+        }
+        assert!(
+            parallel.distinct_states.len() >= sequential.distinct_states.len(),
+            "parallel found fewer states: {} vs seq {}",
+            parallel.distinct_states.len(),
+            sequential.distinct_states.len()
+        );
+        eprintln!(
+            "Peterson parallel parity: seq={}, par4={}",
+            sequential.distinct_states.len(),
+            parallel.distinct_states.len(),
         );
     }
 }
