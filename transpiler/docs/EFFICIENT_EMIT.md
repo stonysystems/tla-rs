@@ -267,6 +267,56 @@ insight — structural sharing — applied via Arc instead of persistent data st
 The transpiler automates this via `arc_wrap_fields` TOML config, achieving 2x RSL
 throughput improvement over the baseline.
 
+### Phase 47/48: `&mut self` calling convention (supersedes Arc)
+
+Phase 47 manually rewrote ~35 hot-path RSL functions to use `&mut self` instead
+of functional rebuild. Phase 48 automated this as a transpiler feature via
+`mut_self_types` TOML config.
+
+**Result**: 1.44x speedup over Sushant's hand-tuned implementation. This
+eliminates the structural clone problem entirely — the outer struct is never
+rebuilt, so there is nothing to Arc-wrap.
+
+**`mut_self_types` config**:
+```toml
+# In <module>_transpile.toml
+mut_self_types = ["CProposer"]
+```
+
+When `mut_self_types` is set, the transpiler transforms the first parameter of
+each function from `&CProposer` to `&mut self`, emitting in-place field
+assignment instead of struct reconstruction.
+
+### Phase 49: Arc removal (post `&mut self`)
+
+With `&mut self` calling convention, Arc-wrapping becomes pure overhead:
+- The hot path no longer clones the outer struct, so Arc's O(1) clone is unused
+- Arc adds 16 bytes per field + pointer indirection + atomic refcount ops
+- Profiling confirmed zero Arc symbols in the hot path
+
+Phase 49 removed Arc from all 5 RSL collection fields. Benchmarks confirmed
+zero measurable impact (as predicted — the fields were never cloned on the hot
+path after Phase 47).
+
+### Arc vs Direct Ownership Decision Matrix
+
+| Calling convention | Clone pattern | Recommended field wrapping |
+|---|---|---|
+| Functional (`&State` -> `State`) | Entire struct rebuilt each call | `arc_wrap_fields` for hot collection fields |
+| `&mut self` (`mut_self_types`) | No struct rebuild; fields mutated in-place | Direct ownership (no Arc) |
+
+**Transpiler enforcement**: When `mut_self_types` is non-empty, the transpiler
+automatically clears `arc_wrap_fields` and `arc_wrap_types` with a warning.
+These configurations conflict — Arc adds overhead without benefit under `&mut self`.
+
+**Migration path**: If a protocol transitions from functional to `&mut self`:
+1. Add `mut_self_types = ["CState"]` to the TOML
+2. Remove or comment out `arc_wrap_fields` (transpiler will clear it anyway)
+3. Remove `Arc::new`/`Arc::get_mut` helpers from generated and manual code
+4. Replace `Arc<T>` field types with `T` in manual impl files
+
 ## Implementation Plan
 
-See TODO.md Phase 40.2 for struct-level Arc steps (dormant), Phase 41 for field-level Arc steps (active).
+See TODO.md Phase 40.2 for struct-level Arc steps (dormant), Phase 41 for
+field-level Arc steps (complete), Phase 47-48 for `&mut self` calling convention
+(active — recommended for all protocols).

@@ -6275,7 +6275,26 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
 
 /// Convert a FileConfig to internal TranspilerConfig.
 /// `config_path` is used for resolving relative paths (e.g., manual_code).
-fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<TranspilerConfig> {
+fn convert_file_config(mut file_config: FileConfig, config_path: &Path) -> Result<TranspilerConfig> {
+    // When mut_self_types is set (&mut self calling convention), Arc-wrapping is
+    // counterproductive — the hot path no longer clones the outer struct, so Arc's
+    // O(1) clone benefit doesn't apply. Clear arc_wrap_fields/arc_wrap_types with a warning.
+    if !file_config.mut_self_types.is_empty() {
+        if !file_config.arc_wrap_fields.is_empty() {
+            eprintln!(
+                "Warning: arc_wrap_fields is set but mut_self_types is also set. \
+                 Arc-wrapping conflicts with &mut self calling convention — clearing arc_wrap_fields."
+            );
+            file_config.arc_wrap_fields.clear();
+        }
+        if !file_config.arc_wrap_types.is_empty() {
+            eprintln!(
+                "Warning: arc_wrap_types is set but mut_self_types is also set. \
+                 Arc-wrapping conflicts with &mut self calling convention — clearing arc_wrap_types."
+            );
+            file_config.arc_wrap_types.clear();
+        }
+    }
     Ok(TranspilerConfig {
         translator: TranslatorConfig {
             validity_predicate_name: file_config.output.validity_predicate_name,
@@ -12380,6 +12399,52 @@ verus! {
             "Should have tested at least 9 protocols, got {} passed + {} skipped",
             passed,
             skipped
+        );
+    }
+
+    #[test]
+    fn test_mut_self_types_clears_arc_wrap_fields() {
+        let mut file_config = FileConfig::default();
+        file_config.mut_self_types = vec!["CProposer".to_string()];
+        file_config.arc_wrap_fields = {
+            let mut m = HashMap::new();
+            m.insert(
+                "CProposer".to_string(),
+                vec!["request_queue".to_string(), "received_1b_packets".to_string()],
+            );
+            m
+        };
+        let config = convert_file_config(file_config, Path::new(".")).unwrap();
+        assert!(
+            config.translator.arc_wrap_fields.is_empty(),
+            "arc_wrap_fields should be cleared when mut_self_types is set"
+        );
+    }
+
+    #[test]
+    fn test_mut_self_types_clears_arc_wrap_types() {
+        let mut file_config = FileConfig::default();
+        file_config.mut_self_types = vec!["CState".to_string()];
+        file_config.arc_wrap_types = vec!["CState".to_string()];
+        let config = convert_file_config(file_config, Path::new(".")).unwrap();
+        assert!(
+            config.arc_wrap_types.is_empty(),
+            "arc_wrap_types should be cleared when mut_self_types is set"
+        );
+    }
+
+    #[test]
+    fn test_no_mut_self_preserves_arc_wrap_fields() {
+        let mut file_config = FileConfig::default();
+        file_config.arc_wrap_fields = {
+            let mut m = HashMap::new();
+            m.insert("CState".to_string(), vec!["field_a".to_string()]);
+            m
+        };
+        let config = convert_file_config(file_config, Path::new(".")).unwrap();
+        assert!(
+            !config.translator.arc_wrap_fields.is_empty(),
+            "arc_wrap_fields should be preserved when mut_self_types is empty"
         );
     }
 }
