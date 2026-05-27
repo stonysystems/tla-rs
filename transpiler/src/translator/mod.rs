@@ -8010,16 +8010,69 @@ impl Translator {
              .replace(&format!("{}.", recv_name), "old(self).")
         }).collect();
 
-        // Adjust ensures: replace output `result@`/`result.` with `self@`/`self.`
+        // Adjust ensures: replace receiver-typed output with `self@`/`self.`
         // and input receiver refs with `old(self)@`
+        //
+        // For multi-output methods, find which tuple index is the receiver type,
+        // replace `result.N@` → `self@` for that index, and renumber remaining indices.
+        let recv_output_idx: Option<usize> = recv_spec_type.and_then(|rt| {
+            output_params.iter().position(|(p, _)| p.ty == *rt)
+        });
+        // Build mapping from old indices to new indices (excluding receiver)
+        let non_recv_indices: Vec<usize> = (0..output_params.len())
+            .filter(|i| Some(*i) != recv_output_idx)
+            .collect();
         let ensures = ensures.iter().map(|e| {
             let mut s = e.clone();
-            // For single-output methods where the output IS the receiver type,
-            // replace result@ with self@
             if output_params.len() == 1 {
-                if recv_spec_type.is_some() && output_params[0].0.ty == *recv_spec_type.unwrap() {
+                // Single output — if same type as receiver, method returns ()
+                if recv_output_idx == Some(0) {
                     s = s.replace("result@", "self@")
                          .replace("result.", "self.");
+                }
+            } else if output_params.len() > 1 {
+                if let Some(ri) = recv_output_idx {
+                    // Replace receiver's tuple component with self
+                    s = s.replace(&format!("result.{}@", ri), "self@")
+                         .replace(&format!("result.{}.", ri), "self.");
+                    // Also handle bare `result.N)` or `result.N,` at end of expressions
+                    // by replacing `result.{ri}` when followed by non-alphanumeric
+                    // We use a careful approach: replace specific patterns
+                    let recv_prefix = format!("result.{}", ri);
+                    // Handle remaining occurrences of `result.{ri}` that weren't caught above
+                    // (e.g., `result.0)` at end of spec call)
+                    let remaining = s.clone();
+                    s = String::new();
+                    let mut chars = remaining.char_indices().peekable();
+                    while let Some((idx, _)) = chars.peek() {
+                        let rest = &remaining[*idx..];
+                        if rest.starts_with(&recv_prefix) {
+                            let after = rest.get(recv_prefix.len()..recv_prefix.len()+1);
+                            let is_boundary = after.map_or(true, |c| {
+                                let c = c.chars().next().unwrap();
+                                !c.is_alphanumeric() && c != '_' && c != '.'
+                            });
+                            if is_boundary {
+                                s.push_str("self");
+                                for _ in 0..recv_prefix.len() {
+                                    chars.next();
+                                }
+                                continue;
+                            }
+                        }
+                        s.push(remaining.as_bytes()[*idx] as char);
+                        chars.next();
+                    }
+                    // Renumber remaining output indices
+                    for (new_idx, &old_idx) in non_recv_indices.iter().enumerate() {
+                        let old_prefix = format!("result.{}", old_idx);
+                        let new_prefix = if non_recv_indices.len() == 1 {
+                            "result".to_string()
+                        } else {
+                            format!("result.{}", new_idx)
+                        };
+                        s = s.replace(&old_prefix, &new_prefix);
+                    }
                 }
             }
             // Replace input receiver references with old(self)
@@ -28647,5 +28700,123 @@ borrowed_args = [0]
         let expr = ExecExpr::Var("s.field".to_string());
         let result = Translator::rename_var_in_expr(&expr, "s", "self");
         assert!(matches!(result, ExecExpr::Var(n) if n == "self.field"));
+    }
+
+    #[test]
+    fn test_maybe_apply_mut_self_multi_output() {
+        // Test multi-output method: (CState, Vec<CMsg>) -> removes CState from return,
+        // rewrites ensures to use self@ for receiver component and renumbers remaining.
+        let mut config = TranslatorConfig::default();
+        config.mut_self_types.insert("CState".to_string());
+        let translator = Translator::new(config);
+
+        let params = vec![
+            ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), false),
+                is_reference: true,
+                is_self: false,
+            },
+            ExecParameter {
+                name: "msg".to_string(),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CMessage".to_string())), false),
+                is_reference: true,
+                is_self: false,
+            },
+        ];
+        // Spec params: s (input), msg (input), s_ (output, LState), sent_packets (output, Seq<LMsg>)
+        let func = make_test_annotated_fn(
+            "LHandleMsg",
+            vec![("s", "LState"), ("msg", "LMessage"), ("s_", "LState"), ("sent_packets", "LMsg")],
+            vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Output, ParameterMode::Output],
+        );
+
+        let requires = vec!["s@.valid()".to_string()];
+        let ensures = vec![
+            "result.0.valid()".to_string(),
+            "result.1.valid()".to_string(),
+            "LHandleMsg(s@, msg@, result.0@, result.1@)".to_string(),
+        ];
+
+        let (p, rt, req, ens, is_method, recv) = translator.maybe_apply_mut_self(
+            params,
+            ExecType::Tuple(vec![
+                ExecType::Named("CState".to_string()),
+                ExecType::Named("Vec<CMsg>".to_string()),
+            ]),
+            requires,
+            ensures,
+            &func,
+        );
+
+        assert!(is_method, "should be detected as method");
+        assert_eq!(recv, Some("CState".to_string()));
+        assert!(p[0].is_self);
+
+        // Return type should only have Vec<CMsg> (receiver removed from tuple)
+        // Since only 1 remaining, it's unwrapped from tuple
+        assert!(
+            matches!(&rt, ExecType::Named(n) if n.contains("Msg")),
+            "Expected single remaining output type, got: {:?}", rt
+        );
+
+        // Requires should use old(self)
+        assert_eq!(req[0], "old(self)@.valid()");
+
+        // Ensures: result.0 → self, result.1 → result (renumbered)
+        assert_eq!(ens[0], "self.valid()", "receiver validity becomes self.valid()");
+        assert_eq!(ens[1], "result.valid()", "non-receiver renumbered from result.1 to result");
+        assert_eq!(ens[2], "LHandleMsg(old(self)@, msg@, self@, result@)",
+            "spec call: result.0@ → self@, result.1@ → result@");
+    }
+
+    #[test]
+    fn test_maybe_apply_mut_self_multi_output_three_outputs() {
+        // Test with 3 outputs: (CState, Vec<CMsg>, u64) → (Vec<CMsg>, u64)
+        let mut config = TranslatorConfig::default();
+        config.mut_self_types.insert("CState".to_string());
+        let translator = Translator::new(config);
+
+        let params = vec![ExecParameter {
+            name: "s".to_string(),
+            ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), false),
+            is_reference: true,
+            is_self: false,
+        }];
+        let func = make_test_annotated_fn(
+            "LStep",
+            vec![("s", "LState"), ("s_", "LState"), ("pkts", "LMsg"), ("count", "LCount")],
+            vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Output, ParameterMode::Output],
+        );
+
+        let ensures = vec![
+            "result.0.valid()".to_string(),
+            "result.1.valid()".to_string(),
+            "LStep(s@, result.0@, result.1@, result.2@)".to_string(),
+        ];
+
+        let (_p, rt, _req, ens, is_method, _recv) = translator.maybe_apply_mut_self(
+            params,
+            ExecType::Tuple(vec![
+                ExecType::Named("CState".to_string()),
+                ExecType::Named("Vec<CMsg>".to_string()),
+                ExecType::Named("u64".to_string()),
+            ]),
+            vec![],
+            ensures,
+            &func,
+        );
+
+        assert!(is_method);
+        // Return type should be tuple of remaining 2: (Vec<CMsg>, u64)
+        // The translator uses translate_type which maps LMsg/LCount spec types
+        // Since make_test_annotated_fn creates Named types, they stay as-is
+        assert!(matches!(&rt, ExecType::Tuple(v) if v.len() == 2),
+            "Expected 2-tuple return, got: {:?}", rt);
+
+        // Ensures renumbering: result.0 → self, result.1 → result.0, result.2 → result.1
+        assert_eq!(ens[0], "self.valid()");
+        assert_eq!(ens[1], "result.0.valid()");
+        assert_eq!(ens[2], "LStep(old(self)@, self@, result.0@, result.1@)");
     }
 }

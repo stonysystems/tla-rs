@@ -15529,10 +15529,11 @@ Validation on TwoPhase revealed 3 gaps in the pipeline. Fixed below:
   In `maybe_apply_mut_self`, rename the receiver param's name references
   in the body from `s` to `self`. The translator already builds the body
   with `s.field` references; for methods, these must become `self.field`.
-- [ ] **48.5.b**: **Return type + ensures for multi-output methods**.
+- [x] **48.5.b**: **Return type + ensures for multi-output methods**.
   When a predicate has multiple outputs (e.g., `(CState, Vec<CMessage>)`),
   remove only the CState component from the return tuple (keep others).
-  Adjust ensures to use `self@` for the removed component.
+  Adjust ensures to use `self@` for the removed component, renumber
+  remaining `result.N` indices. 2 unit tests added.
 - [ ] **48.5.c**: **Body: extract struct from tuple return**.
   In `struct_to_field_assignments`, handle `ExecExpr::Tuple` where one
   element is a `Struct`/`StructUpdate` — convert that element to field
