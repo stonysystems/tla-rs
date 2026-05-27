@@ -292,7 +292,7 @@ ensures
     };
 
     // Mutate election_state in-place (both branches do this)
-    self.election_state = CElectionStateReflectReceivedRequest(&self.election_state, &val);
+    self.election_state.CElectionStateReflectReceivedRequest(&val);
 
     let should_enqueue = if self.current_state != 0 {
         match self.highest_seqno_requested_by_client_this_view.get(&val.client) {
@@ -991,14 +991,12 @@ ensures
     LProposerProcessHeartbeat(old(self)@, self@, p@, *clock as int),
 {
     let ghost old_self = old(self)@;
-    let s_election_state = CElectionStateProcessHeartbeat(&self.election_state, &p, &clock);
-    if CBalLt(&self.election_state.current_view, &s_election_state.current_view) {
+    let old_view = self.election_state.current_view;
+    self.election_state.CElectionStateProcessHeartbeat(&p, &clock);
+    if CBalLt(&old_view, &self.election_state.current_view) {
         proof { lemma_empty_request_queue_map(); }
         self.current_state = 0u64;
         self.request_queue = Arc::new(vec![]);
-        self.election_state = s_election_state;
-    } else {
-        self.election_state = s_election_state;
     }
 }
 
@@ -1009,8 +1007,7 @@ ensures
     self.valid(),
     LProposerCheckForViewTimeout(old(self)@, self@, *clock as int),
 {
-    let s_election_state = CElectionStateCheckForViewTimeout(&self.election_state, &clock);
-    self.election_state = s_election_state;
+    self.election_state.CElectionStateCheckForViewTimeout(&clock);
 }
 
 pub exec fn CProposerCheckForQuorumOfViewSuspicions(&mut self, clock: &u64)
@@ -1021,14 +1018,12 @@ ensures
     LProposerCheckForQuorumOfViewSuspicions(old(self)@, self@, *clock as int),
 {
     let ghost old_self = old(self)@;
-    let s_election_state = CElectionStateCheckForQuorumOfViewSuspicions(&self.election_state, &clock);
-    if CBalLt(&self.election_state.current_view, &s_election_state.current_view) {
+    let old_view = self.election_state.current_view;
+    self.election_state.CElectionStateCheckForQuorumOfViewSuspicions(&clock);
+    if CBalLt(&old_view, &self.election_state.current_view) {
         proof { lemma_empty_request_queue_map(); }
         self.current_state = 0u64;
         self.request_queue = Arc::new(vec![]);
-        self.election_state = s_election_state;
-    } else {
-        self.election_state = s_election_state;
     }
 }
 
@@ -1040,8 +1035,7 @@ ensures
     self.valid(),
     LProposerResetViewTimerDueToExecution(old(self)@, self@, abstractify_crequestbatch(val)),
 {
-    let s_election_state = CElectionStateReflectExecutedRequestBatch(&self.election_state, &val);
-    self.election_state = s_election_state;
+    self.election_state.CElectionStateReflectExecutedRequestBatch(&val);
 }
 
 } // impl CProposer (Phase 47.3.a.4 batch 1 — part 2)
