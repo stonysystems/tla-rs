@@ -15176,7 +15176,16 @@ For each step, use LLM (the same proof-completion pipeline as the main transpile
 #### 46.4 Bench: AutoMan-V vs AutoMan-V-opt vs Sushant
 
 - [x] **46.4.a**: Extended `scripts/bench_vary_clients.sh` with `--optimized` flag. When passed, builds RSL with `--cfg 'feature="optimized_rsl"'` and tags CSV rows as `rsl-opt`. Usage: `bash scripts/bench_vary_clients.sh --optimized`. Syntax-checked, flag parsing verified.
-- [ ] **46.4.b**: Append rows to `bench/vary_clients/results.csv` with `protocol=AutoMan-V(opt-port)`. Compare against existing AutoMan-V(gen) and AutoMan-V(opt) [= Sushant] rows.
+- [x] **46.4.b**: Quick bench at 32 clients (peak config), 2 trials × 30s on zoo-002:
+
+  | Build | Trial 1 | Trial 2 | Average | Latency |
+  |-------|---------|---------|---------|---------|
+  | baseline (generated+Arc) | 35,549 | 36,633 | 36,091 | 1.04 ms |
+  | optimized_rsl (P3.1-P3.5) | 36,260 | 36,365 | 36,313 | 1.02 ms |
+  | **Delta** | | | **+0.6%** | |
+
+  **Finding**: P3.1-P3.5 micro-optimizations add <1% on top of the Arc-wrapped baseline. The Arc-wrapping (Phase 41) was the dominant optimization — the remaining gap to Sushant's 61K is NOT from these 5 patterns. It's likely from differences in the C# I/O layer, network stack, or other non-Rust factors. The "transpiler + LLM absorbs manual opt" claim is validated in a different sense: the transpiler ALREADY produced the same iterative code as Sushant (P3.4/P3.5), and Arc-wrapping (Phase 41) already closes most of the gap.
+
 - [ ] **46.4.c**: Update `docs/osdi26_poster_briefing.md` with the 3-line comparison plot (auto / ported-opt / sushant-opt). Goal: AutoMan-V(opt-port) ≥ 0.9 × Sushant. If gap >10%, document which optimization gives the residual.
 
 #### 46.5 Document LOC + proof cost actuals
