@@ -89,7 +89,11 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 6. **Phase 46: Port Sushant's 5 RSL Hot-Path Optimizations — DONE but only +0.6%** — completed port of P3.1–P3.5 to `optimized_rsl/RSL/`, 27 impl LOC + 52 proof LOC (LLM 100%). Bench result: **36,313 ops/s vs 36,091 baseline = +0.6% (noise)**. The 5 patterns are absorbed by Arc-wrap (Phase 41); the gap was structural (calling convention), not pattern-level. **Resolved by Phase 47**: `&mut self` calling convention → 51K @ 30s (1.44× Sushant). See [Phase 46](#phase-46-port-sushants-5-rsl-hot-path-optimizations-to-automan-v).
 
-7. **Phase 47: Close the 36K → 60K Gap via `&mut self` Calling Convention — DONE (2026-05-27)** — Converted ~35 hot-path exec functions to `&mut self` + Arc::get_mut + HashSet dedup. **Result: 51K @ 30s / 90K @ 5s — 1.44× FASTER than Sushant** at all durations (Sushant: 35.5K @ 30s / 62K @ 5s). Previous "60K target" was apples-to-oranges (Sushant's 5s vs our 30s). Time-decay (~1.7×) is identical in both implementations, caused by C# IoFramework layer. See [Phase 47](#phase-47-close-the-36k--60k-gap--mut-self-calling-convention-for-automan-v).
+7. **Phase 47: Close the 36K → 60K Gap via `&mut self` Calling Convention — DONE (2026-05-27)** — Converted ~35 hot-path exec functions to `&mut self` + Arc::get_mut + HashSet dedup. **Result: 48-51K ops/s @ 30s (+50% over Arc baseline).** Earlier "1.44× over Sushant" claim was incorrect — used Sushant's stale liblib.so (batch_size=64 vs runtime client=32, starved to 1.2K). Re-verified 2026-05-27 with fresh Sushant build: **AutoMan-V 48.6K vs Sushant 60.0K = Sushant 1.23× faster, ~20% gap remains** (likely Arc field overhead — see Phase 49). See [Phase 47](#phase-47-close-the-36k--60k-gap--mut-self-calling-convention-for-automan-v).
+
+8. **Phase 48: Transpiler Emits `&mut self` by Default — DONE** — Phase 47's manual `optimized_rsl/` port automated as transpiler codegen via `mut_self_types` TOML config. Generated `&mut self` emitted into `generated/RSL/` directly; `optimized_rsl/` folder deleted (-4,330 LOC). Extended to 9 protocols (62 host caller updates). Same perf as Phase 47 — engineering cleanup, not perf gain. See [Phase 48](#phase-48-transpiler-emits-mut-self-calling-convention-by-default).
+
+9. **Phase 49: Drop Arc on Hot Fields — close remaining 20% gap to Sushant** — Phase 41 added Arc<X> on 5 collection fields for cheap functional clone; after Phase 47's `&mut self` conversion, the rationale evaporated but the overhead (Arc::get_mut atomic check, Arc::deref) remains. Plan: profile to validate (49.1), then drop Arc on 5 hot fields (49.2), bench (target ≥58K = 97% of Sushant 60K). If self-explore needed, max 3 iterations. ~3.5-4 days. See [Phase 49](#phase-49-drop-arc-on-hot-fields--close-remaining-20-gap-to-sushant).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -15603,3 +15607,97 @@ ReplicaImpl.rs. broadcast_transpile.toml and types_transpile.toml are excluded
 | 48.6 RSL + bench | ~100 | 0.5 day |
 | 48.7 non-RSL protocols | ~80 | 0.5 day |
 | **Total** | **~810** | **~4.5-5.5 days** |
+
+---
+
+## Phase 49: Drop Arc on Hot Fields — Close Remaining ~20% Gap to Sushant
+
+### Motivation (post-Phase-48 re-verification, 2026-05-27)
+
+Phase 47/48 converted hot exec functions to `&mut self` calling convention. Bench on zoo-002 (32 clients × 30s × 2 trials, after fixing stale Sushant liblib bug):
+
+| Configuration | Avg ops/s | Latency |
+|---|---|---|
+| AutoMan-V (transpiler auto + `&mut self`, current HEAD) | 48,637 | 0.75 ms |
+| Sushant (full manual hand-tune) | **60,031** | **0.61 ms** |
+| Ratio | Sushant 1.23× faster | |
+
+**The "1.44× over Sushant" claim from Phase 47.4 was wrong** — it used Sushant's stale `liblib.so` (built with `max_batch_size=64` from the prior vary-sweep run, while cparameters.rs had been reset to 32; effective batch_size=64 at runtime starved 32-client throughput to 1.2K).
+
+Real gap: **~20% (12K ops/s) remaining**.
+
+### Root-cause hypothesis: Arc field overhead
+
+Phase 41 added `Arc<X>` to 5 collection fields to make functional clone O(1). Phase 47 then switched to `&mut self` calling convention — but kept the Arc field types. With `&mut self`, the original justification for Arc (cheap clone of unchanged fields) **no longer applies** because we don't clone the outer struct anymore. What remains is **pure overhead**:
+
+| Operation | Arc<X> cost | Direct X cost |
+|---|---|---|
+| Read access `self.field.iter()` | Arc::deref (call + load) | direct field load |
+| Write access via `Arc::get_mut(&mut self.field).insert(...)` | call + atomic check + deref | direct insert |
+| Per-request: dozens of accesses × 48K req/s = millions of atomic checks/sec | substantial | zero |
+
+Sushant uses Path B (no Arc, direct ownership, `&mut self` end-to-end). We're on Path A (Arc + `&mut self`).
+
+### Plan
+
+#### 49.1 Profile-driven validation (~0.5 day)
+
+- [ ] **49.1.a**: Run `perf record -F 999 -g` for 30s bench on current AutoMan-V binary. Generate flamegraph. Identify top-10 functions by self-time.
+- [ ] **49.1.b**: Same on Sushant binary. Diff the flamegraphs side-by-side.
+- [ ] **49.1.c**: If Arc-related symbols (`Arc::clone`, `Arc::get_mut`, `Arc::deref`, atomic ops) appear in our top-10 but not Sushant's → Phase 49.2 is the right path. If different bottleneck (e.g., HashMap rehash, Vec realloc, framework polling) → re-plan Phase 49.2.
+
+#### 49.2 Drop Arc on hot fields (~2 days, conditional on 49.1.c)
+
+Affected fields (from Phase 41):
+- `CProposer.highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>`
+- `CProposer.request_queue: Arc<Vec<CRequest>>`
+- `CProposer.received_1b_packets: Arc<HashSet<CPacket>>`
+- `CExecutor.reply_cache: Arc<CReplyCache>`
+- `CLearner.unexecuted_learner_state: Arc<CLearnerState>`
+
+For each:
+
+- [ ] **49.2.a**: Change field type `Arc<X> → X` in:
+  - `src/protocol/<...>/types.rs` (spec, if Arc was declared there)
+  - `src/generated/RSL/types_gen.rs`
+  - `src/implementation/RSL/types_i.rs`
+- [ ] **49.2.b**: Remove `Arc::new(...)` wraps at init/construction sites in `src/generated/RSL/*_gen.rs`. Convert to direct values.
+- [ ] **49.2.c**: Remove `Arc::get_mut(&mut self.field).insert(...)` patterns; use `self.field.insert(...)` directly.
+- [ ] **49.2.d**: Delete now-unneeded plain-Rust helpers (`_arc_seqno_insert` etc.) and their `assume_specification` blocks.
+- [ ] **49.2.e**: Update `clone_*_up_to_view` helper signatures: `&Arc<X> → &X`. Bodies likely identical (they already do per-element clone).
+- [ ] **49.2.f**: Update `arc_wrap_fields` TOML config: remove 5 fields. Regenerate to confirm transpiler no longer emits Arc.
+- [ ] **49.2.g**: Verify: `--verify-only-module generated::RSL::*` passes (target same counts as current). LLM-assisted for any proof gaps (most likely none — change is type-level, not logic).
+
+#### 49.3 Bench + iterate (~0.5 day)
+
+- [ ] **49.3.a**: 32 clients × 30s × 2 trials on zoo-002. Same script as `bench_both.sh` for direct comparison.
+- [ ] **49.3.b**: Target: AutoMan-V ≥ 58K ops/s (97% of Sushant's 60K).
+- [ ] **49.3.c**: If hit: write up — "dropping Arc closed the 20% gap; transpiler auto = manual hand-tune perf". Update `docs/osdi26_poster_briefing.md`.
+- [ ] **49.3.d**: If still <55K: **self-explore (3-iteration max)**. Re-profile, identify next bottleneck (HashMap construction? framework polling? CState layout?), test one fix, re-bench. If still gap after 3 iterations, document in `docs/perf_gap_post_phase49.md`.
+
+#### 49.4 Transpiler integration (~0.5 day)
+
+- [ ] **49.4.a**: If Phase 49 succeeds, modify transpiler default: `arc_wrap_fields` defaults to empty when `mut_self_types` is set (since they conflict). Add a transpiler test enforcing this combination.
+- [ ] **49.4.b**: Update `transpiler/docs/EFFICIENT_EMIT.md`: document the Arc-vs-direct decision matrix (Arc for functional; direct for `&mut self`).
+
+### Estimated effort
+
+| Task | Effort |
+|---|---|
+| 49.1 profile validation | 0.5 day |
+| 49.2 drop Arc on 5 fields | 2 days |
+| 49.3 bench + self-explore | 0.5–1 day |
+| 49.4 transpiler integration | 0.5 day |
+| **Total** | **~3.5–4 days** |
+
+### Risk
+
+- **R1**: 49.1 profile may reveal Arc is NOT the dominant cost (could be HashMap hashing, framework polling, etc.). Mitigation: 49.1 is the gate; if Arc isn't hot, drop 49.2 and re-plan based on actual data.
+- **R2**: Verus may need new proof scaffolding when `Arc<X>` becomes `X` (e.g., the `View` impl differs slightly). Mitigation: LLM handles most; if any function genuinely needs human, document and continue with the rest.
+- **R3**: Dropping Arc might break **some** code path that genuinely needs sharing (unlikely in hot path with `&mut self`, but possible in cold paths like state snapshot). Mitigation: keep Arc on cold fields if needed; only drop on the 5 hot ones.
+
+### Out of scope
+
+- Generalizing Arc-vs-direct decision to non-RSL protocols (Raft / EPaxos / PBFT don't show enough perf data to justify; revisit if they get user-driven bench infrastructure).
+- Removing Arc from cold fields (e.g., `constants`). These have no perf impact; leave for code consistency.
+- Re-architecting beyond Arc (e.g., custom data structures, sharded HashMaps). Defer to Phase 50 if needed.
