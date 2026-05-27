@@ -1868,7 +1868,7 @@ fn test_rsl_types_manual_helpers_component_part2_symbols_present() {
 
     let removed_symbols = [
         "pub struct CProposer {",
-        "pub highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>",
+        "pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>",
         "pub struct CReplica {",
         "pub nextHeartbeatTime: u64",
         "pub struct CScheduler {",
@@ -1904,7 +1904,7 @@ fn test_rsl_types_manual_helpers_component_part2_symbols_present() {
         .expect("Failed to read ProposerImpl.rs");
     for symbol in [
         "pub struct CProposer",
-        "pub highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>",
+        "pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>",
         "impl View for CProposer",
     ] {
         assert!(

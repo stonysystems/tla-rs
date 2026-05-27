@@ -4,8 +4,8 @@
 # Emit &mut self calling convention for CLearner methods (Phase 48)
 mut_self_types = ["CLearner"]
 
-# Arc-wrap collection fields for O(1) clone on unchanged paths
-arc_wrap_fields = { CLearner = ["unexecuted_learner_state"] }
+# Phase 49.2: Arc-wrap removed — direct ownership with &mut self calling convention
+# arc_wrap_fields = {}
 
 # Primitive types that don't need valid() predicates
 # OperationNumber is remapped to u64 which is a primitive

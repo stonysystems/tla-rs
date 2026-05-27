@@ -1,14 +1,13 @@
 use crate::implementation::RSL::cconstants::*;
 use crate::implementation::RSL::types_i::*;
 use crate::protocol::RSL::learner::*;
-use std::sync::Arc;
 use vstd::prelude::*;
 
 verus! {
 pub struct CLearner {
     pub constants: CReplicaConstants,
     pub max_ballot_seen: CBallot,
-    pub unexecuted_learner_state: Arc<CLearnerState>,
+    pub unexecuted_learner_state: CLearnerState,
 }
 
 impl CLearner {
@@ -31,22 +30,13 @@ impl CLearner {
         res.valid() == self.valid(),
     {
         let constants_clone = self.constants.clone();
-        let state_clone = clone_arc_learner_state(&self.unexecuted_learner_state);
+        let state_clone = clone_clearnerstate_up_to_view(&self.unexecuted_learner_state);
         CLearner {
             constants: constants_clone,
             max_ballot_seen: self.max_ballot_seen, // CBallot is Copy
             unexecuted_learner_state: state_clone,
         }
     }
-}
-
-/// Arc-backed shallow clone for unexecuted_learner_state. Refcount bump only.
-#[verifier::external_body]
-pub fn clone_arc_learner_state(v: &Arc<CLearnerState>) -> (res: Arc<CLearnerState>)
-    ensures
-        res@ == v@,
-{
-    Arc::clone(v)
 }
 
 impl Clone for CLearner {

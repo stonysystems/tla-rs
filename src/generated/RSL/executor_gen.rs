@@ -26,7 +26,6 @@ use crate::protocol::RSL::types::*;
 use crate::services::RSL::app_state_machine::{AppInitialize, AppState};
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::sync::Arc;
 use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
@@ -37,20 +36,20 @@ use crate::implementation::RSL::types_i::CReplyCache;
 
 verus! {
 
-// --- Arc::get_mut helpers (Phase 47.5: zero-alloc in-place mutation) ---
+// --- Direct mutation helpers (Phase 49.2: Arc removed) ---
 
 #[verifier::external_body]
-fn arc_replycache_set(rc: &mut Arc<CReplyCache>, new_val: CReplyCache)
+fn replycache_set(rc: &mut CReplyCache, new_val: CReplyCache)
     ensures rc@ == new_val@
 {
-    *Arc::get_mut(rc).unwrap() = new_val;
+    *rc = new_val;
 }
 
 #[verifier::external_body]
-fn arc_replycache_clone_from(rc: &mut Arc<CReplyCache>, src: &CReplyCache)
+fn replycache_clone_from(rc: &mut CReplyCache, src: &CReplyCache)
     ensures rc@ == src@
 {
-    *Arc::get_mut(rc).unwrap() = src.clone();
+    *rc = src.clone();
 }
 
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
@@ -153,7 +152,7 @@ ensures
         },
         next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
         },
-        reply_cache: Arc::new(HashMap::new()),
+        reply_cache: HashMap::new(),
     }; proof {
         lemma_empty_set_map();
         // Prove abstractify_creplycache on empty HashMap yields empty Map
@@ -197,7 +196,7 @@ ensures
             self.ops_complete = *opn_state_supply;
             self.max_bal_reflected = *bal_state_supply;
             self.next_op_to_execute = COutstandingOperation::COutstandingOpUnknown {};
-            arc_replycache_clone_from(&mut self.reply_cache, reply_cache);
+            replycache_clone_from(&mut self.reply_cache, reply_cache);
         },
         _ => { proof { assert(false); } }
     }
@@ -416,7 +415,7 @@ ensures
     s.ops_complete = s.ops_complete + 1;
     s.max_bal_reflected = new_max_bal;
     s.next_op_to_execute = COutstandingOperation::COutstandingOpUnknown {};
-    arc_replycache_set(&mut s.reply_cache, s_reply_cache);
+    replycache_set(&mut s.reply_cache, s_reply_cache);
 
     proof {
         let ghost ss = old_self;

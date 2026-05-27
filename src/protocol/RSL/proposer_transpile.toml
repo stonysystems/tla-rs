@@ -3,11 +3,8 @@
 # Emit &mut self calling convention for CProposer methods (Phase 48)
 mut_self_types = ["CProposer"]
 
-# Arc-wrap collection fields for O(1) clone on unchanged paths (Phase 42.3.a / Phase 41)
-# Struct definition lives in ProposerImpl.rs (hand-written). This config tells the
-# transpiler to emit Arc::new() at init/mutation sites and .clone() (Arc::clone) at clone sites.
-# Per-field Arc wrapping: emit Arc::new() at init/mutation, Arc::clone() at clone sites
-arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view", "request_queue", "received_1b_packets"] }
+# Phase 49.2: Arc-wrap removed — direct ownership with &mut self calling convention
+# arc_wrap_fields = {}
 
 # Primitive types that don't need valid() predicates
 # OperationNumber is remapped to u64 which is a primitive
@@ -159,7 +156,6 @@ custom_imports = [
     "use vstd::prelude::*;",
     "use vstd::map::*;",
     "use vstd::set::*;",
-    "use std::sync::Arc;",
     "use std::collections::HashMap;",
     "use std::collections::HashSet;",
     "use crate::common::collections::sets::*;",

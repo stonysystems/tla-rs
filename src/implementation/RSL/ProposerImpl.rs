@@ -16,7 +16,7 @@ use crate::protocol::RSL::types::*;
 use crate::protocol::RSL::{configuration::*, proposer::*};
 use std::collections::HashSet;
 use std::collections::*;
-use std::sync::Arc;
+
 use vstd::hash_set::HashSetWithView;
 use vstd::invariant;
 use vstd::prelude::*;
@@ -29,11 +29,11 @@ verus! {
 pub struct CProposer {
     pub constants: CReplicaConstants,
     pub current_state: u64,
-    pub request_queue: Arc<Vec<CRequest>>,
+    pub request_queue: Vec<CRequest>,
     pub max_ballot_i_sent_1a: CBallot,
     pub next_operation_number_to_propose: u64,
-    pub received_1b_packets: Arc<HashSet<CPacket>>,
-    pub highest_seqno_requested_by_client_this_view: Arc<HashMap<EndPoint, u64>>,
+    pub received_1b_packets: HashSet<CPacket>,
+    pub highest_seqno_requested_by_client_this_view: HashMap<EndPoint, u64>,
     pub incomplete_batch_timer: CIncompleteBatchTimer,
     pub election_state: CElectionState,
     pub max_log_truncation_point: COperationNumber,
@@ -68,8 +68,8 @@ impl CProposer{
             result.valid() == self.valid(),
     {
         let constants = self.constants.clone();
-        let request_queue = clone_arc_request_queue(&self.request_queue);
-        let received_1b_packets = clone_arc_received_1b_packets(&self.received_1b_packets);
+        let request_queue = clone_request_batch_up_to_view(&self.request_queue);
+        let received_1b_packets = clone_hashset(&self.received_1b_packets);
         let highest_seqno = clone_endpoint_seqno_map(&self.highest_seqno_requested_by_client_this_view);
         let incomplete_batch_timer = match self.incomplete_batch_timer {
             CIncompleteBatchTimer::CIncompleteBatchTimerOn { when } =>
@@ -154,81 +154,13 @@ impl Clone for CProposer {
     }
 }
 
-/// Arc-backed shallow clone. Refcount bump only.
+/// Deep clone of HashMap<EndPoint, u64> preserving view.
 #[verifier::external_body]
-pub fn clone_endpoint_seqno_map(m: &Arc<HashMap<EndPoint, u64>>) -> (res: Arc<HashMap<EndPoint, u64>>)
+pub fn clone_endpoint_seqno_map(m: &HashMap<EndPoint, u64>) -> (res: HashMap<EndPoint, u64>)
     ensures
         res@ == m@,
 {
-    Arc::clone(m)
-}
-
-/// Arc-backed shallow clone for request queue. Refcount bump only.
-#[verifier::external_body]
-pub fn clone_arc_request_queue(v: &Arc<Vec<CRequest>>) -> (res: Arc<Vec<CRequest>>)
-    ensures
-        res@ == v@,
-{
-    Arc::clone(v)
-}
-
-/// Arc-backed shallow clone for received_1b_packets. Refcount bump only.
-#[verifier::external_body]
-pub fn clone_arc_received_1b_packets(v: &Arc<HashSet<CPacket>>) -> (res: Arc<HashSet<CPacket>>)
-    ensures
-        res@ == v@,
-{
-    Arc::clone(v)
-}
-
-#[allow(dead_code)]
-#[verifier::external_body]
-fn _orig_clone_endpoint_seqno_map_kept_for_reference(m: &HashMap<EndPoint, u64>) -> HashMap<EndPoint, u64> {
-    broadcast use vstd::std_specs::hash::group_hash_axioms;
-    broadcast use vstd::hash_map::group_hash_map_axioms;
-    broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-
-    let keys = hashmap_keys_to_vec(m);
-    let mut result: HashMap<EndPoint, u64> = HashMap::new();
-    let mut i: usize = 0;
-    while i < keys.len()
-        invariant
-            0 <= i <= keys.len(),
-            forall |k: EndPoint| result@.contains_key(k) ==> m@.contains_key(k),
-            forall |k: EndPoint| result@.contains_key(k) ==> (#[trigger] result@[k]) == m@[k],
-            forall |j: int| 0 <= j < i as int ==> result@.contains_key(#[trigger] keys@[j]),
-            forall |k: int| 0 <= k < keys@.len() ==> m@.contains_key(#[trigger] keys@[k]),
-            forall |k: EndPoint| m@.contains_key(k) ==> (exists |j: int| 0 <= j < keys@.len() && keys@[j] == k),
-        decreases keys.len() - i,
-    {
-        let k = keys[i].clone_eq();
-        proof {
-            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-            broadcast use vstd::std_specs::hash::group_hash_axioms;
-            broadcast use vstd::hash_map::group_hash_map_axioms;
-            assert(k == keys@[i as int]);
-            assert(m@.contains_key(k));
-        }
-        let v = *m.get(&k).unwrap();
-        let ghost old_result = result@;
-        let _ = result.insert(k, v);
-        proof {
-            broadcast use vstd::std_specs::hash::group_hash_axioms;
-            broadcast use vstd::hash_map::group_hash_map_axioms;
-            broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
-            assert(result@ =~= old_result.insert(k, v));
-            assert(v == m@[k]);
-        }
-        i = i + 1;
-    }
-    proof {
-        assert forall |k: EndPoint| m@.contains_key(k) implies result@.contains_key(k) by {
-            let j = choose |j: int| 0 <= j < keys@.len() && keys@[j] == k;
-            assert(result@.contains_key(keys@[j]));
-        };
-        assert(result@ =~= m@);
-    }
-    result
+    m.clone()
 }
 
 broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
