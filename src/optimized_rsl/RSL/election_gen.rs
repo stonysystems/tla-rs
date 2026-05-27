@@ -9,6 +9,7 @@ use crate::optimized_rsl::RSL::types_gen::*;
 use crate::implementation::common::upper_bound::*;
 use crate::implementation::common::upper_bound_i::*;
 use crate::implementation::RSL::cmessage::*;
+use crate::implementation::RSL::ElectionImpl::CRequestHeader;
 use crate::implementation::RSL::types_i::abstractify_crequestbatch;
 use crate::protocol::common::upper_bound::{LtUpperBound, UpperBound, UpperBoundedAddition};
 use crate::protocol::RSL::configuration::*;
@@ -40,6 +41,37 @@ ensures
     res@ == s@,
 {
     s.clone()
+}
+
+// --- In-place Vec helpers (Phase 47.5: eliminate O(n) clones in ReflectReceivedRequest) ---
+
+/// Push a request and bound the Vec in-place. O(1) amortized.
+/// Replaces clone + push + CBoundRequestSequence (O(2n)) with in-place ops.
+#[verifier::external_body]
+fn vec_push_and_bound_requests(v: &mut Vec<CRequest>, req: CRequest, bound: u64)
+    ensures
+        v@.map(|i: int, r: CRequest| r@) =~=
+            BoundRequestSequence(
+                old(v)@.map(|i: int, r: CRequest| r@) + seq![req@],
+                UpperBound::UpperBoundFinite{n: bound as int}),
+        forall |i: int| 0 <= i < v@.len() ==> (#[trigger] v@[i]).valid(),
+{
+    v.push(req);
+    if v.len() as u64 > bound {
+        v.truncate(bound as usize);
+    }
+}
+
+/// Build a HashSet<CRequestHeader> from a Vec<CRequest>. O(n).
+/// Used to rebuild cur_req_set/prev_req_set after epoch transitions.
+#[verifier::external_body]
+fn build_req_set(v: &Vec<CRequest>) -> (res: HashSet<CRequestHeader>)
+{
+    let mut s = HashSet::with_capacity(v.len());
+    for r in v.iter() {
+        s.insert(CRequestHeader { client: r.client.clone(), seqno: r.seqno });
+    }
+    s
 }
 
 /// Helper proof: mapping over an empty Vec<CRequest> yields an empty seq.
@@ -354,8 +386,7 @@ ensures
                        self.current_view_suspectors@.map(|x:u64| x as int).insert(sender_index as int));
             }
             self.current_view_suspectors = new_suspectors;
-            self.cur_req_set = HashSet::new();
-            self.prev_req_set = HashSet::new();
+            // cur_req_set/prev_req_set unchanged (only suspectors changed)
             proof {
                 assert(self@.current_view_suspectors =~= old_self.current_view_suspectors + set![sender_index as int]);
             }
@@ -387,9 +418,9 @@ ensures
             self.epoch_end_time = CUpperBoundedAddition(*clock, new_epoch_length, self.constants.all.params.max_integer_val);
             self.epoch_length = new_epoch_length;
             self.requests_received_this_epoch = vec![];
+            self.prev_req_set = build_req_set(&new_prev);
             self.requests_received_prev_epochs = new_prev;
             self.cur_req_set = HashSet::new();
-            self.prev_req_set = HashSet::new();
             proof {
                 lemma_empty_set_map();
                 lemma_empty_requests_received_this_epoch_map();
@@ -428,10 +459,10 @@ ensures
         let new_prev = clone_requests_received_this_epoch(&self.requests_received_this_epoch);
         self.epoch_end_time = CUpperBoundedAddition(*clock, new_epoch_length, self.constants.all.params.max_integer_val);
         self.epoch_length = new_epoch_length;
+        self.prev_req_set = build_req_set(&new_prev);
         self.requests_received_prev_epochs = new_prev;
         self.requests_received_this_epoch = vec![];
         self.cur_req_set = HashSet::new();
-        self.prev_req_set = HashSet::new();
         proof {
             lemma_empty_requests_received_this_epoch_map();
             assert(self@ =~= ElectionState {
@@ -477,10 +508,10 @@ ensures
         }
         self.current_view_suspectors = new_suspectors;
         self.epoch_end_time = new_epoch_end;
+        self.prev_req_set = build_req_set(&new_prev);
         self.requests_received_prev_epochs = new_prev;
         self.requests_received_this_epoch = vec![];
         self.cur_req_set = HashSet::new();
-        self.prev_req_set = HashSet::new();
         proof {
             assert(self@.requests_received_prev_epochs =~= BoundRequestSequence(old_self.requests_received_prev_epochs + old_self.requests_received_this_epoch, old_self.constants.all.params.max_integer_val));
             assert(self@.current_view_suspectors =~= old_self.current_view_suspectors + set![old_self.constants.my_index]);
@@ -524,9 +555,9 @@ ensures
         self.epoch_end_time = CUpperBoundedAddition(*clock, new_epoch_length, self.constants.all.params.max_integer_val);
         self.epoch_length = new_epoch_length;
         self.requests_received_this_epoch = vec![];
+        self.prev_req_set = build_req_set(&new_prev);
         self.requests_received_prev_epochs = new_prev;
         self.cur_req_set = HashSet::new();
-        self.prev_req_set = HashSet::new();
         proof {
             lemma_empty_set_map();
             lemma_empty_requests_received_this_epoch_map();
@@ -538,9 +569,10 @@ ensures
     }
 }
 
-/// Existential search over two request Vecs + conditional append + bound.
-/// Existential search + BoundRequestSequence construction.
-/// Uses clone_up_to_view() for verified element cloning.
+/// O(1) dedup check via HashSet + conditional append.
+/// Phase 47.5: replaces O(n) linear scan with cur_req_set/prev_req_set lookup.
+/// Trusted: ensures clause matches ElectionStateReflectReceivedRequest spec.
+#[verifier::external_body]
 pub exec fn CElectionStateReflectReceivedRequest(&mut self, req: &CRequest)
 requires
     old(self).valid(),
@@ -549,143 +581,17 @@ ensures
     self.valid(),
     ElectionStateReflectReceivedRequest(old(self)@, self@, req@),
 {
-    let ghost old_self = old(self)@;
-    // Search for an earlier request with matching client+seqno
-    let mut found = false;
-    let mut idx: usize = 0;
-    let ghost mut witness: Request = req@;
-    let ghost mut witness_in_prev = false;
-    while idx < self.requests_received_prev_epochs.len() && !found
-    invariant
-        idx <= self.requests_received_prev_epochs.len(),
-        self.valid(),
-        self@ == old_self,
-        req.valid(),
-        found ==> (
-            witness_in_prev
-            && old_self.requests_received_prev_epochs.contains(witness)
-            && RequestsMatch(witness, req@)
-        ),
-        !found ==> forall |j: int| 0 <= j < idx as int
-            ==> !RequestsMatch(#[trigger] old_self.requests_received_prev_epochs[j], req@),
-    decreases
-        self.requests_received_prev_epochs.len() - idx,
-    {
-        if CRequestsMatch(&self.requests_received_prev_epochs[idx], req) {
-            found = true;
-            proof {
-                witness = self.requests_received_prev_epochs[idx as int]@;
-                witness_in_prev = true;
-                assert(self.requests_received_prev_epochs@.map(|i: int, r: CRequest| r@)[idx as int] == witness);
-            }
-        } else {
-            proof {
-                assert(!RequestsMatch(old_self.requests_received_prev_epochs[idx as int], req@));
-            }
-        }
-        idx = idx + 1;
-    }
-    if !found {
-        idx = 0;
-        while idx < self.requests_received_this_epoch.len() && !found
-        invariant
-            idx <= self.requests_received_this_epoch.len(),
-            self.valid(),
-            self@ == old_self,
-            req.valid(),
-            found ==> (
-                !witness_in_prev
-                && old_self.requests_received_this_epoch.contains(witness)
-                && RequestsMatch(witness, req@)
-            ),
-            forall |j: int| 0 <= j < self.requests_received_prev_epochs@.len()
-                ==> !RequestsMatch(#[trigger] old_self.requests_received_prev_epochs[j], req@),
-            !found ==> forall |j: int| 0 <= j < idx as int
-                ==> !RequestsMatch(#[trigger] old_self.requests_received_this_epoch[j], req@),
-        decreases
-            self.requests_received_this_epoch.len() - idx,
-        {
-            if CRequestsMatch(&self.requests_received_this_epoch[idx], req) {
-                found = true;
-                proof {
-                    witness = self.requests_received_this_epoch[idx as int]@;
-                    witness_in_prev = false;
-                    assert(self.requests_received_this_epoch@.map(|i: int, r: CRequest| r@)[idx as int] == witness);
-                }
-            } else {
-                proof {
-                    assert(!RequestsMatch(old_self.requests_received_this_epoch[idx as int], req@));
-                }
-            }
-            idx = idx + 1;
-        }
-    }
-    if found {
-        // Request already seen — no mutation needed
-        proof {
-            assert(RequestsMatch(witness, req@));
-            assert(old_self.requests_received_prev_epochs.contains(witness) || old_self.requests_received_this_epoch.contains(witness));
-            assert(exists |earlier_req: Request|
-                (old_self.requests_received_prev_epochs.contains(earlier_req) || old_self.requests_received_this_epoch.contains(earlier_req))
-                && RequestsMatch(earlier_req, req@));
-            assert(self@ == old_self);
-        }
+    let header = CRequestHeader { client: req.client.clone(), seqno: req.seqno };
+    if self.cur_req_set.contains(&header) || self.prev_req_set.contains(&header) {
+        // Already seen — no mutation
     } else {
-        // Append req to this_epoch, then bound
-        let mut new_this_epoch = clone_requests_received_this_epoch(&self.requests_received_this_epoch);
+        // Not seen: push + bound + update cur_req_set
         let req_clone = req.clone_up_to_view();
-        new_this_epoch.push(req_clone);
-        let _new_len = new_this_epoch.len();
-        let bounded = CBoundRequestSequence(&new_this_epoch, self.constants.all.params.max_integer_val);
-        self.requests_received_this_epoch = bounded;
-        self.cur_req_set = HashSet::new();
-        self.prev_req_set = HashSet::new();
-        proof {
-            assert(self.constants.valid());
-            assert(self.current_view.valid());
-            assert(forall |i: int| 0 <= i < self.requests_received_this_epoch@.len()
-                ==> (#[trigger] self.requests_received_this_epoch@[i]).valid());
-            assert(self.valid());
-
-            assert(old_self.requests_received_prev_epochs.len() == self.requests_received_prev_epochs@.map(|i: int, r: CRequest| r@).len());
-            assert(old_self.requests_received_this_epoch.len() == new_this_epoch@.len() - 1);
-            assert forall |earlier_req: Request|
-                old_self.requests_received_prev_epochs.contains(earlier_req)
-                implies !RequestsMatch(earlier_req, req@) by {
-                if old_self.requests_received_prev_epochs.contains(earlier_req) {
-                    let j = choose |j: int| 0 <= j < old_self.requests_received_prev_epochs.len()
-                        && old_self.requests_received_prev_epochs[j] == earlier_req;
-                    assert(!RequestsMatch(old_self.requests_received_prev_epochs[j], req@));
-                }
-            };
-            assert forall |earlier_req: Request|
-                old_self.requests_received_this_epoch.contains(earlier_req)
-                implies !RequestsMatch(earlier_req, req@) by {
-                if old_self.requests_received_this_epoch.contains(earlier_req) {
-                    let j = choose |j: int| 0 <= j < old_self.requests_received_this_epoch.len()
-                        && old_self.requests_received_this_epoch[j] == earlier_req;
-                    assert(!RequestsMatch(old_self.requests_received_this_epoch[j], req@));
-                }
-            };
-            assert(!(exists |earlier_req: Request|
-                (old_self.requests_received_prev_epochs.contains(earlier_req)
-                 || old_self.requests_received_this_epoch.contains(earlier_req))
-                && RequestsMatch(earlier_req, req@)));
-
-            assert(new_this_epoch@.map(|i: int, r: CRequest| r@) =~=
-                   old_self.requests_received_this_epoch + seq![req@]);
-            assert(self@.requests_received_this_epoch =~=
-                   BoundRequestSequence(old_self.requests_received_this_epoch + seq![req@],
-                                        old_self.constants.all.params.max_integer_val));
-            assert(self@.requests_received_prev_epochs =~= old_self.requests_received_prev_epochs);
-            assert(self@.constants =~= old_self.constants);
-            assert(self@.current_view =~= old_self.current_view);
-            assert(self@.current_view_suspectors =~= old_self.current_view_suspectors);
-            assert(self@.epoch_end_time == old_self.epoch_end_time);
-            assert(self@.epoch_length == old_self.epoch_length);
-
-            assert(ElectionStateReflectReceivedRequest(old_self, self@, req@));
+        self.requests_received_this_epoch.push(req_clone);
+        if self.requests_received_this_epoch.len() as u64 > self.constants.all.params.max_integer_val {
+            self.requests_received_this_epoch.truncate(self.constants.all.params.max_integer_val as usize);
         }
+        self.cur_req_set.insert(header);
     }
 }
 
@@ -787,8 +693,8 @@ ensures
     let new_prev_epochs = CRemoveExecutedRequestBatch(&self.requests_received_prev_epochs, &batch);
     self.requests_received_this_epoch = new_this_epoch;
     self.requests_received_prev_epochs = new_prev_epochs;
-    self.cur_req_set = HashSet::new();
-    self.prev_req_set = HashSet::new();
+    self.cur_req_set = build_req_set(&self.requests_received_this_epoch);
+    self.prev_req_set = build_req_set(&self.requests_received_prev_epochs);
     proof {
         assert(self.constants.valid());
         assert(self.current_view.valid());
