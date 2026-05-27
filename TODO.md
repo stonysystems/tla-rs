@@ -13607,7 +13607,7 @@ tiers, ordered biggest-gain-per-effort first.
     hashing). String keys are only created lazily when a state is actually new
     (for trace/debug/counterexample). Eliminates ~31% dedup overhead identified
     in 38.21.A.e profiling. ~80 LOC net delta.
-- [ ] **38.21.B**: **Parallelize the explorer** (2-4× on multicore).
+- [x] **38.21.B**: **Parallelize the explorer** (2-4× on multicore).
   TLC uses 4 workers. DPOR currently single-threaded. Worker-thread
   pool with a lock-free `DashMap<u64, ()>` visited set and per-worker
   backtrack stacks. The DPOR algorithm has known parallel variants
@@ -13652,7 +13652,7 @@ tiers, ordered biggest-gain-per-effort first.
     bytecode VM (~2× faster than AST interpreter) instead of falling
     back to AST-only. Added `test_bytecode_cache_is_send_sync` and
     `test_bytecode_cache_concurrent_access` tests. ~40 LOC.
-  - [ ] **38.21.B.ii**: **Parallel DPOR explorer improvements.**
+  - [x] **38.21.B.ii**: **Parallel DPOR explorer improvements.**
     The basic frontier-partition parallel DPOR (`explore_dpor_parallel`)
     already exists (Phase 38.18.1). It does BFS to hardcoded depth 2,
     then round-robin partitions frontier states across workers. Remaining
