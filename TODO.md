@@ -15516,7 +15516,7 @@ this in the transpiler so all protocols benefit without manual editing.
 
 #### 48.4 Body codegen: field mutations (~200 LOC)
 
-- [ ] **48.4.a**: Change body generation for `is_method` functions.
+- [x] **48.4.a**: Change body generation for `is_method` functions.
   Instead of building a return struct, emit `self.field = expr` for each
   field assignment. Add `let ghost old_self = old(self)@` at body start.
   Handle Arc-wrapped fields via external helpers.

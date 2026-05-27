@@ -115,12 +115,21 @@ impl Printer {
             self.current_indent -= 1;
         }
 
-        // Print body
+        // Print body — for methods, transform struct returns into field assignments
         self.indent();
         self.write("{");
         self.newline();
         self.current_indent += 1;
-        self.print_expr(&func.body);
+        if func.is_method {
+            // Emit ghost binding for old state
+            self.indent();
+            self.write("let ghost old_self = *old(self);");
+            self.newline();
+            let method_body = Self::struct_to_field_assignments(&func.body);
+            self.print_expr(&method_body);
+        } else {
+            self.print_expr(&func.body);
+        }
         self.current_indent -= 1;
         self.newline();
         self.indent();
@@ -143,6 +152,66 @@ impl Printer {
         self.current_indent = 0;
         self.print_expr(expr);
         std::mem::take(&mut self.output)
+    }
+
+    /// Transform tail-position struct constructions into `self.field = expr;` assignments
+    /// for `&mut self` method bodies. Recursively handles if/else branches and blocks.
+    fn struct_to_field_assignments(expr: &ExecExpr) -> ExecExpr {
+        match expr {
+            ExecExpr::Struct { fields, .. } => {
+                // Convert each field to self.field = expr;
+                let assignments: Vec<ExecExpr> = fields
+                    .iter()
+                    .map(|(name, value)| ExecExpr::Binary {
+                        lhs: Box::new(ExecExpr::Field(
+                            Box::new(ExecExpr::Var("self".to_string())),
+                            name.clone(),
+                        )),
+                        op: "=".to_string(),
+                        rhs: Box::new(value.clone()),
+                    })
+                    .collect();
+                ExecExpr::Block(assignments)
+            }
+            ExecExpr::StructUpdate { fields, .. } => {
+                // Only the explicitly changed fields get assignments
+                let assignments: Vec<ExecExpr> = fields
+                    .iter()
+                    .map(|(name, value)| ExecExpr::Binary {
+                        lhs: Box::new(ExecExpr::Field(
+                            Box::new(ExecExpr::Var("self".to_string())),
+                            name.clone(),
+                        )),
+                        op: "=".to_string(),
+                        rhs: Box::new(value.clone()),
+                    })
+                    .collect();
+                ExecExpr::Block(assignments)
+            }
+            ExecExpr::Block(stmts) if !stmts.is_empty() => {
+                // Transform the last statement, keep the rest
+                let mut new_stmts = stmts[..stmts.len() - 1].to_vec();
+                let last = Self::struct_to_field_assignments(stmts.last().unwrap());
+                new_stmts.push(last);
+                ExecExpr::Block(new_stmts)
+            }
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                // Transform both branches
+                ExecExpr::If {
+                    cond: cond.clone(),
+                    then_branch: Box::new(Self::struct_to_field_assignments(then_branch)),
+                    else_branch: else_branch
+                        .as_ref()
+                        .map(|e| Box::new(Self::struct_to_field_assignments(e))),
+                }
+            }
+            // For other expressions (no struct at tail), leave unchanged
+            other => other.clone(),
+        }
     }
 
     /// Print function signature
@@ -1739,5 +1808,226 @@ mod tests {
             is_self: false,
         };
         assert!(!regular_param.is_self);
+    }
+
+    #[test]
+    fn test_method_body_struct_to_field_assignments() {
+        // A method whose body is a struct construction should emit field assignments
+        let func = ExecFunction {
+            name: "CDoStep".to_string(),
+            params: vec![
+                ExecParameter {
+                    name: "s".to_string(),
+                    ty: ExecType::Reference(
+                        Box::new(ExecType::Named("CReplica".to_string())),
+                        true,
+                    ),
+                    is_reference: true,
+                    is_self: true,
+                },
+                ExecParameter {
+                    name: "val".to_string(),
+                    ty: ExecType::Named("u64".to_string()),
+                    is_reference: false,
+                    is_self: false,
+                },
+            ],
+            return_type: ExecType::Named("CReplica".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::Struct {
+                name: "CReplica".to_string(),
+                fields: vec![
+                    (
+                        "counter".to_string(),
+                        ExecExpr::Var("val".to_string()),
+                    ),
+                    (
+                        "state".to_string(),
+                        ExecExpr::Literal("0u64".to_string()),
+                    ),
+                ],
+            },
+            is_method: true,
+            receiver_type: Some("CReplica".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Should have ghost old_self binding
+        assert!(
+            output.contains("let ghost old_self = *old(self);"),
+            "method body should start with old_self binding: {}",
+            output
+        );
+        // Should have field assignments instead of struct construction
+        assert!(
+            output.contains("self.counter = val"),
+            "should emit self.counter = val: {}",
+            output
+        );
+        assert!(
+            output.contains("self.state = 0u64"),
+            "should emit self.state = 0u64: {}",
+            output
+        );
+        // Should NOT have struct field initialization syntax
+        assert!(
+            !output.contains("counter:"),
+            "should not have struct field initialization: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_method_body_struct_update_to_field_assignments() {
+        // StructUpdate should only emit assignments for changed fields
+        let func = ExecFunction {
+            name: "CIncrement".to_string(),
+            params: vec![ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(
+                    Box::new(ExecType::Named("CState".to_string())),
+                    true,
+                ),
+                is_reference: true,
+                is_self: true,
+            }],
+            return_type: ExecType::Named("CState".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::StructUpdate {
+                name: "CState".to_string(),
+                base: Box::new(ExecExpr::Clone(Box::new(ExecExpr::Var("s".to_string())))),
+                fields: vec![(
+                    "counter".to_string(),
+                    ExecExpr::Binary {
+                        lhs: Box::new(ExecExpr::Var("self.counter".to_string())),
+                        op: "+".to_string(),
+                        rhs: Box::new(ExecExpr::Literal("1".to_string())),
+                    },
+                )],
+            },
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Only the changed field should be assigned
+        assert!(
+            output.contains("self.counter = "),
+            "should assign changed field: {}",
+            output
+        );
+        // Should not have struct update syntax
+        assert!(
+            !output.contains(".."),
+            "should not have struct update ..base syntax: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_method_body_if_else_branches() {
+        // Method body with if/else where each branch returns a struct
+        let func = ExecFunction {
+            name: "CStep".to_string(),
+            params: vec![
+                ExecParameter {
+                    name: "s".to_string(),
+                    ty: ExecType::Reference(
+                        Box::new(ExecType::Named("CState".to_string())),
+                        true,
+                    ),
+                    is_reference: true,
+                    is_self: true,
+                },
+                ExecParameter {
+                    name: "flag".to_string(),
+                    ty: ExecType::Named("bool".to_string()),
+                    is_reference: false,
+                    is_self: false,
+                },
+            ],
+            return_type: ExecType::Named("CState".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::If {
+                cond: Box::new(ExecExpr::Var("flag".to_string())),
+                then_branch: Box::new(ExecExpr::Struct {
+                    name: "CState".to_string(),
+                    fields: vec![("x".to_string(), ExecExpr::Literal("1".to_string()))],
+                }),
+                else_branch: Some(Box::new(ExecExpr::Struct {
+                    name: "CState".to_string(),
+                    fields: vec![("x".to_string(), ExecExpr::Literal("0".to_string()))],
+                })),
+            },
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Both branches should have field assignments
+        assert!(
+            output.contains("self.x = 1"),
+            "then branch should have field assignment: {}",
+            output
+        );
+        assert!(
+            output.contains("self.x = 0"),
+            "else branch should have field assignment: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_method_body_block_with_lets_then_struct() {
+        // Method body: let bindings followed by struct construction
+        let func = ExecFunction {
+            name: "CCompute".to_string(),
+            params: vec![ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(
+                    Box::new(ExecType::Named("CState".to_string())),
+                    true,
+                ),
+                is_reference: true,
+                is_self: true,
+            }],
+            return_type: ExecType::Named("CState".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "tmp".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::Literal("42u64".to_string())),
+                },
+                ExecExpr::Struct {
+                    name: "CState".to_string(),
+                    fields: vec![("val".to_string(), ExecExpr::Var("tmp".to_string()))],
+                },
+            ]),
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Let binding should be preserved
+        assert!(
+            output.contains("let tmp = 42u64;"),
+            "let binding should be preserved: {}",
+            output
+        );
+        // Last expression should be field assignment
+        assert!(
+            output.contains("self.val = tmp"),
+            "struct construction should become field assignment: {}",
+            output
+        );
     }
 }
