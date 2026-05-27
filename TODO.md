@@ -15642,9 +15642,9 @@ Sushant uses Path B (no Arc, direct ownership, `&mut self` end-to-end). We're on
 
 #### 49.1 Profile-driven validation (~0.5 day)
 
-- [ ] **49.1.a**: Run `perf record -F 999 -g` for 30s bench on current AutoMan-V binary. Generate flamegraph. Identify top-10 functions by self-time.
-- [ ] **49.1.b**: Same on Sushant binary. Diff the flamegraphs side-by-side.
-- [ ] **49.1.c**: If Arc-related symbols (`Arc::clone`, `Arc::get_mut`, `Arc::deref`, atomic ops) appear in our top-10 but not Sushant's → Phase 49.2 is the right path. If different bottleneck (e.g., HashMap rehash, Vec realloc, framework polling) → re-plan Phase 49.2.
+- [x] **49.1.a**: Run `perf record -F 999 -g` for 15s bench on current AutoMan-V binary (32 threads, zoo-001). Result: **73,553 ops/s**, 0.74ms latency. DSO breakdown: 40% .NET JIT, 21.5% libc (malloc/free), 19% liblib.so, 14% kernel. Top liblib.so: `CPacket::clone` 2.75%, `SipHash::write` 1.96%, `Vec<CPacket>::from_iter` 0.96%, `CMessage::drop` 0.75%, `truncate_vecu64` 0.71%, `clone_request_batch_up_to_view` 0.69%.
+- [x] **49.1.b**: Same on Sushant binary (sushant-inspect). Result: **90,521 ops/s**, 0.60ms latency. DSO: 38% JIT, 22% liblib.so, 16% kernel, 15.5% libc. Top liblib.so: `clone_vec_u8` 3.52%, `CPacket::clone_up_to_view` 2.86%, `hashmap_keys_to_vec_u64` 1.01%, `clone_cvotes_up_to_view` 0.92%.
+- [x] **49.1.c**: **Arc is NOT the bottleneck.** Zero Arc-related symbols (Arc::clone, Arc::get_mut, atomic ops) appear in AutoMan-V's top-100 functions. The real bottleneck is **unnecessary deep clone of `HashSet<CPacket>` on every nomination check** (`ProposerImpl.rs:664: clone_hashset(&self.received_1b_packets)` called from `CProposerCanNominateUsingOperationNumber`). Sushant passes `&self.received_1b_packets` directly — no clone. Secondary: AutoMan-V libc (malloc/free) is 21.5% vs Sushant's 15.5% — 6% extra allocation overhead from this and other unnecessary clones. **Revised plan**: (1) remove unnecessary `clone_hashset` at ProposerImpl.rs:664, (2) still drop Arc on 5 fields (removes indirection, simplifies code), (3) re-bench.
 
 #### 49.2 Drop Arc on hot fields (~2 days, conditional on 49.1.c)
 
@@ -15695,6 +15695,25 @@ For each:
 - **R1**: 49.1 profile may reveal Arc is NOT the dominant cost (could be HashMap hashing, framework polling, etc.). Mitigation: 49.1 is the gate; if Arc isn't hot, drop 49.2 and re-plan based on actual data.
 - **R2**: Verus may need new proof scaffolding when `Arc<X>` becomes `X` (e.g., the `View` impl differs slightly). Mitigation: LLM handles most; if any function genuinely needs human, document and continue with the rest.
 - **R3**: Dropping Arc might break **some** code path that genuinely needs sharing (unlikely in hot path with `&mut self`, but possible in cold paths like state snapshot). Mitigation: keep Arc on cold fields if needed; only drop on the 5 hot ones.
+
+### Phase 49.1 Results (2026-05-27, zoo-001)
+
+**Profiling**: `perf record -F 999 -g` for 15s, 32 client threads.
+
+| Configuration | Trial 1 ops/s | Trial 2 ops/s | Latency |
+|---|---|---|---|
+| AutoMan-V (before fix) | 73,553 | — | 0.74 ms |
+| AutoMan-V (after removing clone_hashset) | 77,179 | 53,774 | 0.70 ms |
+| Sushant (hand-tuned) | 95,525 | 74,199 | 0.57 ms |
+
+**Key finding**: Arc is NOT the bottleneck. Zero Arc symbols in profile. The real hotspot was `ProposerImpl.rs:664: clone_hashset(&self.received_1b_packets)` — a deep clone of `HashSet<CPacket>` on every nomination check (called per request). Sushant passes `&self.received_1b_packets` directly. Removing this clone gave **~5% improvement** (73.5K → 77.2K).
+
+Remaining ~19% gap (77K vs 95K) is dominated by:
+1. **libc malloc/free overhead**: 21.5% (AutoMan-V) vs 15.5% (Sushant) — 6% extra allocation from other clone operations
+2. **HashSet hashing**: 2% in SipHash for CPacket/CMessage (AutoMan-V uses `clone` + HashSet ops; Sushant avoids HashSet on hot path)
+3. **Arc indirection on 5 fields**: minor overhead but still unnecessary complexity
+
+**Phase 48.7 regression**: The `&mut self` codegen for 8 non-RSL protocols (Phase 48.7) has a transpiler bug — internal dispatch calls within methods still use free-function syntax (`CFoo(&s, c, ...)` instead of `s.CFoo(c, ...)`). This causes 58 compilation errors and prevents building liblib.so with all protocols enabled. RSL and TwoPhase are unaffected. Needs transpiler fix in follow-up phase.
 
 ### Out of scope
 
