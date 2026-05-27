@@ -121,9 +121,7 @@ impl LeaderElectionHost {
         }
 
         // All CSendAnswer preconditions met: alive, my_id > sender
-        let (new_state, _sent) =
-            election_gen::CSendAnswer(&self.state, &config.constants, &my_id, &sender);
-        self.state = new_state;
+        let _sent = self.state.CSendAnswer(&config.constants, &my_id, &sender);
 
         // Send Answer back to the sender to suppress their election
         if (sender as usize) < config.peers.len() {
@@ -174,9 +172,7 @@ impl LeaderElectionHost {
             };
         }
 
-        let (new_state, _sent) =
-            election_gen::CReceiveAnswer(&self.state, &config.constants, &my_id, &responder);
-        self.state = new_state;
+        let _sent = self.state.CReceiveAnswer(&config.constants, &my_id, &responder);
 
         StepResult {
             ok: true,
@@ -205,9 +201,7 @@ impl LeaderElectionHost {
             };
         }
 
-        let (new_state, _sent) =
-            election_gen::CReceiveCoordinator(&self.state, &config.constants, &my_id, &leader);
-        self.state = new_state;
+        let _sent = self.state.CReceiveCoordinator(&config.constants, &my_id, &leader);
 
         StepResult {
             ok: true,
@@ -271,9 +265,7 @@ impl LeaderElectionHost {
             };
         }
 
-        let (new_state, _sent) =
-            election_gen::CStartElection(&self.state, &config.constants, &my_id);
-        self.state = new_state;
+        let _sent = self.state.CStartElection(&config.constants, &my_id);
 
         // Send Election message to all nodes with higher IDs
         let higher_peers: Vec<EndPoint> = config
@@ -339,9 +331,7 @@ impl LeaderElectionHost {
             };
         }
 
-        let (new_state, _sent) =
-            election_gen::CSendCoordinator(&self.state, &config.constants, &my_id);
-        self.state = new_state;
+        let _sent = self.state.CSendCoordinator(&config.constants, &my_id);
 
         // Broadcast Coordinator message to all peers
         let all_peers: Vec<EndPoint> = config
@@ -401,9 +391,7 @@ impl LeaderElectionHost {
         }
 
         // Leader is not in alive set: precondition satisfied.
-        let (new_state, _sent) =
-            election_gen::CDetectFailure(&self.state, &config.constants, &my_id);
-        self.state = new_state;
+        let _sent = self.state.CDetectFailure(&config.constants, &my_id);
 
         // Send Election message to all higher-ID nodes
         let higher_peers: Vec<EndPoint> = config

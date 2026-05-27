@@ -159,8 +159,7 @@ impl VerticalPaxosHost {
         let promise_v_bal = self.state.max_v_bal;
         let promise_val = self.state.max_val;
 
-        let (new_state, _sent) = vpaxos_gen::CSendPromise(&self.state, &config.constants, &ballot);
-        self.state = new_state;
+        let _sent = self.state.CSendPromise(&config.constants, &ballot);
 
         // Send Promise back to the proposer
         StepResult {
@@ -211,15 +210,13 @@ impl VerticalPaxosHost {
             };
         }
 
-        let (new_state, _sent) = vpaxos_gen::CReceivePromise(
-            &self.state,
+        let _sent = self.state.CReceivePromise(
             &config.constants,
             &sender,
             &ballot,
             &v_bal,
             &val,
         );
-        self.state = new_state;
 
         StepResult {
             ok: true,
@@ -259,9 +256,7 @@ impl VerticalPaxosHost {
             };
         }
 
-        let (new_state, _sent) =
-            vpaxos_gen::CAccept(&self.state, &config.constants, &ballot, &value);
-        self.state = new_state;
+        let _sent = self.state.CAccept(&config.constants, &ballot, &value);
 
         // Send AcceptOk back to the proposer
         StepResult {
@@ -302,9 +297,7 @@ impl VerticalPaxosHost {
             };
         }
 
-        let (new_state, _sent) =
-            vpaxos_gen::CReceiveAccepted(&self.state, &config.constants, &sender, &accept_bal);
-        self.state = new_state;
+        let _sent = self.state.CReceiveAccepted(&config.constants, &sender, &accept_bal);
 
         StepResult {
             ok: true,
@@ -349,9 +342,7 @@ impl VerticalPaxosHost {
             };
         }
 
-        let (new_state, _sent) =
-            vpaxos_gen::CSync(&self.state, &config.constants, &new_config, &val);
-        self.state = new_state;
+        let _sent = self.state.CSync(&config.constants, &new_config, &val);
 
         eprintln!(
             "VerticalPaxos: SYNC to config {} with value = {}",
@@ -389,8 +380,7 @@ impl VerticalPaxosHost {
             };
         }
 
-        let (new_state, _sent) = vpaxos_gen::CPrepare(&self.state, &config.constants, &new_ballot);
-        self.state = new_state;
+        let _sent = self.state.CPrepare(&config.constants, &new_ballot);
 
         // Broadcast Prepare to all other nodes
         let others = Self::other_peers(config);
@@ -433,9 +423,7 @@ impl VerticalPaxosHost {
             };
         }
 
-        let (new_state, _sent) =
-            vpaxos_gen::CAccept(&self.state, &config.constants, &ballot, &value);
-        self.state = new_state;
+        let _sent = self.state.CAccept(&config.constants, &ballot, &value);
 
         // Broadcast Accept to all other nodes
         let others = Self::other_peers(config);
@@ -475,8 +463,7 @@ impl VerticalPaxosHost {
             };
         }
 
-        let (new_state, _sent) = vpaxos_gen::CCommit(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CCommit(&config.constants);
 
         let decided_val = self.state.committed_val;
         eprintln!("VerticalPaxos: COMMITTED value = {}", decided_val);
@@ -523,8 +510,7 @@ impl VerticalPaxosHost {
         }
 
         let old_val = self.state.committed_val;
-        let (new_state, _sent) = vpaxos_gen::CReconfigure(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CReconfigure(&config.constants);
 
         let new_config_num = self.state.config_num;
         eprintln!(

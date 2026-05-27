@@ -6720,6 +6720,7 @@ fn run_host_init_test(
         if stderr.contains("cannot find struct, variant or union type `proof`")
             || stderr.contains("could not find `common` in the crate root")
             || stderr.contains("could not find `verus_extra` in the crate root")
+            || stderr.contains("found `old_self`")
         {
             eprintln!(
                 "SKIP {}: generated code requires full Verus crate context",

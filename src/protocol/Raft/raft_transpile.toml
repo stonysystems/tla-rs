@@ -17,6 +17,9 @@ msg_vec_type = ["CRaftMessage", "LRaftMessage"]
 set_fields = ["votes_granted", "servers"]
 
 # Arc-wrap non-scalar fields of CState for O(1) clone
+# Emit &mut self calling convention for CState methods (Phase 48)
+mut_self_types = ["CState"]
+
 arc_wrap_types = ["CState"]
 
 [arc_wrap_fields]

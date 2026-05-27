@@ -85,9 +85,8 @@ impl RaftHost {
             let val = if has { self.state.log[ni as usize].value } else { 0 };
             let pi = if ni > 0 { ni } else { 0 };
             let pt = if ni > 0 && ni - 1 < ll { self.state.log[(ni - 1) as usize].term } else { 0 };
-            let (ns, sent) = raft_gen::CSendAppendEntries(
-                &self.state, &config.constants, &fid, &val, &pi, &pt, has);
-            self.state = ns;
+            let sent = self.state.CSendAppendEntries(
+                &config.constants, &fid, &val, &pi, &pt, has);
             if !sent.is_empty() {
                 pkts.push(GenericPacket { dst: config.peers[i].clone_up_to_view(),
                     src: config.peers[me as usize].clone_up_to_view(), msg: to_wire(&sent[0]) });
@@ -137,7 +136,7 @@ impl ProtocolHost for RaftHost {
             // Client requests (not part of spec's LHandleMessage)
             if let RaftMessage::ClientRequest { client_id, seq_no, value } = pkt.msg {
                 let ok = matches!(self.state.role, CServerRole::Leader);
-                if ok { let (ns, _) = raft_gen::CClientRequest(&self.state, &config.constants, &value); self.state = ns; }
+                if ok { let _ = self.state.CClientRequest(&config.constants, &value); }
                 return merge(StepResult { ok: true, outbound: GenericOutbound::Send {
                     dst: pkt.src.clone_up_to_view(), msg: RaftMessage::ClientResponse { client_id, seq_no, success: ok } } }, hb);
             }
@@ -145,8 +144,7 @@ impl ProtocolHost for RaftHost {
             if let Some(cmsg) = from_wire(&pkt.msg) {
                 let old_term = self.state.current_term;
                 let old_voted = self.state.has_voted;
-                let (ns, sent) = raft_gen::CHandleMessage(&self.state, &config.constants, &cmsg);
-                self.state = ns;
+                let sent = self.state.CHandleMessage(&config.constants, &cmsg);
                 // Reset election timer on valid heartbeat, vote grant, or step-down
                 let reset = match &pkt.msg {
                     RaftMessage::AppendEntries { term, .. } if *term >= old_term => true,
@@ -167,8 +165,7 @@ impl ProtocolHost for RaftHost {
                     self.last_heartbeat = std::time::Instant::now();
                     self.election_timeout_ms = random_election_timeout();
                     eprintln!("Raft: Node {} election timeout, term {}", config.my_index, self.state.current_term + 1);
-                    let (ns, sent) = raft_gen::CTimeout(&self.state, &config.constants);
-                    self.state = ns;
+                    let sent = self.state.CTimeout(&config.constants);
                     if !sent.is_empty() {
                         let others: Vec<EndPoint> = (0..config.peers.len())
                             .filter(|&i| i as u64 != config.my_index)
@@ -180,8 +177,7 @@ impl ProtocolHost for RaftHost {
             }
             CServerRole::Leader => {
                 if let Some(ci) = self.find_commit_index(config) {
-                    let (ns, _) = raft_gen::CTryAdvanceCommitIndex(&self.state, &config.constants, &ci);
-                    self.state = ns;
+                    let _ = self.state.CTryAdvanceCommitIndex(&config.constants, &ci);
                     eprintln!("Raft: Node {} commit_index -> {}", config.my_index, ci);
                 }
                 merge(StepResult { ok: true, outbound: GenericOutbound::None }, hb)

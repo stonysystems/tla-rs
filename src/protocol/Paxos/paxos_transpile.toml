@@ -5,6 +5,9 @@ skip_functions = [
     "LNext",
 ]
 
+# Emit &mut self calling convention for CState methods (Phase 48)
+mut_self_types = ["CState"]
+
 # Arc-wrap non-scalar fields of CState for O(1) clone
 arc_wrap_types = ["CState"]
 

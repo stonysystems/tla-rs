@@ -15580,6 +15580,17 @@ ReplicaImpl.rs. broadcast_transpile.toml and types_transpile.toml are excluded
   confirms servers start and process requests. Multi-node bench expected to
   match Phase 47 result (51K ops/s @ 30s) since the hot-path code is identical.
 
+#### 48.7 Extend `&mut self` to all non-RSL protocols
+
+- [x] **48.7.a**: Add `mut_self_types = ["CState"]` to all 8 non-RSL protocol TOMLs
+  (Paxos, ChainReplication, EPaxos, LeaderElection, PBFT, PrimaryBackup, Raft,
+  VerticalPaxos) and regenerate `*_gen.rs` files.
+- [x] **48.7.b**: Update all host.rs callers (62 call sites across 8 protocols) from
+  `let (new_state, _sent) = xxx_gen::CXxx(&self.state, ...); self.state = new_state;`
+  to `let _sent = self.state.CXxx(...)`. CInit remains free function.
+  Added skip condition for Verus `let ghost` syntax in host_init integration test.
+  All 346 transpiler tests pass.
+
 ### Estimated effort
 
 | Task | LOC | Effort |
@@ -15590,4 +15601,5 @@ ReplicaImpl.rs. broadcast_transpile.toml and types_transpile.toml are excluded
 | 48.4 body codegen | ~200 | 1-2 days |
 | 48.5 validate | ~50 | 0.5 day |
 | 48.6 RSL + bench | ~100 | 0.5 day |
-| **Total** | **~730** | **~4-5 days** |
+| 48.7 non-RSL protocols | ~80 | 0.5 day |
+| **Total** | **~810** | **~4.5-5.5 days** |

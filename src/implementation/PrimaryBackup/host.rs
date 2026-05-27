@@ -135,9 +135,7 @@ impl PrimaryBackupHost {
             };
         }
 
-        let (new_state, _sent) =
-            primarybackup_gen::CPrimaryWrite(&self.state, &config.constants, &value);
-        self.state = new_state;
+        let _sent = self.state.CPrimaryWrite(&config.constants, &value);
         self.pending_client = Some(client_ep);
 
         // After writing, immediately attempt to send replicate to backup.
@@ -161,9 +159,7 @@ impl PrimaryBackupHost {
         // Capture pending_value before the state transition for the outbound message.
         let value = self.state.pending_value;
 
-        let (new_state, _sent) =
-            primarybackup_gen::CPrimarySendReplicate(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CPrimarySendReplicate(&config.constants);
 
         // Send Replicate to backup
         let dst = Self::backup_endpoint(config);
@@ -190,9 +186,7 @@ impl PrimaryBackupHost {
             };
         }
 
-        let (new_state, _sent) =
-            primarybackup_gen::CPrimaryReceiveAck(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CPrimaryReceiveAck(&config.constants);
 
         // After receiving ack, try to commit
         self.primary_try_commit(config)
@@ -220,8 +214,7 @@ impl PrimaryBackupHost {
         let committed_value = self.state.pending_value;
         let client_ep = self.pending_client.take();
 
-        let (new_state, _sent) = primarybackup_gen::CPrimaryCommit(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CPrimaryCommit(&config.constants);
 
         // Send ClientReply to the requesting client
         match client_ep {
@@ -250,8 +243,7 @@ impl PrimaryBackupHost {
             };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CPrimaryFail(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CPrimaryFail(&config.constants);
 
         StepResult {
             ok: true,
@@ -279,9 +271,7 @@ impl PrimaryBackupHost {
             };
         }
 
-        let (new_state, _sent) =
-            primarybackup_gen::CBackupReceiveReplicate(&self.state, &config.constants, &value);
-        self.state = new_state;
+        let _sent = self.state.CBackupReceiveReplicate(&config.constants, &value);
 
         // After receiving replicate, try to send ack
         self.backup_try_send_ack(config)
@@ -302,8 +292,7 @@ impl PrimaryBackupHost {
             };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CBackupSendAck(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CBackupSendAck(&config.constants);
 
         // Send Ack to primary
         let dst = Self::primary_endpoint(config);
@@ -330,8 +319,7 @@ impl PrimaryBackupHost {
             };
         }
 
-        let (new_state, _sent) = primarybackup_gen::CBackupPromote(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CBackupPromote(&config.constants);
 
         StepResult {
             ok: true,

@@ -5,6 +5,9 @@ skip_functions = [
     "LNext",
 ]
 
+# Emit &mut self calling convention for CState methods (Phase 48)
+mut_self_types = ["CState"]
+
 [naming]
 spec_prefix = "L"
 exec_prefix = "C"

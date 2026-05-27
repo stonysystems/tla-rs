@@ -252,9 +252,7 @@ impl ChainHost {
             };
         }
 
-        let (new_state, _sent) =
-            chain_gen::CHeadReceiveWrite(&self.state, &config.constants, &value);
-        self.state = new_state;
+        let _sent = self.state.CHeadReceiveWrite(&config.constants, &value);
 
         StepResult {
             ok: true,
@@ -301,9 +299,7 @@ impl ChainHost {
             }
         };
 
-        let (new_state, _sent) =
-            chain_gen::CForwardToSuccessor(&self.state, &config.constants, &value);
-        self.state = new_state;
+        let _sent = self.state.CForwardToSuccessor(&config.constants, &value);
 
         // Send Forward message to successor
         match Self::successor_endpoint(config, &self.state) {
@@ -343,8 +339,7 @@ impl ChainHost {
             };
         }
 
-        let (new_state, _sent) = chain_gen::CReceiveUpdate(&self.state, &config.constants, &value);
-        self.state = new_state;
+        let _sent = self.state.CReceiveUpdate(&config.constants, &value);
 
         StepResult {
             ok: true,
@@ -383,8 +378,7 @@ impl ChainHost {
         // Pick a value from history to commit (use first element)
         let value = self.state.history[0];
 
-        let (new_state, _sent) = chain_gen::CTailCommit(&self.state, &config.constants, &value);
-        self.state = new_state;
+        let _sent = self.state.CTailCommit(&config.constants, &value);
 
         // Send Ack to predecessor
         match Self::predecessor_endpoint(config, &self.state) {
@@ -424,8 +418,7 @@ impl ChainHost {
             };
         }
 
-        let (new_state, _sent) = chain_gen::CReceiveAck(&self.state, &config.constants, &value);
-        self.state = new_state;
+        let _sent = self.state.CReceiveAck(&config.constants, &value);
 
         // If this is a Middle node, propagate Ack to predecessor
         if matches!(self.state.role, CNodeRole::Middle) {
@@ -464,8 +457,7 @@ impl ChainHost {
             };
         }
 
-        let (new_state, _sent) = chain_gen::CClientRead(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CClientRead(&config.constants);
 
         // In a real deployment, the read result (self.state.obj_value) would be
         // returned to the client. For now, this is a no-op on the network.

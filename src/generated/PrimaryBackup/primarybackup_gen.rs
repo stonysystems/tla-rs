@@ -44,274 +44,290 @@ CState {
     }
 }
 
-pub exec fn CPrimaryWrite(s: &CState, c: &CConstants, val: &u64) -> (result: (CState, Vec<CPBMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Primary,
-    s.acked == true,
-    s.has_pending == false,
-    (s.log_length < c.max_log_len),
-ensures
-    result.0.valid(),
-    LPrimaryWrite(s@, result.0@, c@, *val as int, result.1@.map(|i, p: CPBMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CPrimaryWrite(&mut self, c: &CConstants, val: &u64) -> (result: Vec<CPBMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).role is Primary,
+        old(self).acked == true,
+        old(self).has_pending == false,
+        (old(self).log_length < c.max_log_len),
+    ensures
+        self.valid(),
+        LPrimaryWrite(old(self)@, self@, c@, *val as int, result@.map(|i, p: CPBMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    has_pending: true,
-    pending_value: (*val),
-    acked: false,
-    role: s.role.clone(),
-    log_length: s.log_length.clone(),
-    last_value: s.last_value.clone(),
-    backup_log_length: s.backup_log_length.clone(),
-    backup_last_value: s.backup_last_value.clone(),
-    backup_synced: s.backup_synced.clone(),
-    view: s.view.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.has_pending = true;
+            self.pending_value = (*val);
+            self.acked = false;
+            self.role = self.role.clone();
+            self.log_length = self.log_length.clone();
+            self.last_value = self.last_value.clone();
+            self.backup_log_length = self.backup_log_length.clone();
+            self.backup_last_value = self.backup_last_value.clone();
+            self.backup_synced = self.backup_synced.clone();
+            self.view = self.view.clone();
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CPrimarySendReplicate(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Primary,
-    s.has_pending == true,
-    s.acked == false,
-ensures
-    result.0.valid(),
-    LPrimarySendReplicate(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
-{
-    let result = (CState {
-    role: s.role.clone(),
-    log_length: s.log_length.clone(),
-    last_value: s.last_value.clone(),
-    has_pending: s.has_pending.clone(),
-    pending_value: s.pending_value.clone(),
-    acked: s.acked.clone(),
-    backup_log_length: s.backup_log_length.clone(),
-    backup_last_value: s.backup_last_value.clone(),
-    backup_synced: s.backup_synced.clone(),
-    view: s.view.clone(),
-}, vec![CPBMessage::Replicate {
+impl CState {
+    pub exec fn CPrimarySendReplicate(&mut self, c: &CConstants) -> (result: Vec<CPBMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).role is Primary,
+        old(self).has_pending == true,
+        old(self).acked == false,
+    ensures
+        self.valid(),
+        LPrimarySendReplicate(old(self)@, self@, c@, result@.map(|i, p: CPBMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        self.role = self.role.clone();
+        self.log_length = self.log_length.clone();
+        self.last_value = self.last_value.clone();
+        self.has_pending = self.has_pending.clone();
+        self.pending_value = self.pending_value.clone();
+        self.acked = self.acked.clone();
+        self.backup_log_length = self.backup_log_length.clone();
+        self.backup_last_value = self.backup_last_value.clone();
+        self.backup_synced = self.backup_synced.clone();
+        self.view = self.view.clone();
+        let result = vec![CPBMessage::Replicate {
     val: s.pending_value.clone(),
-}]);
-    proof {
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result.1@[0]@));
-    }
-    result
+}];
+        proof {
+            assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result@[0]@));
+        }
+        result
 
+    }
 }
 
-pub exec fn CBackupReceiveReplicate(s: &CState, c: &CConstants, val: &u64) -> (result: (CState, Vec<CPBMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Primary,
-    s.backup_log_length < u64::MAX,
-ensures
-    result.0.valid(),
-    LBackupReceiveReplicate(s@, result.0@, c@, *val as int, result.1@.map(|i, p: CPBMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CBackupReceiveReplicate(&mut self, c: &CConstants, val: &u64) -> (result: Vec<CPBMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).role is Primary,
+        old(self).backup_log_length < u64::MAX,
+    ensures
+        self.valid(),
+        LBackupReceiveReplicate(old(self)@, self@, c@, *val as int, result@.map(|i, p: CPBMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    backup_log_length: (s.backup_log_length + 1),
-    backup_last_value: (*val),
-    backup_synced: true,
-    role: s.role.clone(),
-    log_length: s.log_length.clone(),
-    last_value: s.last_value.clone(),
-    has_pending: s.has_pending.clone(),
-    pending_value: s.pending_value.clone(),
-    acked: s.acked.clone(),
-    view: s.view.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.backup_log_length = (self.backup_log_length + 1);
+            self.backup_last_value = (*val);
+            self.backup_synced = true;
+            self.role = self.role.clone();
+            self.log_length = self.log_length.clone();
+            self.last_value = self.last_value.clone();
+            self.has_pending = self.has_pending.clone();
+            self.pending_value = self.pending_value.clone();
+            self.acked = self.acked.clone();
+            self.view = self.view.clone();
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CBackupSendAck(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Primary,
-    s.backup_synced == true,
-ensures
-    result.0.valid(),
-    LBackupSendAck(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
-{
-    let result = (CState {
-    role: s.role.clone(),
-    log_length: s.log_length.clone(),
-    last_value: s.last_value.clone(),
-    has_pending: s.has_pending.clone(),
-    pending_value: s.pending_value.clone(),
-    acked: s.acked.clone(),
-    backup_log_length: s.backup_log_length.clone(),
-    backup_last_value: s.backup_last_value.clone(),
-    backup_synced: s.backup_synced.clone(),
-    view: s.view.clone(),
-}, vec![CPBMessage::Ack]);
-    proof {
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result.1@[0]@));
-    }
-    result
+impl CState {
+    pub exec fn CBackupSendAck(&mut self, c: &CConstants) -> (result: Vec<CPBMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).role is Primary,
+        old(self).backup_synced == true,
+    ensures
+        self.valid(),
+        LBackupSendAck(old(self)@, self@, c@, result@.map(|i, p: CPBMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        self.role = self.role.clone();
+        self.log_length = self.log_length.clone();
+        self.last_value = self.last_value.clone();
+        self.has_pending = self.has_pending.clone();
+        self.pending_value = self.pending_value.clone();
+        self.acked = self.acked.clone();
+        self.backup_log_length = self.backup_log_length.clone();
+        self.backup_last_value = self.backup_last_value.clone();
+        self.backup_synced = self.backup_synced.clone();
+        self.view = self.view.clone();
+        let result = vec![CPBMessage::Ack];
+        proof {
+            assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result@[0]@));
+        }
+        result
 
+    }
 }
 
-pub exec fn CPrimaryReceiveAck(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Primary,
-    s.has_pending == true,
-ensures
-    result.0.valid(),
-    LPrimaryReceiveAck(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CPrimaryReceiveAck(&mut self, c: &CConstants) -> (result: Vec<CPBMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).role is Primary,
+        old(self).has_pending == true,
+    ensures
+        self.valid(),
+        LPrimaryReceiveAck(old(self)@, self@, c@, result@.map(|i, p: CPBMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    acked: true,
-    role: s.role.clone(),
-    log_length: s.log_length.clone(),
-    last_value: s.last_value.clone(),
-    has_pending: s.has_pending.clone(),
-    pending_value: s.pending_value.clone(),
-    backup_log_length: s.backup_log_length.clone(),
-    backup_last_value: s.backup_last_value.clone(),
-    backup_synced: s.backup_synced.clone(),
-    view: s.view.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.acked = true;
+            self.role = self.role.clone();
+            self.log_length = self.log_length.clone();
+            self.last_value = self.last_value.clone();
+            self.has_pending = self.has_pending.clone();
+            self.pending_value = self.pending_value.clone();
+            self.backup_log_length = self.backup_log_length.clone();
+            self.backup_last_value = self.backup_last_value.clone();
+            self.backup_synced = self.backup_synced.clone();
+            self.view = self.view.clone();
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CPrimaryCommit(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Primary,
-    s.acked == true,
-    s.has_pending == true,
-    s.log_length < u64::MAX,
-ensures
-    result.0.valid(),
-    LPrimaryCommit(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
-{
-    let result = (CState {
-    log_length: (s.log_length + 1),
-    last_value: s.pending_value.clone(),
-    has_pending: false,
-    pending_value: 0u64,
-    acked: true,
-    role: s.role.clone(),
-    backup_log_length: s.backup_log_length.clone(),
-    backup_last_value: s.backup_last_value.clone(),
-    backup_synced: s.backup_synced.clone(),
-    view: s.view.clone(),
-}, vec![CPBMessage::ClientReply {
+impl CState {
+    pub exec fn CPrimaryCommit(&mut self, c: &CConstants) -> (result: Vec<CPBMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).role is Primary,
+        old(self).acked == true,
+        old(self).has_pending == true,
+        old(self).log_length < u64::MAX,
+    ensures
+        self.valid(),
+        LPrimaryCommit(old(self)@, self@, c@, result@.map(|i, p: CPBMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        self.log_length = (self.log_length + 1);
+        self.last_value = self.pending_value.clone();
+        self.has_pending = false;
+        self.pending_value = 0u64;
+        self.acked = true;
+        self.role = self.role.clone();
+        self.backup_log_length = self.backup_log_length.clone();
+        self.backup_last_value = self.backup_last_value.clone();
+        self.backup_synced = self.backup_synced.clone();
+        self.view = self.view.clone();
+        let result = vec![CPBMessage::ClientReply {
     val: s.pending_value.clone(),
-}]);
-    proof {
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result.1@[0]@));
-    }
-    result
+}];
+        proof {
+            assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result@[0]@));
+        }
+        result
 
+    }
 }
 
-pub exec fn CPrimaryFail(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Primary,
-ensures
-    result.0.valid(),
-    LPrimaryFail(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CPrimaryFail(&mut self, c: &CConstants) -> (result: Vec<CPBMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).role is Primary,
+    ensures
+        self.valid(),
+        LPrimaryFail(old(self)@, self@, c@, result@.map(|i, p: CPBMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    has_pending: false,
-    pending_value: 0u64,
-    acked: true,
-    log_length: s.log_length.clone(),
-    last_value: s.last_value.clone(),
-    backup_log_length: s.backup_log_length.clone(),
-    backup_last_value: s.backup_last_value.clone(),
-    backup_synced: false,
-    view: s.view.clone(),
-    role: CNodeRole::Inactive,
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.has_pending = false;
+            self.pending_value = 0u64;
+            self.acked = true;
+            self.log_length = self.log_length.clone();
+            self.last_value = self.last_value.clone();
+            self.backup_log_length = self.backup_log_length.clone();
+            self.backup_last_value = self.backup_last_value.clone();
+            self.backup_synced = false;
+            self.view = self.view.clone();
+            self.role = CNodeRole::Inactive;
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CBackupPromote(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.role is Inactive,
-    s.view < u64::MAX,
-ensures
-    result.0.valid(),
-    LBackupPromote(s@, result.0@, c@, result.1@.map(|i, p: CPBMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CBackupPromote(&mut self, c: &CConstants) -> (result: Vec<CPBMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).role is Inactive,
+        old(self).view < u64::MAX,
+    ensures
+        self.valid(),
+        LBackupPromote(old(self)@, self@, c@, result@.map(|i, p: CPBMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    log_length: s.backup_log_length.clone(),
-    last_value: s.backup_last_value.clone(),
-    has_pending: false,
-    pending_value: 0u64,
-    acked: true,
-    backup_log_length: s.backup_log_length.clone(),
-    backup_last_value: s.backup_last_value.clone(),
-    backup_synced: true,
-    view: (s.view + 1),
-    role: CNodeRole::Primary,
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.log_length = self.backup_log_length.clone();
+            self.last_value = self.backup_last_value.clone();
+            self.has_pending = false;
+            self.pending_value = 0u64;
+            self.acked = true;
+            self.backup_log_length = self.backup_log_length.clone();
+            self.backup_last_value = self.backup_last_value.clone();
+            self.backup_synced = true;
+            self.view = (self.view + 1);
+            self.role = CNodeRole::Primary;
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
 } // verus!

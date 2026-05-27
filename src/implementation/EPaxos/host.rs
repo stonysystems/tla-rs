@@ -159,13 +159,11 @@ impl EPaxosHost {
         let local_conflict = false;
         let local_seq = self.state.committed_count;
 
-        let (new_state, _sent) = epaxos_gen::CSendPreAcceptOk(
-            &self.state,
+        let _sent = self.state.CSendPreAcceptOk(
             &config.constants,
             local_conflict,
             &local_seq,
         );
-        self.state = new_state;
 
         StepResult {
             ok: true,
@@ -219,14 +217,12 @@ impl EPaxosHost {
             };
         }
 
-        let (new_state, _sent) = epaxos_gen::CReceivePreAcceptOk(
-            &self.state,
+        let _sent = self.state.CReceivePreAcceptOk(
             &config.constants,
             &sender_id,
             &seq,
             conflict,
         );
-        self.state = new_state;
 
         StepResult {
             ok: true,
@@ -244,8 +240,7 @@ impl EPaxosHost {
         _cmd: u64,
         _seq: u64,
     ) -> StepResult<EPaxosMessage> {
-        let (new_state, _sent) = epaxos_gen::CSendAcceptOk(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CSendAcceptOk(&config.constants);
 
         StepResult {
             ok: true,
@@ -287,9 +282,7 @@ impl EPaxosHost {
             };
         }
 
-        let (new_state, _sent) =
-            epaxos_gen::CReceiveAcceptOk(&self.state, &config.constants, &sender_id);
-        self.state = new_state;
+        let _sent = self.state.CReceiveAcceptOk(&config.constants, &sender_id);
 
         StepResult {
             ok: true,
@@ -337,8 +330,7 @@ impl EPaxosHost {
 
         self.pending_client = client_ep;
 
-        let (new_state, _sent) = epaxos_gen::CPropose(&self.state, &config.constants, &value);
-        self.state = new_state;
+        let _sent = self.state.CPropose(&config.constants, &value);
 
         // Broadcast PreAccept to all other replicas
         let others = Self::other_peers(config);
@@ -396,8 +388,7 @@ impl EPaxosHost {
             };
         }
 
-        let (new_state, _sent) = epaxos_gen::CFastCommit(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CFastCommit(&config.constants);
 
         eprintln!(
             "EPaxos: FAST COMMIT cmd={} seq={}",
@@ -451,8 +442,7 @@ impl EPaxosHost {
             };
         }
 
-        let (new_state, _sent) = epaxos_gen::CStartAccept(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CStartAccept(&config.constants);
 
         // Broadcast Accept to all other replicas
         let others = Self::other_peers(config);
@@ -502,8 +492,7 @@ impl EPaxosHost {
             };
         }
 
-        let (new_state, _sent) = epaxos_gen::CSlowCommit(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CSlowCommit(&config.constants);
 
         eprintln!(
             "EPaxos: SLOW COMMIT cmd={} seq={}",
@@ -546,8 +535,7 @@ impl EPaxosHost {
         let cmd = self.state.cmd;
         let client_ep = if self.state.is_leader { self.pending_client.take() } else { None };
 
-        let (new_state, _sent) = epaxos_gen::CExecute(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CExecute(&config.constants);
 
         eprintln!(
             "EPaxos: EXECUTED cmd={} seq={}",
@@ -581,8 +569,7 @@ impl EPaxosHost {
             };
         }
 
-        let (new_state, _sent) = epaxos_gen::CNewInstance(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CNewInstance(&config.constants);
 
         StepResult {
             ok: true,
@@ -614,8 +601,7 @@ impl EPaxosHost {
             };
         }
 
-        let (new_state, _sent) = epaxos_gen::CRecover(&self.state, &config.constants, &new_ballot);
-        self.state = new_state;
+        let _sent = self.state.CRecover(&config.constants, &new_ballot);
 
         // Broadcast PreAccept with new ballot to all replicas
         let others = Self::other_peers(config);

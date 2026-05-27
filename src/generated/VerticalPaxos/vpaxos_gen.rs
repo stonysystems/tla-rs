@@ -69,385 +69,383 @@ ensures
 
 }
 
-pub exec fn CPrepare(s: &CState, c: &CConstants, b: &u64) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-    (*b > s.max_bal),
-ensures
-    result.0.valid(),
-    LPrepare(s@, result.0@, c@, *b as int, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = (CState {
-    max_bal: (*b),
-    max_v_bal: s.max_v_bal.clone(),
-    max_val: s.max_val.clone(),
-    has_voted: s.has_voted.clone(),
-    config_num: s.config_num.clone(),
-    is_active: s.is_active.clone(),
-    promises_rcvd: s.promises_rcvd.clone(),
-    accepts_rcvd: s.accepts_rcvd.clone(),
-    committed: s.committed.clone(),
-    committed_val: s.committed_val.clone(),
-    witness_val: s.witness_val.clone(),
-    has_witness: s.has_witness.clone(),
-}, vec![CVPMessage::Prepare {
+impl CState {
+    pub exec fn CPrepare(&mut self, c: &CConstants, b: &u64) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+        (*b > old(self).max_bal),
+    ensures
+        self.valid(),
+        LPrepare(old(self)@, self@, c@, *b as int, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        self.max_bal = (*b);
+        self.max_v_bal = self.max_v_bal.clone();
+        self.max_val = self.max_val.clone();
+        self.has_voted = self.has_voted.clone();
+        self.config_num = self.config_num.clone();
+        self.is_active = self.is_active.clone();
+        self.promises_rcvd = self.promises_rcvd.clone();
+        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.committed = self.committed.clone();
+        self.committed_val = self.committed_val.clone();
+        self.witness_val = self.witness_val.clone();
+        self.has_witness = self.has_witness.clone();
+        let result = vec![CVPMessage::Prepare {
     bal: (*b),
-}]);
-    proof {
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result.1@[0]@));
-    }
-    result
+}];
+        proof {
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result@[0]@));
+        }
+        result
 
+    }
 }
 
-pub exec fn CSendPromise(s: &CState, c: &CConstants, prepare_bal: &u64) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-    (*prepare_bal > s.max_bal),
-ensures
-    result.0.valid(),
-    LSendPromise(s@, result.0@, c@, *prepare_bal as int, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = (CState {
-    max_bal: (*prepare_bal),
-    max_v_bal: s.max_v_bal.clone(),
-    max_val: s.max_val.clone(),
-    has_voted: s.has_voted.clone(),
-    config_num: s.config_num.clone(),
-    is_active: s.is_active.clone(),
-    promises_rcvd: s.promises_rcvd.clone(),
-    accepts_rcvd: s.accepts_rcvd.clone(),
-    committed: s.committed.clone(),
-    committed_val: s.committed_val.clone(),
-    witness_val: s.witness_val.clone(),
-    has_witness: s.has_witness.clone(),
-}, vec![CVPMessage::Promise {
+impl CState {
+    pub exec fn CSendPromise(&mut self, c: &CConstants, prepare_bal: &u64) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+        (*prepare_bal > old(self).max_bal),
+    ensures
+        self.valid(),
+        LSendPromise(old(self)@, self@, c@, *prepare_bal as int, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        self.max_bal = (*prepare_bal);
+        self.max_v_bal = self.max_v_bal.clone();
+        self.max_val = self.max_val.clone();
+        self.has_voted = self.has_voted.clone();
+        self.config_num = self.config_num.clone();
+        self.is_active = self.is_active.clone();
+        self.promises_rcvd = self.promises_rcvd.clone();
+        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.committed = self.committed.clone();
+        self.committed_val = self.committed_val.clone();
+        self.witness_val = self.witness_val.clone();
+        self.has_witness = self.has_witness.clone();
+        let result = vec![CVPMessage::Promise {
     bal: (*prepare_bal),
     v_bal: s.max_v_bal.clone(),
     val: s.max_val.clone(),
-}]);
-    proof {
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result.1@[0]@));
-    }
-    result
+}];
+        proof {
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result@[0]@));
+        }
+        result
 
+    }
 }
 
-pub exec fn CReceivePromise(s: &CState, c: &CConstants, sender: &u64, promise_bal: &u64, promise_v_bal: &u64, promise_val: &u64) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-    *promise_bal == s.max_bal,
-    !s@.promises_rcvd.contains(*sender as int),
-ensures
-    result.0.valid(),
-    LReceivePromise(s@, result.0@, c@, *sender as int, *promise_bal as int, *promise_v_bal as int, *promise_val as int, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = {
-        let mut __promises_rcvd = clone_hashset_u64(&s.promises_rcvd);
+impl CState {
+    pub exec fn CReceivePromise(&mut self, c: &CConstants, sender: &u64, promise_bal: &u64, promise_v_bal: &u64, promise_val: &u64) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+        *promise_bal == old(self).max_bal,
+        !old(self)@.promises_rcvd.contains(*sender as int),
+    ensures
+        self.valid(),
+        LReceivePromise(old(self)@, self@, c@, *sender as int, *promise_bal as int, *promise_v_bal as int, *promise_val as int, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        let mut __promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
         __promises_rcvd.insert(sender.clone());
-        { proof {
+        let result = {
+            proof {
+                lemma_empty_seq_map();
+            }
+            { self.promises_rcvd = Arc::new(__promises_rcvd); self.max_v_bal = if ((*promise_v_bal) > self.max_v_bal) {
+                (*promise_v_bal)
+            } else {
+                self.max_v_bal.clone()
+            }; self.max_val = if ((*promise_v_bal) > self.max_v_bal) {
+                (*promise_val)
+            } else {
+                self.max_val.clone()
+            }; self.max_bal = self.max_bal.clone(); self.has_voted = self.has_voted.clone(); self.config_num = self.config_num.clone(); self.is_active = self.is_active.clone(); self.accepts_rcvd = self.accepts_rcvd.clone(); self.committed = self.committed.clone(); self.committed_val = self.committed_val.clone(); self.witness_val = self.witness_val.clone(); self.has_witness = self.has_witness.clone(); vec![] }
+        };
+        proof {
+            broadcast use Set::lemma_set_map_insert_commute;
             lemma_empty_seq_map();
-        }; (CState {
-    promises_rcvd: Arc::new(__promises_rcvd),
-    max_v_bal: if ((*promise_v_bal) > s.max_v_bal) {
-        (*promise_v_bal)
-    } else {
-        s.max_v_bal.clone()
-    },
-    max_val: if ((*promise_v_bal) > s.max_v_bal) {
-        (*promise_val)
-    } else {
-        s.max_val.clone()
-    },
-    max_bal: s.max_bal.clone(),
-    has_voted: s.has_voted.clone(),
-    config_num: s.config_num.clone(),
-    is_active: s.is_active.clone(),
-    accepts_rcvd: s.accepts_rcvd.clone(),
-    committed: s.committed.clone(),
-    committed_val: s.committed_val.clone(),
-    witness_val: s.witness_val.clone(),
-    has_witness: s.has_witness.clone(),
-}, vec![]) }
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
-    }
-    result
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CAccept(s: &CState, c: &CConstants, b: &u64, v: &u64) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-    *b == s.max_bal,
-    (*b > s.max_v_bal),
-ensures
-    result.0.valid(),
-    LAccept(s@, result.0@, c@, *b as int, *v as int, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = (CState {
-    max_v_bal: (*b),
-    max_val: (*v),
-    has_voted: true,
-    max_bal: s.max_bal.clone(),
-    config_num: s.config_num.clone(),
-    is_active: s.is_active.clone(),
-    promises_rcvd: s.promises_rcvd.clone(),
-    accepts_rcvd: s.accepts_rcvd.clone(),
-    committed: s.committed.clone(),
-    committed_val: s.committed_val.clone(),
-    witness_val: s.witness_val.clone(),
-    has_witness: s.has_witness.clone(),
-}, vec![CVPMessage::Accept {
+impl CState {
+    pub exec fn CAccept(&mut self, c: &CConstants, b: &u64, v: &u64) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+        *b == old(self).max_bal,
+        (*b > old(self).max_v_bal),
+    ensures
+        self.valid(),
+        LAccept(old(self)@, self@, c@, *b as int, *v as int, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        self.max_v_bal = (*b);
+        self.max_val = (*v);
+        self.has_voted = true;
+        self.max_bal = self.max_bal.clone();
+        self.config_num = self.config_num.clone();
+        self.is_active = self.is_active.clone();
+        self.promises_rcvd = self.promises_rcvd.clone();
+        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.committed = self.committed.clone();
+        self.committed_val = self.committed_val.clone();
+        self.witness_val = self.witness_val.clone();
+        self.has_witness = self.has_witness.clone();
+        let result = vec![CVPMessage::Accept {
     bal: (*b),
     val: (*v),
-}]);
-    proof {
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result.1@[0]@));
-    }
-    result
+}];
+        proof {
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result@[0]@));
+        }
+        result
 
+    }
 }
 
-pub exec fn CReceiveAccepted(s: &CState, c: &CConstants, sender: &u64, accept_bal: &u64) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-    *accept_bal == s.max_bal,
-    !s@.accepts_rcvd.contains(*sender as int),
-ensures
-    result.0.valid(),
-    LReceiveAccepted(s@, result.0@, c@, *sender as int, *accept_bal as int, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = {
-        let mut __accepts_rcvd = clone_hashset_u64(&s.accepts_rcvd);
+impl CState {
+    pub exec fn CReceiveAccepted(&mut self, c: &CConstants, sender: &u64, accept_bal: &u64) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+        *accept_bal == old(self).max_bal,
+        !old(self)@.accepts_rcvd.contains(*sender as int),
+    ensures
+        self.valid(),
+        LReceiveAccepted(old(self)@, self@, c@, *sender as int, *accept_bal as int, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        let mut __accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         __accepts_rcvd.insert(sender.clone());
-        { proof {
+        let result = {
+            proof {
+                lemma_empty_seq_map();
+            }
+            { self.accepts_rcvd = Arc::new(__accepts_rcvd); self.max_bal = self.max_bal.clone(); self.max_v_bal = self.max_v_bal.clone(); self.max_val = self.max_val.clone(); self.has_voted = self.has_voted.clone(); self.config_num = self.config_num.clone(); self.is_active = self.is_active.clone(); self.promises_rcvd = self.promises_rcvd.clone(); self.committed = self.committed.clone(); self.committed_val = self.committed_val.clone(); self.witness_val = self.witness_val.clone(); self.has_witness = self.has_witness.clone(); vec![] }
+        };
+        proof {
+            broadcast use Set::lemma_set_map_insert_commute;
             lemma_empty_seq_map();
-        }; (CState {
-    accepts_rcvd: Arc::new(__accepts_rcvd),
-    max_bal: s.max_bal.clone(),
-    max_v_bal: s.max_v_bal.clone(),
-    max_val: s.max_val.clone(),
-    has_voted: s.has_voted.clone(),
-    config_num: s.config_num.clone(),
-    is_active: s.is_active.clone(),
-    promises_rcvd: s.promises_rcvd.clone(),
-    committed: s.committed.clone(),
-    committed_val: s.committed_val.clone(),
-    witness_val: s.witness_val.clone(),
-    has_witness: s.has_witness.clone(),
-}, vec![]) }
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
-    }
-    result
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CCommit(s: &CState, c: &CConstants) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-    s.committed == false,
-    (s@.accepts_rcvd.len() >= c.quorum_size),
-ensures
-    result.0.valid(),
-    LCommit(s@, result.0@, c@, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CCommit(&mut self, c: &CConstants) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+        old(self).committed == false,
+        (old(self)@.accepts_rcvd.len() >= c.quorum_size),
+    ensures
+        self.valid(),
+        LCommit(old(self)@, self@, c@, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    committed: true,
-    committed_val: s.max_val.clone(),
-    max_bal: s.max_bal.clone(),
-    max_v_bal: s.max_v_bal.clone(),
-    max_val: s.max_val.clone(),
-    has_voted: s.has_voted.clone(),
-    config_num: s.config_num.clone(),
-    is_active: s.is_active.clone(),
-    promises_rcvd: s.promises_rcvd.clone(),
-    accepts_rcvd: s.accepts_rcvd.clone(),
-    witness_val: s.witness_val.clone(),
-    has_witness: s.has_witness.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.committed = true;
+            self.committed_val = self.max_val.clone();
+            self.max_bal = self.max_bal.clone();
+            self.max_v_bal = self.max_v_bal.clone();
+            self.max_val = self.max_val.clone();
+            self.has_voted = self.has_voted.clone();
+            self.config_num = self.config_num.clone();
+            self.is_active = self.is_active.clone();
+            self.promises_rcvd = self.promises_rcvd.clone();
+            self.accepts_rcvd = self.accepts_rcvd.clone();
+            self.witness_val = self.witness_val.clone();
+            self.has_witness = self.has_witness.clone();
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CReconfigure(s: &CState, c: &CConstants) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-    s.config_num < u64::MAX,
-ensures
-    result.0.valid(),
-    LReconfigure(s@, result.0@, c@, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CReconfigure(&mut self, c: &CConstants) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+        old(self).config_num < u64::MAX,
+    ensures
+        self.valid(),
+        LReconfigure(old(self)@, self@, c@, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    config_num: (s.config_num + 1),
-    max_bal: 0u64,
-    max_v_bal: 0u64,
-    max_val: s.max_val.clone(),
-    has_voted: false,
-    is_active: true,
-    promises_rcvd: Arc::new(HashSet::new()),
-    accepts_rcvd: Arc::new(HashSet::new()),
-    committed: s.committed.clone(),
-    committed_val: s.committed_val.clone(),
-    witness_val: s.witness_val.clone(),
-    has_witness: s.has_witness.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_set_map();
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.config_num = (self.config_num + 1);
+            self.max_bal = 0u64;
+            self.max_v_bal = 0u64;
+            self.max_val = self.max_val.clone();
+            self.has_voted = false;
+            self.is_active = true;
+            self.promises_rcvd = Arc::new(HashSet::new());
+            self.accepts_rcvd = Arc::new(HashSet::new());
+            self.committed = self.committed.clone();
+            self.committed_val = self.committed_val.clone();
+            self.witness_val = self.witness_val.clone();
+            self.has_witness = self.has_witness.clone();
+            vec![]
+        };
+        proof {
+            lemma_empty_set_map();
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CWitnessSync(s: &CState, c: &CConstants, witness_val: &u64) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-ensures
-    result.0.valid(),
-    LWitnessSync(s@, result.0@, c@, *witness_val as int, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CWitnessSync(&mut self, c: &CConstants, witness_val: &u64) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+    ensures
+        self.valid(),
+        LWitnessSync(old(self)@, self@, c@, *witness_val as int, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    has_witness: true,
-    witness_val: (*witness_val),
-    max_val: if !s.has_voted {
-        (*witness_val)
-    } else {
-        s.max_val.clone()
-    },
-    max_bal: s.max_bal.clone(),
-    max_v_bal: s.max_v_bal.clone(),
-    has_voted: s.has_voted.clone(),
-    config_num: s.config_num.clone(),
-    is_active: s.is_active.clone(),
-    promises_rcvd: s.promises_rcvd.clone(),
-    accepts_rcvd: s.accepts_rcvd.clone(),
-    committed: s.committed.clone(),
-    committed_val: s.committed_val.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.has_witness = true;
+            self.witness_val = (*witness_val);
+            self.max_val = if !self.has_voted {
+                (*witness_val)
+            } else {
+                self.max_val.clone()
+            };
+            self.max_bal = self.max_bal.clone();
+            self.max_v_bal = self.max_v_bal.clone();
+            self.has_voted = self.has_voted.clone();
+            self.config_num = self.config_num.clone();
+            self.is_active = self.is_active.clone();
+            self.promises_rcvd = self.promises_rcvd.clone();
+            self.accepts_rcvd = self.accepts_rcvd.clone();
+            self.committed = self.committed.clone();
+            self.committed_val = self.committed_val.clone();
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CSync(s: &CState, c: &CConstants, new_config: &u64, val: &u64) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == false,
-    (*new_config > s.config_num),
-ensures
-    result.0.valid(),
-    LSync(s@, result.0@, c@, *new_config as int, *val as int, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CSync(&mut self, c: &CConstants, new_config: &u64, val: &u64) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == false,
+        (*new_config > old(self).config_num),
+    ensures
+        self.valid(),
+        LSync(old(self)@, self@, c@, *new_config as int, *val as int, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    config_num: (*new_config),
-    max_bal: 0u64,
-    max_v_bal: 0u64,
-    max_val: (*val),
-    has_voted: false,
-    is_active: true,
-    promises_rcvd: Arc::new(HashSet::new()),
-    accepts_rcvd: Arc::new(HashSet::new()),
-    committed: false,
-    committed_val: 0u64,
-    witness_val: 0u64,
-    has_witness: false,
-}, vec![])
-    };
-    proof {
-        lemma_empty_set_map();
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.config_num = (*new_config);
+            self.max_bal = 0u64;
+            self.max_v_bal = 0u64;
+            self.max_val = (*val);
+            self.has_voted = false;
+            self.is_active = true;
+            self.promises_rcvd = Arc::new(HashSet::new());
+            self.accepts_rcvd = Arc::new(HashSet::new());
+            self.committed = false;
+            self.committed_val = 0u64;
+            self.witness_val = 0u64;
+            self.has_witness = false;
+            vec![]
+        };
+        proof {
+            lemma_empty_set_map();
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CDeactivate(s: &CState, c: &CConstants) -> (result: (CState, Vec<CVPMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.is_active == true,
-ensures
-    result.0.valid(),
-    LDeactivate(s@, result.0@, c@, result.1@.map(|i, p: CVPMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CDeactivate(&mut self, c: &CConstants) -> (result: Vec<CVPMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).is_active == true,
+    ensures
+        self.valid(),
+        LDeactivate(old(self)@, self@, c@, result@.map(|i, p: CVPMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    is_active: false,
-    config_num: s.config_num.clone(),
-    max_bal: s.max_bal.clone(),
-    max_v_bal: s.max_v_bal.clone(),
-    max_val: s.max_val.clone(),
-    has_voted: s.has_voted.clone(),
-    promises_rcvd: s.promises_rcvd.clone(),
-    accepts_rcvd: s.accepts_rcvd.clone(),
-    committed: s.committed.clone(),
-    committed_val: s.committed_val.clone(),
-    witness_val: s.witness_val.clone(),
-    has_witness: s.has_witness.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.is_active = false;
+            self.config_num = self.config_num.clone();
+            self.max_bal = self.max_bal.clone();
+            self.max_v_bal = self.max_v_bal.clone();
+            self.max_val = self.max_val.clone();
+            self.has_voted = self.has_voted.clone();
+            self.promises_rcvd = self.promises_rcvd.clone();
+            self.accepts_rcvd = self.accepts_rcvd.clone();
+            self.committed = self.committed.clone();
+            self.committed_val = self.committed_val.clone();
+            self.witness_val = self.witness_val.clone();
+            self.has_witness = self.has_witness.clone();
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
 } // verus!

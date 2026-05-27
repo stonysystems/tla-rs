@@ -69,344 +69,322 @@ ensures
 
 }
 
-pub exec fn CPrePrepare(s: &CState, c: &CConstants, digest: &u64) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.phase is PrePrepare,
-    s.is_primary == true,
-    (s.seq_num >= s.low_watermark),
-    (s.seq_num < s.high_watermark),
-ensures
-    result.0.valid(),
-    LPrePrepare(s@, result.0@, c@, *digest as int, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CPrePrepare(&mut self, c: &CConstants, digest: &u64) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).phase is PrePrepare,
+        old(self).is_primary == true,
+        (old(self).seq_num >= old(self).low_watermark),
+        (old(self).seq_num < old(self).high_watermark),
+    ensures
+        self.valid(),
+        LPrePrepare(old(self)@, self@, c@, *digest as int, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         let mut __prepare_senders = clone_hashset_u64(&HashSet::new());
         __prepare_senders.insert(c.node_id.clone());
-        (CState {
-    request_digest: (*digest),
-    prepare_senders: Arc::new(__prepare_senders),
-    commit_senders: Arc::new(HashSet::new()),
-    view: s.view.clone(),
-    seq_num: s.seq_num.clone(),
-    is_primary: s.is_primary.clone(),
-    checkpoint_seq: s.checkpoint_seq.clone(),
-    checkpoint_digest: s.checkpoint_digest.clone(),
-    low_watermark: s.low_watermark.clone(),
-    high_watermark: s.high_watermark.clone(),
-    phase: CPhase::Prepare,
-}, vec![CPBFTMessage::PrePrepare {
+        let result = {
+            self.request_digest = (*digest);
+            self.prepare_senders = Arc::new(__prepare_senders);
+            self.commit_senders = Arc::new(HashSet::new());
+            self.view = self.view.clone();
+            self.seq_num = self.seq_num.clone();
+            self.is_primary = self.is_primary.clone();
+            self.checkpoint_seq = self.checkpoint_seq.clone();
+            self.checkpoint_digest = self.checkpoint_digest.clone();
+            self.low_watermark = self.low_watermark.clone();
+            self.high_watermark = self.high_watermark.clone();
+            self.phase = CPhase::Prepare;
+            vec![CPBFTMessage::PrePrepare {
     view: s.view.clone(),
     seq: s.seq_num.clone(),
     digest: (*digest),
-}])
-    };
-    proof {
-        lemma_empty_set_map();
-        broadcast use Set::lemma_set_map_insert_commute;
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty().push(result.1@[0]@));
-    }
-    result
+}]
+        };
+        proof {
+            lemma_empty_set_map();
+            broadcast use Set::lemma_set_map_insert_commute;
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty().push(result@[0]@));
+        }
+        result
 
+    }
 }
 
-pub exec fn CReceivePrePrepare(s: &CState, c: &CConstants, view: &u64, seq: &u64, digest: &u64) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.phase is PrePrepare,
-    s.is_primary == false,
-    *view == s.view,
-ensures
-    result.0.valid(),
-    LReceivePrePrepare(s@, result.0@, c@, *view as int, *seq as int, *digest as int, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CReceivePrePrepare(&mut self, c: &CConstants, view: &u64, seq: &u64, digest: &u64) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).phase is PrePrepare,
+        old(self).is_primary == false,
+        *view == old(self).view,
+    ensures
+        self.valid(),
+        LReceivePrePrepare(old(self)@, self@, c@, *view as int, *seq as int, *digest as int, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         let mut __prepare_senders = clone_hashset_u64(&HashSet::new());
         __prepare_senders.insert(c.node_id.clone());
-        { proof {
+        let result = {
+            proof {
+                lemma_empty_seq_map();
+            }
+            { self.request_digest = (*digest); self.prepare_senders = Arc::new(__prepare_senders); self.commit_senders = Arc::new(HashSet::new()); self.view = self.view.clone(); self.seq_num = (*seq); self.is_primary = self.is_primary.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); self.phase = CPhase::Prepare; vec![] }
+        };
+        proof {
+            lemma_empty_set_map();
+            broadcast use Set::lemma_set_map_insert_commute;
             lemma_empty_seq_map();
-        }; (CState {
-    request_digest: (*digest),
-    prepare_senders: Arc::new(__prepare_senders),
-    commit_senders: Arc::new(HashSet::new()),
-    view: s.view.clone(),
-    seq_num: (*seq),
-    is_primary: s.is_primary.clone(),
-    checkpoint_seq: s.checkpoint_seq.clone(),
-    checkpoint_digest: s.checkpoint_digest.clone(),
-    low_watermark: s.low_watermark.clone(),
-    high_watermark: s.high_watermark.clone(),
-    phase: CPhase::Prepare,
-}, vec![]) }
-    };
-    proof {
-        lemma_empty_set_map();
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
-    }
-    result
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CReceivePrepare(s: &CState, c: &CConstants, sender: &u64) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.phase is Prepare,
-    !s@.prepare_senders.contains(*sender as int),
-ensures
-    result.0.valid(),
-    LReceivePrepare(s@, result.0@, c@, *sender as int, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = {
-        let mut __prepare_senders = clone_hashset_u64(&s.prepare_senders);
+impl CState {
+    pub exec fn CReceivePrepare(&mut self, c: &CConstants, sender: &u64) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).phase is Prepare,
+        !old(self)@.prepare_senderold(self).contains(*sender as int),
+    ensures
+        self.valid(),
+        LReceivePrepare(old(self)@, self@, c@, *sender as int, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        let mut __prepare_senders = clone_hashset_u64(&self.prepare_senders);
         __prepare_senders.insert(sender.clone());
-        { proof {
+        let result = {
+            proof {
+                lemma_empty_seq_map();
+            }
+            { self.prepare_senders = Arc::new(__prepare_senders); self.phase = self.phase.clone(); self.view = self.view.clone(); self.commit_senders = self.commit_senders.clone(); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); vec![] }
+        };
+        proof {
+            broadcast use Set::lemma_set_map_insert_commute;
             lemma_empty_seq_map();
-        }; (CState {
-    prepare_senders: Arc::new(__prepare_senders),
-    phase: s.phase.clone(),
-    view: s.view.clone(),
-    commit_senders: s.commit_senders.clone(),
-    seq_num: s.seq_num.clone(),
-    is_primary: s.is_primary.clone(),
-    request_digest: s.request_digest.clone(),
-    checkpoint_seq: s.checkpoint_seq.clone(),
-    checkpoint_digest: s.checkpoint_digest.clone(),
-    low_watermark: s.low_watermark.clone(),
-    high_watermark: s.high_watermark.clone(),
-}, vec![]) }
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
-    }
-    result
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CEnterCommit(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.phase is Prepare,
-    (s@.prepare_senders.len() >= ((2 * c.f) + 1)),
-ensures
-    result.0.valid(),
-    LEnterCommit(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CEnterCommit(&mut self, c: &CConstants) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).phase is Prepare,
+        (old(self)@.prepare_senderold(self).len() >= ((2 * c.f) + 1)),
+    ensures
+        self.valid(),
+        LEnterCommit(old(self)@, self@, c@, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         let mut __commit_senders = clone_hashset_u64(&HashSet::new());
         __commit_senders.insert(c.node_id.clone());
-        { proof {
+        let result = {
+            proof {
+                lemma_empty_seq_map();
+            }
+            { self.commit_senders = Arc::new(__commit_senders); self.view = self.view.clone(); self.prepare_senders = self.prepare_senders.clone(); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); self.phase = CPhase::Commit; vec![] }
+        };
+        proof {
+            lemma_empty_set_map();
+            broadcast use Set::lemma_set_map_insert_commute;
             lemma_empty_seq_map();
-        }; (CState {
-    commit_senders: Arc::new(__commit_senders),
-    view: s.view.clone(),
-    prepare_senders: s.prepare_senders.clone(),
-    seq_num: s.seq_num.clone(),
-    is_primary: s.is_primary.clone(),
-    request_digest: s.request_digest.clone(),
-    checkpoint_seq: s.checkpoint_seq.clone(),
-    checkpoint_digest: s.checkpoint_digest.clone(),
-    low_watermark: s.low_watermark.clone(),
-    high_watermark: s.high_watermark.clone(),
-    phase: CPhase::Commit,
-}, vec![]) }
-    };
-    proof {
-        lemma_empty_set_map();
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
-    }
-    result
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CReceiveCommit(s: &CState, c: &CConstants, sender: &u64) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.phase is Commit,
-    !s@.commit_senders.contains(*sender as int),
-ensures
-    result.0.valid(),
-    LReceiveCommit(s@, result.0@, c@, *sender as int, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = {
-        let mut __commit_senders = clone_hashset_u64(&s.commit_senders);
+impl CState {
+    pub exec fn CReceiveCommit(&mut self, c: &CConstants, sender: &u64) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).phase is Commit,
+        !old(self)@.commit_senderold(self).contains(*sender as int),
+    ensures
+        self.valid(),
+        LReceiveCommit(old(self)@, self@, c@, *sender as int, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        let mut __commit_senders = clone_hashset_u64(&self.commit_senders);
         __commit_senders.insert(sender.clone());
-        { proof {
+        let result = {
+            proof {
+                lemma_empty_seq_map();
+            }
+            { self.commit_senders = Arc::new(__commit_senders); self.phase = self.phase.clone(); self.view = self.view.clone(); self.prepare_senders = self.prepare_senders.clone(); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); vec![] }
+        };
+        proof {
+            broadcast use Set::lemma_set_map_insert_commute;
             lemma_empty_seq_map();
-        }; (CState {
-    commit_senders: Arc::new(__commit_senders),
-    phase: s.phase.clone(),
-    view: s.view.clone(),
-    prepare_senders: s.prepare_senders.clone(),
-    seq_num: s.seq_num.clone(),
-    is_primary: s.is_primary.clone(),
-    request_digest: s.request_digest.clone(),
-    checkpoint_seq: s.checkpoint_seq.clone(),
-    checkpoint_digest: s.checkpoint_digest.clone(),
-    low_watermark: s.low_watermark.clone(),
-    high_watermark: s.high_watermark.clone(),
-}, vec![]) }
-    };
-    proof {
-        broadcast use Set::lemma_set_map_insert_commute;
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
-    }
-    result
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CExecuteReply(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.phase is Commit,
-    (s@.commit_senders.len() >= ((2 * c.f) + 1)),
-    s.seq_num < u64::MAX,
-ensures
-    result.0.valid(),
-    LExecuteReply(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = (CState {
-    seq_num: (s.seq_num + 1),
-    prepare_senders: Arc::new(HashSet::new()),
-    commit_senders: Arc::new(HashSet::new()),
-    view: s.view.clone(),
-    is_primary: s.is_primary.clone(),
-    request_digest: s.request_digest.clone(),
-    checkpoint_seq: s.checkpoint_seq.clone(),
-    checkpoint_digest: s.checkpoint_digest.clone(),
-    low_watermark: s.low_watermark.clone(),
-    high_watermark: s.high_watermark.clone(),
-    phase: CPhase::Replied,
-}, vec![CPBFTMessage::ClientReply {
+impl CState {
+    pub exec fn CExecuteReply(&mut self, c: &CConstants) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).phase is Commit,
+        (old(self)@.commit_senderold(self).len() >= ((2 * c.f) + 1)),
+        old(self).seq_num < u64::MAX,
+    ensures
+        self.valid(),
+        LExecuteReply(old(self)@, self@, c@, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
+        self.seq_num = (self.seq_num + 1);
+        self.prepare_senders = Arc::new(HashSet::new());
+        self.commit_senders = Arc::new(HashSet::new());
+        self.view = self.view.clone();
+        self.is_primary = self.is_primary.clone();
+        self.request_digest = self.request_digest.clone();
+        self.checkpoint_seq = self.checkpoint_seq.clone();
+        self.checkpoint_digest = self.checkpoint_digest.clone();
+        self.low_watermark = self.low_watermark.clone();
+        self.high_watermark = self.high_watermark.clone();
+        self.phase = CPhase::Replied;
+        let result = vec![CPBFTMessage::ClientReply {
     digest: s.request_digest.clone(),
-}]);
-    proof {
-        lemma_empty_set_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty().push(result.1@[0]@));
-    }
-    result
+}];
+        proof {
+            lemma_empty_set_map();
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty().push(result@[0]@));
+        }
+        result
 
+    }
 }
 
-pub exec fn CCheckpoint(s: &CState, c: &CConstants, digest: &u64) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.phase is Replied,
-    (s.seq_num > s.checkpoint_seq),
-    s.seq_num <= u64::MAX - c.checkpoint_interval,
-ensures
-    result.0.valid(),
-    LCheckpoint(s@, result.0@, c@, *digest as int, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CCheckpoint(&mut self, c: &CConstants, digest: &u64) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).phase is Replied,
+        (old(self).seq_num > old(self).checkpoint_seq),
+        old(self).seq_num <= u64::MAX - c.checkpoint_interval,
+    ensures
+        self.valid(),
+        LCheckpoint(old(self)@, self@, c@, *digest as int, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    checkpoint_seq: s.seq_num.clone(),
-    checkpoint_digest: (*digest),
-    low_watermark: s.seq_num.clone(),
-    high_watermark: (s.seq_num + c.checkpoint_interval),
-    view: s.view.clone(),
-    phase: s.phase.clone(),
-    prepare_senders: s.prepare_senders.clone(),
-    commit_senders: s.commit_senders.clone(),
-    seq_num: s.seq_num.clone(),
-    is_primary: s.is_primary.clone(),
-    request_digest: s.request_digest.clone(),
-}, vec![])
-    };
-    proof {
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.checkpoint_seq = self.seq_num.clone();
+            self.checkpoint_digest = (*digest);
+            self.low_watermark = self.seq_num.clone();
+            self.high_watermark = (self.seq_num + c.checkpoint_interval);
+            self.view = self.view.clone();
+            self.phase = self.phase.clone();
+            self.prepare_senders = self.prepare_senders.clone();
+            self.commit_senders = self.commit_senders.clone();
+            self.seq_num = self.seq_num.clone();
+            self.is_primary = self.is_primary.clone();
+            self.request_digest = self.request_digest.clone();
+            vec![]
+        };
+        proof {
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CViewChange(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.view < u64::MAX,
-ensures
-    result.0.valid(),
-    LViewChange(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CViewChange(&mut self, c: &CConstants) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).view < u64::MAX,
+    ensures
+        self.valid(),
+        LViewChange(old(self)@, self@, c@, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    view: (s.view + 1),
-    prepare_senders: Arc::new(HashSet::new()),
-    commit_senders: Arc::new(HashSet::new()),
-    request_digest: 0u64,
-    seq_num: s.seq_num.clone(),
-    is_primary: s.is_primary.clone(),
-    checkpoint_seq: s.checkpoint_seq.clone(),
-    checkpoint_digest: s.checkpoint_digest.clone(),
-    low_watermark: s.low_watermark.clone(),
-    high_watermark: s.high_watermark.clone(),
-    phase: CPhase::PrePrepare,
-}, vec![])
-    };
-    proof {
-        lemma_empty_set_map();
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.view = (self.view + 1);
+            self.prepare_senders = Arc::new(HashSet::new());
+            self.commit_senders = Arc::new(HashSet::new());
+            self.request_digest = 0u64;
+            self.seq_num = self.seq_num.clone();
+            self.is_primary = self.is_primary.clone();
+            self.checkpoint_seq = self.checkpoint_seq.clone();
+            self.checkpoint_digest = self.checkpoint_digest.clone();
+            self.low_watermark = self.low_watermark.clone();
+            self.high_watermark = self.high_watermark.clone();
+            self.phase = CPhase::PrePrepare;
+            vec![]
+        };
+        proof {
+            lemma_empty_set_map();
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
-pub exec fn CNewRound(s: &CState, c: &CConstants) -> (result: (CState, Vec<CPBFTMessage>))
-requires
-    s.valid(),
-    c.valid(),
-    s.phase is Replied,
-ensures
-    result.0.valid(),
-    LNewRound(s@, result.0@, c@, result.1@.map(|i, p: CPBFTMessage| p@)),
-{
-    let result = {
+impl CState {
+    pub exec fn CNewRound(&mut self, c: &CConstants) -> (result: Vec<CPBFTMessage>)
+    requires
+        old(self).valid(),
+        c.valid(),
+        old(self).phase is Replied,
+    ensures
+        self.valid(),
+        LNewRound(old(self)@, self@, c@, result@.map(|i, p: CPBFTMessage| p@)),
+    {
+        let ghost old_self = *old(self);
         proof {
             lemma_empty_seq_map();
         }
-        (CState {
-    prepare_senders: Arc::new(HashSet::new()),
-    commit_senders: Arc::new(HashSet::new()),
-    request_digest: 0u64,
-    view: s.view.clone(),
-    seq_num: s.seq_num.clone(),
-    is_primary: s.is_primary.clone(),
-    checkpoint_seq: s.checkpoint_seq.clone(),
-    checkpoint_digest: s.checkpoint_digest.clone(),
-    low_watermark: s.low_watermark.clone(),
-    high_watermark: s.high_watermark.clone(),
-    phase: CPhase::PrePrepare,
-}, vec![])
-    };
-    proof {
-        lemma_empty_set_map();
-        lemma_empty_seq_map();
-        assert(result.1@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
-    }
-    result
+        let result = {
+            self.prepare_senders = Arc::new(HashSet::new());
+            self.commit_senders = Arc::new(HashSet::new());
+            self.request_digest = 0u64;
+            self.view = self.view.clone();
+            self.seq_num = self.seq_num.clone();
+            self.is_primary = self.is_primary.clone();
+            self.checkpoint_seq = self.checkpoint_seq.clone();
+            self.checkpoint_digest = self.checkpoint_digest.clone();
+            self.low_watermark = self.low_watermark.clone();
+            self.high_watermark = self.high_watermark.clone();
+            self.phase = CPhase::PrePrepare;
+            vec![]
+        };
+        proof {
+            lemma_empty_set_map();
+            lemma_empty_seq_map();
+            assert(result@.map(|i: int, p: CPBFTMessage| p@) =~= Seq::empty());
+        }
+        result
 
+    }
 }
 
 } // verus!

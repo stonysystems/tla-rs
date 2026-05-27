@@ -226,9 +226,7 @@ impl PBFTHost {
             };
         }
 
-        let (new_state, _sent) =
-            pbft_gen::CReceivePrePrepare(&self.state, &config.constants, &view, &seq, &digest);
-        self.state = new_state;
+        let _sent = self.state.CReceivePrePrepare(&config.constants, &view, &seq, &digest);
         self.last_resend_time = Instant::now();
 
         // Broadcast Prepare to all peers
@@ -315,16 +313,14 @@ impl PBFTHost {
             };
         }
 
-        let (new_state, _sent) = pbft_gen::CReceivePrepare(&self.state, &config.constants, &sender);
-        self.state = new_state;
+        let _sent = self.state.CReceivePrepare(&config.constants, &sender);
         self.last_resend_time = Instant::now();
 
         // Check if we have enough prepares to enter commit phase.
         // Guard for CEnterCommit: phase is Prepare, prepare_senders.len() >= 2f+1.
         let threshold = 2 * config.constants.f + 1;
         if self.state.prepare_senders.len() as u64 >= threshold {
-            let (new_state, _sent) = pbft_gen::CEnterCommit(&self.state, &config.constants);
-            self.state = new_state;
+            let _sent = self.state.CEnterCommit(&config.constants);
             self.last_resend_time = Instant::now();
 
             // Broadcast Commit to all peers
@@ -398,8 +394,7 @@ impl PBFTHost {
             };
         }
 
-        let (new_state, _sent) = pbft_gen::CReceiveCommit(&self.state, &config.constants, &sender);
-        self.state = new_state;
+        let _sent = self.state.CReceiveCommit(&config.constants, &sender);
         self.last_resend_time = Instant::now();
 
         // Check if we have enough commits to execute and reply.
@@ -408,8 +403,7 @@ impl PBFTHost {
             let digest = self.state.request_digest;
             let client_ep = self.pending_client.take();
 
-            let (new_state, _sent) = pbft_gen::CExecuteReply(&self.state, &config.constants);
-            self.state = new_state;
+            let _sent = self.state.CExecuteReply(&config.constants);
             // Advance to PrePrepare immediately so we're ready for the next round.
             // Do NOT call CPrePrepare here — let the timer-driven
             // try_pre_prepare_and_new_round handle it. This prevents the primary
@@ -464,8 +458,7 @@ impl PBFTHost {
 
         // Use seq_num as a simple digest for the checkpoint.
         let digest = self.state.seq_num;
-        let (new_state, _sent) = pbft_gen::CCheckpoint(&self.state, &config.constants, &digest);
-        self.state = new_state;
+        let _sent = self.state.CCheckpoint(&config.constants, &digest);
 
         StepResult {
             ok: true,
@@ -483,8 +476,7 @@ impl PBFTHost {
             };
         }
 
-        let (new_state, _sent) = pbft_gen::CViewChange(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CViewChange(&config.constants);
 
         StepResult {
             ok: true,
@@ -502,8 +494,7 @@ impl PBFTHost {
             };
         }
 
-        let (new_state, _sent) = pbft_gen::CNewRound(&self.state, &config.constants);
-        self.state = new_state;
+        let _sent = self.state.CNewRound(&config.constants);
 
         StepResult {
             ok: true,
@@ -518,8 +509,7 @@ impl PBFTHost {
     fn try_pre_prepare_and_new_round(&mut self, config: &PBFTConfig) -> StepResult<PBFTMessage> {
         // First try new round if in Replied phase
         if matches!(self.state.phase, CPhase::Replied) {
-            let (new_state, _sent) = pbft_gen::CNewRound(&self.state, &config.constants);
-            self.state = new_state;
+            let _sent = self.state.CNewRound(&config.constants);
         }
 
         if !self.is_primary() {
@@ -622,8 +612,7 @@ impl PBFTHost {
         // Shift current → prev before starting new round
         self.prev_pre_prepare = self.cur_pre_prepare.take();
         self.cur_pre_prepare = Some((self.state.view, self.state.seq_num, digest));
-        let (new_state, _sent) = pbft_gen::CPrePrepare(&self.state, &config.constants, &digest);
-        self.state = new_state;
+        let _sent = self.state.CPrePrepare(&config.constants, &digest);
         self.last_pre_prepare_time = Instant::now();
 
         let others = Self::other_peers(config);

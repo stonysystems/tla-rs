@@ -144,7 +144,7 @@ impl PaxosHost {
             };
         }
 
-        self.state = paxos_gen::CSend1b(&self.state, &config.constants, &ballot);
+        self.state.CSend1b(&config.constants, &ballot);
 
         // Send Promise back to the proposer
         StepResult {
@@ -194,8 +194,7 @@ impl PaxosHost {
             };
         }
 
-        self.state = paxos_gen::CRecvPromise(
-            &self.state,
+        self.state.CRecvPromise(
             &config.constants,
             &acceptor_id,
             &accepted_bal,
@@ -225,7 +224,7 @@ impl PaxosHost {
             };
         }
 
-        self.state = paxos_gen::CSend2b(&self.state, &config.constants, &ballot, &value);
+        self.state.CSend2b(&config.constants, &ballot, &value);
 
         // Send Accepted back to the proposer
         StepResult {
@@ -270,7 +269,7 @@ impl PaxosHost {
             };
         }
 
-        self.state = paxos_gen::CRecvAccepted(&self.state, &config.constants, &acceptor_id);
+        self.state.CRecvAccepted(&config.constants, &acceptor_id);
 
         StepResult {
             ok: true,
@@ -303,7 +302,7 @@ impl PaxosHost {
             };
         }
 
-        self.state = paxos_gen::CSend1a(&self.state, &config.constants, &new_ballot);
+        self.state.CSend1a(&config.constants, &new_ballot);
 
         // Broadcast Prepare to all other nodes
         let others = Self::other_peers(config);
@@ -340,7 +339,7 @@ impl PaxosHost {
         // Otherwise we can propose our own value (proposed_val, which defaults to 0).
         let proposed_value = self.state.proposed_val;
 
-        self.state = paxos_gen::CSend2a(&self.state, &config.constants, &proposed_value);
+        self.state.CSend2a(&config.constants, &proposed_value);
 
         let ballot = self.state.proposer_bal;
         let value = self.state.proposed_val;
@@ -375,7 +374,7 @@ impl PaxosHost {
             };
         }
 
-        self.state = paxos_gen::CLearn(&self.state, &config.constants);
+        self.state.CLearn(&config.constants);
 
         eprintln!("Paxos: DECIDED value = {}", self.state.decided_val);
 

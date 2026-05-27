@@ -147,10 +147,7 @@ pub fn compile_and_load(
                     message: format!("Failed to find native_eval symbol: {}", e),
                 })?;
         // Transmute to a raw fn pointer that outlives the Symbol borrow
-        std::mem::transmute::<
-            libloading::Symbol<NativeEvalFn>,
-            NativeEvalFn,
-        >(sym)
+        std::mem::transmute::<libloading::Symbol<NativeEvalFn>, NativeEvalFn>(sym)
     };
 
     Ok(NativeFunction { _lib: lib, func })
