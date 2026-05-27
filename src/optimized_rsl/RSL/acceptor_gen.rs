@@ -7,7 +7,7 @@ use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::EndPoint;
 use crate::optimized_rsl::RSL::types_gen::*;
 use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::RSL::acceptor_helpers::{CAddVoteAndRemoveOldOnes, CRemoveVotesBeforeLogTruncationPoint};
+use crate::optimized_rsl::acceptor_helpers_opt::{CAddVoteAndRemoveOldOnes_mut, CRemoveVotesBeforeLogTruncationPoint_mut};
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
 use crate::implementation::RSL::types_i::{abstractify_cvotes, clone_cvotes_up_to_view, clone_request_batch_up_to_view, cvotes_is_valid};
@@ -266,19 +266,18 @@ ensures
         &response,
     );
 
-    let new_votes = if s.log_truncation_point <= opn_2a {
-        CAddVoteAndRemoveOldOnes(
-            &s.votes,
+    let mut new_votes = clone_cvotes_up_to_view(&s.votes);
+    if s.log_truncation_point <= opn_2a {
+        CAddVoteAndRemoveOldOnes_mut(
+            &mut new_votes,
             &opn_2a,
             &CVote {
                 max_value_bal: bal_2a,
                 max_val: val_2b_cloned,
             },
             &new_log_truncation_point,
-        )
-    } else {
-        clone_cvotes_up_to_view(&s.votes)
-    };
+        );
+    }
 
     broadcast use vstd::std_specs::hash::group_hash_axioms;
 
@@ -358,7 +357,8 @@ ensures
         s.clone_up_to_view()
     } else {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        let new_votes = CRemoveVotesBeforeLogTruncationPoint(&s.votes, opn);
+        let mut new_votes = clone_cvotes_up_to_view(&s.votes);
+        CRemoveVotesBeforeLogTruncationPoint_mut(&mut new_votes, opn);
         let constants_clone = s.constants.clone_up_to_view();
         let ckpt_clone = s.last_checkpointed_operation.clone();
         proof {
