@@ -86,6 +86,8 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 4. **Phase 44: Fix PBFT Throughput Bug + Unify Client Interface via Spec Changes** — PBFT is benchmarking at <1 ops/s (bug, not protocol overhead). Diagnose + fix (44.1). Then add `ClientReply` to PB / EPaxos / PBFT specs (no proofs to break — 0 refinement proof for these protocols), regenerate impl, verify, and write one unified C# client framework. Yields apples-to-apples bench data across all 5 benchable protocols (~5–7 days). See [Phase 44](#phase-44-fix-pbft-throughput-bug--unify-client-interface-via-spec-changes). **COMPLETED** but reproduction on zoo-004 revealed Phase 44.5.a's PB number is invalid — see Phase 45.
 
 5. **Phase 45: Fix PrimaryBackup Metrics Bug** — bench reproduction showed backup `log_length` stays at 0, but code analysis (45.1.b/c) proved **replication IS working correctly** — the spec's `acked` guard on `LPrimaryCommit` enforces Replicate→Ack→Commit. Root cause: metrics reported `log_length` (primary's field, always 0 on backup) instead of `backup_log_length`. Previous bench numbers (25–132 ops/s) were valid replication throughput. Fix: 1-line metrics change. See [Phase 45](#phase-45-fix-primarybackup-metrics-bug-backup-reports-wrong-log-field).
+
+6. **Phase 46: Port Sushant's 5 RSL Hot-Path Optimizations to AutoMan-V** — vary-client bench (2026-05-25) shows AutoMan-V auto peaks 38K ops/s while Sushant's hand-tuned (P3.1–P3.5 patterns: in-place mutation, Vec preallocate, single-pass loop fusion) peaks 61K. Pure-impl LOC audit shows the gap is **~30 impl LOC + ~250 proof LOC**. Plan: copy `generated/RSL/` to a fresh `optimized_rsl/RSL/` (preserves auto baseline), apply 5 patterns one at a time with LLM-assisted proofs, gate behind `--features=optimized_rsl`, re-bench. Validates "transpiler + LLM absorbs the manual-opt gap" claim. ~5–6 days. See [Phase 46](#phase-46-port-sushants-5-rsl-hot-path-optimizations-to-automan-v).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -15106,3 +15108,107 @@ Done. Metrics fix: 1 line changed (role-conditional field selection).
 ### Risk
 
 None — fix is purely observational (metrics output). Protocol logic unchanged.
+
+---
+
+## Phase 46: Port Sushant's 5 RSL Hot-Path Optimizations to AutoMan-V
+
+### Motivation
+
+Vary-client bench (2026-05-25) shows AutoMan-V auto-generated RSL peaks at **38K ops/s @ 16 clients** while Sushant's fully hand-written + hand-tuned version (P3.1–P3.5 optimizations on the same lab skeleton) peaks at **60.9K @ 32 clients** — a 1.6× residual gap.
+
+Pure-impl LOC audit shows the gap maps to **~30 lines of impl code change** across 5 functions, plus ~200–300 lines of proof scaffolding (loop invariants, equality lemmas, trigger alignment). Each pattern is mechanical:
+
+| Sushant commit | Pattern | LOC delta |
+|---|---|---|
+| P3.1 `CAddVoteAndRemoveOldOnes` | `&CVotes → &mut CVotes` (in-place) | +2 |
+| P3.2 `CRemoveVotesBeforeLogTruncationPoint` | same | +2 |
+| P3.3 `truncate_vec(_crequest)` | `Vec::new()` → `Vec::with_capacity(n)` | +3 |
+| P3.3 `concat_vec` | same | 0 |
+| P3.4 `CRemoveAllSatisfiedRequestsInSequence` | recursive split → single-pass loop fusion | +13 |
+| P3.5 `CRemoveExecutedRequestBatch` | same | +11 |
+
+Goal: port these 5 optimizations to AutoMan-V's auto-generated RSL **in a fresh folder** (so the current `src/generated/RSL/` stays untouched as the "pure transpiler-auto" baseline), complete the corresponding Verus proofs (LLM-assisted where possible), and bench to confirm AutoMan-V can reach Sushant's ceiling with the same hand-optimization budget.
+
+### Goal
+
+- `src/optimized_rsl/` (or `src/generated/RSL_opt/`) contains AutoMan-V's RSL with all 5 P3 patterns applied.
+- Verus verifies the optimized copy at parity with the current `generated/RSL/` (no new `assume`s except where Verus's `&mut Arc<T>` limit forces escape hatch).
+- Bench result: peak ≥ 55K ops/s @ 16-32 clients (target = match Sushant's 60K within 10%).
+- Documented LOC + proof effort cost for each P3 pattern, validating the "30 impl LOC + ~250 proof LOC" estimate from briefing.
+
+### Non-goals
+
+- Modify `src/generated/RSL/` in-place (keep auto baseline intact for comparison and for OSDI poster).
+- Generalize the optimizations into transpiler codegen (that's a follow-up phase; this is a manual port to prove the pattern works on AutoMan-V output).
+- Touch Raft / EPaxos / PBFT.
+
+### Plan
+
+#### 46.1 Setup parallel folder
+
+- [ ] **46.1.a**: `mkdir -p src/optimized_rsl/RSL src/optimized_rsl/implementation_helpers`.
+  Copy from current state:
+  - `src/generated/RSL/{mod.rs, types_gen.rs, proposer_gen.rs, acceptor_gen.rs, election_gen.rs, executor_gen.rs, learner_gen.rs, broadcast_gen.rs, replica_gen.rs}` → `src/optimized_rsl/RSL/`
+  - Subset of `src/implementation/RSL/` that the 5 functions live in: `acceptor_helpers.rs`, `types_i.rs` (or just the parts used by P3.1–P3.5). May need a small `mod.rs` to expose the changed helpers.
+- [ ] **46.1.b**: Register in `src/lib.rs` behind a feature flag (`cfg(feature = "optimized_rsl")` or `#[cfg(feature = "rsl_opt")]`). Default = use existing `generated/RSL/`. With flag = use `optimized_rsl/RSL/`.
+- [ ] **46.1.c**: Add `Cargo.toml` feature `optimized_rsl = []`. Verify `cargo check` works in both modes.
+
+#### 46.2 Apply optimizations one at a time
+
+For each P3.x:
+1. Patch `optimized_rsl/` files (impl change + proof scaffolding).
+2. Run `verus --crate-type=lib src/lib.rs --features=optimized_rsl --verify-only-module optimized_rsl::RSL::<module>`. Must pass `N verified, 0 errors` (no new assumes).
+3. Smoke-test (1 trial × 10 s) end-to-end via `dotnet IronRSLClientUDP nthreads=4 duration=10`. Confirm no functional regression.
+4. Commit `Phase 46.2.<x>: port P3.<x> <name> to AutoMan-V`.
+
+- [ ] **46.2.a (P3.1)**: `CAddVoteAndRemoveOldOnes` `&CVotes → &mut CVotes` in acceptor_helpers.rs. Update all callers in optimized_rsl/RSL/. Adjust 1–2 invariants where caller relied on functional return.
+- [ ] **46.2.b (P3.2)**: `CRemoveVotesBeforeLogTruncationPoint` same pattern.
+- [ ] **46.2.c (P3.3)**: `truncate_vec` + `concat_vecs` in vecs.rs preallocate via `Vec::with_capacity`. Need 2 new `Vec::with_capacity` length-preservation lemmas (sushant has them).
+- [ ] **46.2.d (P3.4)**: `CRemoveAllSatisfiedRequestsInSequence` recursive → single-pass while-loop with invariant on `subrange + filter`. Heaviest proof work (~80–100 LOC of invariants + bridging lemmas per Sushant's commits).
+- [ ] **46.2.e (P3.5)**: `CRemoveExecutedRequestBatch` same fusion pattern as P3.4. Reuse 46.2.d lemma shapes.
+
+For each step, use LLM (the same proof-completion pipeline as the main transpiler) to draft loop invariants and bridging lemmas. Manual override only if LLM stalls after 3 attempts.
+
+#### 46.3 Build + verify whole module
+
+- [ ] **46.3.a**: Build `liblib.so` with `--features=optimized_rsl`. Confirm cargo + verus both succeed.
+- [ ] **46.3.b**: Full `--verify-only-module optimized_rsl::RSL` sweep. Target: 125+ verified, 0 errors (parity with current generated RSL count).
+- [ ] **46.3.c**: Smoke test end-to-end RSL UDP service + 32-thread client for 30 s. No crash, no correctness drift.
+
+#### 46.4 Bench: AutoMan-V vs AutoMan-V-opt vs Sushant
+
+- [ ] **46.4.a**: Extend `scripts/bench_vary_clients.sh` (or fork) to also test `--features=optimized_rsl` build. Per client_n ∈ {1, 2, 4, 8, 16, 32, 64}, sed `cparameters.rs:63 max_batch_size = client_n`, rebuild with feature flag, 2 trials × 30 s.
+- [ ] **46.4.b**: Append rows to `bench/vary_clients/results.csv` with `protocol=AutoMan-V(opt-port)`. Compare against existing AutoMan-V(gen) and AutoMan-V(opt) [= Sushant] rows.
+- [ ] **46.4.c**: Update `docs/osdi26_poster_briefing.md` with the 3-line comparison plot (auto / ported-opt / sushant-opt). Goal: AutoMan-V(opt-port) ≥ 0.9 × Sushant. If gap >10%, document which optimization gives the residual.
+
+#### 46.5 Document LOC + proof cost actuals
+
+- [ ] **46.5.a**: For each P3.x, record (a) impl LOC added, (b) proof LOC added, (c) wall-time spent, (d) LLM contribution ratio. Compare against the briefing estimate (30 impl + 250 proof).
+- [ ] **46.5.b**: If LLM completion rate >60% of proof LOC, this validates the "transpiler + LLM can absorb manual optimization patterns" claim — add as concrete data point in OSDI briefing.
+
+### Estimated effort
+
+| Task | Effort |
+|---|---|
+| 46.1 folder + feature flag setup | 0.5 day |
+| 46.2.a/b (in-place CVotes patterns) | 1 day (LLM-friendly, mechanical) |
+| 46.2.c (preallocate) | 0.5 day |
+| 46.2.d (single-pass fusion) | 1.5 days (heaviest proof) |
+| 46.2.e (second fusion, reuses 46.2.d) | 0.5–1 day |
+| 46.3 build + full verify sweep | 0.5 day |
+| 46.4 bench + write-up | 0.5 day |
+| 46.5 cost analysis + briefing update | 0.5 day |
+| **Total** | **~5–6 days** |
+
+### Risk
+
+- **R1**: Verus `&mut` interaction with `Arc<>` may force more escape hatches than Sushant needed (Sushant didn't have Arc on CVotes). Mitigation: 46.2.a smoke test will surface this; fall back to "unwrap Arc, mutate, rewrap" if needed (adds ~10 LOC + 1 assume_specification per site).
+- **R2**: LLM may not converge on the heavier proof scaffolding (P3.4, P3.5). Mitigation: keep Sushant's proof commits open as reference; LLM can study and adapt rather than synthesize from scratch.
+- **R3**: Feature-flag build may conflict with existing tests. Mitigation: gate all touched code under cfg, default off, CI runs both configurations.
+
+### Out of scope
+
+- Generalizing the 5 patterns into transpiler codegen rules (that's Phase 41.5 / future Phase 47). This phase only proves the patterns work on AutoMan-V output.
+- Porting any of the 5 patterns to Raft / EPaxos / PBFT (different protocols, different hot paths).
+- Removing the original `src/generated/RSL/` — keep as auto baseline for OSDI poster and ongoing transpiler dev.
