@@ -15175,7 +15175,7 @@ For each step, use LLM (the same proof-completion pipeline as the main transpile
 
 #### 46.4 Bench: AutoMan-V vs AutoMan-V-opt vs Sushant
 
-- [ ] **46.4.a**: Extend `scripts/bench_vary_clients.sh` (or fork) to also test `--features=optimized_rsl` build. Per client_n ∈ {1, 2, 4, 8, 16, 32, 64}, sed `cparameters.rs:63 max_batch_size = client_n`, rebuild with feature flag, 2 trials × 30 s.
+- [x] **46.4.a**: Extended `scripts/bench_vary_clients.sh` with `--optimized` flag. When passed, builds RSL with `--cfg 'feature="optimized_rsl"'` and tags CSV rows as `rsl-opt`. Usage: `bash scripts/bench_vary_clients.sh --optimized`. Syntax-checked, flag parsing verified.
 - [ ] **46.4.b**: Append rows to `bench/vary_clients/results.csv` with `protocol=AutoMan-V(opt-port)`. Compare against existing AutoMan-V(gen) and AutoMan-V(opt) [= Sushant] rows.
 - [ ] **46.4.c**: Update `docs/osdi26_poster_briefing.md` with the 3-line comparison plot (auto / ported-opt / sushant-opt). Goal: AutoMan-V(opt-port) ≥ 0.9 × Sushant. If gap >10%, document which optimization gives the residual.
 
