@@ -13343,7 +13343,47 @@ makes DPOR reduction measurable).
 
 - [ ] **38.18.1**: **Parallelize the DPOR explorer.** TLC uses 4 workers
   and the comparison shows ~77-98x gap on protocol cases — parallelism
-  alone could close 4x of that gap. (Multi-day rewrite; deferred.)
+  alone could close 4x of that gap.
+
+  **Architecture analysis (2026-05-27):** `explore_dpor` is iterative DFS
+  with explicit `Vec<StackFrame>` stack (~1,290 LOC core in `dpor/explore.rs`).
+  `SpecContext` is already `&self` with `Mutex`/`OnceLock` caches — safe to
+  share via `Arc`. Global mutable state: `distinct_states: BTreeSet<String>`,
+  `seen_fingerprints: HashSet<u64>`, counters. Strategy: depth-bounded
+  frontier parallelism — sequential DFS to depth D, collect frontier states,
+  spawn N worker threads each doing independent DFS from their frontier
+  state, sharing visited-state set via `Arc<DashSet>`.
+
+  Decomposed into leaf tasks:
+  - [x] **38.18.1.a**: **Make `SpecContext` shareable (`Arc<SpecContext>`).**
+    Added `SendSpan` wrapper (`unsafe impl Send + Sync`) for `proc_macro2::Span`
+    in `ast/mod.rs` — the only blocker was `SpecFunction.span: Option<Span>`.
+    All span fields are set to `None` in practice (never `Some`), so the change
+    is purely type-level. `BytecodeCache` and `NativeCache` already use `Mutex`.
+    Added `spec_context_is_send_sync` compile-time test. ~40 LOC.
+  - [ ] **38.18.1.b**: **Replace visited-state sets with concurrent containers.**
+    `distinct_states: BTreeSet<String>` → `DashSet<String>` (or
+    `Arc<Mutex<HashSet<String>>>`). `seen_fingerprints: HashSet<u64>` →
+    `DashSet<u64>`. Extract state-dedup into a `SharedStateStore` struct
+    with `insert_if_new(fingerprint, canonical_key) -> bool`. ~100-150 LOC.
+  - [ ] **38.18.1.c**: **Extract `explore_dpor_from_state` worker function.**
+    Refactor core DFS loop into `explore_dpor_from_state(ctx, config,
+    initial_state, shared_store) -> WorkerResult` that takes a single
+    start state and shared store. The existing `explore_dpor` becomes a
+    thin wrapper calling this for each initial state. ~200 LOC refactor.
+  - [ ] **38.18.1.d**: **Add frontier collection + thread spawning.**
+    `explore_dpor_parallel(ctx, config, num_workers)`: sequential DFS to
+    depth D (configurable, default 2-3), collect frontier states, spawn
+    `num_workers` threads via `std::thread::scope`, each calling
+    `explore_dpor_from_state`. Merge `WorkerResult`s. Add `--workers N`
+    CLI flag. ~200-300 LOC.
+  - [ ] **38.18.1.e**: **Early termination on invariant violation.**
+    Add `Arc<AtomicBool>` `violation_found` flag shared across workers.
+    Each worker checks it periodically (every N transitions) and stops
+    early. First violation witness wins. ~50 LOC.
+  - [ ] **38.18.1.f**: **Benchmark + tune.** Run protocol suite with
+    1/2/4/8 workers, measure speedup. Tune frontier depth. Update
+    `tests/reports/` with parallel results. Document in TODO.
 
 - [x] **38.18.2**: **Inline-expand helper calls at IR time.** Added
   `inline_zero_arg_helper_calls()` in `transpiler/src/modelcheck/ir.rs`,

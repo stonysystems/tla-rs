@@ -46,7 +46,7 @@ pub struct SpecContext {
     /// names to ordered field layouts with name→index lookup.
     pub field_schema: crate::modelcheck::field_schema::FieldSchemaRegistry,
     /// Phase 38.22.1.b: bytecode compilation cache for faster expression
-    /// evaluation. Single-threaded DPOR explorer can use RefCell-based cache.
+    /// evaluation. Uses Mutex-based cache (thread-safe for parallel exploration).
     pub bytecode_cache: crate::modelcheck::bytecode::BytecodeCache,
     /// Phase 38.22.1.c.v: native codegen cache for compiled cdylib functions.
     /// Optional — enabled via `--native-codegen` CLI flag.
@@ -2013,5 +2013,14 @@ max_seq_len = 4
                 label, fp.read_fields, fp.write_fields, fp.reads_whole_state, fp.writes_whole_state
             );
         }
+    }
+
+    /// Compile-time assertion that `SpecContext` is `Send + Sync`.
+    /// Required for Phase 38.18.1 parallel DPOR exploration where
+    /// `Arc<SpecContext>` is shared across worker threads.
+    #[test]
+    fn spec_context_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<SpecContext>();
     }
 }

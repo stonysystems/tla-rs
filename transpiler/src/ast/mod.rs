@@ -5,6 +5,39 @@
 
 use proc_macro2::Span;
 
+/// Thread-safe wrapper around `proc_macro2::Span`.
+///
+/// `Span` is not `Send + Sync` due to proc-macro internals, but our AST
+/// spans are only used for error reporting and are never mutated after
+/// parsing. This wrapper allows the AST (and thereby `SpecContext`) to be
+/// shared across threads for parallel DPOR exploration (Phase 38.18.1).
+///
+/// # Safety
+/// `Span` is internally a `u32` index into a thread-local token stream.
+/// We only ever read it (via `Debug` formatting) after parsing is complete
+/// on the main thread. The wrapped value is never mutated.
+#[derive(Debug, Clone)]
+pub struct SendSpan(Span);
+
+// SAFETY: Span is read-only after construction. See doc comment above.
+unsafe impl Send for SendSpan {}
+unsafe impl Sync for SendSpan {}
+
+impl SendSpan {
+    pub fn new(span: Span) -> Self {
+        Self(span)
+    }
+    pub fn span(&self) -> &Span {
+        &self.0
+    }
+}
+
+impl From<Span> for SendSpan {
+    fn from(span: Span) -> Self {
+        Self(span)
+    }
+}
+
 /// A Verus spec function definition
 #[derive(Debug, Clone)]
 pub struct SpecFunction {
@@ -27,7 +60,7 @@ pub struct SpecFunction {
     /// Function body
     pub body: Expr,
     /// Source span for error reporting
-    pub span: Option<Span>,
+    pub span: Option<SendSpan>,
 }
 
 /// Generic type parameters
@@ -84,7 +117,7 @@ pub struct Parameter {
     /// Variable mode (ghost/tracked/exec)
     pub variable_mode: VariableMode,
     /// Source span
-    pub span: Option<Span>,
+    pub span: Option<SendSpan>,
 }
 
 /// Parameter mode indicating whether it's an input or output
