@@ -2885,6 +2885,79 @@ impl Translator {
     ///
     /// Input params are already `&T` in the generated exec function. When the general
     /// `transform_call` adds `&` to all non-output identifiers, input params get `&&T`.
+    /// Rename all occurrences of a variable in an expression tree.
+    /// Used to replace receiver param name (e.g., "s") with "self" for methods.
+    fn rename_var_in_expr(expr: &ExecExpr, from: &str, to: &str) -> ExecExpr {
+        match expr {
+            ExecExpr::Var(name) => {
+                if name == from {
+                    ExecExpr::Var(to.to_string())
+                } else if name.starts_with(&format!("{}.", from)) {
+                    // Handle s.field -> self.field patterns in variable names
+                    ExecExpr::Var(format!("{}.{}", to, &name[from.len() + 1..]))
+                } else {
+                    expr.clone()
+                }
+            }
+            ExecExpr::Field(base, field) => ExecExpr::Field(
+                Box::new(Self::rename_var_in_expr(base, from, to)),
+                field.clone(),
+            ),
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts.iter().map(|s| Self::rename_var_in_expr(s, from, to)).collect(),
+            ),
+            ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                value: Box::new(Self::rename_var_in_expr(value, from, to)),
+            },
+            ExecExpr::If { cond, then_branch, else_branch } => ExecExpr::If {
+                cond: Box::new(Self::rename_var_in_expr(cond, from, to)),
+                then_branch: Box::new(Self::rename_var_in_expr(then_branch, from, to)),
+                else_branch: else_branch.as_ref().map(|e| Box::new(Self::rename_var_in_expr(e, from, to))),
+            },
+            ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
+                lhs: Box::new(Self::rename_var_in_expr(lhs, from, to)),
+                op: op.clone(),
+                rhs: Box::new(Self::rename_var_in_expr(rhs, from, to)),
+            },
+            ExecExpr::Unary { op, expr: inner } => ExecExpr::Unary {
+                op: op.clone(),
+                expr: Box::new(Self::rename_var_in_expr(inner, from, to)),
+            },
+            ExecExpr::Call { func, args } => ExecExpr::Call {
+                func: func.clone(),
+                args: args.iter().map(|a| Self::rename_var_in_expr(a, from, to)).collect(),
+            },
+            ExecExpr::MethodCall { receiver, method, args } => ExecExpr::MethodCall {
+                receiver: Box::new(Self::rename_var_in_expr(receiver, from, to)),
+                method: method.clone(),
+                args: args.iter().map(|a| Self::rename_var_in_expr(a, from, to)).collect(),
+            },
+            ExecExpr::Struct { name, fields } => ExecExpr::Struct {
+                name: name.clone(),
+                fields: fields.iter().map(|(n, v)| (n.clone(), Self::rename_var_in_expr(v, from, to))).collect(),
+            },
+            ExecExpr::StructUpdate { name, base, fields } => ExecExpr::StructUpdate {
+                name: name.clone(),
+                base: Box::new(Self::rename_var_in_expr(base, from, to)),
+                fields: fields.iter().map(|(n, v)| (n.clone(), Self::rename_var_in_expr(v, from, to))).collect(),
+            },
+            ExecExpr::Clone(inner) => ExecExpr::Clone(Box::new(Self::rename_var_in_expr(inner, from, to))),
+            ExecExpr::Tuple(elems) => ExecExpr::Tuple(
+                elems.iter().map(|e| Self::rename_var_in_expr(e, from, to)).collect(),
+            ),
+            ExecExpr::Return(inner) => ExecExpr::Return(Box::new(Self::rename_var_in_expr(inner, from, to))),
+            ExecExpr::Cast(inner, ty) => ExecExpr::Cast(Box::new(Self::rename_var_in_expr(inner, from, to)), ty.clone()),
+            ExecExpr::Match { scrutinee, arms } => ExecExpr::Match {
+                scrutinee: Box::new(Self::rename_var_in_expr(scrutinee, from, to)),
+                arms: arms.iter().map(|(pat, body)| (pat.clone(), Self::rename_var_in_expr(body, from, to))).collect(),
+            },
+            // Leaf nodes that don't contain variable references
+            _ => expr.clone(),
+        }
+    }
+
     /// This post-processing pass strips the extra `&` by walking the expression tree
     /// and removing `&var` → `var` for input params in Call arguments.
     fn strip_double_ref_on_inputs(expr: ExecExpr, ctx: &TransformContext) -> ExecExpr {
@@ -6539,6 +6612,14 @@ impl Translator {
         // Check if receiver type should become &mut self method
         let (params, return_type, requires, ensures, is_method, receiver_type) =
             self.maybe_apply_mut_self(params, return_type, requires, ensures, func);
+
+        // For methods, rename receiver param references in the body to `self`
+        let body = if is_method {
+            let recv_name = &func.spec_fn.params[0].name;
+            Self::rename_var_in_expr(&body, recv_name, "self")
+        } else {
+            body
+        };
 
         Ok(ExecFunction {
             name: exec_name,
@@ -28508,5 +28589,63 @@ borrowed_args = [0]
         );
         assert!(!is_method, "CLearner not in mut_self_types");
         assert!(recv.is_none());
+    }
+
+    #[test]
+    fn test_rename_var_in_expr_basic() {
+        // Var("s") -> Var("self")
+        let expr = ExecExpr::Var("s".to_string());
+        let result = Translator::rename_var_in_expr(&expr, "s", "self");
+        assert!(matches!(result, ExecExpr::Var(n) if n == "self"));
+
+        // Var("other") stays unchanged
+        let expr = ExecExpr::Var("other".to_string());
+        let result = Translator::rename_var_in_expr(&expr, "s", "self");
+        assert!(matches!(result, ExecExpr::Var(n) if n == "other"));
+    }
+
+    #[test]
+    fn test_rename_var_in_expr_field_access() {
+        // Field(Var("s"), "counter") -> Field(Var("self"), "counter")
+        let expr = ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "counter".to_string(),
+        );
+        let result = Translator::rename_var_in_expr(&expr, "s", "self");
+        match result {
+            ExecExpr::Field(base, field) => {
+                assert!(matches!(*base, ExecExpr::Var(n) if n == "self"));
+                assert_eq!(field, "counter");
+            }
+            _ => panic!("expected Field"),
+        }
+    }
+
+    #[test]
+    fn test_rename_var_in_expr_nested() {
+        // Clone(Field(Var("s"), "x")) -> Clone(Field(Var("self"), "x"))
+        let expr = ExecExpr::Clone(Box::new(ExecExpr::Field(
+            Box::new(ExecExpr::Var("s".to_string())),
+            "x".to_string(),
+        )));
+        let result = Translator::rename_var_in_expr(&expr, "s", "self");
+        match result {
+            ExecExpr::Clone(inner) => match *inner {
+                ExecExpr::Field(base, field) => {
+                    assert!(matches!(*base, ExecExpr::Var(n) if n == "self"));
+                    assert_eq!(field, "x");
+                }
+                _ => panic!("expected Field"),
+            },
+            _ => panic!("expected Clone"),
+        }
+    }
+
+    #[test]
+    fn test_rename_var_in_expr_dotted_var() {
+        // Var("s.field") -> Var("self.field")
+        let expr = ExecExpr::Var("s.field".to_string());
+        let result = Translator::rename_var_in_expr(&expr, "s", "self");
+        assert!(matches!(result, ExecExpr::Var(n) if n == "self.field"));
     }
 }

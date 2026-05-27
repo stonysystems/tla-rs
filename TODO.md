@@ -15521,11 +15521,24 @@ this in the transpiler so all protocols benefit without manual editing.
   field assignment. Add `let ghost old_self = old(self)@` at body start.
   Handle Arc-wrapped fields via external helpers.
 
-#### 48.5 Validate on one protocol (~50 LOC)
+#### 48.5 Validate on one protocol (~250 LOC)
 
-- [ ] **48.5.a**: Add `[calling_convention]` to one simple protocol TOML
-  (e.g., VerticalPaxos). Regenerate, verify output matches expected
-  `&mut self` pattern. Compare state counts with functional version.
+Validation on TwoPhase revealed 3 gaps in the pipeline. Fixed below:
+
+- [x] **48.5.a**: **Body: replace receiver param name with `self`**.
+  In `maybe_apply_mut_self`, rename the receiver param's name references
+  in the body from `s` to `self`. The translator already builds the body
+  with `s.field` references; for methods, these must become `self.field`.
+- [ ] **48.5.b**: **Return type + ensures for multi-output methods**.
+  When a predicate has multiple outputs (e.g., `(CState, Vec<CMessage>)`),
+  remove only the CState component from the return tuple (keep others).
+  Adjust ensures to use `self@` for the removed component.
+- [ ] **48.5.c**: **Body: extract struct from tuple return**.
+  In `struct_to_field_assignments`, handle `ExecExpr::Tuple` where one
+  element is a `Struct`/`StructUpdate` — convert that element to field
+  assignments and keep the other elements as the return value.
+- [ ] **48.5.d**: Add `mut_self_types = ["CState"]` to TwoPhase TOML,
+  regenerate, update checked-in file. Verify `&mut self` pattern in output.
 
 #### 48.6 Apply to RSL + bench (~100 LOC)
 
