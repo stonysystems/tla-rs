@@ -15534,10 +15534,12 @@ Validation on TwoPhase revealed 3 gaps in the pipeline. Fixed below:
   remove only the CState component from the return tuple (keep others).
   Adjust ensures to use `self@` for the removed component, renumber
   remaining `result.N` indices. 2 unit tests added.
-- [ ] **48.5.c**: **Body: extract struct from tuple return**.
+- [x] **48.5.c**: **Body: extract struct from tuple return**.
   In `struct_to_field_assignments`, handle `ExecExpr::Tuple` where one
   element is a `Struct`/`StructUpdate` — convert that element to field
-  assignments and keep the other elements as the return value.
+  assignments and keep the other elements as the return value. Also
+  fixed printer signature to emit return type for multi-output methods.
+  3 new printer tests + 2 existing tests fixed for () return type.
 - [ ] **48.5.d**: Add `mut_self_types = ["CState"]` to TwoPhase TOML,
   regenerate, update checked-in file. Verify `&mut self` pattern in output.
 

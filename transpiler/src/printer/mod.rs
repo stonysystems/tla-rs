@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::translator::{ExecExpr, ExecFunction, ExecParameter};
+use crate::translator::{ExecExpr, ExecFunction, ExecParameter, ExecType};
 
 /// Configuration for code printing
 #[derive(Debug, Clone)]
@@ -209,6 +209,39 @@ impl Printer {
                         .map(|e| Box::new(Self::struct_to_field_assignments(e))),
                 }
             }
+            ExecExpr::Tuple(elems) => {
+                // For multi-output methods: find the Struct/StructUpdate element,
+                // convert it to field assignments, and return the remaining elements.
+                let struct_idx = elems.iter().position(|e| {
+                    matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
+                });
+                if let Some(idx) = struct_idx {
+                    let struct_assignments = Self::struct_to_field_assignments(&elems[idx]);
+                    let remaining: Vec<ExecExpr> = elems.iter().enumerate()
+                        .filter(|(i, _)| *i != idx)
+                        .map(|(_, e)| e.clone())
+                        .collect();
+                    // Combine: field assignments block, then return remaining as expression
+                    let mut stmts = match struct_assignments {
+                        ExecExpr::Block(s) => s,
+                        other => vec![other],
+                    };
+                    match remaining.len() {
+                        0 => ExecExpr::Block(stmts),
+                        1 => {
+                            stmts.push(remaining.into_iter().next().unwrap());
+                            ExecExpr::Block(stmts)
+                        }
+                        _ => {
+                            stmts.push(ExecExpr::Tuple(remaining));
+                            ExecExpr::Block(stmts)
+                        }
+                    }
+                } else {
+                    // No struct element found — leave as-is
+                    expr.clone()
+                }
+            }
             // For other expressions (no struct at tail), leave unchanged
             other => other.clone(),
         }
@@ -232,8 +265,9 @@ impl Printer {
 
         self.write(")");
 
-        // Methods don't have a return type (mutations are in-place)
-        if !func.is_method {
+        // Emit return type: methods with () return skip it, all others emit it
+        let skip_return = func.is_method && func.return_type == ExecType::Named("()".to_string());
+        if !skip_return {
             self.write(" -> (result: ");
             self.write(&func.return_type.to_rust_string());
             self.write(")");
@@ -1657,9 +1691,12 @@ mod tests {
         assert!(!output.contains("&mut self"));
 
         // Now test with is_method=true — should print as impl method
+        // In the real pipeline, maybe_apply_mut_self sets return_type to ()
+        // for single-output methods where the output IS the receiver type.
         let method_func = ExecFunction {
             is_method: true,
             receiver_type: Some("CState".to_string()),
+            return_type: ExecType::Named("()".to_string()),
             params: vec![
                 ExecParameter {
                     name: "s".to_string(),
@@ -1727,7 +1764,7 @@ mod tests {
                     is_self: false,
                 },
             ],
-            return_type: ExecType::Named("CReplica".to_string()),
+            return_type: ExecType::Named("()".to_string()),
             requires: vec!["old(self).well_formed()".to_string()],
             ensures: vec!["self.well_formed()".to_string()],
             decreases: vec![],
@@ -2028,6 +2065,173 @@ mod tests {
             output.contains("self.val = tmp"),
             "struct construction should become field assignment: {}",
             output
+        );
+    }
+
+    #[test]
+    fn test_method_body_tuple_with_struct_extracts_assignments() {
+        // Multi-output method: body is Tuple(Struct{...}, sent_packets)
+        // Should become: self.field = val; sent_packets (as return)
+        let func = ExecFunction {
+            name: "CHandleMsg".to_string(),
+            params: vec![
+                ExecParameter {
+                    name: "s".to_string(),
+                    ty: ExecType::Reference(
+                        Box::new(ExecType::Named("CState".to_string())),
+                        true,
+                    ),
+                    is_reference: true,
+                    is_self: true,
+                },
+                ExecParameter {
+                    name: "msg".to_string(),
+                    ty: ExecType::Reference(
+                        Box::new(ExecType::Named("CMessage".to_string())),
+                        false,
+                    ),
+                    is_reference: true,
+                    is_self: false,
+                },
+            ],
+            return_type: ExecType::Named("Vec<CTPCMessage>".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::Tuple(vec![
+                ExecExpr::Struct {
+                    name: "CState".to_string(),
+                    fields: vec![
+                        ("counter".to_string(), ExecExpr::Literal("1u64".to_string())),
+                        ("flag".to_string(), ExecExpr::Literal("true".to_string())),
+                    ],
+                },
+                ExecExpr::Var("sent_packets".to_string()),
+            ]),
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Should have field assignments
+        assert!(
+            output.contains("self.counter = 1u64"),
+            "should have counter assignment: {}", output
+        );
+        assert!(
+            output.contains("self.flag = true"),
+            "should have flag assignment: {}", output
+        );
+        // Should return remaining tuple element
+        assert!(
+            output.contains("sent_packets"),
+            "should return remaining tuple element: {}", output
+        );
+        // Should have return type in signature
+        assert!(
+            output.contains("-> (result: Vec<CTPCMessage>)"),
+            "multi-output method should have return type: {}", output
+        );
+    }
+
+    #[test]
+    fn test_method_body_tuple_in_block_tail() {
+        // Multi-output method where body is Block([let ..., Tuple(Struct, packets)])
+        let func = ExecFunction {
+            name: "CStep".to_string(),
+            params: vec![ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(
+                    Box::new(ExecType::Named("CState".to_string())),
+                    true,
+                ),
+                is_reference: true,
+                is_self: true,
+            }],
+            return_type: ExecType::Named("Vec<CMsg>".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "pkts".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::Literal("Vec::new()".to_string())),
+                },
+                ExecExpr::Tuple(vec![
+                    ExecExpr::StructUpdate {
+                        name: "CState".to_string(),
+                        base: Box::new(ExecExpr::Var("self".to_string())),
+                        fields: vec![("counter".to_string(), ExecExpr::Literal("0u64".to_string()))],
+                    },
+                    ExecExpr::Var("pkts".to_string()),
+                ]),
+            ]),
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Let binding preserved
+        assert!(
+            output.contains("let pkts = Vec::new();"),
+            "let binding should be preserved: {}", output
+        );
+        // Struct update → field assignment
+        assert!(
+            output.contains("self.counter = 0u64"),
+            "struct update should become field assignment: {}", output
+        );
+        // Remaining element returned
+        assert!(
+            output.contains("pkts"),
+            "should return remaining packets: {}", output
+        );
+    }
+
+    #[test]
+    fn test_method_signature_with_non_unit_return() {
+        // Multi-output method should emit return type
+        let func = ExecFunction {
+            name: "CProcess".to_string(),
+            params: vec![ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(
+                    Box::new(ExecType::Named("CState".to_string())),
+                    true,
+                ),
+                is_reference: true,
+                is_self: true,
+            }],
+            return_type: ExecType::Tuple(vec![
+                ExecType::Named("Vec<CMsg>".to_string()),
+                ExecType::Named("u64".to_string()),
+            ]),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::Tuple(vec![
+                ExecExpr::Struct {
+                    name: "CState".to_string(),
+                    fields: vec![("x".to_string(), ExecExpr::Literal("1u64".to_string()))],
+                },
+                ExecExpr::Var("pkts".to_string()),
+                ExecExpr::Literal("42u64".to_string()),
+            ]),
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Should have tuple return type
+        assert!(
+            output.contains("-> (result: (Vec<CMsg>, u64))"),
+            "should emit tuple return type: {}", output
+        );
+        // Field assignment for struct
+        assert!(
+            output.contains("self.x = 1u64"),
+            "should have field assignment: {}", output
         );
     }
 }
