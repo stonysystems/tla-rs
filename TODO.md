@@ -15540,8 +15540,17 @@ Validation on TwoPhase revealed 3 gaps in the pipeline. Fixed below:
   assignments and keep the other elements as the return value. Also
   fixed printer signature to emit return type for multi-output methods.
   3 new printer tests + 2 existing tests fixed for () return type.
-- [ ] **48.5.d**: Add `mut_self_types = ["CState"]` to TwoPhase TOML,
-  regenerate, update checked-in file. Verify `&mut self` pattern in output.
+- [x] **48.5.d**: **Body: `let result = Tuple` pattern + proof rewriting**.
+  Extended `struct_to_field_assignments` to detect `let result = (Struct, rest);
+  ...proofs...; result` pattern — extracts struct into field assignments,
+  rebinds result to remaining elements, and rewrites proof block string
+  references (`result.N@` → `self@` / renumbered). 2 new printer tests.
+  End-to-end validated on TwoPhase: all 8 action functions produce correct
+  `&mut self` output with field assignments and proof blocks.
+- [ ] **48.5.e**: Add `mut_self_types = ["CState"]` to TwoPhase TOML,
+  regenerate checked-in `twophase_gen.rs`, update `host.rs` callers to use
+  `self.state.CStep(...)` instead of `let (new_state, sent) = CStep(&self.state, ...)`.
+  Verify the full pipeline compiles.
 
 #### 48.6 Apply to RSL + bench (~100 LOC)
 

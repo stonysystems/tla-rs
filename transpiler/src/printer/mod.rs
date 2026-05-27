@@ -189,7 +189,64 @@ impl Printer {
                 ExecExpr::Block(assignments)
             }
             ExecExpr::Block(stmts) if !stmts.is_empty() => {
-                // Transform the last statement, keep the rest
+                // Pattern: `let result = (Struct{...}, rest); ...proofs...; result`
+                // Detect: last expr is Var(v) and an earlier Let(v, ...) has a transformable value
+                if let Some(ExecExpr::Var(tail_var)) = stmts.last() {
+                    if let Some(let_idx) = stmts.iter().position(|s| {
+                        matches!(s, ExecExpr::Let { pattern, .. } if pattern == tail_var)
+                    }) {
+                        if let ExecExpr::Let { value, .. } = &stmts[let_idx] {
+                            let transformed = Self::struct_to_field_assignments(value);
+                            if !matches!(&transformed, v if Self::expr_eq(v, value)) {
+                                // The Let value was transformed — restructure the block:
+                                // 1. Statements before the Let (preserved)
+                                // 2. Field assignments from struct extraction
+                                // 3. Rebind result to remaining non-struct elements (if any)
+                                // 4. Proof blocks + other statements (with index rewriting)
+                                // 5. Trailing Var (for return value, if method has non-() return)
+                                let struct_idx = Self::find_struct_in_expr(value);
+                                let remaining_count = Self::count_non_struct_in_expr(value);
+                                let mut new_stmts: Vec<ExecExpr> = stmts[..let_idx].to_vec();
+
+                                match &transformed {
+                                    ExecExpr::Block(inner) => {
+                                        // Last element of inner is the remaining return value
+                                        // Everything before it is field assignments
+                                        if inner.len() > 1 {
+                                            // Field assignments
+                                            new_stmts.extend(inner[..inner.len()-1].iter().cloned());
+                                            // Rebind result to remaining value
+                                            let remaining = &inner[inner.len()-1];
+                                            new_stmts.push(ExecExpr::Let {
+                                                pattern: tail_var.clone(),
+                                                ty: None,
+                                                value: Box::new(remaining.clone()),
+                                            });
+                                        } else if inner.len() == 1 {
+                                            // Only field assignments, no remaining return
+                                            new_stmts.extend(inner.iter().cloned());
+                                        }
+                                    }
+                                    _ => {
+                                        // Single expression (assignments only)
+                                        new_stmts.push(transformed);
+                                    }
+                                }
+
+                                // Add remaining statements (proof blocks etc.) with index rewriting
+                                for stmt in &stmts[let_idx+1..stmts.len()-1] {
+                                    new_stmts.push(Self::rewrite_tuple_refs_in_expr(
+                                        stmt, struct_idx, tail_var, remaining_count,
+                                    ));
+                                }
+                                // Keep trailing var for return
+                                new_stmts.push(stmts.last().unwrap().clone());
+                                return ExecExpr::Block(new_stmts);
+                            }
+                        }
+                    }
+                }
+                // Default: transform the last statement, keep the rest
                 let mut new_stmts = stmts[..stmts.len() - 1].to_vec();
                 let last = Self::struct_to_field_assignments(stmts.last().unwrap());
                 new_stmts.push(last);
@@ -245,6 +302,152 @@ impl Printer {
             // For other expressions (no struct at tail), leave unchanged
             other => other.clone(),
         }
+    }
+
+    /// Check if two ExecExpr are structurally equal (shallow comparison for optimization).
+    fn expr_eq(a: &ExecExpr, b: &ExecExpr) -> bool {
+        // Compare by debug format — sufficient for detecting no-op transforms
+        format!("{:?}", a) == format!("{:?}", b)
+    }
+
+    /// Find the index of a Struct/StructUpdate element inside an expression.
+    /// Returns Some(idx) if the expression is a Tuple with a struct element,
+    /// or if it's a Block/nested expression containing a Tuple with a struct.
+    fn find_struct_in_expr(expr: &ExecExpr) -> Option<usize> {
+        match expr {
+            ExecExpr::Tuple(elems) => {
+                elems.iter().position(|e| {
+                    matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
+                })
+            }
+            ExecExpr::Block(stmts) if !stmts.is_empty() => {
+                Self::find_struct_in_expr(stmts.last().unwrap())
+            }
+            _ => None,
+        }
+    }
+
+    /// Count non-struct elements in a Tuple expression (follows block tails).
+    fn count_non_struct_in_expr(expr: &ExecExpr) -> usize {
+        match expr {
+            ExecExpr::Tuple(elems) => {
+                elems.iter().filter(|e| {
+                    !matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
+                }).count()
+            }
+            ExecExpr::Block(stmts) if !stmts.is_empty() => {
+                Self::count_non_struct_in_expr(stmts.last().unwrap())
+            }
+            _ => 0,
+        }
+    }
+
+    /// Rewrite tuple index references in proof strings and other expressions.
+    /// When the struct at `struct_idx` is extracted from a tuple, references like
+    /// `result.0` (if struct_idx=0) become `self`, and remaining indices are renumbered.
+    /// `remaining_count` is the number of non-struct tuple elements.
+    fn rewrite_tuple_refs_in_expr(
+        expr: &ExecExpr,
+        struct_idx: Option<usize>,
+        result_var: &str,
+        remaining_count: usize,
+    ) -> ExecExpr {
+        let si = match struct_idx {
+            Some(i) => i,
+            None => return expr.clone(),
+        };
+        let rw = |s: &str| Self::rewrite_tuple_refs_in_string(s, si, result_var, remaining_count);
+        let rw_expr = |e: &ExecExpr| Self::rewrite_tuple_refs_in_expr(
+            e, struct_idx, result_var, remaining_count,
+        );
+        match expr {
+            ExecExpr::Var(s) => ExecExpr::Var(rw(s)),
+            ExecExpr::Literal(s) => ExecExpr::Literal(rw(s)),
+            ExecExpr::Assert(inner) => ExecExpr::Assert(Box::new(rw_expr(inner))),
+            ExecExpr::Assume(inner) => ExecExpr::Assume(Box::new(rw_expr(inner))),
+            ExecExpr::ProofBlock { stmts } => ExecExpr::ProofBlock {
+                stmts: stmts.iter().map(|s| rw_expr(s)).collect(),
+            },
+            ExecExpr::Block(stmts) => {
+                ExecExpr::Block(stmts.iter().map(|s| rw_expr(s)).collect())
+            }
+            ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
+                lhs: Box::new(rw_expr(lhs)),
+                op: op.clone(),
+                rhs: Box::new(rw_expr(rhs)),
+            },
+            ExecExpr::Field(base, field) => ExecExpr::Field(Box::new(rw_expr(base)), field.clone()),
+            ExecExpr::BroadcastUse(s) => ExecExpr::BroadcastUse(rw(s)),
+            other => other.clone(),
+        }
+    }
+
+    /// Rewrite tuple index references in a proof string.
+    /// `result.{si}` → `self`, remaining indices renumbered.
+    /// When `remaining_count == 1`, `result.{other_idx}` → `result` (no index).
+    fn rewrite_tuple_refs_in_string(
+        s: &str,
+        struct_idx: usize,
+        result_var: &str,
+        remaining_count: usize,
+    ) -> String {
+        let mut out = s.to_string();
+        // Replace struct index references with self
+        out = out.replace(
+            &format!("{}.{}@", result_var, struct_idx),
+            "self@",
+        );
+        out = out.replace(
+            &format!("{}.{}.", result_var, struct_idx),
+            "self.",
+        );
+        // Handle bare result.{si} followed by non-alnum
+        let struct_prefix = format!("{}.{}", result_var, struct_idx);
+        let temp = out.clone();
+        out = String::new();
+        let mut chars = temp.char_indices().peekable();
+        while let Some((idx, _)) = chars.peek() {
+            let rest = &temp[*idx..];
+            if rest.starts_with(&struct_prefix) {
+                let after = rest.get(struct_prefix.len()..struct_prefix.len()+1);
+                let is_boundary = after.map_or(true, |c| {
+                    let c = c.chars().next().unwrap();
+                    !c.is_alphanumeric() && c != '_' && c != '.'
+                });
+                if is_boundary {
+                    out.push_str("self");
+                    for _ in 0..struct_prefix.len() { chars.next(); }
+                    continue;
+                }
+            }
+            out.push(temp.as_bytes()[*idx] as char);
+            chars.next();
+        }
+
+        // Renumber remaining indices using placeholders to avoid interference
+        // First pass: replace old references with placeholders
+        for old_idx in (0..10).rev() {
+            if old_idx == struct_idx { continue; }
+            let old_ref = format!("{}.{}", result_var, old_idx);
+            let new_idx = if old_idx > struct_idx { old_idx - 1 } else { old_idx };
+            let placeholder = if remaining_count == 1 {
+                format!("__RESULT_PLACEHOLDER__")
+            } else {
+                format!("__RESULT_PLACEHOLDER_{new_idx}__")
+            };
+            out = out.replace(&old_ref, &placeholder);
+        }
+        // Second pass: replace placeholders with final references
+        if remaining_count == 1 {
+            out = out.replace("__RESULT_PLACEHOLDER__", result_var);
+        } else {
+            for new_idx in 0..remaining_count {
+                let placeholder = format!("__RESULT_PLACEHOLDER_{new_idx}__");
+                let new_ref = format!("{}.{}", result_var, new_idx);
+                out = out.replace(&placeholder, &new_ref);
+            }
+        }
+        out
     }
 
     /// Print function signature
@@ -2233,5 +2436,88 @@ mod tests {
             output.contains("self.x = 1u64"),
             "should have field assignment: {}", output
         );
+    }
+
+    #[test]
+    fn test_method_body_let_result_tuple_pattern() {
+        // Body pattern: let result = (Struct{...}, vec); proof { assert(result.1@...) }; result
+        // Should become: field assignments; let result = vec; proof { assert(result@...) }; result
+        let func = ExecFunction {
+            name: "CStep".to_string(),
+            params: vec![ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(
+                    Box::new(ExecType::Named("CState".to_string())),
+                    true,
+                ),
+                is_reference: true,
+                is_self: true,
+            }],
+            return_type: ExecType::Named("Vec<CMsg>".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::Block(vec![
+                ExecExpr::Let {
+                    pattern: "result".to_string(),
+                    ty: None,
+                    value: Box::new(ExecExpr::Tuple(vec![
+                        ExecExpr::Struct {
+                            name: "CState".to_string(),
+                            fields: vec![
+                                ("counter".to_string(), ExecExpr::Literal("1u64".to_string())),
+                            ],
+                        },
+                        ExecExpr::Var("packets".to_string()),
+                    ])),
+                },
+                ExecExpr::ProofBlock {
+                    stmts: vec![ExecExpr::Assert(Box::new(ExecExpr::Var(
+                        "result.1@.len() == 0".to_string(),
+                    )))],
+                },
+                ExecExpr::Var("result".to_string()),
+            ]),
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Field assignment
+        assert!(
+            output.contains("self.counter = 1u64"),
+            "struct should become field assignment: {}", output
+        );
+        // Result rebound to remaining element
+        assert!(
+            output.contains("let result = packets"),
+            "result should be rebound to remaining vec: {}", output
+        );
+        // Proof block should reference result@ (not result.1@)
+        assert!(
+            output.contains("result@.len() == 0"),
+            "proof should reference result@ not result.1@: {}", output
+        );
+        assert!(
+            !output.contains("result.1@"),
+            "should NOT have result.1@ reference: {}", output
+        );
+    }
+
+    #[test]
+    fn test_rewrite_tuple_refs_in_string() {
+        // struct_idx=0, result_var="result", remaining_count=1
+        let s = "result.1@.map(|i: int, p: CMsg| p@) =~= Seq::empty().push(result.1@[0]@)";
+        let out = Printer::rewrite_tuple_refs_in_string(s, 0, "result", 1);
+        assert_eq!(
+            out,
+            "result@.map(|i: int, p: CMsg| p@) =~= Seq::empty().push(result@[0]@)",
+            "result.1 should become result when remaining_count=1"
+        );
+
+        // struct_idx=0, remaining_count=2 — renumber 1→0, 2→1
+        let s2 = "f(result.0@, result.1@, result.2@)";
+        let out2 = Printer::rewrite_tuple_refs_in_string(s2, 0, "result", 2);
+        assert_eq!(out2, "f(self@, result.0@, result.1@)");
     }
 }
