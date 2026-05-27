@@ -190,7 +190,8 @@ ensures
     if has_src {
         let cached_seqno = s.executor.reply_cache.get(&received_packet.src).unwrap().seqno;
         if seqno_req <= cached_seqno {
-            let sent_packets = crate::optimized_rsl::RSL::executor_gen::CExecutorProcessRequest(&s.executor, &received_packet);
+            // Phase 47.3.a.3: use &self method call
+            let sent_packets = s.executor.CExecutorProcessRequest(&received_packet);
             let r = (s.clone_up_to_view(), sent_packets);
             proof {
                 // Bridge exec HashMap.contains_key → spec abstractify_creplycache.contains_key
@@ -398,13 +399,14 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessStartingPhase2(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    { let (s_executor, sent_packets) = crate::optimized_rsl::RSL::executor_gen::CExecutorProcessStartingPhase2(&s.executor, &received_packet); (CReplica {
+    // Phase 47.3.a.3: use &self method call (read-only, no executor change)
+    { let sent_packets = s.executor.CExecutorProcessStartingPhase2(&received_packet); (CReplica {
     constants: s.constants.clone(),
     nextHeartbeatTime: s.nextHeartbeatTime,
     proposer: s.proposer.clone_up_to_view(),
     acceptor: s.acceptor.clone_up_to_view(),
     learner: s.learner.clone_up_to_view(),
-    executor: s_executor,
+    executor: s.executor.clone_up_to_view(),
 }, sent_packets) }
 
 }
@@ -573,7 +575,9 @@ ensures
         unreachable_value()
     },
 });
-        let s_executor = crate::optimized_rsl::RSL::executor_gen::CExecutorProcessAppStateSupply(&s.executor, &received_packet);
+        // Phase 47.3.a.3: use &mut self on cloned executor
+        let mut s_executor = s.executor.clone_up_to_view();
+        s_executor.CExecutorProcessAppStateSupply(&received_packet);
         let r = (CReplica {
     constants: s.constants.clone_up_to_view(),
     nextHeartbeatTime: s.nextHeartbeatTime,
@@ -616,14 +620,15 @@ ensures
     forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
     LReplicaNextProcessAppStateRequest(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@)),
 {
-    let (s_executor, sent_packets) = crate::optimized_rsl::RSL::executor_gen::CExecutorProcessAppStateRequest(&s.executor, &received_packet);
+    // Phase 47.3.a.3: use &self method call (read-only, no executor change)
+    let sent_packets = s.executor.CExecutorProcessAppStateRequest(&received_packet);
     let result_replica = CReplica {
         constants: s.constants.clone(),
         nextHeartbeatTime: s.nextHeartbeatTime,
         proposer: s.proposer.clone_up_to_view(),
         acceptor: s.acceptor.clone_up_to_view(),
         learner: s.learner.clone_up_to_view(),
-        executor: s_executor,
+        executor: s.executor.clone_up_to_view(),
     };
     proof {
         assert(result_replica@.constants == s@.constants);
@@ -631,7 +636,7 @@ ensures
         assert(result_replica@.proposer == s@.proposer);
         assert(result_replica@.acceptor == s@.acceptor);
         assert(result_replica@.learner == s@.learner);
-        assert(result_replica@.executor == s_executor@);
+        assert(result_replica@.executor == s@.executor);
         assert(result_replica@ == LReplica {
             constants: s@.constants,
             nextHeartbeatTime: s@.nextHeartbeatTime,
@@ -937,8 +942,9 @@ ensures
                 // Manually instantiate clearnerstate_is_valid quantifier at opn
                 lemma_clearnerstate_value_valid(&s.learner.unexecuted_learner_state, opn);
             }
-            let s_executor = crate::optimized_rsl::RSL::executor_gen::CExecutorGetDecision(
-                &s.executor, &s.learner.max_ballot_seen, &opn, &lt.candidate_learned_value);
+            // Phase 47.3.a.3: use &mut self on cloned executor
+            let mut s_executor = s.executor.clone_up_to_view();
+            s_executor.CExecutorGetDecision(&s.learner.max_ballot_seen, &opn, &lt.candidate_learned_value);
             let new_replica = CReplica {
                 constants: s.constants.clone(),
                 nextHeartbeatTime: s.nextHeartbeatTime,
@@ -986,7 +992,9 @@ ensures
         COutstandingOperation::COutstandingOpKnown{v, ..} => {
             if cond2 && cond3 {
                 let batch = clone_request_batch_up_to_view(v);
-                let (new_executor, sent_packets) = crate::optimized_rsl::RSL::executor_gen::CExecutorExecute(&s.executor);
+                // Phase 47.3.a.3: use &mut on cloned executor
+                let mut new_executor = s.executor.clone_up_to_view();
+                let sent_packets = crate::optimized_rsl::RSL::executor_gen::CExecutorExecute_mut(&mut new_executor);
                 // Phase 47.3.a.2: use &mut self on cloned learner
                 let mut new_learner = s.learner.clone_up_to_view();
                 new_learner.CLearnerForgetDecision(&s.executor.ops_complete);
