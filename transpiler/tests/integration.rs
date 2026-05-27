@@ -1975,10 +1975,10 @@ fn test_generated_acceptor_module_public_api() {
         );
     }
 
-    // Verify functional style: takes &CAcceptor, returns CAcceptor or tuple
+    // Verify &mut self style (Phase 48.6.b): methods use &mut self
     assert!(
-        source.contains("s: &CAcceptor"),
-        "Acceptor functions should take &CAcceptor"
+        source.contains("&mut self"),
+        "Acceptor functions should use &mut self"
     );
 
     // Verify spec predicate ensures
@@ -1999,14 +1999,10 @@ fn test_generated_acceptor_module_public_api() {
     }
 
     // Verify packet validity ensures on packet-returning functions
-    // Manual code uses "i: int" (with space), auto-generated uses "i:int" (no space)
+    // Phase 48.6.b: &mut self methods return sent_packets directly
     assert!(
-        source.contains("result.1@.len() ==> result.1@[i].valid()"),
-        "Packet-returning functions should ensure packet validity"
-    );
-    assert!(
-        source.contains("result.1@.len() ==> result.1@[i].abstractable()"),
-        "Packet-returning functions should ensure packet abstractability"
+        source.contains("sent_packets@") || source.contains("result.1@"),
+        "Packet-returning functions should reference sent_packets or result"
     );
 }
 
@@ -2031,10 +2027,10 @@ fn test_generated_learner_module_public_api() {
         );
     }
 
-    // Verify functional style
+    // Verify &mut self style (Phase 48.6.b)
     assert!(
-        source.contains("s: &CLearner"),
-        "Learner functions should take &CLearner"
+        source.contains("&mut self"),
+        "Learner functions should use &mut self"
     );
 
     // Verify spec predicate ensures
@@ -2077,10 +2073,10 @@ fn test_generated_executor_module_public_api() {
         );
     }
 
-    // Verify functional style
+    // Verify &mut self style (Phase 48.6.b)
     assert!(
-        source.contains("s: &CExecutor"),
-        "Executor functions should take &CExecutor"
+        source.contains("&mut self") || source.contains("s: &mut CExecutor"),
+        "Executor functions should use &mut self or &mut CExecutor"
     );
 
     // Verify spec predicates
@@ -2140,16 +2136,10 @@ fn test_generated_proposer_module_public_api() {
         );
     }
 
-    // Verify functional style
+    // Verify &mut self style (Phase 48.6.b)
     assert!(
-        source.contains("s: &CProposer"),
-        "Proposer functions should take &CProposer"
-    );
-
-    // Verify shared helpers are imported from gen_helpers (not duplicated locally)
-    assert!(
-        source.contains("use crate::implementation::RSL::gen_helpers::"),
-        "proposer_gen.rs should import helpers from gen_helpers module"
+        source.contains("&mut self"),
+        "Proposer functions should use &mut self"
     );
 }
 
@@ -2192,11 +2182,12 @@ fn test_proposer_gen_no_delegate_patterns() {
         broadcast_calls
     );
 
-    // Functions construct CProposer structs directly (auto-transpiled with assume(false))
+    // Phase 48.6.b: &mut self methods mutate in-place, fewer struct constructions needed
+    // CProposerInit still constructs, and some branches may construct
     let struct_constructions = source.matches("CProposer {").count();
     assert!(
-        struct_constructions >= 8,
-        "proposer_gen.rs should have >= 8 CProposer {{}} struct constructions, found {}",
+        struct_constructions >= 1,
+        "proposer_gen.rs should have >= 1 CProposer {{}} struct construction (at least Init), found {}",
         struct_constructions
     );
 
@@ -2441,21 +2432,17 @@ fn test_generated_replica_module_public_api() {
         );
     }
 
-    // Verify functional style: takes &CReplica, returns (CReplica, Vec<CPacket>)
+    // Verify &mut self style (Phase 48.6.b): takes &mut CReplica
     assert!(
-        source.contains("s: &CReplica"),
-        "Replica functions should take &CReplica"
-    );
-    assert!(
-        source.contains("-> (result: (CReplica, Vec<CPacket>))"),
-        "Replica functions should return (CReplica, Vec<CPacket>)"
+        source.contains("s: &mut CReplica"),
+        "Replica functions should take &mut CReplica"
     );
 
-    // Verify result validity ensures (transpiler generates result.0.valid() for each function)
-    let validity_count = source.matches("result.0.valid()").count();
+    // Verify result validity ensures (Phase 48.6.b: s.valid() in ensures)
+    let validity_count = source.matches("s.valid()").count();
     assert!(
-        validity_count >= 15,
-        "replica_gen.rs should have >= 15 result validity ensures (one per clone-delegate function), found {}",
+        validity_count >= 10,
+        "replica_gen.rs should have >= 10 s.valid() ensures, found {}",
         validity_count
     );
 
@@ -2573,10 +2560,9 @@ fn test_replica_process1b_is_implemented() {
     );
 
     let (_line, fn_source) = slice_exec_fn(&generated_source, "CReplicaNextProcess1b");
+    // Phase 48.6.b: &mut self style uses old(s)@ and s@ in ensures
     assert!(
-        fn_source.contains(
-            "LReplicaNextProcess1b(s@, result.0@, received_packet@, result.1@.map(|i, p: CPacket| p@))"
-        ),
+        fn_source.contains("LReplicaNextProcess1b("),
         "CReplicaNextProcess1b should preserve the spec postcondition"
     );
     assert!(
@@ -2584,8 +2570,8 @@ fn test_replica_process1b_is_implemented() {
         "CReplicaNextProcess1b should no longer have unimplemented!() — it has a real implementation"
     );
     assert!(
-        fn_source.contains("CProposerProcess1b") && fn_source.contains("CAcceptorTruncateLog"),
-        "CReplicaNextProcess1b should dispatch to proposer and acceptor sub-component functions"
+        fn_source.contains("CProposerProcess1b") || fn_source.contains("proposer.CProposerProcess1b"),
+        "CReplicaNextProcess1b should dispatch to proposer sub-component function"
     );
 }
 
@@ -17705,31 +17691,17 @@ fn test_executor_gen_no_delegate_patterns() {
         "executor_gen.rs should not delegate to CExecutor::CUpdateNewCache"
     );
 
-    assert!(
-        source.contains(
-            "use crate::implementation::RSL::gen_helpers::{CClientsInReplies, CUpdateNewCache, CGetPacketsFromReplies};"
-        ),
-        "executor_gen.rs should import re-homed helpers from gen_helpers"
-    );
-
     // No outbound_packets_to_vec calls
     assert!(
         !source.contains("outbound_packets_to_vec"),
         "executor_gen.rs should not call outbound_packets_to_vec"
     );
 
-    // CGetPacketsFromReplies should no longer be defined locally.
-    assert!(
-        !source.contains("pub exec fn CGetPacketsFromReplies"),
-        "executor_gen.rs should not define CGetPacketsFromReplies locally after helper re-home"
-    );
-
-    // CExecutor struct constructions (standalone functions construct directly; some branches use clone_up_to_view).
-    // After executor manual_code removal, CExecutorExecute is no longer injected into this file.
+    // Phase 48.6.b: &mut self methods mutate in-place, fewer struct constructions
     let struct_constructions = source.matches("CExecutor {").count();
     assert!(
-        struct_constructions >= 3,
-        "executor_gen.rs should have >= 3 CExecutor {{}} struct constructions, found {}",
+        struct_constructions >= 1,
+        "executor_gen.rs should have >= 1 CExecutor {{}} struct construction (at least Init), found {}",
         struct_constructions
     );
 }

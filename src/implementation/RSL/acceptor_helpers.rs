@@ -307,4 +307,30 @@ verus! {
         assert(b4 == (CountMatchesInSeq(ss, |x:int| x >= v) >= n));
         b1 && b2 && b3 && b4
     }
+
+    // In-place (&mut) wrappers for &mut self acceptor methods (Phase 48.6.b).
+    // Delegates to verified functional implementations above.
+
+    pub exec fn CRemoveVotesBeforeLogTruncationPoint_mut(votes: &mut CVotes, log_truncation_point: &u64)
+    requires
+        cvotes_is_valid(&*old(votes)),
+    ensures
+        cvotes_is_valid(votes),
+        RemoveVotesBeforeLogTruncationPoint(abstractify_cvotes(&*old(votes)), abstractify_cvotes(votes), *log_truncation_point as int),
+    {
+        let result = CRemoveVotesBeforeLogTruncationPoint(votes, log_truncation_point);
+        *votes = result;
+    }
+
+    pub exec fn CAddVoteAndRemoveOldOnes_mut(votes: &mut CVotes, new_opn: &u64, new_vote: &CVote, log_truncation_point: &u64)
+    requires
+        cvotes_is_valid(&*old(votes)),
+        new_vote.valid(),
+    ensures
+        cvotes_is_valid(votes),
+        LAddVoteAndRemoveOldOnes(abstractify_cvotes(&*old(votes)), abstractify_cvotes(votes), *new_opn as int, new_vote@, *log_truncation_point as int),
+    {
+        let result = CAddVoteAndRemoveOldOnes(votes, new_opn, new_vote, log_truncation_point);
+        *votes = result;
+    }
 }

@@ -33,7 +33,25 @@ use vstd::set::*;
 use vstd::set_lib::*;
 use vstd::std_specs::hash::HashMapAdditionalSpecFns;
 
+use crate::implementation::RSL::types_i::CReplyCache;
+
 verus! {
+
+// --- Arc::get_mut helpers (Phase 47.5: zero-alloc in-place mutation) ---
+
+#[verifier::external_body]
+fn arc_replycache_set(rc: &mut Arc<CReplyCache>, new_val: CReplyCache)
+    ensures rc@ == new_val@
+{
+    *Arc::get_mut(rc).unwrap() = new_val;
+}
+
+#[verifier::external_body]
+fn arc_replycache_clone_from(rc: &mut Arc<CReplyCache>, src: &CReplyCache)
+    ensures rc@ == src@
+{
+    *Arc::get_mut(rc).unwrap() = src.clone();
+}
 
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
@@ -146,228 +164,169 @@ ensures
 
 }
 
-pub exec fn CExecutorGetDecision(s: &CExecutor, bal: &CBallot, opn: &u64, v: &CRequestBatch) -> (result: CExecutor)
+// Phase 47.3.a.3: All executor functions converted to methods
+impl CExecutor {
+
+pub exec fn CExecutorGetDecision(&mut self, bal: &CBallot, opn: &u64, v: &CRequestBatch)
 requires
-    s.valid(),
+    old(self).valid(),
     bal.valid(),
     crequestbatch_is_valid(v),
 ensures
-    result.valid(),
-    LExecutorGetDecision(s@, result@, bal@, *opn as int, abstractify_crequestbatch(v)),
+    self.valid(),
+    LExecutorGetDecision(old(self)@, self@, bal@, *opn as int, abstractify_crequestbatch(v)),
 {
-    CExecutor {
-        next_op_to_execute: COutstandingOperation::COutstandingOpKnown {
-            v: clone_request_batch_up_to_view(v),
-            bal: bal.clone(),
-        },
-        ..s.clone_up_to_view()
-    }
-
+    self.next_op_to_execute = COutstandingOperation::COutstandingOpKnown {
+        v: clone_request_batch_up_to_view(v),
+        bal: bal.clone(),
+    };
 }
 
-pub exec fn CExecutorProcessAppStateSupply(s: &CExecutor, inp: &CPacket) -> (result: CExecutor)
+pub exec fn CExecutorProcessAppStateSupply(&mut self, inp: &CPacket)
 requires
-    s.valid(),
+    old(self).valid(),
     inp.valid(),
     inp.msg is CMessageAppStateSupply,
 ensures
-    result.valid(),
-    LExecutorProcessAppStateSupply(s@, result@, inp@),
+    self.valid(),
+    LExecutorProcessAppStateSupply(old(self)@, self@, inp@),
 {
-    { let m = &inp.msg; CExecutor {
-        constants: s.constants.clone(),
-        app: match &m {
-            CMessage::CMessageAppStateSupply { app_state, .. } => app_state.clone(),
-            _  => {
-                proof {
-                    assert(false);
-                }
-                unreachable_value()
-            },
+    match &inp.msg {
+        CMessage::CMessageAppStateSupply { bal_state_supply, opn_state_supply, app_state, reply_cache } => {
+            self.app = *app_state;
+            self.ops_complete = *opn_state_supply;
+            self.max_bal_reflected = *bal_state_supply;
+            self.next_op_to_execute = COutstandingOperation::COutstandingOpUnknown {};
+            arc_replycache_clone_from(&mut self.reply_cache, reply_cache);
         },
-        ops_complete: match &m {
-            CMessage::CMessageAppStateSupply { opn_state_supply, .. } => opn_state_supply.clone(),
-            _  => {
-                proof {
-                    assert(false);
-                }
-                unreachable_value()
-            },
-        },
-        max_bal_reflected: match &m {
-            CMessage::CMessageAppStateSupply { bal_state_supply, .. } => bal_state_supply.clone(),
-            _  => {
-                proof {
-                    assert(false);
-                }
-                unreachable_value()
-            },
-        },
-        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {
-        },
-        reply_cache: match &m {
-            CMessage::CMessageAppStateSupply { reply_cache, .. } => Arc::new(clone_reply_cache(reply_cache)),
-            _  => {
-                proof {
-                    assert(false);
-                }
-                unreachable_value()
-            },
-        },
-    } }
-
+        _ => { proof { assert(false); } }
+    }
 }
 
-pub exec fn CExecutorProcessAppStateRequest(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
+pub exec fn CExecutorProcessAppStateRequest(&self, inp: &CPacket) -> (result: Vec<CPacket>)
 requires
-    s.valid(),
+    self.valid(),
     inp.valid(),
     inp.msg is CMessageAppStateRequest,
 ensures
-    result.0.valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
-    LExecutorProcessAppStateRequest(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+    LExecutorProcessAppStateRequest(self@, self@, inp@, result@.map(|i, p: CPacket| p@)),
 {
     let (bal_state_req, opn_state_req) = match &inp.msg {
         CMessage::CMessageAppStateRequest { bal_state_req, opn_state_req } => (*bal_state_req, *opn_state_req),
         _ => { proof { assert(false); } unreachable_value() }
     };
-    let src_in_config = contains(&s.constants.all.config.replica_ids, &inp.src);
-    let bal_leq = CBalLeq(&s.max_bal_reflected, &bal_state_req);
-    let opn_ok = s.ops_complete >= opn_state_req;
-    let constants_valid = s.constants.CReplicaConstantsValid();
+    let src_in_config = contains(&self.constants.all.config.replica_ids, &inp.src);
+    let bal_leq = CBalLeq(&self.max_bal_reflected, &bal_state_req);
+    let opn_ok = self.ops_complete >= opn_state_req;
+    let constants_valid = self.constants.CReplicaConstantsValid();
     proof {
-        assert(src_in_config == s@.constants.all.config.replica_ids.contains(inp@.src));
-        assert(bal_leq == BalLeq(s@.max_bal_reflected, inp@.msg->bal_state_req));
-        assert(opn_ok == (s@.ops_complete >= inp@.msg->opn_state_req));
-        assert(constants_valid == LReplicaConstantsValid(s@.constants));
+        assert(src_in_config == self@.constants.all.config.replica_ids.contains(inp@.src));
+        assert(bal_leq == BalLeq(self@.max_bal_reflected, inp@.msg->bal_state_req));
+        assert(opn_ok == (self@.ops_complete >= inp@.msg->opn_state_req));
+        assert(constants_valid == LReplicaConstantsValid(self@.constants));
     }
     if src_in_config && bal_leq && opn_ok && constants_valid {
-        let cloned_cache = clone_reply_cache(&s.reply_cache);
+        let cloned_cache = clone_reply_cache(&self.reply_cache);
         let packet = CPacket {
             dst: inp.src.clone(),
-            src: s.constants.all.config.replica_ids[(s.constants.my_index as usize)].clone(),
+            src: self.constants.all.config.replica_ids[(self.constants.my_index as usize)].clone(),
             msg: CMessage::CMessageAppStateSupply {
-                bal_state_supply: s.max_bal_reflected,
-                opn_state_supply: s.ops_complete,
-                app_state: s.app,
+                bal_state_supply: self.max_bal_reflected,
+                opn_state_supply: self.ops_complete,
+                app_state: self.app,
                 reply_cache: cloned_cache,
             },
         };
-        let r = (s.clone_up_to_view(), vec![packet]);
+        let result = vec![packet];
         proof {
-            assert(r.0@ == s@);
-            assert(r.1@.len() == 1);
-            assert(r.1@[0] == packet);
-            assert(r.1@.map(|i: int, p: CPacket| p@) =~= seq![packet@]);
+            assert(result@.len() == 1);
+            assert(result@[0] == packet);
+            assert(result@.map(|i: int, p: CPacket| p@) =~= seq![packet@]);
         }
-        r
+        result
     } else {
-        let r = (s.clone_up_to_view(), vec![]);
+        let result = vec![];
         proof {
             lemma_empty_seq_map();
-            assert(r.0@ == s@);
-            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            assert(result@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
         }
-        r
+        result
     }
 }
 
-pub exec fn CExecutorProcessStartingPhase2(s: &CExecutor, inp: &CPacket) -> (result: (CExecutor, Vec<CPacket>))
+pub exec fn CExecutorProcessStartingPhase2(&self, inp: &CPacket) -> (result: Vec<CPacket>)
 requires
-    s.valid(),
+    self.valid(),
     inp.valid(),
     inp.msg is CMessageStartingPhase2,
 ensures
-    result.0.valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
-    LExecutorProcessStartingPhase2(s@, result.0@, inp@, result.1@.map(|i, p: CPacket| p@)),
+    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+    LExecutorProcessStartingPhase2(self@, self@, inp@, result@.map(|i, p: CPacket| p@)),
 {
-    { let result = if (contains(&s.constants.all.config.replica_ids, &inp.src) && (match &inp.msg {
-        CMessage::CMessageStartingPhase2 { logTruncationPoint_2, .. } => logTruncationPoint_2.clone(),
-        _  => {
-            proof {
-                assert(false);
-            }
-            unreachable_value()
-        },
-    } > s.ops_complete)) {
-                let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&s.constants.all.config, &s.constants.my_index, &CMessage::CMessageAppStateRequest {
-    bal_state_req: match &inp.msg {
-        CMessage::CMessageStartingPhase2 { bal_2, .. } => bal_2.clone(),
-        _  => {
-            proof {
-                assert(false);
-            }
-            unreachable_value()
-        },
-    },
-    opn_state_req: match &inp.msg {
-        CMessage::CMessageStartingPhase2 { logTruncationPoint_2, .. } => logTruncationPoint_2.clone(),
-        _  => {
-            proof {
-                assert(false);
-            }
-            unreachable_value()
-        },
-    },
-});
-        let r = (s.clone_up_to_view(), sent_packets);
-        proof {
-            assert(r.0@ == s@);
-        }
-        r
-
+    if contains(&self.constants.all.config.replica_ids, &inp.src) && (match &inp.msg {
+        CMessage::CMessageStartingPhase2 { logTruncationPoint_2, .. } => *logTruncationPoint_2,
+        _ => { proof { assert(false); } unreachable_value() },
+    } > self.ops_complete) {
+        let sent_packets = crate::generated::RSL::broadcast_gen::CBroadcastToEveryone(&self.constants.all.config, &self.constants.my_index, &CMessage::CMessageAppStateRequest {
+            bal_state_req: match &inp.msg {
+                CMessage::CMessageStartingPhase2 { bal_2, .. } => *bal_2,
+                _ => { proof { assert(false); } unreachable_value() },
+            },
+            opn_state_req: match &inp.msg {
+                CMessage::CMessageStartingPhase2 { logTruncationPoint_2, .. } => *logTruncationPoint_2,
+                _ => { proof { assert(false); } unreachable_value() },
+            },
+        });
+        sent_packets
     } else {
-        let r = (s.clone_up_to_view(), vec![]);
+        let result = vec![];
         proof {
-            assert(r.0@ == s@);
-            assert(r.1@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
+            assert(result@.map(|i: int, p: CPacket| p@) =~= Seq::<RslPacket>::empty());
         }
-        r
-    }; result }
-
+        result
+    }
 }
 
-pub exec fn CExecutorProcessRequest(s: &CExecutor, inp: &CPacket) -> (result: Vec<CPacket>)
+pub exec fn CExecutorProcessRequest(&self, inp: &CPacket) -> (result: Vec<CPacket>)
 requires
-    s.valid(),
+    self.valid(),
     inp.valid(),
     inp.msg is CMessageRequest,
-    s.reply_cache@.contains_key(inp.src),
+    self.reply_cache@.contains_key(inp.src),
 ensures
     forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
     forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
-    LExecutorProcessRequest(s@, inp@, result@.map(|i, p: CPacket| p@)),
+    LExecutorProcessRequest(self@, inp@, result@.map(|i, p: CPacket| p@)),
 {
     let seqno_req = match &inp.msg {
         CMessage::CMessageRequest { seqno_req, .. } => *seqno_req,
         _ => { proof { assert(false); } unreachable_value() }
     };
-    let ghost ss = s@;
+    let ghost ss = self@;
     let ghost sp = inp@;
     proof {
         broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
     }
-    let r_opt = s.reply_cache.get(&inp.src);
+    let r_opt = self.reply_cache.get(&inp.src);
     proof {
         broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model;
         assert(r_opt.is_some());
-        lemma_creplycache_get(&s.reply_cache, inp.src);
+        lemma_creplycache_get(&self.reply_cache, inp.src);
     }
-    let constants_valid = s.constants.CReplicaConstantsValid();
+    let constants_valid = self.constants.CReplicaConstantsValid();
     if r_opt.is_some() && seqno_req == r_opt.unwrap().seqno && constants_valid {
         let r = r_opt.unwrap();
         proof {
-            lemma_creplycache_get(&s.reply_cache, inp.src);
+            lemma_creplycache_get(&self.reply_cache, inp.src);
             assert(r@ == ss.reply_cache[sp.src]);
             assert(constants_valid == LReplicaConstantsValid(ss.constants));
         }
         let pkt = CPacket {
             dst: r.client.clone_up_to_view(),
-            src: s.constants.all.config.replica_ids[s.constants.my_index as usize].clone_up_to_view(),
+            src: self.constants.all.config.replica_ids[self.constants.my_index as usize].clone_up_to_view(),
             msg: CMessage::CMessageReply {
                 seqno_reply: r.seqno,
                 reply: r.reply.clone_up_to_view(),
@@ -399,94 +358,23 @@ ensures
     }
 }
 
-// =============================================================================
-// CExecutorExecute — standalone with verified proof block
-// (from executor_manual.rs, injected here for module accessibility)
-// =============================================================================
+} // impl CExecutor (Phase 47.3.a.3)
 
-proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestBatch, states: Vec<CAppState>, replies: Vec<CReply>)
-    requires
-        CAppStateIsValid(&state),
-        crequestbatch_is_valid(&batch),
-        (states@.map(|i, x: CAppState| x@), replies@.map(|i, x: CReply| x@)) == HandleRequestBatch(state@, batch@.map(|i, x: CRequest| x@)),
-    ensures
-        states.len() == batch.len() + 1,
-        states.len() > 0,
-        replies.len() == batch.len(),
-{
-    // Use spec-level length lemma on the abstracted batch
-    let ghost spec_batch = batch@.map(|i: int, x: CRequest| x@);
-    lemma_HandleRequestBatch_spec_len(state@, spec_batch);
-    // Map preserves length: states@.map(f).len() == states@.len()
-    // And batch@.map(g).len() == batch@.len()
-    // From requires: states@.map(f) == HandleRequestBatch(...).0
-    // So states@.len() == HandleRequestBatch(...).0.len() == spec_batch.len() + 1 == batch.len() + 1
-    // Note: reply validity (forall replies[j].valid()) is proven by CHandleRequestBatch's ensures
-    // directly, so callers get it from the CHandleRequestBatch call site, not from this lemma.
-}
-
-proof fn lemma_RepliesAreReplyType(me: AbstractEndPoint, requests: RequestBatch, replies: Seq<Reply>, packets: Seq<RslPacket>)
-    requires
-        packets == GetPacketsFromReplies(me, requests, replies),
-        requests.len() == replies.len(),
-    ensures
-        RepliesAreReplyType(packets),
-    decreases requests.len(),
-{
-    // RepliesAreReplyType(packets) = forall |p| packets.contains(p) ==> p.msg is RslMessageReply
-    if requests.len() > 0 {
-        let rest_packets = GetPacketsFromReplies(me, requests.drop_first(), replies.drop_first());
-        lemma_RepliesAreReplyType(me, requests.drop_first(), replies.drop_first(), rest_packets);
-        // packets == seq![first_packet] + rest_packets where first_packet.msg is RslMessageReply
-        // RepliesAreReplyType(rest_packets) holds by induction
-        // Need to show: forall |p| packets.contains(p) ==> p.msg is RslMessageReply
-        let first = LPacket::<AbstractEndPoint, RslMessage>{
-            dst: requests[0].client,
-            src: me,
-            msg: RslMessage::RslMessageReply{
-                seqno_reply: requests[0].seqno,
-                reply: replies[0].reply,
-            },
-        };
-        assert(packets =~= seq![first] + rest_packets);
-        assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {
-            if rest_packets.contains(p) {
-                // By induction: RepliesAreReplyType(rest_packets) ensures p.msg is RslMessageReply
-            } else {
-                // p must be first, which has msg is RslMessageReply
-            }
-        };
-    }
-    // Base case: packets is empty, so vacuously true
-}
-
-proof fn lemma_HandleRequestBatch_spec_len(state: AppState, batch: RequestBatch)
-    ensures
-        HandleRequestBatch(state, batch).0.len() == batch.len() + 1,
-        HandleRequestBatch(state, batch).0.len() > 0,
-        HandleRequestBatch(state, batch).1.len() == batch.len(),
-    decreases batch.len(),
-{
-    // HandleRequestBatch delegates to HandleRequestBatchHidden:
-    // Base case: batch.len() == 0 → (seq![state], empty()) → lengths 1, 0
-    // Inductive: recurse on batch.drop_last(), then append one state and one reply
-    if batch.len() > 0 {
-        lemma_HandleRequestBatch_spec_len(state, batch.drop_last());
-    }
-}
-
-pub exec fn CExecutorExecute(s: &CExecutor) -> (result: (CExecutor, Vec<CPacket>))
+// CExecutorExecute kept as free function to avoid name collision with ExecutorImpl.rs impl
+pub exec fn CExecutorExecute(s: &mut CExecutor) -> (sent_packets: Vec<CPacket>)
 requires
-    s.valid(),
-    s.next_op_to_execute is COutstandingOpKnown,
-    LtUpperBound(s.ops_complete as int, UpperBound::UpperBoundFinite{n: s.constants.all.params.max_integer_val as int}),
-    LReplicaConstantsValid(s.constants@),
+    old(s).valid(),
+    old(s).next_op_to_execute is COutstandingOpKnown,
+    LtUpperBound(old(s).ops_complete as int, UpperBound::UpperBoundFinite{n: old(s).constants.all.params.max_integer_val as int}),
+    LReplicaConstantsValid(old(s).constants@),
 ensures
-    result.0.valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].valid(),
-    forall |i:int| 0 <= i < result.1@.len() ==> result.1@[i].abstractable(),
-    LExecutorExecute(s@, result.0@, result.1@.map(|i, p: CPacket| p@)),
+    s.valid(),
+    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),
+    forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),
+    LExecutorExecute(old(s)@, s@, sent_packets@.map(|i, p: CPacket| p@)),
 {
+    let ghost old_self = old(s)@;
+
     let (batch, op_bal) = match &s.next_op_to_execute {
         COutstandingOperation::COutstandingOpKnown{v, bal} => {
             (clone_request_batch_up_to_view(v), *bal)
@@ -523,21 +411,17 @@ ensures
         s.max_bal_reflected
     };
 
-    let result_executor = CExecutor {
-        constants: s.constants.clone_up_to_view(),
-        app: new_state,
-        ops_complete: (s.ops_complete + 1),
-        max_bal_reflected: new_max_bal,
-        next_op_to_execute: COutstandingOperation::COutstandingOpUnknown {},
-        reply_cache: Arc::new(s_reply_cache),
-    };
-
-    let result = (result_executor, sent_packets);
+    // Mutate fields in-place
+    s.app = new_state;
+    s.ops_complete = s.ops_complete + 1;
+    s.max_bal_reflected = new_max_bal;
+    s.next_op_to_execute = COutstandingOperation::COutstandingOpUnknown {};
+    arc_replycache_set(&mut s.reply_cache, s_reply_cache);
 
     proof {
-        let ghost ss = s@;
-        let ghost sr = result.0@;
-        let ghost sp = result.1@.map(|i, p: CPacket| p@);
+        let ghost ss = old_self;
+        let ghost sr = s@;
+        let ghost sp = sent_packets@.map(|i, p: CPacket| p@);
 
         let ghost spec_batch = ss.next_op_to_execute->v;
         lemma_HandleRequestBatch_spec_len(ss.app, spec_batch);
@@ -574,7 +458,63 @@ ensures
         assert(LExecutorExecute(ss, sr, sp));
     }
 
-    result
+    sent_packets
+}
+
+// Proof helpers kept outside impl block (no self parameter)
+
+proof fn lemma_CHandleRequestBatch_properties(state: CAppState, batch: CRequestBatch, states: Vec<CAppState>, replies: Vec<CReply>)
+    requires
+        CAppStateIsValid(&state),
+        crequestbatch_is_valid(&batch),
+        (states@.map(|i, x: CAppState| x@), replies@.map(|i, x: CReply| x@)) == HandleRequestBatch(state@, batch@.map(|i, x: CRequest| x@)),
+    ensures
+        states.len() == batch.len() + 1,
+        states.len() > 0,
+        replies.len() == batch.len(),
+{
+    let ghost spec_batch = batch@.map(|i: int, x: CRequest| x@);
+    lemma_HandleRequestBatch_spec_len(state@, spec_batch);
+}
+
+proof fn lemma_RepliesAreReplyType(me: AbstractEndPoint, requests: RequestBatch, replies: Seq<Reply>, packets: Seq<RslPacket>)
+    requires
+        packets == GetPacketsFromReplies(me, requests, replies),
+        requests.len() == replies.len(),
+    ensures
+        RepliesAreReplyType(packets),
+    decreases requests.len(),
+{
+    if requests.len() > 0 {
+        let rest_packets = GetPacketsFromReplies(me, requests.drop_first(), replies.drop_first());
+        lemma_RepliesAreReplyType(me, requests.drop_first(), replies.drop_first(), rest_packets);
+        let first = LPacket::<AbstractEndPoint, RslMessage>{
+            dst: requests[0].client,
+            src: me,
+            msg: RslMessage::RslMessageReply{
+                seqno_reply: requests[0].seqno,
+                reply: replies[0].reply,
+            },
+        };
+        assert(packets =~= seq![first] + rest_packets);
+        assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {
+            if rest_packets.contains(p) {
+            } else {
+            }
+        };
+    }
+}
+
+proof fn lemma_HandleRequestBatch_spec_len(state: AppState, batch: RequestBatch)
+    ensures
+        HandleRequestBatch(state, batch).0.len() == batch.len() + 1,
+        HandleRequestBatch(state, batch).0.len() > 0,
+        HandleRequestBatch(state, batch).1.len() == batch.len(),
+    decreases batch.len(),
+{
+    if batch.len() > 0 {
+        lemma_HandleRequestBatch_spec_len(state, batch.drop_last());
+    }
 }
 
 } // verus!

@@ -15562,9 +15562,15 @@ ReplicaImpl.rs. broadcast_transpile.toml and types_transpile.toml are excluded
   (acceptor/proposer/learner/executor/election/replica). Done — TOMLs ready.
   Note: regen deferred because 5 of 6 modules have skip_functions with
   hand-written bodies (56 functions total) that need coordinated body conversion.
-- [ ] **48.6.b**: Convert skip_function + manual_code bodies to `&mut self`
-  (56 hand-written functions across 6 modules), regenerate all `*_gen.rs`,
-  update ReplicaImpl.rs callers (~49 call sites). Must be done atomically.
+- [x] **48.6.b**: Merge `optimized_rsl/` into `generated/RSL/` — copied all 7
+  optimized `*_gen.rs` files (acceptor/broadcast/election/executor/learner/
+  proposer/replica) into `generated/RSL/`, fixed import paths
+  (`optimized_rsl::RSL::` → `generated::RSL::`), removed `_opt` function name
+  suffixes, moved `_mut` acceptor helpers to `acceptor_helpers.rs`, updated
+  `acceptor_manual.rs` to `&mut self` convention, updated ReplicaImpl.rs
+  callers, disabled old functional-style `impl CReplica` block.
+  `optimized_rsl/` still exists but is only compiled with feature flag.
+- [ ] **48.6.b.cleanup**: Delete `optimized_rsl/` module and remove feature flag.
 - [ ] **48.6.c**: Bench RSL with `&mut self` codegen vs Phase 47 optimized_rsl.
 
 ### Estimated effort
