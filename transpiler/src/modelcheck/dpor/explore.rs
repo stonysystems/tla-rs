@@ -5332,4 +5332,192 @@ max_seq_len = 4
             );
         }
     }
+
+    /// Helper: locate the DPOR checker's 20-case test corpus.
+    fn dpor_corpus_dirs() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_dir = manifest_dir.join("DPOR_based_model_tla_rs_checker/tests/tla-rs");
+        let model_dir = manifest_dir.join("DPOR_based_model_tla_rs_checker/tests/model_configs");
+        if spec_dir.exists() && model_dir.exists() {
+            Some((spec_dir, model_dir))
+        } else {
+            None
+        }
+    }
+
+    /// All 20 corpus cases with their spec filenames.
+    fn all_corpus_cases() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("01_aplusb", "APlusB.rs"),
+            ("02_counter_incdec", "CounterIncDec.rs"),
+            ("03_counter_race_bug", "CounterRaceBug.rs"),
+            ("04_lock_basic", "LockBasic.rs"),
+            ("05_broken_lock_bug", "BrokenLock.rs"),
+            ("06_ticket_lock", "TicketLock.rs"),
+            ("07_producer_consumer_1slot", "ProducerConsumer1Slot.rs"),
+            ("08_bounded_buffer_2slot", "BoundedBuffer2Slot.rs"),
+            ("09_peterson_mutex_2p", "PetersonMutex.rs"),
+            ("10_bakery_mutex_3p", "BakeryMutex.rs"),
+            ("11_readers_writers_small", "ReadersWriters.rs"),
+            ("12_dining_philosophers_3", "DiningPhilosophers.rs"),
+            ("13_twophase_small", "TwoPhase.rs"),
+            ("14_leader_election_small", "LeaderElection.rs"),
+            ("15_chain_replication_small", "ChainReplication.rs"),
+            ("16_primarybackup_small", "PrimaryBackup.rs"),
+            ("17_paxos_small", "Paxos.rs"),
+            ("18_pbft_small", "PBFT.rs"),
+            ("19_epaxos_small", "EPaxos.rs"),
+            ("20_raft_small", "Raft.rs"),
+        ]
+    }
+
+    /// Comprehensive benchmark + validation: sequential vs parallel DPOR on
+    /// all 20 corpus cases. Validates state-count parity and measures speedup.
+    /// Run with:
+    /// `cargo test --lib -- bench_parallel_dpor_all_corpus --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_parallel_dpor_all_corpus() {
+        let (spec_dir, model_dir) = match dpor_corpus_dirs() {
+            Some(d) => d,
+            None => {
+                eprintln!("Skipping: DPOR corpus not found");
+                return;
+            }
+        };
+
+        let mut parity_failures: Vec<String> = Vec::new();
+
+        eprintln!("\n=== Parallel DPOR Benchmark — All 20 Corpus Cases ===");
+        eprintln!(
+            "{:<35} {:>8} {:>8} {:>10} {:>10} {:>10} {:>8}",
+            "CASE", "WORKERS", "STATES", "TRANS", "TRACES", "TIME_MS", "SPEEDUP"
+        );
+        eprintln!("{:-<99}", "");
+
+        for (case_id, filename) in all_corpus_cases() {
+            let spec_file = spec_dir.join(format!("{}/{}", case_id, filename));
+            if !spec_file.exists() {
+                eprintln!("{:<35} SKIPPED (spec not found)", case_id);
+                continue;
+            }
+            let model_path = model_dir.join(format!("{}.toml", case_id));
+            if !model_path.exists() {
+                eprintln!("{:<35} SKIPPED (model not found)", case_id);
+                continue;
+            }
+            let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("{:<35} SKIPPED ({})", case_id, e);
+                    continue;
+                }
+            };
+
+            let config = DporConfig {
+                max_depth: 30,
+                max_states: 50_000,
+                use_independence: true,
+                use_sleep_sets: true,
+                ..Default::default()
+            };
+
+            let seq_start = std::time::Instant::now();
+            let seq_result = explore_dpor(&ctx, &config);
+            let seq_ms = seq_start.elapsed().as_secs_f64() * 1000.0;
+
+            eprintln!(
+                "{:<35} {:>8} {:>8} {:>10} {:>10} {:>10.1} {:>8}",
+                case_id, "seq", seq_result.distinct_states.len(),
+                seq_result.transitions_fired, seq_result.traces_explored,
+                seq_ms, "-"
+            );
+
+            for workers in [2, 4] {
+                let par_start = std::time::Instant::now();
+                let par_result = explore_dpor_parallel(&ctx, &config, workers);
+                let par_ms = par_start.elapsed().as_secs_f64() * 1000.0;
+                let speedup = if par_ms > 0.0 { seq_ms / par_ms } else { 0.0 };
+
+                let mut missing = 0;
+                for state in &seq_result.distinct_states {
+                    if !par_result.distinct_states.contains(state) {
+                        missing += 1;
+                    }
+                }
+                if missing > 0 {
+                    parity_failures.push(format!(
+                        "{} workers={}: {} missing", case_id, workers, missing
+                    ));
+                }
+
+                eprintln!(
+                    "{:<35} {:>8} {:>8} {:>10} {:>10} {:>10.1} {:>6.2}x {}",
+                    "", workers, par_result.distinct_states.len(),
+                    par_result.transitions_fired, par_result.traces_explored,
+                    par_ms, speedup, if missing > 0 { "FAIL" } else { "ok" }
+                );
+            }
+        }
+
+        eprintln!("\n=== End Benchmark ===");
+        if !parity_failures.is_empty() {
+            for f in &parity_failures { eprintln!("  FAIL: {}", f); }
+            panic!("{} parity failures", parity_failures.len());
+        }
+        eprintln!("All parity checks passed.\n");
+    }
+
+    /// Quick parity validation on a subset of the 20 corpus cases.
+    /// Uses the DPOR checker corpus directory.
+    #[test]
+    fn test_parallel_dpor_corpus_parity_quick() {
+        let (spec_dir, model_dir) = match dpor_corpus_dirs() {
+            Some(d) => d,
+            None => {
+                eprintln!("Skipping: DPOR corpus not found");
+                return;
+            }
+        };
+
+        let quick_cases = vec![
+            ("01_aplusb", "APlusB.rs"),
+            ("04_lock_basic", "LockBasic.rs"),
+            ("09_peterson_mutex_2p", "PetersonMutex.rs"),
+        ];
+
+        for (case_id, filename) in &quick_cases {
+            let spec_file = spec_dir.join(format!("{}/{}", case_id, filename));
+            if !spec_file.exists() { continue; }
+            let model_path = model_dir.join(format!("{}.toml", case_id));
+            if !model_path.exists() { continue; }
+            let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let config = DporConfig {
+                max_depth: 15,
+                max_states: 1_000,
+                use_independence: true,
+                use_sleep_sets: true,
+                ..Default::default()
+            };
+
+            let sequential = explore_dpor(&ctx, &config);
+            for workers in [2, 4] {
+                let parallel = explore_dpor_parallel(&ctx, &config, workers);
+                for state in &sequential.distinct_states {
+                    assert!(
+                        parallel.distinct_states.contains(state),
+                        "{} workers={}: missing state", case_id, workers
+                    );
+                }
+            }
+            eprintln!(
+                "Corpus parity {}: seq={} states, par ok",
+                case_id, sequential.distinct_states.len()
+            );
+        }
+    }
 }

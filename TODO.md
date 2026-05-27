@@ -13676,9 +13676,12 @@ tiers, ordered biggest-gain-per-effort first.
       another worker's stack. Requires shared backtrack sets with locking.
       Most complex — ~400 LOC. Defer until b proves the work-stealing
       pattern works.
-    - [ ] **38.21.B.ii.d**: **Benchmarks + validation.** Run sequential
+    - [x] **38.21.B.ii.d**: **Benchmarks + validation.** Run sequential
       vs parallel DPOR on all 20 corpus cases, measure speedup and
       validate state-count parity. Document results. ~100 LOC.
+      Added `bench_parallel_dpor_all_corpus` (#[ignore] full benchmark)
+      and `test_parallel_dpor_corpus_parity_quick` (quick CI test) with
+      `dpor_corpus_dirs()` helper for correct corpus path resolution.
 - [ ] **38.21.C**: **Source DPOR / persistent sets** (1.5-2× more
   transition reduction). Sleep sets are sound but not optimal.
   Source-DPOR (Abdulla et al., POPL '14) provably explores the
