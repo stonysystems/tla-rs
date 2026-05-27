@@ -15322,11 +15322,13 @@ Hit **≥55K ops/s @ 32 clients** in `optimized_rsl/RSL/` (within 10% of Sushant
 
 #### 47.1 Audit: identify changes needed
 
-- [ ] **47.1.a**: Pick one hot function (e.g. `CProposerProcessRequest`). Sketch the `&mut self` version:
+- [x] **47.1.a**: Pick one hot function (e.g. `CProposerProcessRequest`). Sketch the `&mut self` version:
   - exec signature: `fn CProposerProcessRequest(&mut self, packet: &CPacket)` (no return)
   - requires: `old(self).valid() ∧ packet.valid()`
   - ensures: `self.valid() ∧ LProposerProcessRequest(old(self)@, self@, packet@)`
-- [ ] **47.1.b**: Verify Verus accepts `&mut self` on a struct containing `Arc<T>` fields. If `&mut Arc<T>` blocks us at exec level (not just `Arc::make_mut`), this is a fundamental blocker — decide between: drop Arc on hot fields entirely (matches Sushant), or keep functional.
+  - **DONE (2026-05-27)**: Implemented in `optimized_rsl/RSL/proposer_gen.rs` as `impl CProposer` method. Caller in `replica_gen.rs` updated to use `s_proposer.CProposerProcessRequest(&pkt)`. Verified: 51 functions, 0 errors. Key findings: (1) `&mut self` works inside `verus!` `impl` blocks, (2) proof uses `old(self)@` / `let ghost old_self = old(self)@` pattern, (3) ghost val snapshot (`let ghost val_ghost = val@`) needed before val is consumed, (4) field mutations (`self.election_state = ...`, `self.request_queue = ...`) just work. Note: current sketch still allocates (Arc::new + clone) per mutation; real perf win requires Phase 47.3 full chain conversion.
+- [x] **47.1.b**: Verify Verus accepts `&mut self` on a struct containing `Arc<T>` fields. If `&mut Arc<T>` blocks us at exec level (not just `Arc::make_mut`), this is a fundamental blocker — decide between: drop Arc on hot fields entirely (matches Sushant), or keep functional.
+  - **ANSWERED by 47.1.a**: YES, Verus accepts `&mut self` on CProposer (which has `Arc<Vec<CRequest>>`, `Arc<HashSet<CPacket>>`, `Arc<HashMap<EndPoint, u64>>`). Field assignment (`self.field = new_value`) works. `Arc::make_mut` must be called through external helpers (outside `verus!` block) since Verus doesn't model it. NOT a blocker.
 - [ ] **47.1.c**: Inventory the call graph: which exec functions live in the hot loop (`ReplicaHost::next()` per request)? Estimate count (likely 10–15 in RSL).
 
 #### 47.2 Pilot: convert one function end-to-end

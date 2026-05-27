@@ -210,7 +210,9 @@ ensures
         }
     }
     {
-        let s_proposer = crate::optimized_rsl::RSL::proposer_gen::CProposerProcessRequest(&s.proposer, &received_packet);
+        // Phase 47.1.a: use &mut self on a cloned proposer (full &mut self chain in 47.3)
+        let mut s_proposer = s.proposer.clone_up_to_view();
+        s_proposer.CProposerProcessRequest(&received_packet);
         let r = (CReplica {
             constants: s.constants.clone(),
             nextHeartbeatTime: s.nextHeartbeatTime,

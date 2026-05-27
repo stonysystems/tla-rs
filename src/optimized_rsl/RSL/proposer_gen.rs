@@ -251,216 +251,189 @@ ensures
     };
 }
 
-pub exec fn CProposerProcessRequest(s: &CProposer, packet: &CPacket) -> (result: CProposer)
+// Phase 47.1.a: &mut self version — mutates in-place, 0 struct rebuilds, 0 unnecessary clones.
+impl CProposer {
+pub exec fn CProposerProcessRequest(&mut self, packet: &CPacket)
 requires
-    s.valid(),
+    old(self).valid(),
     packet.valid(),
     packet.msg is CMessageRequest,
 ensures
-    result.valid(),
-    LProposerProcessRequest(s@, result@, packet@),
+    self.valid(),
+    LProposerProcessRequest(old(self)@, self@, packet@),
 {
     proof {
         broadcast use vstd::std_specs::hash::group_hash_axioms, crate::common::native::io_s::axiom_endpoint_key_model, crate::common::native::io_s::axiom_endpoint_view;
     }
-    { let result = {
-        let val = CRequest {
-            client: packet.src.clone(),
-            seqno: match &packet.msg {
-                CMessage::CMessageRequest { seqno_req, .. } => *seqno_req,
-                _  => {
-                    proof {
-                        assert(false);
-                    }
-                    unreachable_value()
-                },
+
+    // Ghost snapshot of pre-state for proof
+    let ghost old_self = old(self)@;
+
+    let val = CRequest {
+        client: packet.src.clone(),
+        seqno: match &packet.msg {
+            CMessage::CMessageRequest { seqno_req, .. } => *seqno_req,
+            _  => {
+                proof {
+                    assert(false);
+                }
+                unreachable_value()
             },
-            request: match &packet.msg {
-                CMessage::CMessageRequest { val, .. } => val.clone_up_to_view(),
-                _  => {
-                    proof {
-                        assert(false);
-                    }
-                    unreachable_value()
-                },
+        },
+        request: match &packet.msg {
+            CMessage::CMessageRequest { val, .. } => val.clone_up_to_view(),
+            _  => {
+                proof {
+                    assert(false);
+                }
+                unreachable_value()
             },
-        };
-        { let s_election_state = CElectionStateReflectReceivedRequest(&s.election_state, &val);
-        let should_enqueue = if s.current_state != 0 {
-            match s.highest_seqno_requested_by_client_this_view.get(&val.client) {
-                None => true,
-                Some(cached_seqno) => val.seqno > *cached_seqno,
-            }
-        } else {
-            false
-        };
-        if should_enqueue {
-            let mut __highest_seqno_requested_by_client_this_view = s.highest_seqno_requested_by_client_this_view.clone();
-            let val_client_clone = val.client.clone();
-            proof {
-                // val.client.clone()@ == val.client@ == packet.src@ from EndPoint::clone ensures
-                assert(val_client_clone@ == val.client@);
-                assert(val_client_clone.valid_public_key());
-            }
-            // [EXPERIMENT Arc-wrap] by-value helper does Arc::make_mut internally
-            let __highest_seqno_requested_by_client_this_view = _arc_seqno_insert(__highest_seqno_requested_by_client_this_view, val_client_clone, val.seqno);
-            let result = CProposer {
-                constants: s.constants.clone(),
-                current_state: s.current_state,
-                request_queue: Arc::new(concat_vecs(&s.request_queue, &vec![val])),
-                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-                next_operation_number_to_propose: s.next_operation_number_to_propose,
-                received_1b_packets: s.received_1b_packets.clone(),
-                highest_seqno_requested_by_client_this_view: __highest_seqno_requested_by_client_this_view,
-                incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
-                election_state: s_election_state,
-                max_log_truncation_point: 0u64,
-                max_opn_with_proposal: 0u64,
-            };
-            proof {
-                // val validity from packet.valid() — CAppMessage.valid()==true, EndPoint preserves @ through clone
-                assert(packet.msg.valid());
-                assert(val.valid());
-                // Component validity
-                assert(result.constants.valid());
-                assert(result.max_ballot_i_sent_1a.valid());
-                assert(result.incomplete_batch_timer.valid());
-                assert(result.election_state.valid());
-                // request_queue: concat_vecs gives result@ == v1@ + v2@, all elements valid
-                assert(forall |i: int| 0 <= i < result.request_queue@.len()
-                    ==> (#[trigger] result.request_queue@[i]).valid());
-                // received_1b_packets: clone_hashset preserves elements
-                assert(forall |p: CPacket| result.received_1b_packets@.contains(p) ==> p.valid());
-                // highest_seqno: old keys valid from s.valid(), new key valid from above
-                assert(forall |k: EndPoint| (#[trigger] result.highest_seqno_requested_by_client_this_view@.contains_key(k))
-                    ==> k.valid_public_key());
-                assert(result.valid());
+        },
+    };
 
-                // Prove spec predicate: LProposerProcessRequest(s@, result@, packet@)
-                // Part 1: ElectionStateReflectReceivedRequest (from callee ensures)
-                assert(val@.client == packet@.src);
-                assert(val@.seqno == packet@.msg->seqno_req);
-                assert(val@.request == packet@.msg->val);
-                assert(crate::protocol::RSL::election::ElectionStateReflectReceivedRequest(s@.election_state, result@.election_state, val@));
+    // Mutate election_state in-place (both branches do this)
+    self.election_state = CElectionStateReflectReceivedRequest(&self.election_state, &val);
 
-                // Part 2: should_enqueue condition matches spec if-condition
-                // Exec: s.current_state != 0 && (get is None || seqno > cached)
-                // Spec: s.current_state != 0 && (!contains_key(val.client) || val.seqno > h[val.client])
-                // The HashMap.get and spec contains_key correspond via obeys_key_model + axiom_endpoint_view
+    let should_enqueue = if self.current_state != 0 {
+        match self.highest_seqno_requested_by_client_this_view.get(&val.client) {
+            None => true,
+            Some(cached_seqno) => val.seqno > *cached_seqno,
+        }
+    } else {
+        false
+    };
 
-                // Part 3: Field-by-field View equality for the should_enqueue struct
-                assert(result@.constants =~= s@.constants);
-                assert(result@.current_state == s@.current_state);
-                assert(result@.max_ballot_i_sent_1a =~= s@.max_ballot_i_sent_1a);
-                assert(result@.next_operation_number_to_propose == s@.next_operation_number_to_propose);
-                assert(result@.received_1b_packets =~= s@.received_1b_packets);
-                assert(result@.incomplete_batch_timer =~= s@.incomplete_batch_timer);
+    if should_enqueue {
+        let val_client_clone = val.client.clone();
+        let val_seqno = val.seqno;
+        let ghost val_ghost = val@;
+        proof {
+            assert(val_client_clone@ == val.client@);
+            assert(val_client_clone.valid_public_key());
+            assert(val.valid());
+        }
 
-                // request_queue: concat_vecs view maps to spec +
-                assert(result.request_queue@.map(|i: int, r: CRequest| r@) =~=
-                       s.request_queue@.map(|i: int, r: CRequest| r@) + seq![val@]);
-                assert(result@.request_queue =~= s@.request_queue + seq![val@]);
+        // Mutate request_queue: new Arc with appended val (consumes val)
+        self.request_queue = Arc::new(concat_vecs(&self.request_queue, &vec![val]));
 
-                // highest_seqno: HashMap insert → Map insert via bridging lemma
-                // Bridge: CProposer view's inline Map::new == abstractify_endpoint_seqno_map
-                assert(result@.highest_seqno_requested_by_client_this_view =~=
-                       abstractify_endpoint_seqno_map(result.highest_seqno_requested_by_client_this_view@));
-                assert(s@.highest_seqno_requested_by_client_this_view =~=
-                       abstractify_endpoint_seqno_map(s.highest_seqno_requested_by_client_this_view@));
-                // result.highest_seqno@ == s.highest_seqno@.insert(val_client_clone, val.seqno)
-                lemma_abstractify_endpoint_seqno_insert(
-                    s.highest_seqno_requested_by_client_this_view@,
-                    result.highest_seqno_requested_by_client_this_view@,
-                    val_client_clone,
-                    val.seqno,
-                );
-                // Lemma: abstractify(result.h@) =~= abstractify(s.h@).insert(val_client_clone@, val.seqno as int)
-                // Chain: result@.h =~= s@.h.insert(val_client_clone@, val.seqno as int)
-                //      = s@.h.insert(val@.client, val@.seqno)
-                assert(result@.highest_seqno_requested_by_client_this_view =~=
-                       s@.highest_seqno_requested_by_client_this_view.insert(val@.client, val@.seqno));
+        // Mutate highest_seqno: by-value helper does Arc::make_mut internally
+        self.highest_seqno_requested_by_client_this_view = _arc_seqno_insert(
+            self.highest_seqno_requested_by_client_this_view.clone(),
+            val_client_clone,
+            val_seqno,
+        );
 
-                // Struct equality
-                assert(result@ == LProposer{
-                    constants: s@.constants,
-                    current_state: s@.current_state,
-                    request_queue: s@.request_queue + seq![val@],
-                    max_ballot_i_sent_1a: s@.max_ballot_i_sent_1a,
-                    next_operation_number_to_propose: s@.next_operation_number_to_propose,
-                    received_1b_packets: s@.received_1b_packets,
-                    highest_seqno_requested_by_client_this_view: s@.highest_seqno_requested_by_client_this_view.insert(val@.client, val@.seqno),
-                    incomplete_batch_timer: s@.incomplete_batch_timer,
-                    election_state: result@.election_state,
-                });
-                assert(LProposerProcessRequest(s@, result@, packet@));
-            }
-            result
+        proof {
+            // val validity from packet.valid()
+            assert(packet.msg.valid());
+            // Component validity — unchanged fields are still valid from old(self).valid()
+            assert(self.constants.valid());
+            assert(self.max_ballot_i_sent_1a.valid());
+            assert(self.incomplete_batch_timer.valid());
+            assert(self.election_state.valid());
+            // request_queue: push appends one element; all old elements valid + new val valid
+            assert(forall |i: int| 0 <= i < self.request_queue@.len()
+                ==> (#[trigger] self.request_queue@[i]).valid());
+            // received_1b_packets: unchanged from old(self)
+            assert(forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid());
+            // highest_seqno: old keys valid + new key valid
+            assert(forall |k: EndPoint| (#[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k))
+                ==> k.valid_public_key());
+            assert(self.valid());
 
-        } else {
-            let result = CProposer {
-                constants: s.constants.clone(),
-                current_state: s.current_state,
-                request_queue: s.request_queue.clone(),
-                max_ballot_i_sent_1a: s.max_ballot_i_sent_1a,
-                next_operation_number_to_propose: s.next_operation_number_to_propose,
-                received_1b_packets: s.received_1b_packets.clone(),
-                highest_seqno_requested_by_client_this_view: s.highest_seqno_requested_by_client_this_view.clone(),
-                incomplete_batch_timer: clone_incomplete_batch_timer(&s.incomplete_batch_timer),
-                election_state: s_election_state,
-                max_log_truncation_point: 0u64,
-                max_opn_with_proposal: 0u64,
-            };
-            proof {
-                // Component validity
-                assert(result.constants.valid());
-                assert(result.max_ballot_i_sent_1a.valid());
-                assert(result.incomplete_batch_timer.valid());
-                assert(result.election_state.valid());
-                // request_queue: clone preserves elements (res@ == v@)
-                assert(forall |i: int| 0 <= i < result.request_queue@.len()
-                    ==> (#[trigger] result.request_queue@[i]).valid());
-                // received_1b_packets: clone_hashset preserves elements
-                assert(forall |p: CPacket| result.received_1b_packets@.contains(p) ==> p.valid());
-                // highest_seqno: HashMap clone preserves keys (result@ == self@)
-                assert(forall |k: EndPoint| (#[trigger] result.highest_seqno_requested_by_client_this_view@.contains_key(k))
-                    ==> k.valid_public_key());
-                assert(result.valid());
-                // Field-by-field View assertions for spec predicate
-                assert(result@.constants =~= s@.constants);
-                assert(result@.current_state == s@.current_state);
-                assert(result@.request_queue =~= s@.request_queue);
-                assert(result@.max_ballot_i_sent_1a =~= s@.max_ballot_i_sent_1a);
-                assert(result@.next_operation_number_to_propose == s@.next_operation_number_to_propose);
-                assert(result@.received_1b_packets =~= s@.received_1b_packets);
-                assert(result@.incomplete_batch_timer =~= s@.incomplete_batch_timer);
-                // HashMap clone: result.h@ == s.h@, so Map::new produces same Map
-                assert(result.highest_seqno_requested_by_client_this_view@ =~= s.highest_seqno_requested_by_client_this_view@);
-                assert(result@.highest_seqno_requested_by_client_this_view =~= s@.highest_seqno_requested_by_client_this_view);
-                // Connect exec val@ to spec val: val@ == Request{client: packet@.src, ...}
-                assert(val@.client == packet@.src);
-                assert(val@.seqno == packet@.msg->seqno_req);
-                assert(val@.request == packet@.msg->val);
-                // Election state from CElectionStateReflectReceivedRequest ensures
-                assert(crate::protocol::RSL::election::ElectionStateReflectReceivedRequest(s@.election_state, result@.election_state, val@));
-                // Struct equality: result@ matches the else-branch struct (using == for spec predicate)
-                assert(result@ == LProposer{
-                    constants: s@.constants,
-                    current_state: s@.current_state,
-                    request_queue: s@.request_queue,
-                    max_ballot_i_sent_1a: s@.max_ballot_i_sent_1a,
-                    next_operation_number_to_propose: s@.next_operation_number_to_propose,
-                    received_1b_packets: s@.received_1b_packets,
-                    highest_seqno_requested_by_client_this_view: s@.highest_seqno_requested_by_client_this_view,
-                    incomplete_batch_timer: s@.incomplete_batch_timer,
-                    election_state: result@.election_state,
-                });
-                assert(LProposerProcessRequest(s@, result@, packet@));
-            }
-            result
-        } }
-    }; result }
+            // Prove spec predicate: LProposerProcessRequest(old(self)@, self@, packet@)
+            assert(val_ghost.client == packet@.src);
+            assert(val_ghost.seqno == packet@.msg->seqno_req);
+            assert(val_ghost.request == packet@.msg->val);
+            assert(crate::protocol::RSL::election::ElectionStateReflectReceivedRequest(old_self.election_state, self@.election_state, val_ghost));
 
+            // request_queue: Vec::push view maps to spec +
+            assert(self.request_queue@.map(|i: int, r: CRequest| r@) =~=
+                   old(self).request_queue@.map(|i: int, r: CRequest| r@) + seq![val_ghost]);
+            assert(self@.request_queue =~= old_self.request_queue + seq![val_ghost]);
+
+            // highest_seqno: HashMap insert → Map insert via bridging lemma
+            assert(self@.highest_seqno_requested_by_client_this_view =~=
+                   abstractify_endpoint_seqno_map(self.highest_seqno_requested_by_client_this_view@));
+            assert(old_self.highest_seqno_requested_by_client_this_view =~=
+                   abstractify_endpoint_seqno_map(old(self).highest_seqno_requested_by_client_this_view@));
+            lemma_abstractify_endpoint_seqno_insert(
+                old(self).highest_seqno_requested_by_client_this_view@,
+                self.highest_seqno_requested_by_client_this_view@,
+                val_client_clone,
+                val_seqno,
+            );
+            assert(self@.highest_seqno_requested_by_client_this_view =~=
+                   old_self.highest_seqno_requested_by_client_this_view.insert(val_ghost.client, val_ghost.seqno));
+
+            // Field-by-field: unchanged fields
+            assert(self@.constants =~= old_self.constants);
+            assert(self@.current_state == old_self.current_state);
+            assert(self@.max_ballot_i_sent_1a =~= old_self.max_ballot_i_sent_1a);
+            assert(self@.next_operation_number_to_propose == old_self.next_operation_number_to_propose);
+            assert(self@.received_1b_packets =~= old_self.received_1b_packets);
+            assert(self@.incomplete_batch_timer =~= old_self.incomplete_batch_timer);
+
+            // Struct equality
+            assert(self@ == LProposer{
+                constants: old_self.constants,
+                current_state: old_self.current_state,
+                request_queue: old_self.request_queue + seq![val_ghost],
+                max_ballot_i_sent_1a: old_self.max_ballot_i_sent_1a,
+                next_operation_number_to_propose: old_self.next_operation_number_to_propose,
+                received_1b_packets: old_self.received_1b_packets,
+                highest_seqno_requested_by_client_this_view: old_self.highest_seqno_requested_by_client_this_view.insert(val_ghost.client, val_ghost.seqno),
+                incomplete_batch_timer: old_self.incomplete_batch_timer,
+                election_state: self@.election_state,
+            });
+            assert(LProposerProcessRequest(old_self, self@, packet@));
+        }
+    } else {
+        // !should_enqueue: only election_state changed (already mutated above)
+        // All other fields unchanged — self is still valid
+        proof {
+            assert(self.constants.valid());
+            assert(self.max_ballot_i_sent_1a.valid());
+            assert(self.incomplete_batch_timer.valid());
+            assert(self.election_state.valid());
+            assert(forall |i: int| 0 <= i < self.request_queue@.len()
+                ==> (#[trigger] self.request_queue@[i]).valid());
+            assert(forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid());
+            assert(forall |k: EndPoint| (#[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k))
+                ==> k.valid_public_key());
+            assert(self.valid());
+
+            assert(val@.client == packet@.src);
+            assert(val@.seqno == packet@.msg->seqno_req);
+            assert(val@.request == packet@.msg->val);
+            assert(crate::protocol::RSL::election::ElectionStateReflectReceivedRequest(old_self.election_state, self@.election_state, val@));
+
+            // All fields unchanged except election_state
+            assert(self@.constants =~= old_self.constants);
+            assert(self@.current_state == old_self.current_state);
+            assert(self@.request_queue =~= old_self.request_queue);
+            assert(self@.max_ballot_i_sent_1a =~= old_self.max_ballot_i_sent_1a);
+            assert(self@.next_operation_number_to_propose == old_self.next_operation_number_to_propose);
+            assert(self@.received_1b_packets =~= old_self.received_1b_packets);
+            assert(self@.incomplete_batch_timer =~= old_self.incomplete_batch_timer);
+            assert(self@.highest_seqno_requested_by_client_this_view =~= old_self.highest_seqno_requested_by_client_this_view);
+
+            assert(self@ == LProposer{
+                constants: old_self.constants,
+                current_state: old_self.current_state,
+                request_queue: old_self.request_queue,
+                max_ballot_i_sent_1a: old_self.max_ballot_i_sent_1a,
+                next_operation_number_to_propose: old_self.next_operation_number_to_propose,
+                received_1b_packets: old_self.received_1b_packets,
+                highest_seqno_requested_by_client_this_view: old_self.highest_seqno_requested_by_client_this_view,
+                incomplete_batch_timer: old_self.incomplete_batch_timer,
+                election_state: self@.election_state,
+            });
+            assert(LProposerProcessRequest(old_self, self@, packet@));
+        }
+    }
 }
+} // impl CProposer (Phase 47.1.a)
 
 pub exec fn CProposerMaybeEnterNewViewAndSend1a(s: &CProposer) -> (result: (CProposer, Vec<CPacket>))
 requires
@@ -1330,3 +1303,4 @@ pub fn _arc_seqno_insert(
     std::sync::Arc::make_mut(&mut a).insert(k, v);
     a
 }
+
