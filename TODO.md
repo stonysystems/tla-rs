@@ -13372,7 +13372,7 @@ makes DPOR reduction measurable).
     ~80 LOC (struct + migration). `SharedStateStore` is `Send + Sync` by
     construction (Mutex wrapping). Ready for `Arc<SharedStateStore>` sharing
     in 38.18.1.c/d.
-  - [ ] **38.18.1.c**: **Extract `explore_dpor_from_state` worker function.**
+  - [x] **38.18.1.c**: **Extract `explore_dpor_from_state` worker function.**
     Refactor core DFS loop into `explore_dpor_from_state(ctx, config,
     initial_state, shared_store) -> WorkerResult` that takes a single
     start state and shared store. The existing `explore_dpor` becomes a

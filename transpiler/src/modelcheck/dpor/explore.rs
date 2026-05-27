@@ -259,6 +259,85 @@ pub struct ViolationWitness {
     pub trace: Vec<WitnessStep>,
 }
 
+/// Result from a single worker exploring one initial state's DFS subtree.
+///
+/// Designed so that multiple `WorkerResult`s (from parallel exploration of
+/// different initial states) can be merged into a single `DporResult`.
+#[derive(Debug)]
+pub struct WorkerResult {
+    /// Number of complete executions (traces) explored by this worker.
+    pub traces_explored: usize,
+    /// Maximum depth reached by this worker.
+    pub max_depth: usize,
+    /// Total transitions fired by this worker.
+    pub transitions_fired: usize,
+    /// Number of transitions skipped due to sleep-set pruning checks.
+    pub sleep_prune_hits: usize,
+    /// Per-depth sleep-set cardinality telemetry.
+    pub sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats>,
+    /// Independence blocker telemetry.
+    pub sleep_independence_blockers: SleepIndependenceBlockers,
+    /// Runtime conflict verification stats.
+    pub runtime_conflict_stats: RuntimeConflictStats,
+    /// Violation witness if an invariant violation was found.
+    pub violation: Option<ViolationWitness>,
+}
+
+impl WorkerResult {
+    /// Merge another worker's result into this one.
+    ///
+    /// If either result has a violation, the first violation is kept.
+    pub fn merge(&mut self, other: WorkerResult) {
+        self.traces_explored += other.traces_explored;
+        self.max_depth = self.max_depth.max(other.max_depth);
+        self.transitions_fired += other.transitions_fired;
+        self.sleep_prune_hits += other.sleep_prune_hits;
+        // Merge sleep cardinality stats
+        for (depth, stats) in other.sleep_cardinality_by_depth {
+            let entry = self.sleep_cardinality_by_depth.entry(depth).or_default();
+            entry.samples += stats.samples;
+            entry.total_cardinality += stats.total_cardinality;
+            entry.max_cardinality = entry.max_cardinality.max(stats.max_cardinality);
+        }
+        // Merge independence blockers
+        self.sleep_independence_blockers.early_exit_independence_disabled +=
+            other.sleep_independence_blockers.early_exit_independence_disabled;
+        self.sleep_independence_blockers.early_exit_chosen_unknown_footprint +=
+            other.sleep_independence_blockers.early_exit_chosen_unknown_footprint;
+        self.sleep_independence_blockers.candidates_considered +=
+            other.sleep_independence_blockers.candidates_considered;
+        self.sleep_independence_blockers.independent_candidates +=
+            other.sleep_independence_blockers.independent_candidates;
+        self.sleep_independence_blockers.blocked_same_process +=
+            other.sleep_independence_blockers.blocked_same_process;
+        self.sleep_independence_blockers.blocked_unknown_footprint +=
+            other.sleep_independence_blockers.blocked_unknown_footprint;
+        self.sleep_independence_blockers.blocked_footprint_conflict +=
+            other.sleep_independence_blockers.blocked_footprint_conflict;
+        for ((left, right), count) in other.sleep_independence_blockers.conflict_field_pairs {
+            *self
+                .sleep_independence_blockers
+                .conflict_field_pairs
+                .entry((left, right))
+                .or_insert(0) += count;
+        }
+        // Merge runtime conflict stats
+        for (field, (static_count, actual_count)) in other.runtime_conflict_stats.write_field_stats {
+            let entry = self
+                .runtime_conflict_stats
+                .write_field_stats
+                .entry(field)
+                .or_insert((0, 0));
+            entry.0 += static_count;
+            entry.1 += actual_count;
+        }
+        // Keep first violation
+        if self.violation.is_none() {
+            self.violation = other.violation;
+        }
+    }
+}
+
 impl Default for DporConfig {
     fn default() -> Self {
         Self {
@@ -289,28 +368,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     // carry stale cache entries across specs.
     crate::modelcheck::helpers::reset_zero_arg_helper_cache();
 
-    // Phase 38.21.D: route every dedup key through the symmetry-aware
-    // canonical labeling that BFS uses, so DPOR also benefits from
-    // symmetry reduction declared in `[search] symmetry_fields = [...]`.
-    // When the field list is empty this collapses back to plain
-    // `state.canonical_key()`.
-    let symmetry_fields_owned: Vec<String> = ctx.model_config.search.symmetry_fields.clone();
-    let canonical_state_key = |state: &RuntimeValue| -> String {
-        crate::modelcheck::explorer::canonical_dedup_key_public(
-            state,
-            symmetry_fields_owned.iter().cloned(),
-        )
-    };
-
     let store = SharedStateStore::new();
-    let use_symmetry = !symmetry_fields_owned.is_empty();
-    let mut traces_explored: usize = 0;
-    let mut max_depth: usize = 0;
-    let mut transitions_fired: usize = 0;
-    let mut sleep_prune_hits: usize = 0;
-    let mut sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats> = BTreeMap::new();
-    let mut sleep_independence_blockers = SleepIndependenceBlockers::default();
-    let mut runtime_conflict_stats = RuntimeConflictStats::default();
 
     // Get initial states
     let initial_states = match ctx.initial_states() {
@@ -330,6 +388,75 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
             };
         }
     };
+
+    // Explore from each initial state, merging worker results
+    let mut merged = WorkerResult {
+        traces_explored: 0,
+        max_depth: 0,
+        transitions_fired: 0,
+        sleep_prune_hits: 0,
+        sleep_cardinality_by_depth: BTreeMap::new(),
+        sleep_independence_blockers: SleepIndependenceBlockers::default(),
+        runtime_conflict_stats: RuntimeConflictStats::default(),
+        violation: None,
+    };
+
+    for initial in &initial_states {
+        // Early exit if a previous worker found a violation
+        if merged.violation.is_some() {
+            break;
+        }
+        // Early exit if state limit reached
+        if store.fingerprint_count() >= config.max_states {
+            break;
+        }
+        let result = explore_dpor_from_state(ctx, config, initial, &store);
+        merged.merge(result);
+    }
+
+    DporResult {
+        distinct_states: store.into_states(),
+        traces_explored: merged.traces_explored,
+        max_depth: merged.max_depth,
+        transitions_fired: merged.transitions_fired,
+        sleep_prune_hits: merged.sleep_prune_hits,
+        sleep_cardinality_by_depth: merged.sleep_cardinality_by_depth,
+        sleep_independence_blockers: merged.sleep_independence_blockers,
+        runtime_conflict_stats: merged.runtime_conflict_stats,
+        violation: merged.violation,
+    }
+}
+
+/// Explore a single initial state's DFS subtree.
+///
+/// This is the core DPOR worker function. It takes a single initial state and
+/// a shared state store, and runs an iterative DFS from that state. Designed
+/// to be callable from parallel threads in Phase 38.18.1.d (each thread gets
+/// a different initial state and the same `Arc<SharedStateStore>`).
+pub fn explore_dpor_from_state(
+    ctx: &SpecContext,
+    config: &DporConfig,
+    initial: &RuntimeValue,
+    store: &SharedStateStore,
+) -> WorkerResult {
+    // Set up symmetry-aware canonical key closure
+    let symmetry_fields_owned: Vec<String> = ctx.model_config.search.symmetry_fields.clone();
+    let canonical_state_key = |state: &RuntimeValue| -> String {
+        crate::modelcheck::explorer::canonical_dedup_key_public(
+            state,
+            symmetry_fields_owned.iter().cloned(),
+        )
+    };
+    let use_symmetry = !symmetry_fields_owned.is_empty();
+
+    // Per-worker counters
+    let mut traces_explored: usize = 0;
+    let mut max_depth: usize = 0;
+    let mut transitions_fired: usize = 0;
+    let mut sleep_prune_hits: usize = 0;
+    let mut sleep_cardinality_by_depth: BTreeMap<usize, SleepDepthStats> = BTreeMap::new();
+    let mut sleep_independence_blockers = SleepIndependenceBlockers::default();
+    let mut runtime_conflict_stats = RuntimeConflictStats::default();
 
     // Resolve invariant functions
     let invariant_fns = ctx.resolve_invariants(&config.invariants);
@@ -354,23 +481,53 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         }
     };
 
-    // Explore from each initial state
-    for initial in &initial_states {
-        let initial_fp = initial.fingerprint();
-        if !store.insert_fingerprint(initial_fp) {
-            // Fingerprint already seen — definitely a duplicate (no symmetry
-            // can merge two states with identical fingerprints differently).
-            continue;
-        }
-        let initial_key = canonical_state_key(initial);
-        if !store.insert_state(initial_key.clone()) {
-            continue; // Symmetry-merged duplicate
-        }
+    // Dedup initial state via shared store
+    let initial_fp = initial.fingerprint();
+    if !store.insert_fingerprint(initial_fp) {
+        return WorkerResult {
+            traces_explored: 0,
+            max_depth: 0,
+            transitions_fired: 0,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: None,
+        };
+    }
+    let initial_key = canonical_state_key(initial);
+    if !store.insert_state(initial_key.clone()) {
+        return WorkerResult {
+            traces_explored: 0,
+            max_depth: 0,
+            transitions_fired: 0,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: None,
+        };
+    }
 
-        // Check invariants on initial state
-        if let Some(witness) = check_state(initial, 0, &[]) {
-            return DporResult {
-                distinct_states: store.into_states(),
+    // Check invariants on initial state
+    if let Some(witness) = check_state(initial, 0, &[]) {
+        return WorkerResult {
+            traces_explored: 0,
+            max_depth: 0,
+            transitions_fired: 0,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: Some(witness),
+        };
+    }
+
+    let enabled = match ctx.enabled_transitions(initial) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("DPOR: failed to enumerate enabled transitions: {}", e);
+            return WorkerResult {
                 traces_explored: 0,
                 max_depth: 0,
                 transitions_fired: 0,
@@ -378,211 +535,234 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                 sleep_cardinality_by_depth: BTreeMap::new(),
                 sleep_independence_blockers: SleepIndependenceBlockers::default(),
                 runtime_conflict_stats: RuntimeConflictStats::default(),
-                violation: Some(witness),
+                violation: None,
             };
         }
+    };
 
-        let enabled = match ctx.enabled_transitions(initial) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("DPOR: failed to enumerate enabled transitions: {}", e);
-                continue;
-            }
+    // Deadlock on initial state (unlikely but possible)
+    if config.check_deadlock && enabled.is_empty() {
+        return WorkerResult {
+            traces_explored: 0,
+            max_depth: 0,
+            transitions_fired: 0,
+            sleep_prune_hits: 0,
+            sleep_cardinality_by_depth: BTreeMap::new(),
+            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+            runtime_conflict_stats: RuntimeConflictStats::default(),
+            violation: Some(ViolationWitness {
+                invariant: "__deadlock__".to_string(),
+                violating_state_key: initial.canonical_key(),
+                violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(initial),
+                depth: 0,
+                trace: vec![],
+            }),
         };
+    }
 
-        // Deadlock on initial state (unlikely but possible)
-        if config.check_deadlock && enabled.is_empty() {
-            return DporResult {
-                distinct_states: store.into_states(),
-                traces_explored: 0,
-                max_depth: 0,
-                transitions_fired: 0,
-                sleep_prune_hits: 0,
-                sleep_cardinality_by_depth: BTreeMap::new(),
-                sleep_independence_blockers: SleepIndependenceBlockers::default(),
-                runtime_conflict_stats: RuntimeConflictStats::default(),
-                violation: Some(ViolationWitness {
-                    invariant: "__deadlock__".to_string(),
-                    violating_state_key: initial.canonical_key(),
-                    violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(
-                        initial,
-                    ),
-                    depth: 0,
-                    trace: vec![],
-                }),
-            };
+    // Initialize backtrack set with all enabled transitions (conservative)
+    let backtrack = initialize_backtrack_keys(&enabled, &BTreeSet::new());
+
+    let initial_frame = StackFrame {
+        state: initial.clone(),
+        state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(initial),
+        enabled,
+        done: BTreeSet::new(),
+        backtrack,
+        sleep: BTreeSet::new(),
+        chosen: None,
+        depth: 0,
+    };
+    record_sleep_cardinality(
+        &mut sleep_cardinality_by_depth,
+        initial_frame.depth,
+        initial_frame.sleep.len(),
+    );
+
+    // DFS with explicit stack
+    let mut stack: Vec<StackFrame> = vec![initial_frame];
+
+    while !stack.is_empty() {
+        // Check limits
+        if store.fingerprint_count() >= config.max_states {
+            break;
         }
 
-        // Initialize backtrack set with all enabled transitions (conservative)
-        let backtrack = initialize_backtrack_keys(&enabled, &BTreeSet::new());
-
-        let initial_frame = StackFrame {
-            state: initial.clone(),
-            state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(initial),
-            enabled,
-            done: BTreeSet::new(),
-            backtrack,
-            sleep: BTreeSet::new(),
-            chosen: None,
-            depth: 0,
-        };
-        record_sleep_cardinality(
-            &mut sleep_cardinality_by_depth,
-            initial_frame.depth,
-            initial_frame.sleep.len(),
-        );
-
-        // DFS with explicit stack
-        let mut stack: Vec<StackFrame> = vec![initial_frame];
-
-        while !stack.is_empty() {
-            // Check limits
-            if store.fingerprint_count() >= config.max_states {
-                break;
-            }
-
-            // Phase 1: Extract data from the top frame (scoped mutable borrow)
-            let action = {
-                let frame = stack.last_mut().unwrap();
-                let mut next_transition: Option<String> = None;
-                let mut prunes_this_scan: usize = 0;
-                for key in &frame.backtrack {
-                    if frame.done.contains(key) {
+        // Phase 1: Extract data from the top frame (scoped mutable borrow)
+        let action = {
+            let frame = stack.last_mut().unwrap();
+            let mut next_transition: Option<String> = None;
+            let mut prunes_this_scan: usize = 0;
+            for key in &frame.backtrack {
+                if frame.done.contains(key) {
+                    continue;
+                }
+                if !config.use_sleep_sets {
+                    next_transition = Some(key.clone());
+                    break;
+                }
+                let transition = frame.enabled.iter().find(|t| t.ordering_key == *key);
+                if let Some(t) = transition {
+                    if config.use_sleep_sets
+                        && has_done_successor_fingerprint(
+                            &frame.done,
+                            &frame.enabled,
+                            t.successor_fingerprint,
+                        )
+                    {
+                        // If an already explored sibling reaches the same successor
+                        // fingerprint, re-firing this transition is redundant for the
+                        // state-based exploration contract used by this checker.
+                        prunes_this_scan += 1;
                         continue;
                     }
-                    if !config.use_sleep_sets {
-                        next_transition = Some(key.clone());
-                        break;
+                    if frame.sleep.contains(&transition_sleep_key(t)) {
+                        prunes_this_scan += 1;
+                        continue;
                     }
-                    let transition = frame.enabled.iter().find(|t| t.ordering_key == *key);
-                    if let Some(t) = transition {
-                        if config.use_sleep_sets
-                            && has_done_successor_fingerprint(
-                                &frame.done,
-                                &frame.enabled,
-                                t.successor_fingerprint,
-                            )
-                        {
-                            // If an already explored sibling reaches the same successor
-                            // fingerprint, re-firing this transition is redundant for the
-                            // state-based exploration contract used by this checker.
-                            prunes_this_scan += 1;
-                            continue;
-                        }
-                        if frame.sleep.contains(&transition_sleep_key(t)) {
-                            prunes_this_scan += 1;
-                            continue;
-                        }
-                        next_transition = Some(key.clone());
-                        break;
-                    }
+                    next_transition = Some(key.clone());
+                    break;
                 }
-                sleep_prune_hits += prunes_this_scan;
+            }
+            sleep_prune_hits += prunes_this_scan;
 
-                match next_transition {
-                    Some(key) => {
-                        let transition = frame
-                            .enabled
-                            .iter()
-                            .find(|t| t.ordering_key == key)
-                            .cloned();
-                        match transition {
-                            Some(t) => {
-                                frame.done.insert(key.clone());
-                                if config.use_sleep_sets {
-                                    frame.sleep.insert(transition_sleep_key(&t));
-                                }
-                                frame.chosen = Some(t.clone());
-                                let parent_state = frame.state.clone();
-                                let parent_depth = frame.depth;
-                                let parent_sleep = frame.sleep.clone();
-                                let parent_done = frame.done.clone();
-                                let parent_enabled = frame.enabled.clone();
-                                Some((
-                                    key,
-                                    t,
-                                    parent_state,
-                                    parent_depth,
-                                    parent_sleep,
-                                    parent_done,
-                                    parent_enabled,
-                                ))
-                            }
-                            None => continue,
-                        }
-                    }
-                    None => None,
-                }
-            };
-            // Mutable borrow of `frame` is released here
-
-            match action {
-                Some((
-                    _key,
-                    transition,
-                    parent_state,
-                    parent_depth,
-                    parent_sleep,
-                    parent_done,
-                    parent_enabled,
-                )) => {
-                    // Get the actual successor state
-                    let successors = match ctx.full_successors(&parent_state) {
-                        Ok(s) => s,
-                        Err(_) => continue,
-                    };
-
-                    let successor = successors
+            match next_transition {
+                Some(key) => {
+                    let transition = frame
+                        .enabled
                         .iter()
-                        .find(|s| {
-                            crate::modelcheck::dpor::enabled::hash_state(s)
-                                == transition.successor_fingerprint
-                        })
+                        .find(|t| t.ordering_key == key)
                         .cloned();
+                    match transition {
+                        Some(t) => {
+                            frame.done.insert(key.clone());
+                            if config.use_sleep_sets {
+                                frame.sleep.insert(transition_sleep_key(&t));
+                            }
+                            frame.chosen = Some(t.clone());
+                            let parent_state = frame.state.clone();
+                            let parent_depth = frame.depth;
+                            let parent_sleep = frame.sleep.clone();
+                            let parent_done = frame.done.clone();
+                            let parent_enabled = frame.enabled.clone();
+                            Some((
+                                key,
+                                t,
+                                parent_state,
+                                parent_depth,
+                                parent_sleep,
+                                parent_done,
+                                parent_enabled,
+                            ))
+                        }
+                        None => continue,
+                    }
+                }
+                None => None,
+            }
+        };
+        // Mutable borrow of `frame` is released here
 
-                    let Some(successor) = successor else {
-                        continue;
-                    };
+        match action {
+            Some((
+                _key,
+                transition,
+                parent_state,
+                parent_depth,
+                parent_sleep,
+                parent_done,
+                parent_enabled,
+            )) => {
+                // Get the actual successor state
+                let successors = match ctx.full_successors(&parent_state) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
 
-                    // Fast-path: check fingerprint before computing canonical key
-                    let succ_fp = successor.fingerprint();
-                    let fp_is_new = store.insert_fingerprint(succ_fp);
-                    if !fp_is_new && should_prune_seen_successor(config.use_sleep_sets) {
-                        sleep_prune_hits += 1;
-                        continue;
+                let successor = successors
+                    .iter()
+                    .find(|s| {
+                        crate::modelcheck::dpor::enabled::hash_state(s)
+                            == transition.successor_fingerprint
+                    })
+                    .cloned();
+
+                let Some(successor) = successor else {
+                    continue;
+                };
+
+                // Fast-path: check fingerprint before computing canonical key
+                let succ_fp = successor.fingerprint();
+                let fp_is_new = store.insert_fingerprint(succ_fp);
+                if !fp_is_new && should_prune_seen_successor(config.use_sleep_sets) {
+                    sleep_prune_hits += 1;
+                    continue;
+                }
+
+                transitions_fired += 1;
+                // Runtime conflict verification: check which write fields actually changed
+                record_runtime_write_stats(
+                    &mut runtime_conflict_stats,
+                    &transition,
+                    &parent_state,
+                    &successor,
+                );
+                // Compute canonical key only for reporting / symmetry dedup
+                let is_new = if fp_is_new && !use_symmetry {
+                    // No symmetry: fingerprint is authoritative
+                    let succ_key = canonical_state_key(&successor);
+                    store.insert_state(succ_key);
+                    true
+                } else if fp_is_new {
+                    // Symmetry enabled: fingerprint was new but canonical
+                    // key might merge with existing state
+                    let succ_key = canonical_state_key(&successor);
+                    store.insert_state(succ_key)
+                } else {
+                    // Fingerprint already seen: duplicate
+                    false
+                };
+
+                let depth = parent_depth + 1;
+                if depth > max_depth {
+                    max_depth = depth;
+                }
+
+                // Check invariants on the new state
+                if is_new && !invariant_fns.is_empty() {
+                    let mut trace: Vec<WitnessStep> = Vec::new();
+                    for frame in &stack {
+                        if let Some(ch) = &frame.chosen {
+                            trace.push(WitnessStep {
+                                state_fingerprint: frame.state_fingerprint,
+                                state_key: frame.state.canonical_key(),
+                                transition_key: ch.ordering_key.clone(),
+                                depth: frame.depth,
+                            });
+                        }
                     }
 
-                    transitions_fired += 1;
-                    // Runtime conflict verification: check which write fields actually changed
-                    record_runtime_write_stats(
-                        &mut runtime_conflict_stats,
-                        &transition,
-                        &parent_state,
-                        &successor,
-                    );
-                    // Compute canonical key only for reporting / symmetry dedup
-                    let is_new = if fp_is_new && !use_symmetry {
-                        // No symmetry: fingerprint is authoritative
-                        let succ_key = canonical_state_key(&successor);
-                        store.insert_state(succ_key);
-                        true
-                    } else if fp_is_new {
-                        // Symmetry enabled: fingerprint was new but canonical
-                        // key might merge with existing state
-                        let succ_key = canonical_state_key(&successor);
-                        store.insert_state(succ_key)
-                    } else {
-                        // Fingerprint already seen: duplicate
-                        false
-                    };
-
-                    let depth = parent_depth + 1;
-                    if depth > max_depth {
-                        max_depth = depth;
+                    if let Some(witness) = check_state(&successor, depth, &trace) {
+                        return WorkerResult {
+                            traces_explored,
+                            max_depth,
+                            transitions_fired,
+                            sleep_prune_hits,
+                            sleep_cardinality_by_depth,
+                            sleep_independence_blockers,
+                            runtime_conflict_stats,
+                            violation: Some(witness),
+                        };
                     }
+                }
 
-                    // Check invariants on the new state
-                    if is_new && !invariant_fns.is_empty() {
+                // Push child frame if depth limit not reached and state is new
+                if depth < config.max_depth && is_new {
+                    let enabled = ctx.enabled_transitions(&successor).unwrap_or_default();
+
+                    // Deadlock detection: state with zero enabled transitions
+                    if config.check_deadlock && enabled.is_empty() {
+                        // Build trace from the stack
                         let mut trace: Vec<WitnessStep> = Vec::new();
                         for frame in &stack {
                             if let Some(ch) = &frame.chosen {
@@ -594,105 +774,68 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
                                 });
                             }
                         }
-
-                        if let Some(witness) = check_state(&successor, depth, &trace) {
-                            return DporResult {
-                                distinct_states: store.into_states(),
-                                traces_explored,
-                                max_depth,
-                                transitions_fired,
-                                sleep_prune_hits,
-                                sleep_cardinality_by_depth,
-                                sleep_independence_blockers,
-                                runtime_conflict_stats,
-                                violation: Some(witness),
-                            };
-                        }
-                    }
-
-                    // Push child frame if depth limit not reached and state is new
-                    if depth < config.max_depth && is_new {
-                        let enabled = ctx.enabled_transitions(&successor).unwrap_or_default();
-
-                        // Deadlock detection: state with zero enabled transitions
-                        if config.check_deadlock && enabled.is_empty() {
-                            // Build trace from the stack
-                            let mut trace: Vec<WitnessStep> = Vec::new();
-                            for frame in &stack {
-                                if let Some(ch) = &frame.chosen {
-                                    trace.push(WitnessStep {
-                                        state_fingerprint: frame.state_fingerprint,
-                                        state_key: frame.state.canonical_key(),
-                                        transition_key: ch.ordering_key.clone(),
-                                        depth: frame.depth,
-                                    });
-                                }
-                            }
-                            return DporResult {
-                                distinct_states: store.into_states(),
-                                traces_explored,
-                                max_depth,
-                                transitions_fired,
-                                sleep_prune_hits,
-                                sleep_cardinality_by_depth,
-                                sleep_independence_blockers,
-                                runtime_conflict_stats,
-                                violation: Some(ViolationWitness {
-                                    invariant: "__deadlock__".to_string(),
-                                    violating_state_key: successor.canonical_key(),
-                                    violating_state_fingerprint:
-                                        crate::modelcheck::dpor::enabled::hash_state(&successor),
-                                    depth,
-                                    trace,
-                                }),
-                            };
-                        }
-
-                        let child_sleep = if config.use_sleep_sets {
-                            compute_child_sleep_set(
-                                &parent_sleep,
-                                &parent_done,
-                                &transition,
-                                &parent_enabled,
-                                config.use_independence,
-                                &mut sleep_independence_blockers,
-                                config.runtime_overrides.as_ref(),
-                            )
-                        } else {
-                            BTreeSet::new()
+                        return WorkerResult {
+                            traces_explored,
+                            max_depth,
+                            transitions_fired,
+                            sleep_prune_hits,
+                            sleep_cardinality_by_depth,
+                            sleep_independence_blockers,
+                            runtime_conflict_stats,
+                            violation: Some(ViolationWitness {
+                                invariant: "__deadlock__".to_string(),
+                                violating_state_key: successor.canonical_key(),
+                                violating_state_fingerprint:
+                                    crate::modelcheck::dpor::enabled::hash_state(&successor),
+                                depth,
+                                trace,
+                            }),
                         };
-                        let backtrack = initialize_backtrack_keys(&enabled, &child_sleep);
+                    }
 
-                        stack.push(StackFrame {
-                            state: successor,
-                            state_fingerprint: transition.successor_fingerprint,
-                            enabled,
-                            done: BTreeSet::new(),
-                            backtrack,
-                            sleep: child_sleep,
-                            chosen: None,
-                            depth,
-                        });
-                        if let Some(frame) = stack.last() {
-                            record_sleep_cardinality(
-                                &mut sleep_cardinality_by_depth,
-                                frame.depth,
-                                frame.sleep.len(),
-                            );
-                        }
+                    let child_sleep = if config.use_sleep_sets {
+                        compute_child_sleep_set(
+                            &parent_sleep,
+                            &parent_done,
+                            &transition,
+                            &parent_enabled,
+                            config.use_independence,
+                            &mut sleep_independence_blockers,
+                            config.runtime_overrides.as_ref(),
+                        )
+                    } else {
+                        BTreeSet::new()
+                    };
+                    let backtrack = initialize_backtrack_keys(&enabled, &child_sleep);
+
+                    stack.push(StackFrame {
+                        state: successor,
+                        state_fingerprint: transition.successor_fingerprint,
+                        enabled,
+                        done: BTreeSet::new(),
+                        backtrack,
+                        sleep: child_sleep,
+                        chosen: None,
+                        depth,
+                    });
+                    if let Some(frame) = stack.last() {
+                        record_sleep_cardinality(
+                            &mut sleep_cardinality_by_depth,
+                            frame.depth,
+                            frame.sleep.len(),
+                        );
                     }
                 }
-                None => {
-                    // All backtrack alternatives explored at this depth — pop
-                    stack.pop();
-                    traces_explored += 1;
-                }
+            }
+            None => {
+                // All backtrack alternatives explored at this depth — pop
+                stack.pop();
+                traces_explored += 1;
             }
         }
     }
 
-    DporResult {
-        distinct_states: store.into_states(),
+    WorkerResult {
         traces_explored,
         max_depth,
         transitions_fired,
