@@ -78,6 +78,7 @@ fn test_printer_output() {
             name: "input".to_string(),
             ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), false),
             is_reference: true,
+            is_self: false,
         }],
         return_type: ExecType::Tuple(vec![
             ExecType::Named("CState".to_string()),
@@ -93,6 +94,8 @@ fn test_printer_output() {
             ExecExpr::Clone(Box::new(ExecExpr::Var("input".to_string()))),
             ExecExpr::VecLit(vec![]),
         ]),
+        is_method: false,
+        receiver_type: None,
     };
 
     let output = print_function(&func);

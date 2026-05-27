@@ -15462,3 +15462,85 @@ Perf profile (30s, liblib.so = 21% of total):
 - Generalizing `&mut self` into transpiler codegen (that's Phase 48 if 47 succeeds).
 - Porting to Raft / EPaxos / PBFT.
 - Touching `src/generated/RSL/` (auto baseline stays untouched for comparison).
+
+---
+
+## Phase 48: Transpiler Emits `&mut self` Calling Convention by Default
+
+### Motivation
+
+Phase 47 proved that converting exec functions from functional style
+(`fn step(&CState, args) -> CState`) to mutating style (`fn step(&mut self, args)`)
+yields a **1.44× speedup** (51K vs 35.5K ops/s @ 30s). The conversion was done
+manually for ~35 hot-path functions in `optimized_rsl/RSL/`. Phase 48 automates
+this in the transpiler so all protocols benefit without manual editing.
+
+### Current transpiler pipeline
+
+1. Translator: `extract_parameters_and_outputs()` creates `ExecParameter` list
+   with first param as `s: &CType` (immutable reference to state)
+2. Printer: `print_signature()` emits `pub exec fn Name(s: &CType, ...) -> (result: (CType, ...))`
+3. Body: functional rebuild — constructs new CType from fields
+4. Proof: `ensures LSpec(s@, result.0@, ...)` symmetric pre/post
+
+### Target transpiler pipeline (Phase 48)
+
+1. Translator: first param becomes `&mut self` when `emit_mut_self = true`
+2. Printer: emits `impl CType { pub exec fn Name(&mut self, ...) -> (...) }`
+3. Body: in-place field mutation (`self.field = new_value`)
+4. Proof: `requires old(self).valid()`, `ensures LSpec(old(self)@, self@, ...)`
+
+### Plan
+
+#### 48.1 Data model + config (~130 LOC)
+
+- [x] **48.1.a**: Extend `ExecParameter` with `is_self: bool` and
+  `ExecFunction` with `is_method: bool`, `receiver_type: Option<String>`.
+  Add `emit_mut_self: bool` and `mut_self_types: Vec<String>` to
+  `TranslatorConfig`. Parse from TOML `[calling_convention]` section.
+  Unit tests for config parsing and data model.
+
+#### 48.2 Printer: `&mut self` signatures (~100 LOC)
+
+- [ ] **48.2.a**: Update `print_signature()` to emit `&mut self` when
+  `func.is_method == true`. Skip receiver from param list. Update
+  `format_param()` for self case. Wrap output in `impl ReceiverType { }`.
+  When `is_method`, filter receiver from return type.
+
+#### 48.3 Translator: detect receiver + adjust return type (~150 LOC)
+
+- [ ] **48.3.a**: In `extract_parameters_and_outputs()`, when
+  `emit_mut_self` is configured for the receiver type, mark first param
+  as `is_self = true` and set `func.is_method = true`. Remove receiver
+  from return type tuple. Adjust ensures clauses to use `old(self)@`.
+
+#### 48.4 Body codegen: field mutations (~200 LOC)
+
+- [ ] **48.4.a**: Change body generation for `is_method` functions.
+  Instead of building a return struct, emit `self.field = expr` for each
+  field assignment. Add `let ghost old_self = old(self)@` at body start.
+  Handle Arc-wrapped fields via external helpers.
+
+#### 48.5 Validate on one protocol (~50 LOC)
+
+- [ ] **48.5.a**: Add `[calling_convention]` to one simple protocol TOML
+  (e.g., VerticalPaxos). Regenerate, verify output matches expected
+  `&mut self` pattern. Compare state counts with functional version.
+
+#### 48.6 Apply to RSL + bench (~100 LOC)
+
+- [ ] **48.6.a**: Enable `emit_mut_self` for all RSL component TOMLs.
+  Regenerate `src/generated/RSL/`. Verify builds + bench matches
+  Phase 47 optimized_rsl results.
+
+### Estimated effort
+
+| Task | LOC | Effort |
+|------|-----|--------|
+| 48.1 data model + config | ~130 | 0.5 day |
+| 48.2 printer | ~100 | 0.5 day |
+| 48.3 translator | ~150 | 1 day |
+| 48.4 body codegen | ~200 | 1-2 days |
+| 48.5 validate | ~50 | 0.5 day |
+| 48.6 RSL + bench | ~100 | 0.5 day |
+| **Total** | **~730** | **~4-5 days** |

@@ -146,6 +146,14 @@ pub struct TranspilerConfig {
     #[serde(default)]
     pub arc_wrap_fields: HashMap<String, Vec<String>>,
 
+    /// Exec type names whose functions should be emitted as `impl Type { &mut self }` methods.
+    /// The first parameter (the state) becomes `&mut self`, and the return type no longer
+    /// includes the state. Proof uses `old(self)@` / `self@` instead of `s@` / `result@`.
+    /// Phase 48: transpiler emits `&mut self` calling convention for performance.
+    /// e.g., ["CProposer", "CAcceptor", "CLearner", "CExecutor", "CElectionState"]
+    #[serde(default)]
+    pub mut_self_types: Vec<String>,
+
     /// Types to skip during generation (already manually implemented).
     /// These spec type names will be parsed but NOT generated as exec types.
     /// e.g., ["Ballot", "Request", "Reply", "Vote", "LearnerTuple"]
@@ -1611,5 +1619,34 @@ mod tests {
 
         let config = TranspilerConfig::from_toml(toml).unwrap();
         assert!(config.clone_up_to_view_types.is_empty());
+    }
+
+    #[test]
+    fn test_mut_self_types_parsing() {
+        let toml = r#"
+            mut_self_types = ["CProposer", "CAcceptor", "CLearner"]
+
+            [naming]
+            spec_prefix = "L"
+            exec_prefix = "C"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert_eq!(config.mut_self_types.len(), 3);
+        assert!(config.mut_self_types.contains(&"CProposer".to_string()));
+        assert!(config.mut_self_types.contains(&"CAcceptor".to_string()));
+        assert!(config.mut_self_types.contains(&"CLearner".to_string()));
+    }
+
+    #[test]
+    fn test_mut_self_types_defaults_empty() {
+        let toml = r#"
+            [naming]
+            spec_prefix = "L"
+            exec_prefix = "C"
+        "#;
+
+        let config = TranspilerConfig::from_toml(toml).unwrap();
+        assert!(config.mut_self_types.is_empty());
     }
 }

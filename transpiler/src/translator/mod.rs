@@ -939,6 +939,12 @@ pub struct ExecFunction {
     pub decreases: Vec<String>,
     /// Function body
     pub body: ExecExpr,
+    /// Whether this function should be emitted as an `impl` method with `&mut self`.
+    /// When true, the first parameter is the receiver and is printed as `&mut self`.
+    pub is_method: bool,
+    /// The concrete type name for the receiver (e.g., "CProposer").
+    /// Set when `is_method` is true; used to wrap the function in `impl ReceiverType { }`.
+    pub receiver_type: Option<String>,
 }
 
 /// Parameter for exec function
@@ -947,6 +953,9 @@ pub struct ExecParameter {
     pub name: String,
     pub ty: ExecType,
     pub is_reference: bool,
+    /// Whether this parameter is the `self` receiver of a method.
+    /// When true, the printer emits `&mut self` instead of `name: &Type`.
+    pub is_self: bool,
 }
 
 /// Type for exec code
@@ -5541,6 +5550,8 @@ impl Translator {
             ensures,
             decreases: Vec::new(), // Loop-based, no decreases needed
             body,
+            is_method: false,
+            receiver_type: None,
         })
     }
 
@@ -5596,6 +5607,8 @@ impl Translator {
             ensures,
             decreases: Vec::new(), // Loop-based, no decreases needed
             body,
+            is_method: false,
+            receiver_type: None,
         })
     }
 
@@ -5845,6 +5858,8 @@ impl Translator {
             ensures,
             decreases: Vec::new(),
             body,
+            is_method: false,
+            receiver_type: None,
         })
     }
 
@@ -6525,6 +6540,8 @@ impl Translator {
             ensures,
             decreases: Vec::new(), // Predicates are not recursive
             body,
+            is_method: false,
+            receiver_type: None,
         })
     }
 
@@ -6600,6 +6617,8 @@ impl Translator {
             ensures,
             decreases,
             body,
+            is_method: false,
+            receiver_type: None,
         })
     }
 
@@ -7249,6 +7268,7 @@ impl Translator {
                 name: param.name.clone(),
                 ty: ExecType::Reference(Box::new(self.translate_type(&param.ty)), false),
                 is_reference: true,
+                is_self: false,
             })
             .collect()
     }
@@ -7808,6 +7828,7 @@ impl Translator {
                         name: param.name.clone(),
                         ty,
                         is_reference,
+                        is_self: false,
                     });
                 }
                 ParameterMode::Output => {

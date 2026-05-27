@@ -902,12 +902,15 @@ mod tests {
                 name: "s".to_string(),
                 ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), false),
                 is_reference: true,
+                is_self: false,
             }],
             return_type: ExecType::Named("CState".to_string()),
             requires: vec!["s.well_formed()".to_string()],
             ensures: vec!["result.well_formed()".to_string()],
             decreases: vec![],
             body: ExecExpr::Clone(Box::new(ExecExpr::Var("s".to_string()))),
+            is_method: false,
+            receiver_type: None,
         };
 
         let output = print_function(&func);
@@ -929,12 +932,15 @@ mod tests {
                     false,
                 ),
                 is_reference: true,
+                is_self: false,
             }],
             return_type: ExecType::Vec(Box::new(ExecType::Named("CRequest".to_string()))),
             requires: vec!["s.valid()".to_string()],
             ensures: vec!["result.valid()".to_string()],
             decreases: vec!["s.len()".to_string()],
             body: ExecExpr::VecLit(vec![]),
+            is_method: false,
+            receiver_type: None,
         };
 
         let output = print_function(&func);
@@ -1514,5 +1520,72 @@ mod tests {
             value: Box::new(ExecExpr::Literal("42".to_string())),
         });
         assert_eq!(printer.output, "let x: u64 = 42;");
+    }
+
+    #[test]
+    fn test_exec_function_is_method_field() {
+        // Verify that ExecFunction with is_method=false prints as regular function
+        let func = ExecFunction {
+            name: "CTestMethod".to_string(),
+            params: vec![
+                ExecParameter {
+                    name: "s".to_string(),
+                    ty: ExecType::Reference(
+                        Box::new(ExecType::Named("CState".to_string())),
+                        false,
+                    ),
+                    is_reference: true,
+                    is_self: false,
+                },
+                ExecParameter {
+                    name: "x".to_string(),
+                    ty: ExecType::Named("u64".to_string()),
+                    is_reference: false,
+                    is_self: false,
+                },
+            ],
+            return_type: ExecType::Named("CState".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::Clone(Box::new(ExecExpr::Var("s".to_string()))),
+            is_method: false,
+            receiver_type: None,
+        };
+
+        let output = print_function(&func);
+        // Regular function should have both params and no impl block
+        assert!(output.contains("pub exec fn CTestMethod(s: &CState, x: u64)"));
+        assert!(!output.contains("impl"));
+        assert!(!output.contains("&mut self"));
+
+        // Now test with is_method=true — for now it still prints as regular function
+        // (Phase 48.2 will change this behavior)
+        let method_func = ExecFunction {
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+            ..func
+        };
+        assert!(method_func.is_method);
+        assert_eq!(method_func.receiver_type.as_deref(), Some("CState"));
+    }
+
+    #[test]
+    fn test_exec_parameter_is_self_field() {
+        let self_param = ExecParameter {
+            name: "self".to_string(),
+            ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
+            is_reference: true,
+            is_self: true,
+        };
+        assert!(self_param.is_self);
+
+        let regular_param = ExecParameter {
+            name: "packet".to_string(),
+            ty: ExecType::Reference(Box::new(ExecType::Named("CPacket".to_string())), false),
+            is_reference: true,
+            is_self: false,
+        };
+        assert!(!regular_param.is_self);
     }
 }
