@@ -154,6 +154,9 @@ pub struct TranslatorConfig {
     /// At struct construction sites, changed fields get `Arc::new(value)`
     /// and unchanged clone fields use `.clone()` (Arc::clone, O(1)).
     pub arc_wrap_fields: HashMap<String, HashSet<String>>,
+    /// Exec type names whose functions should be emitted as `impl Type { &mut self }` methods.
+    /// When the first input param's exec type matches, the function becomes a method.
+    pub mut_self_types: HashSet<String>,
 }
 
 impl Default for TranslatorConfig {
@@ -197,6 +200,7 @@ impl Default for TranslatorConfig {
             assume_postconditions: false,
             proven_functions: HashSet::new(),
             arc_wrap_fields: HashMap::new(),
+            mut_self_types: HashSet::new(),
         }
     }
 }
@@ -6532,6 +6536,10 @@ impl Translator {
         // Otherwise keep the existing trusted fallback.
         let body = self.apply_assume_postcondition_strategy(func, &exec_name, &ensures, body);
 
+        // Check if receiver type should become &mut self method
+        let (params, return_type, requires, ensures, is_method, receiver_type) =
+            self.maybe_apply_mut_self(params, return_type, requires, ensures, func);
+
         Ok(ExecFunction {
             name: exec_name,
             params,
@@ -6540,8 +6548,8 @@ impl Translator {
             ensures,
             decreases: Vec::new(), // Predicates are not recursive
             body,
-            is_method: false,
-            receiver_type: None,
+            is_method,
+            receiver_type,
         })
     }
 
@@ -7840,6 +7848,106 @@ impl Translator {
         }
 
         Ok((params, output_names))
+    }
+
+    /// If the first input parameter's exec type is in `mut_self_types`, transform
+    /// the function into a `&mut self` method: mark receiver as self, remove
+    /// receiver type from return type, and adjust ensures to use `self@`/`old(self)@`.
+    fn maybe_apply_mut_self(
+        &self,
+        mut params: Vec<ExecParameter>,
+        return_type: ExecType,
+        requires: Vec<String>,
+        ensures: Vec<String>,
+        func: &AnnotatedFunction,
+    ) -> (Vec<ExecParameter>, ExecType, Vec<String>, Vec<String>, bool, Option<String>) {
+        if self.config.mut_self_types.is_empty() || params.is_empty() {
+            return (params, return_type, requires, ensures, false, None);
+        }
+
+        // Extract the exec type name from the first param
+        let recv_type_name = match &params[0].ty {
+            ExecType::Reference(inner, _) => match inner.as_ref() {
+                ExecType::Named(name) => name.clone(),
+                _ => return (params, return_type, requires, ensures, false, None),
+            },
+            ExecType::Named(name) => name.clone(),
+            _ => return (params, return_type, requires, ensures, false, None),
+        };
+
+        if !self.config.mut_self_types.contains(&recv_type_name) {
+            return (params, return_type, requires, ensures, false, None);
+        }
+
+        // Get the original spec param name for the receiver
+        let recv_param_name = &params[0].name;
+
+        // Mark first param as self, change its reference to mutable
+        let recv_name = recv_param_name.clone();
+        params[0].is_self = true;
+        params[0].ty = ExecType::Reference(Box::new(ExecType::Named(recv_type_name.clone())), true);
+
+        // Find the receiver's spec param name for output filtering
+        // The output param with the same type as the receiver is the self-return
+        let recv_spec_type = func.spec_fn.params.iter()
+            .find(|p| p.name == recv_name)
+            .map(|p| &p.ty);
+
+        // Remove receiver type from return type
+        // For single output: if it matches receiver type, return becomes ()
+        // For tuple output: filter out the receiver type component
+        let output_params: Vec<_> = func.spec_fn.params.iter()
+            .zip(&func.param_modes)
+            .filter(|(_, m)| **m == ParameterMode::Output)
+            .collect();
+
+        let new_return_type = if output_params.len() == 1 {
+            // Single output — if same type as receiver, method returns ()
+            if recv_spec_type.is_some() && output_params[0].0.ty == *recv_spec_type.unwrap() {
+                ExecType::Named("()".to_string())
+            } else {
+                return_type
+            }
+        } else if output_params.len() > 1 {
+            // Tuple output — filter out the receiver-typed component
+            let remaining: Vec<_> = output_params.iter()
+                .filter(|(p, _)| recv_spec_type.map_or(true, |rt| p.ty != *rt))
+                .map(|(p, _)| self.translate_type(&p.ty))
+                .collect();
+            match remaining.len() {
+                0 => ExecType::Named("()".to_string()),
+                1 => remaining.into_iter().next().unwrap(),
+                _ => ExecType::Tuple(remaining),
+            }
+        } else {
+            return_type
+        };
+
+        // Adjust requires: replace `recv_name@` and `recv_name.` with `old(self)@` and `old(self).`
+        let requires = requires.iter().map(|r| {
+            r.replace(&format!("{}@", recv_name), "old(self)@")
+             .replace(&format!("{}.", recv_name), "old(self).")
+        }).collect();
+
+        // Adjust ensures: replace output `result@`/`result.` with `self@`/`self.`
+        // and input receiver refs with `old(self)@`
+        let ensures = ensures.iter().map(|e| {
+            let mut s = e.clone();
+            // For single-output methods where the output IS the receiver type,
+            // replace result@ with self@
+            if output_params.len() == 1 {
+                if recv_spec_type.is_some() && output_params[0].0.ty == *recv_spec_type.unwrap() {
+                    s = s.replace("result@", "self@")
+                         .replace("result.", "self.");
+                }
+            }
+            // Replace input receiver references with old(self)
+            s = s.replace(&format!("{}@", recv_name), "old(self)@")
+                 .replace(&format!("{}.", recv_name), "old(self).");
+            s
+        }).collect();
+
+        (params, new_return_type, requires, ensures, true, Some(recv_type_name))
     }
 
     /// Build return type from output parameters
@@ -28257,5 +28365,148 @@ borrowed_args = [0]
             "clone_hashset of unchanged field should become Arc::clone: {:?}",
             result[0].1
         );
+    }
+
+    fn make_test_annotated_fn(
+        name: &str,
+        params: Vec<(&str, &str)>,
+        modes: Vec<ParameterMode>,
+    ) -> crate::moder::AnnotatedFunction {
+        crate::moder::AnnotatedFunction {
+            spec_fn: SpecFunction {
+                name: name.to_string(),
+                generics: Generics::default(),
+                params: params
+                    .into_iter()
+                    .map(|(n, ty)| Parameter {
+                        name: n.to_string(),
+                        ty: Type::Named(Path::single(ty.to_string())),
+                        mode: None,
+                        variable_mode: VariableMode::Exec,
+                        span: None,
+                    })
+                    .collect(),
+                return_type: Type::Bool,
+                requires: vec![],
+                ensures: vec![],
+                recommends: vec![],
+                decreases: vec![],
+                body: Expr::Literal(Literal::Bool(true)),
+                span: None,
+            },
+            kind: FunctionKind::Predicate,
+            param_modes: modes,
+            return_type: None,
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        }
+    }
+
+    #[test]
+    fn test_maybe_apply_mut_self_noop_when_empty() {
+        let translator = Translator::default();
+        let params = vec![ExecParameter {
+            name: "s".to_string(),
+            ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), false),
+            is_reference: true,
+            is_self: false,
+        }];
+        let func = make_test_annotated_fn(
+            "LTest",
+            vec![("s", "LState")],
+            vec![ParameterMode::Input],
+        );
+        let (p, _rt, _req, _ens, is_method, recv) = translator.maybe_apply_mut_self(
+            params,
+            ExecType::Named("CState".to_string()),
+            vec![],
+            vec![],
+            &func,
+        );
+        assert!(!is_method);
+        assert!(recv.is_none());
+        assert!(!p[0].is_self);
+    }
+
+    #[test]
+    fn test_maybe_apply_mut_self_transforms_method() {
+        let mut config = TranslatorConfig::default();
+        config.mut_self_types.insert("CProposer".to_string());
+        let translator = Translator::new(config);
+
+        let params = vec![
+            ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CProposer".to_string())), false),
+                is_reference: true,
+                is_self: false,
+            },
+            ExecParameter {
+                name: "msg".to_string(),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CMessage".to_string())), false),
+                is_reference: true,
+                is_self: false,
+            },
+        ];
+        let func = make_test_annotated_fn(
+            "LHandleRequest",
+            vec![("s", "LProposer"), ("msg", "LMessage"), ("s_", "LProposer")],
+            vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Output],
+        );
+
+        let requires = vec!["s@.well_formed()".to_string()];
+        let ensures = vec![
+            "result@.well_formed()".to_string(),
+            "LHandleRequest(s@, msg@, result@)".to_string(),
+        ];
+
+        let (p, rt, req, ens, is_method, recv) = translator.maybe_apply_mut_self(
+            params,
+            ExecType::Named("CProposer".to_string()),
+            requires,
+            ensures,
+            &func,
+        );
+
+        assert!(is_method, "should be detected as method");
+        assert_eq!(recv, Some("CProposer".to_string()));
+        assert!(p[0].is_self, "first param should be self");
+        assert!(!p[1].is_self, "second param should not be self");
+        // Return type should be () since receiver type is removed
+        assert_eq!(rt, ExecType::Named("()".to_string()));
+        // Requires should use old(self)
+        assert_eq!(req[0], "old(self)@.well_formed()");
+        // Ensures should use self@ for result and old(self)@ for input
+        assert_eq!(ens[0], "self@.well_formed()");
+        assert_eq!(ens[1], "LHandleRequest(old(self)@, msg@, self@)");
+    }
+
+    #[test]
+    fn test_maybe_apply_mut_self_non_matching_type() {
+        let mut config = TranslatorConfig::default();
+        config.mut_self_types.insert("CProposer".to_string());
+        let translator = Translator::new(config);
+
+        let params = vec![ExecParameter {
+            name: "s".to_string(),
+            ty: ExecType::Reference(Box::new(ExecType::Named("CLearner".to_string())), false),
+            is_reference: true,
+            is_self: false,
+        }];
+        let func = make_test_annotated_fn(
+            "LTest",
+            vec![("s", "LLearner")],
+            vec![ParameterMode::Input],
+        );
+        let (_p, _rt, _req, _ens, is_method, recv) = translator.maybe_apply_mut_self(
+            params,
+            ExecType::Named("()".to_string()),
+            vec![],
+            vec![],
+            &func,
+        );
+        assert!(!is_method, "CLearner not in mut_self_types");
+        assert!(recv.is_none());
     }
 }

@@ -6346,6 +6346,7 @@ fn convert_file_config(file_config: FileConfig, config_path: &Path) -> Result<Tr
                 .iter()
                 .map(|(k, v)| (k.clone(), v.iter().cloned().collect()))
                 .collect(),
+            mut_self_types: file_config.mut_self_types.iter().cloned().collect(),
         },
         custom_imports: file_config.output.custom_imports,
         generate_inline_types: file_config.output.generate_inline_types,

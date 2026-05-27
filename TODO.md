@@ -15509,7 +15509,7 @@ this in the transpiler so all protocols benefit without manual editing.
 
 #### 48.3 Translator: detect receiver + adjust return type (~150 LOC)
 
-- [ ] **48.3.a**: In `extract_parameters_and_outputs()`, when
+- [x] **48.3.a**: In `extract_parameters_and_outputs()`, when
   `emit_mut_self` is configured for the receiver type, mark first param
   as `is_self = true` and set `func.is_method = true`. Remove receiver
   from return type tuple. Adjust ensures clauses to use `old(self)@`.
