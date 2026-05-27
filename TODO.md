@@ -15502,7 +15502,7 @@ this in the transpiler so all protocols benefit without manual editing.
 
 #### 48.2 Printer: `&mut self` signatures (~100 LOC)
 
-- [ ] **48.2.a**: Update `print_signature()` to emit `&mut self` when
+- [x] **48.2.a**: Update `print_signature()` to emit `&mut self` when
   `func.is_method == true`. Skip receiver from param list. Update
   `format_param()` for self case. Wrap output in `impl ReceiverType { }`.
   When `is_method`, filter receiver from return type.

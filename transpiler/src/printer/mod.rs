@@ -56,7 +56,17 @@ impl Printer {
         self.output.clear();
         self.current_indent = 0;
 
+        // For methods, open impl block
+        if func.is_method {
+            if let Some(ref recv_ty) = func.receiver_type {
+                self.write(&format!("impl {} {{", recv_ty));
+                self.newline();
+                self.current_indent += 1;
+            }
+        }
+
         // Print function signature
+        self.indent();
         self.print_signature(func);
 
         // Print requires
@@ -117,6 +127,13 @@ impl Printer {
         self.write("}");
         self.newline();
 
+        // For methods, close impl block
+        if func.is_method && func.receiver_type.is_some() {
+            self.current_indent -= 1;
+            self.write("}");
+            self.newline();
+        }
+
         std::mem::take(&mut self.output)
     }
 
@@ -134,13 +151,24 @@ impl Printer {
         self.write(&func.name);
         self.write("(");
 
-        // Print parameters
-        let params: Vec<_> = func.params.iter().map(|p| self.format_param(p)).collect();
+        // Print parameters — for methods, emit &mut self then non-self params
+        let params: Vec<_> = if func.is_method {
+            std::iter::once("&mut self".to_string())
+                .chain(func.params.iter().filter(|p| !p.is_self).map(|p| self.format_param(p)))
+                .collect()
+        } else {
+            func.params.iter().map(|p| self.format_param(p)).collect()
+        };
         self.write(&params.join(", "));
 
-        self.write(") -> (result: ");
-        self.write(&func.return_type.to_rust_string());
         self.write(")");
+
+        // Methods don't have a return type (mutations are in-place)
+        if !func.is_method {
+            self.write(" -> (result: ");
+            self.write(&func.return_type.to_rust_string());
+            self.write(")");
+        }
     }
 
     /// Format a parameter
@@ -1559,15 +1587,139 @@ mod tests {
         assert!(!output.contains("impl"));
         assert!(!output.contains("&mut self"));
 
-        // Now test with is_method=true — for now it still prints as regular function
-        // (Phase 48.2 will change this behavior)
+        // Now test with is_method=true — should print as impl method
         let method_func = ExecFunction {
             is_method: true,
             receiver_type: Some("CState".to_string()),
+            params: vec![
+                ExecParameter {
+                    name: "s".to_string(),
+                    ty: ExecType::Reference(
+                        Box::new(ExecType::Named("CState".to_string())),
+                        true,
+                    ),
+                    is_reference: true,
+                    is_self: true,
+                },
+                ExecParameter {
+                    name: "x".to_string(),
+                    ty: ExecType::Named("u64".to_string()),
+                    is_reference: false,
+                    is_self: false,
+                },
+            ],
             ..func
         };
-        assert!(method_func.is_method);
-        assert_eq!(method_func.receiver_type.as_deref(), Some("CState"));
+        let method_output = print_function(&method_func);
+        assert!(
+            method_output.contains("impl CState {"),
+            "method should be wrapped in impl block: {}",
+            method_output
+        );
+        assert!(
+            method_output.contains("&mut self, x: u64)"),
+            "method should have &mut self and skip receiver param: {}",
+            method_output
+        );
+        assert!(
+            !method_output.contains("-> (result:"),
+            "method should not have return type: {}",
+            method_output
+        );
+        // impl block should be closed
+        assert!(
+            method_output.ends_with("}\n}\n"),
+            "impl block should be closed: {:?}",
+            method_output
+        );
+    }
+
+    #[test]
+    fn test_print_method_with_requires_ensures() {
+        let func = ExecFunction {
+            name: "CDoStep".to_string(),
+            params: vec![
+                ExecParameter {
+                    name: "s".to_string(),
+                    ty: ExecType::Reference(
+                        Box::new(ExecType::Named("CReplica".to_string())),
+                        true,
+                    ),
+                    is_reference: true,
+                    is_self: true,
+                },
+                ExecParameter {
+                    name: "msg".to_string(),
+                    ty: ExecType::Reference(
+                        Box::new(ExecType::Named("CMessage".to_string())),
+                        false,
+                    ),
+                    is_reference: true,
+                    is_self: false,
+                },
+            ],
+            return_type: ExecType::Named("CReplica".to_string()),
+            requires: vec!["old(self).well_formed()".to_string()],
+            ensures: vec!["self.well_formed()".to_string()],
+            decreases: vec![],
+            body: ExecExpr::Block(vec![]),
+            is_method: true,
+            receiver_type: Some("CReplica".to_string()),
+        };
+
+        let output = print_function(&func);
+        // Verify impl block structure
+        assert!(output.starts_with("impl CReplica {\n"), "output: {}", output);
+        assert!(
+            output.contains("pub exec fn CDoStep(&mut self, msg: &CMessage)"),
+            "output: {}",
+            output
+        );
+        assert!(output.contains("requires"), "output: {}", output);
+        assert!(
+            output.contains("old(self).well_formed()"),
+            "output: {}",
+            output
+        );
+        assert!(output.contains("ensures"), "output: {}", output);
+        assert!(
+            output.contains("self.well_formed()"),
+            "output: {}",
+            output
+        );
+        // No return type
+        assert!(!output.contains("-> (result:"), "output: {}", output);
+    }
+
+    #[test]
+    fn test_print_method_no_extra_params() {
+        // Method with only self parameter (no extra args)
+        let func = ExecFunction {
+            name: "CInit".to_string(),
+            params: vec![ExecParameter {
+                name: "s".to_string(),
+                ty: ExecType::Reference(
+                    Box::new(ExecType::Named("CState".to_string())),
+                    true,
+                ),
+                is_reference: true,
+                is_self: true,
+            }],
+            return_type: ExecType::Named("CState".to_string()),
+            requires: vec![],
+            ensures: vec![],
+            decreases: vec![],
+            body: ExecExpr::Block(vec![]),
+            is_method: true,
+            receiver_type: Some("CState".to_string()),
+        };
+
+        let output = print_function(&func);
+        assert!(
+            output.contains("pub exec fn CInit(&mut self)"),
+            "self-only method should have just &mut self: {}",
+            output
+        );
     }
 
     #[test]
