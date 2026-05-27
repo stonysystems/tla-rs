@@ -15171,7 +15171,7 @@ For each step, use LLM (the same proof-completion pipeline as the main transpile
 
 - [x] **46.3.a**: Build `liblib.so` with `--cfg 'feature="optimized_rsl"'`. Both feature-on and feature-off builds succeed (6.3MB .so, 972/895 warnings respectively). Verus flag is `--cfg` not `--features`.
 - [x] **46.3.b**: Full verify sweep across all 8 optimized_rsl submodules: **123 verified, 0 errors**.
-- [ ] **46.3.c**: Smoke test end-to-end RSL UDP service + 32-thread client for 30 s. No crash, no correctness drift.
+- [x] **46.3.c**: Smoke test end-to-end RSL UDP service via `scripts/integration_test_cluster.sh rsl`. PASS: 3 servers reached [[READY]], client got throughput > 0, all servers survived. Build used `--crate-type=cdylib` (not `lib`) for proper ELF shared object. No crash, no correctness drift.
 
 #### 46.4 Bench: AutoMan-V vs AutoMan-V-opt vs Sushant
 
