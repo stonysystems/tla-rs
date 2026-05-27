@@ -650,20 +650,22 @@ pub fn explore_dpor_parallel(
         num_workers
     );
 
-    // Phase 2: Partition frontier states across workers (round-robin)
-    let mut partitions: Vec<Vec<RuntimeValue>> = (0..num_workers).map(|_| Vec::new()).collect();
-    for (i, state) in frontier.into_iter().enumerate() {
-        partitions[i % num_workers].push(state);
-    }
+    // Phase 2: Work-stealing frontier queue.
+    // Instead of static round-robin partitioning, place all frontier states
+    // into a shared queue. Workers pop states on demand, giving natural load
+    // balancing — fast workers that finish a shallow subtree immediately grab
+    // the next state instead of sitting idle.
+    let frontier_queue: Mutex<std::collections::VecDeque<RuntimeValue>> =
+        Mutex::new(frontier.into_iter().collect());
 
     // Shared stop flag for early termination on invariant violation
     let stop_flag = AtomicBool::new(false);
 
-    // Phase 3: Spawn worker threads
+    // Phase 3: Spawn worker threads — each pulls from shared frontier queue
     let worker_results: Vec<WorkerResult> = std::thread::scope(|s| {
-        let handles: Vec<_> = partitions
-            .into_iter()
-            .map(|partition| {
+        let handles: Vec<_> = (0..num_workers)
+            .map(|_| {
+                let queue_ref = &frontier_queue;
                 let store_ref = &store;
                 let ctx_ref = ctx;
                 let config_ref = config;
@@ -679,7 +681,8 @@ pub fn explore_dpor_parallel(
                         runtime_conflict_stats: RuntimeConflictStats::default(),
                         violation: None,
                     };
-                    for state in &partition {
+                    loop {
+                        // Check stop conditions before taking next item
                         if flag_ref.load(Ordering::Relaxed) {
                             break;
                         }
@@ -689,8 +692,17 @@ pub fn explore_dpor_parallel(
                         if store_ref.fingerprint_count() >= config_ref.max_states {
                             break;
                         }
+                        // Pop next frontier state from shared queue
+                        let state = {
+                            let mut q = queue_ref.lock().unwrap();
+                            q.pop_front()
+                        };
+                        let state = match state {
+                            Some(s) => s,
+                            None => break, // Queue exhausted
+                        };
                         let r = explore_dpor_from_state(
-                            ctx_ref, config_ref, state, store_ref, flag_ref,
+                            ctx_ref, config_ref, &state, store_ref, flag_ref,
                         );
                         if r.violation.is_some() {
                             flag_ref.store(true, Ordering::Relaxed);
@@ -5229,5 +5241,95 @@ max_seq_len = 4
             parallel_shallow.distinct_states.len(),
             parallel_deep.distinct_states.len(),
         );
+    }
+
+    /// Work-stealing frontier queue: with many more frontier states than
+    /// workers, workers should dynamically pick up states. Verify state
+    /// parity is preserved across different worker counts.
+    #[test]
+    fn test_work_stealing_frontier_state_parity() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        // Use Peterson (has ~50+ states) to get a meaningful frontier
+        let spec_file = manifest_dir.join("tests/tla-rs/09_peterson_mutex_2p/PetersonMutex.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: PetersonMutex.rs not found");
+            return;
+        }
+        let model_path = case_model_config("09_peterson_mutex_2p");
+        let ctx = SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext").unwrap();
+
+        let config = DporConfig {
+            max_depth: 30,
+            max_states: 10000,
+            use_independence: true,
+            use_sleep_sets: true,
+            // Low frontier_per_worker to create many frontier states relative
+            // to workers, exercising the work-stealing queue
+            min_frontier_per_worker: 1,
+            max_frontier_depth: 4,
+            ..Default::default()
+        };
+
+        let sequential = explore_dpor(&ctx, &config);
+
+        // Test with 2, 3, 4, 8 workers — odd counts exercise uneven distribution
+        for workers in [2, 3, 4, 8] {
+            let parallel = explore_dpor_parallel(&ctx, &config, workers);
+            for state in &sequential.distinct_states {
+                assert!(
+                    parallel.distinct_states.contains(state),
+                    "workers={}: missing state {}",
+                    workers,
+                    state
+                );
+            }
+            eprintln!(
+                "Work-stealing parity: workers={}, seq={}, par={}",
+                workers,
+                sequential.distinct_states.len(),
+                parallel.distinct_states.len(),
+            );
+        }
+    }
+
+    /// Work-stealing with violation: ensure early termination propagates
+    /// correctly when workers steal from a shared queue.
+    #[test]
+    fn test_work_stealing_violation_propagation() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/03_counter_race_bug/CounterRaceBug.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: CounterRaceBug.rs not found");
+            return;
+        }
+        let model_path = case_model_config("03_counter_race_bug");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Skip: {}", e);
+                return;
+            }
+        };
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: vec!["LTotalCorrect".to_string()],
+            min_frontier_per_worker: 2,
+            max_frontier_depth: 4,
+            ..Default::default()
+        };
+
+        // Both sequential and parallel should find the violation
+        let seq_result = explore_dpor(&ctx, &config);
+        assert!(seq_result.violation.is_some(), "Sequential should find violation");
+
+        for workers in [2, 4] {
+            let par_result = explore_dpor_parallel(&ctx, &config, workers);
+            assert!(
+                par_result.violation.is_some(),
+                "Parallel with {} workers should find violation",
+                workers
+            );
+        }
     }
 }

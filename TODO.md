@@ -13664,11 +13664,13 @@ tiers, ordered biggest-gain-per-effort first.
       Added `min_frontier_per_worker` and `max_frontier_depth` fields to
       `DporConfig`. 2 new tests (`test_adaptive_frontier_depth_state_parity`,
       `test_adaptive_frontier_depth_cap`). ~80 LOC. *DONE.*
-    - [ ] **38.21.B.ii.b**: **Work-stealing frontier queue.** Replace
-      static round-robin partitioning with a shared `crossbeam::deque`
-      work-stealing queue. Workers pop frontier states on demand instead
-      of getting a fixed partition. Better load balance when subtree
-      depths vary widely. ~200 LOC.
+    - [x] **38.21.B.ii.b**: **Work-stealing frontier queue.** Replaced
+      static round-robin partitioning with a shared `Mutex<VecDeque>`
+      frontier queue. Workers pop states on demand, giving natural load
+      balancing — fast workers that finish shallow subtrees immediately
+      grab the next state. No new dependency needed (uses std Mutex).
+      2 new tests (`test_work_stealing_frontier_state_parity`,
+      `test_work_stealing_violation_propagation`). ~50 LOC net. *DONE.*
     - [ ] **38.21.B.ii.c**: **Per-subtree DFS work-stealing.** When a
       worker's DFS stack empties, steal unexplored backtrack entries from
       another worker's stack. Requires shared backtrack sets with locking.
