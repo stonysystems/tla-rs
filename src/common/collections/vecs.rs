@@ -105,7 +105,7 @@ verus! {
             result@ == v@.subrange(start as int, end as int),
             result@.map(|i, t:T| t@) == v@.map(|i, t:T| t@).subrange(start as int, end as int),
     {
-        let mut new_vec = Vec::new();
+        let mut new_vec = Vec::with_capacity(end - start);
         let mut i = start;
         assert(end <= v.len());
         assert(new_vec@ == v@.subrange(start as int, i as int));
@@ -146,7 +146,7 @@ verus! {
             result@ == v@.subrange(start as int, end as int),
             result@.map(|i, t:u64| t as int) == v@.map(|i, t:u64| t as int).subrange(start as int, end as int),
     {
-        let mut new_vec = Vec::new();
+        let mut new_vec: Vec<u64> = Vec::with_capacity(end - start);
         let mut i = start;
         assert(end <= v.len());
         assert(new_vec@ == v@.subrange(start as int, i as int));
@@ -182,7 +182,7 @@ verus! {
             result@.len() == v1@.len() + v2@.len(),
             result@.map(|i, t:T| t@).len() == v1@.map(|i, t:T| t@).len() + v2@.map(|i, t:T| t@).len()
     {
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(v1.len() + v2.len());
         let mut i = 0;
 
         assert(result@ == v1@.subrange(0, i as int));
