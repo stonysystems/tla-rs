@@ -8,6 +8,7 @@
 //! Reference: source-DPOR from Nidhugg (DPORDriver + TraceBuilder pattern).
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use crate::modelcheck::dpor::enabled::SpecContext;
@@ -390,6 +391,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
     };
 
     // Explore from each initial state, merging worker results
+    let stop_flag = AtomicBool::new(false);
     let mut merged = WorkerResult {
         traces_explored: 0,
         max_depth: 0,
@@ -410,7 +412,7 @@ pub fn explore_dpor(ctx: &SpecContext, config: &DporConfig) -> DporResult {
         if store.fingerprint_count() >= config.max_states {
             break;
         }
-        let result = explore_dpor_from_state(ctx, config, initial, &store);
+        let result = explore_dpor_from_state(ctx, config, initial, &store, &stop_flag);
         merged.merge(result);
     }
 
@@ -593,6 +595,9 @@ pub fn explore_dpor_parallel(
         partitions[i % num_workers].push(state);
     }
 
+    // Shared stop flag for early termination on invariant violation
+    let stop_flag = AtomicBool::new(false);
+
     // Phase 3: Spawn worker threads
     let worker_results: Vec<WorkerResult> = std::thread::scope(|s| {
         let handles: Vec<_> = partitions
@@ -601,6 +606,7 @@ pub fn explore_dpor_parallel(
                 let store_ref = &store;
                 let ctx_ref = ctx;
                 let config_ref = config;
+                let flag_ref = &stop_flag;
                 s.spawn(move || {
                     let mut local_result = WorkerResult {
                         traces_explored: 0,
@@ -613,13 +619,21 @@ pub fn explore_dpor_parallel(
                         violation: None,
                     };
                     for state in &partition {
+                        if flag_ref.load(Ordering::Relaxed) {
+                            break;
+                        }
                         if local_result.violation.is_some() {
                             break;
                         }
                         if store_ref.fingerprint_count() >= config_ref.max_states {
                             break;
                         }
-                        let r = explore_dpor_from_state(ctx_ref, config_ref, state, store_ref);
+                        let r = explore_dpor_from_state(
+                            ctx_ref, config_ref, state, store_ref, flag_ref,
+                        );
+                        if r.violation.is_some() {
+                            flag_ref.store(true, Ordering::Relaxed);
+                        }
                         local_result.merge(r);
                     }
                     local_result
@@ -672,6 +686,7 @@ pub fn explore_dpor_from_state(
     config: &DporConfig,
     initial: &RuntimeValue,
     store: &SharedStateStore,
+    stop_flag: &AtomicBool,
 ) -> WorkerResult {
     // Set up symmetry-aware canonical key closure
     let symmetry_fields_owned: Vec<String> = ctx.model_config.search.symmetry_fields.clone();
@@ -745,6 +760,7 @@ pub fn explore_dpor_from_state(
 
     // Check invariants on initial state
     if let Some(witness) = check_state(initial, 0, &[]) {
+        stop_flag.store(true, Ordering::Relaxed);
         return WorkerResult {
             traces_explored: 0,
             max_depth: 0,
@@ -776,6 +792,7 @@ pub fn explore_dpor_from_state(
 
     // Deadlock on initial state (unlikely but possible)
     if config.check_deadlock && enabled.is_empty() {
+        stop_flag.store(true, Ordering::Relaxed);
         return WorkerResult {
             traces_explored: 0,
             max_depth: 0,
@@ -817,6 +834,10 @@ pub fn explore_dpor_from_state(
     let mut stack: Vec<StackFrame> = vec![initial_frame];
 
     while !stack.is_empty() {
+        // Early termination: another worker found a violation
+        if stop_flag.load(Ordering::Relaxed) {
+            break;
+        }
         // Check limits
         if store.fingerprint_count() >= config.max_states {
             break;
@@ -977,6 +998,7 @@ pub fn explore_dpor_from_state(
                     }
 
                     if let Some(witness) = check_state(&successor, depth, &trace) {
+                        stop_flag.store(true, Ordering::Relaxed);
                         return WorkerResult {
                             traces_explored,
                             max_depth,
@@ -1008,6 +1030,7 @@ pub fn explore_dpor_from_state(
                                 });
                             }
                         }
+                        stop_flag.store(true, Ordering::Relaxed);
                         return WorkerResult {
                             traces_explored,
                             max_depth,
@@ -4762,6 +4785,117 @@ max_seq_len = 4
             "Peterson parallel parity: seq={}, par4={}",
             sequential.distinct_states.len(),
             parallel.distinct_states.len(),
+        );
+    }
+
+    #[test]
+    fn test_parallel_dpor_early_termination_on_violation() {
+        // CounterRaceBug violates LTotalCorrect — parallel should detect it
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/03_counter_race_bug/CounterRaceBug.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: CounterRaceBug.rs not found");
+            return;
+        }
+        let model_path = case_model_config("03_counter_race_bug");
+        let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Skip: {}", e);
+                return;
+            }
+        };
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            invariants: vec!["LTotalCorrect".to_string()],
+            ..Default::default()
+        };
+
+        // Sequential should find violation
+        let seq_result = explore_dpor(&ctx, &config);
+        assert!(
+            seq_result.violation.is_some(),
+            "Sequential should find violation"
+        );
+
+        // Parallel with 2 workers should also find violation
+        let par_result = explore_dpor_parallel(&ctx, &config, 2);
+        assert!(
+            par_result.violation.is_some(),
+            "Parallel should find violation"
+        );
+        assert_eq!(
+            par_result.violation.as_ref().unwrap().invariant,
+            "LTotalCorrect"
+        );
+
+        // Parallel with 4 workers should also find violation
+        let par4_result = explore_dpor_parallel(&ctx, &config, 4);
+        assert!(
+            par4_result.violation.is_some(),
+            "Parallel(4) should find violation"
+        );
+
+        eprintln!(
+            "Early termination: seq_transitions={}, par2_transitions={}, par4_transitions={}",
+            seq_result.transitions_fired,
+            par_result.transitions_fired,
+            par4_result.transitions_fired,
+        );
+    }
+
+    #[test]
+    fn test_stop_flag_prevents_further_exploration() {
+        // Verify that setting stop_flag causes explore_dpor_from_state to
+        // terminate quickly even when there's a large state space.
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: APlusB.rs not found");
+                return;
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+        let config = DporConfig {
+            max_depth: 20,
+            max_states: 10_000,
+            ..Default::default()
+        };
+
+        // Normal run
+        let store_normal = SharedStateStore::new();
+        let no_stop = AtomicBool::new(false);
+        let initial_states = ctx.initial_states().unwrap();
+        let normal = explore_dpor_from_state(
+            &ctx, &config, &initial_states[0], &store_normal, &no_stop,
+        );
+
+        // Pre-stopped run: flag is already set before exploration
+        let store_stopped = SharedStateStore::new();
+        let pre_stop = AtomicBool::new(true);
+        let stopped = explore_dpor_from_state(
+            &ctx, &config, &initial_states[0], &store_stopped, &pre_stop,
+        );
+
+        // Stopped run should fire far fewer transitions
+        assert!(
+            stopped.transitions_fired <= normal.transitions_fired,
+            "Stopped ({}) should fire <= normal ({})",
+            stopped.transitions_fired,
+            normal.transitions_fired,
+        );
+        // With pre-set flag, no DFS iterations should happen, so 0 transitions
+        assert_eq!(
+            stopped.transitions_fired, 0,
+            "Pre-stopped should fire 0 transitions"
+        );
+        eprintln!(
+            "Stop flag: normal={} transitions, pre-stopped={} transitions",
+            normal.transitions_fired,
+            stopped.transitions_fired,
         );
     }
 }

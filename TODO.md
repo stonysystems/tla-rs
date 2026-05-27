@@ -13383,7 +13383,7 @@ makes DPOR reduction measurable).
     `num_workers` threads via `std::thread::scope`, each calling
     `explore_dpor_from_state`. Merge `WorkerResult`s. Add `--workers N`
     CLI flag. ~200-300 LOC.
-  - [ ] **38.18.1.e**: **Early termination on invariant violation.**
+  - [x] **38.18.1.e**: **Early termination on invariant violation.**
     Add `Arc<AtomicBool>` `violation_found` flag shared across workers.
     Each worker checks it periodically (every N transitions) and stops
     early. First violation witness wins. ~50 LOC.
