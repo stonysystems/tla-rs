@@ -15186,7 +15186,7 @@ For each step, use LLM (the same proof-completion pipeline as the main transpile
 
   **Finding**: P3.1-P3.5 micro-optimizations add <1% on top of the Arc-wrapped baseline. The Arc-wrapping (Phase 41) was the dominant optimization — the remaining gap to Sushant's 61K is NOT from these 5 patterns. It's likely from differences in the C# I/O layer, network stack, or other non-Rust factors. The "transpiler + LLM absorbs manual opt" claim is validated in a different sense: the transpiler ALREADY produced the same iterative code as Sushant (P3.4/P3.5), and Arc-wrapping (Phase 41) already closes most of the gap.
 
-- [ ] **46.4.c**: Update `docs/osdi26_poster_briefing.md` with the 3-line comparison plot (auto / ported-opt / sushant-opt). Goal: AutoMan-V(opt-port) ≥ 0.9 × Sushant. If gap >10%, document which optimization gives the residual.
+- [x] **46.4.c**: Updated `docs/osdi26_poster_briefing.md` with Phase 46 bench comparison table (auto 36,091 / ported-opt 36,313 / sushant ~61K). Gap is ~40% — documented that the residual is NOT from P3.1-P3.5 (which add <1%), but from structural differences in the lab skeleton / C# I/O layer. Updated section 5 table with measured impact column and corrected P3.4/P3.5 to "already in transpiler baseline".
 
 #### 46.5 Document LOC + proof cost actuals
 
