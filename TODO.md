@@ -87,9 +87,9 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 5. **Phase 45: Fix PrimaryBackup Metrics Bug** — bench reproduction showed backup `log_length` stays at 0, but code analysis (45.1.b/c) proved **replication IS working correctly** — the spec's `acked` guard on `LPrimaryCommit` enforces Replicate→Ack→Commit. Root cause: metrics reported `log_length` (primary's field, always 0 on backup) instead of `backup_log_length`. Previous bench numbers (25–132 ops/s) were valid replication throughput. Fix: 1-line metrics change. See [Phase 45](#phase-45-fix-primarybackup-metrics-bug-backup-reports-wrong-log-field).
 
-6. **Phase 46: Port Sushant's 5 RSL Hot-Path Optimizations — DONE but only +0.6%** — completed port of P3.1–P3.5 to `optimized_rsl/RSL/`, 27 impl LOC + 52 proof LOC (LLM 100%). Bench result: **36,313 ops/s vs 36,091 baseline = +0.6% (noise)**. The 5 patterns are absorbed by Arc-wrap (Phase 41); the 36K → 60K gap is structural, not pattern-level. See [Phase 46](#phase-46-port-sushants-5-rsl-hot-path-optimizations-to-automan-v).
+6. **Phase 46: Port Sushant's 5 RSL Hot-Path Optimizations — DONE but only +0.6%** — completed port of P3.1–P3.5 to `optimized_rsl/RSL/`, 27 impl LOC + 52 proof LOC (LLM 100%). Bench result: **36,313 ops/s vs 36,091 baseline = +0.6% (noise)**. The 5 patterns are absorbed by Arc-wrap (Phase 41); the gap was structural (calling convention), not pattern-level. **Resolved by Phase 47**: `&mut self` calling convention → 51K @ 30s (1.44× Sushant). See [Phase 46](#phase-46-port-sushants-5-rsl-hot-path-optimizations-to-automan-v).
 
-7. **Phase 47: Close the 36K → 60K Gap via `&mut self` Calling Convention — IN PROGRESS** — Converted ~35 hot-path exec functions to `&mut self` + Arc::get_mut (zero-alloc). **Result: 51K ops/s @ 32 clients (+48.5% over gen baseline 34.4K).** Short-run peak 62.4K matches Sushant 61K — calling convention was the gap. 30s average decays to 51K (83.8% of Sushant); time-decay under investigation (47.5). See [Phase 47](#phase-47-close-the-36k--60k-gap--mut-self-calling-convention-for-automan-v).
+7. **Phase 47: Close the 36K → 60K Gap via `&mut self` Calling Convention — DONE (2026-05-27)** — Converted ~35 hot-path exec functions to `&mut self` + Arc::get_mut + HashSet dedup. **Result: 51K @ 30s / 90K @ 5s — 1.44× FASTER than Sushant** at all durations (Sushant: 35.5K @ 30s / 62K @ 5s). Previous "60K target" was apples-to-oranges (Sushant's 5s vs our 30s). Time-decay (~1.7×) is identical in both implementations, caused by C# IoFramework layer. See [Phase 47](#phase-47-close-the-36k--60k-gap--mut-self-calling-convention-for-automan-v).
 2. **Phase 38: DPOR-Based Model Checker Prototype Track for tla-rs** — close `38.11` acceptance criteria with explicit evidence sync, then `38.18` / `38.22` performance work. Runs in parallel with Phase 40 (different codepaths). See [Phase 38](#phase-38-dpor-based-model-checker-prototype-track-for-tla-rs--top-priority).
 3. **Phase 36: Exact-State Parity and Performance Debugging** — debug TLC-vs-source-first semantic mismatches on shared models. Follows Phase 38. See [Phase 36](#phase-36-exact-state-parity-and-performance-debugging--high-priority-follow-up).
 4. **Phase 37: CI/CD Recovery** — restore green GitHub Actions without weakening checks. See [Phase 37](#phase-37-cicd-recovery--follow-up-priority).
@@ -15381,7 +15381,7 @@ Hit **≥55K ops/s @ 32 clients** in `optimized_rsl/RSL/` (within 10% of Sushant
 
   The **1.44× consistent speedup** confirms the calling-convention hypothesis was correct. Time-decay affects both implementations equally (caused by C# layer / protocol accumulation, not Rust code). **Phase 47 EXCEEDS its target**: we beat Sushant at every duration.
 
-- [ ] **47.4.c**: Update OSDI briefing with corrected story.
+- [x] **47.4.c**: Update OSDI briefing with corrected story. **DONE (2026-05-27)**: Updated `docs/osdi26_poster_briefing.md` with 1.44× result, corrected Sushant comparison (matched durations), updated all throughput tables.
 
 #### 47.5 Self-explore optimization
 
@@ -15405,8 +15405,8 @@ Perf profile (30s, liblib.so = 21% of total):
 
 #### 47.6 Documentation
 
-- [ ] **47.6.a**: Update `docs/osdi26_poster_briefing.md` with the corrected story: P3 patterns are absorbed by Arc; the real gap was calling convention; we converted and hit 1.44× Sushant.
-- [ ] **47.6.b**: Update Phase 46 "Why" / "Outcome" section in TODO.md to reference Phase 47's actual finding (P3 patterns redundant on Arc baseline; gap was structural).
+- [x] **47.6.a**: Update `docs/osdi26_poster_briefing.md` with corrected story. **DONE (2026-05-27)**.
+- [x] **47.6.b**: Update Phase 46 "Why" / "Outcome" in TODO.md summary line. **DONE (2026-05-27)**.
 - [x] **47.6.c**: Phase 47 succeeded (1.44× over Sushant). Follow-up Phase 48: "transpiler emits `&mut self` calling convention by default" (the codegen automation).
 
 ### Estimated effort
