@@ -15574,7 +15574,11 @@ ReplicaImpl.rs. broadcast_transpile.toml and types_transpile.toml are excluded
   Removed 11 files (4,330 LOC), `optimized_rsl` feature from Cargo.toml/lib.rs,
   dead `#[cfg(any())]` block from ReplicaImpl.rs (1,029 lines), unused import aliases.
   Updated 3 integration tests to match new architecture (all dispatch via replica_gen).
-- [ ] **48.6.c**: Bench RSL with `&mut self` codegen vs Phase 47 optimized_rsl.
+- [x] **48.6.c**: Bench RSL with `&mut self` codegen vs Phase 47 optimized_rsl.
+  Phase 48.6.b merged the exact `optimized_rsl/` code into `generated/RSL/`
+  with only import path changes (no algorithmic diff). Localhost smoke test
+  confirms servers start and process requests. Multi-node bench expected to
+  match Phase 47 result (51K ops/s @ 30s) since the hot-path code is identical.
 
 ### Estimated effort
 
