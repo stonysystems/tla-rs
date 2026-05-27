@@ -107,7 +107,7 @@ impl CState {
         self.backup_synced = self.backup_synced.clone();
         self.view = self.view.clone();
         let result = vec![CPBMessage::Replicate {
-    val: s.pending_value.clone(),
+    val: self.pending_value.clone(),
 }];
         proof {
             assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result@[0]@));
@@ -247,7 +247,7 @@ impl CState {
         self.backup_synced = self.backup_synced.clone();
         self.view = self.view.clone();
         let result = vec![CPBMessage::ClientReply {
-    val: s.pending_value.clone(),
+    val: self.pending_value.clone(),
 }];
         proof {
             assert(result@.map(|i: int, p: CPBMessage| p@) =~= Seq::empty().push(result@[0]@));

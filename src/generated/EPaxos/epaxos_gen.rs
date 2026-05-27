@@ -6,7 +6,6 @@ use crate::generated::EPaxos::types_gen::*;
 use crate::protocol::EPaxos::epaxos::*;
 use crate::protocol::EPaxos::types::*;
 use std::collections::HashSet;
-use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -57,8 +56,8 @@ ensures
         is_leader: false,
         committed_count: 0u64,
         executed_count: 0u64,
-        preaccept_senders: Arc::new(HashSet::new()),
-        accept_senders: Arc::new(HashSet::new()),
+        preaccept_senders: HashSet::new(),
+        accept_senders: HashSet::new(),
         has_conflict: false,
         max_resp_seq: 0u64,
         phase: CInstancePhase::Empty,
@@ -92,15 +91,15 @@ impl CState {
             self.is_leader = true;
             self.committed_count = self.committed_count.clone();
             self.executed_count = self.executed_count.clone();
-            self.preaccept_senders = Arc::new(__preaccept_senders);
-            self.accept_senders = Arc::new(HashSet::new());
+            self.preaccept_senders = __preaccept_senders;
+            self.accept_senders = HashSet::new();
             self.has_conflict = false;
             self.max_resp_seq = 0u64;
             self.phase = CInstancePhase::PreAccepted;
             vec![CEPaxosMessage::PreAccept {
-    ballot: s.ballot.clone(),
+    ballot: self.ballot.clone(),
     cmd: (*value),
-    seq: (s.committed_count + 1),
+    seq: (self.committed_count + 1),
 }]
         };
         proof {
@@ -131,8 +130,8 @@ impl CState {
         self.is_leader = self.is_leader.clone();
         self.committed_count = self.committed_count.clone();
         self.executed_count = self.executed_count.clone();
-        self.preaccept_senders = self.preaccept_senders.clone();
-        self.accept_senders = self.accept_senders.clone();
+        self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
+        self.accept_senders = clone_hashset_u64(&self.accept_senders);
         self.has_conflict = self.has_conflict.clone();
         self.max_resp_seq = self.max_resp_seq.clone();
         let result = vec![CEPaxosMessage::PreAcceptOk {
@@ -168,7 +167,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.preaccept_senders = Arc::new(__preaccept_senders); self.has_conflict = if pa_conflict {
+            { self.preaccept_senders = __preaccept_senders; self.has_conflict = if pa_conflict {
                 true
             } else {
                 self.has_conflict.clone()
@@ -184,7 +183,7 @@ impl CState {
                 (*pa_seq)
             } else {
                 self.seq.clone()
-            }; self.ballot = self.ballot.clone(); self.phase = self.phase.clone(); self.cmd = self.cmd.clone(); self.is_leader = self.is_leader.clone(); self.committed_count = self.committed_count.clone(); self.executed_count = self.executed_count.clone(); self.accept_senders = self.accept_senders.clone(); vec![] }
+            }; self.ballot = self.ballot.clone(); self.phase = self.phase.clone(); self.cmd = self.cmd.clone(); self.is_leader = self.is_leader.clone(); self.committed_count = self.committed_count.clone(); self.executed_count = self.executed_count.clone(); self.accept_senders = clone_hashset_u64(&self.accept_senders); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -218,14 +217,14 @@ impl CState {
         self.is_leader = self.is_leader.clone();
         self.committed_count = (self.committed_count + 1);
         self.executed_count = self.executed_count.clone();
-        self.preaccept_senders = self.preaccept_senders.clone();
-        self.accept_senders = self.accept_senders.clone();
+        self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
+        self.accept_senders = clone_hashset_u64(&self.accept_senders);
         self.has_conflict = self.has_conflict.clone();
         self.max_resp_seq = self.max_resp_seq.clone();
         self.phase = CInstancePhase::Committed;
         let result = vec![CEPaxosMessage::Commit {
-    cmd: s.cmd.clone(),
-    seq: s.seq.clone(),
+    cmd: self.cmd.clone(),
+    seq: self.seq.clone(),
 }];
         proof {
             assert(result@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result@[0]@));
@@ -259,15 +258,15 @@ impl CState {
             self.is_leader = self.is_leader.clone();
             self.committed_count = self.committed_count.clone();
             self.executed_count = self.executed_count.clone();
-            self.preaccept_senders = self.preaccept_senders.clone();
-            self.accept_senders = Arc::new(__accept_senders);
+            self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
+            self.accept_senders = __accept_senders;
             self.has_conflict = self.has_conflict.clone();
             self.max_resp_seq = self.max_resp_seq.clone();
             self.phase = CInstancePhase::Accepted;
             vec![CEPaxosMessage::Accept {
-    ballot: s.ballot.clone(),
-    cmd: s.cmd.clone(),
-    seq: s.seq.clone(),
+    ballot: self.ballot.clone(),
+    cmd: self.cmd.clone(),
+    seq: self.seq.clone(),
 }]
         };
         proof {
@@ -298,8 +297,8 @@ impl CState {
         self.is_leader = self.is_leader.clone();
         self.committed_count = self.committed_count.clone();
         self.executed_count = self.executed_count.clone();
-        self.preaccept_senders = self.preaccept_senders.clone();
-        self.accept_senders = self.accept_senders.clone();
+        self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
+        self.accept_senders = clone_hashset_u64(&self.accept_senders);
         self.has_conflict = self.has_conflict.clone();
         self.max_resp_seq = self.max_resp_seq.clone();
         let result = vec![CEPaxosMessage::AcceptOk {
@@ -332,7 +331,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.accept_senders = Arc::new(__accept_senders); self.ballot = self.ballot.clone(); self.phase = self.phase.clone(); self.cmd = self.cmd.clone(); self.seq = self.seq.clone(); self.dep_count = self.dep_count.clone(); self.is_leader = self.is_leader.clone(); self.committed_count = self.committed_count.clone(); self.executed_count = self.executed_count.clone(); self.preaccept_senders = self.preaccept_senders.clone(); self.has_conflict = self.has_conflict.clone(); self.max_resp_seq = self.max_resp_seq.clone(); vec![] }
+            { self.accept_senders = __accept_senders; self.ballot = self.ballot.clone(); self.phase = self.phase.clone(); self.cmd = self.cmd.clone(); self.seq = self.seq.clone(); self.dep_count = self.dep_count.clone(); self.is_leader = self.is_leader.clone(); self.committed_count = self.committed_count.clone(); self.executed_count = self.executed_count.clone(); self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders); self.has_conflict = self.has_conflict.clone(); self.max_resp_seq = self.max_resp_seq.clone(); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -365,14 +364,14 @@ impl CState {
         self.is_leader = self.is_leader.clone();
         self.committed_count = (self.committed_count + 1);
         self.executed_count = self.executed_count.clone();
-        self.preaccept_senders = self.preaccept_senders.clone();
-        self.accept_senders = self.accept_senders.clone();
+        self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
+        self.accept_senders = clone_hashset_u64(&self.accept_senders);
         self.has_conflict = self.has_conflict.clone();
         self.max_resp_seq = self.max_resp_seq.clone();
         self.phase = CInstancePhase::Committed;
         let result = vec![CEPaxosMessage::Commit {
-    cmd: s.cmd.clone(),
-    seq: s.seq.clone(),
+    cmd: self.cmd.clone(),
+    seq: self.seq.clone(),
 }];
         proof {
             assert(result@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result@[0]@));
@@ -401,13 +400,13 @@ impl CState {
         self.is_leader = self.is_leader.clone();
         self.committed_count = self.committed_count.clone();
         self.executed_count = (self.executed_count + 1);
-        self.preaccept_senders = self.preaccept_senders.clone();
-        self.accept_senders = self.accept_senders.clone();
+        self.preaccept_senders = clone_hashset_u64(&self.preaccept_senders);
+        self.accept_senders = clone_hashset_u64(&self.accept_senders);
         self.has_conflict = self.has_conflict.clone();
         self.max_resp_seq = self.max_resp_seq.clone();
         self.phase = CInstancePhase::Executed;
         let result = vec![CEPaxosMessage::ClientReply {
-    cmd: s.cmd.clone(),
+    cmd: self.cmd.clone(),
 }];
         proof {
             assert(result@.map(|i: int, p: CEPaxosMessage| p@) =~= Seq::empty().push(result@[0]@));
@@ -439,15 +438,15 @@ impl CState {
             self.is_leader = true;
             self.committed_count = self.committed_count.clone();
             self.executed_count = self.executed_count.clone();
-            self.preaccept_senders = Arc::new(__preaccept_senders);
-            self.accept_senders = Arc::new(HashSet::new());
+            self.preaccept_senders = __preaccept_senders;
+            self.accept_senders = HashSet::new();
             self.has_conflict = false;
             self.max_resp_seq = 0u64;
             self.phase = CInstancePhase::PreAccepted;
             vec![CEPaxosMessage::PreAccept {
     ballot: (*new_ballot),
-    cmd: s.cmd.clone(),
-    seq: s.seq.clone(),
+    cmd: self.cmd.clone(),
+    seq: self.seq.clone(),
 }]
         };
         proof {
@@ -482,8 +481,8 @@ impl CState {
             self.is_leader = false;
             self.committed_count = self.committed_count.clone();
             self.executed_count = self.executed_count.clone();
-            self.preaccept_senders = Arc::new(HashSet::new());
-            self.accept_senders = Arc::new(HashSet::new());
+            self.preaccept_senders = HashSet::new();
+            self.accept_senders = HashSet::new();
             self.has_conflict = false;
             self.max_resp_seq = 0u64;
             self.phase = CInstancePhase::Empty;

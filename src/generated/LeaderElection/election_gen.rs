@@ -6,7 +6,6 @@ use crate::generated::LeaderElection::types_gen::*;
 use crate::protocol::LeaderElection::election::*;
 use crate::protocol::LeaderElection::types::*;
 use std::collections::HashSet;
-use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -71,10 +70,10 @@ ensures
     LInit(result@, c@),
 {
     let result = CState {
-        electing: Arc::new(HashSet::new()),
+        electing: HashSet::new(),
         has_leader: false,
         leader: 0u64,
-        alive: Arc::new(clone_hashset_u64(&c.nodes)),
+        alive: clone_hashset_u64(&c.nodes),
         has_highest: false,
         highest_heard: 0u64,
         waiting_answer: false,
@@ -103,12 +102,12 @@ impl CState {
         let mut __electing = clone_hashset_u64(&self.electing);
         __electing.insert(node.clone());
         let result = {
-            self.electing = Arc::new(__electing);
+            self.electing = __electing;
             self.waiting_answer = true;
             self.waiting_node = (*node);
             self.has_leader = self.has_leader.clone();
             self.leader = self.leader.clone();
-            self.alive = self.alive.clone();
+            self.alive = clone_hashset_u64(&self.alive);
             self.has_highest = self.has_highest.clone();
             self.highest_heard = self.highest_heard.clone();
             vec![CElectionMessage::Election {
@@ -138,12 +137,12 @@ impl CState {
         let mut __electing = clone_hashset_u64(&self.electing);
         __electing.insert(node.clone());
         let result = {
-            self.electing = Arc::new(__electing);
+            self.electing = __electing;
             self.has_leader = false;
             self.leader = 0u64;
             self.waiting_answer = true;
             self.waiting_node = (*node);
-            self.alive = self.alive.clone();
+            self.alive = clone_hashset_u64(&self.alive);
             self.has_highest = self.has_highest.clone();
             self.highest_heard = self.highest_heard.clone();
             vec![CElectionMessage::Election {
@@ -174,7 +173,7 @@ impl CState {
         let mut __electing = clone_hashset_u64(&self.electing);
         __electing.insert(node.clone());
         let result = {
-            self.electing = Arc::new(__electing);
+            self.electing = __electing;
             self.has_highest = true;
             self.highest_heard = if (!self.has_highest || ((*node) > self.highest_heard)) {
                 (*node)
@@ -183,7 +182,7 @@ impl CState {
             };
             self.has_leader = self.has_leader.clone();
             self.leader = self.leader.clone();
-            self.alive = self.alive.clone();
+            self.alive = clone_hashset_u64(&self.alive);
             self.waiting_answer = self.waiting_answer.clone();
             self.waiting_node = self.waiting_node.clone();
             vec![CElectionMessage::Answer {
@@ -218,10 +217,10 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.waiting_answer = false; self.waiting_node = 0u64; self.electing = Arc::new(__electing); self.has_leader = self.has_leader.clone(); self.leader = self.leader.clone(); self.alive = self.alive.clone(); self.has_highest = self.has_highest.clone(); self.highest_heard = self.highest_heard.clone(); vec![] }
+            { self.waiting_answer = false; self.waiting_node = 0u64; self.electing = __electing; self.has_leader = self.has_leader.clone(); self.leader = self.leader.clone(); self.alive = clone_hashset_u64(&self.alive); self.has_highest = self.has_highest.clone(); self.highest_heard = self.highest_heard.clone(); vec![] }
         };
         proof {
-            lemma_set_map_remove_commute(s.electing@, (*node));
+            lemma_set_map_remove_commute(self.electing@, (*node));
             lemma_empty_seq_map();
             assert(result@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
         }
@@ -249,10 +248,10 @@ impl CState {
         let result = {
             self.has_leader = true;
             self.leader = (*node);
-            self.electing = Arc::new(__electing);
+            self.electing = __electing;
             self.waiting_answer = false;
             self.waiting_node = 0u64;
-            self.alive = self.alive.clone();
+            self.alive = clone_hashset_u64(&self.alive);
             self.has_highest = self.has_highest.clone();
             self.highest_heard = self.highest_heard.clone();
             vec![CElectionMessage::Coordinator {
@@ -260,7 +259,7 @@ impl CState {
 }]
         };
         proof {
-            lemma_set_map_remove_commute(s.electing@, (*node));
+            lemma_set_map_remove_commute(self.electing@, (*node));
             assert(result@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty().push(result@[0]@));
         }
         result
@@ -285,10 +284,10 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.has_leader = true; self.leader = (*leader); self.electing = Arc::new(__electing); self.alive = self.alive.clone(); self.has_highest = self.has_highest.clone(); self.highest_heard = self.highest_heard.clone(); self.waiting_answer = self.waiting_answer.clone(); self.waiting_node = self.waiting_node.clone(); vec![] }
+            { self.has_leader = true; self.leader = (*leader); self.electing = __electing; self.alive = clone_hashset_u64(&self.alive); self.has_highest = self.has_highest.clone(); self.highest_heard = self.highest_heard.clone(); self.waiting_answer = self.waiting_answer.clone(); self.waiting_node = self.waiting_node.clone(); vec![] }
         };
         proof {
-            lemma_set_map_remove_commute(s.electing@, (*node));
+            lemma_set_map_remove_commute(self.electing@, (*node));
             lemma_empty_seq_map();
             assert(result@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
         }
@@ -316,7 +315,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.alive = Arc::new(__alive); self.electing = Arc::new(__electing); self.has_leader = if (self.has_leader && (self.leader == (*node))) {
+            { self.alive = __alive; self.electing = __electing; self.has_leader = if (self.has_leader && (self.leader == (*node))) {
                 false
             } else {
                 self.has_leader.clone()
@@ -335,8 +334,8 @@ impl CState {
             }; self.has_highest = self.has_highest.clone(); self.highest_heard = self.highest_heard.clone(); vec![] }
         };
         proof {
-            lemma_set_map_remove_commute(s.alive@, (*node));
-            lemma_set_map_remove_commute(s.electing@, (*node));
+            lemma_set_map_remove_commute(self.alive@, (*node));
+            lemma_set_map_remove_commute(self.electing@, (*node));
             lemma_empty_seq_map();
             assert(result@.map(|i: int, p: CElectionMessage| p@) =~= Seq::empty());
         }

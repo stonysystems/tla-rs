@@ -157,6 +157,10 @@ pub struct TranslatorConfig {
     /// Exec type names whose functions should be emitted as `impl Type { &mut self }` methods.
     /// When the first input param's exec type matches, the function becomes a method.
     pub mut_self_types: HashSet<String>,
+    /// Exec names of functions that will be emitted as `&mut self` methods.
+    /// Pre-populated by the caller so that internal dispatch calls can be
+    /// converted from `CFoo(var, ...)` to `var.CFoo(...)` during body generation.
+    pub method_names: HashSet<String>,
 }
 
 impl Default for TranslatorConfig {
@@ -201,6 +205,7 @@ impl Default for TranslatorConfig {
             proven_functions: HashSet::new(),
             arc_wrap_fields: HashMap::new(),
             mut_self_types: HashSet::new(),
+            method_names: HashSet::new(),
         }
     }
 }
@@ -1444,6 +1449,27 @@ impl Translator {
             .filter(|(_, m)| **m == ParameterMode::Input)
             .map(|(p, _)| p.ty.clone())
             .collect();
+
+        // If mut_self_types is configured, check if this function should become a method
+        if func.is_functionalizable
+            && !func.spec_fn.params.is_empty()
+            && !self.config.mut_self_types.is_empty()
+        {
+            let first_param_type = self.translate_type(&func.spec_fn.params[0].ty);
+            let type_name = match &first_param_type {
+                ExecType::Reference(inner, _) => match inner.as_ref() {
+                    ExecType::Named(n) => Some(n.clone()),
+                    _ => None,
+                },
+                ExecType::Named(n) => Some(n.clone()),
+                _ => None,
+            };
+            if let Some(tn) = type_name {
+                if self.config.mut_self_types.contains(&tn) {
+                    self.config.method_names.insert(exec_name.clone());
+                }
+            }
+        }
 
         self.function_registry.insert(
             spec_name.clone(),
@@ -2895,6 +2921,9 @@ impl Translator {
                 } else if name.starts_with(&format!("{}.", from)) {
                     // Handle s.field -> self.field patterns in variable names
                     ExecExpr::Var(format!("{}.{}", to, &name[from.len() + 1..]))
+                } else if name.contains(from) {
+                    // Var may contain arbitrary code (proof block elements) — do text rename
+                    ExecExpr::Var(Self::rename_in_text(name, from, to))
                 } else {
                     expr.clone()
                 }
@@ -2934,13 +2963,31 @@ impl Translator {
                 op: op.clone(),
                 expr: Box::new(Self::rename_var_in_expr(inner, from, to)),
             },
-            ExecExpr::Call { func, args } => ExecExpr::Call {
-                func: func.clone(),
-                args: args
+            ExecExpr::Call { func, args } => {
+                let renamed_args: Vec<ExecExpr> = args
                     .iter()
                     .map(|a| Self::rename_var_in_expr(a, from, to))
-                    .collect(),
-            },
+                    .collect();
+                // When renaming to "self", convert free-function calls whose first arg
+                // is self/&self into method calls (the function is now a &mut self method)
+                if to == "self" && !renamed_args.is_empty() {
+                    let first_is_self = matches!(&renamed_args[0], ExecExpr::Var(n) if n == "self")
+                        || matches!(&renamed_args[0],
+                            ExecExpr::Unary { op, expr } if op == "&"
+                                && matches!(expr.as_ref(), ExecExpr::Var(n) if n == "self"));
+                    if first_is_self {
+                        return ExecExpr::MethodCall {
+                            receiver: Box::new(ExecExpr::Var("self".to_string())),
+                            method: func.clone(),
+                            args: renamed_args[1..].to_vec(),
+                        };
+                    }
+                }
+                ExecExpr::Call {
+                    func: func.clone(),
+                    args: renamed_args,
+                }
+            }
             ExecExpr::MethodCall {
                 receiver,
                 method,
@@ -2991,7 +3038,268 @@ impl Translator {
                     .map(|(pat, body)| (pat.clone(), Self::rename_var_in_expr(body, from, to)))
                     .collect(),
             },
-            // Leaf nodes that don't contain variable references
+            ExecExpr::ProofBlock { stmts } => ExecExpr::ProofBlock {
+                stmts: stmts
+                    .iter()
+                    .map(|s| Self::rename_var_in_expr(s, from, to))
+                    .collect(),
+            },
+            ExecExpr::Assume(inner) => {
+                ExecExpr::Assume(Box::new(Self::rename_var_in_expr(inner, from, to)))
+            }
+            ExecExpr::Assert(inner) => {
+                ExecExpr::Assert(Box::new(Self::rename_var_in_expr(inner, from, to)))
+            }
+            ExecExpr::GhostVar {
+                name,
+                ty,
+                init,
+                mutable,
+            } => ExecExpr::GhostVar {
+                name: name.clone(),
+                ty: ty.clone(),
+                init: Box::new(Self::rename_var_in_expr(init, from, to)),
+                mutable: *mutable,
+            },
+            ExecExpr::WhileLoop {
+                cond,
+                invariants,
+                decreases,
+                body,
+            } => {
+                let from_at = format!("{}@", from);
+                let to_at = format!("{}@", to);
+                let from_dot = format!("{}.", from);
+                let to_dot = format!("{}.", to);
+                ExecExpr::WhileLoop {
+                    cond: Box::new(Self::rename_var_in_expr(cond, from, to)),
+                    invariants: invariants
+                        .iter()
+                        .map(|inv| inv.replace(&from_at, &to_at).replace(&from_dot, &to_dot))
+                        .collect(),
+                    decreases: decreases.as_ref().map(|d| {
+                        d.replace(&from_at, &to_at).replace(&from_dot, &to_dot)
+                    }),
+                    body: Box::new(Self::rename_var_in_expr(body, from, to)),
+                }
+            }
+            ExecExpr::ForInIter {
+                var,
+                iter_name,
+                iter_source,
+                invariants,
+                body,
+            } => {
+                let from_at = format!("{}@", from);
+                let to_at = format!("{}@", to);
+                let from_dot = format!("{}.", from);
+                let to_dot = format!("{}.", to);
+                ExecExpr::ForInIter {
+                    var: var.clone(),
+                    iter_name: iter_name.clone(),
+                    iter_source: Box::new(Self::rename_var_in_expr(iter_source, from, to)),
+                    invariants: invariants
+                        .iter()
+                        .map(|inv| inv.replace(&from_at, &to_at).replace(&from_dot, &to_dot))
+                        .collect(),
+                    body: Box::new(Self::rename_var_in_expr(body, from, to)),
+                }
+            }
+            ExecExpr::Range { start, end } => ExecExpr::Range {
+                start: Box::new(Self::rename_var_in_expr(start, from, to)),
+                end: Box::new(Self::rename_var_in_expr(end, from, to)),
+            },
+            ExecExpr::Closure { params, body } => ExecExpr::Closure {
+                params: params.clone(),
+                body: Box::new(Self::rename_var_in_expr(body, from, to)),
+            },
+            ExecExpr::MapUpdateWithInsert {
+                source,
+                key_var,
+                filter,
+                new_key,
+            } => ExecExpr::MapUpdateWithInsert {
+                source: Box::new(Self::rename_var_in_expr(source, from, to)),
+                key_var: key_var.clone(),
+                filter: Box::new(Self::rename_var_in_expr(filter, from, to)),
+                new_key: Box::new(Self::rename_var_in_expr(new_key, from, to)),
+            },
+            ExecExpr::Matches {
+                expr: inner,
+                pattern,
+                is_struct_variant,
+            } => ExecExpr::Matches {
+                expr: Box::new(Self::rename_var_in_expr(inner, from, to)),
+                pattern: pattern.clone(),
+                is_struct_variant: *is_struct_variant,
+            },
+            ExecExpr::VecLit(elems) => ExecExpr::VecLit(
+                elems
+                    .iter()
+                    .map(|e| Self::rename_var_in_expr(e, from, to))
+                    .collect(),
+            ),
+            // String-based nodes: do text replacement for receiver name references
+            ExecExpr::Literal(text) => {
+                ExecExpr::Literal(Self::rename_in_text(text, from, to))
+            }
+            ExecExpr::Comment(text) => {
+                ExecExpr::Comment(Self::rename_in_text(text, from, to))
+            }
+            // True leaf nodes: BroadcastUse, Break
+            _ => expr.clone(),
+        }
+    }
+
+    /// Replace variable name references in raw text strings (proof blocks, literals).
+    /// Matches `from` at word boundaries (not preceded/followed by alphanumeric or '_').
+    /// Handles `from@`, `from.`, `from)`, etc. naturally via boundary detection.
+    fn rename_in_text(text: &str, from: &str, to: &str) -> String {
+        let from_bytes = from.as_bytes();
+        let bytes = text.as_bytes();
+        let mut out = String::with_capacity(text.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if i + from_bytes.len() <= bytes.len()
+                && &bytes[i..i + from_bytes.len()] == from_bytes
+            {
+                // Check word boundary before
+                let before_ok = i == 0 || {
+                    let c = bytes[i - 1] as char;
+                    !c.is_alphanumeric() && c != '_'
+                };
+                // Check word boundary after (allow @, ., etc. — just not identifier chars)
+                let after_ok = i + from_bytes.len() >= bytes.len() || {
+                    let c = bytes[i + from_bytes.len()] as char;
+                    !c.is_alphanumeric() && c != '_'
+                };
+                if before_ok && after_ok {
+                    out.push_str(to);
+                    i += from_bytes.len();
+                    continue;
+                }
+            }
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+        out
+    }
+
+    /// Convert free-function calls to method calls when the function is a known
+    /// `&mut self` method and the first argument is a variable (or &variable).
+    /// E.g. `CGrantVote(&s_mid, c, ...)` → `s_mid.CGrantVote(c, ...)`
+    fn convert_calls_to_methods(expr: &ExecExpr, method_names: &HashSet<String>) -> ExecExpr {
+        match expr {
+            ExecExpr::Call { func, args } if method_names.contains(func) && !args.is_empty() => {
+                let renamed_args: Vec<ExecExpr> = args
+                    .iter()
+                    .map(|a| Self::convert_calls_to_methods(a, method_names))
+                    .collect();
+                // Extract receiver: unwrap &var → var, or use var directly
+                let receiver = match &renamed_args[0] {
+                    ExecExpr::Unary { op, expr } if op == "&" => (**expr).clone(),
+                    other => other.clone(),
+                };
+                ExecExpr::MethodCall {
+                    receiver: Box::new(receiver),
+                    method: func.clone(),
+                    args: renamed_args[1..].to_vec(),
+                }
+            }
+            // Recurse into all compound variants
+            ExecExpr::Call { func, args } => ExecExpr::Call {
+                func: func.clone(),
+                args: args.iter().map(|a| Self::convert_calls_to_methods(a, method_names)).collect(),
+            },
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts.iter().map(|s| Self::convert_calls_to_methods(s, method_names)).collect(),
+            ),
+            ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
+                pattern: pattern.clone(),
+                ty: ty.clone(),
+                value: Box::new(Self::convert_calls_to_methods(value, method_names)),
+            },
+            ExecExpr::If { cond, then_branch, else_branch } => ExecExpr::If {
+                cond: Box::new(Self::convert_calls_to_methods(cond, method_names)),
+                then_branch: Box::new(Self::convert_calls_to_methods(then_branch, method_names)),
+                else_branch: else_branch.as_ref().map(|e| Box::new(Self::convert_calls_to_methods(e, method_names))),
+            },
+            ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
+                lhs: Box::new(Self::convert_calls_to_methods(lhs, method_names)),
+                op: op.clone(),
+                rhs: Box::new(Self::convert_calls_to_methods(rhs, method_names)),
+            },
+            ExecExpr::Unary { op, expr: inner } => ExecExpr::Unary {
+                op: op.clone(),
+                expr: Box::new(Self::convert_calls_to_methods(inner, method_names)),
+            },
+            ExecExpr::MethodCall { receiver, method, args } => ExecExpr::MethodCall {
+                receiver: Box::new(Self::convert_calls_to_methods(receiver, method_names)),
+                method: method.clone(),
+                args: args.iter().map(|a| Self::convert_calls_to_methods(a, method_names)).collect(),
+            },
+            ExecExpr::Struct { name, fields } => ExecExpr::Struct {
+                name: name.clone(),
+                fields: fields.iter().map(|(n, v)| (n.clone(), Self::convert_calls_to_methods(v, method_names))).collect(),
+            },
+            ExecExpr::StructUpdate { name, base, fields } => ExecExpr::StructUpdate {
+                name: name.clone(),
+                base: Box::new(Self::convert_calls_to_methods(base, method_names)),
+                fields: fields.iter().map(|(n, v)| (n.clone(), Self::convert_calls_to_methods(v, method_names))).collect(),
+            },
+            ExecExpr::Tuple(elems) => ExecExpr::Tuple(
+                elems.iter().map(|e| Self::convert_calls_to_methods(e, method_names)).collect(),
+            ),
+            ExecExpr::Return(inner) => ExecExpr::Return(Box::new(Self::convert_calls_to_methods(inner, method_names))),
+            ExecExpr::Clone(inner) => ExecExpr::Clone(Box::new(Self::convert_calls_to_methods(inner, method_names))),
+            ExecExpr::Cast(inner, ty) => ExecExpr::Cast(
+                Box::new(Self::convert_calls_to_methods(inner, method_names)),
+                ty.clone(),
+            ),
+            ExecExpr::Field(base, field) => ExecExpr::Field(
+                Box::new(Self::convert_calls_to_methods(base, method_names)),
+                field.clone(),
+            ),
+            ExecExpr::Match { scrutinee, arms } => ExecExpr::Match {
+                scrutinee: Box::new(Self::convert_calls_to_methods(scrutinee, method_names)),
+                arms: arms.iter().map(|(pat, body)| (pat.clone(), Self::convert_calls_to_methods(body, method_names))).collect(),
+            },
+            ExecExpr::ProofBlock { stmts } => ExecExpr::ProofBlock {
+                stmts: stmts.iter().map(|s| Self::convert_calls_to_methods(s, method_names)).collect(),
+            },
+            ExecExpr::Assume(inner) => ExecExpr::Assume(Box::new(Self::convert_calls_to_methods(inner, method_names))),
+            ExecExpr::Assert(inner) => ExecExpr::Assert(Box::new(Self::convert_calls_to_methods(inner, method_names))),
+            ExecExpr::WhileLoop { cond, invariants, decreases, body } => ExecExpr::WhileLoop {
+                cond: Box::new(Self::convert_calls_to_methods(cond, method_names)),
+                invariants: invariants.clone(),
+                decreases: decreases.clone(),
+                body: Box::new(Self::convert_calls_to_methods(body, method_names)),
+            },
+            ExecExpr::ForInIter { var, iter_name, iter_source, invariants, body } => ExecExpr::ForInIter {
+                var: var.clone(),
+                iter_name: iter_name.clone(),
+                iter_source: Box::new(Self::convert_calls_to_methods(iter_source, method_names)),
+                invariants: invariants.clone(),
+                body: Box::new(Self::convert_calls_to_methods(body, method_names)),
+            },
+            ExecExpr::VecLit(elems) => ExecExpr::VecLit(
+                elems.iter().map(|e| Self::convert_calls_to_methods(e, method_names)).collect(),
+            ),
+            ExecExpr::Closure { params, body } => ExecExpr::Closure {
+                params: params.clone(),
+                body: Box::new(Self::convert_calls_to_methods(body, method_names)),
+            },
+            ExecExpr::Range { start, end } => ExecExpr::Range {
+                start: Box::new(Self::convert_calls_to_methods(start, method_names)),
+                end: Box::new(Self::convert_calls_to_methods(end, method_names)),
+            },
+            ExecExpr::GhostVar { name, ty, init, mutable } => ExecExpr::GhostVar {
+                name: name.clone(),
+                ty: ty.clone(),
+                init: Box::new(Self::convert_calls_to_methods(init, method_names)),
+                mutable: *mutable,
+            },
+            // Leaf nodes: Var, Literal, Comment, Break, BroadcastUse, etc.
             _ => expr.clone(),
         }
     }
@@ -6654,7 +6962,10 @@ impl Translator {
         // For methods, rename receiver param references in the body to `self`
         let body = if is_method {
             let recv_name = &func.spec_fn.params[0].name;
-            Self::rename_var_in_expr(&body, recv_name, "self")
+            let body = Self::rename_var_in_expr(&body, recv_name, "self");
+            // Convert internal dispatch: CFoo(&var, ...) → var.CFoo(...)
+            // when CFoo is a known method on the same type
+            Self::convert_calls_to_methods(&body, &self.config.method_names)
         } else {
             body
         };
@@ -7634,7 +7945,7 @@ impl Translator {
 
     /// Translate spec name to exec name for function DEFINITIONS (L* -> C*)
     /// This never uses qualified paths - just simple name translation.
-    fn translate_definition_name(&self, spec_name: &str) -> String {
+    pub fn translate_definition_name(&self, spec_name: &str) -> String {
         // Check variant_remapping FIRST — it maps bare variant names to
         // fully-qualified exec enum paths (e.g., "OutstandingOpUnknown" ->
         // "COutstandingOperation::COutstandingOpUnknown"). This must precede
@@ -7876,7 +8187,7 @@ impl Translator {
     }
 
     /// Translate spec type to exec type
-    fn translate_type(&self, ty: &Type) -> ExecType {
+    pub fn translate_type(&self, ty: &Type) -> ExecType {
         match ty {
             Type::Named(path) => {
                 let name = path.last().unwrap_or("Unknown");

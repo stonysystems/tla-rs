@@ -6,7 +6,6 @@ use crate::generated::PBFT::types_gen::*;
 use crate::protocol::PBFT::pbft::*;
 use crate::protocol::PBFT::types::*;
 use std::collections::HashSet;
-use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -51,8 +50,8 @@ ensures
 {
     let result = CState {
         view: 0u64,
-        prepare_senders: Arc::new(HashSet::new()),
-        commit_senders: Arc::new(HashSet::new()),
+        prepare_senders: HashSet::new(),
+        commit_senders: HashSet::new(),
         seq_num: 0u64,
         is_primary: true,
         request_digest: 0u64,
@@ -87,8 +86,8 @@ impl CState {
         __prepare_senders.insert(c.node_id.clone());
         let result = {
             self.request_digest = (*digest);
-            self.prepare_senders = Arc::new(__prepare_senders);
-            self.commit_senders = Arc::new(HashSet::new());
+            self.prepare_senders = __prepare_senders;
+            self.commit_senders = HashSet::new();
             self.view = self.view.clone();
             self.seq_num = self.seq_num.clone();
             self.is_primary = self.is_primary.clone();
@@ -98,8 +97,8 @@ impl CState {
             self.high_watermark = self.high_watermark.clone();
             self.phase = CPhase::Prepare;
             vec![CPBFTMessage::PrePrepare {
-    view: s.view.clone(),
-    seq: s.seq_num.clone(),
+    view: self.view.clone(),
+    seq: self.seq_num.clone(),
     digest: (*digest),
 }]
         };
@@ -132,7 +131,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.request_digest = (*digest); self.prepare_senders = Arc::new(__prepare_senders); self.commit_senders = Arc::new(HashSet::new()); self.view = self.view.clone(); self.seq_num = (*seq); self.is_primary = self.is_primary.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); self.phase = CPhase::Prepare; vec![] }
+            { self.request_digest = (*digest); self.prepare_senders = __prepare_senders; self.commit_senders = HashSet::new(); self.view = self.view.clone(); self.seq_num = (*seq); self.is_primary = self.is_primary.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); self.phase = CPhase::Prepare; vec![] }
         };
         proof {
             lemma_empty_set_map();
@@ -163,7 +162,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.prepare_senders = Arc::new(__prepare_senders); self.phase = self.phase.clone(); self.view = self.view.clone(); self.commit_senders = self.commit_senders.clone(); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); vec![] }
+            { self.prepare_senders = __prepare_senders; self.phase = self.phase.clone(); self.view = self.view.clone(); self.commit_senders = clone_hashset_u64(&self.commit_senders); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -193,7 +192,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.commit_senders = Arc::new(__commit_senders); self.view = self.view.clone(); self.prepare_senders = self.prepare_senders.clone(); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); self.phase = CPhase::Commit; vec![] }
+            { self.commit_senders = __commit_senders; self.view = self.view.clone(); self.prepare_senders = clone_hashset_u64(&self.prepare_senders); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); self.phase = CPhase::Commit; vec![] }
         };
         proof {
             lemma_empty_set_map();
@@ -224,7 +223,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.commit_senders = Arc::new(__commit_senders); self.phase = self.phase.clone(); self.view = self.view.clone(); self.prepare_senders = self.prepare_senders.clone(); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); vec![] }
+            { self.commit_senders = __commit_senders; self.phase = self.phase.clone(); self.view = self.view.clone(); self.prepare_senders = clone_hashset_u64(&self.prepare_senders); self.seq_num = self.seq_num.clone(); self.is_primary = self.is_primary.clone(); self.request_digest = self.request_digest.clone(); self.checkpoint_seq = self.checkpoint_seq.clone(); self.checkpoint_digest = self.checkpoint_digest.clone(); self.low_watermark = self.low_watermark.clone(); self.high_watermark = self.high_watermark.clone(); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -250,8 +249,8 @@ impl CState {
     {
         let ghost old_self = *old(self);
         self.seq_num = (self.seq_num + 1);
-        self.prepare_senders = Arc::new(HashSet::new());
-        self.commit_senders = Arc::new(HashSet::new());
+        self.prepare_senders = HashSet::new();
+        self.commit_senders = HashSet::new();
         self.view = self.view.clone();
         self.is_primary = self.is_primary.clone();
         self.request_digest = self.request_digest.clone();
@@ -261,7 +260,7 @@ impl CState {
         self.high_watermark = self.high_watermark.clone();
         self.phase = CPhase::Replied;
         let result = vec![CPBFTMessage::ClientReply {
-    digest: s.request_digest.clone(),
+    digest: self.request_digest.clone(),
 }];
         proof {
             lemma_empty_set_map();
@@ -295,8 +294,8 @@ impl CState {
             self.high_watermark = (self.seq_num + c.checkpoint_interval);
             self.view = self.view.clone();
             self.phase = self.phase.clone();
-            self.prepare_senders = self.prepare_senders.clone();
-            self.commit_senders = self.commit_senders.clone();
+            self.prepare_senders = clone_hashset_u64(&self.prepare_senders);
+            self.commit_senders = clone_hashset_u64(&self.commit_senders);
             self.seq_num = self.seq_num.clone();
             self.is_primary = self.is_primary.clone();
             self.request_digest = self.request_digest.clone();
@@ -327,8 +326,8 @@ impl CState {
         }
         let result = {
             self.view = (self.view + 1);
-            self.prepare_senders = Arc::new(HashSet::new());
-            self.commit_senders = Arc::new(HashSet::new());
+            self.prepare_senders = HashSet::new();
+            self.commit_senders = HashSet::new();
             self.request_digest = 0u64;
             self.seq_num = self.seq_num.clone();
             self.is_primary = self.is_primary.clone();
@@ -364,8 +363,8 @@ impl CState {
             lemma_empty_seq_map();
         }
         let result = {
-            self.prepare_senders = Arc::new(HashSet::new());
-            self.commit_senders = Arc::new(HashSet::new());
+            self.prepare_senders = HashSet::new();
+            self.commit_senders = HashSet::new();
             self.request_digest = 0u64;
             self.view = self.view.clone();
             self.seq_num = self.seq_num.clone();

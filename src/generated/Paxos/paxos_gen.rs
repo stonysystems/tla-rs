@@ -6,7 +6,6 @@ use crate::generated::Paxos::types_gen::*;
 use crate::protocol::Paxos::paxos::*;
 use crate::protocol::Paxos::types::*;
 use std::collections::HashSet;
-use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -37,11 +36,11 @@ ensures
         accepted_bal: 0u64,
         accepted_val: 0u64,
         proposer_bal: 0u64,
-        promises_rcvd: Arc::new(HashSet::new()),
+        promises_rcvd: HashSet::new(),
         highest_accepted_bal: 0u64,
         highest_accepted_val: 0u64,
         proposed_val: 0u64,
-        accepts_rcvd: Arc::new(HashSet::new()),
+        accepts_rcvd: HashSet::new(),
         decided_val: 0u64,
         phase: CPhase::Idle,
     };
@@ -65,14 +64,14 @@ impl CState {
     {
         let ghost old_self = *old(self);
         self.proposer_bal = (*b);
-        self.promises_rcvd = Arc::new(HashSet::new());
+        self.promises_rcvd = HashSet::new();
         self.highest_accepted_bal = 0u64;
         self.highest_accepted_val = 0u64;
         self.proposed_val = self.proposed_val.clone();
         self.promised_bal = self.promised_bal.clone();
         self.accepted_bal = self.accepted_bal.clone();
         self.accepted_val = self.accepted_val.clone();
-        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         self.decided_val = self.decided_val.clone();
         let result = self.phase = CPhase::Phase1;
         proof {
@@ -99,11 +98,11 @@ impl CState {
         self.accepted_val = self.accepted_val.clone();
         self.proposer_bal = self.proposer_bal.clone();
         self.phase = self.phase.clone();
-        self.promises_rcvd = self.promises_rcvd.clone();
+        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
         self.highest_accepted_bal = self.highest_accepted_bal.clone();
         self.highest_accepted_val = self.highest_accepted_val.clone();
         self.proposed_val = self.proposed_val.clone();
-        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         self.decided_val = self.decided_val.clone()
 
     }
@@ -127,7 +126,7 @@ impl CState {
         }
         let mut __promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
         __promises_rcvd.insert(a.clone());
-        { self.promises_rcvd = Arc::new(__promises_rcvd); self.highest_accepted_bal = if ((*a_accepted_bal) > self.highest_accepted_bal) {
+        { self.promises_rcvd = __promises_rcvd; self.highest_accepted_bal = if ((*a_accepted_bal) > self.highest_accepted_bal) {
             (*a_accepted_bal)
         } else {
             self.highest_accepted_bal.clone()
@@ -135,7 +134,7 @@ impl CState {
             (*a_accepted_val)
         } else {
             self.highest_accepted_val.clone()
-        }; self.proposer_bal = self.proposer_bal.clone(); self.proposed_val = self.proposed_val.clone(); self.promised_bal = self.promised_bal.clone(); self.accepted_bal = self.accepted_bal.clone(); self.accepted_val = self.accepted_val.clone(); self.accepts_rcvd = self.accepts_rcvd.clone(); self.decided_val = self.decided_val.clone(); self.phase = CPhase::Phase1 }
+        }; self.proposer_bal = self.proposer_bal.clone(); self.proposed_val = self.proposed_val.clone(); self.promised_bal = self.promised_bal.clone(); self.accepted_bal = self.accepted_bal.clone(); self.accepted_val = self.accepted_val.clone(); self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd); self.decided_val = self.decided_val.clone(); self.phase = CPhase::Phase1 }
 
     }
 }
@@ -157,9 +156,9 @@ impl CState {
         } else {
             (*v)
         };
-        self.accepts_rcvd = Arc::new(HashSet::new());
+        self.accepts_rcvd = HashSet::new();
         self.proposer_bal = self.proposer_bal.clone();
-        self.promises_rcvd = self.promises_rcvd.clone();
+        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
         self.highest_accepted_bal = self.highest_accepted_bal.clone();
         self.highest_accepted_val = self.highest_accepted_val.clone();
         self.promised_bal = self.promised_bal.clone();
@@ -191,11 +190,11 @@ impl CState {
         self.accepted_val = (*v);
         self.proposer_bal = self.proposer_bal.clone();
         self.phase = self.phase.clone();
-        self.promises_rcvd = self.promises_rcvd.clone();
+        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
         self.highest_accepted_bal = self.highest_accepted_bal.clone();
         self.highest_accepted_val = self.highest_accepted_val.clone();
         self.proposed_val = self.proposed_val.clone();
-        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         self.decided_val = self.decided_val.clone()
 
     }
@@ -219,7 +218,7 @@ impl CState {
         }
         let mut __accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         __accepts_rcvd.insert(a.clone());
-        { self.accepts_rcvd = Arc::new(__accepts_rcvd); self.proposer_bal = self.proposer_bal.clone(); self.promises_rcvd = self.promises_rcvd.clone(); self.highest_accepted_bal = self.highest_accepted_bal.clone(); self.highest_accepted_val = self.highest_accepted_val.clone(); self.proposed_val = self.proposed_val.clone(); self.promised_bal = self.promised_bal.clone(); self.accepted_bal = self.accepted_bal.clone(); self.accepted_val = self.accepted_val.clone(); self.decided_val = self.decided_val.clone(); self.phase = CPhase::Phase2 }
+        { self.accepts_rcvd = __accepts_rcvd; self.proposer_bal = self.proposer_bal.clone(); self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd); self.highest_accepted_bal = self.highest_accepted_bal.clone(); self.highest_accepted_val = self.highest_accepted_val.clone(); self.proposed_val = self.proposed_val.clone(); self.promised_bal = self.promised_bal.clone(); self.accepted_bal = self.accepted_bal.clone(); self.accepted_val = self.accepted_val.clone(); self.decided_val = self.decided_val.clone(); self.phase = CPhase::Phase2 }
 
     }
 }
@@ -238,11 +237,11 @@ impl CState {
         let ghost old_self = *old(self);
         self.decided_val = self.proposed_val.clone();
         self.proposer_bal = self.proposer_bal.clone();
-        self.promises_rcvd = self.promises_rcvd.clone();
+        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
         self.highest_accepted_bal = self.highest_accepted_bal.clone();
         self.highest_accepted_val = self.highest_accepted_val.clone();
         self.proposed_val = self.proposed_val.clone();
-        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         self.promised_bal = self.promised_bal.clone();
         self.accepted_bal = self.accepted_bal.clone();
         self.accepted_val = self.accepted_val.clone();

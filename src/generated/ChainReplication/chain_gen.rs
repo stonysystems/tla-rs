@@ -6,7 +6,6 @@ use crate::generated::ChainReplication::types_gen::*;
 use crate::protocol::ChainReplication::chain::*;
 use crate::protocol::ChainReplication::types::*;
 use std::collections::HashSet;
-use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -75,8 +74,8 @@ ensures
     LInit(result@, c@),
 {
     let result = CState {
-        history: Arc::new(vec![]),
-        pending_sent: Arc::new(HashSet::new()),
+        history: vec![],
+        pending_sent: HashSet::new(),
         committed_count: 0u64,
         obj_value: 0u64,
         has_predecessor: (c.node_id > 0),
@@ -123,7 +122,7 @@ impl CState {
         LHeadReceiveWrite(old(self)@, self@, c@, *value as int, result@.map(|i, p: CCRMessage| p@)),
     {
         let ghost old_self = *old(self);
-        let mut __history = (*self.history).clone();
+        let mut __history = self.history.clone();
         __history.push(value.clone());
         let mut __pending_sent = clone_hashset_u64(&self.pending_sent);
         __pending_sent.insert(value.clone());
@@ -131,12 +130,12 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.role = self.role.clone(); self.history = Arc::new(__history); self.pending_sent = Arc::new(__pending_sent); self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
+            { self.role = self.role.clone(); self.history = __history; self.pending_sent = __pending_sent; self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
             lemma_empty_seq_map();
-            lemma_seq_push_map_commute(s.history@, *value);
+            lemma_seq_push_map_commute(self.history@, *value);
             assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
         }
         result
@@ -160,7 +159,7 @@ impl CState {
         let ghost old_self = *old(self);
         self.role = self.role.clone();
         self.history = self.history.clone();
-        self.pending_sent = self.pending_sent.clone();
+        self.pending_sent = clone_hashset_u64(&self.pending_sent);
         self.committed_count = self.committed_count.clone();
         self.obj_value = self.obj_value.clone();
         self.has_predecessor = self.has_predecessor.clone();
@@ -192,7 +191,7 @@ impl CState {
         LReceiveUpdate(old(self)@, self@, c@, *value as int, result@.map(|i, p: CCRMessage| p@)),
     {
         let ghost old_self = *old(self);
-        let mut __history = (*self.history).clone();
+        let mut __history = self.history.clone();
         __history.push(value.clone());
         let mut __pending_sent = clone_hashset_u64(&self.pending_sent);
         match &self.role {
@@ -206,12 +205,12 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.role = self.role.clone(); self.history = Arc::new(__history); self.pending_sent = Arc::new(__pending_sent); self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
+            { self.role = self.role.clone(); self.history = __history; self.pending_sent = __pending_sent; self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
             lemma_empty_seq_map();
-            lemma_seq_push_map_commute(s.history@, *value);
+            lemma_seq_push_map_commute(self.history@, *value);
             assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
         }
         result
@@ -235,7 +234,7 @@ impl CState {
         let ghost old_self = *old(self);
         self.role = self.role.clone();
         self.history = self.history.clone();
-        self.pending_sent = self.pending_sent.clone();
+        self.pending_sent = clone_hashset_u64(&self.pending_sent);
         self.committed_count = (self.committed_count + 1);
         self.obj_value = (*value);
         self.has_predecessor = self.has_predecessor.clone();
@@ -273,10 +272,10 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.role = self.role.clone(); self.history = self.history.clone(); self.pending_sent = Arc::new(__pending_sent); self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
+            { self.role = self.role.clone(); self.history = self.history.clone(); self.pending_sent = __pending_sent; self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
         };
         proof {
-            lemma_set_map_remove_commute(s.pending_sent@, (*value));
+            lemma_set_map_remove_commute(self.pending_sent@, (*value));
             lemma_empty_seq_map();
             assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
         }
@@ -303,7 +302,7 @@ impl CState {
         let result = {
             self.role = self.role.clone();
             self.history = self.history.clone();
-            self.pending_sent = self.pending_sent.clone();
+            self.pending_sent = clone_hashset_u64(&self.pending_sent);
             self.committed_count = self.committed_count.clone();
             self.obj_value = self.obj_value.clone();
             self.has_predecessor = self.has_predecessor.clone();
@@ -340,7 +339,7 @@ impl CState {
             self.alive = false;
             self.role = self.role.clone();
             self.history = self.history.clone();
-            self.pending_sent = self.pending_sent.clone();
+            self.pending_sent = clone_hashset_u64(&self.pending_sent);
             self.committed_count = self.committed_count.clone();
             self.obj_value = self.obj_value.clone();
             self.has_predecessor = self.has_predecessor.clone();
@@ -379,7 +378,7 @@ impl CState {
             self.successor = (*new_successor);
             self.role = self.role.clone();
             self.history = self.history.clone();
-            self.pending_sent = self.pending_sent.clone();
+            self.pending_sent = clone_hashset_u64(&self.pending_sent);
             self.committed_count = self.committed_count.clone();
             self.obj_value = self.obj_value.clone();
             self.alive = self.alive.clone();

@@ -15710,7 +15710,7 @@ Remaining ~19% gap (77K vs 95K) is dominated by:
 2. **HashSet hashing**: 2% in SipHash for CPacket/CMessage (AutoMan-V uses `clone` + HashSet ops; Sushant avoids HashSet on hot path)
 3. **Arc indirection on 5 fields**: minor overhead but still unnecessary complexity
 
-**Phase 48.7 regression**: The `&mut self` codegen for 8 non-RSL protocols (Phase 48.7) has a transpiler bug — internal dispatch calls within methods still use free-function syntax (`CFoo(&s, c, ...)` instead of `s.CFoo(c, ...)`). This causes 58 compilation errors and prevents building liblib.so with all protocols enabled. RSL and TwoPhase are unaffected. Needs transpiler fix in follow-up phase.
+**Phase 48.7 regression (FIXED)**: The `&mut self` codegen for 8 non-RSL protocols had a transpiler bug — internal dispatch calls within methods used free-function syntax (`CFoo(&s, c, ...)` instead of `s.CFoo(c, ...)`). Fixed by adding `convert_calls_to_methods` post-processing pass and populating `method_names` during `register_function`. Also extended `rename_var_in_expr` to recurse into ProofBlock, Assume, Assert, GhostVar, WhileLoop, ForInIter, and other ExecExpr variants.
 
 ### Out of scope
 

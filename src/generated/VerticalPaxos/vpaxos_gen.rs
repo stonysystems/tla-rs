@@ -6,7 +6,6 @@ use crate::generated::VerticalPaxos::types_gen::*;
 use crate::protocol::VerticalPaxos::types::*;
 use crate::protocol::VerticalPaxos::vpaxos::*;
 use std::collections::HashSet;
-use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -55,8 +54,8 @@ ensures
         max_val: 0u64,
         has_voted: false,
         is_active: true,
-        promises_rcvd: Arc::new(HashSet::new()),
-        accepts_rcvd: Arc::new(HashSet::new()),
+        promises_rcvd: HashSet::new(),
+        accepts_rcvd: HashSet::new(),
         committed: false,
         committed_val: 0u64,
         witness_val: 0u64,
@@ -87,8 +86,8 @@ impl CState {
         self.has_voted = self.has_voted.clone();
         self.config_num = self.config_num.clone();
         self.is_active = self.is_active.clone();
-        self.promises_rcvd = self.promises_rcvd.clone();
-        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
+        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         self.committed = self.committed.clone();
         self.committed_val = self.committed_val.clone();
         self.witness_val = self.witness_val.clone();
@@ -122,16 +121,16 @@ impl CState {
         self.has_voted = self.has_voted.clone();
         self.config_num = self.config_num.clone();
         self.is_active = self.is_active.clone();
-        self.promises_rcvd = self.promises_rcvd.clone();
-        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
+        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         self.committed = self.committed.clone();
         self.committed_val = self.committed_val.clone();
         self.witness_val = self.witness_val.clone();
         self.has_witness = self.has_witness.clone();
         let result = vec![CVPMessage::Promise {
     bal: (*prepare_bal),
-    v_bal: s.max_v_bal.clone(),
-    val: s.max_val.clone(),
+    v_bal: self.max_v_bal.clone(),
+    val: self.max_val.clone(),
 }];
         proof {
             assert(result@.map(|i: int, p: CVPMessage| p@) =~= Seq::empty().push(result@[0]@));
@@ -160,7 +159,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.promises_rcvd = Arc::new(__promises_rcvd); self.max_v_bal = if ((*promise_v_bal) > self.max_v_bal) {
+            { self.promises_rcvd = __promises_rcvd; self.max_v_bal = if ((*promise_v_bal) > self.max_v_bal) {
                 (*promise_v_bal)
             } else {
                 self.max_v_bal.clone()
@@ -168,7 +167,7 @@ impl CState {
                 (*promise_val)
             } else {
                 self.max_val.clone()
-            }; self.max_bal = self.max_bal.clone(); self.has_voted = self.has_voted.clone(); self.config_num = self.config_num.clone(); self.is_active = self.is_active.clone(); self.accepts_rcvd = self.accepts_rcvd.clone(); self.committed = self.committed.clone(); self.committed_val = self.committed_val.clone(); self.witness_val = self.witness_val.clone(); self.has_witness = self.has_witness.clone(); vec![] }
+            }; self.max_bal = self.max_bal.clone(); self.has_voted = self.has_voted.clone(); self.config_num = self.config_num.clone(); self.is_active = self.is_active.clone(); self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd); self.committed = self.committed.clone(); self.committed_val = self.committed_val.clone(); self.witness_val = self.witness_val.clone(); self.has_witness = self.has_witness.clone(); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -199,8 +198,8 @@ impl CState {
         self.max_bal = self.max_bal.clone();
         self.config_num = self.config_num.clone();
         self.is_active = self.is_active.clone();
-        self.promises_rcvd = self.promises_rcvd.clone();
-        self.accepts_rcvd = self.accepts_rcvd.clone();
+        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
+        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
         self.committed = self.committed.clone();
         self.committed_val = self.committed_val.clone();
         self.witness_val = self.witness_val.clone();
@@ -236,7 +235,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.accepts_rcvd = Arc::new(__accepts_rcvd); self.max_bal = self.max_bal.clone(); self.max_v_bal = self.max_v_bal.clone(); self.max_val = self.max_val.clone(); self.has_voted = self.has_voted.clone(); self.config_num = self.config_num.clone(); self.is_active = self.is_active.clone(); self.promises_rcvd = self.promises_rcvd.clone(); self.committed = self.committed.clone(); self.committed_val = self.committed_val.clone(); self.witness_val = self.witness_val.clone(); self.has_witness = self.has_witness.clone(); vec![] }
+            { self.accepts_rcvd = __accepts_rcvd; self.max_bal = self.max_bal.clone(); self.max_v_bal = self.max_v_bal.clone(); self.max_val = self.max_val.clone(); self.has_voted = self.has_voted.clone(); self.config_num = self.config_num.clone(); self.is_active = self.is_active.clone(); self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd); self.committed = self.committed.clone(); self.committed_val = self.committed_val.clone(); self.witness_val = self.witness_val.clone(); self.has_witness = self.has_witness.clone(); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -273,8 +272,8 @@ impl CState {
             self.has_voted = self.has_voted.clone();
             self.config_num = self.config_num.clone();
             self.is_active = self.is_active.clone();
-            self.promises_rcvd = self.promises_rcvd.clone();
-            self.accepts_rcvd = self.accepts_rcvd.clone();
+            self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
+            self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
             self.witness_val = self.witness_val.clone();
             self.has_witness = self.has_witness.clone();
             vec![]
@@ -310,8 +309,8 @@ impl CState {
             self.max_val = self.max_val.clone();
             self.has_voted = false;
             self.is_active = true;
-            self.promises_rcvd = Arc::new(HashSet::new());
-            self.accepts_rcvd = Arc::new(HashSet::new());
+            self.promises_rcvd = HashSet::new();
+            self.accepts_rcvd = HashSet::new();
             self.committed = self.committed.clone();
             self.committed_val = self.committed_val.clone();
             self.witness_val = self.witness_val.clone();
@@ -355,8 +354,8 @@ impl CState {
             self.has_voted = self.has_voted.clone();
             self.config_num = self.config_num.clone();
             self.is_active = self.is_active.clone();
-            self.promises_rcvd = self.promises_rcvd.clone();
-            self.accepts_rcvd = self.accepts_rcvd.clone();
+            self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
+            self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
             self.committed = self.committed.clone();
             self.committed_val = self.committed_val.clone();
             vec![]
@@ -392,8 +391,8 @@ impl CState {
             self.max_val = (*val);
             self.has_voted = false;
             self.is_active = true;
-            self.promises_rcvd = Arc::new(HashSet::new());
-            self.accepts_rcvd = Arc::new(HashSet::new());
+            self.promises_rcvd = HashSet::new();
+            self.accepts_rcvd = HashSet::new();
             self.committed = false;
             self.committed_val = 0u64;
             self.witness_val = 0u64;
@@ -431,8 +430,8 @@ impl CState {
             self.max_v_bal = self.max_v_bal.clone();
             self.max_val = self.max_val.clone();
             self.has_voted = self.has_voted.clone();
-            self.promises_rcvd = self.promises_rcvd.clone();
-            self.accepts_rcvd = self.accepts_rcvd.clone();
+            self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
+            self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
             self.committed = self.committed.clone();
             self.committed_val = self.committed_val.clone();
             self.witness_val = self.witness_val.clone();

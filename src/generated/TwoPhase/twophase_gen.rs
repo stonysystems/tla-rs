@@ -6,7 +6,6 @@ use crate::generated::TwoPhase::types_gen::*;
 use crate::protocol::TwoPhase::twophase::*;
 use crate::protocol::TwoPhase::types::*;
 use std::collections::HashSet;
-use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -47,10 +46,10 @@ ensures
     LInit(result@, c@),
 {
     let result = CState {
-        tm_prepared: Arc::new(HashSet::new()),
-        rm_prepared: Arc::new(HashSet::new()),
-        rm_committed: Arc::new(HashSet::new()),
-        rm_aborted: Arc::new(HashSet::new()),
+        tm_prepared: HashSet::new(),
+        rm_prepared: HashSet::new(),
+        rm_committed: HashSet::new(),
+        rm_aborted: HashSet::new(),
         tm_state: CTMState::Init,
     };
     proof {
@@ -72,10 +71,10 @@ impl CState {
     {
         let ghost old_self = *old(self);
         self.tm_state = self.tm_state.clone();
-        self.tm_prepared = self.tm_prepared.clone();
-        self.rm_prepared = self.rm_prepared.clone();
-        self.rm_committed = self.rm_committed.clone();
-        self.rm_aborted = self.rm_aborted.clone();
+        self.tm_prepared = clone_hashset_u64(&self.tm_prepared);
+        self.rm_prepared = clone_hashset_u64(&self.rm_prepared);
+        self.rm_committed = clone_hashset_u64(&self.rm_committed);
+        self.rm_aborted = clone_hashset_u64(&self.rm_aborted);
         let result = vec![CTPCMessage::Prepare];
         proof {
             assert(result@.map(|i: int, p: CTPCMessage| p@) =~= Seq::empty().push(result@[0]@));
@@ -102,10 +101,10 @@ impl CState {
         __rm_prepared.insert(rm.clone());
         let result = {
             self.tm_state = self.tm_state.clone();
-            self.tm_prepared = self.tm_prepared.clone();
-            self.rm_prepared = Arc::new(__rm_prepared);
-            self.rm_committed = self.rm_committed.clone();
-            self.rm_aborted = self.rm_aborted.clone();
+            self.tm_prepared = clone_hashset_u64(&self.tm_prepared);
+            self.rm_prepared = __rm_prepared;
+            self.rm_committed = clone_hashset_u64(&self.rm_committed);
+            self.rm_aborted = clone_hashset_u64(&self.rm_aborted);
             vec![CTPCMessage::PreparedVote {
     rm: (*rm),
 }]
@@ -139,7 +138,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.tm_state = self.tm_state.clone(); self.tm_prepared = self.tm_prepared.clone(); self.rm_prepared = self.rm_prepared.clone(); self.rm_committed = self.rm_committed.clone(); self.rm_aborted = Arc::new(__rm_aborted); vec![] }
+            { self.tm_state = self.tm_state.clone(); self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = clone_hashset_u64(&self.rm_committed); self.rm_aborted = __rm_aborted; vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -169,7 +168,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.tm_prepared = Arc::new(__tm_prepared); self.rm_prepared = self.rm_prepared.clone(); self.rm_committed = self.rm_committed.clone(); self.rm_aborted = self.rm_aborted.clone(); self.tm_state = CTMState::Init; vec![] }
+            { self.tm_prepared = __tm_prepared; self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = clone_hashset_u64(&self.rm_committed); self.rm_aborted = clone_hashset_u64(&self.rm_aborted); self.tm_state = CTMState::Init; vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -193,10 +192,10 @@ impl CState {
         LTMSendCommit(old(self)@, self@, c@, result@.map(|i, p: CTPCMessage| p@)),
     {
         let ghost old_self = *old(self);
-        self.tm_prepared = self.tm_prepared.clone();
-        self.rm_prepared = self.rm_prepared.clone();
-        self.rm_committed = self.rm_committed.clone();
-        self.rm_aborted = self.rm_aborted.clone();
+        self.tm_prepared = clone_hashset_u64(&self.tm_prepared);
+        self.rm_prepared = clone_hashset_u64(&self.rm_prepared);
+        self.rm_committed = clone_hashset_u64(&self.rm_committed);
+        self.rm_aborted = clone_hashset_u64(&self.rm_aborted);
         self.tm_state = CTMState::Committed;
         let result = vec![CTPCMessage::Commit];
         proof {
@@ -218,10 +217,10 @@ impl CState {
         LTMSendAbort(old(self)@, self@, c@, result@.map(|i, p: CTPCMessage| p@)),
     {
         let ghost old_self = *old(self);
-        self.tm_prepared = self.tm_prepared.clone();
-        self.rm_prepared = self.rm_prepared.clone();
-        self.rm_committed = self.rm_committed.clone();
-        self.rm_aborted = self.rm_aborted.clone();
+        self.tm_prepared = clone_hashset_u64(&self.tm_prepared);
+        self.rm_prepared = clone_hashset_u64(&self.rm_prepared);
+        self.rm_committed = clone_hashset_u64(&self.rm_committed);
+        self.rm_aborted = clone_hashset_u64(&self.rm_aborted);
         self.tm_state = CTMState::Aborted;
         let result = vec![CTPCMessage::Abort];
         proof {
@@ -251,7 +250,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.tm_state = self.tm_state.clone(); self.tm_prepared = self.tm_prepared.clone(); self.rm_prepared = self.rm_prepared.clone(); self.rm_committed = Arc::new(__rm_committed); self.rm_aborted = self.rm_aborted.clone(); vec![] }
+            { self.tm_state = self.tm_state.clone(); self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = __rm_committed; self.rm_aborted = clone_hashset_u64(&self.rm_aborted); vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
@@ -282,7 +281,7 @@ impl CState {
             proof {
                 lemma_empty_seq_map();
             }
-            { self.tm_state = self.tm_state.clone(); self.tm_prepared = self.tm_prepared.clone(); self.rm_prepared = self.rm_prepared.clone(); self.rm_committed = self.rm_committed.clone(); self.rm_aborted = Arc::new(__rm_aborted); vec![] }
+            { self.tm_state = self.tm_state.clone(); self.tm_prepared = clone_hashset_u64(&self.tm_prepared); self.rm_prepared = clone_hashset_u64(&self.rm_prepared); self.rm_committed = clone_hashset_u64(&self.rm_committed); self.rm_aborted = __rm_aborted; vec![] }
         };
         proof {
             broadcast use Set::lemma_set_map_insert_commute;
