@@ -19,6 +19,38 @@ use vstd::std_specs::hash::KeysAdditionalSpecFns;
 
 verus! {
 
+// --- Arc::get_mut helpers (Phase 47.5: zero-alloc in-place mutation) ---
+
+#[verifier::external_body]
+fn arc_learnerstate_clear_and_insert(state: &mut Arc<CLearnerState>, opn: COperationNumber, tup: CLearnerTuple)
+    ensures state@ == Map::<COperationNumber, CLearnerTuple>::empty().insert(opn, tup)
+{
+    let m = Arc::get_mut(state).unwrap();
+    m.clear();
+    m.insert(opn, tup);
+}
+
+#[verifier::external_body]
+fn arc_learnerstate_insert(state: &mut Arc<CLearnerState>, opn: COperationNumber, tup: CLearnerTuple)
+    ensures state@ == old(state)@.insert(opn, tup)
+{
+    Arc::get_mut(state).unwrap().insert(opn, tup);
+}
+
+#[verifier::external_body]
+fn arc_learnerstate_remove(state: &mut Arc<CLearnerState>, opn: &COperationNumber)
+    ensures state@ == old(state)@.remove(*opn)
+{
+    Arc::get_mut(state).unwrap().remove(opn);
+}
+
+#[verifier::external_body]
+fn arc_learnerstate_set(state: &mut Arc<CLearnerState>, new_val: CLearnerState)
+    ensures state@ == new_val@
+{
+    *Arc::get_mut(state).unwrap() = new_val;
+}
+
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
 ensures
@@ -371,10 +403,8 @@ ensures
             assert(tup.abstractable());
             assert(tup.valid());
         }
-        let mut new_state: CLearnerState = HashMap::new();
-        new_state.insert(opn_2b, tup);
         self.max_ballot_seen = bal_2b;
-        self.unexecuted_learner_state = Arc::new(new_state);
+        arc_learnerstate_clear_and_insert(&mut self.unexecuted_learner_state, opn_2b, tup);
     } else if !self.unexecuted_learner_state.contains_key(&opn_2b) {
         // Branch 3: same ballot, new opn — insert new entry
         let src_clone = packet.src.clone_up_to_view();
@@ -403,10 +433,8 @@ ensures
             assert(tup.abstractable());
             assert(tup.valid());
         }
-        let mut new_state = clone_clearnerstate(&self.unexecuted_learner_state);
-        new_state.insert(opn_2b, tup);
         self.max_ballot_seen = bal_2b;
-        self.unexecuted_learner_state = Arc::new(new_state);
+        arc_learnerstate_insert(&mut self.unexecuted_learner_state, opn_2b, tup);
     } else {
         let existing = self.unexecuted_learner_state.get(&opn_2b).unwrap();
         if existing.received_2b_message_senders.contains(&packet.src) {
@@ -438,9 +466,7 @@ ensures
                 assert(tup.abstractable());
                 assert(tup.valid());
             }
-            let mut new_state = clone_clearnerstate(&self.unexecuted_learner_state);
-            new_state.insert(opn_2b, tup);
-            self.unexecuted_learner_state = Arc::new(new_state);
+            arc_learnerstate_insert(&mut self.unexecuted_learner_state, opn_2b, tup);
         }
     }
     proof {
@@ -527,9 +553,7 @@ ensures
 {
     let ghost old_self = old(self)@;
     if self.unexecuted_learner_state.contains_key(&opn) {
-        let mut new_state = clone_clearnerstate(&self.unexecuted_learner_state);
-        new_state.remove(&opn);
-        self.unexecuted_learner_state = Arc::new(new_state);
+        arc_learnerstate_remove(&mut self.unexecuted_learner_state, &opn);
     }
     proof {
         if old(self).unexecuted_learner_state@.contains_key(*opn) {
@@ -548,7 +572,7 @@ ensures
 {
     let ghost old_self = old(self)@;
     let filtered = filter_clearnerstate(&self.unexecuted_learner_state, *ops_complete);
-    self.unexecuted_learner_state = Arc::new(filtered);
+    arc_learnerstate_set(&mut self.unexecuted_learner_state, filtered);
     proof {
         assert(self.valid());
 

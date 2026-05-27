@@ -36,14 +36,68 @@ use vstd::set_lib::*;
 
 verus! {
 
-// [EXPERIMENT Arc-wrap] declare external helper for Verus
-pub assume_specification [crate::optimized_rsl::RSL::proposer_gen::_arc_seqno_insert]
-    (arc: std::sync::Arc<std::collections::HashMap<crate::common::native::io_s::EndPoint, u64>>,
-     k: crate::common::native::io_s::EndPoint,
-     v: u64)
-    -> (res: std::sync::Arc<std::collections::HashMap<crate::common::native::io_s::EndPoint, u64>>)
-    ensures
-        res@ == arc@.insert(k, v);
+// --- Arc::make_mut helpers (Phase 47.5: zero-alloc in-place mutation) ---
+// Each helper is #[verifier::external_body] with a trusted ensures clause.
+// At runtime, Arc::get_mut succeeds because &mut self guarantees refcount == 1.
+
+#[verifier::external_body]
+fn arc_vec_push_request(rq: &mut Arc<Vec<CRequest>>, val: CRequest)
+    ensures rq@ == old(rq)@.push(val)
+{
+    Arc::get_mut(rq).unwrap().push(val);
+}
+
+#[verifier::external_body]
+fn arc_vec_clear_requests(rq: &mut Arc<Vec<CRequest>>)
+    ensures rq@.len() == 0, rq@ =~= Seq::<CRequest>::empty()
+{
+    Arc::get_mut(rq).unwrap().clear();
+}
+
+#[verifier::external_body]
+fn arc_vec_replace_from_concat(dest: &mut Arc<Vec<CRequest>>, src1: &Vec<CRequest>, src2: &Vec<CRequest>)
+    ensures dest@ == src1@ + src2@
+{
+    let v = Arc::get_mut(dest).unwrap();
+    v.clear();
+    v.extend_from_slice(src1);
+    v.extend_from_slice(src2);
+}
+
+#[verifier::external_body]
+fn arc_vec_set(dest: &mut Arc<Vec<CRequest>>, new_val: Vec<CRequest>)
+    ensures dest@ == new_val@
+{
+    *Arc::get_mut(dest).unwrap() = new_val;
+}
+
+#[verifier::external_body]
+fn arc_hashset_insert_cpacket(hs: &mut Arc<HashSet<CPacket>>, p: CPacket)
+    ensures hs@ == old(hs)@.insert(p)
+{
+    Arc::get_mut(hs).unwrap().insert(p);
+}
+
+#[verifier::external_body]
+fn arc_hashset_clear_cpacket(hs: &mut Arc<HashSet<CPacket>>)
+    ensures hs@.len() == 0, hs@ =~= Set::<CPacket>::empty()
+{
+    Arc::get_mut(hs).unwrap().clear();
+}
+
+#[verifier::external_body]
+fn arc_hashmap_insert_seqno(hm: &mut Arc<HashMap<EndPoint, u64>>, k: EndPoint, v: u64)
+    ensures hm@ == old(hm)@.insert(k, v)
+{
+    Arc::get_mut(hm).unwrap().insert(k, v);
+}
+
+#[verifier::external_body]
+fn arc_hashmap_clear_seqno(hm: &mut Arc<HashMap<EndPoint, u64>>)
+    ensures hm@.len() == 0, hm@ =~= Map::<EndPoint, u64>::empty()
+{
+    Arc::get_mut(hm).unwrap().clear();
+}
 
 
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
@@ -313,12 +367,12 @@ ensures
             assert(val.valid());
         }
 
-        // Mutate request_queue: new Arc with appended val (consumes val)
-        self.request_queue = Arc::new(concat_vecs(&self.request_queue, &vec![val]));
+        // Mutate request_queue in-place (zero-alloc via Arc::get_mut)
+        arc_vec_push_request(&mut self.request_queue, val);
 
-        // Mutate highest_seqno: by-value helper does Arc::make_mut internally
-        self.highest_seqno_requested_by_client_this_view = _arc_seqno_insert(
-            self.highest_seqno_requested_by_client_this_view.clone(),
+        // Mutate highest_seqno in-place (zero-alloc via Arc::get_mut)
+        arc_hashmap_insert_seqno(
+            &mut self.highest_seqno_requested_by_client_this_view,
             val_client_clone,
             val_seqno,
         );
@@ -458,13 +512,12 @@ ensures
         let sent_packets = CBroadcastToEveryone(&self.constants.all.config, &self.constants.my_index, &CMessage::CMessage1a {
             bal_1a: self.election_state.current_view,
         });
-        let new_request_queue = Arc::new(concat_vecs(&self.election_state.requests_received_prev_epochs, &self.election_state.requests_received_this_epoch));
-        // Mutate changed fields
+        // Mutate changed fields (zero-alloc via Arc::get_mut)
         self.current_state = 1u64;
         self.max_ballot_i_sent_1a = self.election_state.current_view;
-        self.request_queue = new_request_queue;
-        self.received_1b_packets = Arc::new(HashSet::new());
-        self.highest_seqno_requested_by_client_this_view = Arc::new(HashMap::new());
+        arc_vec_replace_from_concat(&mut self.request_queue, &self.election_state.requests_received_prev_epochs, &self.election_state.requests_received_this_epoch);
+        arc_hashset_clear_cpacket(&mut self.received_1b_packets);
+        arc_hashmap_clear_seqno(&mut self.highest_seqno_requested_by_client_this_view);
         self.max_log_truncation_point = 0u64;
         self.max_opn_with_proposal = 0u64;
         proof {
@@ -502,7 +555,7 @@ ensures
 {
     let ghost old_self = old(self)@;
     let p_cloned = clone_cpacket_preserving_validity(p);
-    self.received_1b_packets = Arc::new(hashset_insert_cpacket(&self.received_1b_packets, p_cloned));
+    arc_hashset_insert_cpacket(&mut self.received_1b_packets, p_cloned);
     proof {
         assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.valid() by {
             if !old(self).received_1b_packets@.contains(q) {
@@ -607,7 +660,7 @@ ensures
         &msg,
     );
     // Mutate only changed fields (eliminates 3 Arc clones)
-    self.request_queue = Arc::new(new_queue);
+    arc_vec_set(&mut self.request_queue, new_queue);
     self.next_operation_number_to_propose = opn + 1;
     self.incomplete_batch_timer = timer;
     self.max_log_truncation_point = 0u64;
@@ -996,7 +1049,7 @@ ensures
     if CBalLt(&old_view, &self.election_state.current_view) {
         proof { lemma_empty_request_queue_map(); }
         self.current_state = 0u64;
-        self.request_queue = Arc::new(vec![]);
+        arc_vec_clear_requests(&mut self.request_queue);
     }
 }
 
@@ -1023,7 +1076,7 @@ ensures
     if CBalLt(&old_view, &self.election_state.current_view) {
         proof { lemma_empty_request_queue_map(); }
         self.current_state = 0u64;
-        self.request_queue = Arc::new(vec![]);
+        arc_vec_clear_requests(&mut self.request_queue);
     }
 }
 
@@ -1042,15 +1095,5 @@ ensures
 
 } // verus!
 
-// [EXPERIMENT] Plain Rust helper (outside verus!{}) for Arc::make_mut
-// Take by-value, return by-value to avoid &mut in signature (Verus rejects)
-pub fn _arc_seqno_insert(
-    arc: std::sync::Arc<std::collections::HashMap<crate::common::native::io_s::EndPoint, u64>>,
-    k: crate::common::native::io_s::EndPoint,
-    v: u64,
-) -> std::sync::Arc<std::collections::HashMap<crate::common::native::io_s::EndPoint, u64>> {
-    let mut a = arc;
-    std::sync::Arc::make_mut(&mut a).insert(k, v);
-    a
-}
+// Old _arc_seqno_insert removed — replaced by arc_hashmap_insert_seqno (Phase 47.5)
 

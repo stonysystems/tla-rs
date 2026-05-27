@@ -33,7 +33,25 @@ use vstd::set::*;
 use vstd::set_lib::*;
 use vstd::std_specs::hash::HashMapAdditionalSpecFns;
 
+use crate::implementation::RSL::types_i::CReplyCache;
+
 verus! {
+
+// --- Arc::get_mut helpers (Phase 47.5: zero-alloc in-place mutation) ---
+
+#[verifier::external_body]
+fn arc_replycache_set(rc: &mut Arc<CReplyCache>, new_val: CReplyCache)
+    ensures rc@ == new_val@
+{
+    *Arc::get_mut(rc).unwrap() = new_val;
+}
+
+#[verifier::external_body]
+fn arc_replycache_clone_from(rc: &mut Arc<CReplyCache>, src: &CReplyCache)
+    ensures rc@ == src@
+{
+    *Arc::get_mut(rc).unwrap() = src.clone();
+}
 
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
@@ -179,7 +197,7 @@ ensures
             self.ops_complete = *opn_state_supply;
             self.max_bal_reflected = *bal_state_supply;
             self.next_op_to_execute = COutstandingOperation::COutstandingOpUnknown {};
-            self.reply_cache = Arc::new(clone_reply_cache(reply_cache));
+            arc_replycache_clone_from(&mut self.reply_cache, reply_cache);
         },
         _ => { proof { assert(false); } }
     }
@@ -398,7 +416,7 @@ ensures
     s.ops_complete = s.ops_complete + 1;
     s.max_bal_reflected = new_max_bal;
     s.next_op_to_execute = COutstandingOperation::COutstandingOpUnknown {};
-    s.reply_cache = Arc::new(s_reply_cache);
+    arc_replycache_set(&mut s.reply_cache, s_reply_cache);
 
     proof {
         let ghost ss = old_self;
