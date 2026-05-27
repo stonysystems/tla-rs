@@ -1,5 +1,8 @@
 # Configuration for transpiling RSL acceptor spec to implementation
 
+# Emit &mut self calling convention for CAcceptor methods (Phase 48)
+mut_self_types = ["CAcceptor"]
+
 # Spec-only functions (must be at top level before any section)
 spec_only_functions = [
     "LeqUpperBound",

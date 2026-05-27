@@ -15552,11 +15552,20 @@ Validation on TwoPhase revealed 3 gaps in the pipeline. Fixed below:
   `self.state.CStep(...)` instead of `let (new_state, sent) = CStep(&self.state, ...)`.
   7 call sites updated. CInit remains free function (constructor).
 
-#### 48.6 Apply to RSL + bench (~100 LOC)
+#### 48.6 Apply to RSL + bench
 
-- [ ] **48.6.a**: Enable `emit_mut_self` for all RSL component TOMLs.
-  Regenerate `src/generated/RSL/`. Verify builds + bench matches
-  Phase 47 optimized_rsl results.
+6 TOMLs need `mut_self_types`, ~69 exec functions affected, ~49 call sites in
+ReplicaImpl.rs. broadcast_transpile.toml and types_transpile.toml are excluded
+(utility-only/type-definition-only).
+
+- [x] **48.6.a**: Add `mut_self_types` to all 6 RSL component TOMLs
+  (acceptor/proposer/learner/executor/election/replica). Done — TOMLs ready.
+  Note: regen deferred because 5 of 6 modules have skip_functions with
+  hand-written bodies (56 functions total) that need coordinated body conversion.
+- [ ] **48.6.b**: Convert skip_function + manual_code bodies to `&mut self`
+  (56 hand-written functions across 6 modules), regenerate all `*_gen.rs`,
+  update ReplicaImpl.rs callers (~49 call sites). Must be done atomically.
+- [ ] **48.6.c**: Bench RSL with `&mut self` codegen vs Phase 47 optimized_rsl.
 
 ### Estimated effort
 

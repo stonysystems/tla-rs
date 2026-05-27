@@ -1,5 +1,8 @@
 # Configuration for transpiling RSL executor spec to implementation
 
+# Emit &mut self calling convention for CExecutor methods (Phase 48)
+mut_self_types = ["CExecutor"]
+
 # Arc-wrap collection fields for O(1) clone on unchanged paths
 arc_wrap_fields = { CExecutor = ["reply_cache"] }
 

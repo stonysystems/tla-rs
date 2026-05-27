@@ -1,5 +1,8 @@
 # Configuration for transpiling RSL proposer spec to implementation
 
+# Emit &mut self calling convention for CProposer methods (Phase 48)
+mut_self_types = ["CProposer"]
+
 # Arc-wrap collection fields for O(1) clone on unchanged paths (Phase 42.3.a / Phase 41)
 # Struct definition lives in ProposerImpl.rs (hand-written). This config tells the
 # transpiler to emit Arc::new() at init/mutation sites and .clone() (Arc::clone) at clone sites.

@@ -1,6 +1,9 @@
 # Configuration for transpiling RSL election spec to implementation
 # This configures the transpiler to match the existing RSL codebase conventions
 
+# Emit &mut self calling convention for CElectionState methods (Phase 48)
+mut_self_types = ["CElectionState"]
+
 # Spec-only functions that should not get C-prefix (must be at top level before sections)
 spec_only_functions = [
     "LtUpperBound",

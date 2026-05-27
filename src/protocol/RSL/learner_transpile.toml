@@ -1,6 +1,9 @@
 # Configuration for transpiling RSL learner spec to implementation
 # This configures the transpiler to match the existing RSL codebase conventions
 
+# Emit &mut self calling convention for CLearner methods (Phase 48)
+mut_self_types = ["CLearner"]
+
 # Arc-wrap collection fields for O(1) clone on unchanged paths
 arc_wrap_fields = { CLearner = ["unexecuted_learner_state"] }
 

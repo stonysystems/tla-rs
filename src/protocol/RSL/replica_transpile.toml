@@ -1,5 +1,8 @@
 # Configuration for transpiling RSL replica spec to implementation
 
+# Emit &mut self calling convention for CReplica methods (Phase 48)
+mut_self_types = ["CReplica"]
+
 # Primitive types that don't need valid() predicates
 # OperationNumber is remapped to u64 which is a primitive
 primitive_types = [
