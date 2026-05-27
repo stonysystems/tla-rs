@@ -192,9 +192,9 @@ impl Printer {
                 // Pattern: `let result = (Struct{...}, rest); ...proofs...; result`
                 // Detect: last expr is Var(v) and an earlier Let(v, ...) has a transformable value
                 if let Some(ExecExpr::Var(tail_var)) = stmts.last() {
-                    if let Some(let_idx) = stmts.iter().position(|s| {
-                        matches!(s, ExecExpr::Let { pattern, .. } if pattern == tail_var)
-                    }) {
+                    if let Some(let_idx) = stmts.iter().position(
+                        |s| matches!(s, ExecExpr::Let { pattern, .. } if pattern == tail_var),
+                    ) {
                         if let ExecExpr::Let { value, .. } = &stmts[let_idx] {
                             let transformed = Self::struct_to_field_assignments(value);
                             if !matches!(&transformed, v if Self::expr_eq(v, value)) {
@@ -214,9 +214,10 @@ impl Printer {
                                         // Everything before it is field assignments
                                         if inner.len() > 1 {
                                             // Field assignments
-                                            new_stmts.extend(inner[..inner.len()-1].iter().cloned());
+                                            new_stmts
+                                                .extend(inner[..inner.len() - 1].iter().cloned());
                                             // Rebind result to remaining value
-                                            let remaining = &inner[inner.len()-1];
+                                            let remaining = &inner[inner.len() - 1];
                                             new_stmts.push(ExecExpr::Let {
                                                 pattern: tail_var.clone(),
                                                 ty: None,
@@ -234,9 +235,12 @@ impl Printer {
                                 }
 
                                 // Add remaining statements (proof blocks etc.) with index rewriting
-                                for stmt in &stmts[let_idx+1..stmts.len()-1] {
+                                for stmt in &stmts[let_idx + 1..stmts.len() - 1] {
                                     new_stmts.push(Self::rewrite_tuple_refs_in_expr(
-                                        stmt, struct_idx, tail_var, remaining_count,
+                                        stmt,
+                                        struct_idx,
+                                        tail_var,
+                                        remaining_count,
                                     ));
                                 }
                                 // Keep trailing var for return
@@ -274,7 +278,9 @@ impl Printer {
                 });
                 if let Some(idx) = struct_idx {
                     let struct_assignments = Self::struct_to_field_assignments(&elems[idx]);
-                    let remaining: Vec<ExecExpr> = elems.iter().enumerate()
+                    let remaining: Vec<ExecExpr> = elems
+                        .iter()
+                        .enumerate()
                         .filter(|(i, _)| *i != idx)
                         .map(|(_, e)| e.clone())
                         .collect();
@@ -315,11 +321,9 @@ impl Printer {
     /// or if it's a Block/nested expression containing a Tuple with a struct.
     fn find_struct_in_expr(expr: &ExecExpr) -> Option<usize> {
         match expr {
-            ExecExpr::Tuple(elems) => {
-                elems.iter().position(|e| {
-                    matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
-                })
-            }
+            ExecExpr::Tuple(elems) => elems
+                .iter()
+                .position(|e| matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })),
             ExecExpr::Block(stmts) if !stmts.is_empty() => {
                 Self::find_struct_in_expr(stmts.last().unwrap())
             }
@@ -330,11 +334,10 @@ impl Printer {
     /// Count non-struct elements in a Tuple expression (follows block tails).
     fn count_non_struct_in_expr(expr: &ExecExpr) -> usize {
         match expr {
-            ExecExpr::Tuple(elems) => {
-                elems.iter().filter(|e| {
-                    !matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
-                }).count()
-            }
+            ExecExpr::Tuple(elems) => elems
+                .iter()
+                .filter(|e| !matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. }))
+                .count(),
             ExecExpr::Block(stmts) if !stmts.is_empty() => {
                 Self::count_non_struct_in_expr(stmts.last().unwrap())
             }
@@ -357,20 +360,18 @@ impl Printer {
             None => return expr.clone(),
         };
         let rw = |s: &str| Self::rewrite_tuple_refs_in_string(s, si, result_var, remaining_count);
-        let rw_expr = |e: &ExecExpr| Self::rewrite_tuple_refs_in_expr(
-            e, struct_idx, result_var, remaining_count,
-        );
+        let rw_expr = |e: &ExecExpr| {
+            Self::rewrite_tuple_refs_in_expr(e, struct_idx, result_var, remaining_count)
+        };
         match expr {
             ExecExpr::Var(s) => ExecExpr::Var(rw(s)),
             ExecExpr::Literal(s) => ExecExpr::Literal(rw(s)),
             ExecExpr::Assert(inner) => ExecExpr::Assert(Box::new(rw_expr(inner))),
             ExecExpr::Assume(inner) => ExecExpr::Assume(Box::new(rw_expr(inner))),
             ExecExpr::ProofBlock { stmts } => ExecExpr::ProofBlock {
-                stmts: stmts.iter().map(|s| rw_expr(s)).collect(),
+                stmts: stmts.iter().map(rw_expr).collect(),
             },
-            ExecExpr::Block(stmts) => {
-                ExecExpr::Block(stmts.iter().map(|s| rw_expr(s)).collect())
-            }
+            ExecExpr::Block(stmts) => ExecExpr::Block(stmts.iter().map(rw_expr).collect()),
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
                 lhs: Box::new(rw_expr(lhs)),
                 op: op.clone(),
@@ -393,14 +394,8 @@ impl Printer {
     ) -> String {
         let mut out = s.to_string();
         // Replace struct index references with self
-        out = out.replace(
-            &format!("{}.{}@", result_var, struct_idx),
-            "self@",
-        );
-        out = out.replace(
-            &format!("{}.{}.", result_var, struct_idx),
-            "self.",
-        );
+        out = out.replace(&format!("{}.{}@", result_var, struct_idx), "self@");
+        out = out.replace(&format!("{}.{}.", result_var, struct_idx), "self.");
         // Handle bare result.{si} followed by non-alnum
         let struct_prefix = format!("{}.{}", result_var, struct_idx);
         let temp = out.clone();
@@ -409,14 +404,16 @@ impl Printer {
         while let Some((idx, _)) = chars.peek() {
             let rest = &temp[*idx..];
             if rest.starts_with(&struct_prefix) {
-                let after = rest.get(struct_prefix.len()..struct_prefix.len()+1);
-                let is_boundary = after.map_or(true, |c| {
+                let after = rest.get(struct_prefix.len()..struct_prefix.len() + 1);
+                let is_boundary = !after.is_some_and(|c| {
                     let c = c.chars().next().unwrap();
-                    !c.is_alphanumeric() && c != '_' && c != '.'
+                    c.is_alphanumeric() || c == '_' || c == '.'
                 });
                 if is_boundary {
                     out.push_str("self");
-                    for _ in 0..struct_prefix.len() { chars.next(); }
+                    for _ in 0..struct_prefix.len() {
+                        chars.next();
+                    }
                     continue;
                 }
             }
@@ -427,11 +424,17 @@ impl Printer {
         // Renumber remaining indices using placeholders to avoid interference
         // First pass: replace old references with placeholders
         for old_idx in (0..10).rev() {
-            if old_idx == struct_idx { continue; }
+            if old_idx == struct_idx {
+                continue;
+            }
             let old_ref = format!("{}.{}", result_var, old_idx);
-            let new_idx = if old_idx > struct_idx { old_idx - 1 } else { old_idx };
+            let new_idx = if old_idx > struct_idx {
+                old_idx - 1
+            } else {
+                old_idx
+            };
             let placeholder = if remaining_count == 1 {
-                format!("__RESULT_PLACEHOLDER__")
+                "__RESULT_PLACEHOLDER__".to_string()
             } else {
                 format!("__RESULT_PLACEHOLDER_{new_idx}__")
             };
@@ -459,7 +462,12 @@ impl Printer {
         // Print parameters — for methods, emit &mut self then non-self params
         let params: Vec<_> = if func.is_method {
             std::iter::once("&mut self".to_string())
-                .chain(func.params.iter().filter(|p| !p.is_self).map(|p| self.format_param(p)))
+                .chain(
+                    func.params
+                        .iter()
+                        .filter(|p| !p.is_self)
+                        .map(|p| self.format_param(p)),
+                )
                 .collect()
         } else {
             func.params.iter().map(|p| self.format_param(p)).collect()
@@ -1864,10 +1872,7 @@ mod tests {
             params: vec![
                 ExecParameter {
                     name: "s".to_string(),
-                    ty: ExecType::Reference(
-                        Box::new(ExecType::Named("CState".to_string())),
-                        false,
-                    ),
+                    ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), false),
                     is_reference: true,
                     is_self: false,
                 },
@@ -1903,10 +1908,7 @@ mod tests {
             params: vec![
                 ExecParameter {
                     name: "s".to_string(),
-                    ty: ExecType::Reference(
-                        Box::new(ExecType::Named("CState".to_string())),
-                        true,
-                    ),
+                    ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                     is_reference: true,
                     is_self: true,
                 },
@@ -1978,7 +1980,11 @@ mod tests {
 
         let output = print_function(&func);
         // Verify impl block structure
-        assert!(output.starts_with("impl CReplica {\n"), "output: {}", output);
+        assert!(
+            output.starts_with("impl CReplica {\n"),
+            "output: {}",
+            output
+        );
         assert!(
             output.contains("pub exec fn CDoStep(&mut self, msg: &CMessage)"),
             "output: {}",
@@ -1991,11 +1997,7 @@ mod tests {
             output
         );
         assert!(output.contains("ensures"), "output: {}", output);
-        assert!(
-            output.contains("self.well_formed()"),
-            "output: {}",
-            output
-        );
+        assert!(output.contains("self.well_formed()"), "output: {}", output);
         // No return type
         assert!(!output.contains("-> (result:"), "output: {}", output);
     }
@@ -2007,10 +2009,7 @@ mod tests {
             name: "CInit".to_string(),
             params: vec![ExecParameter {
                 name: "s".to_string(),
-                ty: ExecType::Reference(
-                    Box::new(ExecType::Named("CState".to_string())),
-                    true,
-                ),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                 is_reference: true,
                 is_self: true,
             }],
@@ -2079,14 +2078,8 @@ mod tests {
             body: ExecExpr::Struct {
                 name: "CReplica".to_string(),
                 fields: vec![
-                    (
-                        "counter".to_string(),
-                        ExecExpr::Var("val".to_string()),
-                    ),
-                    (
-                        "state".to_string(),
-                        ExecExpr::Literal("0u64".to_string()),
-                    ),
+                    ("counter".to_string(), ExecExpr::Var("val".to_string())),
+                    ("state".to_string(), ExecExpr::Literal("0u64".to_string())),
                 ],
             },
             is_method: true,
@@ -2126,10 +2119,7 @@ mod tests {
             name: "CIncrement".to_string(),
             params: vec![ExecParameter {
                 name: "s".to_string(),
-                ty: ExecType::Reference(
-                    Box::new(ExecType::Named("CState".to_string())),
-                    true,
-                ),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                 is_reference: true,
                 is_self: true,
             }],
@@ -2176,10 +2166,7 @@ mod tests {
             params: vec![
                 ExecParameter {
                     name: "s".to_string(),
-                    ty: ExecType::Reference(
-                        Box::new(ExecType::Named("CState".to_string())),
-                        true,
-                    ),
+                    ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                     is_reference: true,
                     is_self: true,
                 },
@@ -2230,10 +2217,7 @@ mod tests {
             name: "CCompute".to_string(),
             params: vec![ExecParameter {
                 name: "s".to_string(),
-                ty: ExecType::Reference(
-                    Box::new(ExecType::Named("CState".to_string())),
-                    true,
-                ),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                 is_reference: true,
                 is_self: true,
             }],
@@ -2280,10 +2264,7 @@ mod tests {
             params: vec![
                 ExecParameter {
                     name: "s".to_string(),
-                    ty: ExecType::Reference(
-                        Box::new(ExecType::Named("CState".to_string())),
-                        true,
-                    ),
+                    ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                     is_reference: true,
                     is_self: true,
                 },
@@ -2319,21 +2300,25 @@ mod tests {
         // Should have field assignments
         assert!(
             output.contains("self.counter = 1u64"),
-            "should have counter assignment: {}", output
+            "should have counter assignment: {}",
+            output
         );
         assert!(
             output.contains("self.flag = true"),
-            "should have flag assignment: {}", output
+            "should have flag assignment: {}",
+            output
         );
         // Should return remaining tuple element
         assert!(
             output.contains("sent_packets"),
-            "should return remaining tuple element: {}", output
+            "should return remaining tuple element: {}",
+            output
         );
         // Should have return type in signature
         assert!(
             output.contains("-> (result: Vec<CTPCMessage>)"),
-            "multi-output method should have return type: {}", output
+            "multi-output method should have return type: {}",
+            output
         );
     }
 
@@ -2344,10 +2329,7 @@ mod tests {
             name: "CStep".to_string(),
             params: vec![ExecParameter {
                 name: "s".to_string(),
-                ty: ExecType::Reference(
-                    Box::new(ExecType::Named("CState".to_string())),
-                    true,
-                ),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                 is_reference: true,
                 is_self: true,
             }],
@@ -2365,7 +2347,10 @@ mod tests {
                     ExecExpr::StructUpdate {
                         name: "CState".to_string(),
                         base: Box::new(ExecExpr::Var("self".to_string())),
-                        fields: vec![("counter".to_string(), ExecExpr::Literal("0u64".to_string()))],
+                        fields: vec![(
+                            "counter".to_string(),
+                            ExecExpr::Literal("0u64".to_string()),
+                        )],
                     },
                     ExecExpr::Var("pkts".to_string()),
                 ]),
@@ -2378,17 +2363,20 @@ mod tests {
         // Let binding preserved
         assert!(
             output.contains("let pkts = Vec::new();"),
-            "let binding should be preserved: {}", output
+            "let binding should be preserved: {}",
+            output
         );
         // Struct update → field assignment
         assert!(
             output.contains("self.counter = 0u64"),
-            "struct update should become field assignment: {}", output
+            "struct update should become field assignment: {}",
+            output
         );
         // Remaining element returned
         assert!(
             output.contains("pkts"),
-            "should return remaining packets: {}", output
+            "should return remaining packets: {}",
+            output
         );
     }
 
@@ -2399,10 +2387,7 @@ mod tests {
             name: "CProcess".to_string(),
             params: vec![ExecParameter {
                 name: "s".to_string(),
-                ty: ExecType::Reference(
-                    Box::new(ExecType::Named("CState".to_string())),
-                    true,
-                ),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                 is_reference: true,
                 is_self: true,
             }],
@@ -2429,12 +2414,14 @@ mod tests {
         // Should have tuple return type
         assert!(
             output.contains("-> (result: (Vec<CMsg>, u64))"),
-            "should emit tuple return type: {}", output
+            "should emit tuple return type: {}",
+            output
         );
         // Field assignment for struct
         assert!(
             output.contains("self.x = 1u64"),
-            "should have field assignment: {}", output
+            "should have field assignment: {}",
+            output
         );
     }
 
@@ -2446,10 +2433,7 @@ mod tests {
             name: "CStep".to_string(),
             params: vec![ExecParameter {
                 name: "s".to_string(),
-                ty: ExecType::Reference(
-                    Box::new(ExecType::Named("CState".to_string())),
-                    true,
-                ),
+                ty: ExecType::Reference(Box::new(ExecType::Named("CState".to_string())), true),
                 is_reference: true,
                 is_self: true,
             }],
@@ -2464,9 +2448,10 @@ mod tests {
                     value: Box::new(ExecExpr::Tuple(vec![
                         ExecExpr::Struct {
                             name: "CState".to_string(),
-                            fields: vec![
-                                ("counter".to_string(), ExecExpr::Literal("1u64".to_string())),
-                            ],
+                            fields: vec![(
+                                "counter".to_string(),
+                                ExecExpr::Literal("1u64".to_string()),
+                            )],
                         },
                         ExecExpr::Var("packets".to_string()),
                     ])),
@@ -2486,21 +2471,25 @@ mod tests {
         // Field assignment
         assert!(
             output.contains("self.counter = 1u64"),
-            "struct should become field assignment: {}", output
+            "struct should become field assignment: {}",
+            output
         );
         // Result rebound to remaining element
         assert!(
             output.contains("let result = packets"),
-            "result should be rebound to remaining vec: {}", output
+            "result should be rebound to remaining vec: {}",
+            output
         );
         // Proof block should reference result@ (not result.1@)
         assert!(
             output.contains("result@.len() == 0"),
-            "proof should reference result@ not result.1@: {}", output
+            "proof should reference result@ not result.1@: {}",
+            output
         );
         assert!(
             !output.contains("result.1@"),
-            "should NOT have result.1@ reference: {}", output
+            "should NOT have result.1@ reference: {}",
+            output
         );
     }
 
@@ -2510,8 +2499,7 @@ mod tests {
         let s = "result.1@.map(|i: int, p: CMsg| p@) =~= Seq::empty().push(result.1@[0]@)";
         let out = Printer::rewrite_tuple_refs_in_string(s, 0, "result", 1);
         assert_eq!(
-            out,
-            "result@.map(|i: int, p: CMsg| p@) =~= Seq::empty().push(result@[0]@)",
+            out, "result@.map(|i: int, p: CMsg| p@) =~= Seq::empty().push(result@[0]@)",
             "result.1 should become result when remaining_count=1"
         );
 

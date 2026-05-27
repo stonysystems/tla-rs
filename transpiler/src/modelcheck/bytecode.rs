@@ -1445,18 +1445,25 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
             Opcode::SetNewClosure { var, body_len } => {
                 let body_len = *body_len as usize;
                 let var_slot = *var as usize;
-                let result = vm_eval_set_new_closure(
-                    chunk, ctx, &mut locals, pc + 1, body_len, var_slot,
-                )?;
+                let result =
+                    vm_eval_set_new_closure(chunk, ctx, &mut locals, pc + 1, body_len, var_slot)?;
                 stack.push(result);
                 pc += body_len;
             }
             Opcode::MapNewClosure { var, body_len } => {
                 let body_len = *body_len as usize;
                 let var_slot = *var as usize;
-                let domain_set = stack.pop().ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
+                let domain_set = stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
                 let result = vm_eval_map_new_closure(
-                    chunk, ctx, &mut locals, pc + 1, body_len, var_slot, &domain_set,
+                    chunk,
+                    ctx,
+                    &mut locals,
+                    pc + 1,
+                    body_len,
+                    var_slot,
+                    &domain_set,
                 )?;
                 stack.push(result);
                 pc += body_len;
@@ -1464,9 +1471,17 @@ pub fn vm_eval(chunk: &Chunk, ctx: &VmContext<'_>) -> TranspileResult<RuntimeVal
             Opcode::SetMapClosure { var, body_len } => {
                 let body_len = *body_len as usize;
                 let var_slot = *var as usize;
-                let receiver_set = stack.pop().ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
+                let receiver_set = stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
                 let result = vm_eval_set_map_closure(
-                    chunk, ctx, &mut locals, pc + 1, body_len, var_slot, &receiver_set,
+                    chunk,
+                    ctx,
+                    &mut locals,
+                    pc + 1,
+                    body_len,
+                    var_slot,
+                    &receiver_set,
                 )?;
                 stack.push(result);
                 pc += body_len;
@@ -1966,16 +1981,22 @@ fn vm_eval_body_slice(
             Opcode::MapNewClosure { var, body_len } => {
                 let bl = *body_len as usize;
                 let vs = *var as usize;
-                let domain = stack.pop().ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
-                let result = vm_eval_map_new_closure(&sub_chunk, ctx, locals, pc + 1, bl, vs, &domain)?;
+                let domain = stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
+                let result =
+                    vm_eval_map_new_closure(&sub_chunk, ctx, locals, pc + 1, bl, vs, &domain)?;
                 stack.push(result);
                 pc += bl;
             }
             Opcode::SetMapClosure { var, body_len } => {
                 let bl = *body_len as usize;
                 let vs = *var as usize;
-                let recv = stack.pop().ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
-                let result = vm_eval_set_map_closure(&sub_chunk, ctx, locals, pc + 1, bl, vs, &recv)?;
+                let recv = stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
+                let result =
+                    vm_eval_set_map_closure(&sub_chunk, ctx, locals, pc + 1, bl, vs, &recv)?;
                 stack.push(result);
                 pc += bl;
             }
@@ -2056,7 +2077,10 @@ impl BytecodeCache {
         }
         drop(guard);
         let compiled = Arc::new(compile_with_env(expr, env_names)?);
-        self.cache.lock().unwrap().insert(key, Arc::clone(&compiled));
+        self.cache
+            .lock()
+            .unwrap()
+            .insert(key, Arc::clone(&compiled));
         Ok(compiled)
     }
 }
@@ -2435,16 +2459,22 @@ pub fn vm_eval_with_locals(
             Opcode::MapNewClosure { var, body_len } => {
                 let bl = *body_len as usize;
                 let vs = *var as usize;
-                let domain = stack.pop().ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
-                let result = vm_eval_map_new_closure(chunk, ctx, &mut locals, pc + 1, bl, vs, &domain)?;
+                let domain = stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: MapNewClosure: empty stack"))?;
+                let result =
+                    vm_eval_map_new_closure(chunk, ctx, &mut locals, pc + 1, bl, vs, &domain)?;
                 stack.push(result);
                 pc += bl;
             }
             Opcode::SetMapClosure { var, body_len } => {
                 let bl = *body_len as usize;
                 let vs = *var as usize;
-                let recv = stack.pop().ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
-                let result = vm_eval_set_map_closure(chunk, ctx, &mut locals, pc + 1, bl, vs, &recv)?;
+                let recv = stack
+                    .pop()
+                    .ok_or_else(|| type_error("VM: SetMapClosure: empty stack"))?;
+                let result =
+                    vm_eval_set_map_closure(chunk, ctx, &mut locals, pc + 1, bl, vs, &recv)?;
                 stack.push(result);
                 pc += bl;
             }
@@ -3265,11 +3295,13 @@ mod tests {
             method_evaluator: None,
             quantifier_domain: None,
         };
-        let input_set = RuntimeValue::Set(std::sync::Arc::new(transpiler_runtime::SetRepr::from_values(vec![
-            RuntimeValue::Int(1),
-            RuntimeValue::Int(2),
-            RuntimeValue::Int(3),
-        ])));
+        let input_set = RuntimeValue::Set(std::sync::Arc::new(
+            transpiler_runtime::SetRepr::from_values(vec![
+                RuntimeValue::Int(1),
+                RuntimeValue::Int(2),
+                RuntimeValue::Int(3),
+            ]),
+        ));
         let mut env = std::collections::BTreeMap::new();
         env.insert("s".to_string(), input_set);
         let result = vm_eval_with_env(&compiled, &env, &ctx).unwrap();

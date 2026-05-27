@@ -325,7 +325,11 @@ where
     let mut seen_fingerprints = std::collections::HashSet::<u64>::new();
     macro_rules! visited_count {
         () => {
-            if use_fingerprint_fast_path { seen_fingerprints.len() } else { visited.len() }
+            if use_fingerprint_fast_path {
+                seen_fingerprints.len()
+            } else {
+                visited.len()
+            }
         };
     }
 
@@ -336,7 +340,13 @@ where
                 let key = format!("h{fp:016x}");
                 if let Some(ref mut exporter) = debug_exporter {
                     let _ = exporter.record_generated(
-                        &key, state, 0, true, None, None, "accepted_distinct",
+                        &key,
+                        state,
+                        0,
+                        true,
+                        None,
+                        None,
+                        "accepted_distinct",
                     );
                     let _ = exporter.record_distinct(&key, state, 0, true, None, None);
                 }
@@ -348,8 +358,7 @@ where
                 });
             } else if let Some(ref mut exporter) = debug_exporter {
                 let key = format!("h{fp:016x}");
-                let _ =
-                    exporter.record_generated(&key, state, 0, true, None, None, "duplicate");
+                let _ = exporter.record_generated(&key, state, 0, true, None, None, "duplicate");
             }
         } else {
             let dedup_canonical = canonical_dedup_key(state, &symmetry_field_set);
@@ -370,7 +379,13 @@ where
                 }
                 if let Some(ref mut exporter) = debug_exporter {
                     let _ = exporter.record_generated(
-                        &key, state, 0, true, None, None, "accepted_distinct",
+                        &key,
+                        state,
+                        0,
+                        true,
+                        None,
+                        None,
+                        "accepted_distinct",
                     );
                     let _ = exporter.record_distinct(&key, state, 0, true, None, None);
                 }
@@ -381,8 +396,7 @@ where
                     depth: 0,
                 });
             } else if let Some(ref mut exporter) = debug_exporter {
-                let _ =
-                    exporter.record_generated(&key, state, 0, true, None, None, "duplicate");
+                let _ = exporter.record_generated(&key, state, 0, true, None, None, "duplicate");
             }
         }
     }
@@ -537,8 +551,7 @@ where
                             branch_label,
                         );
                         if let Some(label) = branch_label {
-                            let _ =
-                                exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                            let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
                         }
                     }
                     states_by_key.insert(key.clone(), successor.state.clone());
@@ -568,15 +581,13 @@ where
                             "duplicate",
                         );
                         if let Some(label) = branch_label {
-                            let _ =
-                                exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                            let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
                         }
                     }
                     stats.duplicate_successors += 1;
                 }
             } else {
-                let dedup_canonical =
-                    canonical_dedup_key(&successor.state, &symmetry_field_set);
+                let dedup_canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
                 if !symmetry_field_set.is_empty()
                     && record_symmetry_collapse(
                         &mut symmetry_representatives,
@@ -589,8 +600,7 @@ where
                 let key = dedup_key_from_canonical(&dedup_canonical, state_dedup);
                 if visited.insert(key.clone()) {
                     if matches!(state_dedup, StateDedupMode::HashCompaction64) {
-                        let canonical =
-                            canonical_dedup_key(&successor.state, &symmetry_field_set);
+                        let canonical = canonical_dedup_key(&successor.state, &symmetry_field_set);
                         hash_representatives.insert(key.clone(), canonical);
                     }
                     if let Some(ref mut exporter) = debug_exporter {
@@ -612,8 +622,7 @@ where
                             branch_label,
                         );
                         if let Some(label) = branch_label {
-                            let _ =
-                                exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                            let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
                         }
                     }
                     states_by_key.insert(key.clone(), successor.state.clone());
@@ -642,8 +651,7 @@ where
                             "duplicate",
                         );
                         if let Some(label) = branch_label {
-                            let _ =
-                                exporter.record_edge(&item.key, &key, label, item.depth + 1);
+                            let _ = exporter.record_edge(&item.key, &key, label, item.depth + 1);
                         }
                     }
                     let dedup_canonical =

@@ -35,6 +35,12 @@ pub struct SharedStateStore {
     states: Mutex<BTreeSet<String>>,
 }
 
+impl Default for SharedStateStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SharedStateStore {
     pub fn new() -> Self {
         Self {
@@ -360,10 +366,14 @@ impl WorkerResult {
             entry.max_cardinality = entry.max_cardinality.max(stats.max_cardinality);
         }
         // Merge independence blockers
-        self.sleep_independence_blockers.early_exit_independence_disabled +=
-            other.sleep_independence_blockers.early_exit_independence_disabled;
-        self.sleep_independence_blockers.early_exit_chosen_unknown_footprint +=
-            other.sleep_independence_blockers.early_exit_chosen_unknown_footprint;
+        self.sleep_independence_blockers
+            .early_exit_independence_disabled += other
+            .sleep_independence_blockers
+            .early_exit_independence_disabled;
+        self.sleep_independence_blockers
+            .early_exit_chosen_unknown_footprint += other
+            .sleep_independence_blockers
+            .early_exit_chosen_unknown_footprint;
         self.sleep_independence_blockers.candidates_considered +=
             other.sleep_independence_blockers.candidates_considered;
         self.sleep_independence_blockers.independent_candidates +=
@@ -382,7 +392,8 @@ impl WorkerResult {
                 .or_insert(0) += count;
         }
         // Merge runtime conflict stats
-        for (field, (static_count, actual_count)) in other.runtime_conflict_stats.write_field_stats {
+        for (field, (static_count, actual_count)) in other.runtime_conflict_stats.write_field_stats
+        {
             let entry = self
                 .runtime_conflict_stats
                 .write_field_stats
@@ -569,8 +580,9 @@ pub fn explore_dpor_parallel(
                     violation: Some(ViolationWitness {
                         invariant: violated,
                         violating_state_key: initial.canonical_key(),
-                        violating_state_fingerprint:
-                            crate::modelcheck::dpor::enabled::hash_state(initial),
+                        violating_state_fingerprint: crate::modelcheck::dpor::enabled::hash_state(
+                            initial,
+                        ),
                         depth: 0,
                         trace: vec![],
                     }),
@@ -754,7 +766,11 @@ pub fn explore_dpor_parallel(
                         };
                         if let Some(state) = frontier_state {
                             let r = explore_dpor_from_state(
-                                ctx_ref, config_ref, &state, store_ref, flag_ref,
+                                ctx_ref,
+                                config_ref,
+                                &state,
+                                store_ref,
+                                flag_ref,
                                 Some(pool_ref),
                             );
                             if r.violation.is_some() {
@@ -1343,8 +1359,7 @@ fn execute_stolen_work(
     let successor = successors
         .iter()
         .find(|s| {
-            crate::modelcheck::dpor::enabled::hash_state(s)
-                == work.transition.successor_fingerprint
+            crate::modelcheck::dpor::enabled::hash_state(s) == work.transition.successor_fingerprint
         })
         .cloned();
     let Some(successor) = successor else {
@@ -1846,7 +1861,10 @@ fn record_runtime_write_stats(
     post_state: &RuntimeValue,
 ) {
     for write_field in &transition.footprint.writes {
-        let entry = stats.write_field_stats.entry(write_field.clone()).or_insert((0, 0));
+        let entry = stats
+            .write_field_stats
+            .entry(write_field.clone())
+            .or_insert((0, 0));
         entry.0 += 1; // static_write_count
 
         let pre_val = extract_field_value(pre_state, write_field);
@@ -1889,10 +1907,9 @@ fn classify_transition_independence(
     }
     // Check independence: with overrides if available, else static-only.
     let independent = match overrides {
-        Some(ov) if !ov.non_writing_fields.is_empty() => {
-            left.footprint
-                .independent_of_with_overrides(&right.footprint, &ov.non_writing_fields)
-        }
+        Some(ov) if !ov.non_writing_fields.is_empty() => left
+            .footprint
+            .independent_of_with_overrides(&right.footprint, &ov.non_writing_fields),
         _ => left.footprint.independent_of(&right.footprint),
     };
     if independent {
@@ -1961,7 +1978,12 @@ fn compute_child_sleep_set(
             // If independent of chosen, keep asleep
             if record_independence_decision(
                 blockers,
-                classify_transition_independence(sleeping_trans, chosen, use_independence, overrides),
+                classify_transition_independence(
+                    sleeping_trans,
+                    chosen,
+                    use_independence,
+                    overrides,
+                ),
                 sleeping_trans,
                 chosen,
             ) {
@@ -2385,7 +2407,7 @@ max_seq_len = 4
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
-        ..Default::default()
+            ..Default::default()
         };
         let with_independence = DporConfig {
             max_depth: 20,
@@ -2395,7 +2417,7 @@ max_seq_len = 4
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
-        ..Default::default()
+            ..Default::default()
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -2435,7 +2457,7 @@ max_seq_len = 4
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
-        ..Default::default()
+            ..Default::default()
         };
         let with_sleep = DporConfig {
             max_depth: 20,
@@ -2445,7 +2467,7 @@ max_seq_len = 4
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
-        ..Default::default()
+            ..Default::default()
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -2505,7 +2527,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
-            ..Default::default()
+                ..Default::default()
             };
             let with_independence = DporConfig {
                 max_depth: 20,
@@ -2515,7 +2537,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
-            ..Default::default()
+                ..Default::default()
             };
             let with_sleep = DporConfig {
                 max_depth: 20,
@@ -2525,7 +2547,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
-            ..Default::default()
+                ..Default::default()
             };
 
             let result_conservative = explore_dpor(&ctx, &without_sleep);
@@ -2600,7 +2622,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
-            ..Default::default()
+                ..Default::default()
             },
         );
         let sleep = explore_dpor(
@@ -2613,7 +2635,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
-            ..Default::default()
+                ..Default::default()
             },
         );
 
@@ -2682,7 +2704,7 @@ max_seq_len = 4
                     invariants: vec![],
                     check_deadlock: false,
                     runtime_overrides: None,
-                ..Default::default()
+                    ..Default::default()
                 },
             );
             let independence = explore_dpor(
@@ -2695,7 +2717,7 @@ max_seq_len = 4
                     invariants: vec![],
                     check_deadlock: false,
                     runtime_overrides: None,
-                ..Default::default()
+                    ..Default::default()
                 },
             );
             let sleep = explore_dpor(
@@ -2708,7 +2730,7 @@ max_seq_len = 4
                     invariants: vec![],
                     check_deadlock: false,
                     runtime_overrides: None,
-                ..Default::default()
+                    ..Default::default()
                 },
             );
 
@@ -3307,7 +3329,9 @@ max_seq_len = 4
         );
         // The conflict transition reads "x", chosen writes "x" → pair ("x", "x")
         assert!(
-            blockers.conflict_field_pairs.contains_key(&("x".to_string(), "x".to_string())),
+            blockers
+                .conflict_field_pairs
+                .contains_key(&("x".to_string(), "x".to_string())),
             "should record (x, x) conflict pair, got: {:?}",
             blockers.conflict_field_pairs
         );
@@ -3363,12 +3387,16 @@ max_seq_len = 4
         // t1 writes "val", t2 reads "pc" → no conflict (different roots)
         // t1 writes "val", t2 writes "val" → ("val", "val")
         assert_eq!(
-            blockers.conflict_field_pairs.get(&("pc".to_string(), "pc".to_string())),
+            blockers
+                .conflict_field_pairs
+                .get(&("pc".to_string(), "pc".to_string())),
             Some(&2),
             "pc-pc pair should be counted twice"
         );
         assert_eq!(
-            blockers.conflict_field_pairs.get(&("val".to_string(), "val".to_string())),
+            blockers
+                .conflict_field_pairs
+                .get(&("val".to_string(), "val".to_string())),
             Some(&2),
             "val-val pair should be counted twice"
         );
@@ -3417,20 +3445,32 @@ max_seq_len = 4
 
     #[test]
     fn test_format_summary_top_conflicts_ordering() {
-        let mut blockers = SleepIndependenceBlockers::default();
-        blockers.blocked_footprint_conflict = 30;
-        blockers.candidates_considered = 30;
+        let mut blockers = SleepIndependenceBlockers {
+            blocked_footprint_conflict: 30,
+            candidates_considered: 30,
+            ..Default::default()
+        };
         // Insert field pairs with different frequencies
-        blockers.conflict_field_pairs.insert(("a".to_string(), "b".to_string()), 5);
-        blockers.conflict_field_pairs.insert(("pc".to_string(), "pc".to_string()), 20);
-        blockers.conflict_field_pairs.insert(("val".to_string(), "val".to_string()), 3);
-        blockers.conflict_field_pairs.insert(("x".to_string(), "y".to_string()), 2);
+        blockers
+            .conflict_field_pairs
+            .insert(("a".to_string(), "b".to_string()), 5);
+        blockers
+            .conflict_field_pairs
+            .insert(("pc".to_string(), "pc".to_string()), 20);
+        blockers
+            .conflict_field_pairs
+            .insert(("val".to_string(), "val".to_string()), 3);
+        blockers
+            .conflict_field_pairs
+            .insert(("x".to_string(), "y".to_string()), 2);
 
         let summary = format_independence_blockers_summary(&blockers);
         // Top-N should be ordered by frequency descending
         assert!(summary.contains("top_conflicts="));
         // pc,pc (20) should appear before a,b (5)
-        let pc_pos = summary.find("(pc,pc)::20").expect("should contain pc,pc::20");
+        let pc_pos = summary
+            .find("(pc,pc)::20")
+            .expect("should contain pc,pc::20");
         let ab_pos = summary.find("(a,b)::5").expect("should contain a,b::5");
         assert!(
             pc_pos < ab_pos,
@@ -3440,12 +3480,14 @@ max_seq_len = 4
 
     #[test]
     fn test_format_conflict_profile_report() {
-        let mut blockers = SleepIndependenceBlockers::default();
-        blockers.candidates_considered = 100;
-        blockers.independent_candidates = 40;
-        blockers.blocked_same_process = 20;
-        blockers.blocked_unknown_footprint = 10;
-        blockers.blocked_footprint_conflict = 30;
+        let mut blockers = SleepIndependenceBlockers {
+            candidates_considered: 100,
+            independent_candidates: 40,
+            blocked_same_process: 20,
+            blocked_unknown_footprint: 10,
+            blocked_footprint_conflict: 30,
+            ..Default::default()
+        };
         blockers
             .conflict_field_pairs
             .insert(("pc".to_string(), "pc".to_string()), 15);
@@ -3505,8 +3547,14 @@ max_seq_len = 4
             ("pc", RuntimeValue::Int(1)),
             ("val", RuntimeValue::Int(42)),
         ]);
-        assert_eq!(extract_field_value(&state, "pc"), Some(&RuntimeValue::Int(1)));
-        assert_eq!(extract_field_value(&state, "val"), Some(&RuntimeValue::Int(42)));
+        assert_eq!(
+            extract_field_value(&state, "pc"),
+            Some(&RuntimeValue::Int(1))
+        );
+        assert_eq!(
+            extract_field_value(&state, "val"),
+            Some(&RuntimeValue::Int(42))
+        );
         assert_eq!(extract_field_value(&state, "nonexistent"), None);
     }
 
@@ -3518,8 +3566,14 @@ max_seq_len = 4
             RuntimeValue::Int(30),
         ]));
         let state = make_struct_state(vec![("log", seq)]);
-        assert_eq!(extract_field_value(&state, "log[0]"), Some(&RuntimeValue::Int(10)));
-        assert_eq!(extract_field_value(&state, "log[2]"), Some(&RuntimeValue::Int(30)));
+        assert_eq!(
+            extract_field_value(&state, "log[0]"),
+            Some(&RuntimeValue::Int(10))
+        );
+        assert_eq!(
+            extract_field_value(&state, "log[2]"),
+            Some(&RuntimeValue::Int(30))
+        );
         assert_eq!(extract_field_value(&state, "log[5]"), None);
     }
 
@@ -3586,8 +3640,12 @@ max_seq_len = 4
     fn test_format_conflict_profile_with_runtime_stats() {
         let blockers = SleepIndependenceBlockers::default();
         let mut runtime_stats = RuntimeConflictStats::default();
-        runtime_stats.write_field_stats.insert("pc".to_string(), (100, 80));
-        runtime_stats.write_field_stats.insert("val".to_string(), (50, 5));
+        runtime_stats
+            .write_field_stats
+            .insert("pc".to_string(), (100, 80));
+        runtime_stats
+            .write_field_stats
+            .insert("val".to_string(), (50, 5));
 
         let report = format_conflict_profile(&blockers, &runtime_stats);
         assert!(report.contains("Runtime write-field verification:"));
@@ -3614,8 +3672,14 @@ max_seq_len = 4
         let overrides = stats.compute_overrides(10);
         assert!(overrides.non_writing_fields.contains("pc"));
         assert!(overrides.non_writing_fields.contains("log"));
-        assert!(!overrides.non_writing_fields.contains("val"), "50% conflict rate");
-        assert!(!overrides.non_writing_fields.contains("rare"), "below min_samples");
+        assert!(
+            !overrides.non_writing_fields.contains("val"),
+            "50% conflict rate"
+        );
+        assert!(
+            !overrides.non_writing_fields.contains("rare"),
+            "below min_samples"
+        );
         assert_eq!(overrides.narrowed_count, 2);
     }
 
@@ -4647,7 +4711,7 @@ max_seq_len = 4
                         invariants: vec![],
                         check_deadlock: false,
                         runtime_overrides: None,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 ),
                 (
@@ -4660,7 +4724,7 @@ max_seq_len = 4
                         invariants: vec![],
                         check_deadlock: false,
                         runtime_overrides: None,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 ),
                 (
@@ -4673,7 +4737,7 @@ max_seq_len = 4
                         invariants: vec![],
                         check_deadlock: false,
                         runtime_overrides: None,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 ),
             ];
@@ -5050,8 +5114,7 @@ max_seq_len = 4
             return;
         }
         let model_path = case_model_config("09_peterson_mutex_2p");
-        let ctx =
-            SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext").unwrap();
+        let ctx = SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext").unwrap();
         let config = DporConfig {
             max_depth: 30,
             max_states: 10000,
@@ -5164,14 +5227,24 @@ max_seq_len = 4
         let no_stop = AtomicBool::new(false);
         let initial_states = ctx.initial_states().unwrap();
         let normal = explore_dpor_from_state(
-            &ctx, &config, &initial_states[0], &store_normal, &no_stop, None,
+            &ctx,
+            &config,
+            &initial_states[0],
+            &store_normal,
+            &no_stop,
+            None,
         );
 
         // Pre-stopped run: flag is already set before exploration
         let store_stopped = SharedStateStore::new();
         let pre_stop = AtomicBool::new(true);
         let stopped = explore_dpor_from_state(
-            &ctx, &config, &initial_states[0], &store_stopped, &pre_stop, None,
+            &ctx,
+            &config,
+            &initial_states[0],
+            &store_stopped,
+            &pre_stop,
+            None,
         );
 
         // Stopped run should fire far fewer transitions
@@ -5188,8 +5261,7 @@ max_seq_len = 4
         );
         eprintln!(
             "Stop flag: normal={} transitions, pre-stopped={} transitions",
-            normal.transitions_fired,
-            stopped.transitions_fired,
+            normal.transitions_fired, stopped.transitions_fired,
         );
     }
 
@@ -5527,7 +5599,10 @@ max_seq_len = 4
 
         // Both sequential and parallel should find the violation
         let seq_result = explore_dpor(&ctx, &config);
-        assert!(seq_result.violation.is_some(), "Sequential should find violation");
+        assert!(
+            seq_result.violation.is_some(),
+            "Sequential should find violation"
+        );
 
         for workers in [2, 4] {
             let par_result = explore_dpor_parallel(&ctx, &config, workers);
@@ -5634,9 +5709,13 @@ max_seq_len = 4
 
             eprintln!(
                 "{:<35} {:>8} {:>8} {:>10} {:>10} {:>10.1} {:>8}",
-                case_id, "seq", seq_result.distinct_states.len(),
-                seq_result.transitions_fired, seq_result.traces_explored,
-                seq_ms, "-"
+                case_id,
+                "seq",
+                seq_result.distinct_states.len(),
+                seq_result.transitions_fired,
+                seq_result.traces_explored,
+                seq_ms,
+                "-"
             );
 
             for workers in [2, 4] {
@@ -5653,22 +5732,30 @@ max_seq_len = 4
                 }
                 if missing > 0 {
                     parity_failures.push(format!(
-                        "{} workers={}: {} missing", case_id, workers, missing
+                        "{} workers={}: {} missing",
+                        case_id, workers, missing
                     ));
                 }
 
                 eprintln!(
                     "{:<35} {:>8} {:>8} {:>10} {:>10} {:>10.1} {:>6.2}x {}",
-                    "", workers, par_result.distinct_states.len(),
-                    par_result.transitions_fired, par_result.traces_explored,
-                    par_ms, speedup, if missing > 0 { "FAIL" } else { "ok" }
+                    "",
+                    workers,
+                    par_result.distinct_states.len(),
+                    par_result.transitions_fired,
+                    par_result.traces_explored,
+                    par_ms,
+                    speedup,
+                    if missing > 0 { "FAIL" } else { "ok" }
                 );
             }
         }
 
         eprintln!("\n=== End Benchmark ===");
         if !parity_failures.is_empty() {
-            for f in &parity_failures { eprintln!("  FAIL: {}", f); }
+            for f in &parity_failures {
+                eprintln!("  FAIL: {}", f);
+            }
             panic!("{} parity failures", parity_failures.len());
         }
         eprintln!("All parity checks passed.\n");
@@ -5694,9 +5781,13 @@ max_seq_len = 4
 
         for (case_id, filename) in &quick_cases {
             let spec_file = spec_dir.join(format!("{}/{}", case_id, filename));
-            if !spec_file.exists() { continue; }
+            if !spec_file.exists() {
+                continue;
+            }
             let model_path = model_dir.join(format!("{}.toml", case_id));
-            if !model_path.exists() { continue; }
+            if !model_path.exists() {
+                continue;
+            }
             let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
                 Ok(c) => c,
                 Err(_) => continue,
@@ -5716,13 +5807,16 @@ max_seq_len = 4
                 for state in &sequential.distinct_states {
                     assert!(
                         parallel.distinct_states.contains(state),
-                        "{} workers={}: missing state", case_id, workers
+                        "{} workers={}: missing state",
+                        case_id,
+                        workers
                     );
                 }
             }
             eprintln!(
                 "Corpus parity {}: seq={} states, par ok",
-                case_id, sequential.distinct_states.len()
+                case_id,
+                sequential.distinct_states.len()
             );
         }
     }
@@ -5742,9 +5836,13 @@ max_seq_len = 4
 
         // Use peterson which has enough depth for work-stealing to trigger
         let spec_file = spec_dir.join("09_peterson_mutex_2p/PetersonMutex.rs");
-        if !spec_file.exists() { return; }
+        if !spec_file.exists() {
+            return;
+        }
         let model_path = model_dir.join("09_peterson_mutex_2p.toml");
-        if !model_path.exists() { return; }
+        if !model_path.exists() {
+            return;
+        }
         let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
             Ok(c) => c,
             Err(_) => return,
@@ -5763,7 +5861,7 @@ max_seq_len = 4
 
         let sequential = explore_dpor(&ctx, &config);
         assert!(
-            sequential.distinct_states.len() > 0,
+            !sequential.distinct_states.is_empty(),
             "sequential should find states"
         );
 
@@ -5773,12 +5871,15 @@ max_seq_len = 4
             for state in &sequential.distinct_states {
                 assert!(
                     parallel.distinct_states.contains(state),
-                    "workers={}: missing state from sequential set", workers
+                    "workers={}: missing state from sequential set",
+                    workers
                 );
             }
             eprintln!(
                 "DFS work-stealing parity: workers={}, seq={}, par={} — ok",
-                workers, sequential.distinct_states.len(), parallel.distinct_states.len()
+                workers,
+                sequential.distinct_states.len(),
+                parallel.distinct_states.len()
             );
         }
     }

@@ -186,20 +186,17 @@ impl TransitionFootprint {
                 .reads
                 .iter()
                 .any(|right| field_paths_conflict(left, right))
-                || other
-                    .writes
-                    .iter()
-                    .any(|right| !non_writing_overrides.contains(right) && field_paths_conflict(left, right))
+                || other.writes.iter().any(|right| {
+                    !non_writing_overrides.contains(right) && field_paths_conflict(left, right)
+                })
             {
                 return false;
             }
         }
         for left in &self.reads {
-            if other
-                .writes
-                .iter()
-                .any(|right| !non_writing_overrides.contains(right) && field_paths_conflict(left, right))
-            {
+            if other.writes.iter().any(|right| {
+                !non_writing_overrides.contains(right) && field_paths_conflict(left, right)
+            }) {
                 return false;
             }
         }
@@ -208,9 +205,11 @@ impl TransitionFootprint {
 
     /// Return the specific field pairs that conflict between two footprints.
     /// Each pair is `(left_field, right_field)` where the conflict type is:
+    ///
     /// - write-read: left writes, right reads
     /// - write-write: left writes, right writes
     /// - read-write: left reads, right writes
+    ///
     /// Returns an empty vec if footprints are independent.
     pub fn conflicting_field_pairs(&self, other: &TransitionFootprint) -> Vec<(String, String)> {
         let mut pairs = Vec::new();

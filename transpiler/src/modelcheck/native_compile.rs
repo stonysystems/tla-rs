@@ -12,13 +12,22 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+/// Function signature for natively compiled eval functions.
+type NativeEvalFn = unsafe fn(&[RuntimeValue]) -> RuntimeResult<RuntimeValue>;
+
+/// Cache key: (expression pointer, environment variable names).
+type NativeCacheKey = (usize, Vec<String>);
+
+/// Cache map: key → compiled function (None = cached failure).
+type NativeCacheMap = HashMap<NativeCacheKey, Option<Arc<NativeFunction>>>;
+
 /// A natively compiled eval function loaded from a cdylib.
 ///
 /// Holds the `libloading::Library` to keep the shared library mapped.
 /// The function pointer is valid as long as `_lib` is alive.
 pub struct NativeFunction {
     _lib: libloading::Library,
-    func: unsafe fn(&[RuntimeValue]) -> RuntimeResult<RuntimeValue>,
+    func: NativeEvalFn,
 }
 
 impl NativeFunction {
@@ -132,15 +141,15 @@ pub fn compile_and_load(
 
     // Look up the entry point
     let func = unsafe {
-        let sym: libloading::Symbol<unsafe fn(&[RuntimeValue]) -> RuntimeResult<RuntimeValue>> =
+        let sym: libloading::Symbol<NativeEvalFn> =
             lib.get(b"native_eval")
                 .map_err(|e| TranspileError::Config {
                     message: format!("Failed to find native_eval symbol: {}", e),
                 })?;
         // Transmute to a raw fn pointer that outlives the Symbol borrow
         std::mem::transmute::<
-            libloading::Symbol<unsafe fn(&[RuntimeValue]) -> RuntimeResult<RuntimeValue>>,
-            unsafe fn(&[RuntimeValue]) -> RuntimeResult<RuntimeValue>,
+            libloading::Symbol<NativeEvalFn>,
+            NativeEvalFn,
         >(sym)
     };
 
@@ -208,7 +217,7 @@ pub fn find_runtime_rlib(runtime_crate_dir: &Path) -> TranspileResult<(PathBuf, 
 /// shared across parallel BFS workers.
 pub struct NativeCache {
     /// `None` = compilation failed (cached failure); `Some` = loaded function.
-    cache: Mutex<HashMap<(usize, Vec<String>), Option<Arc<NativeFunction>>>>,
+    cache: Mutex<NativeCacheMap>,
     runtime_rlib_path: PathBuf,
     runtime_deps_dir: PathBuf,
 }
@@ -226,7 +235,10 @@ impl NativeCache {
     /// Return the (rlib_path, deps_dir) pair for constructing a second cache
     /// with the same pre-built runtime (avoids a second `cargo build`).
     pub fn rlib_paths(&self) -> (PathBuf, PathBuf) {
-        (self.runtime_rlib_path.clone(), self.runtime_deps_dir.clone())
+        (
+            self.runtime_rlib_path.clone(),
+            self.runtime_deps_dir.clone(),
+        )
     }
 
     /// Try to initialize by building the runtime crate.
@@ -366,8 +378,9 @@ mod tests {
             PathBuf::from("/nonexistent/test.rlib"),
             PathBuf::from("/nonexistent/deps"),
         ));
-        let expr: &'static crate::ast::Expr =
-            Box::leak(Box::new(crate::ast::Expr::Literal(crate::ast::Literal::Int(77))));
+        let expr: &'static crate::ast::Expr = Box::leak(Box::new(crate::ast::Expr::Literal(
+            crate::ast::Literal::Int(77),
+        )));
         let handles: Vec<_> = (0..4)
             .map(|_| {
                 let cache = StdArc::clone(&cache);

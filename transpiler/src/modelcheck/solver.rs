@@ -112,8 +112,11 @@ pub fn dump_eval_dispatch_profile() {
     }
     EVAL_DISPATCH_PROFILE.with(|p| {
         let p = p.borrow();
-        let total = p.native_hit + p.native_compile_fail + p.bytecode_hit
-            + p.bytecode_compile_fail + p.ast_fallback;
+        let total = p.native_hit
+            + p.native_compile_fail
+            + p.bytecode_hit
+            + p.bytecode_compile_fail
+            + p.ast_fallback;
         if total == 0 {
             return;
         }
@@ -139,8 +142,15 @@ pub fn dump_eval_dispatch_profile() {
             0.0
         };
         eprintln!("  compiled (native+bc):   {:>12}  {:>6.2}%", fast, pct_fast);
-        eprintln!("  AST fallback:           {:>12}  {:>6.2}%", p.ast_fallback,
-            if total > 0 { 100.0 * (p.ast_fallback as f64) / (total as f64) } else { 0.0 });
+        eprintln!(
+            "  AST fallback:           {:>12}  {:>6.2}%",
+            p.ast_fallback,
+            if total > 0 {
+                100.0 * (p.ast_fallback as f64) / (total as f64)
+            } else {
+                0.0
+            }
+        );
     });
 }
 
@@ -2734,7 +2744,10 @@ mod tests {
             let p = p.borrow();
             assert_eq!(p.bytecode_hit, 1, "should record 1 bytecode hit");
             assert_eq!(p.ast_fallback, 0, "should not fall back to AST");
-            assert_eq!(p.bytecode_compile_fail, 0, "bytecode should compile successfully");
+            assert_eq!(
+                p.bytecode_compile_fail, 0,
+                "bytecode should compile successfully"
+            );
         });
 
         // Cleanup: disable profiling
@@ -2795,12 +2808,17 @@ mod tests {
 
         EVAL_DISPATCH_PROFILE.with(|p| {
             let p = p.borrow();
-            assert_eq!(p.bytecode_hit, 1, "Set::new closure should compile and run via bytecode");
-            assert_eq!(p.bytecode_compile_fail, 0, "should not fail bytecode compilation");
+            assert_eq!(
+                p.bytecode_hit, 1,
+                "Set::new closure should compile and run via bytecode"
+            );
+            assert_eq!(
+                p.bytecode_compile_fail, 0,
+                "should not fail bytecode compilation"
+            );
             assert_eq!(p.ast_fallback, 0, "should not fall back to AST");
         });
 
         EVAL_DISPATCH_PROFILE_ENABLED.with(|c| c.set(false));
     }
-
 }

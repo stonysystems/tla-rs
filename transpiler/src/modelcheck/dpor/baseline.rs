@@ -35,7 +35,14 @@ pub fn run_baseline(
     invariants: &[String],
     _timeout_sec: u64,
 ) -> BaselineResult {
-    run_baseline_with_flags(transpiler_bin, spec_file, model_toml, invariants, _timeout_sec, &[])
+    run_baseline_with_flags(
+        transpiler_bin,
+        spec_file,
+        model_toml,
+        invariants,
+        _timeout_sec,
+        &[],
+    )
 }
 
 /// Run the baseline model checker with native codegen enabled.
@@ -51,7 +58,11 @@ pub fn run_baseline_native(
     _timeout_sec: u64,
 ) -> BaselineResult {
     run_baseline_with_flags(
-        transpiler_bin, spec_file, model_toml, invariants, _timeout_sec,
+        transpiler_bin,
+        spec_file,
+        model_toml,
+        invariants,
+        _timeout_sec,
         &["--native-codegen"],
     )
 }
@@ -259,8 +270,11 @@ mod tests {
 
         eprintln!(
             "[native-cross-check] {}: baseline={}/{} states, native={}/{} states",
-            case_label, baseline.result, baseline.distinct_states,
-            native.result, native.distinct_states,
+            case_label,
+            baseline.result,
+            baseline.distinct_states,
+            native.result,
+            native.distinct_states,
         );
 
         // Native codegen may gracefully fall back to bytecode/AST when
@@ -295,8 +309,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_default_model_toml(tmp.path());
         assert_native_parity(
-            &transpiler, &spec_file, &model_path,
-            &["LSumInvariant".to_string()], "01_aplusb",
+            &transpiler,
+            &spec_file,
+            &model_path,
+            &["LSumInvariant".to_string()],
+            "01_aplusb",
         );
     }
 
@@ -318,8 +335,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_default_model_toml(tmp.path());
         assert_native_parity(
-            &transpiler, &spec_file, &model_path,
-            &["LTypeOK".to_string()], "02_counter_incdec",
+            &transpiler,
+            &spec_file,
+            &model_path,
+            &["LTypeOK".to_string()],
+            "02_counter_incdec",
         );
     }
 
@@ -341,8 +361,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let model_path = create_default_model_toml(tmp.path());
         assert_native_parity(
-            &transpiler, &spec_file, &model_path,
-            &["LMutualExclusion".to_string()], "04_lock_basic",
+            &transpiler,
+            &spec_file,
+            &model_path,
+            &["LMutualExclusion".to_string()],
+            "04_lock_basic",
         );
     }
 

@@ -1069,24 +1069,38 @@ fn test_chain_replication_config_loading() {
 /// Helper: verify that transpiler output for a protocol matches the checked-in *_gen.rs.
 /// Catches stale generated files (e.g., missing proof lemma calls after config changes).
 fn assert_regen_matches_checked_in(
-    protocol_dir: &str,    // e.g. "ChainReplication"
-    spec_file: &str,       // e.g. "chain.rs"
-    toml_file: &str,       // e.g. "chain_transpile.toml"
-    automan_file: &str,    // e.g. "chain.automan"
-    gen_file: &str,        // e.g. "chain_gen.rs"
+    protocol_dir: &str, // e.g. "ChainReplication"
+    spec_file: &str,    // e.g. "chain.rs"
+    toml_file: &str,    // e.g. "chain_transpile.toml"
+    automan_file: &str, // e.g. "chain.automan"
+    gen_file: &str,     // e.g. "chain_gen.rs"
 ) {
     let repo_root = resolve_repo_root_for_integration();
     let checked_in_path = repo_root.join(format!("src/generated/{}/{}", protocol_dir, gen_file));
 
     let output = std::process::Command::new("cargo")
         .args([
-            "run", "--release", "--",
-            "--input", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, spec_file)).to_str().unwrap(),
-            "--config", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, toml_file)).to_str().unwrap(),
-            "--annotations", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, automan_file)).to_str().unwrap(),
+            "run",
+            "--release",
+            "--",
+            "--input",
+            repo_root
+                .join(format!("src/protocol/{}/{}", protocol_dir, spec_file))
+                .to_str()
+                .unwrap(),
+            "--config",
+            repo_root
+                .join(format!("src/protocol/{}/{}", protocol_dir, toml_file))
+                .to_str()
+                .unwrap(),
+            "--annotations",
+            repo_root
+                .join(format!("src/protocol/{}/{}", protocol_dir, automan_file))
+                .to_str()
+                .unwrap(),
             "--stdout",
         ])
-        .current_dir(&repo_root.join("transpiler"))
+        .current_dir(repo_root.join("transpiler"))
         .output()
         .expect("Failed to run transpiler");
 
@@ -1097,8 +1111,8 @@ fn assert_regen_matches_checked_in(
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let fresh_output = String::from_utf8(output.stdout)
-        .expect("Transpiler output is not valid UTF-8");
+    let fresh_output =
+        String::from_utf8(output.stdout).expect("Transpiler output is not valid UTF-8");
     let checked_in = std::fs::read_to_string(&checked_in_path)
         .unwrap_or_else(|e| panic!("Failed to read checked-in {}: {}", gen_file, e));
 
@@ -1121,11 +1135,18 @@ fn assert_regen_matches_checked_in(
                      --config src/protocol/{}/{} \
                      --annotations src/protocol/{}/{} \
                      --output src/generated/{}/{}",
-                    gen_file, i + 1, checked_line, fresh_line,
-                    protocol_dir, spec_file,
-                    protocol_dir, toml_file,
-                    protocol_dir, automan_file,
-                    protocol_dir, gen_file,
+                    gen_file,
+                    i + 1,
+                    checked_line,
+                    fresh_line,
+                    protocol_dir,
+                    spec_file,
+                    protocol_dir,
+                    toml_file,
+                    protocol_dir,
+                    automan_file,
+                    protocol_dir,
+                    gen_file,
                 );
             }
         }
@@ -1138,84 +1159,130 @@ fn assert_regen_matches_checked_in(
 #[test]
 fn test_chain_replication_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "ChainReplication", "chain.rs", "chain_transpile.toml", "chain.automan", "chain_gen.rs",
+        "ChainReplication",
+        "chain.rs",
+        "chain_transpile.toml",
+        "chain.automan",
+        "chain_gen.rs",
     );
 }
 
 #[test]
 fn test_twophase_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "TwoPhase", "twophase.rs", "twophase_transpile.toml", "twophase.automan", "twophase_gen.rs",
+        "TwoPhase",
+        "twophase.rs",
+        "twophase_transpile.toml",
+        "twophase.automan",
+        "twophase_gen.rs",
     );
 }
 
 #[test]
 fn test_paxos_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "Paxos", "paxos.rs", "paxos_transpile.toml", "paxos.automan", "paxos_gen.rs",
+        "Paxos",
+        "paxos.rs",
+        "paxos_transpile.toml",
+        "paxos.automan",
+        "paxos_gen.rs",
     );
 }
 
 #[test]
 fn test_leader_election_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "LeaderElection", "election.rs", "election_transpile.toml", "election.automan", "election_gen.rs",
+        "LeaderElection",
+        "election.rs",
+        "election_transpile.toml",
+        "election.automan",
+        "election_gen.rs",
     );
 }
 
 #[test]
 fn test_epaxos_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "EPaxos", "epaxos.rs", "epaxos_transpile.toml", "epaxos.automan", "epaxos_gen.rs",
+        "EPaxos",
+        "epaxos.rs",
+        "epaxos_transpile.toml",
+        "epaxos.automan",
+        "epaxos_gen.rs",
     );
 }
 
 #[test]
 fn test_pbft_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "PBFT", "pbft.rs", "pbft_transpile.toml", "pbft.automan", "pbft_gen.rs",
+        "PBFT",
+        "pbft.rs",
+        "pbft_transpile.toml",
+        "pbft.automan",
+        "pbft_gen.rs",
     );
 }
 
 #[test]
 fn test_primarybackup_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "PrimaryBackup", "primarybackup.rs", "primarybackup_transpile.toml", "primarybackup.automan", "primarybackup_gen.rs",
+        "PrimaryBackup",
+        "primarybackup.rs",
+        "primarybackup_transpile.toml",
+        "primarybackup.automan",
+        "primarybackup_gen.rs",
     );
 }
 
 #[test]
 fn test_vertical_paxos_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "VerticalPaxos", "vpaxos.rs", "vpaxos_transpile.toml", "vpaxos.automan", "vpaxos_gen.rs",
+        "VerticalPaxos",
+        "vpaxos.rs",
+        "vpaxos_transpile.toml",
+        "vpaxos.automan",
+        "vpaxos_gen.rs",
     );
 }
 
 #[test]
 fn test_raft_regen_matches_checked_in() {
     assert_regen_matches_checked_in(
-        "Raft", "raft.rs", "raft_transpile.toml", "raft.automan", "raft_gen.rs",
+        "Raft",
+        "raft.rs",
+        "raft_transpile.toml",
+        "raft.automan",
+        "raft_gen.rs",
     );
 }
 
 /// Helper: run `generate-types` and compare output against the checked-in types_gen.rs.
 /// Skips RSL (which has extensive manual additions beyond what generate-types produces).
 fn assert_types_regen_matches_checked_in(
-    protocol_dir: &str,    // e.g. "ChainReplication"
-    types_file: &str,      // e.g. "types.rs"
-    toml_file: &str,       // e.g. "chain_transpile.toml"
+    protocol_dir: &str, // e.g. "ChainReplication"
+    types_file: &str,   // e.g. "types.rs"
+    toml_file: &str,    // e.g. "chain_transpile.toml"
 ) {
     let repo_root = resolve_repo_root_for_integration();
     let checked_in_path = repo_root.join(format!("src/generated/{}/types_gen.rs", protocol_dir));
 
     let output = std::process::Command::new("cargo")
         .args([
-            "run", "--release", "--",
+            "run",
+            "--release",
+            "--",
             "generate-types",
-            "--input", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, types_file)).to_str().unwrap(),
-            "--config", repo_root.join(format!("src/protocol/{}/{}", protocol_dir, toml_file)).to_str().unwrap(),
+            "--input",
+            repo_root
+                .join(format!("src/protocol/{}/{}", protocol_dir, types_file))
+                .to_str()
+                .unwrap(),
+            "--config",
+            repo_root
+                .join(format!("src/protocol/{}/{}", protocol_dir, toml_file))
+                .to_str()
+                .unwrap(),
         ])
-        .current_dir(&repo_root.join("transpiler"))
+        .current_dir(repo_root.join("transpiler"))
         .output()
         .expect("Failed to run transpiler generate-types");
 
@@ -1226,10 +1293,14 @@ fn assert_types_regen_matches_checked_in(
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let fresh_output = String::from_utf8(output.stdout)
-        .expect("Transpiler output is not valid UTF-8");
-    let checked_in = std::fs::read_to_string(&checked_in_path)
-        .unwrap_or_else(|e| panic!("Failed to read checked-in types_gen.rs for {}: {}", protocol_dir, e));
+    let fresh_output =
+        String::from_utf8(output.stdout).expect("Transpiler output is not valid UTF-8");
+    let checked_in = std::fs::read_to_string(&checked_in_path).unwrap_or_else(|e| {
+        panic!(
+            "Failed to read checked-in types_gen.rs for {}: {}",
+            protocol_dir, e
+        )
+    });
 
     let fresh_lines: Vec<&str> = fresh_output.trim_end().lines().collect();
     let checked_lines: Vec<&str> = checked_in.trim_end().lines().collect();
@@ -1249,9 +1320,14 @@ fn assert_types_regen_matches_checked_in(
                      --input src/protocol/{}/{} \
                      --config src/protocol/{}/{} \
                      --output src/generated/{}/types_gen.rs",
-                    protocol_dir, i + 1, checked_line, fresh_line,
-                    protocol_dir, types_file,
-                    protocol_dir, toml_file,
+                    protocol_dir,
+                    i + 1,
+                    checked_line,
+                    fresh_line,
+                    protocol_dir,
+                    types_file,
+                    protocol_dir,
+                    toml_file,
                     protocol_dir,
                 );
             }
@@ -1261,65 +1337,51 @@ fn assert_types_regen_matches_checked_in(
 
 #[test]
 fn test_chain_replication_types_regen_matches_checked_in() {
-    assert_types_regen_matches_checked_in(
-        "ChainReplication", "types.rs", "chain_transpile.toml",
-    );
+    assert_types_regen_matches_checked_in("ChainReplication", "types.rs", "chain_transpile.toml");
 }
 
 #[test]
 fn test_twophase_types_regen_matches_checked_in() {
-    assert_types_regen_matches_checked_in(
-        "TwoPhase", "types.rs", "twophase_transpile.toml",
-    );
+    assert_types_regen_matches_checked_in("TwoPhase", "types.rs", "twophase_transpile.toml");
 }
 
 #[test]
 fn test_paxos_types_regen_matches_checked_in() {
-    assert_types_regen_matches_checked_in(
-        "Paxos", "types.rs", "paxos_transpile.toml",
-    );
+    assert_types_regen_matches_checked_in("Paxos", "types.rs", "paxos_transpile.toml");
 }
 
 #[test]
 fn test_leader_election_types_regen_matches_checked_in() {
-    assert_types_regen_matches_checked_in(
-        "LeaderElection", "types.rs", "election_transpile.toml",
-    );
+    assert_types_regen_matches_checked_in("LeaderElection", "types.rs", "election_transpile.toml");
 }
 
 #[test]
 fn test_epaxos_types_regen_matches_checked_in() {
-    assert_types_regen_matches_checked_in(
-        "EPaxos", "types.rs", "epaxos_transpile.toml",
-    );
+    assert_types_regen_matches_checked_in("EPaxos", "types.rs", "epaxos_transpile.toml");
 }
 
 #[test]
 fn test_pbft_types_regen_matches_checked_in() {
-    assert_types_regen_matches_checked_in(
-        "PBFT", "types.rs", "pbft_transpile.toml",
-    );
+    assert_types_regen_matches_checked_in("PBFT", "types.rs", "pbft_transpile.toml");
 }
 
 #[test]
 fn test_primarybackup_types_regen_matches_checked_in() {
     assert_types_regen_matches_checked_in(
-        "PrimaryBackup", "types.rs", "primarybackup_transpile.toml",
+        "PrimaryBackup",
+        "types.rs",
+        "primarybackup_transpile.toml",
     );
 }
 
 #[test]
 fn test_vertical_paxos_types_regen_matches_checked_in() {
-    assert_types_regen_matches_checked_in(
-        "VerticalPaxos", "types.rs", "vpaxos_transpile.toml",
-    );
+    assert_types_regen_matches_checked_in("VerticalPaxos", "types.rs", "vpaxos_transpile.toml");
 }
 
 #[test]
 fn test_raft_types_regen_matches_checked_in() {
-    assert_types_regen_matches_checked_in(
-        "Raft", "types.rs", "raft_transpile.toml",
-    );
+    assert_types_regen_matches_checked_in("Raft", "types.rs", "raft_transpile.toml");
 }
 
 #[test]
@@ -2570,7 +2632,8 @@ fn test_replica_process1b_is_implemented() {
         "CReplicaNextProcess1b should no longer have unimplemented!() — it has a real implementation"
     );
     assert!(
-        fn_source.contains("CProposerProcess1b") || fn_source.contains("proposer.CProposerProcess1b"),
+        fn_source.contains("CProposerProcess1b")
+            || fn_source.contains("proposer.CProposerProcess1b"),
         "CReplicaNextProcess1b should dispatch to proposer sub-component function"
     );
 }

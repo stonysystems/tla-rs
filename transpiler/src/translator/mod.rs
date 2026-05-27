@@ -2904,17 +2904,26 @@ impl Translator {
                 field.clone(),
             ),
             ExecExpr::Block(stmts) => ExecExpr::Block(
-                stmts.iter().map(|s| Self::rename_var_in_expr(s, from, to)).collect(),
+                stmts
+                    .iter()
+                    .map(|s| Self::rename_var_in_expr(s, from, to))
+                    .collect(),
             ),
             ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 value: Box::new(Self::rename_var_in_expr(value, from, to)),
             },
-            ExecExpr::If { cond, then_branch, else_branch } => ExecExpr::If {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
                 cond: Box::new(Self::rename_var_in_expr(cond, from, to)),
                 then_branch: Box::new(Self::rename_var_in_expr(then_branch, from, to)),
-                else_branch: else_branch.as_ref().map(|e| Box::new(Self::rename_var_in_expr(e, from, to))),
+                else_branch: else_branch
+                    .as_ref()
+                    .map(|e| Box::new(Self::rename_var_in_expr(e, from, to))),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
                 lhs: Box::new(Self::rename_var_in_expr(lhs, from, to)),
@@ -2927,31 +2936,60 @@ impl Translator {
             },
             ExecExpr::Call { func, args } => ExecExpr::Call {
                 func: func.clone(),
-                args: args.iter().map(|a| Self::rename_var_in_expr(a, from, to)).collect(),
+                args: args
+                    .iter()
+                    .map(|a| Self::rename_var_in_expr(a, from, to))
+                    .collect(),
             },
-            ExecExpr::MethodCall { receiver, method, args } => ExecExpr::MethodCall {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => ExecExpr::MethodCall {
                 receiver: Box::new(Self::rename_var_in_expr(receiver, from, to)),
                 method: method.clone(),
-                args: args.iter().map(|a| Self::rename_var_in_expr(a, from, to)).collect(),
+                args: args
+                    .iter()
+                    .map(|a| Self::rename_var_in_expr(a, from, to))
+                    .collect(),
             },
             ExecExpr::Struct { name, fields } => ExecExpr::Struct {
                 name: name.clone(),
-                fields: fields.iter().map(|(n, v)| (n.clone(), Self::rename_var_in_expr(v, from, to))).collect(),
+                fields: fields
+                    .iter()
+                    .map(|(n, v)| (n.clone(), Self::rename_var_in_expr(v, from, to)))
+                    .collect(),
             },
             ExecExpr::StructUpdate { name, base, fields } => ExecExpr::StructUpdate {
                 name: name.clone(),
                 base: Box::new(Self::rename_var_in_expr(base, from, to)),
-                fields: fields.iter().map(|(n, v)| (n.clone(), Self::rename_var_in_expr(v, from, to))).collect(),
+                fields: fields
+                    .iter()
+                    .map(|(n, v)| (n.clone(), Self::rename_var_in_expr(v, from, to)))
+                    .collect(),
             },
-            ExecExpr::Clone(inner) => ExecExpr::Clone(Box::new(Self::rename_var_in_expr(inner, from, to))),
+            ExecExpr::Clone(inner) => {
+                ExecExpr::Clone(Box::new(Self::rename_var_in_expr(inner, from, to)))
+            }
             ExecExpr::Tuple(elems) => ExecExpr::Tuple(
-                elems.iter().map(|e| Self::rename_var_in_expr(e, from, to)).collect(),
+                elems
+                    .iter()
+                    .map(|e| Self::rename_var_in_expr(e, from, to))
+                    .collect(),
             ),
-            ExecExpr::Return(inner) => ExecExpr::Return(Box::new(Self::rename_var_in_expr(inner, from, to))),
-            ExecExpr::Cast(inner, ty) => ExecExpr::Cast(Box::new(Self::rename_var_in_expr(inner, from, to)), ty.clone()),
+            ExecExpr::Return(inner) => {
+                ExecExpr::Return(Box::new(Self::rename_var_in_expr(inner, from, to)))
+            }
+            ExecExpr::Cast(inner, ty) => ExecExpr::Cast(
+                Box::new(Self::rename_var_in_expr(inner, from, to)),
+                ty.clone(),
+            ),
             ExecExpr::Match { scrutinee, arms } => ExecExpr::Match {
                 scrutinee: Box::new(Self::rename_var_in_expr(scrutinee, from, to)),
-                arms: arms.iter().map(|(pat, body)| (pat.clone(), Self::rename_var_in_expr(body, from, to))).collect(),
+                arms: arms
+                    .iter()
+                    .map(|(pat, body)| (pat.clone(), Self::rename_var_in_expr(body, from, to)))
+                    .collect(),
             },
             // Leaf nodes that don't contain variable references
             _ => expr.clone(),
@@ -7941,7 +7979,14 @@ impl Translator {
         requires: Vec<String>,
         ensures: Vec<String>,
         func: &AnnotatedFunction,
-    ) -> (Vec<ExecParameter>, ExecType, Vec<String>, Vec<String>, bool, Option<String>) {
+    ) -> (
+        Vec<ExecParameter>,
+        ExecType,
+        Vec<String>,
+        Vec<String>,
+        bool,
+        Option<String>,
+    ) {
         if self.config.mut_self_types.is_empty() || params.is_empty() {
             return (params, return_type, requires, ensures, false, None);
         }
@@ -7970,14 +8015,20 @@ impl Translator {
 
         // Find the receiver's spec param name for output filtering
         // The output param with the same type as the receiver is the self-return
-        let recv_spec_type = func.spec_fn.params.iter()
+        let recv_spec_type = func
+            .spec_fn
+            .params
+            .iter()
             .find(|p| p.name == recv_name)
             .map(|p| &p.ty);
 
         // Remove receiver type from return type
         // For single output: if it matches receiver type, return becomes ()
         // For tuple output: filter out the receiver type component
-        let output_params: Vec<_> = func.spec_fn.params.iter()
+        let output_params: Vec<_> = func
+            .spec_fn
+            .params
+            .iter()
             .zip(&func.param_modes)
             .filter(|(_, m)| **m == ParameterMode::Output)
             .collect();
@@ -7991,8 +8042,9 @@ impl Translator {
             }
         } else if output_params.len() > 1 {
             // Tuple output — filter out the receiver-typed component
-            let remaining: Vec<_> = output_params.iter()
-                .filter(|(p, _)| recv_spec_type.map_or(true, |rt| p.ty != *rt))
+            let remaining: Vec<_> = output_params
+                .iter()
+                .filter(|(p, _)| !recv_spec_type.is_some_and(|rt| p.ty == *rt))
                 .map(|(p, _)| self.translate_type(&p.ty))
                 .collect();
             match remaining.len() {
@@ -8005,83 +8057,96 @@ impl Translator {
         };
 
         // Adjust requires: replace `recv_name@` and `recv_name.` with `old(self)@` and `old(self).`
-        let requires = requires.iter().map(|r| {
-            r.replace(&format!("{}@", recv_name), "old(self)@")
-             .replace(&format!("{}.", recv_name), "old(self).")
-        }).collect();
+        let requires = requires
+            .iter()
+            .map(|r| {
+                r.replace(&format!("{}@", recv_name), "old(self)@")
+                    .replace(&format!("{}.", recv_name), "old(self).")
+            })
+            .collect();
 
         // Adjust ensures: replace receiver-typed output with `self@`/`self.`
         // and input receiver refs with `old(self)@`
         //
         // For multi-output methods, find which tuple index is the receiver type,
         // replace `result.N@` → `self@` for that index, and renumber remaining indices.
-        let recv_output_idx: Option<usize> = recv_spec_type.and_then(|rt| {
-            output_params.iter().position(|(p, _)| p.ty == *rt)
-        });
+        let recv_output_idx: Option<usize> =
+            recv_spec_type.and_then(|rt| output_params.iter().position(|(p, _)| p.ty == *rt));
         // Build mapping from old indices to new indices (excluding receiver)
         let non_recv_indices: Vec<usize> = (0..output_params.len())
             .filter(|i| Some(*i) != recv_output_idx)
             .collect();
-        let ensures = ensures.iter().map(|e| {
-            let mut s = e.clone();
-            if output_params.len() == 1 {
-                // Single output — if same type as receiver, method returns ()
-                if recv_output_idx == Some(0) {
-                    s = s.replace("result@", "self@")
-                         .replace("result.", "self.");
-                }
-            } else if output_params.len() > 1 {
-                if let Some(ri) = recv_output_idx {
-                    // Replace receiver's tuple component with self
-                    s = s.replace(&format!("result.{}@", ri), "self@")
-                         .replace(&format!("result.{}.", ri), "self.");
-                    // Also handle bare `result.N)` or `result.N,` at end of expressions
-                    // by replacing `result.{ri}` when followed by non-alphanumeric
-                    // We use a careful approach: replace specific patterns
-                    let recv_prefix = format!("result.{}", ri);
-                    // Handle remaining occurrences of `result.{ri}` that weren't caught above
-                    // (e.g., `result.0)` at end of spec call)
-                    let remaining = s.clone();
-                    s = String::new();
-                    let mut chars = remaining.char_indices().peekable();
-                    while let Some((idx, _)) = chars.peek() {
-                        let rest = &remaining[*idx..];
-                        if rest.starts_with(&recv_prefix) {
-                            let after = rest.get(recv_prefix.len()..recv_prefix.len()+1);
-                            let is_boundary = after.map_or(true, |c| {
-                                let c = c.chars().next().unwrap();
-                                !c.is_alphanumeric() && c != '_' && c != '.'
-                            });
-                            if is_boundary {
-                                s.push_str("self");
-                                for _ in 0..recv_prefix.len() {
-                                    chars.next();
+        let ensures = ensures
+            .iter()
+            .map(|e| {
+                let mut s = e.clone();
+                if output_params.len() == 1 {
+                    // Single output — if same type as receiver, method returns ()
+                    if recv_output_idx == Some(0) {
+                        s = s.replace("result@", "self@").replace("result.", "self.");
+                    }
+                } else if output_params.len() > 1 {
+                    if let Some(ri) = recv_output_idx {
+                        // Replace receiver's tuple component with self
+                        s = s
+                            .replace(&format!("result.{}@", ri), "self@")
+                            .replace(&format!("result.{}.", ri), "self.");
+                        // Also handle bare `result.N)` or `result.N,` at end of expressions
+                        // by replacing `result.{ri}` when followed by non-alphanumeric
+                        // We use a careful approach: replace specific patterns
+                        let recv_prefix = format!("result.{}", ri);
+                        // Handle remaining occurrences of `result.{ri}` that weren't caught above
+                        // (e.g., `result.0)` at end of spec call)
+                        let remaining = s.clone();
+                        s = String::new();
+                        let mut chars = remaining.char_indices().peekable();
+                        while let Some((idx, _)) = chars.peek() {
+                            let rest = &remaining[*idx..];
+                            if rest.starts_with(&recv_prefix) {
+                                let after = rest.get(recv_prefix.len()..recv_prefix.len() + 1);
+                                let is_boundary = !after.is_some_and(|c| {
+                                    let c = c.chars().next().unwrap();
+                                    c.is_alphanumeric() || c == '_' || c == '.'
+                                });
+                                if is_boundary {
+                                    s.push_str("self");
+                                    for _ in 0..recv_prefix.len() {
+                                        chars.next();
+                                    }
+                                    continue;
                                 }
-                                continue;
                             }
+                            s.push(remaining.as_bytes()[*idx] as char);
+                            chars.next();
                         }
-                        s.push(remaining.as_bytes()[*idx] as char);
-                        chars.next();
-                    }
-                    // Renumber remaining output indices
-                    for (new_idx, &old_idx) in non_recv_indices.iter().enumerate() {
-                        let old_prefix = format!("result.{}", old_idx);
-                        let new_prefix = if non_recv_indices.len() == 1 {
-                            "result".to_string()
-                        } else {
-                            format!("result.{}", new_idx)
-                        };
-                        s = s.replace(&old_prefix, &new_prefix);
+                        // Renumber remaining output indices
+                        for (new_idx, &old_idx) in non_recv_indices.iter().enumerate() {
+                            let old_prefix = format!("result.{}", old_idx);
+                            let new_prefix = if non_recv_indices.len() == 1 {
+                                "result".to_string()
+                            } else {
+                                format!("result.{}", new_idx)
+                            };
+                            s = s.replace(&old_prefix, &new_prefix);
+                        }
                     }
                 }
-            }
-            // Replace input receiver references with old(self)
-            s = s.replace(&format!("{}@", recv_name), "old(self)@")
-                 .replace(&format!("{}.", recv_name), "old(self).");
-            s
-        }).collect();
+                // Replace input receiver references with old(self)
+                s = s
+                    .replace(&format!("{}@", recv_name), "old(self)@")
+                    .replace(&format!("{}.", recv_name), "old(self).");
+                s
+            })
+            .collect();
 
-        (params, new_return_type, requires, ensures, true, Some(recv_type_name))
+        (
+            params,
+            new_return_type,
+            requires,
+            ensures,
+            true,
+            Some(recv_type_name),
+        )
     }
 
     /// Build return type from output parameters
@@ -28546,11 +28611,8 @@ borrowed_args = [0]
             is_reference: true,
             is_self: false,
         }];
-        let func = make_test_annotated_fn(
-            "LTest",
-            vec![("s", "LState")],
-            vec![ParameterMode::Input],
-        );
+        let func =
+            make_test_annotated_fn("LTest", vec![("s", "LState")], vec![ParameterMode::Input]);
         let (p, _rt, _req, _ens, is_method, recv) = translator.maybe_apply_mut_self(
             params,
             ExecType::Named("CState".to_string()),
@@ -28586,7 +28648,11 @@ borrowed_args = [0]
         let func = make_test_annotated_fn(
             "LHandleRequest",
             vec![("s", "LProposer"), ("msg", "LMessage"), ("s_", "LProposer")],
-            vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Output],
+            vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Output,
+            ],
         );
 
         let requires = vec!["s@.well_formed()".to_string()];
@@ -28628,11 +28694,8 @@ borrowed_args = [0]
             is_reference: true,
             is_self: false,
         }];
-        let func = make_test_annotated_fn(
-            "LTest",
-            vec![("s", "LLearner")],
-            vec![ParameterMode::Input],
-        );
+        let func =
+            make_test_annotated_fn("LTest", vec![("s", "LLearner")], vec![ParameterMode::Input]);
         let (_p, _rt, _req, _ens, is_method, recv) = translator.maybe_apply_mut_self(
             params,
             ExecType::Named("()".to_string()),
@@ -28727,8 +28790,18 @@ borrowed_args = [0]
         // Spec params: s (input), msg (input), s_ (output, LState), sent_packets (output, Seq<LMsg>)
         let func = make_test_annotated_fn(
             "LHandleMsg",
-            vec![("s", "LState"), ("msg", "LMessage"), ("s_", "LState"), ("sent_packets", "LMsg")],
-            vec![ParameterMode::Input, ParameterMode::Input, ParameterMode::Output, ParameterMode::Output],
+            vec![
+                ("s", "LState"),
+                ("msg", "LMessage"),
+                ("s_", "LState"),
+                ("sent_packets", "LMsg"),
+            ],
+            vec![
+                ParameterMode::Input,
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Output,
+            ],
         );
 
         let requires = vec!["s@.valid()".to_string()];
@@ -28757,17 +28830,26 @@ borrowed_args = [0]
         // Since only 1 remaining, it's unwrapped from tuple
         assert!(
             matches!(&rt, ExecType::Named(n) if n.contains("Msg")),
-            "Expected single remaining output type, got: {:?}", rt
+            "Expected single remaining output type, got: {:?}",
+            rt
         );
 
         // Requires should use old(self)
         assert_eq!(req[0], "old(self)@.valid()");
 
         // Ensures: result.0 → self, result.1 → result (renumbered)
-        assert_eq!(ens[0], "self.valid()", "receiver validity becomes self.valid()");
-        assert_eq!(ens[1], "result.valid()", "non-receiver renumbered from result.1 to result");
-        assert_eq!(ens[2], "LHandleMsg(old(self)@, msg@, self@, result@)",
-            "spec call: result.0@ → self@, result.1@ → result@");
+        assert_eq!(
+            ens[0], "self.valid()",
+            "receiver validity becomes self.valid()"
+        );
+        assert_eq!(
+            ens[1], "result.valid()",
+            "non-receiver renumbered from result.1 to result"
+        );
+        assert_eq!(
+            ens[2], "LHandleMsg(old(self)@, msg@, self@, result@)",
+            "spec call: result.0@ → self@, result.1@ → result@"
+        );
     }
 
     #[test]
@@ -28785,8 +28867,18 @@ borrowed_args = [0]
         }];
         let func = make_test_annotated_fn(
             "LStep",
-            vec![("s", "LState"), ("s_", "LState"), ("pkts", "LMsg"), ("count", "LCount")],
-            vec![ParameterMode::Input, ParameterMode::Output, ParameterMode::Output, ParameterMode::Output],
+            vec![
+                ("s", "LState"),
+                ("s_", "LState"),
+                ("pkts", "LMsg"),
+                ("count", "LCount"),
+            ],
+            vec![
+                ParameterMode::Input,
+                ParameterMode::Output,
+                ParameterMode::Output,
+                ParameterMode::Output,
+            ],
         );
 
         let ensures = vec![
@@ -28811,8 +28903,11 @@ borrowed_args = [0]
         // Return type should be tuple of remaining 2: (Vec<CMsg>, u64)
         // The translator uses translate_type which maps LMsg/LCount spec types
         // Since make_test_annotated_fn creates Named types, they stay as-is
-        assert!(matches!(&rt, ExecType::Tuple(v) if v.len() == 2),
-            "Expected 2-tuple return, got: {:?}", rt);
+        assert!(
+            matches!(&rt, ExecType::Tuple(v) if v.len() == 2),
+            "Expected 2-tuple return, got: {:?}",
+            rt
+        );
 
         // Ensures renumbering: result.0 → self, result.1 → result.0, result.2 → result.1
         assert_eq!(ens[0], "self.valid()");

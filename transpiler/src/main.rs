@@ -3577,6 +3577,7 @@ fn try_solve_predicate_only_helper_branch(
 /// every reached state's RuntimeValue, only their canonical-key
 /// strings. For DPOR runs, `exploration.explored` is empty and the
 /// downstream leads_to check is skipped accordingly.
+#[allow(clippy::too_many_arguments)]
 fn run_dpor_explorer_as_main_path(
     bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
@@ -3671,6 +3672,7 @@ fn run_dpor_explorer_as_main_path(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_model_check(
     bundle: &verus_transpiler::spec_analyzer::ProtocolSourceBundle,
     model_config: &verus_transpiler::modelcheck::config::ModelConfig,
@@ -7027,10 +7029,11 @@ Next(s, s_, c) ==
             "--native-codegen",
         ]);
         match cli.command {
-            Some(Commands::ModelCheck {
-                native_codegen, ..
-            }) => {
-                assert!(native_codegen, "native_codegen should be true with --native-codegen");
+            Some(Commands::ModelCheck { native_codegen, .. }) => {
+                assert!(
+                    native_codegen,
+                    "native_codegen should be true with --native-codegen"
+                );
             }
             _ => panic!("Expected ModelCheck command"),
         }
@@ -7051,7 +7054,10 @@ Next(s, s_, c) ==
             Some(Commands::ModelCheck {
                 conflict_profile, ..
             }) => {
-                assert!(!conflict_profile, "conflict_profile should default to false");
+                assert!(
+                    !conflict_profile,
+                    "conflict_profile should default to false"
+                );
             }
             _ => panic!("Expected ModelCheck command"),
         }

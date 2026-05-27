@@ -622,6 +622,7 @@ fn match_codegen(
 }
 
 /// Convert a pattern to a boolean condition string and binding list.
+#[allow(clippy::only_used_in_recursion)]
 fn pattern_to_condition(
     pattern: &crate::ast::Pattern,
     scrutinee: &str,
