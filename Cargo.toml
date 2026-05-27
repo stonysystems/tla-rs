@@ -11,9 +11,6 @@ categories = ["algorithms", "science"]
 #[dependencies]
 #vstd = { git = "https://github.com/verus-lang/verus.git" }
 
-[features]
-optimized_rsl = []
-
 [package.metadata.verus.ide]
 extra_args = "--crate-type=dylib --expand-errors --multiple-errors 5"
 

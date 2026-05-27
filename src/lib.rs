@@ -10,8 +10,6 @@ use crate::implementation::common::marshalling::Marshalable;
 mod common;
 mod generated;
 mod implementation;
-#[cfg(feature = "optimized_rsl")]
-mod optimized_rsl;
 mod protocol;
 mod services;
 mod verus_extra;

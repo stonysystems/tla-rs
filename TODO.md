@@ -15570,7 +15570,10 @@ ReplicaImpl.rs. broadcast_transpile.toml and types_transpile.toml are excluded
   `acceptor_manual.rs` to `&mut self` convention, updated ReplicaImpl.rs
   callers, disabled old functional-style `impl CReplica` block.
   `optimized_rsl/` still exists but is only compiled with feature flag.
-- [ ] **48.6.b.cleanup**: Delete `optimized_rsl/` module and remove feature flag.
+- [x] **48.6.b.cleanup**: Delete `optimized_rsl/` module and remove feature flag.
+  Removed 11 files (4,330 LOC), `optimized_rsl` feature from Cargo.toml/lib.rs,
+  dead `#[cfg(any())]` block from ReplicaImpl.rs (1,029 lines), unused import aliases.
+  Updated 3 integration tests to match new architecture (all dispatch via replica_gen).
 - [ ] **48.6.c**: Bench RSL with `&mut self` codegen vs Phase 47 optimized_rsl.
 
 ### Estimated effort

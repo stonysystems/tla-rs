@@ -2933,11 +2933,12 @@ fn test_executor_manual_code_footprint_audit_guard() {
         "ExecutorImpl.rs CExecutorExecute should be verified (Phase 25.6 removed external_body)"
     );
 
-    let replica_impl = std::fs::read_to_string("../src/implementation/RSL/ReplicaImpl.rs")
-        .expect("Failed to read ReplicaImpl.rs");
+    // Phase 48.6.b.cleanup: execute is now routed through replica_gen → executor_gen
+    let replica_gen = std::fs::read_to_string("../src/generated/RSL/replica_gen.rs")
+        .expect("Failed to read replica_gen.rs");
     assert!(
-        replica_impl.contains("self.executor.CExecutorExecute"),
-        "ReplicaImpl.rs should continue to route execute through the explicit fallback boundary"
+        replica_gen.contains("CExecutorExecute"),
+        "replica_gen.rs should route execute through executor_gen::CExecutorExecute"
     );
 }
 
@@ -3401,23 +3402,14 @@ fn test_replica_impl_uses_all_generated_modules() {
     let source = std::fs::read_to_string("../src/implementation/RSL/ReplicaImpl.rs")
         .expect("Failed to read ReplicaImpl.rs");
 
-    let expected_imports = [
-        "use crate::generated::RSL::acceptor_gen as generated_acceptor;",
-        "use crate::generated::RSL::executor_gen as generated_executor;",
-        "use crate::generated::RSL::learner_gen as generated_learner;",
-        "use crate::generated::RSL::proposer_gen as generated_proposer;",
-    ];
-
-    for import in expected_imports {
-        assert!(
-            source.contains(import),
-            "ReplicaImpl.rs should import `{}`",
-            import
-        );
-    }
+    // Phase 48.6.b.cleanup: all dispatch goes through replica_gen (which internally
+    // calls acceptor_gen, executor_gen, etc. via &mut self methods).
+    assert!(
+        source.contains("crate::generated::RSL::replica_gen::"),
+        "ReplicaImpl.rs should route all dispatch through generated::RSL::replica_gen"
+    );
 
     // Verify no direct CProposer::, CAcceptor::, CLearner:: static method calls remain
-    // (all should go through generated_* wrappers)
     assert!(
         !source.contains("CProposer::CProposerInit"),
         "Should not call CProposer::CProposerInit directly"
@@ -3426,22 +3418,6 @@ fn test_replica_impl_uses_all_generated_modules() {
         !source.contains("CAcceptor::CAcceptorInit"),
         "Should not call CAcceptor::CAcceptorInit directly"
     );
-
-    // Verify generated function calls are present
-    let generated_calls = [
-        "generated_acceptor::",
-        "generated_executor::",
-        "generated_learner::",
-        "generated_proposer::",
-    ];
-
-    for call in generated_calls {
-        assert!(
-            source.contains(call),
-            "ReplicaImpl.rs should use `{}`",
-            call
-        );
-    }
 }
 
 /// Verify no self.proposer.C*, self.acceptor.C*, self.learner.C* direct method calls remain
@@ -3478,10 +3454,11 @@ fn test_replica_impl_no_direct_subcomponent_method_calls() {
         );
     }
 
-    // CExecutorExecute is the ONE exception that stays manual
+    // Phase 48.6.b.cleanup: CExecutorExecute is now routed through replica_gen → executor_gen.
+    // No direct self.executor.CExecutorExecute call remains in ReplicaImpl.rs.
     assert!(
-        source.contains("self.executor.CExecutorExecute"),
-        "CExecutorExecute should remain as direct manual call (transpiler limitation)"
+        !active_lines.contains("self.executor.CExecutorExecute"),
+        "CExecutorExecute should be routed through replica_gen, not called directly"
     );
 }
 
