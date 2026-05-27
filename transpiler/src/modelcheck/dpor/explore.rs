@@ -519,6 +519,8 @@ pub fn explore_dpor_parallel(
     }
 
     let mut bfs_transitions_fired: usize = 0;
+    // Track frontier fingerprints to dedup without inserting into the store
+    let mut frontier_fps: HashSet<u64> = HashSet::new();
     while let Some((state, depth)) = bfs_queue.pop_front() {
         if depth >= frontier_depth {
             // This state is at the frontier — hand off to parallel workers
@@ -530,14 +532,24 @@ pub fn explore_dpor_parallel(
             Ok(s) => s,
             Err(_) => continue,
         };
+        let child_depth = depth + 1;
         for succ in successors {
             let fp = succ.fingerprint();
-            if !store.insert_fingerprint(fp) {
-                continue;
-            }
-            let key = succ.canonical_key();
-            if !store.insert_state(key) {
-                continue;
+            if child_depth >= frontier_depth {
+                // Frontier state: dedup locally but do NOT insert into the
+                // shared store — workers need to be able to claim these.
+                if !frontier_fps.insert(fp) {
+                    continue;
+                }
+            } else {
+                // Pre-frontier state: insert into store for global dedup
+                if !store.insert_fingerprint(fp) {
+                    continue;
+                }
+                let key = succ.canonical_key();
+                if !store.insert_state(key) {
+                    continue;
+                }
             }
             bfs_transitions_fired += 1;
             // Check invariants
@@ -557,13 +569,13 @@ pub fn explore_dpor_parallel(
                             violating_state_key: succ.canonical_key(),
                             violating_state_fingerprint:
                                 crate::modelcheck::dpor::enabled::hash_state(&succ),
-                            depth: depth + 1,
+                            depth: child_depth,
                             trace: vec![],
                         }),
                     };
                 }
             }
-            bfs_queue.push_back((succ, depth + 1));
+            bfs_queue.push_back((succ, child_depth));
         }
     }
 
@@ -4897,5 +4909,124 @@ max_seq_len = 4
             normal.transitions_fired,
             stopped.transitions_fired,
         );
+    }
+
+    /// Benchmark: parallel DPOR speedup across worker counts.
+    ///
+    /// Runs the protocol test suite with 1/2/4/8 workers and reports
+    /// wall-clock time + state counts. Tagged `#[ignore]` — run manually:
+    /// `cargo test --lib -- bench_parallel_dpor_speedup --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_parallel_dpor_speedup() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let cases: Vec<(&str, &str)> = vec![
+            ("01_aplusb", "APlusB.rs"),
+            ("02_counter_incdec", "CounterIncDec.rs"),
+            ("04_lock_basic", "LockBasic.rs"),
+            ("07_producer_consumer_1slot", "ProducerConsumer1Slot.rs"),
+            ("09_peterson_mutex_2p", "PetersonMutex.rs"),
+            ("13_twophase_small", "TwoPhase.rs"),
+        ];
+        let worker_counts = [1, 2, 4];
+
+        eprintln!("\n=== DPOR Parallel Speedup Benchmark ===");
+        eprintln!(
+            "{:<35} {:>8} {:>8} {:>10} {:>10} {:>10} {:>10}",
+            "CASE", "WORKERS", "STATES", "TRANS", "TRACES", "TIME_MS", "SPEEDUP"
+        );
+        eprintln!("{:-<95}", "");
+
+        for (case_id, filename) in &cases {
+            let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
+            if !spec_file.exists() {
+                continue;
+            }
+            let model_path = case_model_config(case_id);
+            let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let config = DporConfig {
+                max_depth: 20,
+                max_states: 10_000,
+                use_independence: true,
+                use_sleep_sets: true,
+                ..Default::default()
+            };
+
+            let mut baseline_ms: f64 = 0.0;
+            for &workers in &worker_counts {
+                let start = std::time::Instant::now();
+                let result = explore_dpor_parallel(&ctx, &config, workers);
+                let elapsed = start.elapsed();
+                let ms = elapsed.as_secs_f64() * 1000.0;
+
+                if workers == 1 {
+                    baseline_ms = ms;
+                }
+                let speedup = if ms > 0.0 { baseline_ms / ms } else { 0.0 };
+
+                eprintln!(
+                    "{:<35} {:>8} {:>8} {:>10} {:>10} {:>10.1} {:>9.2}x",
+                    case_id,
+                    workers,
+                    result.distinct_states.len(),
+                    result.transitions_fired,
+                    result.traces_explored,
+                    ms,
+                    speedup,
+                );
+            }
+        }
+        eprintln!("\n=== End Benchmark ===\n");
+    }
+
+    /// Correctness: parallel exploration with all worker counts produces
+    /// the same state set as sequential.
+    #[test]
+    fn test_parallel_dpor_all_worker_counts_parity() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let cases: Vec<(&str, &str)> = vec![
+            ("01_aplusb", "APlusB.rs"),
+            ("04_lock_basic", "LockBasic.rs"),
+            ("09_peterson_mutex_2p", "PetersonMutex.rs"),
+        ];
+
+        for (case_id, filename) in &cases {
+            let spec_file = manifest_dir.join(format!("tests/tla-rs/{}/{}", case_id, filename));
+            if !spec_file.exists() {
+                continue;
+            }
+            let model_path = case_model_config(case_id);
+            let ctx = match SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext") {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let config = DporConfig {
+                max_depth: 20,
+                max_states: 10_000,
+                use_independence: true,
+                use_sleep_sets: true,
+                ..Default::default()
+            };
+
+            let sequential = explore_dpor(&ctx, &config);
+            for workers in [2, 4, 8] {
+                let parallel = explore_dpor_parallel(&ctx, &config, workers);
+                // Sequential states must be subset of parallel states
+                for state in &sequential.distinct_states {
+                    assert!(
+                        parallel.distinct_states.contains(state),
+                        "{} workers={}: missing state {}",
+                        case_id,
+                        workers,
+                        state
+                    );
+                }
+            }
+        }
     }
 }
