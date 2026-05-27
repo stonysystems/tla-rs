@@ -3628,6 +3628,7 @@ fn run_dpor_explorer_as_main_path(
         invariants: invariant_names,
         check_deadlock: model_config.properties.check_deadlock,
         runtime_overrides: None,
+        ..Default::default()
     };
     let result = if num_workers > 1 {
         explore_dpor_parallel(&ctx, &dpor_config, num_workers)

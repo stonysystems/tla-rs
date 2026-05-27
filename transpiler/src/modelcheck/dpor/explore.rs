@@ -230,6 +230,15 @@ pub struct DporConfig {
     /// When set, write fields listed in `non_writing_fields` are excluded from
     /// conflict checks, narrowing the independence relation.
     pub runtime_overrides: Option<RuntimeIndependenceOverrides>,
+    /// Minimum frontier states per worker before parallel dispatch.
+    /// The parallel explorer BFS-expands until `frontier.len() >=
+    /// min_frontier_per_worker * num_workers`, ensuring good load balance.
+    /// Default: 4.
+    pub min_frontier_per_worker: usize,
+    /// Maximum BFS depth for frontier collection in parallel mode.
+    /// Caps the adaptive frontier expansion to avoid exploring too deeply
+    /// in the sequential BFS phase. Default: 6.
+    pub max_frontier_depth: usize,
 }
 
 /// A recorded step in a violation witness trace.
@@ -349,6 +358,8 @@ impl Default for DporConfig {
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
+            min_frontier_per_worker: 4,
+            max_frontier_depth: 6,
         }
     }
 }
@@ -473,12 +484,13 @@ pub fn explore_dpor_parallel(
     // Resolve invariant functions for initial-state checking
     let invariant_fns = ctx.resolve_invariants(&config.invariants);
 
-    // Phase 1: Shallow BFS to collect frontier states.
-    // We explore depth 0 (initial) and depth 1 sequentially, collecting
-    // all states at depth <= frontier_depth as frontier candidates for
-    // parallel DFS. States discovered during this phase are inserted
-    // into the shared store so workers won't re-explore them.
-    let frontier_depth: usize = 2;
+    // Phase 1: Adaptive BFS to collect frontier states.
+    // BFS-expand until we have enough frontier states for good load balancing
+    // (at least min_frontier_per_worker * num_workers), capped at max_frontier_depth.
+    // States discovered during pre-frontier depths are inserted into the shared
+    // store so workers won't re-explore them.
+    let target_frontier_size = config.min_frontier_per_worker * num_workers;
+    let max_frontier_depth = config.max_frontier_depth;
     let mut frontier: Vec<RuntimeValue> = Vec::new();
     let mut bfs_queue: std::collections::VecDeque<(RuntimeValue, usize)> =
         std::collections::VecDeque::new();
@@ -521,70 +533,106 @@ pub fn explore_dpor_parallel(
     let mut bfs_transitions_fired: usize = 0;
     // Track frontier fingerprints to dedup without inserting into the store
     let mut frontier_fps: HashSet<u64> = HashSet::new();
-    while let Some((state, depth)) = bfs_queue.pop_front() {
-        if depth >= frontier_depth {
-            // This state is at the frontier — hand off to parallel workers
-            frontier.push(state);
-            continue;
-        }
-        // Expand children
-        let successors = match ctx.full_successors(&state) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let child_depth = depth + 1;
-        for succ in successors {
-            let fp = succ.fingerprint();
-            if child_depth >= frontier_depth {
-                // Frontier state: dedup locally but do NOT insert into the
-                // shared store — workers need to be able to claim these.
-                if !frontier_fps.insert(fp) {
-                    continue;
+    // Adaptive frontier depth: start at 1, expand if frontier is too small
+    let mut current_frontier_depth: usize = 1;
+    loop {
+        // Drain the BFS queue at the current frontier depth
+        let mut next_queue: std::collections::VecDeque<(RuntimeValue, usize)> =
+            std::collections::VecDeque::new();
+        frontier.clear();
+        frontier_fps.clear();
+
+        while let Some((state, depth)) = bfs_queue.pop_front() {
+            if depth >= current_frontier_depth {
+                // This state is at the frontier — collect for parallel dispatch
+                let fp = state.fingerprint();
+                if frontier_fps.insert(fp) {
+                    frontier.push(state);
                 }
-            } else {
-                // Pre-frontier state: insert into store for global dedup
-                if !store.insert_fingerprint(fp) {
-                    continue;
+                continue;
+            }
+            // Expand children
+            let successors = match ctx.full_successors(&state) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let child_depth = depth + 1;
+            for succ in successors {
+                let fp = succ.fingerprint();
+                if child_depth >= current_frontier_depth {
+                    // Frontier state: dedup locally but do NOT insert into the
+                    // shared store — workers need to be able to claim these.
+                    if !frontier_fps.insert(fp) {
+                        continue;
+                    }
+                } else {
+                    // Pre-frontier state: insert into store for global dedup
+                    if !store.insert_fingerprint(fp) {
+                        continue;
+                    }
+                    let key = succ.canonical_key();
+                    if !store.insert_state(key) {
+                        continue;
+                    }
                 }
-                let key = succ.canonical_key();
-                if !store.insert_state(key) {
-                    continue;
+                bfs_transitions_fired += 1;
+                // Check invariants
+                if !invariant_fns.is_empty() {
+                    if let Ok(Some(violated)) = ctx.check_invariants(&succ, &invariant_fns) {
+                        return DporResult {
+                            distinct_states: store.into_states(),
+                            traces_explored: 0,
+                            max_depth: 0,
+                            transitions_fired: bfs_transitions_fired,
+                            sleep_prune_hits: 0,
+                            sleep_cardinality_by_depth: BTreeMap::new(),
+                            sleep_independence_blockers: SleepIndependenceBlockers::default(),
+                            runtime_conflict_stats: RuntimeConflictStats::default(),
+                            violation: Some(ViolationWitness {
+                                invariant: violated,
+                                violating_state_key: succ.canonical_key(),
+                                violating_state_fingerprint:
+                                    crate::modelcheck::dpor::enabled::hash_state(&succ),
+                                depth: child_depth,
+                                trace: vec![],
+                            }),
+                        };
+                    }
+                }
+                if child_depth >= current_frontier_depth {
+                    frontier.push(succ);
+                } else {
+                    next_queue.push_back((succ, child_depth));
                 }
             }
-            bfs_transitions_fired += 1;
-            // Check invariants
-            if !invariant_fns.is_empty() {
-                if let Ok(Some(violated)) = ctx.check_invariants(&succ, &invariant_fns) {
-                    return DporResult {
-                        distinct_states: store.into_states(),
-                        traces_explored: 0,
-                        max_depth: 0,
-                        transitions_fired: bfs_transitions_fired,
-                        sleep_prune_hits: 0,
-                        sleep_cardinality_by_depth: BTreeMap::new(),
-                        sleep_independence_blockers: SleepIndependenceBlockers::default(),
-                        runtime_conflict_stats: RuntimeConflictStats::default(),
-                        violation: Some(ViolationWitness {
-                            invariant: violated,
-                            violating_state_key: succ.canonical_key(),
-                            violating_state_fingerprint:
-                                crate::modelcheck::dpor::enabled::hash_state(&succ),
-                            depth: child_depth,
-                            trace: vec![],
-                        }),
-                    };
-                }
-            }
-            bfs_queue.push_back((succ, child_depth));
         }
+
+        // Check if we have enough frontier states or hit the depth cap
+        if frontier.len() >= target_frontier_size || current_frontier_depth >= max_frontier_depth {
+            break;
+        }
+
+        // Not enough frontier states — expand one more level.
+        // Move current frontier states back into the BFS queue for further expansion.
+        // Insert them into the store since they are now pre-frontier.
+        for state in frontier.drain(..) {
+            let fp = state.fingerprint();
+            store.insert_fingerprint(fp);
+            let key = state.canonical_key();
+            store.insert_state(key);
+            next_queue.push_back((state, current_frontier_depth));
+        }
+        // Also drain any remaining next_queue items back
+        bfs_queue = next_queue;
+        current_frontier_depth += 1;
     }
 
     if frontier.is_empty() {
-        // All states explored within frontier_depth — nothing to parallelize
+        // All states explored within frontier depth — nothing to parallelize
         return DporResult {
             distinct_states: store.into_states(),
             traces_explored: 0,
-            max_depth: frontier_depth,
+            max_depth: current_frontier_depth,
             transitions_fired: bfs_transitions_fired,
             sleep_prune_hits: 0,
             sleep_cardinality_by_depth: BTreeMap::new(),
@@ -595,9 +643,10 @@ pub fn explore_dpor_parallel(
     }
 
     eprintln!(
-        "DPOR parallel: {} frontier states at depth {}, dispatching to {} workers",
+        "DPOR parallel: {} frontier states at depth {} (target: {}), dispatching to {} workers",
         frontier.len(),
-        frontier_depth,
+        current_frontier_depth,
+        target_frontier_size,
         num_workers
     );
 
@@ -2118,6 +2167,7 @@ max_seq_len = 4
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
+        ..Default::default()
         };
         let with_independence = DporConfig {
             max_depth: 20,
@@ -2127,6 +2177,7 @@ max_seq_len = 4
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
+        ..Default::default()
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -2166,6 +2217,7 @@ max_seq_len = 4
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
+        ..Default::default()
         };
         let with_sleep = DporConfig {
             max_depth: 20,
@@ -2175,6 +2227,7 @@ max_seq_len = 4
             invariants: vec![],
             check_deadlock: false,
             runtime_overrides: None,
+        ..Default::default()
         };
 
         let result_conservative = explore_dpor(&ctx, &conservative);
@@ -2234,6 +2287,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
+            ..Default::default()
             };
             let with_independence = DporConfig {
                 max_depth: 20,
@@ -2243,6 +2297,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
+            ..Default::default()
             };
             let with_sleep = DporConfig {
                 max_depth: 20,
@@ -2252,6 +2307,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
+            ..Default::default()
             };
 
             let result_conservative = explore_dpor(&ctx, &without_sleep);
@@ -2326,6 +2382,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
+            ..Default::default()
             },
         );
         let sleep = explore_dpor(
@@ -2338,6 +2395,7 @@ max_seq_len = 4
                 invariants: vec![],
                 check_deadlock: false,
                 runtime_overrides: None,
+            ..Default::default()
             },
         );
 
@@ -2406,6 +2464,7 @@ max_seq_len = 4
                     invariants: vec![],
                     check_deadlock: false,
                     runtime_overrides: None,
+                ..Default::default()
                 },
             );
             let independence = explore_dpor(
@@ -2418,6 +2477,7 @@ max_seq_len = 4
                     invariants: vec![],
                     check_deadlock: false,
                     runtime_overrides: None,
+                ..Default::default()
                 },
             );
             let sleep = explore_dpor(
@@ -2430,6 +2490,7 @@ max_seq_len = 4
                     invariants: vec![],
                     check_deadlock: false,
                     runtime_overrides: None,
+                ..Default::default()
                 },
             );
 
@@ -4368,6 +4429,7 @@ max_seq_len = 4
                         invariants: vec![],
                         check_deadlock: false,
                         runtime_overrides: None,
+                    ..Default::default()
                     },
                 ),
                 (
@@ -4380,6 +4442,7 @@ max_seq_len = 4
                         invariants: vec![],
                         check_deadlock: false,
                         runtime_overrides: None,
+                    ..Default::default()
                     },
                 ),
                 (
@@ -4392,6 +4455,7 @@ max_seq_len = 4
                         invariants: vec![],
                         check_deadlock: false,
                         runtime_overrides: None,
+                    ..Default::default()
                     },
                 ),
             ];
@@ -5028,5 +5092,142 @@ max_seq_len = 4
                 }
             }
         }
+    }
+
+    /// Adaptive frontier depth: with min_frontier_per_worker=1 (low target),
+    /// the frontier should settle at a shallow depth. With a high target,
+    /// it should expand deeper. State parity must be preserved in both cases.
+    #[test]
+    fn test_adaptive_frontier_depth_state_parity() {
+        let spec_path = match aplusb_spec_path() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping: APlusB.rs not found");
+                return;
+            }
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let model_path = create_model_toml(tmp.path());
+        let ctx = SpecContext::load(&spec_path, None, &model_path, "LInit", "LNext").unwrap();
+
+        let sequential = explore_dpor(
+            &ctx,
+            &DporConfig {
+                max_depth: 20,
+                max_states: 1000,
+                ..Default::default()
+            },
+        );
+
+        // Low frontier target: frontier_per_worker=1, should use shallow depth
+        let config_low = DporConfig {
+            max_depth: 20,
+            max_states: 1000,
+            min_frontier_per_worker: 1,
+            max_frontier_depth: 6,
+            ..Default::default()
+        };
+        let parallel_low = explore_dpor_parallel(&ctx, &config_low, 2);
+        for state in &sequential.distinct_states {
+            assert!(
+                parallel_low.distinct_states.contains(state),
+                "low frontier: missing state {}",
+                state
+            );
+        }
+
+        // High frontier target: frontier_per_worker=100, should expand deeper
+        let config_high = DporConfig {
+            max_depth: 20,
+            max_states: 1000,
+            min_frontier_per_worker: 100,
+            max_frontier_depth: 6,
+            ..Default::default()
+        };
+        let parallel_high = explore_dpor_parallel(&ctx, &config_high, 2);
+        for state in &sequential.distinct_states {
+            assert!(
+                parallel_high.distinct_states.contains(state),
+                "high frontier: missing state {}",
+                state
+            );
+        }
+
+        eprintln!(
+            "Adaptive frontier parity: seq={}, low={}, high={}",
+            sequential.distinct_states.len(),
+            parallel_low.distinct_states.len(),
+            parallel_high.distinct_states.len(),
+        );
+    }
+
+    /// Adaptive frontier depth with max_frontier_depth=1 forces minimal
+    /// pre-expansion. State parity must still hold.
+    #[test]
+    fn test_adaptive_frontier_depth_cap() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let spec_file = manifest_dir.join("tests/tla-rs/09_peterson_mutex_2p/PetersonMutex.rs");
+        if !spec_file.exists() {
+            eprintln!("Skipping: PetersonMutex.rs not found");
+            return;
+        }
+        let model_path = case_model_config("09_peterson_mutex_2p");
+        let ctx = SpecContext::load(&spec_file, None, &model_path, "LInit", "LNext").unwrap();
+
+        let sequential = explore_dpor(
+            &ctx,
+            &DporConfig {
+                max_depth: 30,
+                max_states: 10000,
+                use_independence: true,
+                use_sleep_sets: true,
+                ..Default::default()
+            },
+        );
+
+        // Force max_frontier_depth=1: minimal BFS, most work done by workers
+        let config_shallow = DporConfig {
+            max_depth: 30,
+            max_states: 10000,
+            use_independence: true,
+            use_sleep_sets: true,
+            min_frontier_per_worker: 100,
+            max_frontier_depth: 1,
+            ..Default::default()
+        };
+        let parallel_shallow = explore_dpor_parallel(&ctx, &config_shallow, 4);
+        for state in &sequential.distinct_states {
+            assert!(
+                parallel_shallow.distinct_states.contains(state),
+                "shallow cap: missing state {}",
+                state
+            );
+        }
+
+        // Force max_frontier_depth=6 with high target: deeper BFS expansion
+        let config_deep = DporConfig {
+            max_depth: 30,
+            max_states: 10000,
+            use_independence: true,
+            use_sleep_sets: true,
+            min_frontier_per_worker: 100,
+            max_frontier_depth: 6,
+            ..Default::default()
+        };
+        let parallel_deep = explore_dpor_parallel(&ctx, &config_deep, 4);
+        for state in &sequential.distinct_states {
+            assert!(
+                parallel_deep.distinct_states.contains(state),
+                "deep cap: missing state {}",
+                state
+            );
+        }
+
+        eprintln!(
+            "Peterson adaptive frontier: seq={}, shallow_cap={}, deep_cap={}",
+            sequential.distinct_states.len(),
+            parallel_shallow.distinct_states.len(),
+            parallel_deep.distinct_states.len(),
+        );
     }
 }

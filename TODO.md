@@ -13652,10 +13652,31 @@ tiers, ordered biggest-gain-per-effort first.
     bytecode VM (~2× faster than AST interpreter) instead of falling
     back to AST-only. Added `test_bytecode_cache_is_send_sync` and
     `test_bytecode_cache_concurrent_access` tests. ~40 LOC.
-  - [ ] **38.21.B.ii**: **Parallel DPOR explorer** (future).
-    DFS with sleep sets is harder to parallelize — requires work-stealing
-    or independent subtree partitioning. Defer until BFS parallelism
-    is proven. Multi-week.
+  - [ ] **38.21.B.ii**: **Parallel DPOR explorer improvements.**
+    The basic frontier-partition parallel DPOR (`explore_dpor_parallel`)
+    already exists (Phase 38.18.1). It does BFS to hardcoded depth 2,
+    then round-robin partitions frontier states across workers. Remaining
+    improvements decomposed below.
+    - [x] **38.21.B.ii.a**: **Adaptive frontier depth.** Replaced hardcoded
+      `frontier_depth = 2` with adaptive expansion: BFS until
+      `frontier.len() >= min_frontier_per_worker * num_workers` (default
+      `min_frontier_per_worker = 4`), capped at `max_frontier_depth = 6`.
+      Added `min_frontier_per_worker` and `max_frontier_depth` fields to
+      `DporConfig`. 2 new tests (`test_adaptive_frontier_depth_state_parity`,
+      `test_adaptive_frontier_depth_cap`). ~80 LOC. *DONE.*
+    - [ ] **38.21.B.ii.b**: **Work-stealing frontier queue.** Replace
+      static round-robin partitioning with a shared `crossbeam::deque`
+      work-stealing queue. Workers pop frontier states on demand instead
+      of getting a fixed partition. Better load balance when subtree
+      depths vary widely. ~200 LOC.
+    - [ ] **38.21.B.ii.c**: **Per-subtree DFS work-stealing.** When a
+      worker's DFS stack empties, steal unexplored backtrack entries from
+      another worker's stack. Requires shared backtrack sets with locking.
+      Most complex — ~400 LOC. Defer until b proves the work-stealing
+      pattern works.
+    - [ ] **38.21.B.ii.d**: **Benchmarks + validation.** Run sequential
+      vs parallel DPOR on all 20 corpus cases, measure speedup and
+      validate state-count parity. Document results. ~100 LOC.
 - [ ] **38.21.C**: **Source DPOR / persistent sets** (1.5-2× more
   transition reduction). Sleep sets are sound but not optimal.
   Source-DPOR (Abdulla et al., POPL '14) provably explores the
