@@ -16,10 +16,15 @@ msg_vec_type = ["CRaftMessage", "LRaftMessage"]
 # HashSet fields for cardinality bridge proof injection
 set_fields = ["votes_granted", "servers"]
 
-# Arc-wrap non-scalar fields of CState for O(1) clone
-# Emit &mut self calling convention for CState methods (Phase 48)
-mut_self_types = ["CState"]
-
+# Arc-wrap non-scalar fields of CState for O(1) clone.
+# NOTE (Phase 50): Raft does NOT use the &mut self calling convention.
+# Several message handlers (CHandleRequestVoteMsg, CHandleAppendEntriesMsg, ...)
+# compute an intermediate functional state `s_mid = step_down_if_needed(s, term)`
+# and then return it (or grant-vote from it). The &mut self body transform cannot
+# rewrite that intermediate-state pattern into `*self = s_mid; return msgs`, so
+# Raft stays on the functional (returns-new-CState) convention, which verifies and
+# compiles. Arc-wrapping keeps the functional clone O(1). Revisit if the transpiler
+# learns to lift intermediate functional state into self-assignment.
 arc_wrap_types = ["CState"]
 
 [arc_wrap_fields]

@@ -6,6 +6,7 @@ use crate::generated::ChainReplication::types_gen::*;
 use crate::protocol::ChainReplication::chain::*;
 use crate::protocol::ChainReplication::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -74,8 +75,8 @@ ensures
     LInit(result@, c@),
 {
     let result = CState {
-        history: vec![],
-        pending_sent: HashSet::new(),
+        history: Arc::new(vec![]),
+        pending_sent: Arc::new(HashSet::new()),
         committed_count: 0u64,
         obj_value: 0u64,
         has_predecessor: (c.node_id > 0),
@@ -109,288 +110,299 @@ ensures
 
 }
 
-impl CState {
-    pub exec fn CHeadReceiveWrite(&mut self, c: &CConstants, value: &u64) -> (result: Vec<CCRMessage>)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).role is Head,
-        old(self).alive == true,
-        !old(self)@.pending_sent.contains(*value as int),
-    ensures
-        self.valid(),
-        LHeadReceiveWrite(old(self)@, self@, c@, *value as int, result@.map(|i, p: CCRMessage| p@)),
-    {
-        let ghost old_self = *old(self);
-        let mut __history = self.history.clone();
+pub exec fn CHeadReceiveWrite(s: &CState, c: &CConstants, value: &u64) -> (result: (CState, Vec<CCRMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.role is Head,
+    s.alive == true,
+    !s@.pending_sent.contains(*value as int),
+ensures
+    result.0.valid(),
+    LHeadReceiveWrite(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CCRMessage| p@)),
+{
+    let result = {
+        let mut __history = (*s.history).clone();
         __history.push(value.clone());
-        let mut __pending_sent = clone_hashset_u64(&self.pending_sent);
+        let mut __pending_sent = clone_hashset_u64(&s.pending_sent);
         __pending_sent.insert(value.clone());
-        let result = {
-            proof {
-                lemma_empty_seq_map();
-            }
-            { self.role = self.role.clone(); self.history = __history; self.pending_sent = __pending_sent; self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
-        };
-        proof {
-            broadcast use Set::lemma_set_map_insert_commute;
+        { proof {
             lemma_empty_seq_map();
-            lemma_seq_push_map_commute(self.history@, *value);
-            assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
-        }
-        result
-
+        }; (CState {
+    role: s.role.clone(),
+    history: Arc::new(__history),
+    pending_sent: Arc::new(__pending_sent),
+    committed_count: s.committed_count.clone(),
+    obj_value: s.obj_value.clone(),
+    has_predecessor: s.has_predecessor.clone(),
+    predecessor: s.predecessor.clone(),
+    has_successor: s.has_successor.clone(),
+    successor: s.successor.clone(),
+    alive: s.alive.clone(),
+}, vec![]) }
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        lemma_seq_push_map_commute(s.history@, *value);
+        assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
-impl CState {
-    pub exec fn CForwardToSuccessor(&mut self, c: &CConstants, value: &u64) -> (result: Vec<CCRMessage>)
-    requires
-        old(self).valid(),
-        c.valid(),
-        (old(self).role is Head || old(self).role is Middle),
-        old(self).alive == true,
-        old(self)@.pending_sent.contains(*value as int),
-        old(self).has_successor == true,
-    ensures
-        self.valid(),
-        LForwardToSuccessor(old(self)@, self@, c@, *value as int, result@.map(|i, p: CCRMessage| p@)),
-    {
-        let ghost old_self = *old(self);
-        self.role = self.role.clone();
-        self.history = self.history.clone();
-        self.pending_sent = clone_hashset_u64(&self.pending_sent);
-        self.committed_count = self.committed_count.clone();
-        self.obj_value = self.obj_value.clone();
-        self.has_predecessor = self.has_predecessor.clone();
-        self.predecessor = self.predecessor.clone();
-        self.has_successor = self.has_successor.clone();
-        self.successor = self.successor.clone();
-        self.alive = self.alive.clone();
-        let result = vec![CCRMessage::Forward {
+pub exec fn CForwardToSuccessor(s: &CState, c: &CConstants, value: &u64) -> (result: (CState, Vec<CCRMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    (s.role is Head || s.role is Middle),
+    s.alive == true,
+    s@.pending_sent.contains(*value as int),
+    s.has_successor == true,
+ensures
+    result.0.valid(),
+    LForwardToSuccessor(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CCRMessage| p@)),
+{
+    let result = (CState {
+    role: s.role.clone(),
+    history: s.history.clone(),
+    pending_sent: s.pending_sent.clone(),
+    committed_count: s.committed_count.clone(),
+    obj_value: s.obj_value.clone(),
+    has_predecessor: s.has_predecessor.clone(),
+    predecessor: s.predecessor.clone(),
+    has_successor: s.has_successor.clone(),
+    successor: s.successor.clone(),
+    alive: s.alive.clone(),
+}, vec![CCRMessage::Forward {
     value: (*value),
-}];
-        proof {
-            assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty().push(result@[0]@));
-        }
-        result
-
+}]);
+    proof {
+        assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
+    result
+
 }
 
-impl CState {
-    pub exec fn CReceiveUpdate(&mut self, c: &CConstants, value: &u64) -> (result: Vec<CCRMessage>)
-    requires
-        old(self).valid(),
-        c.valid(),
-        (old(self).role is Middle || old(self).role is Tail),
-        old(self).alive == true,
-        !old(self)@.history.contains(*value as int),
-    ensures
-        self.valid(),
-        LReceiveUpdate(old(self)@, self@, c@, *value as int, result@.map(|i, p: CCRMessage| p@)),
-    {
-        let ghost old_self = *old(self);
-        let mut __history = self.history.clone();
+pub exec fn CReceiveUpdate(s: &CState, c: &CConstants, value: &u64) -> (result: (CState, Vec<CCRMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    (s.role is Middle || s.role is Tail),
+    s.alive == true,
+    !s@.history.contains(*value as int),
+ensures
+    result.0.valid(),
+    LReceiveUpdate(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CCRMessage| p@)),
+{
+    let result = {
+        let mut __history = (*s.history).clone();
         __history.push(value.clone());
-        let mut __pending_sent = clone_hashset_u64(&self.pending_sent);
-        match &self.role {
+        let mut __pending_sent = clone_hashset_u64(&s.pending_sent);
+        match &s.role {
             CNodeRole::Middle => {
                 __pending_sent.insert(value.clone());
                 
             },
             _ => {},
         };
-        let result = {
-            proof {
-                lemma_empty_seq_map();
-            }
-            { self.role = self.role.clone(); self.history = __history; self.pending_sent = __pending_sent; self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
-        };
-        proof {
-            broadcast use Set::lemma_set_map_insert_commute;
+        { proof {
             lemma_empty_seq_map();
-            lemma_seq_push_map_commute(self.history@, *value);
-            assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
-        }
-        result
-
+        }; (CState {
+    role: s.role.clone(),
+    history: Arc::new(__history),
+    pending_sent: Arc::new(__pending_sent),
+    committed_count: s.committed_count.clone(),
+    obj_value: s.obj_value.clone(),
+    has_predecessor: s.has_predecessor.clone(),
+    predecessor: s.predecessor.clone(),
+    has_successor: s.has_successor.clone(),
+    successor: s.successor.clone(),
+    alive: s.alive.clone(),
+}, vec![]) }
+    };
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
+        lemma_empty_seq_map();
+        lemma_seq_push_map_commute(s.history@, *value);
+        assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
-impl CState {
-    pub exec fn CTailCommit(&mut self, c: &CConstants, value: &u64) -> (result: Vec<CCRMessage>)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).role is Tail,
-        old(self).alive == true,
-        old(self)@.history.contains(*value as int),
-        old(self).committed_count < u64::MAX,
-    ensures
-        self.valid(),
-        LTailCommit(old(self)@, self@, c@, *value as int, result@.map(|i, p: CCRMessage| p@)),
-    {
-        let ghost old_self = *old(self);
-        self.role = self.role.clone();
-        self.history = self.history.clone();
-        self.pending_sent = clone_hashset_u64(&self.pending_sent);
-        self.committed_count = (self.committed_count + 1);
-        self.obj_value = (*value);
-        self.has_predecessor = self.has_predecessor.clone();
-        self.predecessor = self.predecessor.clone();
-        self.has_successor = self.has_successor.clone();
-        self.successor = self.successor.clone();
-        self.alive = self.alive.clone();
-        let result = vec![CCRMessage::Ack {
+pub exec fn CTailCommit(s: &CState, c: &CConstants, value: &u64) -> (result: (CState, Vec<CCRMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.role is Tail,
+    s.alive == true,
+    s@.history.contains(*value as int),
+    s.committed_count < u64::MAX,
+ensures
+    result.0.valid(),
+    LTailCommit(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CCRMessage| p@)),
+{
+    let result = (CState {
+    role: s.role.clone(),
+    history: s.history.clone(),
+    pending_sent: s.pending_sent.clone(),
+    committed_count: (s.committed_count + 1),
+    obj_value: (*value),
+    has_predecessor: s.has_predecessor.clone(),
+    predecessor: s.predecessor.clone(),
+    has_successor: s.has_successor.clone(),
+    successor: s.successor.clone(),
+    alive: s.alive.clone(),
+}, vec![CCRMessage::Ack {
     value: (*value),
-}];
-        proof {
-            assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty().push(result@[0]@));
-        }
-        result
-
+}]);
+    proof {
+        assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
+    result
+
 }
 
-impl CState {
-    pub exec fn CReceiveAck(&mut self, c: &CConstants, value: &u64) -> (result: Vec<CCRMessage>)
-    requires
-        old(self).valid(),
-        c.valid(),
-        (old(self).role is Head || old(self).role is Middle),
-        old(self).alive == true,
-        old(self)@.pending_sent.contains(*value as int),
-    ensures
-        self.valid(),
-        LReceiveAck(old(self)@, self@, c@, *value as int, result@.map(|i, p: CCRMessage| p@)),
-    {
-        let ghost old_self = *old(self);
-        let mut __pending_sent = clone_hashset_u64(&self.pending_sent);
+pub exec fn CReceiveAck(s: &CState, c: &CConstants, value: &u64) -> (result: (CState, Vec<CCRMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    (s.role is Head || s.role is Middle),
+    s.alive == true,
+    s@.pending_sent.contains(*value as int),
+ensures
+    result.0.valid(),
+    LReceiveAck(s@, result.0@, c@, *value as int, result.1@.map(|i, p: CCRMessage| p@)),
+{
+    let result = {
+        let mut __pending_sent = clone_hashset_u64(&s.pending_sent);
         __pending_sent.remove(&value);
-        let result = {
-            proof {
-                lemma_empty_seq_map();
-            }
-            { self.role = self.role.clone(); self.history = self.history.clone(); self.pending_sent = __pending_sent; self.committed_count = self.committed_count.clone(); self.obj_value = self.obj_value.clone(); self.has_predecessor = self.has_predecessor.clone(); self.predecessor = self.predecessor.clone(); self.has_successor = self.has_successor.clone(); self.successor = self.successor.clone(); self.alive = self.alive.clone(); vec![] }
-        };
-        proof {
-            lemma_set_map_remove_commute(self.pending_sent@, (*value));
+        { proof {
             lemma_empty_seq_map();
-            assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
-        }
-        result
-
+        }; (CState {
+    role: s.role.clone(),
+    history: s.history.clone(),
+    pending_sent: Arc::new(__pending_sent),
+    committed_count: s.committed_count.clone(),
+    obj_value: s.obj_value.clone(),
+    has_predecessor: s.has_predecessor.clone(),
+    predecessor: s.predecessor.clone(),
+    has_successor: s.has_successor.clone(),
+    successor: s.successor.clone(),
+    alive: s.alive.clone(),
+}, vec![]) }
+    };
+    proof {
+        lemma_set_map_remove_commute(s.pending_sent@, (*value));
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
-impl CState {
-    pub exec fn CClientRead(&mut self, c: &CConstants) -> (result: Vec<CCRMessage>)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).role is Tail,
-        old(self).alive == true,
-    ensures
-        self.valid(),
-        LClientRead(old(self)@, self@, c@, result@.map(|i, p: CCRMessage| p@)),
-    {
-        let ghost old_self = *old(self);
+pub exec fn CClientRead(s: &CState, c: &CConstants) -> (result: (CState, Vec<CCRMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.role is Tail,
+    s.alive == true,
+ensures
+    result.0.valid(),
+    LClientRead(s@, result.0@, c@, result.1@.map(|i, p: CCRMessage| p@)),
+{
+    let result = {
         proof {
             lemma_empty_seq_map();
         }
-        let result = {
-            self.role = self.role.clone();
-            self.history = self.history.clone();
-            self.pending_sent = clone_hashset_u64(&self.pending_sent);
-            self.committed_count = self.committed_count.clone();
-            self.obj_value = self.obj_value.clone();
-            self.has_predecessor = self.has_predecessor.clone();
-            self.predecessor = self.predecessor.clone();
-            self.has_successor = self.has_successor.clone();
-            self.successor = self.successor.clone();
-            self.alive = self.alive.clone();
-            vec![]
-        };
-        proof {
-            lemma_empty_seq_map();
-            assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
-        }
-        result
-
+        (CState {
+    role: s.role.clone(),
+    history: s.history.clone(),
+    pending_sent: s.pending_sent.clone(),
+    committed_count: s.committed_count.clone(),
+    obj_value: s.obj_value.clone(),
+    has_predecessor: s.has_predecessor.clone(),
+    predecessor: s.predecessor.clone(),
+    has_successor: s.has_successor.clone(),
+    successor: s.successor.clone(),
+    alive: s.alive.clone(),
+}, vec![])
+    };
+    proof {
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
-impl CState {
-    pub exec fn CNodeFail(&mut self, c: &CConstants) -> (result: Vec<CCRMessage>)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).alive == true,
-    ensures
-        self.valid(),
-        LNodeFail(old(self)@, self@, c@, result@.map(|i, p: CCRMessage| p@)),
-    {
-        let ghost old_self = *old(self);
+pub exec fn CNodeFail(s: &CState, c: &CConstants) -> (result: (CState, Vec<CCRMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.alive == true,
+ensures
+    result.0.valid(),
+    LNodeFail(s@, result.0@, c@, result.1@.map(|i, p: CCRMessage| p@)),
+{
+    let result = {
         proof {
             lemma_empty_seq_map();
         }
-        let result = {
-            self.alive = false;
-            self.role = self.role.clone();
-            self.history = self.history.clone();
-            self.pending_sent = clone_hashset_u64(&self.pending_sent);
-            self.committed_count = self.committed_count.clone();
-            self.obj_value = self.obj_value.clone();
-            self.has_predecessor = self.has_predecessor.clone();
-            self.predecessor = self.predecessor.clone();
-            self.has_successor = self.has_successor.clone();
-            self.successor = self.successor.clone();
-            vec![]
-        };
-        proof {
-            lemma_empty_seq_map();
-            assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
-        }
-        result
-
+        (CState {
+    alive: false,
+    role: s.role.clone(),
+    history: s.history.clone(),
+    pending_sent: s.pending_sent.clone(),
+    committed_count: s.committed_count.clone(),
+    obj_value: s.obj_value.clone(),
+    has_predecessor: s.has_predecessor.clone(),
+    predecessor: s.predecessor.clone(),
+    has_successor: s.has_successor.clone(),
+    successor: s.successor.clone(),
+}, vec![])
+    };
+    proof {
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
-impl CState {
-    pub exec fn CReconfigure(&mut self, c: &CConstants, new_has_predecessor: bool, new_predecessor: &u64, new_has_successor: bool, new_successor: &u64) -> (result: Vec<CCRMessage>)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).alive == true,
-    ensures
-        self.valid(),
-        LReconfigure(old(self)@, self@, c@, new_has_predecessor, *new_predecessor as int, new_has_successor, *new_successor as int, result@.map(|i, p: CCRMessage| p@)),
-    {
-        let ghost old_self = *old(self);
+pub exec fn CReconfigure(s: &CState, c: &CConstants, new_has_predecessor: bool, new_predecessor: &u64, new_has_successor: bool, new_successor: &u64) -> (result: (CState, Vec<CCRMessage>))
+requires
+    s.valid(),
+    c.valid(),
+    s.alive == true,
+ensures
+    result.0.valid(),
+    LReconfigure(s@, result.0@, c@, new_has_predecessor, *new_predecessor as int, new_has_successor, *new_successor as int, result.1@.map(|i, p: CCRMessage| p@)),
+{
+    let result = {
         proof {
             lemma_empty_seq_map();
         }
-        let result = {
-            self.has_predecessor = new_has_predecessor.clone();
-            self.predecessor = (*new_predecessor);
-            self.has_successor = new_has_successor.clone();
-            self.successor = (*new_successor);
-            self.role = self.role.clone();
-            self.history = self.history.clone();
-            self.pending_sent = clone_hashset_u64(&self.pending_sent);
-            self.committed_count = self.committed_count.clone();
-            self.obj_value = self.obj_value.clone();
-            self.alive = self.alive.clone();
-            vec![]
-        };
-        proof {
-            lemma_empty_seq_map();
-            assert(result@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
-        }
-        result
-
+        (CState {
+    has_predecessor: new_has_predecessor.clone(),
+    predecessor: (*new_predecessor),
+    has_successor: new_has_successor.clone(),
+    successor: (*new_successor),
+    role: s.role.clone(),
+    history: s.history.clone(),
+    pending_sent: s.pending_sent.clone(),
+    committed_count: s.committed_count.clone(),
+    obj_value: s.obj_value.clone(),
+    alive: s.alive.clone(),
+}, vec![])
+    };
+    proof {
+        lemma_empty_seq_map();
+        assert(result.1@.map(|i: int, p: CCRMessage| p@) =~= Seq::empty());
     }
+    result
+
 }
 
 } // verus!

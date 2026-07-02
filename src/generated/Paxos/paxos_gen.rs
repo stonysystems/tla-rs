@@ -6,6 +6,7 @@ use crate::generated::Paxos::types_gen::*;
 use crate::protocol::Paxos::paxos::*;
 use crate::protocol::Paxos::types::*;
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
@@ -36,11 +37,11 @@ ensures
         accepted_bal: 0u64,
         accepted_val: 0u64,
         proposer_bal: 0u64,
-        promises_rcvd: HashSet::new(),
+        promises_rcvd: Arc::new(HashSet::new()),
         highest_accepted_bal: 0u64,
         highest_accepted_val: 0u64,
         proposed_val: 0u64,
-        accepts_rcvd: HashSet::new(),
+        accepts_rcvd: Arc::new(HashSet::new()),
         decided_val: 0u64,
         phase: CPhase::Idle,
     };
@@ -51,202 +52,212 @@ ensures
 
 }
 
-impl CState {
-    pub exec fn CSend1a(&mut self, c: &CConstants, b: &u64)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).phase is Idle,
-        (*b > old(self).proposer_bal),
-    ensures
-        self.valid(),
-        LSend1a(old(self)@, self@, c@, *b as int),
-    {
-        let ghost old_self = *old(self);
-        self.proposer_bal = (*b);
-        self.promises_rcvd = HashSet::new();
-        self.highest_accepted_bal = 0u64;
-        self.highest_accepted_val = 0u64;
-        self.proposed_val = self.proposed_val.clone();
-        self.promised_bal = self.promised_bal.clone();
-        self.accepted_bal = self.accepted_bal.clone();
-        self.accepted_val = self.accepted_val.clone();
-        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
-        self.decided_val = self.decided_val.clone();
-        let result = self.phase = CPhase::Phase1;
-        proof {
-            lemma_empty_set_map();
-        }
-        result
+pub exec fn CSend1a(s: &CState, c: &CConstants, b: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is Idle,
+    (*b > s.proposer_bal),
+ensures
+    result.valid(),
+    LSend1a(s@, result@, c@, *b as int),
+{
+    let result = CState {
+        proposer_bal: (*b),
+        promises_rcvd: Arc::new(HashSet::new()),
+        highest_accepted_bal: 0u64,
+        highest_accepted_val: 0u64,
+        proposed_val: s.proposed_val.clone(),
+        promised_bal: s.promised_bal.clone(),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        accepts_rcvd: s.accepts_rcvd.clone(),
+        decided_val: s.decided_val.clone(),
+        phase: CPhase::Phase1,
+    };
+    proof {
+        lemma_empty_set_map();
+    }
+    result
 
+}
+
+pub exec fn CSend1b(s: &CState, c: &CConstants, b: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    (*b >= s.promised_bal),
+ensures
+    result.valid(),
+    LSend1b(s@, result@, c@, *b as int),
+{
+CState {
+        promised_bal: (*b),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        proposer_bal: s.proposer_bal.clone(),
+        phase: s.phase.clone(),
+        promises_rcvd: s.promises_rcvd.clone(),
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        proposed_val: s.proposed_val.clone(),
+        accepts_rcvd: s.accepts_rcvd.clone(),
+        decided_val: s.decided_val.clone(),
     }
 }
 
-impl CState {
-    pub exec fn CSend1b(&mut self, c: &CConstants, b: &u64)
-    requires
-        old(self).valid(),
-        c.valid(),
-        (*b >= old(self).promised_bal),
-    ensures
-        self.valid(),
-        LSend1b(old(self)@, self@, c@, *b as int),
-    {
-        let ghost old_self = *old(self);
-        self.promised_bal = (*b);
-        self.accepted_bal = self.accepted_bal.clone();
-        self.accepted_val = self.accepted_val.clone();
-        self.proposer_bal = self.proposer_bal.clone();
-        self.phase = self.phase.clone();
-        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
-        self.highest_accepted_bal = self.highest_accepted_bal.clone();
-        self.highest_accepted_val = self.highest_accepted_val.clone();
-        self.proposed_val = self.proposed_val.clone();
-        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
-        self.decided_val = self.decided_val.clone()
-
+pub exec fn CRecvPromise(s: &CState, c: &CConstants, a: &u64, a_accepted_bal: &u64, a_accepted_val: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is Phase1,
+    c@.acceptors.contains(*a as int),
+    !s@.promises_rcvd.contains(*a as int),
+ensures
+    result.valid(),
+    LRecvPromise(s@, result@, c@, *a as int, *a_accepted_bal as int, *a_accepted_val as int),
+{
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
     }
-}
-
-impl CState {
-    pub exec fn CRecvPromise(&mut self, c: &CConstants, a: &u64, a_accepted_bal: &u64, a_accepted_val: &u64)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).phase is Phase1,
-        c@.acceptorold(self).contains(*a as int),
-        !old(self)@.promises_rcvd.contains(*a as int),
-    ensures
-        self.valid(),
-        LRecvPromise(old(self)@, self@, c@, *a as int, *a_accepted_bal as int, *a_accepted_val as int),
-    {
-        let ghost old_self = *old(self);
-        proof {
-            broadcast use Set::lemma_set_map_insert_commute;
-        }
-        let mut __promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
-        __promises_rcvd.insert(a.clone());
-        { self.promises_rcvd = __promises_rcvd; self.highest_accepted_bal = if ((*a_accepted_bal) > self.highest_accepted_bal) {
+    let mut __promises_rcvd = clone_hashset_u64(&s.promises_rcvd);
+    __promises_rcvd.insert(a.clone());
+    CState {
+        promises_rcvd: Arc::new(__promises_rcvd),
+        highest_accepted_bal: if ((*a_accepted_bal) > s.highest_accepted_bal) {
             (*a_accepted_bal)
         } else {
-            self.highest_accepted_bal.clone()
-        }; self.highest_accepted_val = if ((*a_accepted_bal) > self.highest_accepted_bal) {
+            s.highest_accepted_bal.clone()
+        },
+        highest_accepted_val: if ((*a_accepted_bal) > s.highest_accepted_bal) {
             (*a_accepted_val)
         } else {
-            self.highest_accepted_val.clone()
-        }; self.proposer_bal = self.proposer_bal.clone(); self.proposed_val = self.proposed_val.clone(); self.promised_bal = self.promised_bal.clone(); self.accepted_bal = self.accepted_bal.clone(); self.accepted_val = self.accepted_val.clone(); self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd); self.decided_val = self.decided_val.clone(); self.phase = CPhase::Phase1 }
-
+            s.highest_accepted_val.clone()
+        },
+        proposer_bal: s.proposer_bal.clone(),
+        proposed_val: s.proposed_val.clone(),
+        promised_bal: s.promised_bal.clone(),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        accepts_rcvd: s.accepts_rcvd.clone(),
+        decided_val: s.decided_val.clone(),
+        phase: CPhase::Phase1,
     }
+
 }
 
-impl CState {
-    pub exec fn CSend2a(&mut self, c: &CConstants, v: &u64)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).phase is Phase1,
-        (old(self)@.promises_rcvd.len() >= c.quorum_size),
-    ensures
-        self.valid(),
-        LSend2a(old(self)@, self@, c@, *v as int),
-    {
-        let ghost old_self = *old(self);
-        self.proposed_val = if (self.highest_accepted_bal > 0) {
-            self.highest_accepted_val.clone()
+pub exec fn CSend2a(s: &CState, c: &CConstants, v: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is Phase1,
+    (s@.promises_rcvd.len() >= c.quorum_size),
+ensures
+    result.valid(),
+    LSend2a(s@, result@, c@, *v as int),
+{
+    let result = CState {
+        proposed_val: if (s.highest_accepted_bal > 0) {
+            s.highest_accepted_val.clone()
         } else {
             (*v)
-        };
-        self.accepts_rcvd = HashSet::new();
-        self.proposer_bal = self.proposer_bal.clone();
-        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
-        self.highest_accepted_bal = self.highest_accepted_bal.clone();
-        self.highest_accepted_val = self.highest_accepted_val.clone();
-        self.promised_bal = self.promised_bal.clone();
-        self.accepted_bal = self.accepted_bal.clone();
-        self.accepted_val = self.accepted_val.clone();
-        self.decided_val = self.decided_val.clone();
-        let result = self.phase = CPhase::Phase2;
-        proof {
-            lemma_empty_set_map();
-        }
-        result
+        },
+        accepts_rcvd: Arc::new(HashSet::new()),
+        proposer_bal: s.proposer_bal.clone(),
+        promises_rcvd: s.promises_rcvd.clone(),
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        promised_bal: s.promised_bal.clone(),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        decided_val: s.decided_val.clone(),
+        phase: CPhase::Phase2,
+    };
+    proof {
+        lemma_empty_set_map();
+    }
+    result
 
+}
+
+pub exec fn CSend2b(s: &CState, c: &CConstants, b: &u64, v: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    (*b >= s.promised_bal),
+ensures
+    result.valid(),
+    LSend2b(s@, result@, c@, *b as int, *v as int),
+{
+CState {
+        promised_bal: (*b),
+        accepted_bal: (*b),
+        accepted_val: (*v),
+        proposer_bal: s.proposer_bal.clone(),
+        phase: s.phase.clone(),
+        promises_rcvd: s.promises_rcvd.clone(),
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        proposed_val: s.proposed_val.clone(),
+        accepts_rcvd: s.accepts_rcvd.clone(),
+        decided_val: s.decided_val.clone(),
     }
 }
 
-impl CState {
-    pub exec fn CSend2b(&mut self, c: &CConstants, b: &u64, v: &u64)
-    requires
-        old(self).valid(),
-        c.valid(),
-        (*b >= old(self).promised_bal),
-    ensures
-        self.valid(),
-        LSend2b(old(self)@, self@, c@, *b as int, *v as int),
-    {
-        let ghost old_self = *old(self);
-        self.promised_bal = (*b);
-        self.accepted_bal = (*b);
-        self.accepted_val = (*v);
-        self.proposer_bal = self.proposer_bal.clone();
-        self.phase = self.phase.clone();
-        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
-        self.highest_accepted_bal = self.highest_accepted_bal.clone();
-        self.highest_accepted_val = self.highest_accepted_val.clone();
-        self.proposed_val = self.proposed_val.clone();
-        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
-        self.decided_val = self.decided_val.clone()
-
+pub exec fn CRecvAccepted(s: &CState, c: &CConstants, a: &u64) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is Phase2,
+    c@.acceptors.contains(*a as int),
+    !s@.accepts_rcvd.contains(*a as int),
+ensures
+    result.valid(),
+    LRecvAccepted(s@, result@, c@, *a as int),
+{
+    proof {
+        broadcast use Set::lemma_set_map_insert_commute;
     }
+    let mut __accepts_rcvd = clone_hashset_u64(&s.accepts_rcvd);
+    __accepts_rcvd.insert(a.clone());
+    CState {
+        accepts_rcvd: Arc::new(__accepts_rcvd),
+        proposer_bal: s.proposer_bal.clone(),
+        promises_rcvd: s.promises_rcvd.clone(),
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        proposed_val: s.proposed_val.clone(),
+        promised_bal: s.promised_bal.clone(),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        decided_val: s.decided_val.clone(),
+        phase: CPhase::Phase2,
+    }
+
 }
 
-impl CState {
-    pub exec fn CRecvAccepted(&mut self, c: &CConstants, a: &u64)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).phase is Phase2,
-        c@.acceptorold(self).contains(*a as int),
-        !old(self)@.accepts_rcvd.contains(*a as int),
-    ensures
-        self.valid(),
-        LRecvAccepted(old(self)@, self@, c@, *a as int),
-    {
-        let ghost old_self = *old(self);
-        proof {
-            broadcast use Set::lemma_set_map_insert_commute;
-        }
-        let mut __accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
-        __accepts_rcvd.insert(a.clone());
-        { self.accepts_rcvd = __accepts_rcvd; self.proposer_bal = self.proposer_bal.clone(); self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd); self.highest_accepted_bal = self.highest_accepted_bal.clone(); self.highest_accepted_val = self.highest_accepted_val.clone(); self.proposed_val = self.proposed_val.clone(); self.promised_bal = self.promised_bal.clone(); self.accepted_bal = self.accepted_bal.clone(); self.accepted_val = self.accepted_val.clone(); self.decided_val = self.decided_val.clone(); self.phase = CPhase::Phase2 }
-
-    }
-}
-
-impl CState {
-    pub exec fn CLearn(&mut self, c: &CConstants)
-    requires
-        old(self).valid(),
-        c.valid(),
-        old(self).phase is Phase2,
-        (old(self)@.accepts_rcvd.len() >= c.quorum_size),
-    ensures
-        self.valid(),
-        LLearn(old(self)@, self@, c@),
-    {
-        let ghost old_self = *old(self);
-        self.decided_val = self.proposed_val.clone();
-        self.proposer_bal = self.proposer_bal.clone();
-        self.promises_rcvd = clone_hashset_u64(&self.promises_rcvd);
-        self.highest_accepted_bal = self.highest_accepted_bal.clone();
-        self.highest_accepted_val = self.highest_accepted_val.clone();
-        self.proposed_val = self.proposed_val.clone();
-        self.accepts_rcvd = clone_hashset_u64(&self.accepts_rcvd);
-        self.promised_bal = self.promised_bal.clone();
-        self.accepted_bal = self.accepted_bal.clone();
-        self.accepted_val = self.accepted_val.clone();
-        self.phase = CPhase::Decided
-
+pub exec fn CLearn(s: &CState, c: &CConstants) -> (result: CState)
+requires
+    s.valid(),
+    c.valid(),
+    s.phase is Phase2,
+    (s@.accepts_rcvd.len() >= c.quorum_size),
+ensures
+    result.valid(),
+    LLearn(s@, result@, c@),
+{
+CState {
+        decided_val: s.proposed_val.clone(),
+        proposer_bal: s.proposer_bal.clone(),
+        promises_rcvd: s.promises_rcvd.clone(),
+        highest_accepted_bal: s.highest_accepted_bal.clone(),
+        highest_accepted_val: s.highest_accepted_val.clone(),
+        proposed_val: s.proposed_val.clone(),
+        accepts_rcvd: s.accepts_rcvd.clone(),
+        promised_bal: s.promised_bal.clone(),
+        accepted_bal: s.accepted_bal.clone(),
+        accepted_val: s.accepted_val.clone(),
+        phase: CPhase::Decided,
     }
 }
 

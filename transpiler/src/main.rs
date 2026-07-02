@@ -5484,6 +5484,29 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
             }
 
+            // Phase 50: mirror convert_file_config's arc/mut_self conflict resolution.
+            // The `generate-types` path loads FileConfig directly and never calls
+            // convert_file_config, so without this the type generator would emit
+            // Arc-wrapped fields (`Arc<HashSet<..>>`) while the &mut self function
+            // codegen (which DOES clear arc) emits plain-collection bodies — an
+            // uncompilable types/bodies mismatch (Phase 49.4 regression).
+            if !file_config.mut_self_types.is_empty() {
+                if !file_config.arc_wrap_fields.is_empty() {
+                    eprintln!(
+                        "Warning: arc_wrap_fields is set but mut_self_types is also set. \
+                         Arc-wrapping conflicts with &mut self calling convention — clearing arc_wrap_fields."
+                    );
+                    file_config.arc_wrap_fields.clear();
+                }
+                if !file_config.arc_wrap_types.is_empty() {
+                    eprintln!(
+                        "Warning: arc_wrap_types is set but mut_self_types is also set. \
+                         Arc-wrapping conflicts with &mut self calling convention — clearing arc_wrap_types."
+                    );
+                    file_config.arc_wrap_types.clear();
+                }
+            }
+
             let naming_config = file_config.naming.clone();
             let remapping = file_config.remapping.clone();
             let custom_imports = file_config.output.custom_imports.clone();
@@ -6275,7 +6298,10 @@ fn load_config(path: &Path) -> Result<TranspilerConfig> {
 
 /// Convert a FileConfig to internal TranspilerConfig.
 /// `config_path` is used for resolving relative paths (e.g., manual_code).
-fn convert_file_config(mut file_config: FileConfig, config_path: &Path) -> Result<TranspilerConfig> {
+fn convert_file_config(
+    mut file_config: FileConfig,
+    config_path: &Path,
+) -> Result<TranspilerConfig> {
     // When mut_self_types is set (&mut self calling convention), Arc-wrapping is
     // counterproductive — the hot path no longer clones the outer struct, so Arc's
     // O(1) clone benefit doesn't apply. Clear arc_wrap_fields/arc_wrap_types with a warning.
@@ -12411,7 +12437,10 @@ verus! {
             let mut m = HashMap::new();
             m.insert(
                 "CProposer".to_string(),
-                vec!["request_queue".to_string(), "received_1b_packets".to_string()],
+                vec![
+                    "request_queue".to_string(),
+                    "received_1b_packets".to_string(),
+                ],
             );
             m
         };

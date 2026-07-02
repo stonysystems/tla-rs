@@ -8,6 +8,44 @@ use crate::error::{TranspileError, TranspileResult};
 use crate::moder::AnnotatedFunction;
 use std::collections::{HashMap, HashSet};
 
+/// Replace the receiver identifier `recv_name` with `replacement` in a rendered
+/// spec string, but ONLY when `recv_name` occurs as a standalone identifier token
+/// immediately followed by `@` or `.`.
+///
+/// A naive `str::replace("s.", "old(self).")` corrupts every identifier that ends
+/// in the receiver name — e.g. `s.preaccept_senders.contains(..)` becomes
+/// `old(self).preaccept_senderold(self).contains(..)` because the `s.` inside
+/// `senders.` also matches (Phase 48.7 name-mangling bug). Requiring an identifier
+/// boundary before the match (start-of-string or a non-`[A-Za-z0-9_]` char) fixes it.
+fn replace_receiver_refs(input: &str, recv_name: &str, replacement: &str) -> String {
+    if recv_name.is_empty() {
+        return input.to_string();
+    }
+    let bytes = input.as_bytes();
+    let n = bytes.len();
+    let mut out = String::with_capacity(n);
+    let mut i = 0;
+    while i < n {
+        if input[i..].starts_with(recv_name) {
+            let after_idx = i + recv_name.len();
+            let after = bytes.get(after_idx).copied();
+            let boundary_before = i == 0 || {
+                let c = bytes[i - 1];
+                !(c.is_ascii_alphanumeric() || c == b'_')
+            };
+            if boundary_before && matches!(after, Some(b'@') | Some(b'.')) {
+                out.push_str(replacement);
+                out.push(after.unwrap() as char);
+                i = after_idx + 1;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
 /// Type alias for output assignments result: (name, expression) pairs and other expressions.
 pub type OutputAssignments = (Vec<(String, ExecExpr)>, Vec<ExecExpr>);
 
@@ -1450,8 +1488,13 @@ impl Translator {
             .map(|(p, _)| p.ty.clone())
             .collect();
 
-        // If mut_self_types is configured, check if this function should become a method
+        // If mut_self_types is configured, check if this function should become a method.
+        // Only Predicate (action) functions are emitted as `&mut self` methods; value-
+        // returning Helpers (e.g. `step_down_if_needed(s, t) -> LState`) stay free
+        // functions and are used functionally (`Cstep_down_if_needed(s, t).field`), so
+        // their calls must NOT be rewritten to method syntax (Phase 50: Cstep_down bug).
         if func.is_functionalizable
+            && matches!(func.kind, FunctionKind::Predicate)
             && !func.spec_fn.params.is_empty()
             && !self.config.mut_self_types.is_empty()
         {
@@ -2964,28 +3007,19 @@ impl Translator {
                 expr: Box::new(Self::rename_var_in_expr(inner, from, to)),
             },
             ExecExpr::Call { func, args } => {
-                let renamed_args: Vec<ExecExpr> = args
-                    .iter()
-                    .map(|a| Self::rename_var_in_expr(a, from, to))
-                    .collect();
-                // When renaming to "self", convert free-function calls whose first arg
-                // is self/&self into method calls (the function is now a &mut self method)
-                if to == "self" && !renamed_args.is_empty() {
-                    let first_is_self = matches!(&renamed_args[0], ExecExpr::Var(n) if n == "self")
-                        || matches!(&renamed_args[0],
-                            ExecExpr::Unary { op, expr } if op == "&"
-                                && matches!(expr.as_ref(), ExecExpr::Var(n) if n == "self"));
-                    if first_is_self {
-                        return ExecExpr::MethodCall {
-                            receiver: Box::new(ExecExpr::Var("self".to_string())),
-                            method: func.clone(),
-                            args: renamed_args[1..].to_vec(),
-                        };
-                    }
-                }
+                // NOTE: converting free-function calls whose first arg is `self` into
+                // method calls is deliberately NOT done here. That would method-ize
+                // calls to value-returning helper free functions (e.g.
+                // `Cstep_down_if_needed(&self, t)` → `self.Cstep_down_if_needed(t)`),
+                // which don't exist as methods (Phase 50 bug). `convert_calls_to_methods`
+                // performs the conversion instead, guarded by `method_names` so only
+                // functions actually emitted as `&mut self` methods are rewritten.
                 ExecExpr::Call {
                     func: func.clone(),
-                    args: renamed_args,
+                    args: args
+                        .iter()
+                        .map(|a| Self::rename_var_in_expr(a, from, to))
+                        .collect(),
                 }
             }
             ExecExpr::MethodCall {
@@ -3077,9 +3111,9 @@ impl Translator {
                         .iter()
                         .map(|inv| inv.replace(&from_at, &to_at).replace(&from_dot, &to_dot))
                         .collect(),
-                    decreases: decreases.as_ref().map(|d| {
-                        d.replace(&from_at, &to_at).replace(&from_dot, &to_dot)
-                    }),
+                    decreases: decreases
+                        .as_ref()
+                        .map(|d| d.replace(&from_at, &to_at).replace(&from_dot, &to_dot)),
                     body: Box::new(Self::rename_var_in_expr(body, from, to)),
                 }
             }
@@ -3140,12 +3174,8 @@ impl Translator {
                     .collect(),
             ),
             // String-based nodes: do text replacement for receiver name references
-            ExecExpr::Literal(text) => {
-                ExecExpr::Literal(Self::rename_in_text(text, from, to))
-            }
-            ExecExpr::Comment(text) => {
-                ExecExpr::Comment(Self::rename_in_text(text, from, to))
-            }
+            ExecExpr::Literal(text) => ExecExpr::Literal(Self::rename_in_text(text, from, to)),
+            ExecExpr::Comment(text) => ExecExpr::Comment(Self::rename_in_text(text, from, to)),
             // True leaf nodes: BroadcastUse, Break
             _ => expr.clone(),
         }
@@ -3160,8 +3190,7 @@ impl Translator {
         let mut out = String::with_capacity(text.len());
         let mut i = 0;
         while i < bytes.len() {
-            if i + from_bytes.len() <= bytes.len()
-                && &bytes[i..i + from_bytes.len()] == from_bytes
+            if i + from_bytes.len() <= bytes.len() && &bytes[i..i + from_bytes.len()] == from_bytes
             {
                 // Check word boundary before
                 let before_ok = i == 0 || {
@@ -3209,20 +3238,32 @@ impl Translator {
             // Recurse into all compound variants
             ExecExpr::Call { func, args } => ExecExpr::Call {
                 func: func.clone(),
-                args: args.iter().map(|a| Self::convert_calls_to_methods(a, method_names)).collect(),
+                args: args
+                    .iter()
+                    .map(|a| Self::convert_calls_to_methods(a, method_names))
+                    .collect(),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
-                stmts.iter().map(|s| Self::convert_calls_to_methods(s, method_names)).collect(),
+                stmts
+                    .iter()
+                    .map(|s| Self::convert_calls_to_methods(s, method_names))
+                    .collect(),
             ),
             ExecExpr::Let { pattern, ty, value } => ExecExpr::Let {
                 pattern: pattern.clone(),
                 ty: ty.clone(),
                 value: Box::new(Self::convert_calls_to_methods(value, method_names)),
             },
-            ExecExpr::If { cond, then_branch, else_branch } => ExecExpr::If {
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
                 cond: Box::new(Self::convert_calls_to_methods(cond, method_names)),
                 then_branch: Box::new(Self::convert_calls_to_methods(then_branch, method_names)),
-                else_branch: else_branch.as_ref().map(|e| Box::new(Self::convert_calls_to_methods(e, method_names))),
+                else_branch: else_branch
+                    .as_ref()
+                    .map(|e| Box::new(Self::convert_calls_to_methods(e, method_names))),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
                 lhs: Box::new(Self::convert_calls_to_methods(lhs, method_names)),
@@ -3233,25 +3274,47 @@ impl Translator {
                 op: op.clone(),
                 expr: Box::new(Self::convert_calls_to_methods(inner, method_names)),
             },
-            ExecExpr::MethodCall { receiver, method, args } => ExecExpr::MethodCall {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => ExecExpr::MethodCall {
                 receiver: Box::new(Self::convert_calls_to_methods(receiver, method_names)),
                 method: method.clone(),
-                args: args.iter().map(|a| Self::convert_calls_to_methods(a, method_names)).collect(),
+                args: args
+                    .iter()
+                    .map(|a| Self::convert_calls_to_methods(a, method_names))
+                    .collect(),
             },
             ExecExpr::Struct { name, fields } => ExecExpr::Struct {
                 name: name.clone(),
-                fields: fields.iter().map(|(n, v)| (n.clone(), Self::convert_calls_to_methods(v, method_names))).collect(),
+                fields: fields
+                    .iter()
+                    .map(|(n, v)| (n.clone(), Self::convert_calls_to_methods(v, method_names)))
+                    .collect(),
             },
             ExecExpr::StructUpdate { name, base, fields } => ExecExpr::StructUpdate {
                 name: name.clone(),
                 base: Box::new(Self::convert_calls_to_methods(base, method_names)),
-                fields: fields.iter().map(|(n, v)| (n.clone(), Self::convert_calls_to_methods(v, method_names))).collect(),
+                fields: fields
+                    .iter()
+                    .map(|(n, v)| (n.clone(), Self::convert_calls_to_methods(v, method_names)))
+                    .collect(),
             },
             ExecExpr::Tuple(elems) => ExecExpr::Tuple(
-                elems.iter().map(|e| Self::convert_calls_to_methods(e, method_names)).collect(),
+                elems
+                    .iter()
+                    .map(|e| Self::convert_calls_to_methods(e, method_names))
+                    .collect(),
             ),
-            ExecExpr::Return(inner) => ExecExpr::Return(Box::new(Self::convert_calls_to_methods(inner, method_names))),
-            ExecExpr::Clone(inner) => ExecExpr::Clone(Box::new(Self::convert_calls_to_methods(inner, method_names))),
+            ExecExpr::Return(inner) => ExecExpr::Return(Box::new(Self::convert_calls_to_methods(
+                inner,
+                method_names,
+            ))),
+            ExecExpr::Clone(inner) => ExecExpr::Clone(Box::new(Self::convert_calls_to_methods(
+                inner,
+                method_names,
+            ))),
             ExecExpr::Cast(inner, ty) => ExecExpr::Cast(
                 Box::new(Self::convert_calls_to_methods(inner, method_names)),
                 ty.clone(),
@@ -3262,20 +3325,48 @@ impl Translator {
             ),
             ExecExpr::Match { scrutinee, arms } => ExecExpr::Match {
                 scrutinee: Box::new(Self::convert_calls_to_methods(scrutinee, method_names)),
-                arms: arms.iter().map(|(pat, body)| (pat.clone(), Self::convert_calls_to_methods(body, method_names))).collect(),
+                arms: arms
+                    .iter()
+                    .map(|(pat, body)| {
+                        (
+                            pat.clone(),
+                            Self::convert_calls_to_methods(body, method_names),
+                        )
+                    })
+                    .collect(),
             },
             ExecExpr::ProofBlock { stmts } => ExecExpr::ProofBlock {
-                stmts: stmts.iter().map(|s| Self::convert_calls_to_methods(s, method_names)).collect(),
+                stmts: stmts
+                    .iter()
+                    .map(|s| Self::convert_calls_to_methods(s, method_names))
+                    .collect(),
             },
-            ExecExpr::Assume(inner) => ExecExpr::Assume(Box::new(Self::convert_calls_to_methods(inner, method_names))),
-            ExecExpr::Assert(inner) => ExecExpr::Assert(Box::new(Self::convert_calls_to_methods(inner, method_names))),
-            ExecExpr::WhileLoop { cond, invariants, decreases, body } => ExecExpr::WhileLoop {
+            ExecExpr::Assume(inner) => ExecExpr::Assume(Box::new(Self::convert_calls_to_methods(
+                inner,
+                method_names,
+            ))),
+            ExecExpr::Assert(inner) => ExecExpr::Assert(Box::new(Self::convert_calls_to_methods(
+                inner,
+                method_names,
+            ))),
+            ExecExpr::WhileLoop {
+                cond,
+                invariants,
+                decreases,
+                body,
+            } => ExecExpr::WhileLoop {
                 cond: Box::new(Self::convert_calls_to_methods(cond, method_names)),
                 invariants: invariants.clone(),
                 decreases: decreases.clone(),
                 body: Box::new(Self::convert_calls_to_methods(body, method_names)),
             },
-            ExecExpr::ForInIter { var, iter_name, iter_source, invariants, body } => ExecExpr::ForInIter {
+            ExecExpr::ForInIter {
+                var,
+                iter_name,
+                iter_source,
+                invariants,
+                body,
+            } => ExecExpr::ForInIter {
                 var: var.clone(),
                 iter_name: iter_name.clone(),
                 iter_source: Box::new(Self::convert_calls_to_methods(iter_source, method_names)),
@@ -3283,7 +3374,10 @@ impl Translator {
                 body: Box::new(Self::convert_calls_to_methods(body, method_names)),
             },
             ExecExpr::VecLit(elems) => ExecExpr::VecLit(
-                elems.iter().map(|e| Self::convert_calls_to_methods(e, method_names)).collect(),
+                elems
+                    .iter()
+                    .map(|e| Self::convert_calls_to_methods(e, method_names))
+                    .collect(),
             ),
             ExecExpr::Closure { params, body } => ExecExpr::Closure {
                 params: params.clone(),
@@ -3293,7 +3387,12 @@ impl Translator {
                 start: Box::new(Self::convert_calls_to_methods(start, method_names)),
                 end: Box::new(Self::convert_calls_to_methods(end, method_names)),
             },
-            ExecExpr::GhostVar { name, ty, init, mutable } => ExecExpr::GhostVar {
+            ExecExpr::GhostVar {
+                name,
+                ty,
+                init,
+                mutable,
+            } => ExecExpr::GhostVar {
                 name: name.clone(),
                 ty: ty.clone(),
                 init: Box::new(Self::convert_calls_to_methods(init, method_names)),
@@ -8370,10 +8469,7 @@ impl Translator {
         // Adjust requires: replace `recv_name@` and `recv_name.` with `old(self)@` and `old(self).`
         let requires = requires
             .iter()
-            .map(|r| {
-                r.replace(&format!("{}@", recv_name), "old(self)@")
-                    .replace(&format!("{}.", recv_name), "old(self).")
-            })
+            .map(|r| replace_receiver_refs(r, &recv_name, "old(self)"))
             .collect();
 
         // Adjust ensures: replace receiver-typed output with `self@`/`self.`
@@ -8443,9 +8539,7 @@ impl Translator {
                     }
                 }
                 // Replace input receiver references with old(self)
-                s = s
-                    .replace(&format!("{}@", recv_name), "old(self)@")
-                    .replace(&format!("{}.", recv_name), "old(self).");
+                s = replace_receiver_refs(&s, &recv_name, "old(self)");
                 s
             })
             .collect();

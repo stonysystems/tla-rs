@@ -150,7 +150,7 @@ impl CState {
         old(self).valid(),
         c.valid(),
         old(self).phase is Prepare,
-        !old(self)@.prepare_senderold(self).contains(*sender as int),
+        !old(self)@.prepare_senders.contains(*sender as int),
     ensures
         self.valid(),
         LReceivePrepare(old(self)@, self@, c@, *sender as int, result@.map(|i, p: CPBFTMessage| p@)),
@@ -180,7 +180,7 @@ impl CState {
         old(self).valid(),
         c.valid(),
         old(self).phase is Prepare,
-        (old(self)@.prepare_senderold(self).len() >= ((2 * c.f) + 1)),
+        (old(self)@.prepare_senders.len() >= ((2 * c.f) + 1)),
     ensures
         self.valid(),
         LEnterCommit(old(self)@, self@, c@, result@.map(|i, p: CPBFTMessage| p@)),
@@ -211,7 +211,7 @@ impl CState {
         old(self).valid(),
         c.valid(),
         old(self).phase is Commit,
-        !old(self)@.commit_senderold(self).contains(*sender as int),
+        !old(self)@.commit_senders.contains(*sender as int),
     ensures
         self.valid(),
         LReceiveCommit(old(self)@, self@, c@, *sender as int, result@.map(|i, p: CPBFTMessage| p@)),
@@ -241,7 +241,7 @@ impl CState {
         old(self).valid(),
         c.valid(),
         old(self).phase is Commit,
-        (old(self)@.commit_senderold(self).len() >= ((2 * c.f) + 1)),
+        (old(self)@.commit_senders.len() >= ((2 * c.f) + 1)),
         old(self).seq_num < u64::MAX,
     ensures
         self.valid(),

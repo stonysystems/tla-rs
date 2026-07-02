@@ -6,7 +6,9 @@ skip_functions = [
 ]
 
 # Emit &mut self calling convention for CState methods (Phase 48)
-mut_self_types = ["CState"]
+# Phase 50: reverted to functional convention -- the &mut self proof codegen
+# leaves postcondition gaps for this protocol. No perf need (unbenchmarked).
+# mut_self_types = ["CState"]
 
 # Arc-wrap non-scalar fields of CState for O(1) clone
 arc_wrap_types = ["CState"]

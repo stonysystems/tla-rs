@@ -15703,3 +15703,91 @@ Remaining ~19% gap (77K vs 95K) is dominated by:
 - Generalizing Arc-vs-direct decision to non-RSL protocols (Raft / EPaxos / PBFT don't show enough perf data to justify; revisit if they get user-driven bench infrastructure).
 - Removing Arc from cold fields (e.g., `constants`). These have no perf impact; leave for code consistency.
 - Re-architecting beyond Arc (e.g., custom data structures, sharded HashMaps). Defer to Phase 50 if needed.
+
+---
+
+## Phase 50: Fix regen→compile→run breakage in RSL/Raft/EPaxos/PBFT (whole-crate build recovery)
+
+### Findings (2026-07-02)
+
+**The committed tree did NOT compile.** A full-crate `verus --compile --no-verify src/lib.rs`
+failed with **203 errors** across all 8 non-RSL "simple" protocols (RSL itself was clean).
+The last-good `liblib.so` on disk (built 2026-05-27 18:03 UTC) predated the breakage and
+was a stale artifact of the pre-`&mut self` (2026-05-25, commit 83b09a2) generated code —
+it had never been rebuilt from HEAD. Three distinct transpiler bugs, all introduced by the
+Phase 48.7 / 49.4 `&mut self` generalization commits and never caught (only the 2570
+transpiler unit tests ran; no whole-crate `verus --compile`):
+
+- **Bug A — Arc/type mismatch (177 × E0308).** `generate-types` loads `FileConfig` directly
+  and never calls `convert_file_config`, so the Phase 49.4 rule "clear `arc_wrap_fields`/
+  `arc_wrap_types` when `mut_self_types` is set" never applied to the *types* path. Result:
+  `types_gen.rs` emitted `Arc<HashSet<..>>` fields while the `&mut self` function bodies
+  produced plain collections — uncompilable.
+- **Bug B — mangled spec-method names (25 × E0599).** The `requires`/`ensures` receiver
+  rewrite used naive `String::replace("s.", "old(self).")`, which also matched the trailing
+  `s.` inside identifiers ending in `s`: `s.preaccept_senders.contains(..)` →
+  `old(self).preaccept_senderold(self).contains(..)` (also `servers`→`serverold`,
+  `acceptors`→`acceptorold`).
+- **Bug C — helper calls method-ized (E0599 + E0308).** `rename_var_in_expr` unconditionally
+  turned any call whose first arg became `self` into `self.Method(..)`, even for
+  value-returning free-function *helpers* like `step_down_if_needed(s,t) -> LState` (used as
+  `Cstep_down_if_needed(&s,t).field`). `register_function` also added Helpers to
+  `method_names`. Both must be gated to functions actually emitted as `&mut self` methods.
+
+### Fixes
+
+- [x] **50.1** Bug A: `generate-types` handler (main.rs) now clears `arc_wrap_fields`/
+  `arc_wrap_types` when `mut_self_types` is non-empty, mirroring `convert_file_config`.
+- [x] **50.2** Bug B: added identifier-boundary-aware `replace_receiver_refs()` helper
+  (translator/mod.rs) and replaced the two naive `requires`/`ensures` receiver rewrites.
+- [x] **50.3** Bug C: (a) `register_function` only adds `Predicate` functions to
+  `method_names` (not value-returning Helpers); (b) removed the ungated Call→MethodCall
+  block from `rename_var_in_expr` — `convert_calls_to_methods` (guarded by `method_names`)
+  is the single method-ization path.
+- [x] **50.4** Raft reverted to the functional calling convention (dropped `mut_self_types`
+  from `raft_transpile.toml`, kept arc-wrap). Raft's message handlers
+  (`CHandleRequestVoteMsg`/`CHandleAppendEntriesMsg`, 8 functions) compute an intermediate
+  functional state `s_mid = step_down_if_needed(s, term)` then return/grant-vote from it;
+  the `&mut self` body transform cannot lift that into `*self = s_mid; return msgs`, so Raft
+  never compiled under `&mut self` (bug C was already present in committed HEAD). Reverting
+  restores the known-good compiling+verifying functional form. Updated 5 `host.rs` call
+  sites back to `let (ns, sent) = raft_gen::CFoo(&self.state, ..); self.state = ns;`.
+- [x] **50.5** First-ever whole-crate `verus` verification of the `&mut self` generated code
+  (the Phase 48.7 commits never ran it) revealed the proof codegen leaves postcondition gaps
+  for 5 more protocols: Paxos (1), LeaderElection (5), ChainReplication (3), PrimaryBackup (1),
+  VerticalPaxos (1) — 11 errors. TwoPhase, EPaxos, PBFT verify cleanly under `&mut self`.
+  Reverted those 5 to the functional convention (same as Raft) so the whole crate verifies;
+  they are unbenchmarked so there is no perf cost. Updated their `host.rs` call sites
+  (method → functional) and restored `ChainReplication/host.rs` head-node Arc init.
+- [x] **50.6** Regenerated all 9 simple protocols (`types_gen` + `*_gen`) from spec with the
+  fixed transpiler. `&mut self` retained where it verifies (TwoPhase, EPaxos, PBFT);
+  functional convention for Raft, Paxos, LeaderElection, ChainReplication, PrimaryBackup,
+  VerticalPaxos.
+
+### Evidence
+
+- **Compile**: `verus --compile --no-verify src/lib.rs` → **0 errors** (was 203).
+  `liblib.so` rebuilt 2026-07-02.
+- **Verify** (per generated module, 0 errors each): TwoPhase 12, Paxos 9, LeaderElection 12,
+  ChainReplication 13, PrimaryBackup 11, VerticalPaxos 14, EPaxos + PBFT 36. RSL untouched
+  (unchanged from HEAD). Raft's `raft_gen` compiles; its refinement proof keeps the
+  pre-existing Phase 34 deprecated assumes (unchanged, out of scope).
+- **Transpiler tests**: 347 pass single-threaded, incl. all `*_regen_matches_checked_in`
+  (transpiler reproduces the checked-in generated files byte-for-byte). NOTE: these
+  integration tests spawn `cargo run` and race on the build lock under `--test-threads>1` —
+  run them single-threaded. `cargo fmt --check` + `cargo clippy` clean.
+- **Run**: RSL 3-node UDP cluster (fresh `liblib.so`) → 3/3 servers `[[READY]]`, client
+  reaches consensus with non-zero throughput. Raft/EPaxos/PBFT clusters run end-to-end via
+  `scripts/bench_generic.sh` (~11K / ~15K / ~2.5K ops/s localhost, hardware-dependent).
+- **Reproducibility**: full spec→generate→verify→compile→run guide for a fresh checkout in
+  `docs/REPRODUCE_WORKFLOW.md` (toolchain pins + exact commands + cert generation).
+
+### Notes / follow-ups
+
+- RSL full lossless regen is still Phase 42 territory (10 `skip_functions` hand-written
+  bodies + Arc patches); RSL was NOT regenerated here — it already compiles and runs.
+- Root process gap: the Phase 48.7/49.4 commits shipped without a whole-crate
+  `verus --compile`. Recommend adding that to CI (Phase 37) so generated-code breakage can't
+  land green again.
+- Optional future work: teach the `&mut self` body transform to lift intermediate functional
+  state (`s_mid = helper(s, ..)`) into `*self = s_mid`, which would let Raft rejoin `&mut self`.

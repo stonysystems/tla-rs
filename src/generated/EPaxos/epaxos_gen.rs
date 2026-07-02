@@ -154,7 +154,7 @@ impl CState {
         c.valid(),
         old(self).phase is PreAccepted,
         old(self).is_leader == true,
-        !old(self)@.preaccept_senderold(self).contains(*pa_sender as int),
+        !old(self)@.preaccept_senders.contains(*pa_sender as int),
         old(self).dep_count < u64::MAX,
     ensures
         self.valid(),
@@ -202,7 +202,7 @@ impl CState {
         c.valid(),
         old(self).phase is PreAccepted,
         old(self).is_leader == true,
-        (old(self)@.preaccept_senderold(self).len() >= c.fast_quorum_size),
+        (old(self)@.preaccept_senders.len() >= c.fast_quorum_size),
         old(self).has_conflict == false,
         old(self).committed_count < u64::MAX,
     ensures
@@ -241,7 +241,7 @@ impl CState {
         c.valid(),
         old(self).phase is PreAccepted,
         old(self).is_leader == true,
-        (old(self)@.preaccept_senderold(self).len() >= c.quorum_size),
+        (old(self)@.preaccept_senders.len() >= c.quorum_size),
         old(self).has_conflict == true,
     ensures
         self.valid(),
@@ -319,7 +319,7 @@ impl CState {
         c.valid(),
         old(self).phase is Accepted,
         old(self).is_leader == true,
-        !old(self)@.accept_senderold(self).contains(*ao_sender as int),
+        !old(self)@.accept_senders.contains(*ao_sender as int),
     ensures
         self.valid(),
         LReceiveAcceptOk(old(self)@, self@, c@, *ao_sender as int, result@.map(|i, p: CEPaxosMessage| p@)),
@@ -350,7 +350,7 @@ impl CState {
         c.valid(),
         old(self).phase is Accepted,
         old(self).is_leader == true,
-        (old(self)@.accept_senderold(self).len() >= c.quorum_size),
+        (old(self)@.accept_senders.len() >= c.quorum_size),
         old(self).committed_count < u64::MAX,
     ensures
         self.valid(),
