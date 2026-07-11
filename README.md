@@ -4,8 +4,12 @@ A Rust implementation of the IronFleet verified distributed systems framework, f
 
 ## Features
 
-- **Formally Verified Protocols**: Paxos-based RSL (Replicated State Machine) and distributed Lock service
-- **669 Verified Functions**: Main codebase fully verified with Verus (0 errors)
+- **10 Formally Verified Protocols**: RSL (Multi-Paxos RSM), Single-Decree Paxos, Raft,
+  EPaxos, PBFT, Chain Replication, Primary-Backup, Vertical Paxos, Two-Phase Commit, and
+  Bully Leader Election — plus a distributed Lock service
+- **~1000 Verified Functions**: Verified with Verus. Every protocol verifies with 0 errors
+  except Raft, whose refinement proof still carries 13 deprecated "Phase 34" `assume`s (a
+  known, isolated research gap)
 - **Spec-to-Exec Transpiler**: Automatic transformation of TLA-style specifications to verified implementations (~10K LOC)
 - **C# FFI Integration**: Production-ready networking layer via .NET runtime
 
@@ -29,7 +33,7 @@ A Rust implementation of the IronFleet verified distributed systems framework, f
 
 ## Requirements
 
-- **Verus**: v0.2026.01.14 or compatible (tested with 0.2026.01.14.88f7396)
+- **Verus**: v0.2026.02.04 or compatible (tested with 0.2026.02.04.175a879)
 - **Rust**: 1.80.1+ (tested with 1.92.0)
 - **.NET 6.0 SDK**: https://dotnet.microsoft.com/download
 - **scons**: `pip install scons`
@@ -48,9 +52,13 @@ scons --skip-verus
 scons bin/IronRSLServerUDP.dll
 ```
 
+> A complete, reproducible spec → generate → verify → compile → run walkthrough for a fresh
+> checkout (with toolchain pins and exact commands) lives in
+> [`docs/REPRODUCE_WORKFLOW.md`](docs/REPRODUCE_WORKFLOW.md).
+
 ## Running
 
-### IronRSL (Paxos-based Replicated State Machine)
+### IronRSL (Multi-Paxos Replicated State Machine)
 
 #### Generate Certificates
 
@@ -83,6 +91,33 @@ dotnet bin/IronRSLClientUDP.dll ip1=127.0.0.1 port1=4001 ip2=127.0.0.1 port2=400
 
 > **Note:** A legacy TCP+SSL variant (`IronRSLServer.dll` / `IronRSLClient.dll`) is
 > still available for backward compatibility but delivers ~17x lower throughput.
+
+### Other Protocols (Raft, EPaxos, PBFT, …)
+
+The 8 non-RSL protocols share a unified C# runtime: one server binary
+(`IronProtocolServer.dll`) dispatched by a `protocol=<name>` argument, and one client
+(`IronGenericClient.dll`). Supported `protocol=` values include `raft`, `epaxos`, `pbft`,
+and `primarybackup`.
+
+```bash
+# Certificates (name=MyRaft / type=IronProtocol for all generic protocols).
+# 3-node cluster (raft, epaxos):
+dotnet bin/CreateIronServiceCerts.dll outputdir=bench/certs name=MyRaft type=IronProtocol \
+  addr1=127.0.0.1 port1=4001 addr2=127.0.0.1 port2=4002 addr3=127.0.0.1 port3=4003
+```
+
+The easiest way to start a cluster, run the client, and print throughput is the helper
+script:
+
+```bash
+# usage: scripts/bench_generic.sh <protocol> [duration_s] [trials] [nthreads]
+scripts/bench_generic.sh raft   8 1 4
+scripts/bench_generic.sh epaxos 8 1 4
+scripts/bench_generic.sh pbft   8 1 4   # 4-node; see the script for cert setup
+```
+
+See [`docs/REPRODUCE_WORKFLOW.md`](docs/REPRODUCE_WORKFLOW.md) for the full run recipe,
+including PBFT's 4-node certificate generation.
 
 ### IronLock (Distributed Lock Service)
 
@@ -127,6 +162,10 @@ verus impl.rs
 
 ### Transformation Example
 
+By default the transpiler emits an **in-place `&mut self`** calling convention (enabled per
+protocol via `mut_self_types` in the `_transpile.toml`): the post-state is `self` and the
+function returns only the sent messages.
+
 **Input (spec):**
 ```rust
 spec fn LAcceptorProcess1a(s: LAcceptor, s_: LAcceptor, inp: RslPacket, sent: Seq<RslPacket>) -> bool {
@@ -141,20 +180,28 @@ spec fn LAcceptorProcess1a(s: LAcceptor, s_: LAcceptor, inp: RslPacket, sent: Se
 }
 ```
 
-**Output (exec):**
+**Output (exec, `&mut self`):**
 ```rust
-exec fn CAcceptorProcess1a(s: &CAcceptor, inp: &CRslPacket) -> (CAcceptor, Vec<CRslPacket>)
-    requires s.well_formed(), inp.well_formed()
-    ensures LAcceptorProcess1a(s@, result.0@, inp@, result.1@)
-{
-    if ballot_lt(&s.max_bal, &inp.msg.get_bal_1a()) {
-        (CAcceptor { max_bal: inp.msg.get_bal_1a().clone(), votes: s.votes.clone() },
-         vec![make_1b_reply_impl(s, inp)])
-    } else {
-        (s.clone(), vec![])
+impl CAcceptor {
+    exec fn CAcceptorProcess1a(&mut self, inp: &CPacket) -> (sent: Vec<CPacket>)
+        requires old(self).well_formed(), inp.well_formed()
+        ensures LAcceptorProcess1a(old(self)@, self@, inp@, sent@)
+    {
+        if ballot_lt(&self.max_bal, &inp.msg.get_bal_1a()) {
+            self.max_bal = inp.msg.get_bal_1a().clone();   // in-place mutation, no rebuild
+            vec![make_1b_reply_impl(self, inp)]
+        } else {
+            vec![]
+        }
     }
 }
 ```
+
+Protocols whose specs are not amenable to `&mut self` (e.g. **Raft**, whose handlers compute
+an intermediate whole-state via a helper) instead use the **functional** convention —
+`fn CFoo(s: &CState, ...) -> (CState, Vec<CMsg>)` — selected simply by leaving
+`mut_self_types` unset. The choice is pure configuration; there is no protocol-specific logic
+in the transpiler.
 
 ### Verified Examples
 
@@ -168,41 +215,51 @@ The transpiler includes 25+ verified examples in `transpiler/verus_examples/` co
 
 ### Performance
 
-With field-level `Arc<T>` wrapping of hot collection fields, the transpiler generates
-code that **matches or exceeds** hand-tuned throughput on RSL UDP:
+The transpiler's default `&mut self` calling convention mutates state in place — eliminating
+the per-request "rebuild the whole struct + clone every field" cost of the earlier functional
+style. On RSL this closes most of the gap to a fully hand-tuned implementation.
 
-| Configuration | Throughput | Latency | Decay |
-|--------------|-----------|---------|-------|
-| Pre-Arc baseline | 16,341 ops/s | 2.39 ms | 36% |
-| Hand-tuned (wasiq) | 28,449 ops/s | 1.31 ms | 5% |
-| **Transpiler + Arc (5 fields)** | **32,663 ops/s** | **1.12 ms** | **5%** |
+RSL over UDP (localhost, 3 nodes, 32 client threads, `max_batch_size=32`):
 
-All benchable protocols (Phase 43, HEAD vs pre-Arc baseline c097da0):
+| Configuration | Throughput | Notes |
+|--------------|-----------|-------|
+| Pre-optimization (functional rebuild) | ~16K ops/s | Phase 46 baseline |
+| **Transpiler + `&mut self`** | **~46–54K ops/s** | current codegen (~0.85 ms latency) |
+| Hand-tuned reference (Sushant) | ~60K ops/s | `&mut self` end-to-end, hand-written |
 
-| Protocol | Nodes | Throughput | vs Baseline |
-|----------|-------|-----------|-------------|
-| RSL (field-level Arc) | 3 | 32,663 ops/s | +100% |
-| PrimaryBackup | 2 | 32,769 ops/s | +1.8% (noise) |
-| EPaxos | 3 | 4,066 ops/s | -13% |
-| Raft | 3 | 3,613 ops/s | +0% |
-| PBFT | 4 | <1 ops/s | N/A |
+So the auto-generated code reaches roughly **80–90% of a full hand-tune** — a ~3× improvement
+over the pre-optimization baseline. (Earlier READMEs credited "field-level `Arc<T>` wrapping";
+that approach was superseded by `&mut self` in Phases 47–49 and the Arc wrapping was removed
+from the RSL hot fields. `arc_wrap_fields` still exists for functional-convention protocols
+but conflicts with — and is auto-cleared under — `mut_self_types`.)
 
-The `arc_wrap_fields` TOML config wraps individual collection fields (`HashMap`,
-`HashSet`, `Vec`) in `Arc<T>` for O(1) clone on unchanged dispatch paths. Configure
-in the protocol's `_transpile.toml`:
+Other protocols run end-to-end but are not perf-tuned; sample localhost smoke numbers
+(hardware- and duration-dependent — yours will differ):
+
+| Protocol | Nodes | Throughput (localhost smoke) |
+|----------|-------|------------------------------|
+| RSL | 3 | ~46K ops/s (32 clients) |
+| EPaxos | 3 | ~15K ops/s (4 clients, 8 s) |
+| Raft | 3 | ~11K ops/s (4 clients, 8 s) |
+| PBFT | 4 | ~2.5K ops/s (4 clients, 8 s; BFT 3-phase) |
+
+To select the calling convention, set `mut_self_types` in the protocol's `_transpile.toml`:
 
 ```toml
-arc_wrap_fields = { CProposer = ["request_queue", "received_1b_packets"] }
+mut_self_types = ["CProposer"]   # emit &mut self methods on CProposer
 ```
 
-See `transpiler/docs/PATTERNS.md` and `transpiler/docs/EFFICIENT_EMIT.md` for details.
+See `transpiler/docs/EFFICIENT_EMIT.md` for the `&mut self`-vs-functional decision matrix and
+`docs/REPRODUCE_WORKFLOW.md` for how to reproduce these measurements.
 
 ### Documentation
 
 - `transpiler/docs/ANNOTATION_FORMAT.md` - Mode annotation syntax
-- `transpiler/docs/PATTERNS.md` - Supported transformation patterns (incl. Arc wrapping)
+- `transpiler/docs/PATTERNS.md` - Supported transformation patterns
+- `transpiler/docs/EFFICIENT_EMIT.md` - `&mut self` vs functional convention, perf history
 - `transpiler/docs/LIMITATIONS.md` - Known limitations, workarounds, and performance analysis
 - `transpiler/docs/MIGRATION_GUIDE.md` - Migration from manual implementations
+- `docs/REPRODUCE_WORKFLOW.md` - End-to-end spec → generate → verify → compile → run guide
 
 ## Code Organization
 
@@ -217,15 +274,14 @@ See `transpiler/docs/PATTERNS.md` and `transpiler/docs/EFFICIENT_EMIT.md` for de
 
 | Directory | Purpose |
 |-----------|---------|
-| `src/protocol/RSL/` | Abstract Paxos protocol specs and proofs (~6K LOC) |
-| `src/protocol/lock/` | Abstract Lock protocol specs |
-| `src/implementation/RSL/` | Verified concrete RSL implementation (~6K LOC) |
-| `src/implementation/lock/` | Verified concrete Lock implementation |
-| `src/generated/RSL/` | Auto-generated RSL types and functions |
+| `src/protocol/<P>/` | Abstract protocol specs and proofs (RSL, Raft, EPaxos, PBFT, …) |
+| `src/implementation/<P>/` | Verified concrete implementation + hand-written I/O host |
+| `src/generated/<P>/` | Transpiler-generated types and functions (do not hand-edit) |
+| `src/services/<P>/` | Service entry points |
 | `src/common/native/io_s.rs` | Network client with marshalling (~17K LOC) |
 | `csharp/` | C# runtime and deployable services (~45K LOC) |
 | `transpiler/` | Spec-to-exec transpiler (~10K LOC) |
-| `scripts/` | Utility scripts (e.g., regeneration) |
+| `scripts/` | Utility scripts (regeneration, benchmarks) |
 
 ## Verus Patterns
 
@@ -261,6 +317,10 @@ For arithmetic in triggers, use extra variables:
 - Verus maps/sets are infinite by default (need `.dom().finite()` bounds)
 - Cannot add conditions on trait implementations (copy clauses as workaround)
 - Marshalling lacks spec function for non-deserializable check
+- `&mut self` codegen cannot yet lift an intermediate whole-state (`s_mid = helper(s, …)`)
+  into `*self = s_mid`; protocols using that pattern (Raft) stay on the functional convention
+- RSL is not fully auto-generated: 10 functions have hand-written bodies (`skip_functions`);
+  see `transpiler/docs/REGEN_WORKFLOW.md`
 
 ## Code Attribution
 
