@@ -26,6 +26,40 @@ verus! {
         &&& is_majority_of(quorum.intersect(new_config), new_config)
     }
 
+    /// The cluster is either using one stable configuration or
+    /// temporarily requiring approval from old and new configurations.
+    pub enum MembershipPhase {
+        Stable {
+            config: Set<int>,
+        },
+        Joint {
+            old_config: Set<int>,
+            new_config: Set<int>,
+        },
+    }
+
+    /// A valid quorum depends on the current membership phase.
+    pub open spec fn is_quorum_for_phase(
+        quorum: Set<int>,
+        phase: MembershipPhase,
+    ) -> bool {
+        match phase {
+            MembershipPhase::Stable { config } => {
+                is_majority_of(quorum, config)
+            },
+            MembershipPhase::Joint {
+                old_config,
+                new_config,
+            } => {
+                is_joint_quorum(
+                    quorum,
+                    old_config,
+                    new_config,
+                )
+            },
+        }
+    }
+
     /// Any two majorities of the same configuration overlap.
     pub proof fn lemma_majorities_intersect(
         quorum1: Set<int>,
@@ -151,5 +185,41 @@ verus! {
 
         assert(joint_quorum1.contains(server));
         assert(joint_quorum2.contains(server));
+    }
+
+    /// Any two quorums valid for the same membership phase overlap.
+    pub proof fn lemma_phase_quorums_intersect(
+        quorum1: Set<int>,
+        quorum2: Set<int>,
+        phase: MembershipPhase,
+    )
+        requires
+            is_quorum_for_phase(quorum1, phase),
+            is_quorum_for_phase(quorum2, phase),
+        ensures
+            exists |server: int|
+                quorum1.contains(server)
+                && quorum2.contains(server),
+    {
+        match phase {
+            MembershipPhase::Stable { config } => {
+                lemma_majorities_intersect(
+                    quorum1,
+                    quorum2,
+                    config,
+                );
+            },
+            MembershipPhase::Joint {
+                old_config,
+                new_config,
+            } => {
+                lemma_joint_quorums_intersect(
+                    quorum1,
+                    quorum2,
+                    old_config,
+                    new_config,
+                );
+            },
+        }
     }
 }
