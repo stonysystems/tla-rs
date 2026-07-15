@@ -2,6 +2,7 @@ use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
 use crate::protocol::Raft::refinement_proof::message_invariants::*;
+use crate::protocol::Raft::refinement_proof::reconfiguration::*;
 use crate::common::collections::sets::*;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*, set_lib::*};
@@ -166,6 +167,82 @@ verus! {
             0 <= i < ds.num_servers
             && ds.server_states[i].role is Leader
             ==> ds.server_states[i].votes_granted.len() >= ds.server_constants[i].quorum_size
+    }
+
+    /// Configuration-aware version of LeaderHasQuorum for the
+    /// existing fixed-membership Raft model.
+    pub open spec fn LeaderHasStablePhaseQuorum(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |i: int|
+            0 <= i < ds.num_servers
+            && ds.server_states[i].role is Leader
+            ==> is_quorum_for_phase(
+                ds.server_states[i].votes_granted,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[i].servers,
+                },
+            )
+    }
+
+    /// The existing fixed-membership election invariants imply that
+    /// every leader has a valid quorum for the stable membership phase.
+    pub proof fn lemma_fixed_leader_quorum_implies_stable_phase_quorum(
+        ds: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LeaderHasQuorum(ds),
+            VotesGrantedAreServers(ds),
+        ensures
+            LeaderHasStablePhaseQuorum(ds),
+    {
+        assert forall |i: int|
+            0 <= i < ds.num_servers
+            && ds.server_states[i].role is Leader
+            implies is_quorum_for_phase(
+                ds.server_states[i].votes_granted,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[i].servers,
+                },
+            )
+        by {
+            let votes = ds.server_states[i].votes_granted;
+            let config = ds.server_constants[i].servers;
+
+            assert(ds.num_servers > 0);
+            assert(ds.server_constants[i].quorum_size
+                == ds.num_servers / 2 + 1);
+            assert(config
+                == Set::<int>::new(|j: int| 0 <= j < ds.num_servers));
+
+            lemma_range_set_finite(ds.num_servers);
+
+            assert(config.finite());
+            assert(config.len() == ds.num_servers);
+            assert(config.len() > 0);
+
+            assert(votes.subset_of(config)) by {
+                assert forall |v: int|
+                    votes.contains(v)
+                    implies config.contains(v)
+                by {
+                    assert(0 <= v < ds.num_servers);
+                };
+            };
+
+            assert(votes.len()
+                >= ds.server_constants[i].quorum_size);
+            assert(votes.len() >= config.len() / 2 + 1);
+
+            assert(is_majority_of(votes, config));
+            assert(is_quorum_for_phase(
+                votes,
+                MembershipPhase::Stable {
+                    config,
+                },
+            ));
+        };
     }
 
     /// Commit index is bounded by log length
