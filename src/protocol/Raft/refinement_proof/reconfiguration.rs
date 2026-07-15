@@ -1,4 +1,6 @@
 use crate::common::collections::sets::lemma_quorum_intersection;
+use crate::protocol::Raft::raft::replicator_count;
+use crate::protocol::Raft::types::{LConstants, LState};
 use vstd::prelude::*;
 
 verus! {
@@ -415,5 +417,75 @@ verus! {
                 }
             },
         }
+    }
+
+    /// The set whose cardinality is currently returned by
+    /// the fixed-membership replicator_count helper.
+    pub open spec fn replicator_set(
+        s: LState,
+        c: LConstants,
+        idx: int,
+    ) -> Set<int> {
+        c.servers.filter(|server: int|
+            server == c.my_id
+            || (s.match_index.contains_key(server as u64)
+                && s.match_index[server as u64] as int >= idx)
+        )
+    }
+
+    /// Exposing the underlying set does not change the meaning
+    /// of the existing count-based helper.
+    pub proof fn lemma_replicator_count_matches_set(
+        s: LState,
+        c: LConstants,
+        idx: int,
+    )
+        ensures
+            replicator_count(s, c, idx)
+                == replicator_set(s, c, idx).len() as int,
+    {
+    }
+
+    /// The existing fixed-membership commit guard implies that
+    /// the replicating servers form a valid stable-phase quorum.
+    pub proof fn lemma_fixed_commit_guard_implies_stable_phase_quorum(
+        s: LState,
+        c: LConstants,
+        idx: int,
+    )
+        requires
+            c.servers.finite(),
+            c.servers.len() > 0,
+            c.quorum_size == c.servers.len() / 2 + 1,
+            replicator_count(s, c, idx) >= c.quorum_size,
+        ensures
+            is_quorum_for_phase(
+                replicator_set(s, c, idx),
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+    {
+        let replicators = replicator_set(s, c, idx);
+
+        assert(replicators.subset_of(c.servers)) by {
+            assert forall |server: int|
+                replicators.contains(server)
+                implies c.servers.contains(server)
+            by {
+            };
+        };
+
+        lemma_replicator_count_matches_set(s, c, idx);
+
+        assert(replicators.len() as int >= c.quorum_size);
+        assert(replicators.len() >= c.servers.len() / 2 + 1);
+        assert(is_majority_of(replicators, c.servers));
+        assert(is_quorum_for_phase(
+            replicators,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        ));
     }
 }
