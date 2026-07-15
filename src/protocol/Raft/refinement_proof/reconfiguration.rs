@@ -299,4 +299,121 @@ verus! {
         assert(joint_quorum.contains(server));
         assert(stable_quorum.contains(server));
     }
+
+    /// Legal membership-phase progression for joint consensus.
+    ///
+    /// A stable configuration may remain stable or enter a joint phase
+    /// whose old configuration matches it. A joint phase may remain
+    /// unchanged or finish at its new configuration.
+    pub open spec fn is_legal_phase_progression(
+        phase: MembershipPhase,
+        phase_: MembershipPhase,
+    ) -> bool {
+        match phase {
+            MembershipPhase::Stable { config } => {
+                match phase_ {
+                    MembershipPhase::Stable { config: config_ } => {
+                        config_ == config
+                    },
+                    MembershipPhase::Joint {
+                        old_config,
+                        new_config: _,
+                    } => {
+                        old_config == config
+                    },
+                }
+            },
+            MembershipPhase::Joint {
+                old_config,
+                new_config,
+            } => {
+                match phase_ {
+                    MembershipPhase::Joint {
+                        old_config: old_config_,
+                        new_config: new_config_,
+                    } => {
+                        old_config_ == old_config
+                            && new_config_ == new_config
+                    },
+                    MembershipPhase::Stable { config } => {
+                        config == new_config
+                    },
+                }
+            },
+        }
+    }
+
+    /// Quorums before and after every legal membership-phase
+    /// progression share at least one server.
+    pub proof fn lemma_legal_phase_progression_quorums_intersect(
+        quorum: Set<int>,
+        quorum_: Set<int>,
+        phase: MembershipPhase,
+        phase_: MembershipPhase,
+    )
+        requires
+            is_legal_phase_progression(phase, phase_),
+            is_quorum_for_phase(quorum, phase),
+            is_quorum_for_phase(quorum_, phase_),
+        ensures
+            exists |server: int|
+                quorum.contains(server)
+                && quorum_.contains(server),
+    {
+        match phase {
+            MembershipPhase::Stable { config } => {
+                match phase_ {
+                    MembershipPhase::Stable { config: config_ } => {
+                        assert(config_ == config);
+                        lemma_majorities_intersect(
+                            quorum,
+                            quorum_,
+                            config,
+                        );
+                    },
+                    MembershipPhase::Joint {
+                        old_config,
+                        new_config,
+                    } => {
+                        assert(old_config == config);
+                        lemma_stable_to_joint_quorums_intersect(
+                            quorum,
+                            quorum_,
+                            config,
+                            new_config,
+                        );
+                    },
+                }
+            },
+            MembershipPhase::Joint {
+                old_config,
+                new_config,
+            } => {
+                match phase_ {
+                    MembershipPhase::Joint {
+                        old_config: old_config_,
+                        new_config: new_config_,
+                    } => {
+                        assert(old_config_ == old_config);
+                        assert(new_config_ == new_config);
+                        lemma_joint_quorums_intersect(
+                            quorum,
+                            quorum_,
+                            old_config,
+                            new_config,
+                        );
+                    },
+                    MembershipPhase::Stable { config } => {
+                        assert(config == new_config);
+                        lemma_joint_to_stable_quorums_intersect(
+                            quorum,
+                            quorum_,
+                            old_config,
+                            new_config,
+                        );
+                    },
+                }
+            },
+        }
+    }
 }
