@@ -222,4 +222,81 @@ verus! {
             },
         }
     }
+
+    /// A quorum from the old stable phase overlaps a quorum from
+    /// the following joint-consensus phase.
+    pub proof fn lemma_stable_to_joint_quorums_intersect(
+        stable_quorum: Set<int>,
+        joint_quorum: Set<int>,
+        old_config: Set<int>,
+        new_config: Set<int>,
+    )
+        requires
+            is_quorum_for_phase(
+                stable_quorum,
+                MembershipPhase::Stable {
+                    config: old_config,
+                },
+            ),
+            is_quorum_for_phase(
+                joint_quorum,
+                MembershipPhase::Joint {
+                    old_config,
+                    new_config,
+                },
+            ),
+        ensures
+            exists |server: int|
+                stable_quorum.contains(server)
+                && joint_quorum.contains(server),
+    {
+        lemma_old_majority_intersects_joint(
+            stable_quorum,
+            joint_quorum,
+            old_config,
+            new_config,
+        );
+    }
+
+    /// A quorum from the joint-consensus phase overlaps a quorum
+    /// from the following new stable phase.
+    pub proof fn lemma_joint_to_stable_quorums_intersect(
+        joint_quorum: Set<int>,
+        stable_quorum: Set<int>,
+        old_config: Set<int>,
+        new_config: Set<int>,
+    )
+        requires
+            is_quorum_for_phase(
+                joint_quorum,
+                MembershipPhase::Joint {
+                    old_config,
+                    new_config,
+                },
+            ),
+            is_quorum_for_phase(
+                stable_quorum,
+                MembershipPhase::Stable {
+                    config: new_config,
+                },
+            ),
+        ensures
+            exists |server: int|
+                joint_quorum.contains(server)
+                && stable_quorum.contains(server),
+    {
+        lemma_new_majority_intersects_joint(
+            stable_quorum,
+            joint_quorum,
+            old_config,
+            new_config,
+        );
+
+        let server = choose |server: int|
+            stable_quorum.contains(server)
+            && joint_quorum.contains(server);
+
+        assert(joint_quorum.contains(server));
+        assert(stable_quorum.contains(server));
+    }
 }
