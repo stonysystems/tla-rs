@@ -694,6 +694,162 @@ verus! {
         }
     }
 
+    /// Appending an entry beyond committed_len cannot change whether
+    /// the existing committed prefix is a well-formed membership history.
+    pub proof fn lemma_uncommitted_entry_does_not_affect_membership_log_well_formed(
+        log: Seq<MembershipLogEntry>,
+        uncommitted_entry: MembershipLogEntry,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            0 <= committed_len,
+            committed_len <= log.len(),
+        ensures
+            committed_membership_log_is_well_formed(
+                log.push(uncommitted_entry),
+                committed_len,
+                initial_phase,
+            ) == committed_membership_log_is_well_formed(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+        decreases committed_len
+    {
+        if committed_len == 0 {
+        } else {
+            assert(0 < committed_len);
+            assert(0 <= committed_len - 1);
+            assert(committed_len - 1 < log.len());
+
+            assert(
+                log.push(uncommitted_entry)[committed_len - 1]
+                    == log[committed_len - 1]
+            );
+
+            lemma_uncommitted_entry_does_not_affect_membership_log_well_formed(
+                log,
+                uncommitted_entry,
+                committed_len - 1,
+                initial_phase,
+            );
+
+            lemma_uncommitted_entry_does_not_affect_active_phase(
+                log,
+                uncommitted_entry,
+                committed_len - 1,
+                initial_phase,
+            );
+
+            match log[committed_len - 1] {
+                MembershipLogEntry::Data { value: _ } => {
+                    assert(
+                        is_legal_next_membership_log_entry(
+                            log.push(uncommitted_entry),
+                            committed_len - 1,
+                            initial_phase,
+                            log.push(uncommitted_entry)[committed_len - 1],
+                        ) == is_legal_next_membership_log_entry(
+                            log,
+                            committed_len - 1,
+                            initial_phase,
+                            log[committed_len - 1],
+                        )
+                    );
+                },
+                MembershipLogEntry::Configuration { phase: _ } => {
+                    assert(
+                        is_legal_next_membership_log_entry(
+                            log.push(uncommitted_entry),
+                            committed_len - 1,
+                            initial_phase,
+                            log.push(uncommitted_entry)[committed_len - 1],
+                        ) == is_legal_next_membership_log_entry(
+                            log,
+                            committed_len - 1,
+                            initial_phase,
+                            log[committed_len - 1],
+                        )
+                    );
+                },
+            }
+        }
+    }
+
+    /// Extending a well-formed committed membership history with one
+    /// legal committed entry produces another well-formed history.
+    pub proof fn lemma_legal_entry_extends_well_formed_committed_log(
+        log: Seq<MembershipLogEntry>,
+        initial_phase: MembershipPhase,
+        entry: MembershipLogEntry,
+    )
+        requires
+            committed_membership_log_is_well_formed(
+                log,
+                log.len() as int,
+                initial_phase,
+            ),
+            is_legal_next_membership_log_entry(
+                log,
+                log.len() as int,
+                initial_phase,
+                entry,
+            ),
+        ensures
+            committed_membership_log_is_well_formed(
+                log.push(entry),
+                (log.len() + 1) as int,
+                initial_phase,
+            ),
+    {
+        lemma_uncommitted_entry_does_not_affect_membership_log_well_formed(
+            log,
+            entry,
+            log.len() as int,
+            initial_phase,
+        );
+
+        lemma_uncommitted_entry_does_not_affect_active_phase(
+            log,
+            entry,
+            log.len() as int,
+            initial_phase,
+        );
+
+        assert(
+            committed_membership_log_is_well_formed(
+                log.push(entry),
+                log.len() as int,
+                initial_phase,
+            )
+        );
+
+        assert(
+            log.push(entry)[log.len() as int]
+                == entry
+        );
+
+        match entry {
+            MembershipLogEntry::Data { value: _ } => {
+                assert(is_legal_next_membership_log_entry(
+                    log.push(entry),
+                    log.len() as int,
+                    initial_phase,
+                    entry,
+                ));
+            },
+            MembershipLogEntry::Configuration { phase: _ } => {
+                assert(is_legal_next_membership_log_entry(
+                    log.push(entry),
+                    log.len() as int,
+                    initial_phase,
+                    entry,
+                ));
+            },
+        }
+    }
+
     /// Committing a legal next entry preserves the legal membership-phase
     /// progression required by joint consensus.
     pub proof fn lemma_legal_committed_entry_preserves_phase_progression(
