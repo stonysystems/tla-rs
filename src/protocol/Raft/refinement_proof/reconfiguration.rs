@@ -568,6 +568,132 @@ verus! {
         }
     }
 
+    /// Every entry in the committed prefix follows the legal
+    /// joint-consensus membership-phase progression.
+    pub open spec fn committed_membership_log_is_well_formed(
+        log: Seq<MembershipLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    ) -> bool
+        decreases committed_len
+    {
+        if committed_len < 0 || committed_len > log.len() {
+            false
+        } else if committed_len == 0 {
+            true
+        } else {
+            &&& committed_membership_log_is_well_formed(
+                log,
+                committed_len - 1,
+                initial_phase,
+            )
+            &&& is_legal_next_membership_log_entry(
+                log,
+                committed_len - 1,
+                initial_phase,
+                log[committed_len - 1],
+            )
+        }
+    }
+
+    /// An empty committed prefix is a well-formed membership history.
+    pub proof fn lemma_empty_committed_membership_log_is_well_formed(
+        log: Seq<MembershipLogEntry>,
+        initial_phase: MembershipPhase,
+    )
+        ensures
+            committed_membership_log_is_well_formed(
+                log,
+                0,
+                initial_phase,
+            ),
+    {
+    }
+
+    /// A nonempty well-formed committed prefix consists of a
+    /// well-formed shorter prefix followed by one legal entry.
+    pub proof fn lemma_well_formed_committed_log_decomposes(
+        log: Seq<MembershipLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            committed_membership_log_is_well_formed(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+            committed_len > 0,
+        ensures
+            committed_membership_log_is_well_formed(
+                log,
+                committed_len - 1,
+                initial_phase,
+            ),
+            is_legal_next_membership_log_entry(
+                log,
+                committed_len - 1,
+                initial_phase,
+                log[committed_len - 1],
+            ),
+    {
+    }
+
+    /// In every nonempty well-formed committed history, the final
+    /// committed entry produces a legal membership-phase progression.
+    pub proof fn lemma_well_formed_committed_log_last_step_is_legal(
+        log: Seq<MembershipLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            committed_membership_log_is_well_formed(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+            committed_len > 0,
+        ensures
+            is_legal_phase_progression(
+                active_membership_phase(
+                    log,
+                    committed_len - 1,
+                    initial_phase,
+                ),
+                active_membership_phase(
+                    log,
+                    committed_len,
+                    initial_phase,
+                ),
+            ),
+    {
+        lemma_well_formed_committed_log_decomposes(
+            log,
+            committed_len,
+            initial_phase,
+        );
+
+        let previous_phase = active_membership_phase(
+            log,
+            committed_len - 1,
+            initial_phase,
+        );
+
+        match log[committed_len - 1] {
+            MembershipLogEntry::Data { value: _ } => {
+                lemma_phase_progression_reflexive(
+                    previous_phase,
+                );
+            },
+            MembershipLogEntry::Configuration { phase } => {
+                assert(is_legal_phase_progression(
+                    previous_phase,
+                    phase,
+                ));
+            },
+        }
+    }
+
     /// Committing a legal next entry preserves the legal membership-phase
     /// progression required by joint consensus.
     pub proof fn lemma_legal_committed_entry_preserves_phase_progression(
