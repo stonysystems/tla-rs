@@ -517,6 +517,118 @@ verus! {
         }
     }
 
+    /// Every membership phase legally progresses to itself.
+    /// This covers ordinary data entries, which do not change membership.
+    pub proof fn lemma_phase_progression_reflexive(
+        phase: MembershipPhase,
+    )
+        ensures
+            is_legal_phase_progression(
+                phase,
+                phase,
+            ),
+    {
+        match phase {
+            MembershipPhase::Stable { config: _ } => {
+            },
+            MembershipPhase::Joint {
+                old_config: _,
+                new_config: _,
+            } => {
+            },
+        }
+    }
+
+    /// Determine whether the next committed log entry is legal.
+    ///
+    /// Data entries are always legal because they preserve membership.
+    /// Configuration entries must follow the joint-consensus phase order.
+    pub open spec fn is_legal_next_membership_log_entry(
+        log: Seq<MembershipLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+        entry: MembershipLogEntry,
+    ) -> bool {
+        &&& 0 <= committed_len
+        &&& committed_len <= log.len()
+        &&& match entry {
+            MembershipLogEntry::Data { value: _ } => {
+                true
+            },
+            MembershipLogEntry::Configuration { phase } => {
+                is_legal_phase_progression(
+                    active_membership_phase(
+                        log,
+                        committed_len,
+                        initial_phase,
+                    ),
+                    phase,
+                )
+            },
+        }
+    }
+
+    /// Committing a legal next entry preserves the legal membership-phase
+    /// progression required by joint consensus.
+    pub proof fn lemma_legal_committed_entry_preserves_phase_progression(
+        log: Seq<MembershipLogEntry>,
+        initial_phase: MembershipPhase,
+        entry: MembershipLogEntry,
+    )
+        requires
+            is_legal_next_membership_log_entry(
+                log,
+                log.len() as int,
+                initial_phase,
+                entry,
+            ),
+        ensures
+            is_legal_phase_progression(
+                active_membership_phase(
+                    log,
+                    log.len() as int,
+                    initial_phase,
+                ),
+                active_membership_phase(
+                    log.push(entry),
+                    (log.len() + 1) as int,
+                    initial_phase,
+                ),
+            ),
+    {
+        let previous_phase = active_membership_phase(
+            log,
+            log.len() as int,
+            initial_phase,
+        );
+
+        match entry {
+            MembershipLogEntry::Data { value } => {
+                lemma_committed_data_preserves_active_phase(
+                    log,
+                    initial_phase,
+                    value,
+                );
+
+                lemma_phase_progression_reflexive(
+                    previous_phase,
+                );
+            },
+            MembershipLogEntry::Configuration { phase } => {
+                assert(is_legal_phase_progression(
+                    previous_phase,
+                    phase,
+                ));
+
+                lemma_committed_configuration_becomes_active(
+                    log,
+                    initial_phase,
+                    phase,
+                );
+            },
+        }
+    }
+
     /// Quorums before and after every legal membership-phase
     /// progression share at least one server.
     pub proof fn lemma_legal_phase_progression_quorums_intersect(
