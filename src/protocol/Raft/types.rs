@@ -8,6 +8,14 @@ verus! {
         Leader,
     }
 
+    /// Executable representation of a Raft server configuration.
+    ///
+    /// The sequence can be converted to a mathematical set for
+    /// quorum reasoning in refinement proofs.
+    pub struct LMembershipConfig {
+        pub servers: Seq<int>,
+    }
+
     /// A log entry: term in which the entry was created, and the command value
     pub struct LLogEntry {
         pub term: int,

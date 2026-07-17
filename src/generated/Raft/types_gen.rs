@@ -15,6 +15,27 @@ use vstd::set_lib::*;
 verus! {
 
 #[derive(Clone)]
+pub struct CMembershipConfig {
+    pub servers: Vec<u64>,
+}
+
+impl CMembershipConfig {
+    pub open spec fn valid(&self) -> bool {
+        true
+    }
+}
+
+impl View for CMembershipConfig {
+    type V = LMembershipConfig;
+
+    open spec fn view(&self) -> LMembershipConfig {
+        LMembershipConfig {
+            servers: self.servers@.map(|i: int, x: u64| x as int),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct CLogEntry {
     pub term: u64,
     pub value: u64,
