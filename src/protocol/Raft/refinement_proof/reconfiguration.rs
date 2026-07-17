@@ -40,6 +40,178 @@ verus! {
         },
     }
 
+    /// Specification-level representation of entries that may affect
+    /// membership. This remains separate from the concrete Raft log
+    /// while the committed-log design is developed and verified.
+    pub enum MembershipLogEntry {
+        /// An ordinary replicated command that does not change membership.
+        Data {
+            value: int,
+        },
+
+        /// A complete membership phase recorded in the replicated log.
+        Configuration {
+            phase: MembershipPhase,
+        },
+    }
+
+    /// Derive the active membership phase from the committed log prefix.
+    ///
+    /// Only entries with indices below committed_len are considered.
+    /// The latest committed Configuration entry determines the active phase.
+    /// If no such entry exists, the initial phase remains active.
+    pub open spec fn active_membership_phase(
+        log: Seq<MembershipLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    ) -> MembershipPhase
+        decreases committed_len
+    {
+        if committed_len <= 0 || committed_len > log.len() {
+            initial_phase
+        } else {
+            match log[committed_len - 1] {
+                MembershipLogEntry::Data { value: _ } => {
+                    active_membership_phase(
+                        log,
+                        committed_len - 1,
+                        initial_phase,
+                    )
+                },
+                MembershipLogEntry::Configuration { phase } => {
+                    phase
+                },
+            }
+        }
+    }
+
+    /// With no committed entries, the initial membership remains active.
+    pub proof fn lemma_no_committed_entries_use_initial_phase(
+        log: Seq<MembershipLogEntry>,
+        initial_phase: MembershipPhase,
+    )
+        ensures
+            active_membership_phase(
+                log,
+                0,
+                initial_phase,
+            ) == initial_phase,
+    {
+    }
+
+    /// If a configuration entry is appended and immediately committed,
+    /// the phase contained in that entry becomes active.
+    pub proof fn lemma_committed_configuration_becomes_active(
+        log: Seq<MembershipLogEntry>,
+        initial_phase: MembershipPhase,
+        phase: MembershipPhase,
+    )
+        ensures
+            active_membership_phase(
+                log.push(
+                    MembershipLogEntry::Configuration {
+                        phase,
+                    },
+                ),
+                    (log.len() + 1) as int,
+                initial_phase,
+            ) == phase,
+    {
+    }
+
+    /// Appending an entry beyond the committed prefix cannot affect
+    /// the active membership phase.
+    pub proof fn lemma_uncommitted_entry_does_not_affect_active_phase(
+        log: Seq<MembershipLogEntry>,
+        uncommitted_entry: MembershipLogEntry,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            0 <= committed_len,
+            committed_len <= log.len(),
+        ensures
+            active_membership_phase(
+                log.push(uncommitted_entry),
+                committed_len,
+                initial_phase,
+            ) == active_membership_phase(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+        decreases committed_len
+    {
+        if committed_len <= 0 {
+        } else {
+            assert(0 <= committed_len - 1);
+            assert(committed_len - 1 < log.len());
+
+            assert(
+                log.push(uncommitted_entry)[committed_len - 1]
+                    == log[committed_len - 1]
+            );
+
+            match log[committed_len - 1] {
+                MembershipLogEntry::Data { value: _ } => {
+                    lemma_uncommitted_entry_does_not_affect_active_phase(
+                        log,
+                        uncommitted_entry,
+                        committed_len - 1,
+                        initial_phase,
+                    );
+                },
+                MembershipLogEntry::Configuration { phase: _ } => {
+                },
+            }
+        }
+    }
+
+    /// Committing an ordinary data entry does not change membership.
+    pub proof fn lemma_committed_data_preserves_active_phase(
+        log: Seq<MembershipLogEntry>,
+        initial_phase: MembershipPhase,
+        value: int,
+    )
+        ensures
+            active_membership_phase(
+                log.push(
+                    MembershipLogEntry::Data {
+                        value,
+                    },
+                ),
+                (log.len() + 1) as int,
+                initial_phase,
+            ) == active_membership_phase(
+                log,
+                log.len() as int,
+                initial_phase,
+            ),
+    {
+        let data_entry = MembershipLogEntry::Data {
+            value,
+        };
+
+        assert(
+            active_membership_phase(
+                log.push(data_entry),
+                (log.len() + 1) as int,
+                initial_phase,
+            ) == active_membership_phase(
+                log.push(data_entry),
+                log.len() as int,
+                initial_phase,
+            )
+        );
+
+        lemma_uncommitted_entry_does_not_affect_active_phase(
+            log,
+            data_entry,
+            log.len() as int,
+            initial_phase,
+        );
+    }
+
     /// A valid quorum depends on the current membership phase.
     pub open spec fn is_quorum_for_phase(
         quorum: Set<int>,
