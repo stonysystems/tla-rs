@@ -1,6 +1,10 @@
 use crate::common::collections::sets::lemma_quorum_intersection;
 use crate::protocol::Raft::raft::replicator_count;
-use crate::protocol::Raft::types::{LConstants, LState};
+use crate::protocol::Raft::types::{
+    LConstants,
+    LMembershipConfig,
+    LState,
+};
 use vstd::prelude::*;
 
 verus! {
@@ -39,6 +43,45 @@ verus! {
             new_config: Set<int>,
         },
     }
+
+    /// Mathematical view of an executable membership configuration.
+    ///
+    /// The concrete representation is a sequence because it can be
+    /// transpiled to executable Rust. Quorum proofs use its set view.
+    pub open spec fn membership_config_view(
+        config: LMembershipConfig,
+    ) -> Set<int> {
+        config.servers.to_set()
+    }
+
+    /// Interpret an executable configuration as a stable proof phase.
+    pub open spec fn stable_phase_from_config(
+        config: LMembershipConfig,
+    ) -> MembershipPhase {
+        MembershipPhase::Stable {
+            config: membership_config_view(config),
+        }
+    }
+
+    /// A majority of the executable configuration's set view is
+    /// exactly a valid quorum for its corresponding stable phase.
+    pub proof fn lemma_executable_majority_is_stable_phase_quorum(
+        config: LMembershipConfig,
+        quorum: Set<int>,
+    )
+        requires
+            is_majority_of(
+                quorum,
+                membership_config_view(config),
+            ),
+        ensures
+            is_quorum_for_phase(
+                quorum,
+                stable_phase_from_config(config),
+            ),
+    {
+    }
+
 
     /// Specification-level representation of entries that may affect
     /// membership. This remains separate from the concrete Raft log
