@@ -314,6 +314,188 @@ verus! {
         assert(data_payload_matches_value(entry));
     }
 
+    /// Derive the active membership phase directly from the committed
+    /// prefix of Raft's actual log.
+    ///
+    /// Data payloads are skipped. The latest committed Configuration
+    /// payload determines the active membership phase.
+    pub open spec fn active_membership_phase_from_raft_log(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    ) -> MembershipPhase
+        decreases committed_len
+    {
+        if committed_len <= 0 || committed_len > log.len() {
+            initial_phase
+        } else {
+            match log[committed_len - 1].payload {
+                LLogValue::Data {
+                    value: _,
+                } => {
+                    active_membership_phase_from_raft_log(
+                        log,
+                        committed_len - 1,
+                        initial_phase,
+                    )
+                },
+                LLogValue::Configuration {
+                    phase,
+                } => {
+                    membership_phase_view(phase)
+                },
+            }
+        }
+    }
+
+    /// With no committed actual log entries, the initial membership
+    /// phase remains active.
+    pub proof fn lemma_empty_raft_log_prefix_uses_initial_phase(
+        log: Seq<LLogEntry>,
+        initial_phase: MembershipPhase,
+    )
+        ensures
+            active_membership_phase_from_raft_log(
+                log,
+                0,
+                initial_phase,
+            ) == initial_phase,
+    {
+    }
+
+    /// A committed configuration payload in the actual Raft log
+    /// becomes the active mathematical membership phase.
+    pub proof fn lemma_committed_raft_configuration_becomes_active(
+        log: Seq<LLogEntry>,
+        initial_phase: MembershipPhase,
+        term: int,
+        legacy_value: int,
+        phase: LMembershipPhase,
+    )
+        ensures
+            active_membership_phase_from_raft_log(
+                log.push(
+                    LLogEntry {
+                        term,
+                        value: legacy_value,
+                        payload: LLogValue::Configuration {
+                            phase,
+                        },
+                    },
+                ),
+                (log.len() + 1) as int,
+                initial_phase,
+            ) == membership_phase_view(phase),
+    {
+    }
+
+    /// An entry outside the committed prefix cannot affect the active
+    /// membership phase derived from the actual Raft log.
+    pub proof fn lemma_uncommitted_raft_entry_does_not_affect_active_phase(
+        log: Seq<LLogEntry>,
+        uncommitted_entry: LLogEntry,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            0 <= committed_len,
+            committed_len <= log.len(),
+        ensures
+            active_membership_phase_from_raft_log(
+                log.push(uncommitted_entry),
+                committed_len,
+                initial_phase,
+            ) == active_membership_phase_from_raft_log(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+        decreases committed_len
+    {
+        if committed_len <= 0 {
+        } else {
+            assert(0 <= committed_len - 1);
+            assert(committed_len - 1 < log.len());
+
+            assert(
+                log.push(uncommitted_entry)[committed_len - 1]
+                    == log[committed_len - 1]
+            );
+
+            match log[committed_len - 1].payload {
+                LLogValue::Data {
+                    value: _,
+                } => {
+                    lemma_uncommitted_raft_entry_does_not_affect_active_phase(
+                        log,
+                        uncommitted_entry,
+                        committed_len - 1,
+                        initial_phase,
+                    );
+                },
+                LLogValue::Configuration {
+                    phase: _,
+                } => {
+                },
+            }
+        }
+    }
+
+    /// Committing an ordinary data payload in the actual Raft log
+    /// does not change the active membership phase.
+    pub proof fn lemma_committed_raft_data_preserves_active_phase(
+        log: Seq<LLogEntry>,
+        initial_phase: MembershipPhase,
+        term: int,
+        value: int,
+    )
+        ensures
+            active_membership_phase_from_raft_log(
+                log.push(
+                    LLogEntry {
+                        term,
+                        value,
+                        payload: LLogValue::Data {
+                            value,
+                        },
+                    },
+                ),
+                (log.len() + 1) as int,
+                initial_phase,
+            ) == active_membership_phase_from_raft_log(
+                log,
+                log.len() as int,
+                initial_phase,
+            ),
+    {
+        let data_entry = LLogEntry {
+            term,
+            value,
+            payload: LLogValue::Data {
+                value,
+            },
+        };
+
+        assert(
+            active_membership_phase_from_raft_log(
+                log.push(data_entry),
+                (log.len() + 1) as int,
+                initial_phase,
+            ) == active_membership_phase_from_raft_log(
+                log.push(data_entry),
+                log.len() as int,
+                initial_phase,
+            )
+        );
+
+        lemma_uncommitted_raft_entry_does_not_affect_active_phase(
+            log,
+            data_entry,
+            log.len() as int,
+            initial_phase,
+        );
+    }
+
     /// Derive the active membership phase from the committed log prefix.
     ///
     /// Only entries with indices below committed_len are considered.
