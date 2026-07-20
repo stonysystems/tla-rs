@@ -1,10 +1,16 @@
 use crate::common::collections::sets::lemma_quorum_intersection;
-use crate::protocol::Raft::raft::replicator_count;
+use crate::protocol::Raft::raft::{
+    LClientRequest,
+    LFollowerAppendEntries,
+    replicator_count,
+};
 use crate::protocol::Raft::types::{
     LConstants,
+    LLogEntry,
     LLogValue,
     LMembershipConfig,
     LMembershipPhase,
+    LRaftMessage,
     LState,
 };
 use vstd::prelude::*;
@@ -211,6 +217,101 @@ verus! {
                 phase: membership_phase_view(phase),
             }),
     {
+    }
+
+    /// An ordinary log entry's tagged payload agrees with its
+    /// existing application-level integer value.
+    pub open spec fn data_payload_matches_value(
+        entry: LLogEntry,
+    ) -> bool {
+        entry.payload == (LLogValue::Data {
+            value: entry.value,
+        })
+    }
+
+    /// The client-request action appends an ordinary data entry whose
+    /// tagged payload agrees with its application value.
+    pub proof fn lemma_client_request_appends_matching_data_payload(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        value: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LClientRequest(
+                s,
+                s_,
+                c,
+                value,
+                sent_packets,
+            ),
+        ensures
+            s_.log.len() == s.log.len() + 1,
+            data_payload_matches_value(
+                s_.log[s.log.len() as int],
+            ),
+    {
+        let entry = LLogEntry {
+            term: s.current_term,
+            value,
+            payload: LLogValue::Data {
+                value,
+            },
+        };
+
+        assert(s_.log == s.log.push(entry));
+        assert(s_.log[s.log.len() as int] == entry);
+        assert(data_payload_matches_value(entry));
+    }
+
+    /// When a follower accepts an entry, it appends an ordinary data
+    /// entry whose tagged payload agrees with its application value.
+    pub proof fn lemma_follower_append_appends_matching_data_payload(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        ae_term: int,
+        ae_leader: int,
+        ae_prev_index: int,
+        ae_prev_term: int,
+        ae_value: int,
+        ae_has_entry: bool,
+        ae_leader_commit: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LFollowerAppendEntries(
+                s,
+                s_,
+                c,
+                ae_term,
+                ae_leader,
+                ae_prev_index,
+                ae_prev_term,
+                ae_value,
+                ae_has_entry,
+                ae_leader_commit,
+                sent_packets,
+            ),
+            ae_has_entry,
+        ensures
+            s_.log.len() == s.log.len() + 1,
+            data_payload_matches_value(
+                s_.log[s.log.len() as int],
+            ),
+    {
+        let entry = LLogEntry {
+            term: ae_term,
+            value: ae_value,
+            payload: LLogValue::Data {
+                value: ae_value,
+            },
+        };
+
+        assert(s_.log == s.log.push(entry));
+        assert(s_.log[s.log.len() as int] == entry);
+        assert(data_payload_matches_value(entry));
     }
 
     /// Derive the active membership phase from the committed log prefix.
