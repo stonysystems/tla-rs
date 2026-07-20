@@ -43,10 +43,15 @@ verus! {
         },
     }
 
-    /// A log entry: term in which the entry was created, and the command value
+    /// A replicated Raft log entry.
+    ///
+    /// `value` preserves the existing application-level refinement,
+    /// while `payload` distinguishes ordinary data from membership
+    /// configurations as the protocol is extended.
     pub struct LLogEntry {
         pub term: int,
         pub value: int,
+        pub payload: LLogValue,
     }
 
     /// Raft protocol messages

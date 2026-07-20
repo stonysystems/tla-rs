@@ -39,11 +39,12 @@ impl View for CMembershipConfig {
 pub struct CLogEntry {
     pub term: u64,
     pub value: u64,
+    pub payload: CLogValue,
 }
 
 impl CLogEntry {
     pub open spec fn valid(&self) -> bool {
-        true
+        &&& self.payload.valid()
     }
 }
 
@@ -54,6 +55,7 @@ impl View for CLogEntry {
         LLogEntry {
             term: self.term as int,
             value: self.value as int,
+            payload: self.payload@,
         }
     }
 }

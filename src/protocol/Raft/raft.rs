@@ -120,7 +120,13 @@ verus! {
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
         &&& s_.voted_for == s.voted_for
-        &&& s_.log == s.log.push(LLogEntry { term: s.current_term, value: value })
+                &&& s_.log == s.log.push(LLogEntry {
+            term: s.current_term,
+            value,
+            payload: LLogValue::Data {
+                value,
+            },
+        })
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
         &&& s_.match_index == s.match_index
@@ -183,7 +189,13 @@ verus! {
         &&& s_.has_voted == step_down_if_needed(s, ae_term).has_voted
         &&& s_.voted_for == step_down_if_needed(s, ae_term).voted_for
         &&& s_.log == (if ae_has_entry {
-            s.log.push(LLogEntry { term: ae_term, value: ae_value })
+                        s.log.push(LLogEntry {
+                term: ae_term,
+                value: ae_value,
+                payload: LLogValue::Data {
+                    value: ae_value,
+                },
+            })
         } else { s.log })
         &&& s_.commit_index == (if ae_leader_commit > s.commit_index {
             if ae_has_entry {

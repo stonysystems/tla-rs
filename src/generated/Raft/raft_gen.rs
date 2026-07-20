@@ -89,6 +89,16 @@ ensures
     r.clone()
 }
 
+/// Helper: clone CLogValue preserving view (workaround for missing derive Clone spec).
+#[verifier(external_body)]
+fn clone_payload(r: &CLogValue) -> (res: CLogValue)
+ensures
+    res@ == r@,
+    res.valid() == r.valid(),
+{
+    r.clone()
+}
+
 
 pub exec fn CInit(c: &CConstants) -> (result: CState)
 requires
@@ -290,6 +300,9 @@ ensures
         __log.push(CLogEntry {
     term: s.current_term.clone(),
     value: (*value),
+    payload: CLogValue::Data {
+        value: (*value),
+    },
 });
         { proof {
             lemma_empty_msg_map();
@@ -307,7 +320,7 @@ ensures
     };
     proof {
         lemma_empty_log_map();
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value });
+        lemma_log_push_map_commute(s.log@, CLogEntry { term: s.current_term, value: *value, payload: CLogValue::Data { value: *value } });
         assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty());
     }
     result
@@ -373,6 +386,9 @@ ensures
                         __log.push(CLogEntry {
     term: (*ae_term),
     value: (*ae_value),
+    payload: CLogValue::Data {
+        value: (*ae_value),
+    },
 });
             
 
@@ -415,7 +431,7 @@ ensures
 }])
     };
     proof {
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: *ae_term, value: *ae_value });
+        lemma_log_push_map_commute(s.log@, CLogEntry { term: *ae_term, value: *ae_value, payload: CLogValue::Data { value: *ae_value } });
         assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
     }
     result
