@@ -57,8 +57,11 @@ verus! {
             // (A) Local/sending actions — no message received from network
             ||| (received_from is None && LTimeout(s, s_, c, sent_packets))
             ||| (received_from is None && (exists |value: int| LClientRequest(s, s_, c, value, sent_packets)))
-            ||| (received_from is None && (exists |follower: int, ev: int, pli: int, plt: int, he: bool|
-                    LSendAppendEntries(s, s_, c, follower, ev, pli, plt, he, sent_packets)))
+            ||| (received_from is None && (exists |follower: int, ev: int,
+                    ep: LLogValue, pli: int, plt: int, he: bool|
+                    LSendAppendEntries(
+                        s, s_, c, follower, ev, ep, pli, plt, he, sent_packets,
+                    )))
             ||| (received_from is None && (exists |nci: int| LTryAdvanceCommitIndex(s, s_, c, nci, sent_packets)))
             // (B) Message handling — received packet must be in network
             ||| (exists |pkt: LRaftPacket| {

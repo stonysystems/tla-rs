@@ -29,11 +29,15 @@ pub open spec fn LNextAtomic(s: LState, s_: LState, c: LConstants) -> bool {
             LBecomeLeader(s, s_, c, sent_packets)
     ||| exists |value: int, sent_packets: Seq<LRaftMessage>|
             LClientRequest(s, s_, c, value, sent_packets)
-    ||| exists |f: int, ev: int, pli: int, plt: int, he: bool, sent_packets: Seq<LRaftMessage>|
-            LSendAppendEntries(s, s_, c, f, ev, pli, plt, he, sent_packets)
-    ||| exists |at: int, al: int, api: int, apt: int, av: int, ahe: bool, alc: int,
+    ||| exists |f: int, ev: int, ep: LLogValue, pli: int, plt: int,
+               he: bool, sent_packets: Seq<LRaftMessage>|
+            LSendAppendEntries(s, s_, c, f, ev, ep, pli, plt, he, sent_packets)
+    ||| exists |at: int, al: int, api: int, apt: int, av: int,
+               ap: LLogValue, ahe: bool, alc: int,
                sent_packets: Seq<LRaftMessage>|
-            LFollowerAppendEntries(s, s_, c, at, al, api, apt, av, ahe, alc, sent_packets)
+            LFollowerAppendEntries(
+                s, s_, c, at, al, api, apt, av, ap, ahe, alc, sent_packets,
+            )
     ||| exists |rt: int, rs: bool, rmi: int, rf: int, f: u64, nmi: u64,
                sent_packets: Seq<LRaftMessage>|
             LHandleAppendResponse(s, s_, c, rt, rs, rmi, rf, f, nmi, sent_packets)
@@ -121,13 +125,14 @@ ensures
 proof fn lemma_handle_append_entries_refines(
     s: LState, s_: LState, c: LConstants,
     ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
-    ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
+    ae_value: int, ae_payload: LLogValue,
+    ae_has_entry: bool, ae_leader_commit: int,
     sent_packets: Seq<LRaftMessage>,
 )
 requires
     LHandleAppendEntriesMsg(s, s_, c, ae_term, ae_leader, ae_prev_index,
-                            ae_prev_term, ae_value, ae_has_entry,
-                            ae_leader_commit, sent_packets),
+        ae_prev_term, ae_value, ae_payload, ae_has_entry,
+        ae_leader_commit, sent_packets),
 ensures
     refines_atomic(s, s_, c),
 {
@@ -173,8 +178,9 @@ ensures
         // The atomic LFollowerAppendEntries handles step-down internally,
         // so LFollowerAppendEntries(s, s_, ...) produces the same result.
         assert(LFollowerAppendEntries(s, s_, c, ae_term, ae_leader, ae_prev_index,
-                                      ae_prev_term, ae_value, ae_has_entry,
-                                      ae_leader_commit, sent_packets));
+                                      ae_prev_term, ae_value, ae_payload,
+                                      ae_has_entry, ae_leader_commit,
+                                      sent_packets));
         assert(LNextAtomic(s, s_, c));
     }
 }
@@ -324,11 +330,12 @@ ensures
     } else if exists |value: int, sent_packets: Seq<LRaftMessage>|
                   LClientRequest(s, s_, c, value, sent_packets) {
         // Direct match to LNextAtomic
-    } else if exists |follower: int, entry_value: int, prev_log_index: int,
-                      prev_log_term: int, has_entry: bool,
+    } else if exists |follower: int, entry_value: int, entry_payload: LLogValue,
+                      prev_log_index: int, prev_log_term: int, has_entry: bool,
                       sent_packets: Seq<LRaftMessage>|
-                  LSendAppendEntries(s, s_, c, follower, entry_value, prev_log_index,
-                                     prev_log_term, has_entry, sent_packets) {
+              LSendAppendEntries(s, s_, c, follower, entry_value, entry_payload,
+                                 prev_log_index, prev_log_term, has_entry,
+                                 sent_packets) {
         // Direct match to LNextAtomic
     } else if exists |msg: LRaftMessage, sent_packets: Seq<LRaftMessage>|
                   LHandleMessage(s, s_, c, msg, sent_packets) {
@@ -347,10 +354,12 @@ ensures
                     s, s_, c, term, granted, voter, sent_packets);
             }
             LRaftMessage::AppendEntries { term, leader, prev_index, prev_term,
-                                          value, has_entry, leader_commit } => {
+                                          value, payload, has_entry,
+                                          leader_commit } => {
                 lemma_handle_append_entries_refines(
                     s, s_, c, term, leader, prev_index, prev_term,
-                    value, has_entry, leader_commit, sent_packets);
+                    value, payload, has_entry, leader_commit,
+                    sent_packets);
             }
             LRaftMessage::AppendResponse { term, success, match_index, follower } => {
                 lemma_handle_append_response_refines(

@@ -124,7 +124,7 @@ fields = [["term", "u64"], ["granted", "bool"], ["voter", "u64"], ["voter_last_l
 [[messages.variants]]
 name = "AppendEntries"
 doc = "Leader sends log entries (or heartbeats) to followers."
-fields = [["term", "u64"], ["leader_id", "u64"], ["prev_log_index", "u64"], ["prev_log_term", "u64"], ["value", "u64"], ["has_entry", "bool"], ["leader_commit", "u64"]]
+fields = [["term", "u64"], ["leader_id", "u64"], ["prev_log_index", "u64"], ["prev_log_term", "u64"], ["value", "u64"], ["payload", "CLogValue"], ["has_entry", "bool"], ["leader_commit", "u64"]]
 
 [[messages.variants]]
 name = "AppendResponse"
@@ -162,7 +162,7 @@ existential_params = [["value", "int"], ["sent_packets", "Seq<LRaftMessage>"]]
 spec_name = "LSendAppendEntries"
 exec_name = "CSendAppendEntries"
 kind = "timer_driven"
-existential_params = [["follower", "int"], ["entry_value", "int"], ["prev_log_index", "int"], ["prev_log_term", "int"], ["has_entry", "bool"], ["sent_packets", "Seq<LRaftMessage>"]]
+existential_params = [["follower", "int"], ["entry_value", "int"], ["entry_payload", "LLogValue"], ["prev_log_index", "int"], ["prev_log_term", "int"], ["has_entry", "bool"], ["sent_packets", "Seq<LRaftMessage>"]]
 
 [[scheduler.actions]]
 spec_name = "LHandleMessage"

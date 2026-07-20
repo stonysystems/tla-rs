@@ -281,7 +281,7 @@ verus! {
         sent_packets: Seq<LRaftMessage>,
     )
         requires
-            LFollowerAppendEntries(
+             LFollowerAppendEntries(
                 s,
                 s_,
                 c,
@@ -290,6 +290,9 @@ verus! {
                 ae_prev_index,
                 ae_prev_term,
                 ae_value,
+                LLogValue::Data {
+                    value: ae_value,
+                },
                 ae_has_entry,
                 ae_leader_commit,
                 sent_packets,

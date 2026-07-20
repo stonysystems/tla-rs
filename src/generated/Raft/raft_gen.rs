@@ -327,20 +327,22 @@ ensures
 
 }
 
-pub exec fn CSendAppendEntries(s: &CState, c: &CConstants, follower: &u64, entry_value: &u64, prev_log_index: &u64, prev_log_term: &u64, has_entry: bool) -> (result: (CState, Vec<CRaftMessage>))
+pub exec fn CSendAppendEntries(s: &CState, c: &CConstants, follower: &u64, entry_value: &u64, entry_payload: &CLogValue, prev_log_index: &u64, prev_log_term: &u64, has_entry: bool) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
+    entry_payload.valid(),
     s.role is Leader,
     c@.servers.contains(*follower as int),
     (*prev_log_index >= 0),
     (s@.log.len() >= (*prev_log_index + ae_entry_count(has_entry))),
     ((*prev_log_index > 0) ==> s@.log[(*prev_log_index - 1)].term == *prev_log_term),
     (has_entry ==> s@.log[*prev_log_index as int].value == *entry_value),
+    (has_entry ==> s@.log[*prev_log_index as int].payload == entry_payload@),
     (has_entry ==> s@.log[*prev_log_index as int].term == s.current_term),
 ensures
     result.0.valid(),
-    LSendAppendEntries(s@, result.0@, c@, *follower as int, *entry_value as int, *prev_log_index as int, *prev_log_term as int, has_entry, result.1@.map(|i, p: CRaftMessage| p@)),
+    LSendAppendEntries(s@, result.0@, c@, *follower as int, *entry_value as int, entry_payload@, *prev_log_index as int, *prev_log_term as int, has_entry, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let result = (CState {
     current_term: s.current_term.clone(),
@@ -358,6 +360,7 @@ ensures
     prev_index: (*prev_log_index),
     prev_term: (*prev_log_term),
     value: (*entry_value),
+    payload: clone_payload(entry_payload),
     has_entry: has_entry.clone(),
     leader_commit: s.commit_index.clone(),
 }]);
@@ -368,27 +371,27 @@ ensures
 
 }
 
-pub exec fn CFollowerAppendEntries(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
+pub exec fn CFollowerAppendEntries(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_payload: &CLogValue, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
+    ae_payload.valid(),
     (*ae_term >= s.current_term),
     s.log.len() < u64::MAX,
     *ae_term >= s.current_term,
     s.log@.len() < u64::MAX as int,
 ensures
     result.0.valid(),
-    LFollowerAppendEntries(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
+    LFollowerAppendEntries(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_payload@, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
+    let payload_copy = clone_payload(ae_payload);
     let result = {
         let mut __log = clone_log_inner(&s.log);
         if ae_has_entry {
                         __log.push(CLogEntry {
     term: (*ae_term),
     value: (*ae_value),
-    payload: CLogValue::Data {
-        value: (*ae_value),
-    },
+    payload: payload_copy,
 });
             
 
@@ -431,8 +434,21 @@ ensures
 }])
     };
     proof {
-        lemma_log_push_map_commute(s.log@, CLogEntry { term: *ae_term, value: *ae_value, payload: CLogValue::Data { value: *ae_value } });
-        assert(result.1@.map(|i: int, p: CRaftMessage| p@) =~= Seq::empty().push(result.1@[0]@));
+        if ae_has_entry {
+            assert(result.0.log@.len() == s.log@.len() + 1);
+            assert(
+                result.0.log@[s.log@.len() as int].payload@
+                    == ae_payload@
+            );
+            lemma_log_push_map_commute(
+                s.log@,
+                result.0.log@[s.log@.len() as int],
+            );
+        }
+        assert(
+            result.1@.map(|i: int, p: CRaftMessage| p@)
+                =~= Seq::empty().push(result.1@[0]@)
+        );
     }
     result
 
@@ -671,14 +687,15 @@ ensures
 
 }
 
-pub exec fn CHandleAppendEntriesMsg(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
+pub exec fn CHandleAppendEntriesMsg(s: &CState, c: &CConstants, ae_term: &u64, ae_leader: &u64, ae_prev_index: &u64, ae_prev_term: &u64, ae_value: &u64, ae_payload: &CLogValue, ae_has_entry: bool, ae_leader_commit: &u64) -> (result: (CState, Vec<CRaftMessage>))
 requires
     s.valid(),
     c.valid(),
+    ae_payload.valid(),
     s.log@.len() < u64::MAX as int,
 ensures
     result.0.valid(),
-    LHandleAppendEntriesMsg(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
+    LHandleAppendEntriesMsg(s@, result.0@, c@, *ae_term as int, *ae_leader as int, *ae_prev_index as int, *ae_prev_term as int, *ae_value as int, ae_payload@, ae_has_entry, *ae_leader_commit as int, result.1@.map(|i, p: CRaftMessage| p@)),
 {
     let s_mid = Cstep_down_if_needed(s, ae_term);
     if ((*ae_term) < s_mid.current_term) {
@@ -724,7 +741,7 @@ ensures
                     assert(s_mid@.log =~= s@.log);
                     assert(s_mid@.log.len() == s@.log.len());
                 }
-                CFollowerAppendEntries(&s_mid, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_has_entry, ae_leader_commit)
+                CFollowerAppendEntries(&s_mid, c, ae_term, ae_leader, ae_prev_index, ae_prev_term, ae_value, ae_payload, ae_has_entry, ae_leader_commit)
 
             }
         }
@@ -931,7 +948,7 @@ ensures
 match msg {
         CRaftMessage::RequestVote { term: term, candidate: candidate, last_log_index: last_log_index, last_log_term: last_log_term, .. } => CHandleRequestVoteMsg(&s, &c, &term, &candidate, &last_log_index, &last_log_term),
         CRaftMessage::VoteResponse { term: term, granted: granted, voter: voter, .. } => CHandleVoteResponseMsg(&s, &c, &term, (*granted), &voter),
-        CRaftMessage::AppendEntries { term: term, leader: leader, prev_index: prev_index, prev_term: prev_term, value: value, has_entry: has_entry, leader_commit: leader_commit, .. } => CHandleAppendEntriesMsg(&s, &c, &term, &leader, &prev_index, &prev_term, &value, (*has_entry), &leader_commit),
+        CRaftMessage::AppendEntries { term: term, leader: leader, prev_index: prev_index, prev_term: prev_term, value: value, payload: payload, has_entry: has_entry, leader_commit: leader_commit, .. } => CHandleAppendEntriesMsg(&s, &c, &term, &leader, &prev_index, &prev_term, &value, &payload, (*has_entry), &leader_commit),
         CRaftMessage::AppendResponse { term: term, success: success, match_index: match_index, follower: follower, .. } => CHandleAppendResponseMsg(&s, &c, &term, (*success), &match_index, &follower),
     }
 }

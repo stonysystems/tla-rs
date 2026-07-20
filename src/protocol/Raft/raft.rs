@@ -120,12 +120,12 @@ verus! {
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
         &&& s_.voted_for == s.voted_for
-                &&& s_.log == s.log.push(LLogEntry {
+        &&& s_.log == s.log.push(LLogEntry {
             term: s.current_term,
             value,
             payload: LLogValue::Data {
-                value,
-            },
+		value,
+	    },
         })
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
@@ -138,7 +138,8 @@ verus! {
     /// Sends entries starting from the next_index for that follower
     pub open spec fn LSendAppendEntries(
         s: LState, s_: LState, c: LConstants,
-        follower: int, entry_value: int, prev_log_index: int, prev_log_term: int,
+        follower: int, entry_value: int, entry_payload: LLogValue,
+        prev_log_index: int, prev_log_term: int,
         has_entry: bool, sent_packets: Seq<LRaftMessage>,
     ) -> bool {
         &&& s.role is Leader
@@ -148,6 +149,7 @@ verus! {
         &&& s.log.len() >= prev_log_index + ae_entry_count(has_entry)
         &&& (prev_log_index > 0 ==> s.log[prev_log_index - 1].term == prev_log_term)
         &&& (has_entry ==> s.log[prev_log_index].value == entry_value)
+        &&& (has_entry ==> s.log[prev_log_index].payload == entry_payload)
         // Entry term must match leader's current term. This ensures
         // replicated entries have the correct term (ae_term == entry's original term),
         // which is needed for LogMatching. In the simplified spec (no log truncation),
@@ -169,6 +171,7 @@ verus! {
             prev_index: prev_log_index,
             prev_term: prev_log_term,
             value: entry_value,
+            payload: entry_payload,
             has_entry: has_entry,
             leader_commit: s.commit_index,
         }]
@@ -179,7 +182,8 @@ verus! {
     pub open spec fn LFollowerAppendEntries(
         s: LState, s_: LState, c: LConstants,
         ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
-        ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
+        ae_value: int, ae_payload: LLogValue,
+        ae_has_entry: bool, ae_leader_commit: int,
         sent_packets: Seq<LRaftMessage>,
     ) -> bool {
         &&& ae_term >= s.current_term
@@ -189,12 +193,10 @@ verus! {
         &&& s_.has_voted == step_down_if_needed(s, ae_term).has_voted
         &&& s_.voted_for == step_down_if_needed(s, ae_term).voted_for
         &&& s_.log == (if ae_has_entry {
-                        s.log.push(LLogEntry {
+            s.log.push(LLogEntry {
                 term: ae_term,
                 value: ae_value,
-                payload: LLogValue::Data {
-                    value: ae_value,
-                },
+                payload: ae_payload,
             })
         } else { s.log })
         &&& s_.commit_index == (if ae_leader_commit > s.commit_index {
@@ -399,7 +401,8 @@ verus! {
     pub open spec fn LHandleAppendEntriesMsg(
         s: LState, s_: LState, c: LConstants,
         ae_term: int, ae_leader: int, ae_prev_index: int, ae_prev_term: int,
-        ae_value: int, ae_has_entry: bool, ae_leader_commit: int,
+        ae_value: int, ae_payload: LLogValue,
+        ae_has_entry: bool, ae_leader_commit: int,
         sent_packets: Seq<LRaftMessage>,
     ) -> bool {
         let s_mid = step_down_if_needed(s, ae_term);
@@ -441,8 +444,8 @@ verus! {
         } else {
             // Accept: delegate to atomic follower append entries
             LFollowerAppendEntries(s_mid, s_, c, ae_term, ae_leader, ae_prev_index,
-                                   ae_prev_term, ae_value, ae_has_entry,
-                                   ae_leader_commit, sent_packets)
+                                   ae_prev_term, ae_value, ae_payload,
+                                   ae_has_entry, ae_leader_commit, sent_packets)
         }
     }
 
@@ -585,9 +588,10 @@ verus! {
             LRaftMessage::VoteResponse { term, granted, voter, .. } =>
                 LHandleVoteResponseMsg(s, s_, c, term, granted, voter, sent_packets),
             LRaftMessage::AppendEntries { term, leader, prev_index, prev_term,
-                                          value, has_entry, leader_commit } =>
+                                          value, payload, has_entry, leader_commit } =>
                 LHandleAppendEntriesMsg(s, s_, c, term, leader, prev_index, prev_term,
-                                        value, has_entry, leader_commit, sent_packets),
+                                        value, payload, has_entry, leader_commit,
+                                        sent_packets),
             LRaftMessage::AppendResponse { term, success, match_index, follower } =>
                 LHandleAppendResponseMsg(s, s_, c, term, success, match_index,
                                          follower, sent_packets),
@@ -608,10 +612,12 @@ verus! {
         ||| exists |sent_packets: Seq<LRaftMessage>| LTimeout(s, s_, c, sent_packets)
         ||| exists |value: int, sent_packets: Seq<LRaftMessage>|
                 LClientRequest(s, s_, c, value, sent_packets)
-        ||| exists |follower: int, entry_value: int, prev_log_index: int, prev_log_term: int,
+        ||| exists |follower: int, entry_value: int, entry_payload: LLogValue,
+                    prev_log_index: int, prev_log_term: int,
                     has_entry: bool, sent_packets: Seq<LRaftMessage>|
-                LSendAppendEntries(s, s_, c, follower, entry_value, prev_log_index,
-                                   prev_log_term, has_entry, sent_packets)
+                LSendAppendEntries(s, s_, c, follower, entry_value, entry_payload,
+                                   prev_log_index, prev_log_term, has_entry,
+                                   sent_packets)
         // Composite message dispatch (replaces individual message handlers)
         ||| exists |msg: LRaftMessage, sent_packets: Seq<LRaftMessage>|
                 LHandleMessage(s, s_, c, msg, sent_packets)

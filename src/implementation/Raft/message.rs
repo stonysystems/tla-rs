@@ -1,6 +1,7 @@
 //! Raft Consensus protocol network messages.
 
 use crate::common::framework::protocol_trait::ProtocolMessage;
+use crate::generated::Raft::types_gen::CLogValue;
 
 #[derive(Clone)]
 pub enum RaftMessage {
@@ -26,6 +27,7 @@ pub enum RaftMessage {
         prev_log_index: u64,
         prev_log_term: u64,
         value: u64,
+        payload: CLogValue,
         has_entry: bool,
         leader_commit: u64,
     },
@@ -91,13 +93,24 @@ impl ProtocolMessage for RaftMessage {
                 buf.extend_from_slice(&voter_last_log_index.to_le_bytes());
                 buf.extend_from_slice(&voter_last_log_term.to_le_bytes());
             },
-            RaftMessage::AppendEntries { term, leader_id, prev_log_index, prev_log_term, value, has_entry, leader_commit } => {
+            RaftMessage::AppendEntries { term, leader_id, prev_log_index, prev_log_term, value, payload, has_entry, leader_commit } => {
                 buf.extend_from_slice(&TAG_APPEND_ENTRIES.to_le_bytes());
                 buf.extend_from_slice(&term.to_le_bytes());
                 buf.extend_from_slice(&leader_id.to_le_bytes());
                 buf.extend_from_slice(&prev_log_index.to_le_bytes());
                 buf.extend_from_slice(&prev_log_term.to_le_bytes());
                 buf.extend_from_slice(&value.to_le_bytes());
+                // Compatibility encoding: ordinary Data payloads preserve their
+                // value. Full configuration-payload encoding is added separately.
+                let payload_value: u64 = match payload {
+                    CLogValue::Data {
+                        value: data_value,
+                    } => *data_value,
+                    CLogValue::Configuration {
+                        phase: _,
+                    } => *value,
+                };
+                buf.extend_from_slice(&payload_value.to_le_bytes());
                 let has_entry_val: u64 = if *has_entry { 1 } else { 0 };
                 buf.extend_from_slice(&has_entry_val.to_le_bytes());
                 buf.extend_from_slice(&leader_commit.to_le_bytes());
@@ -154,7 +167,7 @@ impl ProtocolMessage for RaftMessage {
                 Some(RaftMessage::VoteResponse { term, granted, voter, voter_last_log_index, voter_last_log_term })
             },
             TAG_APPEND_ENTRIES => {
-                if data.len() < 64 {
+                if data.len() < 72 {
                     return None;
                 }
                 let term = read_u64(data, 8);
@@ -162,9 +175,21 @@ impl ProtocolMessage for RaftMessage {
                 let prev_log_index = read_u64(data, 24);
                 let prev_log_term = read_u64(data, 32);
                 let value = read_u64(data, 40);
-                let has_entry = read_u64(data, 48) != 0;
-                let leader_commit = read_u64(data, 56);
-                Some(RaftMessage::AppendEntries { term, leader_id, prev_log_index, prev_log_term, value, has_entry, leader_commit })
+                let payload = read_u64(data, 48);
+                let has_entry = read_u64(data, 56) != 0;
+                let leader_commit = read_u64(data, 64);
+                Some(RaftMessage::AppendEntries {
+                    term,
+                    leader_id,
+                    prev_log_index,
+                    prev_log_term,
+                    value,
+                    payload: CLogValue::Data {
+                        value: payload,
+                    },
+                    has_entry,
+                    leader_commit,
+                })
             },
             TAG_APPEND_RESPONSE => {
                 if data.len() < 40 {
