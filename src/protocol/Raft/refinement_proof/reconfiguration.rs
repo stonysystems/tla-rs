@@ -2,7 +2,9 @@ use crate::common::collections::sets::lemma_quorum_intersection;
 use crate::protocol::Raft::raft::replicator_count;
 use crate::protocol::Raft::types::{
     LConstants,
+    LLogValue,
     LMembershipConfig,
+    LMembershipPhase,
     LState,
 };
 use vstd::prelude::*;
@@ -63,6 +65,66 @@ verus! {
         }
     }
 
+    /// Convert an executable membership phase into the mathematical
+    /// phase used by the quorum proofs.
+    pub open spec fn membership_phase_view(
+        phase: LMembershipPhase,
+    ) -> MembershipPhase {
+        match phase {
+            LMembershipPhase::Stable {
+                config,
+            } => {
+                MembershipPhase::Stable {
+                    config: membership_config_view(config),
+                }
+            },
+            LMembershipPhase::Joint {
+                old_config,
+                new_config,
+            } => {
+                MembershipPhase::Joint {
+                    old_config: membership_config_view(old_config),
+                    new_config: membership_config_view(new_config),
+                }
+            },
+        }
+    }
+
+    /// The view of an executable stable phase is the corresponding
+    /// mathematical stable phase.
+    pub proof fn lemma_stable_membership_phase_view(
+        config: LMembershipConfig,
+    )
+        ensures
+            membership_phase_view(
+                LMembershipPhase::Stable {
+                    config,
+                },
+            ) == (MembershipPhase::Stable {
+                config: membership_config_view(config),
+            }),
+    {
+    }
+
+    /// The view of an executable joint phase contains the set views
+    /// of both executable configurations.
+    pub proof fn lemma_joint_membership_phase_view(
+        old_config: LMembershipConfig,
+        new_config: LMembershipConfig,
+    )
+        ensures
+            membership_phase_view(
+                LMembershipPhase::Joint {
+                    old_config,
+                    new_config,
+                },
+            ) == (MembershipPhase::Joint {
+                old_config: membership_config_view(old_config),
+                new_config: membership_config_view(new_config),
+            }),
+    {
+    }
+
     /// A majority of the executable configuration's set view is
     /// exactly a valid quorum for its corresponding stable phase.
     pub proof fn lemma_executable_majority_is_stable_phase_quorum(
@@ -82,7 +144,6 @@ verus! {
     {
     }
 
-
     /// Specification-level representation of entries that may affect
     /// membership. This remains separate from the concrete Raft log
     /// while the committed-log design is developed and verified.
@@ -96,6 +157,60 @@ verus! {
         Configuration {
             phase: MembershipPhase,
         },
+    }
+
+    /// Convert an executable log value into the corresponding entry
+    /// used by the membership-history proof.
+    pub open spec fn membership_log_entry_view(
+        value: LLogValue,
+    ) -> MembershipLogEntry {
+        match value {
+            LLogValue::Data {
+                value,
+            } => {
+                MembershipLogEntry::Data {
+                    value,
+                }
+            },
+            LLogValue::Configuration {
+                phase,
+            } => {
+                MembershipLogEntry::Configuration {
+                    phase: membership_phase_view(phase),
+                }
+            },
+        }
+    }
+
+    /// Ordinary executable data remains ordinary data in the proof log.
+    pub proof fn lemma_data_log_value_view(
+        value: int,
+    )
+        ensures
+            membership_log_entry_view(
+                LLogValue::Data {
+                    value,
+                },
+            ) == (MembershipLogEntry::Data {
+                value,
+            }),
+    {
+    }
+
+    /// An executable configuration value becomes a configuration
+    /// entry containing the mathematical view of its phase.
+    pub proof fn lemma_configuration_log_value_view(
+        phase: LMembershipPhase,
+    )
+        ensures
+            membership_log_entry_view(
+                LLogValue::Configuration {
+                    phase,
+                },
+            ) == (MembershipLogEntry::Configuration {
+                phase: membership_phase_view(phase),
+            }),
+    {
     }
 
     /// Derive the active membership phase from the committed log prefix.
