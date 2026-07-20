@@ -16,6 +16,33 @@ verus! {
         pub servers: Seq<int>,
     }
 
+    /// Executable representation of a membership phase.
+    ///
+    /// Stable uses one configuration. Joint temporarily carries
+    /// both the old and new configurations.
+    pub enum LMembershipPhase {
+        Stable {
+            config: LMembershipConfig,
+        },
+        Joint {
+            old_config: LMembershipConfig,
+            new_config: LMembershipConfig,
+        },
+    }
+
+    /// A value that can be replicated through the Raft log.
+    ///
+    /// Ordinary data commands retain their integer value, while
+    /// configuration entries carry a membership phase.
+    pub enum LLogValue {
+        Data {
+            value: int,
+        },
+        Configuration {
+            phase: LMembershipPhase,
+        },
+    }
+
     /// A log entry: term in which the entry was created, and the command value
     pub struct LLogEntry {
         pub term: int,

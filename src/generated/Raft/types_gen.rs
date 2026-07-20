@@ -215,6 +215,67 @@ impl View for CServerRole {
 }
 
 #[derive(Clone)]
+pub enum CMembershipPhase {
+    Stable {
+        config: CMembershipConfig,
+    },
+    Joint {
+        old_config: CMembershipConfig,
+        new_config: CMembershipConfig,
+    },
+}
+
+impl CMembershipPhase {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CMembershipPhase::Stable { config } => config.valid(),
+            CMembershipPhase::Joint { old_config, new_config } => old_config.valid() && new_config.valid(),
+        }
+    }
+}
+
+impl View for CMembershipPhase {
+    type V = LMembershipPhase;
+
+    open spec fn view(&self) -> LMembershipPhase {
+        match self {
+            CMembershipPhase::Stable { config } => LMembershipPhase::Stable { config: config@ },
+            CMembershipPhase::Joint { old_config, new_config } => LMembershipPhase::Joint { old_config: old_config@, new_config: new_config@ },
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum CLogValue {
+    Data {
+        value: u64,
+    },
+    Configuration {
+        phase: CMembershipPhase,
+    },
+}
+
+impl CLogValue {
+    pub open spec fn valid(&self) -> bool {
+        match self {
+            CLogValue::Data { value } => true,
+            CLogValue::Configuration { phase } => phase.valid(),
+        }
+    }
+}
+
+impl View for CLogValue {
+    type V = LLogValue;
+
+    open spec fn view(&self) -> LLogValue {
+        match self {
+            CLogValue::Data { value } => LLogValue::Data { value: *value as int },
+            CLogValue::Configuration { phase } => LLogValue::Configuration { phase: phase@ },
+        }
+    }
+}
+
+#[derive(Clone)]
 pub enum CRaftMessage {
     RequestVote {
         term: u64,
