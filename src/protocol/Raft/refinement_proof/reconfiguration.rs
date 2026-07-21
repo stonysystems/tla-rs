@@ -571,6 +571,132 @@ verus! {
         }
     }
 
+    /// A leader appends a legal membership configuration entry.
+    ///
+    /// The entry is initially uncommitted, so it does not immediately
+    /// change either active membership or application-visible output.
+    pub open spec fn LAppendConfigurationEntry(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        phase: LMembershipPhase,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let initial_phase = MembershipPhase::Stable {
+            config: c.servers,
+        };
+
+        let current_phase = active_membership_phase_from_raft_log(
+            s.log,
+            s.commit_index,
+            initial_phase,
+        );
+
+        let requested_phase = membership_phase_view(phase);
+
+        &&& s.role is Leader
+        &&& 0 <= s.commit_index
+        &&& s.commit_index <= s.log.len()
+        &&& is_legal_phase_progression(
+            current_phase,
+            requested_phase,
+        )
+        &&& s_.current_term == s.current_term
+        &&& s_.role == s.role
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log.push(
+            LLogEntry {
+                term: s.current_term,
+                value: 0int,
+                payload: LLogValue::Configuration {
+                    phase,
+                },
+            },
+        )
+        &&& s_.commit_index == s.commit_index
+        &&& s_.votes_granted == s.votes_granted
+        &&& s_.match_index == s.match_index
+        &&& s_.next_index == s.next_index
+        &&& sent_packets == Seq::<LRaftMessage>::empty()
+    }
+
+    /// Appending a legal but uncommitted configuration entry preserves
+    /// the currently active membership and application-visible output.
+    pub proof fn lemma_append_configuration_preserves_committed_views(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        phase: LMembershipPhase,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LAppendConfigurationEntry(
+                s,
+                s_,
+                c,
+                phase,
+                sent_packets,
+            ),
+        ensures
+            s_.log.len() == s.log.len() + 1,
+            is_legal_phase_progression(
+                active_membership_phase_from_raft_log(
+                    s.log,
+                    s.commit_index,
+                    MembershipPhase::Stable {
+                        config: c.servers,
+                    },
+                ),
+                membership_phase_view(phase),
+            ),
+            active_membership_phase_from_raft_log(
+                s_.log,
+                s_.commit_index,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ) == active_membership_phase_from_raft_log(
+                s.log,
+                s.commit_index,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+            application_values_from_raft_log(
+                s_.log,
+                s_.commit_index,
+            ) == application_values_from_raft_log(
+                s.log,
+                s.commit_index,
+            ),
+    {
+        let entry = LLogEntry {
+            term: s.current_term,
+            value: 0int,
+            payload: LLogValue::Configuration {
+                phase,
+            },
+        };
+
+        assert(s_.log == s.log.push(entry));
+
+        lemma_uncommitted_raft_entry_does_not_affect_active_phase(
+            s.log,
+            entry,
+            s.commit_index,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        );
+
+        lemma_uncommitted_raft_entry_does_not_affect_application_values(
+            s.log,
+            entry,
+            s.commit_index,
+        );
+    }
+
     /// Committing an ordinary data entry appends exactly its payload
     /// value to the application-visible command sequence.
     pub proof fn lemma_committed_raft_data_extends_application_values(
