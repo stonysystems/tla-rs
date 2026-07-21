@@ -499,6 +499,157 @@ verus! {
         );
     }
 
+    /// Extract only ordinary application commands from a prefix of
+    /// Raft's actual log.
+    ///
+    /// Configuration entries affect membership but are not exposed as
+    /// client commands.
+    pub open spec fn application_values_from_raft_log(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+    ) -> Seq<int>
+        decreases committed_len
+    {
+        if committed_len <= 0 || committed_len > log.len() {
+            Seq::<int>::empty()
+        } else {
+            let previous = application_values_from_raft_log(
+                log,
+                committed_len - 1,
+            );
+
+            match log[committed_len - 1].payload {
+                LLogValue::Data {
+                    value,
+                } => {
+                    previous.push(value)
+                },
+                LLogValue::Configuration {
+                    phase: _,
+                } => {
+                    previous
+                },
+            }
+        }
+    }
+
+    /// Appending an entry outside the examined prefix cannot change
+    /// the extracted application-command sequence.
+    pub proof fn lemma_uncommitted_raft_entry_does_not_affect_application_values(
+        log: Seq<LLogEntry>,
+        uncommitted_entry: LLogEntry,
+        committed_len: int,
+    )
+        requires
+            0 <= committed_len,
+            committed_len <= log.len(),
+        ensures
+            application_values_from_raft_log(
+                log.push(uncommitted_entry),
+                committed_len,
+            ) == application_values_from_raft_log(
+                log,
+                committed_len,
+            ),
+        decreases committed_len
+    {
+        if committed_len <= 0 {
+        } else {
+            assert(0 <= committed_len - 1);
+            assert(committed_len - 1 < log.len());
+
+            assert(
+                log.push(uncommitted_entry)[committed_len - 1]
+                    == log[committed_len - 1]
+            );
+
+            lemma_uncommitted_raft_entry_does_not_affect_application_values(
+                log,
+                uncommitted_entry,
+                committed_len - 1,
+            );
+        }
+    }
+
+    /// Committing an ordinary data entry appends exactly its payload
+    /// value to the application-visible command sequence.
+    pub proof fn lemma_committed_raft_data_extends_application_values(
+        log: Seq<LLogEntry>,
+        term: int,
+        value: int,
+    )
+        ensures
+            application_values_from_raft_log(
+                log.push(
+                    LLogEntry {
+                        term,
+                        value,
+                        payload: LLogValue::Data {
+                            value,
+                        },
+                    },
+                ),
+                (log.len() + 1) as int,
+            ) == application_values_from_raft_log(
+                log,
+                log.len() as int,
+            ).push(value),
+    {
+        let data_entry = LLogEntry {
+            term,
+            value,
+            payload: LLogValue::Data {
+                value,
+            },
+        };
+
+        lemma_uncommitted_raft_entry_does_not_affect_application_values(
+            log,
+            data_entry,
+            log.len() as int,
+        );
+    }
+
+    /// Committing a configuration entry changes membership but does
+    /// not add a command to the application-visible sequence.
+    pub proof fn lemma_committed_raft_configuration_preserves_application_values(
+        log: Seq<LLogEntry>,
+        term: int,
+        legacy_value: int,
+        phase: LMembershipPhase,
+    )
+        ensures
+            application_values_from_raft_log(
+                log.push(
+                    LLogEntry {
+                        term,
+                        value: legacy_value,
+                        payload: LLogValue::Configuration {
+                            phase,
+                        },
+                    },
+                ),
+                (log.len() + 1) as int,
+            ) == application_values_from_raft_log(
+                log,
+                log.len() as int,
+            ),
+    {
+        let configuration_entry = LLogEntry {
+            term,
+            value: legacy_value,
+            payload: LLogValue::Configuration {
+                phase,
+            },
+        };
+
+        lemma_uncommitted_raft_entry_does_not_affect_application_values(
+            log,
+            configuration_entry,
+            log.len() as int,
+        );
+    }
+
     /// Derive the active membership phase from the committed log prefix.
     ///
     /// Only entries with indices below committed_len are considered.
