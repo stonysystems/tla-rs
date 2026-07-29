@@ -23,6 +23,7 @@ module Raft::raft {
     helper step_down_if_needed(+, +) -> LState;
     helper log_up_to_date(+, +, +) -> bool;
     helper has_active_election_quorum_after_vote(+, +, +) -> bool;
+    helper has_active_commit_quorum(+, +, +) -> bool;
 
     // Composite message handlers (Phase 29 — transpiler-generated)
     LHandleRequestVoteMsg(+, -, +, +, +, +, +, -);

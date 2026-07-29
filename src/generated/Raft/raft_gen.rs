@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::generated::Raft::types_gen::*;
 use crate::implementation::Raft::helpers::*;
 use crate::implementation::Raft::membership_helpers::*;
+use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
 use std::collections::HashMap;
@@ -546,10 +547,7 @@ requires
     (*new_commit_index > s.commit_index),
     (*new_commit_index <= s@.log.len()),
     s@.log[(*new_commit_index - 1)].term == s.current_term,
-    c@.servers.finite(),
-    (replicator_count(s@, c@, *new_commit_index as int) >= c.quorum_size),
-    (*new_commit_index as int <= s@.log.len()),
-    s.log@[*new_commit_index as int - 1].term == s.current_term,
+    has_active_commit_quorum(s@, c@, *new_commit_index as int),
 ensures
     result.0.valid(),
     LAdvanceCommitIndex(s@, result.0@, c@, *new_commit_index as int, result.1@.map(|i, p: CRaftMessage| p@)),
@@ -905,11 +903,9 @@ pub exec fn CTryAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index:
 requires
     s.valid(),
     c.valid(),
-    c@.servers.finite(),
     (!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
         *new_commit_index as int <= s@.log.len()
         && s.log@[*new_commit_index as int - 1].term == s.current_term
-        && replicator_count(s@, c@, *new_commit_index as int) >= c.quorum_size
     ),
 ensures
     result.0.valid(),
@@ -922,7 +918,19 @@ if (!matches!(s.role, CServerRole::Leader { .. }) || ((*new_commit_index) <= s.c
         (s.clone(), vec![])
 
     } else {
-        CAdvanceCommitIndex(s, c, new_commit_index)
+        let has_quorum = Chas_active_commit_quorum(
+            s,
+            c,
+            new_commit_index,
+        );
+        if !has_quorum {
+            proof {
+                lemma_empty_msg_map();
+            }
+            (s.clone(), vec![])
+        } else {
+            CAdvanceCommitIndex(s, c, new_commit_index)
+        }
     }
 }
 

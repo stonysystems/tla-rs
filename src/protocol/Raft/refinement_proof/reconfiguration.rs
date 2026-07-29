@@ -1907,10 +1907,12 @@ verus! {
                 sent_packets,
             ),
     {
-        lemma_fixed_commit_guard_implies_active_stable_quorum(
-            s,
-            c,
-            new_commit_index,
+        assert(
+            LAdvanceCommitIndex(
+                s, s_, c, new_commit_index, sent_packets,
+            ) == LAdvanceCommitIndexWithMembership(
+                s, s_, c, new_commit_index, sent_packets,
+            )
         );
     }
 
@@ -1947,16 +1949,12 @@ verus! {
                 sent_packets,
             ),
     {
-        if s.role is Leader
-            && new_commit_index > s.commit_index
-        {
-            lemma_fixed_advance_commit_implies_membership_advance_commit(
-                s,
-                s_,
-                c,
-                new_commit_index,
-                sent_packets,
-            );
-        }
+        assert(
+            LTryAdvanceCommitIndex(
+                s, s_, c, new_commit_index, sent_packets,
+            ) == LTryAdvanceCommitIndexWithMembership(
+                s, s_, c, new_commit_index, sent_packets,
+            )
+        );
     }
 }

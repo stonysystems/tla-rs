@@ -10,6 +10,7 @@
 
 use crate::protocol::Raft::membership::{
     active_membership_phase_for_state,
+    has_active_commit_quorum,
     has_active_election_quorum,
     has_active_election_quorum_after_vote,
 };
@@ -309,7 +310,10 @@ requires
 ensures
     refines_atomic(s, s_, c),
 {
-    if !(s.role is Leader) || new_commit_index <= s.commit_index {
+    if !(s.role is Leader)
+        || new_commit_index <= s.commit_index
+        || !has_active_commit_quorum(s, c, new_commit_index)
+    {
         // Guard failure: stutter (s_ == s)
         assert(s_ == s);
     } else {
