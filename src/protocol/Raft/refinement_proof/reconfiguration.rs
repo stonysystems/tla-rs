@@ -6,8 +6,13 @@ use crate::protocol::Raft::raft::{
     LBecomeLeader,
     LBecomeLeaderWithMembership,
     LClientRequest,
+    LHandleVoteResponseMsg,
+    LHandleVoteResponseMsgWithMembership,
+    LTryAdvanceCommitIndex,
+    LTryAdvanceCommitIndexWithMembership,
     LFollowerAppendEntries,
     replicator_count,
+    step_down_if_needed,
 };
 use crate::protocol::Raft::refinement_proof::state_machine::{
     MaxCommitIndex,
@@ -939,6 +944,98 @@ verus! {
         );
     }
 
+    /// While membership is still the original stable configuration,
+    /// the fixed vote-response handler is also a valid dynamic-membership
+    /// vote-response handler.
+    pub proof fn lemma_fixed_vote_response_implies_membership_vote_response(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        term: int,
+        granted: bool,
+        voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LHandleVoteResponseMsg(
+                s,
+                s_,
+                c,
+                term,
+                granted,
+                voter,
+                sent_packets,
+            ),
+            c.servers.finite(),
+            c.servers.len() > 0,
+            c.quorum_size == c.servers.len() / 2 + 1,
+            step_down_if_needed(s, term).votes_granted
+                .subset_of(c.servers),
+            active_membership_phase_for_state(
+                step_down_if_needed(s, term),
+                c,
+            ) == (MembershipPhase::Stable {
+                config: c.servers,
+            }),
+        ensures
+            LHandleVoteResponseMsgWithMembership(
+                s,
+                s_,
+                c,
+                term,
+                granted,
+                voter,
+                sent_packets,
+            ),
+    {
+        let s_mid = step_down_if_needed(s, term);
+
+        if s_mid.role is Candidate
+            && term >= s_mid.current_term
+            && granted
+            && c.servers.contains(voter)
+        {
+            let votes = s_mid.votes_granted.insert(voter);
+
+            assert(votes.subset_of(c.servers)) by {
+                assert forall |server: int|
+                    votes.contains(server)
+                    implies c.servers.contains(server)
+                by {
+                };
+            };
+
+            if votes.len() >= c.quorum_size {
+                assert(votes.len()
+                    >= c.servers.len() / 2 + 1);
+                assert(is_majority_of(votes, c.servers));
+                assert(has_active_election_quorum_after_vote(
+                    s_mid,
+                    c,
+                    voter,
+                ));
+            } else {
+                assert(!has_active_election_quorum_after_vote(
+                    s_mid,
+                    c,
+                    voter,
+                )) by {
+                    if has_active_election_quorum_after_vote(
+                        s_mid,
+                        c,
+                        voter,
+                    ) {
+                        assert(is_majority_of(votes, c.servers));
+                        assert(votes.len()
+                            >= c.servers.len() / 2 + 1);
+                        assert(votes.len() >= c.quorum_size);
+                        assert(false);
+                    }
+                };
+            }
+        }
+    }
+
     /// Any two majorities of the same configuration overlap.
     pub proof fn lemma_majorities_intersect(
         quorum1: Set<int>,
@@ -1815,5 +1912,51 @@ verus! {
             c,
             new_commit_index,
         );
+    }
+
+    /// While membership is still the original stable configuration,
+    /// the fixed composite commit handler is also a valid
+    /// dynamic-membership composite commit handler.
+    pub proof fn lemma_fixed_try_advance_commit_implies_membership_try_advance_commit(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        new_commit_index: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LTryAdvanceCommitIndex(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            ),
+            c.servers.len() > 0,
+            c.quorum_size == c.servers.len() / 2 + 1,
+            active_membership_phase_for_state(s, c)
+                == (MembershipPhase::Stable {
+                    config: c.servers,
+                }),
+        ensures
+            LTryAdvanceCommitIndexWithMembership(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            ),
+    {
+        if s.role is Leader
+            && new_commit_index > s.commit_index
+        {
+            lemma_fixed_advance_commit_implies_membership_advance_commit(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            );
+        }
     }
 }

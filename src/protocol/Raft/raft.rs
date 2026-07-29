@@ -1,6 +1,7 @@
 use crate::protocol::Raft::membership::{
     has_active_commit_quorum,
     has_active_election_quorum,
+    has_active_election_quorum_after_vote,
 };
 use crate::protocol::Raft::types::*;
 use vstd::prelude::*;
@@ -550,6 +551,53 @@ verus! {
         }
     }
 
+    /// Handle VoteResponse using the election quorum required by the
+    /// membership phase derived from the candidate's committed log.
+    pub open spec fn LHandleVoteResponseMsgWithMembership(
+        s: LState, s_: LState, c: LConstants,
+        term: int, granted: bool, voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let s_mid = step_down_if_needed(s, term);
+        if !(s_mid.role is Candidate) {
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if term < s_mid.current_term {
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if !granted {
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if !c.servers.contains(voter) {
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if has_active_election_quorum_after_vote(
+            s_mid,
+            c,
+            voter,
+        ) {
+            LReceiveVoteAndBecomeLeader(
+                s_mid,
+                s_,
+                c,
+                term,
+                granted,
+                voter,
+                sent_packets,
+            )
+        } else {
+            LReceiveVoteGranted(
+                s_mid,
+                s_,
+                c,
+                term,
+                granted,
+                voter,
+                sent_packets,
+            )
+        }
+    }
+
     /// Handle AppendResponse: step down if higher term, update match/next_index or backtrack.
     pub open spec fn LHandleAppendResponseMsg(
         s: LState, s_: LState, c: LConstants,
@@ -611,6 +659,27 @@ verus! {
         } else {
             // Valid advancement: delegate to LAdvanceCommitIndex
             LAdvanceCommitIndex(s, s_, c, new_commit_index, sent_packets)
+        }
+    }
+
+    /// Advance commit index using the quorum required by the membership
+    /// phase derived from the leader's committed log.
+    pub open spec fn LTryAdvanceCommitIndexWithMembership(
+        s: LState, s_: LState, c: LConstants,
+        new_commit_index: int,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        if !(s.role is Leader) || new_commit_index <= s.commit_index {
+            &&& s_ == s
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else {
+            LAdvanceCommitIndexWithMembership(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            )
         }
     }
 

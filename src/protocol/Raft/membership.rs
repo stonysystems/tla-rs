@@ -172,6 +172,19 @@ verus! {
         )
     }
 
+    /// The candidate's vote set after accepting one additional vote is
+    /// a quorum for the membership phase in its committed log.
+    pub open spec fn has_active_election_quorum_after_vote(
+        s: LState,
+        c: LConstants,
+        voter: int,
+    ) -> bool {
+        is_quorum_for_phase(
+            s.votes_granted.insert(voter),
+            active_membership_phase_for_state(s, c),
+        )
+    }
+
     /// The set whose cardinality is currently returned by
     /// the fixed-membership replicator_count helper.
     pub open spec fn replicator_set(
