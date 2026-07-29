@@ -1,4 +1,5 @@
 use crate::common::collections::hashsets::{
+    clone_hashset_u64,
     hashset_to_vec,
     lemma_hashset_view_finite,
     lemma_set_u64_to_int_len,
@@ -13,6 +14,7 @@ use crate::protocol::Raft::membership::{
     active_membership_phase_from_raft_log,
     active_membership_phase_for_state,
     has_active_election_quorum,
+    has_active_election_quorum_after_vote,
     is_joint_quorum,
     is_majority_of,
     is_quorum_for_phase,
@@ -20,6 +22,7 @@ use crate::protocol::Raft::membership::{
     MembershipPhase,
 };
 use std::collections::HashSet;
+use std::sync::Arc;
 use vstd::assert_sets_equal;
 use vstd::prelude::*;
 use vstd::seq_lib::*;
@@ -996,6 +999,60 @@ pub fn has_active_election_quorum_exec(
                     config: c@.servers,
                 },
             )
+        );
+    }
+    result
+}
+
+/// Evaluate the active election quorum after accepting one additional vote.
+pub fn has_active_election_quorum_after_vote_exec(
+    s: &CState,
+    c: &CConstants,
+    voter: &u64,
+) -> (result: bool)
+    ensures
+        result == has_active_election_quorum_after_vote(
+            s@,
+            c@,
+            *voter as int,
+        ),
+{
+    broadcast use group_hash_axioms;
+
+    let ghost old_votes = s.votes_granted@;
+    let mut votes = clone_hashset_u64(&s.votes_granted);
+    votes.insert(*voter);
+
+    proof {
+        assert(votes@ == old_votes.insert(*voter));
+        old_votes.lemma_set_map_insert_commute(
+            *voter,
+            |server: u64| server as int,
+        );
+    }
+
+    let mut s_with_vote = s.clone();
+    s_with_vote.votes_granted = Arc::new(votes);
+
+    let result = has_active_election_quorum_exec(
+        &s_with_vote,
+        c,
+    );
+
+    proof {
+        assert(
+            s_with_vote@.votes_granted
+            == old_votes.insert(*voter).map(
+                |server: u64| server as int,
+            )
+        );
+        assert(
+            s_with_vote@.votes_granted
+            == s@.votes_granted.insert(*voter as int)
+        );
+        assert(
+            active_membership_phase_for_state(s_with_vote@, c@)
+            == active_membership_phase_for_state(s@, c@)
         );
     }
     result
