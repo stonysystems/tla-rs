@@ -5,6 +5,7 @@ use crate::common::collections::hashsets::{
 };
 use crate::protocol::Raft::membership::is_majority_of;
 use std::collections::HashSet;
+use vstd::assert_sets_equal;
 use vstd::prelude::*;
 use vstd::seq_lib::*;
 use vstd::std_specs::hash::*;
@@ -260,6 +261,171 @@ pub fn is_majority_of_membership_view(
         );
     }
     result
+}
+
+/// Concrete-set form of the joint-consensus quorum predicate.
+pub open spec fn is_u64_joint_quorum(
+    quorum: Set<u64>,
+    old_config: Set<u64>,
+    new_config: Set<u64>,
+) -> bool {
+    &&& quorum.subset_of(old_config + new_config)
+    &&& is_u64_majority_of(
+        quorum.intersect(old_config),
+        old_config,
+    )
+    &&& is_u64_majority_of(
+        quorum.intersect(new_config),
+        new_config,
+    )
+}
+
+/// Build the union of two sequence-backed membership configurations.
+pub fn membership_union_set(
+    old_servers: &Vec<u64>,
+    new_servers: &Vec<u64>,
+) -> (result: HashSet<u64>)
+    ensures
+        result@ == old_servers@.to_set() + new_servers@.to_set(),
+{
+    broadcast use group_hash_axioms;
+
+    let mut result = membership_servers_set(old_servers);
+    let mut i: usize = 0;
+
+    while i < new_servers.len()
+        invariant
+            0 <= i <= new_servers.len(),
+            result@ == old_servers@.to_set()
+                + new_servers@.subrange(0, i as int).to_set(),
+        decreases
+            new_servers.len() - i,
+    {
+        let server = new_servers[i];
+        let ghost previous = result@;
+        result.insert(server);
+
+        proof {
+            assert(result@ == previous.insert(server));
+            assert(
+                new_servers@.subrange(0, i as int + 1)
+                    == new_servers@.subrange(0, i as int).push(server)
+            );
+            new_servers@.subrange(0, i as int)
+                .lemma_push_to_set_commute(server);
+        }
+
+        i = i + 1;
+    }
+
+    assert(
+        new_servers@.subrange(
+            0,
+            new_servers@.len() as int,
+        ) == new_servers@
+    );
+    result
+}
+
+/// Intersect a vote set with a sequence-backed membership configuration.
+pub fn quorum_intersection_with_servers(
+    quorum: &HashSet<u64>,
+    servers: &Vec<u64>,
+) -> (result: HashSet<u64>)
+    ensures
+        result@ == quorum@.intersect(servers@.to_set()),
+{
+    broadcast use group_hash_axioms;
+
+    let mut result = HashSet::<u64>::new();
+    let mut i: usize = 0;
+
+    while i < servers.len()
+        invariant
+            0 <= i <= servers.len(),
+            result@ == quorum@.intersect(
+                servers@.subrange(0, i as int).to_set(),
+            ),
+        decreases
+            servers.len() - i,
+    {
+        let server = servers[i];
+        let ghost previous = result@;
+
+        if quorum.contains(&server) {
+            result.insert(server);
+            assert(result@ == previous.insert(server));
+        }
+
+        proof {
+            assert(
+                servers@.subrange(0, i as int + 1)
+                    == servers@.subrange(0, i as int).push(server)
+            );
+            servers@.subrange(0, i as int)
+                .lemma_push_to_set_commute(server);
+
+            assert_sets_equal!(
+                result@,
+                quorum@.intersect(
+                    servers@.subrange(
+                        0,
+                        i as int + 1,
+                    ).to_set(),
+                )
+            );
+        }
+
+        i = i + 1;
+    }
+
+    assert(
+        servers@.subrange(
+            0,
+            servers@.len() as int,
+        ) == servers@
+    );
+    result
+}
+
+/// Executably decide the concrete joint-consensus quorum condition.
+pub fn is_joint_quorum_servers(
+    quorum: &HashSet<u64>,
+    old_servers: &Vec<u64>,
+    new_servers: &Vec<u64>,
+) -> (result: bool)
+    ensures
+        result == is_u64_joint_quorum(
+            quorum@,
+            old_servers@.to_set(),
+            new_servers@.to_set(),
+        ),
+{
+    let union = membership_union_set(
+        old_servers,
+        new_servers,
+    );
+    let within_union = hashset_is_subset(quorum, &union);
+
+    let old_votes = quorum_intersection_with_servers(
+        quorum,
+        old_servers,
+    );
+    let new_votes = quorum_intersection_with_servers(
+        quorum,
+        new_servers,
+    );
+
+    let old_majority = is_majority_of_servers(
+        &old_votes,
+        old_servers,
+    );
+    let new_majority = is_majority_of_servers(
+        &new_votes,
+        new_servers,
+    );
+
+    within_union && old_majority && new_majority
 }
 
 } // verus!
