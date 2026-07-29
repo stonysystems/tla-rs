@@ -1,6 +1,10 @@
 use crate::common::collections::sets::lemma_quorum_intersection;
 use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::raft::{
+    LAdvanceCommitIndex,
+    LAdvanceCommitIndexWithMembership,
+    LBecomeLeader,
+    LBecomeLeaderWithMembership,
     LClientRequest,
     LFollowerAppendEntries,
     replicator_count,
@@ -903,6 +907,38 @@ verus! {
         ));
     }
 
+    /// The existing fixed-quorum leader transition is a valid
+    /// active-membership leader transition while membership is stable.
+    pub proof fn lemma_fixed_become_leader_implies_membership_become_leader(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LBecomeLeader(s, s_, c, sent_packets),
+            c.servers.finite(),
+            c.servers.len() > 0,
+            c.quorum_size == c.servers.len() / 2 + 1,
+            s.votes_granted.subset_of(c.servers),
+            active_membership_phase_for_state(s, c)
+                == (MembershipPhase::Stable {
+                    config: c.servers,
+                }),
+        ensures
+            LBecomeLeaderWithMembership(
+                s,
+                s_,
+                c,
+                sent_packets,
+            ),
+    {
+        lemma_fixed_election_guard_implies_active_stable_quorum(
+            s,
+            c,
+        );
+    }
+
     /// Any two majorities of the same configuration overlap.
     pub proof fn lemma_majorities_intersect(
         quorum1: Set<int>,
@@ -1740,5 +1776,44 @@ verus! {
             replicator_set(s, c, idx),
             active_membership_phase_for_state(s, c),
         ));
+    }
+
+    /// The existing fixed-quorum commit transition is a valid
+    /// active-membership commit transition while membership is stable.
+    pub proof fn lemma_fixed_advance_commit_implies_membership_advance_commit(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        new_commit_index: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LAdvanceCommitIndex(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            ),
+            c.servers.len() > 0,
+            c.quorum_size == c.servers.len() / 2 + 1,
+            active_membership_phase_for_state(s, c)
+                == (MembershipPhase::Stable {
+                    config: c.servers,
+                }),
+        ensures
+            LAdvanceCommitIndexWithMembership(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            ),
+    {
+        lemma_fixed_commit_guard_implies_active_stable_quorum(
+            s,
+            c,
+            new_commit_index,
+        );
     }
 }

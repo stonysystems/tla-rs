@@ -1,3 +1,7 @@
+use crate::protocol::Raft::membership::{
+    has_active_commit_quorum,
+    has_active_election_quorum,
+};
 use crate::protocol::Raft::types::*;
 use vstd::prelude::*;
 
@@ -99,6 +103,25 @@ verus! {
     pub open spec fn LBecomeLeader(s: LState, s_: LState, c: LConstants, sent_packets: Seq<LRaftMessage>) -> bool {
         &&& s.role is Candidate
         &&& s.votes_granted.len() >= c.quorum_size
+        &&& s_.current_term == s.current_term
+        &&& s_.role is Leader
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log
+        &&& s_.commit_index == s.commit_index
+        &&& s_.votes_granted == s.votes_granted
+        &&& s_.match_index == Map::<u64, u64>::empty()
+        &&& s_.next_index == Map::<u64, u64>::empty()
+        &&& sent_packets == Seq::<LRaftMessage>::empty()
+    }
+
+    /// Become leader using the quorum required by the membership phase
+    /// derived from the candidate's committed log.
+    pub open spec fn LBecomeLeaderWithMembership(
+        s: LState, s_: LState, c: LConstants, sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        &&& s.role is Candidate
+        &&& has_active_election_quorum(s, c)
         &&& s_.current_term == s.current_term
         &&& s_.role is Leader
         &&& s_.has_voted == s.has_voted
@@ -285,6 +308,29 @@ verus! {
         // Quorum replication guard: at least quorum_size servers have the entry
         &&& c.servers.finite()
         &&& replicator_count(s, c, new_commit_index) >= c.quorum_size
+        &&& s_.current_term == s.current_term
+        &&& s_.role == s.role
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log
+        &&& s_.commit_index == new_commit_index
+        &&& s_.votes_granted == s.votes_granted
+        &&& s_.match_index == s.match_index
+        &&& s_.next_index == s.next_index
+        &&& sent_packets == Seq::<LRaftMessage>::empty()
+    }
+
+    /// Advance commit index using the replication quorum required by
+    /// the membership phase derived from the leader's committed log.
+    pub open spec fn LAdvanceCommitIndexWithMembership(
+        s: LState, s_: LState, c: LConstants,
+        new_commit_index: int, sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        &&& s.role is Leader
+        &&& new_commit_index > s.commit_index
+        &&& new_commit_index <= s.log.len()
+        &&& s.log[new_commit_index - 1].term == s.current_term
+        &&& has_active_commit_quorum(s, c, new_commit_index)
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
