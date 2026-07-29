@@ -1,5 +1,6 @@
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
+use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::refinement_proof::state_machine::*;
 use crate::protocol::Raft::refinement_proof::message_invariants::*;
 use crate::protocol::Raft::refinement_proof::reconfiguration::*;
