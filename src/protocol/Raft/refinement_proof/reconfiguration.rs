@@ -1829,6 +1829,19 @@ verus! {
         )
     }
 
+    /// A leader has enough replicas to commit an index exactly when
+    /// those replicas form a quorum for its active committed membership.
+    pub open spec fn has_active_commit_quorum(
+        s: LState,
+        c: LConstants,
+        idx: int,
+    ) -> bool {
+        is_quorum_for_phase(
+            replicator_set(s, c, idx),
+            active_membership_phase_for_state(s, c),
+        )
+    }
+
     /// Exposing the underlying set does not change the meaning
     /// of the existing count-based helper.
     pub proof fn lemma_replicator_count_matches_set(
@@ -1882,6 +1895,38 @@ verus! {
             MembershipPhase::Stable {
                 config: c.servers,
             },
+        ));
+    }
+
+    /// While the committed membership remains the original stable
+    /// configuration, the existing fixed replication-count guard is
+    /// sufficient for the new active-phase commit guard.
+    pub proof fn lemma_fixed_commit_guard_implies_active_stable_quorum(
+        s: LState,
+        c: LConstants,
+        idx: int,
+    )
+        requires
+            c.servers.finite(),
+            c.servers.len() > 0,
+            c.quorum_size == c.servers.len() / 2 + 1,
+            replicator_count(s, c, idx) >= c.quorum_size,
+            active_membership_phase_for_state(s, c)
+                == (MembershipPhase::Stable {
+                    config: c.servers,
+                }),
+        ensures
+            has_active_commit_quorum(s, c, idx),
+    {
+        lemma_fixed_commit_guard_implies_stable_phase_quorum(
+            s,
+            c,
+            idx,
+        );
+
+        assert(is_quorum_for_phase(
+            replicator_set(s, c, idx),
+            active_membership_phase_for_state(s, c),
         ));
     }
 }
