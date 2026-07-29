@@ -22,6 +22,7 @@ module Raft::raft {
     // Spec helpers (value-returning functions)
     helper step_down_if_needed(+, +) -> LState;
     helper log_up_to_date(+, +, +) -> bool;
+    helper has_active_election_quorum_after_vote(+, +, +) -> bool;
 
     // Composite message handlers (Phase 29 — transpiler-generated)
     LHandleRequestVoteMsg(+, -, +, +, +, +, +, -);

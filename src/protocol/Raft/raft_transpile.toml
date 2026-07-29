@@ -105,6 +105,7 @@ custom_imports = [
     "use crate::protocol::Raft::raft::*;",
     "use crate::generated::Raft::types_gen::*;",
     "use crate::implementation::Raft::helpers::*;",
+    "use crate::implementation::Raft::membership_helpers::*;",
 ]
 
 [messages]

@@ -542,7 +542,11 @@ verus! {
             // Unknown voter: no-op
             &&& s_ == s_mid
             &&& sent_packets == Seq::<LRaftMessage>::empty()
-        } else if s_mid.votes_granted.insert(voter).len() >= c.quorum_size {
+        } else if has_active_election_quorum_after_vote(
+            s_mid,
+            c,
+            voter,
+        ) {
             // Quorum reached: add vote and become leader
             LReceiveVoteAndBecomeLeader(s_mid, s_, c, term, granted, voter, sent_packets)
         } else {

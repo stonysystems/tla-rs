@@ -4,6 +4,7 @@
 use crate::common::collections::hashsets::clone_hashset_u64;
 use crate::generated::Raft::types_gen::*;
 use crate::implementation::Raft::helpers::*;
+use crate::implementation::Raft::membership_helpers::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::types::*;
 use std::collections::HashMap;
@@ -833,17 +834,7 @@ ensures
                         broadcast use vstd::std_specs::hash::group_hash_axioms;
                         lemma_set_map_contains(c.servers@, *voter);
                     }
-                    if {
-                        let __lhs_0 = {
-                            let mut __set_tmp = clone_hashset_u64(&s_mid.votes_granted);
-                            __set_tmp.insert(voter.clone());
-                            proof {
-                                crate::common::collections::hashsets::lemma_hashset_u64_len_eq_mapped(&__set_tmp);
-                            }
-                            (__set_tmp.len() as u64)
-                        };
-                        (__lhs_0 >= c.quorum_size)
-                    } {
+                    if Chas_active_election_quorum_after_vote(&s_mid, c, voter) {
                         CReceiveVoteAndBecomeLeader(&s_mid, c, term, granted, voter)
                     } else {
                         CReceiveVoteGranted(&s_mid, c, term, granted, voter)

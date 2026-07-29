@@ -8,6 +8,11 @@
 //
 // Cases (a) and (c) are standard in TLA+ refinement (stuttering simulation).
 
+use crate::protocol::Raft::membership::{
+    active_membership_phase_for_state,
+    has_active_election_quorum,
+    has_active_election_quorum_after_vote,
+};
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
 use vstd::prelude::*;
@@ -27,6 +32,8 @@ pub open spec fn LNextAtomic(s: LState, s_: LState, c: LConstants) -> bool {
             LReceiveVoteGranted(s, s_, c, vt, vg, v, sent_packets)
     ||| exists |sent_packets: Seq<LRaftMessage>|
             LBecomeLeader(s, s_, c, sent_packets)
+    ||| exists |sent_packets: Seq<LRaftMessage>|
+            LBecomeLeaderWithMembership(s, s_, c, sent_packets)
     ||| exists |value: int, sent_packets: Seq<LRaftMessage>|
             LClientRequest(s, s_, c, value, sent_packets)
     ||| exists |f: int, ev: int, ep: LLogValue, pli: int, plt: int,
@@ -217,11 +224,21 @@ ensures
                 votes_granted: s_mid.votes_granted.insert(voter),
                 ..s_mid
             };
-            if s_voted.votes_granted.len() >= c.quorum_size {
-                // Quorum reached: ReceiveVoteGranted + BecomeLeader (two steps)
+            if has_active_election_quorum_after_vote(s_mid, c, voter) {
+                // Dynamic quorum reached: receive the vote, then become leader.
                 assert(LReceiveVoteGranted(s, s_voted, c, term, granted, voter, empty));
                 assert(LNextAtomic(s, s_voted, c));
-                assert(LBecomeLeader(s_voted, s_, c, empty));
+                assert(
+                    active_membership_phase_for_state(s_voted, c)
+                    == active_membership_phase_for_state(s_mid, c)
+                );
+                assert(has_active_election_quorum(s_voted, c));
+                assert(LBecomeLeaderWithMembership(
+                    s_voted,
+                    s_,
+                    c,
+                    empty,
+                ));
                 assert(LNextAtomic(s_voted, s_, c));
                 assert(LNextAtomic(s, s_voted, c) && LNextAtomic(s_voted, s_, c));
             } else {

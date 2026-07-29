@@ -1058,4 +1058,25 @@ pub fn has_active_election_quorum_after_vote_exec(
     result
 }
 
+/// Transpiler-facing name for the verified after-vote election guard.
+#[allow(non_snake_case)]
+pub fn Chas_active_election_quorum_after_vote(
+    s: &CState,
+    c: &CConstants,
+    voter: &u64,
+) -> (result: bool)
+    ensures
+        result == has_active_election_quorum_after_vote(
+            s@,
+            c@,
+            *voter as int,
+        ),
+{
+    has_active_election_quorum_after_vote_exec(
+        s,
+        c,
+        voter,
+    )
+}
+
 } // verus!
