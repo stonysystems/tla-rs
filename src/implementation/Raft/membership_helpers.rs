@@ -1079,4 +1079,157 @@ pub fn Chas_active_election_quorum_after_vote(
     )
 }
 
+/// Concrete predicate for whether one server has replicated an index.
+pub open spec fn is_u64_replicator(
+    match_index: Map<u64, u64>,
+    my_id: u64,
+    server: u64,
+    idx: u64,
+) -> bool {
+    server == my_id
+    || (match_index.contains_key(server)
+        && match_index[server] >= idx)
+}
+
+/// Concrete set of servers that have replicated a candidate index.
+pub open spec fn u64_replicator_set(
+    servers: Set<u64>,
+    match_index: Map<u64, u64>,
+    my_id: u64,
+    idx: u64,
+) -> Set<u64> {
+    servers.filter(|server: u64|
+        is_u64_replicator(
+            match_index,
+            my_id,
+            server,
+            idx,
+        )
+    )
+}
+
+/// Build the executable replication set for a candidate commit index.
+pub fn replicator_set_exec(
+    s: &CState,
+    c: &CConstants,
+    idx: &u64,
+) -> (result: HashSet<u64>)
+    ensures
+        result@ == u64_replicator_set(
+            c.servers@,
+            s.match_index@,
+            c.my_id,
+            *idx,
+        ),
+{
+    broadcast use group_hash_axioms;
+
+    let servers = hashset_to_vec(&c.servers);
+    let mut result = HashSet::<u64>::new();
+    let mut i: usize = 0;
+
+    while i < servers.len()
+        invariant
+            0 <= i <= servers.len(),
+            result@ == servers@.subrange(
+                0,
+                i as int,
+            ).to_set().filter(|server: u64|
+                is_u64_replicator(
+                    s.match_index@,
+                    c.my_id,
+                    server,
+                    *idx,
+                )
+            ),
+            forall |k: int|
+                0 <= k < servers@.len()
+                ==> c.servers@.contains(#[trigger] servers@[k]),
+            forall |server: u64|
+                c.servers@.contains(server)
+                ==> exists |k: int|
+                    0 <= k < servers@.len()
+                    && servers@[k] == server,
+        decreases
+            servers.len() - i,
+    {
+        let server = servers[i];
+        let replicated = if server == c.my_id {
+            true
+        } else {
+            match s.match_index.get(&server) {
+                Some(matched) => *matched >= *idx,
+                None => false,
+            }
+        };
+
+        if replicated {
+            result.insert(server);
+        }
+
+        proof {
+            assert(
+                replicated == is_u64_replicator(
+                    s.match_index@,
+                    c.my_id,
+                    server,
+                    *idx,
+                )
+            );
+            assert(
+                servers@.subrange(0, i as int + 1)
+                == servers@.subrange(0, i as int).push(server)
+            );
+            servers@.subrange(0, i as int)
+                .lemma_push_to_set_commute(server);
+            assert_sets_equal!(
+                result@,
+                servers@.subrange(
+                    0,
+                    i as int + 1,
+                ).to_set().filter(|candidate: u64|
+                    is_u64_replicator(
+                        s.match_index@,
+                        c.my_id,
+                        candidate,
+                        *idx,
+                    )
+                )
+            );
+        }
+
+        i = i + 1;
+    }
+
+    proof {
+        assert(
+            servers@.subrange(0, servers@.len() as int)
+            == servers@
+        );
+        assert_sets_equal!(
+            servers@.to_set(),
+            c.servers@
+        );
+        assert(
+            result@ == c.servers@.filter(|server: u64|
+                is_u64_replicator(
+                    s.match_index@,
+                    c.my_id,
+                    server,
+                    *idx,
+                )
+            )
+        );
+        assert(
+            result@ == u64_replicator_set(
+                c.servers@,
+                s.match_index@,
+                c.my_id,
+                *idx,
+            )
+        );
+    }
+    result
+}
+
 } // verus!
