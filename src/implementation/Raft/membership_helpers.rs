@@ -3,7 +3,10 @@ use crate::common::collections::hashsets::{
     lemma_hashset_view_finite,
     lemma_set_u64_to_int_len,
 };
-use crate::protocol::Raft::membership::is_majority_of;
+use crate::protocol::Raft::membership::{
+    is_joint_quorum,
+    is_majority_of,
+};
 use std::collections::HashSet;
 use vstd::assert_sets_equal;
 use vstd::prelude::*;
@@ -426,6 +429,272 @@ pub fn is_joint_quorum_servers(
     );
 
     within_union && old_majority && new_majority
+}
+
+/// Mapping injective u64 server IDs to int preserves set inclusion.
+pub proof fn lemma_u64_cast_map_subset_iff(
+    subset: Set<u64>,
+    superset: Set<u64>,
+)
+    ensures
+        subset.map(|server: u64| server as int).subset_of(
+            superset.map(|server: u64| server as int),
+        ) == subset.subset_of(superset),
+{
+    let cast = |server: u64| server as int;
+
+    if subset.subset_of(superset) {
+        assert(subset.map(cast).subset_of(superset.map(cast))) by {
+            assert forall |logical_server: int|
+                subset.map(cast).contains(logical_server)
+                implies superset.map(cast).contains(logical_server)
+            by {
+                let concrete_server = choose |concrete_server: u64|
+                    subset.contains(concrete_server)
+                    && cast(concrete_server) == logical_server;
+                assert(superset.contains(concrete_server));
+            };
+        };
+    } else {
+        let concrete_server = choose |concrete_server: u64|
+            subset.contains(concrete_server)
+            && !superset.contains(concrete_server);
+
+        assert(subset.map(cast).contains(cast(concrete_server)));
+        assert(!superset.map(cast).contains(cast(concrete_server))) by {
+            if superset.map(cast).contains(cast(concrete_server)) {
+                let other = choose |other: u64|
+                    superset.contains(other)
+                    && cast(other) == cast(concrete_server);
+                assert(other == concrete_server);
+                assert(false);
+            }
+        };
+        assert(!subset.map(cast).subset_of(superset.map(cast)));
+    }
+}
+
+/// Mapping u64 server IDs to int commutes with set union.
+pub proof fn lemma_u64_cast_map_union(
+    left: Set<u64>,
+    right: Set<u64>,
+)
+    ensures
+        (left + right).map(
+            |server: u64| server as int,
+        ) == left.map(
+            |server: u64| server as int,
+        ) + right.map(
+            |server: u64| server as int,
+        ),
+{
+    let cast = |server: u64| server as int;
+
+    let mapped_union = (left + right).map(cast);
+    let union_of_maps = left.map(cast) + right.map(cast);
+
+    assert(mapped_union.subset_of(union_of_maps)) by {
+        assert forall |logical_server: int|
+            mapped_union.contains(logical_server)
+            implies union_of_maps.contains(logical_server)
+        by {
+            let concrete_server = choose |concrete_server: u64|
+                (left + right).contains(concrete_server)
+                && cast(concrete_server) == logical_server;
+
+            if left.contains(concrete_server) {
+                assert(left.map(cast).contains(logical_server));
+            } else {
+                assert(right.contains(concrete_server));
+                assert(right.map(cast).contains(logical_server));
+            }
+        };
+    };
+
+    assert(union_of_maps.subset_of(mapped_union)) by {
+        assert forall |logical_server: int|
+            union_of_maps.contains(logical_server)
+            implies mapped_union.contains(logical_server)
+        by {
+            if left.map(cast).contains(logical_server) {
+                let concrete_server = choose |concrete_server: u64|
+                    left.contains(concrete_server)
+                    && cast(concrete_server) == logical_server;
+                assert((left + right).contains(concrete_server));
+            } else {
+                let concrete_server = choose |concrete_server: u64|
+                    right.contains(concrete_server)
+                    && cast(concrete_server) == logical_server;
+                assert((left + right).contains(concrete_server));
+            }
+        };
+    };
+
+    assert_sets_equal!(
+        mapped_union,
+        union_of_maps
+    );
+}
+
+/// Because the u64-to-int cast is injective, mapping also commutes with
+/// intersection.
+pub proof fn lemma_u64_cast_map_intersection(
+    left: Set<u64>,
+    right: Set<u64>,
+)
+    ensures
+        left.intersect(right).map(
+            |server: u64| server as int,
+        ) == left.map(
+            |server: u64| server as int,
+        ).intersect(
+            right.map(|server: u64| server as int),
+        ),
+{
+    let cast = |server: u64| server as int;
+    let mapped_intersection = left.intersect(right).map(cast);
+    let intersection_of_maps =
+        left.map(cast).intersect(right.map(cast));
+
+    assert(mapped_intersection.subset_of(intersection_of_maps)) by {
+        assert forall |logical_server: int|
+            mapped_intersection.contains(logical_server)
+            implies intersection_of_maps.contains(logical_server)
+        by {
+            let concrete_server = choose |concrete_server: u64|
+                left.intersect(right).contains(concrete_server)
+                && cast(concrete_server) == logical_server;
+        };
+    };
+
+    assert(intersection_of_maps.subset_of(mapped_intersection)) by {
+        assert forall |logical_server: int|
+            intersection_of_maps.contains(logical_server)
+            implies mapped_intersection.contains(logical_server)
+        by {
+            let left_server = choose |left_server: u64|
+                left.contains(left_server)
+                && cast(left_server) == logical_server;
+            let right_server = choose |right_server: u64|
+                right.contains(right_server)
+                && cast(right_server) == logical_server;
+            assert(left_server == right_server);
+            assert(left.intersect(right).contains(left_server));
+        };
+    };
+
+    assert_sets_equal!(
+        mapped_intersection,
+        intersection_of_maps
+    );
+}
+
+/// Casting executable server IDs to logical IDs preserves the full
+/// joint-consensus quorum predicate.
+pub proof fn lemma_u64_joint_quorum_matches_logical(
+    quorum: Set<u64>,
+    old_servers: Seq<u64>,
+    new_servers: Seq<u64>,
+)
+    requires
+        quorum.finite(),
+    ensures
+        is_u64_joint_quorum(
+            quorum,
+            old_servers.to_set(),
+            new_servers.to_set(),
+        ) == is_joint_quorum(
+            quorum.map(|server: u64| server as int),
+            old_servers.map(
+                |i: int, server: u64| server as int,
+            ).to_set(),
+            new_servers.map(
+                |i: int, server: u64| server as int,
+            ).to_set(),
+        ),
+{
+    let old_config = old_servers.to_set();
+    let new_config = new_servers.to_set();
+    let cast = |server: u64| server as int;
+
+    broadcast use seq_to_set_is_finite;
+    broadcast use vstd::set::group_set_axioms;
+
+    old_servers.lemma_to_set_map_commutes(cast);
+    new_servers.lemma_to_set_map_commutes(cast);
+
+    assert(old_servers.map(
+        |i: int, server: u64| server as int,
+    ) == old_servers.map_values(cast)) by {
+        assert_seqs_equal!(
+            old_servers.map(
+                |i: int, server: u64| server as int,
+            ),
+            old_servers.map_values(cast)
+        );
+    };
+    assert(new_servers.map(
+        |i: int, server: u64| server as int,
+    ) == new_servers.map_values(cast)) by {
+        assert_seqs_equal!(
+            new_servers.map(
+                |i: int, server: u64| server as int,
+            ),
+            new_servers.map_values(cast)
+        );
+    };
+
+    lemma_u64_cast_map_union(old_config, new_config);
+    lemma_u64_cast_map_subset_iff(
+        quorum,
+        old_config + new_config,
+    );
+
+    lemma_u64_cast_map_intersection(quorum, old_config);
+    lemma_u64_cast_map_intersection(quorum, new_config);
+
+    lemma_u64_majority_matches_logical(
+        quorum.intersect(old_config),
+        old_servers,
+    );
+    lemma_u64_majority_matches_logical(
+        quorum.intersect(new_config),
+        new_servers,
+    );
+}
+
+/// Executable joint-quorum check stated directly in Raft's logical
+/// membership model.
+pub fn is_joint_quorum_membership_view(
+    quorum: &HashSet<u64>,
+    old_servers: &Vec<u64>,
+    new_servers: &Vec<u64>,
+) -> (result: bool)
+    ensures
+        result == is_joint_quorum(
+            quorum@.map(|server: u64| server as int),
+            old_servers@.map(
+                |i: int, server: u64| server as int,
+            ).to_set(),
+            new_servers@.map(
+                |i: int, server: u64| server as int,
+            ).to_set(),
+        ),
+{
+    let result = is_joint_quorum_servers(
+        quorum,
+        old_servers,
+        new_servers,
+    );
+    proof {
+        lemma_hashset_view_finite(quorum);
+        lemma_u64_joint_quorum_matches_logical(
+            quorum@,
+            old_servers@,
+            new_servers@,
+        );
+    }
+    result
 }
 
 } // verus!
