@@ -19,6 +19,7 @@ use crate::protocol::Raft::membership::{
     is_majority_of,
     is_quorum_for_phase,
     membership_phase_view,
+    replicator_set,
     MembershipPhase,
 };
 use std::collections::HashSet;
@@ -1108,6 +1109,97 @@ pub open spec fn u64_replicator_set(
     )
 }
 
+/// Converting concrete server IDs to logical IDs preserves the exact
+/// replication set used by the membership-level commit predicate.
+pub proof fn lemma_u64_replicator_set_matches_logical(
+    s: &CState,
+    c: &CConstants,
+    idx: &u64,
+)
+    ensures
+        u64_replicator_set(
+            c.servers@,
+            s.match_index@,
+            c.my_id,
+            *idx,
+        ).map(
+            |server: u64| server as int,
+        ) == replicator_set(s@, c@, *idx as int),
+{
+    let cast = |server: u64| server as int;
+    let concrete = u64_replicator_set(
+        c.servers@,
+        s.match_index@,
+        c.my_id,
+        *idx,
+    );
+    let logical = replicator_set(s@, c@, *idx as int);
+
+    assert_sets_equal!(
+        concrete.map(cast),
+        logical,
+        logical_server => {
+            if concrete.map(cast).contains(logical_server) {
+                let concrete_server = choose |server: u64|
+                    concrete.contains(server)
+                    && cast(server) == logical_server;
+
+                assert(c.servers@.contains(concrete_server));
+                assert(c@.servers.contains(logical_server));
+                assert(
+                    is_u64_replicator(
+                        s.match_index@,
+                        c.my_id,
+                        concrete_server,
+                        *idx,
+                    )
+                );
+                assert(
+                    logical_server == c@.my_id
+                    || (s@.match_index.contains_key(
+                            logical_server as u64,
+                        )
+                        && s@.match_index[
+                            logical_server as u64
+                        ] as int >= *idx as int)
+                );
+            } else if logical.contains(logical_server) {
+                assert(c@.servers.contains(logical_server));
+                let concrete_server = choose |server: u64|
+                    c.servers@.contains(server)
+                    && cast(server) == logical_server;
+                assert(c.servers@.contains(concrete_server));
+                assert(
+                    logical_server == c@.my_id
+                    || (s@.match_index.contains_key(
+                            logical_server as u64,
+                        )
+                        && s@.match_index[
+                            logical_server as u64
+                        ] as int >= *idx as int)
+                );
+                assert(concrete_server as int == logical_server);
+                assert(
+                    concrete_server == c.my_id
+                    || (s.match_index@.contains_key(
+                            concrete_server,
+                        )
+                        && s.match_index@[concrete_server] >= *idx)
+                );
+                assert(
+                    is_u64_replicator(
+                        s.match_index@,
+                        c.my_id,
+                        concrete_server,
+                        *idx,
+                    )
+                );
+                assert(concrete.contains(concrete_server));
+            }
+        }
+    );
+}
+
 /// Build the executable replication set for a candidate commit index.
 pub fn replicator_set_exec(
     s: &CState,
@@ -1120,6 +1212,13 @@ pub fn replicator_set_exec(
             s.match_index@,
             c.my_id,
             *idx,
+        ),
+        result@.map(
+            |server: u64| server as int,
+        ) == replicator_set(
+            s@,
+            c@,
+            *idx as int,
         ),
 {
     broadcast use group_hash_axioms;
@@ -1227,6 +1326,11 @@ pub fn replicator_set_exec(
                 c.my_id,
                 *idx,
             )
+        );
+        lemma_u64_replicator_set_matches_logical(
+            s,
+            c,
+            idx,
         );
     }
     result
