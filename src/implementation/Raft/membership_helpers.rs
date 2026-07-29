@@ -13,6 +13,7 @@ use crate::generated::Raft::types_gen::{
 use crate::protocol::Raft::membership::{
     active_membership_phase_from_raft_log,
     active_membership_phase_for_state,
+    has_active_commit_quorum,
     has_active_election_quorum,
     has_active_election_quorum_after_vote,
     is_joint_quorum,
@@ -1334,6 +1335,84 @@ pub fn replicator_set_exec(
         );
     }
     result
+}
+
+/// Decide whether the servers that replicated `idx` form a quorum for
+/// the membership phase derived from the committed log.
+pub fn has_active_commit_quorum_exec(
+    s: &CState,
+    c: &CConstants,
+    idx: &u64,
+) -> (result: bool)
+    ensures
+        result == has_active_commit_quorum(
+            s@,
+            c@,
+            *idx as int,
+        ),
+{
+    let replicators = replicator_set_exec(
+        s,
+        c,
+        idx,
+    );
+
+    let mut s_with_replicators = s.clone();
+    s_with_replicators.votes_granted =
+        Arc::new(replicators);
+
+    let result = has_active_election_quorum_exec(
+        &s_with_replicators,
+        c,
+    );
+
+    proof {
+        assert(
+            s_with_replicators@.votes_granted
+            == replicator_set(
+                s@,
+                c@,
+                *idx as int,
+            )
+        );
+        assert(
+            active_membership_phase_for_state(
+                s_with_replicators@,
+                c@,
+            ) == active_membership_phase_for_state(
+                s@,
+                c@,
+            )
+        );
+        assert(
+            has_active_election_quorum(
+                s_with_replicators@,
+                c@,
+            ) == has_active_commit_quorum(
+                s@,
+                c@,
+                *idx as int,
+            )
+        );
+    }
+    result
+}
+
+/// Transpiler-facing name for the verified dynamic commit guard.
+#[allow(non_snake_case)]
+pub fn Chas_active_commit_quorum(
+    s: &CState,
+    c: &CConstants,
+    idx: &u64,
+) -> (result: bool)
+    ensures
+        result == has_active_commit_quorum(
+            s@,
+            c@,
+            *idx as int,
+        ),
+{
+    has_active_commit_quorum_exec(s, c, idx)
 }
 
 } // verus!
