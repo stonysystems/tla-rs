@@ -3,9 +3,12 @@ use crate::common::collections::hashsets::{
     lemma_hashset_view_finite,
     lemma_set_u64_to_int_len,
 };
+use crate::generated::Raft::types_gen::CMembershipPhase;
 use crate::protocol::Raft::membership::{
     is_joint_quorum,
     is_majority_of,
+    is_quorum_for_phase,
+    membership_phase_view,
 };
 use std::collections::HashSet;
 use vstd::assert_sets_equal;
@@ -695,6 +698,104 @@ pub fn is_joint_quorum_membership_view(
         );
     }
     result
+}
+
+/// Check a majority when both the quorum and configuration already use
+/// executable HashSet storage.
+pub fn is_majority_of_hashset_membership_view(
+    quorum: &HashSet<u64>,
+    config: &HashSet<u64>,
+) -> (result: bool)
+    ensures
+        result == is_majority_of(
+            quorum@.map(|server: u64| server as int),
+            config@.map(|server: u64| server as int),
+        ),
+{
+    broadcast use group_hash_axioms;
+
+    let is_subset = hashset_is_subset(quorum, config);
+
+    proof {
+        lemma_hashset_view_finite(quorum);
+        lemma_hashset_view_finite(config);
+        lemma_set_u64_to_int_len(quorum@);
+        lemma_set_u64_to_int_len(config@);
+        quorum@.lemma_map_finite(
+            |server: u64| server as int,
+        );
+        config@.lemma_map_finite(
+            |server: u64| server as int,
+        );
+        lemma_u64_cast_map_subset_iff(
+            quorum@,
+            config@,
+        );
+    }
+
+    if config.len() == 0 {
+        assert(config@.len() == 0);
+        false
+    } else if !is_subset {
+        false
+    } else {
+        let quorum_size = quorum.len();
+        let config_size = config.len();
+
+        if quorum_size >= config_size / 2 + 1 {
+            assert(
+                quorum@.map(
+                    |server: u64| server as int,
+                ).len()
+                >= config@.map(
+                    |server: u64| server as int,
+                ).len() / 2 + 1
+            );
+            true
+        } else {
+            assert(
+                quorum@.map(
+                    |server: u64| server as int,
+                ).len()
+                < config@.map(
+                    |server: u64| server as int,
+                ).len() / 2 + 1
+            );
+            false
+        }
+    }
+}
+
+/// Dispatch an executable election-quorum check according to a concrete
+/// stable or joint membership phase.
+pub fn is_quorum_for_membership_phase(
+    quorum: &HashSet<u64>,
+    phase: &CMembershipPhase,
+) -> (result: bool)
+    ensures
+        result == is_quorum_for_phase(
+            quorum@.map(|server: u64| server as int),
+            membership_phase_view(phase@),
+        ),
+{
+    match phase {
+        CMembershipPhase::Stable { config } => {
+            is_majority_of_membership_view(
+                quorum,
+                &config.servers,
+            )
+        },
+        CMembershipPhase::Joint {
+            old_config,
+            new_config,
+        } => {
+            is_joint_quorum_membership_view(
+                quorum,
+                &old_config.servers,
+                &new_config.servers,
+            )
+        },
+    }
 }
 
 } // verus!
