@@ -4,6 +4,10 @@ use crate::protocol::Raft::raft::{
     LFollowerAppendEntries,
     replicator_count,
 };
+use crate::protocol::Raft::refinement_proof::state_machine::{
+    MaxCommitIndex,
+    RaftDistributedState,
+};
 use crate::protocol::Raft::types::{
     LConstants,
     LLogEntry,
@@ -531,6 +535,50 @@ verus! {
                 },
             }
         }
+    }
+
+    /// Extract the application-visible committed log from the distributed
+    /// Raft state without changing the existing physical committed-log view.
+    ///
+    /// The physical committed prefix still includes every Raft entry, while
+    /// this parallel view filters Configuration entries from that prefix.
+    pub open spec fn GetApplicationCommittedLog(
+        ds: RaftDistributedState,
+    ) -> Seq<int> {
+        let max_commit = MaxCommitIndex(ds);
+        if max_commit <= 0 {
+            Seq::<int>::empty()
+        } else {
+            let server_id = choose |id: int| 0 <= id < ds.num_servers
+                && ds.server_states[id].commit_index >= max_commit
+                && ds.server_states[id].log.len() >= max_commit;
+            application_values_from_raft_log(
+                ds.server_states[server_id].log,
+                max_commit,
+            )
+        }
+    }
+
+    /// The parallel distributed view is exactly the tagged-payload filter
+    /// applied to the selected maximum committed Raft prefix.
+    pub proof fn lemma_get_application_committed_log_selected_prefix(
+        ds: RaftDistributedState,
+    )
+        ensures
+            MaxCommitIndex(ds) <= 0 ==> GetApplicationCommittedLog(ds)
+                == Seq::<int>::empty(),
+            MaxCommitIndex(ds) > 0 ==> {
+                let max_commit = MaxCommitIndex(ds);
+                let server_id = choose |id: int| 0 <= id < ds.num_servers
+                    && ds.server_states[id].commit_index >= max_commit
+                    && ds.server_states[id].log.len() >= max_commit;
+                GetApplicationCommittedLog(ds)
+                    == application_values_from_raft_log(
+                        ds.server_states[server_id].log,
+                        max_commit,
+                    )
+            },
+    {
     }
 
     /// Appending an entry outside the examined prefix cannot change
