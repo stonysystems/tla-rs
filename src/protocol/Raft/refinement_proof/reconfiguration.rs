@@ -1003,6 +1003,67 @@ verus! {
         }
     }
 
+    /// The membership phase that governs one server's next election
+    /// decision is derived from that server's committed Raft-log prefix.
+    pub open spec fn active_membership_phase_for_state(
+        s: LState,
+        c: LConstants,
+    ) -> MembershipPhase {
+        active_membership_phase_from_raft_log(
+            s.log,
+            s.commit_index,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        )
+    }
+
+    /// A candidate has enough votes exactly when its collected voter set
+    /// is a quorum for the membership phase in its committed log.
+    pub open spec fn has_active_election_quorum(
+        s: LState,
+        c: LConstants,
+    ) -> bool {
+        is_quorum_for_phase(
+            s.votes_granted,
+            active_membership_phase_for_state(s, c),
+        )
+    }
+
+    /// While the committed membership remains the original stable
+    /// configuration, the existing fixed-majority election guard is
+    /// sufficient for the new active-phase election guard.
+    pub proof fn lemma_fixed_election_guard_implies_active_stable_quorum(
+        s: LState,
+        c: LConstants,
+    )
+        requires
+            c.servers.finite(),
+            c.servers.len() > 0,
+            c.quorum_size == c.servers.len() / 2 + 1,
+            s.votes_granted.subset_of(c.servers),
+            s.votes_granted.len() >= c.quorum_size,
+            active_membership_phase_for_state(s, c)
+                == (MembershipPhase::Stable {
+                    config: c.servers,
+                }),
+        ensures
+            has_active_election_quorum(s, c),
+    {
+        assert(s.votes_granted.len()
+            >= c.servers.len() / 2 + 1);
+        assert(is_majority_of(
+            s.votes_granted,
+            c.servers,
+        ));
+        assert(is_quorum_for_phase(
+            s.votes_granted,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        ));
+    }
+
     /// Any two majorities of the same configuration overlap.
     pub proof fn lemma_majorities_intersect(
         quorum1: Set<int>,
