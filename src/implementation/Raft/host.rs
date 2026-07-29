@@ -4,6 +4,7 @@ use crate::common::framework::protocol_trait::*;
 use crate::common::native::io_s::*;
 use crate::generated::Raft::raft_gen;
 use crate::generated::Raft::types_gen::*;
+use crate::implementation::Raft::membership_helpers::Chas_active_commit_quorum;
 use crate::implementation::Raft::message::*;
 use std::collections::HashSet;
 
@@ -151,14 +152,13 @@ impl RaftHost {
         let mut n = self.state.log.len() as u64;
         while n > self.state.commit_index {
             if self.state.log[(n - 1) as usize].term == self.state.current_term {
-                let mut cnt: u64 = 1;
-                for j in 0..config.peers.len() {
-                    let p = j as u64;
-                    if p != config.my_index {
-                        if let Some(mi) = self.state.match_index.get(&p) { if *mi >= n { cnt += 1; } }
-                    }
+                if Chas_active_commit_quorum(
+                    &self.state,
+                    &config.constants,
+                    &n,
+                ) {
+                    return Some(n);
                 }
-                if cnt >= config.constants.quorum_size { return Some(n); }
             }
             n -= 1;
         }
