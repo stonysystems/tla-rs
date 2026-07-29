@@ -3,12 +3,21 @@ use crate::common::collections::hashsets::{
     lemma_hashset_view_finite,
     lemma_set_u64_to_int_len,
 };
-use crate::generated::Raft::types_gen::CMembershipPhase;
+use crate::generated::Raft::types_gen::{
+    CConstants,
+    CLogValue,
+    CMembershipPhase,
+    CState,
+};
 use crate::protocol::Raft::membership::{
+    active_membership_phase_from_raft_log,
+    active_membership_phase_for_state,
+    has_active_election_quorum,
     is_joint_quorum,
     is_majority_of,
     is_quorum_for_phase,
     membership_phase_view,
+    MembershipPhase,
 };
 use std::collections::HashSet;
 use vstd::assert_sets_equal;
@@ -796,6 +805,200 @@ pub fn is_quorum_for_membership_phase(
             )
         },
     }
+}
+
+/// Executably derive the election quorum from the latest configuration
+/// in the committed log prefix.
+pub fn has_active_election_quorum_exec(
+    s: &CState,
+    c: &CConstants,
+) -> (result: bool)
+    ensures
+        result == has_active_election_quorum(s@, c@),
+{
+    if s.commit_index == 0
+        || s.commit_index > s.log.len() as u64
+    {
+        let result = is_majority_of_hashset_membership_view(
+            &s.votes_granted,
+            &c.servers,
+        );
+        proof {
+            assert(
+                active_membership_phase_from_raft_log(
+                    s@.log,
+                    s@.commit_index,
+                    MembershipPhase::Stable {
+                        config: c@.servers,
+                    },
+                ) == (MembershipPhase::Stable {
+                    config: c@.servers,
+                })
+            );
+        }
+        return result;
+    }
+
+    let mut remaining = s.commit_index;
+
+    while remaining > 0
+        invariant
+            0 <= remaining <= s.commit_index,
+            remaining <= s.log.len() as u64,
+            active_membership_phase_from_raft_log(
+                s@.log,
+                s@.commit_index,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            ) == active_membership_phase_from_raft_log(
+                s@.log,
+                remaining as int,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            ),
+        decreases
+            remaining,
+    {
+        let log: &Vec<crate::generated::Raft::types_gen::CLogEntry> = &*s.log;
+        let entry = &log[(remaining - 1) as usize];
+
+        match &entry.payload {
+            CLogValue::Configuration { phase } => {
+                let result = is_quorum_for_membership_phase(
+                    &s.votes_granted,
+                    phase,
+                );
+                proof {
+                    assert(
+                        s@.log[remaining as int - 1].payload
+                        == crate::protocol::Raft::types::LLogValue::Configuration {
+                            phase: phase@,
+                        }
+                    );
+                    assert(
+                        active_membership_phase_from_raft_log(
+                            s@.log,
+                            remaining as int,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        ) == membership_phase_view(phase@)
+                    );
+                    assert(
+                        active_membership_phase_from_raft_log(
+                            s@.log,
+                            s@.commit_index,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        ) == membership_phase_view(phase@)
+                    );
+                    assert(
+                        active_membership_phase_for_state(
+                            s@,
+                            c@,
+                        ) == active_membership_phase_from_raft_log(
+                            s@.log,
+                            s@.commit_index,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        )
+                    );
+                    assert(
+                        active_membership_phase_for_state(
+                            s@,
+                            c@,
+                        ) == membership_phase_view(phase@)
+                    );
+                    assert(
+                        has_active_election_quorum(s@, c@)
+                        == is_quorum_for_phase(
+                            s@.votes_granted,
+                            membership_phase_view(phase@),
+                        )
+                    );
+                }
+                return result;
+            },
+            CLogValue::Data { value } => {
+                proof {
+                    assert(
+                        s@.log[remaining as int - 1].payload
+                        == crate::protocol::Raft::types::LLogValue::Data {
+                            value: *value as int,
+                        }
+                    );
+                    assert(
+                        active_membership_phase_from_raft_log(
+                            s@.log,
+                            remaining as int,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        ) == active_membership_phase_from_raft_log(
+                            s@.log,
+                            remaining as int - 1,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        )
+                    );
+                }
+                remaining = remaining - 1;
+            },
+        }
+    }
+
+    let result = is_majority_of_hashset_membership_view(
+        &s.votes_granted,
+        &c.servers,
+    );
+    proof {
+        assert(
+            active_membership_phase_from_raft_log(
+                s@.log,
+                s@.commit_index,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            ) == (MembershipPhase::Stable {
+                config: c@.servers,
+            })
+        );
+        assert(
+            active_membership_phase_for_state(
+                s@,
+                c@,
+            ) == active_membership_phase_from_raft_log(
+                s@.log,
+                s@.commit_index,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            )
+        );
+        assert(
+            active_membership_phase_for_state(
+                s@,
+                c@,
+            ) == (MembershipPhase::Stable {
+                config: c@.servers,
+            })
+        );
+        assert(
+            has_active_election_quorum(s@, c@)
+            == is_quorum_for_phase(
+                s@.votes_granted,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            )
+        );
+    }
+    result
 }
 
 } // verus!
