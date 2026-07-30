@@ -558,6 +558,11 @@ requires
     (*new_commit_index <= s@.log.len()),
     s@.log[(*new_commit_index - 1)].term == s.current_term,
     has_active_commit_quorum(s@, c@, *new_commit_index as int),
+    commit_interval_stops_at_first_configuration(
+        s@.log,
+        s@.commit_index,
+        *new_commit_index as int,
+    ),
 ensures
     result.0.valid(),
     LAdvanceCommitIndex(s@, result.0@, c@, *new_commit_index as int, result.1@.map(|i, p: CRaftMessage| p@)),
@@ -918,6 +923,7 @@ requires
     c.valid(),
     (!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
         *new_commit_index as int <= s@.log.len()
+        && *new_commit_index <= s.log.len() as u64
         && s.log@[*new_commit_index as int - 1].term == s.current_term
     ),
 ensures
@@ -931,18 +937,30 @@ if (!matches!(s.role, CServerRole::Leader { .. }) || ((*new_commit_index) <= s.c
         (s.clone(), vec![])
 
     } else {
-        let has_quorum = Chas_active_commit_quorum(
-            s,
-            c,
-            new_commit_index,
-        );
-        if !has_quorum {
+        let respects_boundary =
+            Ccommit_interval_stops_at_first_configuration(
+                s,
+                new_commit_index,
+            );
+        if !respects_boundary {
             proof {
                 lemma_empty_msg_map();
             }
             (s.clone(), vec![])
         } else {
-            CAdvanceCommitIndex(s, c, new_commit_index)
+            let has_quorum = Chas_active_commit_quorum(
+            s,
+            c,
+            new_commit_index,
+            );
+            if !has_quorum {
+                proof {
+                    lemma_empty_msg_map();
+                }
+                (s.clone(), vec![])
+            } else {
+                CAdvanceCommitIndex(s, c, new_commit_index)
+            }
         }
     }
 }

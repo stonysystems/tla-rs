@@ -6,6 +6,7 @@ use crate::common::collections::hashsets::{
 };
 use crate::generated::Raft::types_gen::{
     CConstants,
+    CLogEntry,
     CLogValue,
     CMembershipConfig,
     CMembershipPhase,
@@ -16,6 +17,7 @@ use crate::protocol::Raft::membership::{
     active_membership_phase_from_raft_log,
     active_membership_phase_for_state,
     has_active_commit_quorum,
+    commit_interval_stops_at_first_configuration,
     has_active_election_quorum,
     has_active_election_quorum_after_vote,
     is_joint_quorum,
@@ -1531,6 +1533,116 @@ pub fn replicator_set_exec(
         );
     }
     result
+}
+
+/// Executably check that one commit-index advancement stops at the first
+/// Configuration entry in the newly committed interval.
+pub fn commit_interval_stops_at_first_configuration_exec(
+    s: &CState,
+    new_commit_index: &u64,
+) -> (result: bool)
+    requires
+        s.valid(),
+        s.commit_index < *new_commit_index,
+        *new_commit_index as int <= s@.log.len(),
+        *new_commit_index <= s.log.len() as u64,
+    ensures
+        result == commit_interval_stops_at_first_configuration(
+            s@.log,
+            s@.commit_index,
+            *new_commit_index as int,
+        ),
+{
+    let mut cursor = s.commit_index + 1;
+
+    while cursor < *new_commit_index
+        invariant
+            0 < cursor,
+            s.commit_index < cursor,
+            cursor <= *new_commit_index,
+            cursor <= s.log.len() as u64,
+            *new_commit_index as int <= s@.log.len(),
+            forall |checked: int|
+                s@.commit_index <= checked < cursor - 1
+                ==> !(s@.log[checked].payload is Configuration),
+        decreases
+            *new_commit_index - cursor,
+    {
+        let log: &Vec<CLogEntry> = &*s.log;
+        let entry = &log[(cursor - 1) as usize];
+
+        match &entry.payload {
+            CLogValue::Configuration { phase: _ } => {
+                proof {
+                    assert(
+                        s@.log[cursor as int - 1].payload
+                            is Configuration
+                    );
+                    assert(
+                        s@.commit_index
+                            <= cursor as int - 1
+                            < *new_commit_index as int - 1
+                    );
+                    assert(
+                        !commit_interval_stops_at_first_configuration(
+                            s@.log,
+                            s@.commit_index,
+                            *new_commit_index as int,
+                        )
+                    );
+                }
+                return false;
+            },
+            CLogValue::Data { value: _ } => {
+                proof {
+                    assert(
+                        !(s@.log[cursor as int - 1].payload
+                            is Configuration)
+                    );
+                }
+            },
+        }
+
+        cursor = cursor + 1;
+    }
+
+    proof {
+        assert(cursor == *new_commit_index);
+        assert forall |checked: int|
+            s@.commit_index
+                <= checked
+                < *new_commit_index as int - 1
+            implies !(s@.log[checked].payload is Configuration)
+        by {
+            assert(checked < cursor - 1);
+        };
+    }
+
+    true
+}
+
+/// Transpiler-facing name for the verified commit-boundary guard.
+#[allow(non_snake_case)]
+pub fn Ccommit_interval_stops_at_first_configuration(
+    s: &CState,
+    new_commit_index: &u64,
+) -> (result: bool)
+    requires
+        s.valid(),
+        s.commit_index < *new_commit_index,
+        *new_commit_index as int <= s@.log.len(),
+        *new_commit_index <= s.log.len() as u64,
+    ensures
+        result == commit_interval_stops_at_first_configuration(
+            s@.log,
+            s@.commit_index,
+            *new_commit_index as int,
+        ),
+{
+    commit_interval_stops_at_first_configuration_exec(
+        s,
+        new_commit_index,
+    )
 }
 
 /// Decide whether the servers that replicated `idx` form a quorum for

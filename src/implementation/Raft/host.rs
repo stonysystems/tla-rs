@@ -149,7 +149,25 @@ impl RaftHost {
     }
 
     fn find_commit_index(&self, config: &RaftConfig) -> Option<u64> {
-        let mut n = self.state.log.len() as u64;
+        // A commit search is governed by the membership phase derived from
+        // the current committed prefix. Stop the search at the first
+        // Configuration entry so one old-phase quorum cannot skip across a
+        // membership boundary.
+        let mut commit_limit = self.state.log.len() as u64;
+        let mut index = self.state.commit_index;
+
+        while index < commit_limit {
+            if matches!(
+                self.state.log[index as usize].payload,
+                CLogValue::Configuration { .. }
+            ) {
+                commit_limit = index + 1;
+                break;
+            }
+            index += 1;
+        }
+
+        let mut n = commit_limit;
         while n > self.state.commit_index {
             if self.state.log[(n - 1) as usize].term == self.state.current_term {
                 if Chas_active_commit_quorum(
