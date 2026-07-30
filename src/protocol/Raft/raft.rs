@@ -817,6 +817,9 @@ verus! {
         ||| exists |sent_packets: Seq<LRaftMessage>| LTimeout(s, s_, c, sent_packets)
         ||| exists |value: int, sent_packets: Seq<LRaftMessage>|
                 LClientRequest(s, s_, c, value, sent_packets)
+        ||| exists |phase: LMembershipPhase, sent_packets: Seq<LRaftMessage>|
+                LAppendConfigurationEntry(
+                    s, s_, c, phase, sent_packets)
         ||| exists |follower: int, entry_value: int, entry_payload: LLogValue,
                     prev_log_index: int, prev_log_term: int,
                     has_entry: bool, sent_packets: Seq<LRaftMessage>|

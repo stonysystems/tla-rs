@@ -5953,6 +5953,31 @@ verus! {
                     value,
                     sent_packets,
                 );
+            } else if exists |phase: LMembershipPhase|
+                LAppendConfigurationEntry(
+                    s,
+                    s_,
+                    c,
+                    phase,
+                    sent_packets,
+                )
+            {
+                let phase = choose |phase: LMembershipPhase|
+                    LAppendConfigurationEntry(
+                        s,
+                        s_,
+                        c,
+                        phase,
+                        sent_packets,
+                    );
+
+                lemma_append_configuration_preserves_full_history(
+                    s,
+                    s_,
+                    c,
+                    phase,
+                    sent_packets,
+                );
             } else {
                 let pkt = choose |pkt: LRaftPacket| {
                     &&& received_from == Some(pkt.src)

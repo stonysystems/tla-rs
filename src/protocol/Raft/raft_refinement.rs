@@ -37,6 +37,9 @@ pub open spec fn LNextAtomic(s: LState, s_: LState, c: LConstants) -> bool {
             LBecomeLeaderWithMembership(s, s_, c, sent_packets)
     ||| exists |value: int, sent_packets: Seq<LRaftMessage>|
             LClientRequest(s, s_, c, value, sent_packets)
+    ||| exists |phase: LMembershipPhase, sent_packets: Seq<LRaftMessage>|
+            LAppendConfigurationEntry(
+                s, s_, c, phase, sent_packets)
     ||| exists |f: int, ev: int, ep: LLogValue, pli: int, plt: int,
                he: bool, sent_packets: Seq<LRaftMessage>|
             LSendAppendEntries(s, s_, c, f, ev, ep, pli, plt, he, sent_packets)
@@ -350,6 +353,9 @@ ensures
         // Direct match to LNextAtomic
     } else if exists |value: int, sent_packets: Seq<LRaftMessage>|
                   LClientRequest(s, s_, c, value, sent_packets) {
+        // Direct match to LNextAtomic
+    } else if exists |phase: LMembershipPhase, sent_packets: Seq<LRaftMessage>|
+                  LAppendConfigurationEntry(s, s_, c, phase, sent_packets) {
         // Direct match to LNextAtomic
     } else if exists |follower: int, entry_value: int, entry_payload: LLogValue,
                       prev_log_index: int, prev_log_term: int, has_entry: bool,
