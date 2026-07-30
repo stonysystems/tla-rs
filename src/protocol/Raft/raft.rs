@@ -22,6 +22,7 @@ verus! {
         &&& s.log == Seq::<LLogEntry>::empty()
         &&& s.commit_index == 0int
         &&& s.votes_granted == Set::<int>::empty()
+        &&& s.election_membership_phase is None
         &&& s.match_index == Map::<u64, u64>::empty()
         &&& s.next_index == Map::<u64, u64>::empty()
     }
@@ -37,6 +38,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == Set::<int>::empty().insert(c.my_id)
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::RequestVote {
@@ -68,6 +70,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::VoteResponse {
@@ -94,6 +97,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted.insert(voter)
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -111,6 +115,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -130,6 +135,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -153,6 +159,7 @@ verus! {
         })
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -187,6 +194,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::AppendEntries {
@@ -231,6 +239,7 @@ verus! {
             }
         } else { s.commit_index })
         &&& s_.votes_granted == step_down_if_needed(s, ae_term).votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == seq![LRaftMessage::AppendResponse {
@@ -262,6 +271,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index.insert(follower, new_match_index)
         &&& s_.next_index == s.next_index.insert(follower, u64_inc(new_match_index))
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -290,6 +300,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
@@ -314,6 +325,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == new_commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -337,6 +349,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == new_commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -354,6 +367,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == Set::<int>::empty()
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -511,6 +525,7 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted.insert(voter)
+        &&& s_.election_membership_phase == s.election_membership_phase
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
         &&& sent_packets == Seq::<LRaftMessage>::empty()

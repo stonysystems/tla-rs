@@ -143,6 +143,10 @@ verus! {
         // Candidate state
         pub votes_granted: Set<int>,    // Set of servers that granted vote to this candidate
 
+        // Configuration whose quorum elected the current leader.
+        // None before this server has completed an election.
+        pub election_membership_phase: Option<MembershipPhase>,
+
         // Leader state (u64 keys/values match HashMap<u64, u64> View)
         pub match_index: Map<u64, u64>, // For each server, index of highest known replicated entry
         pub next_index: Map<u64, u64>,  // For each server, index of next log entry to send

@@ -68,6 +68,7 @@ pub struct CState {
     pub log: Arc<Vec<CLogEntry>>,
     pub commit_index: u64,
     pub votes_granted: Arc<HashSet<u64>>,
+    pub election_membership_phase: Option<CMembershipPhase>,
     pub match_index: Arc<HashMap<u64, u64>>,
     pub next_index: Arc<HashMap<u64, u64>>,
 }
@@ -92,6 +93,7 @@ impl Clone for CState {
             log: self.log.clone(),
             commit_index: self.commit_index,
             votes_granted: self.votes_granted.clone(),
+            election_membership_phase: self.election_membership_phase.clone(),
             match_index: self.match_index.clone(),
             next_index: self.next_index.clone(),
         }
@@ -116,6 +118,10 @@ impl View for CState {
             log: self.log@.map(|i: int, x: CLogEntry| x@),
             commit_index: self.commit_index as int,
             votes_granted: self.votes_granted@.map(|x: u64| x as int),
+            election_membership_phase: match self.election_membership_phase {
+                Some(phase) => Some(membership_phase_view(phase@)),
+                None => None,
+            },
             match_index: self.match_index@,
             next_index: self.next_index@,
         }
@@ -244,6 +250,77 @@ impl View for CMembershipPhase {
             CMembershipPhase::Stable { config } => LMembershipPhase::Stable { config: config@ },
             CMembershipPhase::Joint { old_config, new_config } => LMembershipPhase::Joint { old_config: old_config@, new_config: new_config@ },
         }
+    }
+}
+
+pub fn clone_membership_config(
+    input: &CMembershipConfig,
+) -> (result: CMembershipConfig)
+    ensures
+        result@ == input@,
+{
+    let mut servers = Vec::<u64>::new();
+    let mut i: usize = 0;
+    while i < input.servers.len()
+        invariant
+            0 <= i <= input.servers.len(),
+            servers@ == input.servers@.subrange(0, i as int),
+        decreases
+            input.servers.len() - i,
+    {
+        servers.push(input.servers[i]);
+        i = i + 1;
+    }
+    assert(
+        input.servers@.subrange(
+            0,
+            input.servers@.len() as int,
+        ) == input.servers@
+    );
+    CMembershipConfig { servers }
+}
+
+pub fn clone_membership_phase(
+    input: &CMembershipPhase,
+) -> (result: CMembershipPhase)
+    ensures
+        result@ == input@,
+{
+    match input {
+        CMembershipPhase::Stable { config } => {
+            CMembershipPhase::Stable {
+                config: clone_membership_config(config),
+            }
+        },
+        CMembershipPhase::Joint {
+            old_config,
+            new_config,
+        } => {
+            CMembershipPhase::Joint {
+                old_config: clone_membership_config(old_config),
+                new_config: clone_membership_config(new_config),
+            }
+        },
+    }
+}
+
+pub fn clone_optional_membership_phase(
+    input: &Option<CMembershipPhase>,
+) -> (result: Option<CMembershipPhase>)
+    ensures
+        match result {
+            Some(phase) => Some(membership_phase_view(phase@)),
+            None => None,
+        } == match input {
+            Some(phase) => Some(membership_phase_view(phase@)),
+            None => None,
+        },
+{
+    match input {
+        Some(phase) => {
+            Some(clone_membership_phase(phase))
+        },
+        None => None,
     }
 }
 

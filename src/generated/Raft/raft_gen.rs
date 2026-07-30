@@ -116,6 +116,7 @@ ensures
         log: Arc::new(vec![]),
         commit_index: 0u64,
         votes_granted: Arc::new(HashSet::new()),
+        election_membership_phase: None,
         match_index: Arc::new(HashMap::new()),
         next_index: Arc::new(HashMap::new()),
         role: CServerRole::Follower,
@@ -148,6 +149,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: Arc::new(__votes_granted),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Candidate,
@@ -196,6 +198,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
@@ -241,6 +244,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: Arc::new(__votes_granted),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![]) }
@@ -275,6 +279,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: Arc::new(HashMap::new()),
     next_index: Arc::new(HashMap::new()),
     role: CServerRole::Leader,
@@ -316,6 +321,7 @@ ensures
     log: Arc::new(__log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![]) }
@@ -354,6 +360,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![CRaftMessage::AppendEntries {
@@ -421,6 +428,7 @@ ensures
         s.commit_index.clone()
     },
     votes_granted: Cstep_down_if_needed(&s, &ae_term).votes_granted,
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
@@ -485,6 +493,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: Arc::new(__match_index),
     next_index: Arc::new(__next_index),
 }, vec![]) }
@@ -527,6 +536,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
 }, vec![]) }
     };
@@ -564,6 +574,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: (*new_commit_index),
     votes_granted: s.votes_granted.clone(),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
 }, vec![])
@@ -596,6 +607,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: Arc::new(HashSet::new()),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: s.match_index.clone(),
     next_index: s.next_index.clone(),
     role: CServerRole::Follower,
@@ -771,6 +783,7 @@ ensures
     log: clone_log(&s.log),
     commit_index: s.commit_index.clone(),
     votes_granted: Arc::new(__votes_granted),
+    election_membership_phase: clone_optional_membership_phase(&s.election_membership_phase),
     match_index: Arc::new(HashMap::new()),
     next_index: Arc::new(HashMap::new()),
     role: CServerRole::Leader,
