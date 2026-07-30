@@ -3461,6 +3461,133 @@ verus! {
         );
     }
 
+    /// The concrete logical commit action changes the active membership by
+    /// at most one legal joint-consensus step.
+    pub proof fn lemma_advance_commit_index_progresses_membership_once(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        new_commit_index: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LAdvanceCommitIndex(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            ),
+            raft_membership_log_is_well_formed(
+                s.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ensures
+            is_legal_phase_progression(
+                active_membership_phase_for_state(s, c),
+                active_membership_phase_for_state(s_, c),
+            ),
+    {
+        let initial_phase = MembershipPhase::Stable {
+            config: c.servers,
+        };
+
+        assert(s_.log == s.log);
+        assert(s_.commit_index == new_commit_index);
+
+        lemma_commit_boundary_progresses_membership_once(
+            s.log,
+            s.commit_index,
+            new_commit_index,
+            initial_phase,
+        );
+
+        assert(
+            active_membership_phase_for_state(s, c)
+                == active_membership_phase_from_raft_log(
+                    s.log,
+                    s.commit_index,
+                    initial_phase,
+                )
+        );
+
+        assert(
+            active_membership_phase_for_state(s_, c)
+                == active_membership_phase_from_raft_log(
+                    s.log,
+                    new_commit_index,
+                    initial_phase,
+                )
+        );
+    }
+
+    /// The composite commit attempt either stutters or performs the same
+    /// one-step legal membership progression as LAdvanceCommitIndex.
+    pub proof fn lemma_try_advance_commit_index_progresses_membership_once(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        new_commit_index: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LTryAdvanceCommitIndex(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            ),
+            raft_membership_log_is_well_formed(
+                s.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ensures
+            is_legal_phase_progression(
+                active_membership_phase_for_state(s, c),
+                active_membership_phase_for_state(s_, c),
+            ),
+    {
+        if !(s.role is Leader)
+            || new_commit_index <= s.commit_index
+            || !has_active_commit_quorum(
+                s,
+                c,
+                new_commit_index,
+            )
+            || !commit_interval_stops_at_first_configuration(
+                s.log,
+                s.commit_index,
+                new_commit_index,
+            )
+        {
+            assert(s_ == s);
+            lemma_phase_progression_reflexive(
+                active_membership_phase_for_state(s, c),
+            );
+        } else {
+            assert(LAdvanceCommitIndex(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            ));
+
+            lemma_advance_commit_index_progresses_membership_once(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            );
+        }
+    }
+
     /// If an interval contains only Data entries, its endpoint membership
     /// phases are equal and any valid endpoint quorums overlap.
     pub proof fn lemma_configuration_free_raft_interval_quorums_intersect(
