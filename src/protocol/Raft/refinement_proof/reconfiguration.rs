@@ -2419,6 +2419,265 @@ verus! {
         }
     }
 
+    /// A suffix containing only Data entries cannot change the active
+    /// membership phase between its two prefix lengths.
+    pub proof fn lemma_configuration_free_interval_preserves_active_phase(
+        log: Seq<LLogEntry>,
+        earlier_len: int,
+        later_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            0 <= earlier_len <= later_len <= log.len(),
+            forall |index: int|
+                earlier_len <= index < later_len
+                ==> !(log[index].payload is Configuration),
+        ensures
+            active_membership_phase_from_raft_log(
+                log,
+                later_len,
+                initial_phase,
+            ) == active_membership_phase_from_raft_log(
+                log,
+                earlier_len,
+                initial_phase,
+            ),
+        decreases later_len - earlier_len,
+    {
+        if earlier_len < later_len {
+            assert(!(log[later_len - 1].payload
+                is Configuration));
+
+            match log[later_len - 1].payload {
+                LLogValue::Data { value: _ } => {
+                    lemma_configuration_free_interval_preserves_active_phase(
+                        log,
+                        earlier_len,
+                        later_len - 1,
+                        initial_phase,
+                    );
+                },
+                LLogValue::Configuration { phase: _ } => {
+                    assert(false);
+                },
+            }
+        }
+    }
+
+    /// Every prefix of the actual tagged Raft log is a legal
+    /// joint-consensus membership history.
+    pub open spec fn raft_membership_log_is_well_formed(
+        log: Seq<LLogEntry>,
+        initial_phase: MembershipPhase,
+    ) -> bool {
+        forall |prefix_len: int|
+            0 <= prefix_len <= log.len()
+            ==> committed_raft_membership_history_is_well_formed(
+                log,
+                prefix_len,
+                initial_phase,
+            )
+    }
+
+    /// The empty physical Raft log has a legal membership history.
+    pub proof fn lemma_empty_raft_membership_log_is_well_formed(
+        initial_phase: MembershipPhase,
+    )
+        ensures
+            raft_membership_log_is_well_formed(
+                Seq::<LLogEntry>::empty(),
+                initial_phase,
+            ),
+    {
+        assert forall |prefix_len: int|
+            0 <= prefix_len <= Seq::<LLogEntry>::empty().len()
+            implies committed_raft_membership_history_is_well_formed(
+                Seq::<LLogEntry>::empty(),
+                prefix_len,
+                initial_phase,
+            )
+        by {
+            assert(prefix_len == 0);
+            lemma_empty_committed_raft_membership_history_is_well_formed(
+                Seq::<LLogEntry>::empty(),
+                initial_phase,
+            );
+        };
+    }
+
+    /// Appending one legal next physical entry preserves legality of
+    /// every prefix of the actual Raft log.
+    pub proof fn lemma_legal_raft_append_preserves_full_history(
+        log: Seq<LLogEntry>,
+        entry: LLogEntry,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                log,
+                initial_phase,
+            ),
+            is_legal_next_raft_membership_log_entry(
+                log.push(entry),
+                log.len() as int,
+                initial_phase,
+            ),
+        ensures
+            raft_membership_log_is_well_formed(
+                log.push(entry),
+                initial_phase,
+            ),
+    {
+        let extended_log = log.push(entry);
+
+        assert forall |prefix_len: int|
+            0 <= prefix_len <= extended_log.len()
+            implies committed_raft_membership_history_is_well_formed(
+                extended_log,
+                prefix_len,
+                initial_phase,
+            )
+        by {
+            if prefix_len <= log.len() {
+                lemma_membership_history_ignores_uncommitted_raft_append(
+                    log,
+                    entry,
+                    prefix_len,
+                );
+
+                assert(committed_raft_membership_history_is_well_formed(
+                    log,
+                    prefix_len,
+                    initial_phase,
+                ));
+            } else {
+                assert(prefix_len == log.len() + 1);
+
+                lemma_membership_history_ignores_uncommitted_raft_append(
+                    log,
+                    entry,
+                    log.len() as int,
+                );
+
+                assert(committed_raft_membership_history_is_well_formed(
+                    log,
+                    log.len() as int,
+                    initial_phase,
+                ));
+
+                assert(committed_membership_log_is_well_formed(
+                    membership_history_from_raft_log(
+                        extended_log,
+                        log.len() as int,
+                    ),
+                    log.len() as int,
+                    initial_phase,
+                ));
+
+                assert(0 <= log.len() <= extended_log.len());
+
+                assert(committed_raft_membership_history_is_well_formed(
+                    extended_log,
+                    log.len() as int,
+                    initial_phase,
+                ));
+
+                lemma_legal_next_raft_entry_extends_actual_history(
+                    extended_log,
+                    log.len() as int,
+                    initial_phase,
+                );
+            }
+        };
+    }
+
+    /// The guarded leader configuration append is a legal extension
+    /// of every actual-log prefix, not only of the committed prefix.
+    pub proof fn lemma_append_configuration_preserves_full_history(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        phase: LMembershipPhase,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LAppendConfigurationEntry(
+                s,
+                s_,
+                c,
+                phase,
+                sent_packets,
+            ),
+            raft_membership_log_is_well_formed(
+                s.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ensures
+            raft_membership_log_is_well_formed(
+                s_.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+    {
+        let initial_phase = MembershipPhase::Stable {
+            config: c.servers,
+        };
+
+        let entry = LLogEntry {
+            term: s.current_term,
+            value: 0int,
+            payload: LLogValue::Configuration {
+                phase,
+            },
+        };
+
+        assert(s_.log == s.log.push(entry));
+
+        lemma_configuration_free_interval_preserves_active_phase(
+            s.log,
+            s.commit_index,
+            s.log.len() as int,
+            initial_phase,
+        );
+
+        assert(is_legal_phase_progression(
+            active_membership_phase_from_raft_log(
+                s.log,
+                s.log.len() as int,
+                initial_phase,
+            ),
+            membership_phase_view(phase),
+        ));
+
+        lemma_uncommitted_raft_entry_does_not_affect_active_phase(
+            s.log,
+            entry,
+            s.log.len() as int,
+            initial_phase,
+        );
+
+        assert(s.log.push(entry)[s.log.len() as int] == entry);
+        assert(s.log.push(entry)[s.log.len() as int].payload
+            == (LLogValue::Configuration {
+                phase,
+            }));
+
+        assert(is_legal_next_raft_membership_log_entry(
+            s.log.push(entry),
+            s.log.len() as int,
+            initial_phase,
+        ));
+
+        lemma_legal_raft_append_preserves_full_history(
+            s.log,
+            entry,
+            initial_phase,
+        );
+    }
+
     /// An empty committed actual-log prefix is always a legal
     /// membership history.
     pub proof fn lemma_empty_committed_raft_membership_history_is_well_formed(
