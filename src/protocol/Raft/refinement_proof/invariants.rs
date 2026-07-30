@@ -4608,6 +4608,122 @@ verus! {
             );
     }
 
+    /// Leaders elected from committed prefixes separated by one guarded
+    /// commit interval have overlapping election quorums.
+    ///
+    /// Unlike the adjacent-prefix theorem, the interval may batch any
+    /// number of Data entries before its optional final Configuration entry.
+    pub proof fn lemma_commit_boundary_election_prefixes_imply_quorum_overlap(
+        ds: RaftDistributedState,
+        earlier_leader: int,
+        later_leader: int,
+        earlier_election_len: int,
+        later_election_len: int,
+    )
+        requires
+            CommittedMembershipPrefixAgreement(ds),
+            AllRaftMembershipLogsWellFormed(ds),
+            CommitIndexBounded(ds),
+            0 <= earlier_leader < ds.num_servers,
+            0 <= later_leader < ds.num_servers,
+            ds.server_states[earlier_leader].role is Leader,
+            ds.server_states[later_leader].role is Leader,
+            0 <= earlier_election_len,
+            earlier_election_len
+                <= ds.server_states[earlier_leader].commit_index,
+            earlier_election_len < later_election_len,
+            later_election_len
+                <= ds.server_states[later_leader].commit_index,
+            commit_interval_stops_at_first_configuration(
+                ds.server_states[later_leader].log,
+                earlier_election_len,
+                later_election_len,
+            ),
+            ds.server_states[earlier_leader].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[earlier_leader].log,
+                    earlier_election_len,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[earlier_leader].servers,
+                    },
+                )),
+            ds.server_states[later_leader].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[later_leader].log,
+                    later_election_len,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[later_leader].servers,
+                    },
+                )),
+            has_recorded_election_quorum(
+                ds.server_states[earlier_leader],
+            ),
+            has_recorded_election_quorum(
+                ds.server_states[later_leader],
+            ),
+        ensures
+            exists |server: int|
+                ds.server_states[earlier_leader]
+                    .votes_granted.contains(server)
+                && ds.server_states[later_leader]
+                    .votes_granted.contains(server),
+    {
+        let later_log =
+            ds.server_states[later_leader].log;
+        let initial_phase = MembershipPhase::Stable {
+            config:
+                ds.server_constants[later_leader].servers,
+        };
+        let earlier_phase =
+            active_membership_phase_from_raft_log(
+                later_log,
+                earlier_election_len,
+                initial_phase,
+            );
+        let later_phase =
+            active_membership_phase_from_raft_log(
+                later_log,
+                later_election_len,
+                initial_phase,
+            );
+
+        assert(active_membership_phase_from_raft_log(
+            ds.server_states[earlier_leader].log,
+            earlier_election_len,
+            MembershipPhase::Stable {
+                config:
+                    ds.server_constants[earlier_leader].servers,
+            },
+        ) == earlier_phase);
+
+        assert(ds.server_states[earlier_leader]
+            .election_membership_phase
+                == Some(earlier_phase));
+        assert(ds.server_states[later_leader]
+            .election_membership_phase
+                == Some(later_phase));
+
+        assert(is_quorum_for_phase(
+            ds.server_states[earlier_leader].votes_granted,
+            earlier_phase,
+        ));
+        assert(is_quorum_for_phase(
+            ds.server_states[later_leader].votes_granted,
+            later_phase,
+        ));
+
+        lemma_commit_boundary_quorums_intersect(
+            later_log,
+            earlier_election_len,
+            later_election_len,
+            initial_phase,
+            ds.server_states[earlier_leader].votes_granted,
+            ds.server_states[later_leader].votes_granted,
+        );
+    }
+
     // =========================================================================
     // Supporting invariant induction: CommitIndexNonnegative
     // =========================================================================
