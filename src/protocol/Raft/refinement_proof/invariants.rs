@@ -3944,6 +3944,112 @@ verus! {
         }
     }
 
+    /// If two leaders' saved election phases come from committed
+    /// prefixes of the same length, StateMachineSafety makes those
+    /// prefixes equal. The leaders therefore used the same dynamic
+    /// membership phase, so their election quorums overlap.
+    pub proof fn lemma_equal_election_prefixes_imply_quorum_overlap(
+        ds: RaftDistributedState,
+        left: int,
+        right: int,
+        election_commit_len: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            StateMachineSafety(ds),
+            0 <= left < ds.num_servers,
+            0 <= right < ds.num_servers,
+            ds.server_states[left].role is Leader,
+            ds.server_states[right].role is Leader,
+            0 <= election_commit_len,
+            election_commit_len
+                <= ds.server_states[left].commit_index,
+            election_commit_len
+                <= ds.server_states[right].commit_index,
+            ds.server_states[left].commit_index
+                <= ds.server_states[left].log.len(),
+            ds.server_states[right].commit_index
+                <= ds.server_states[right].log.len(),
+            ds.server_states[left].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[left].log,
+                    election_commit_len,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[left].servers,
+                    },
+                )),
+            ds.server_states[right].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[right].log,
+                    election_commit_len,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[right].servers,
+                    },
+                )),
+            has_recorded_election_quorum(
+                ds.server_states[left],
+            ),
+            has_recorded_election_quorum(
+                ds.server_states[right],
+            ),
+        ensures
+            exists |server: int|
+                ds.server_states[left].votes_granted.contains(server)
+                && ds.server_states[right].votes_granted.contains(server),
+    {
+        let left_state = ds.server_states[left];
+        let right_state = ds.server_states[right];
+        let initial_phase = MembershipPhase::Stable {
+            config: ds.server_constants[left].servers,
+        };
+
+        assert(ds.server_constants[left].servers
+            == ds.server_constants[right].servers);
+
+        assert forall |index: int|
+            0 <= index < election_commit_len
+            implies left_state.log[index] == right_state.log[index]
+        by {
+            assert(index < left_state.commit_index);
+            assert(index < right_state.commit_index);
+            assert(index < left_state.log.len());
+            assert(index < right_state.log.len());
+        };
+
+        lemma_equal_committed_raft_prefixes_have_same_active_phase(
+            left_state.log,
+            right_state.log,
+            election_commit_len,
+            initial_phase,
+        );
+
+        let phase = active_membership_phase_from_raft_log(
+            left_state.log,
+            election_commit_len,
+            initial_phase,
+        );
+
+        assert(left_state.election_membership_phase
+            == Some(phase));
+        assert(right_state.election_membership_phase
+            == Some(phase));
+
+        assert(is_quorum_for_phase(
+            left_state.votes_granted,
+            phase,
+        ));
+        assert(is_quorum_for_phase(
+            right_state.votes_granted,
+            phase,
+        ));
+
+        lemma_phase_quorums_intersect(
+            left_state.votes_granted,
+            right_state.votes_granted,
+            phase,
+        );
+    }
+
     // =========================================================================
     // Supporting invariant induction: CommitIndexNonnegative
     // =========================================================================
