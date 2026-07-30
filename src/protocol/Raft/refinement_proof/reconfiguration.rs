@@ -125,6 +125,174 @@ verus! {
         }
     }
 
+    /// Project a prefix of the actual tagged Raft log into the
+    /// one-entry-per-index membership-history representation.
+    ///
+    /// Unlike the application-log projection, this does not filter
+    /// configuration entries. Keeping every physical index makes it
+    /// possible to reuse the legal-history lemmas below.
+    pub open spec fn membership_history_from_raft_log(
+        log: Seq<LLogEntry>,
+        prefix_len: int,
+    ) -> Seq<MembershipLogEntry>
+        decreases prefix_len
+    {
+        if prefix_len <= 0 || prefix_len > log.len() {
+            Seq::<MembershipLogEntry>::empty()
+        } else {
+            membership_history_from_raft_log(
+                log,
+                prefix_len - 1,
+            ).push(
+                membership_log_entry_view(
+                    log[prefix_len - 1].payload,
+                ),
+            )
+        }
+    }
+
+    /// A valid projected prefix contains exactly one membership-history
+    /// entry for every physical Raft-log entry in that prefix.
+    pub proof fn lemma_membership_history_from_raft_log_len(
+        log: Seq<LLogEntry>,
+        prefix_len: int,
+    )
+        requires
+            0 <= prefix_len <= log.len(),
+        ensures
+            membership_history_from_raft_log(
+                log,
+                prefix_len,
+            ).len() == prefix_len,
+        decreases prefix_len,
+    {
+        if prefix_len > 0 {
+            lemma_membership_history_from_raft_log_len(
+                log,
+                prefix_len - 1,
+            );
+        }
+    }
+
+    /// Projecting a valid prefix preserves the payload at every
+    /// physical Raft-log index.
+    pub proof fn lemma_membership_history_from_raft_log_index(
+        log: Seq<LLogEntry>,
+        prefix_len: int,
+        index: int,
+    )
+        requires
+            0 <= prefix_len <= log.len(),
+            0 <= index < prefix_len,
+        ensures
+            membership_history_from_raft_log(
+                log,
+                prefix_len,
+            )[index] == membership_log_entry_view(
+                log[index].payload,
+            ),
+        decreases prefix_len,
+    {
+        lemma_membership_history_from_raft_log_len(
+            log,
+            prefix_len,
+        );
+
+        if index < prefix_len - 1 {
+            lemma_membership_history_from_raft_log_index(
+                log,
+                prefix_len - 1,
+                index,
+            );
+        } else {
+            assert(index == prefix_len - 1);
+            lemma_membership_history_from_raft_log_len(
+                log,
+                prefix_len - 1,
+            );
+        }
+    }
+
+    /// The proof-history projection and the actual tagged Raft log
+    /// derive exactly the same active membership phase.
+    pub proof fn lemma_projected_membership_history_has_same_active_phase(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            0 <= committed_len <= log.len(),
+        ensures
+            active_membership_phase(
+                membership_history_from_raft_log(
+                    log,
+                    committed_len,
+                ),
+                committed_len,
+                initial_phase,
+            ) == active_membership_phase_from_raft_log(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+        decreases committed_len,
+    {
+        if committed_len > 0 {
+            let previous_history =
+                membership_history_from_raft_log(
+                    log,
+                    committed_len - 1,
+                );
+
+            let final_entry = membership_log_entry_view(
+                log[committed_len - 1].payload,
+            );
+
+            assert(
+                membership_history_from_raft_log(
+                    log,
+                    committed_len,
+                ) == previous_history.push(final_entry)
+            );
+
+            lemma_membership_history_from_raft_log_len(
+                log,
+                committed_len - 1,
+            );
+
+            match log[committed_len - 1].payload {
+                LLogValue::Data { value: _ } => {
+                    lemma_uncommitted_entry_does_not_affect_active_phase(
+                        previous_history,
+                        final_entry,
+                        committed_len - 1,
+                        initial_phase,
+                    );
+
+                    lemma_projected_membership_history_has_same_active_phase(
+                        log,
+                        committed_len - 1,
+                        initial_phase,
+                    );
+                },
+                LLogValue::Configuration { phase } => {
+                    assert(final_entry
+                        == (MembershipLogEntry::Configuration {
+                            phase: membership_phase_view(phase),
+                        }));
+
+                    assert(
+                        active_membership_phase(
+                            previous_history.push(final_entry),
+                            committed_len,
+                            initial_phase,
+                        ) == membership_phase_view(phase)
+                    );
+                },
+            }
+        }
+    }
+
     /// Ordinary executable data remains ordinary data in the proof log.
     pub proof fn lemma_data_log_value_view(
         value: int,
