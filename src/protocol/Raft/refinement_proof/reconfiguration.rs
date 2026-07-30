@@ -3334,6 +3334,68 @@ verus! {
         };
     }
 
+    /// If an interval contains only Data entries, its endpoint membership
+    /// phases are equal and any valid endpoint quorums overlap.
+    pub proof fn lemma_configuration_free_raft_interval_quorums_intersect(
+        log: Seq<LLogEntry>,
+        earlier_len: int,
+        later_len: int,
+        initial_phase: MembershipPhase,
+        earlier_quorum: Set<int>,
+        later_quorum: Set<int>,
+    )
+        requires
+            0 <= earlier_len <= later_len <= log.len(),
+            forall |index: int|
+                earlier_len <= index < later_len
+                ==> !(log[index].payload is Configuration),
+            is_quorum_for_phase(
+                earlier_quorum,
+                active_membership_phase_from_raft_log(
+                    log,
+                    earlier_len,
+                    initial_phase,
+                ),
+            ),
+            is_quorum_for_phase(
+                later_quorum,
+                active_membership_phase_from_raft_log(
+                    log,
+                    later_len,
+                    initial_phase,
+                ),
+            ),
+        ensures
+            exists |server: int|
+                earlier_quorum.contains(server)
+                && later_quorum.contains(server),
+    {
+        lemma_configuration_free_interval_preserves_active_phase(
+            log,
+            earlier_len,
+            later_len,
+            initial_phase,
+        );
+
+        let phase = active_membership_phase_from_raft_log(
+            log,
+            earlier_len,
+            initial_phase,
+        );
+
+        assert(active_membership_phase_from_raft_log(
+            log,
+            later_len,
+            initial_phase,
+        ) == phase);
+
+        lemma_phase_quorums_intersect(
+            earlier_quorum,
+            later_quorum,
+            phase,
+        );
+    }
+
     /// A normal client command is a Data entry, so appending it cannot
     /// violate the legal Stable-to-Joint-to-Stable membership order.
     pub proof fn lemma_client_request_preserves_full_membership_history(
