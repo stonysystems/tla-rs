@@ -30,6 +30,19 @@ verus! {
         },
     }
 
+    /// Mathematical membership phase used by quorum and provenance
+    /// proofs. It lives with the dependency-neutral Raft datatypes so
+    /// protocol state can remember the phase used for an election.
+    pub enum MembershipPhase {
+        Stable {
+            config: Set<int>,
+        },
+        Joint {
+            old_config: Set<int>,
+            new_config: Set<int>,
+        },
+    }
+
     /// A value that can be replicated through the Raft log.
     ///
     /// Ordinary data commands retain their integer value, while

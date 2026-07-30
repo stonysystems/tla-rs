@@ -7,6 +7,8 @@ use crate::protocol::Raft::types::{
     LState,
 };
 use vstd::prelude::*;
+pub use crate::protocol::Raft::types::MembershipPhase;
+
 
 verus! {
 
@@ -31,18 +33,6 @@ verus! {
         &&& quorum.subset_of(old_config + new_config)
         &&& is_majority_of(quorum.intersect(old_config), old_config)
         &&& is_majority_of(quorum.intersect(new_config), new_config)
-    }
-
-    /// The cluster is either using one stable configuration or
-    /// temporarily requiring approval from old and new configurations.
-    pub enum MembershipPhase {
-        Stable {
-            config: Set<int>,
-        },
-        Joint {
-            old_config: Set<int>,
-            new_config: Set<int>,
-        },
     }
 
     /// Mathematical view of an executable membership configuration.
