@@ -8,6 +8,7 @@ use crate::protocol::Raft::raft::{
     LClientRequest,
     LHandleVoteResponseMsg,
     LHandleVoteResponseMsgWithMembership,
+    LReceiveVoteAndBecomeLeader,
     LTryAdvanceCommitIndex,
     LTryAdvanceCommitIndexWithMembership,
     LFollowerAppendEntries,
@@ -1129,6 +1130,74 @@ verus! {
                     }
                 };
             }
+        }
+    }
+
+    /// The Candidate-to-Leader action records the membership phase used
+    /// for the election, and its vote set is a quorum for that phase.
+    pub proof fn lemma_receive_vote_and_become_leader_records_quorum(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        term: int,
+        granted: bool,
+        voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LReceiveVoteAndBecomeLeader(
+                s,
+                s_,
+                c,
+                term,
+                granted,
+                voter,
+                sent_packets,
+            ),
+            has_active_election_quorum_after_vote(s, c, voter),
+        ensures
+            has_recorded_election_quorum(s_),
+    {
+        assert(s_.role is Leader);
+        assert(s_.votes_granted
+            == s.votes_granted.insert(voter));
+        assert(s_.election_membership_phase
+            == Some(active_membership_phase_for_state(s, c)));
+        assert(is_quorum_for_phase(
+            s_.votes_granted,
+            active_membership_phase_for_state(s, c),
+        ));
+    }
+
+    /// The full vote-response handler preserves a valid saved election
+    /// certificate, or creates one when the candidate becomes leader.
+    pub proof fn lemma_vote_response_preserves_recorded_election_quorum(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        term: int,
+        granted: bool,
+        voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LHandleVoteResponseMsg(
+                s, s_, c, term, granted, voter, sent_packets,
+            ),
+            has_recorded_election_quorum(s),
+        ensures
+            has_recorded_election_quorum(s_),
+    {
+        let s_mid = step_down_if_needed(s, term);
+        if s_mid.role is Candidate
+            && term >= s_mid.current_term
+            && granted
+            && c.servers.contains(voter)
+            && has_active_election_quorum_after_vote(s_mid, c, voter)
+        {
+            lemma_receive_vote_and_become_leader_records_quorum(
+                s_mid, s_, c, term, granted, voter, sent_packets,
+            );
         }
     }
 

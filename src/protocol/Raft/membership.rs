@@ -136,6 +136,25 @@ verus! {
         )
     }
 
+    /// A leader's saved election certificate is valid when the votes it
+    /// collected form a quorum for the exact membership phase saved at
+    /// election time.
+    pub open spec fn has_recorded_election_quorum(
+        s: LState,
+    ) -> bool {
+        if s.role is Leader {
+            match s.election_membership_phase {
+                Some(phase) => is_quorum_for_phase(
+                    s.votes_granted,
+                    phase,
+                ),
+                None => false,
+            }
+        } else {
+            true
+        }
+    }
+
     /// The set whose cardinality is currently returned by
     /// the fixed-membership replicator_count helper.
     pub open spec fn replicator_set(
