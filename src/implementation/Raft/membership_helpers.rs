@@ -7,8 +7,10 @@ use crate::common::collections::hashsets::{
 use crate::generated::Raft::types_gen::{
     CConstants,
     CLogValue,
+    CMembershipConfig,
     CMembershipPhase,
     CState,
+    clone_membership_phase,
 };
 use crate::protocol::Raft::membership::{
     active_membership_phase_from_raft_log,
@@ -810,6 +812,200 @@ pub fn is_quorum_for_membership_phase(
             )
         },
     }
+}
+
+pub proof fn lemma_membership_vector_view_matches_set(
+    servers: Seq<u64>,
+    concrete: Set<u64>,
+)
+    requires
+        servers.to_set() == concrete,
+    ensures
+        servers.map(
+            |i: int, server: u64| server as int,
+        ).to_set() == concrete.map(
+            |server: u64| server as int,
+        ),
+{
+    let cast = |server: u64| server as int;
+    servers.lemma_to_set_map_commutes(cast);
+    assert(
+        servers.map(
+            |i: int, server: u64| server as int,
+        ) == servers.map_values(cast)
+    ) by {
+        assert_seqs_equal!(
+            servers.map(
+                |i: int, server: u64| server as int,
+            ),
+            servers.map_values(cast)
+        );
+    };
+}
+
+/// Return the concrete membership phase selected by the latest
+/// configuration entry in the committed log prefix.
+pub fn active_membership_phase_exec(
+    s: &CState,
+    c: &CConstants,
+) -> (result: CMembershipPhase)
+    ensures
+        membership_phase_view(result@)
+        == active_membership_phase_for_state(s@, c@),
+{
+    if s.commit_index == 0
+        || s.commit_index > s.log.len() as u64
+    {
+        let servers = hashset_to_vec(&c.servers);
+        proof {
+            assert_sets_equal!(servers@.to_set(), c.servers@);
+            lemma_membership_vector_view_matches_set(
+                servers@,
+                c.servers@,
+            );
+        }
+        let result = CMembershipPhase::Stable {
+            config: CMembershipConfig { servers },
+        };
+        proof {
+            assert(
+                membership_phase_view(result@)
+                == (MembershipPhase::Stable {
+                    config: c@.servers,
+                })
+            );
+            assert(
+                active_membership_phase_for_state(s@, c@)
+                == (MembershipPhase::Stable {
+                    config: c@.servers,
+                })
+            );
+        }
+        return result;
+    }
+
+    let mut remaining = s.commit_index;
+
+    while remaining > 0
+        invariant
+            0 <= remaining <= s.commit_index,
+            remaining <= s.log.len() as u64,
+            active_membership_phase_from_raft_log(
+                s@.log,
+                s@.commit_index,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            ) == active_membership_phase_from_raft_log(
+                s@.log,
+                remaining as int,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            ),
+        decreases
+            remaining,
+    {
+        let log: &Vec<crate::generated::Raft::types_gen::CLogEntry> = &*s.log;
+        let entry = &log[(remaining - 1) as usize];
+
+        match &entry.payload {
+            CLogValue::Configuration { phase } => {
+                let result = clone_membership_phase(phase);
+                proof {
+                    assert(
+                        s@.log[remaining as int - 1].payload
+                        == crate::protocol::Raft::types::LLogValue::Configuration {
+                            phase: phase@,
+                        }
+                    );
+                    assert(
+                        active_membership_phase_from_raft_log(
+                            s@.log,
+                            remaining as int,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        ) == membership_phase_view(phase@)
+                    );
+                    assert(
+                        active_membership_phase_from_raft_log(
+                            s@.log,
+                            s@.commit_index,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        ) == membership_phase_view(phase@)
+                    );
+                }
+                return result;
+            },
+            CLogValue::Data { value } => {
+                proof {
+                    assert(
+                        s@.log[remaining as int - 1].payload
+                        == crate::protocol::Raft::types::LLogValue::Data {
+                            value: *value as int,
+                        }
+                    );
+                    assert(
+                        active_membership_phase_from_raft_log(
+                            s@.log,
+                            remaining as int,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        ) == active_membership_phase_from_raft_log(
+                            s@.log,
+                            remaining as int - 1,
+                            MembershipPhase::Stable {
+                                config: c@.servers,
+                            },
+                        )
+                    );
+                }
+                remaining = remaining - 1;
+            },
+        }
+    }
+
+    let servers = hashset_to_vec(&c.servers);
+    proof {
+        assert_sets_equal!(servers@.to_set(), c.servers@);
+        lemma_membership_vector_view_matches_set(
+            servers@,
+            c.servers@,
+        );
+    }
+    let result = CMembershipPhase::Stable {
+        config: CMembershipConfig { servers },
+    };
+    proof {
+        assert(
+            active_membership_phase_from_raft_log(
+                s@.log,
+                s@.commit_index,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            ) == (MembershipPhase::Stable {
+                config: c@.servers,
+            })
+        );
+        assert(
+            active_membership_phase_for_state(
+                s@,
+                c@,
+            ) == active_membership_phase_from_raft_log(
+                s@.log,
+                s@.commit_index,
+                MembershipPhase::Stable {
+                    config: c@.servers,
+                },
+            )
+        );
+    }
+    result
 }
 
 /// Executably derive the election quorum from the latest configuration

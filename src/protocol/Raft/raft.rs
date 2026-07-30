@@ -1,4 +1,5 @@
 use crate::protocol::Raft::membership::{
+    active_membership_phase_for_state,
     has_active_commit_quorum,
     has_active_election_quorum,
     has_active_election_quorum_after_vote,
@@ -115,7 +116,9 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
-        &&& s_.election_membership_phase == s.election_membership_phase
+        &&& s_.election_membership_phase == Some(
+            active_membership_phase_for_state(s, c),
+        )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -135,7 +138,9 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
-        &&& s_.election_membership_phase == s.election_membership_phase
+        &&& s_.election_membership_phase == Some(
+            active_membership_phase_for_state(s, c),
+        )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -525,7 +530,9 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted.insert(voter)
-        &&& s_.election_membership_phase == s.election_membership_phase
+        &&& s_.election_membership_phase == Some(
+            active_membership_phase_for_state(s, c),
+        )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
         &&& sent_packets == Seq::<LRaftMessage>::empty()
