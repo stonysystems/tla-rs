@@ -3,6 +3,7 @@ use crate::protocol::Raft::membership::*;
 use crate::protocol::Raft::raft::{
     LAdvanceCommitIndex,
     LAdvanceCommitIndexWithMembership,
+    LAppendConfigurationEntry,
     LBecomeLeader,
     LBecomeLeaderWithMembership,
     LClientRequest,
@@ -810,75 +811,6 @@ verus! {
                 committed_len - 1,
             );
         }
-    }
-
-    /// No configuration change is already waiting in the uncommitted
-    /// suffix. This enforces one membership transition at a time.
-    pub open spec fn uncommitted_suffix_has_no_configuration(
-        log: Seq<LLogEntry>,
-        committed_len: int,
-    ) -> bool {
-        &&& 0 <= committed_len <= log.len()
-        &&& forall |index: int|
-            committed_len <= index < log.len()
-            ==> !(log[index].payload is Configuration)
-    }
-
-    /// A leader appends a legal membership configuration entry.
-    ///
-    /// The entry is initially uncommitted, so it does not immediately
-    /// change either active membership or application-visible output.
-    /// A second configuration cannot be appended until this one commits.
-    pub open spec fn LAppendConfigurationEntry(
-        s: LState,
-        s_: LState,
-        c: LConstants,
-        phase: LMembershipPhase,
-        sent_packets: Seq<LRaftMessage>,
-    ) -> bool {
-        let initial_phase = MembershipPhase::Stable {
-            config: c.servers,
-        };
-
-        let current_phase = active_membership_phase_from_raft_log(
-            s.log,
-            s.commit_index,
-            initial_phase,
-        );
-
-        let requested_phase = membership_phase_view(phase);
-
-        &&& s.role is Leader
-        &&& 0 <= s.commit_index
-        &&& s.commit_index <= s.log.len()
-        &&& uncommitted_suffix_has_no_configuration(
-            s.log,
-            s.commit_index,
-        )
-        &&& is_legal_phase_progression(
-            current_phase,
-            requested_phase,
-        )
-        &&& s_.current_term == s.current_term
-        &&& s_.role == s.role
-        &&& s_.has_voted == s.has_voted
-        &&& s_.voted_for == s.voted_for
-        &&& s_.log == s.log.push(
-            LLogEntry {
-                term: s.current_term,
-                value: 0int,
-                payload: LLogValue::Configuration {
-                    phase,
-                },
-            },
-        )
-        &&& s_.commit_index == s.commit_index
-        &&& s_.votes_granted == s.votes_granted
-        &&& s_.election_membership_phase
-            == s.election_membership_phase
-        &&& s_.match_index == s.match_index
-        &&& s_.next_index == s.next_index
-        &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 
     /// Appending a legal but uncommitted configuration entry preserves
@@ -1916,49 +1848,6 @@ verus! {
 
         assert(joint_quorum.contains(server));
         assert(stable_quorum.contains(server));
-    }
-
-    /// Legal membership-phase progression for joint consensus.
-    ///
-    /// A stable configuration may remain stable or enter a joint phase
-    /// whose old configuration matches it. A joint phase may remain
-    /// unchanged or finish at its new configuration.
-    pub open spec fn is_legal_phase_progression(
-        phase: MembershipPhase,
-        phase_: MembershipPhase,
-    ) -> bool {
-        match phase {
-            MembershipPhase::Stable { config } => {
-                match phase_ {
-                    MembershipPhase::Stable { config: config_ } => {
-                        config_ == config
-                    },
-                    MembershipPhase::Joint {
-                        old_config,
-                        new_config: _,
-                    } => {
-                        old_config == config
-                    },
-                }
-            },
-            MembershipPhase::Joint {
-                old_config,
-                new_config,
-            } => {
-                match phase_ {
-                    MembershipPhase::Joint {
-                        old_config: old_config_,
-                        new_config: new_config_,
-                    } => {
-                        old_config_ == old_config
-                            && new_config_ == new_config
-                    },
-                    MembershipPhase::Stable { config } => {
-                        config == new_config
-                    },
-                }
-            },
-        }
     }
 
     /// Every membership phase legally progresses to itself.

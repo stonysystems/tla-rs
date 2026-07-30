@@ -1,8 +1,11 @@
 use crate::protocol::Raft::membership::{
+    active_membership_phase_from_raft_log,
     active_membership_phase_for_state,
     has_active_commit_quorum,
     has_active_election_quorum,
     has_active_election_quorum_after_vote,
+    is_legal_phase_progression,
+    uncommitted_suffix_has_no_configuration,
 };
 use crate::protocol::Raft::types::*;
 use vstd::prelude::*;
@@ -143,6 +146,63 @@ verus! {
         )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
+        &&& sent_packets == Seq::<LRaftMessage>::empty()
+    }
+
+    /// A leader appends a legal membership configuration entry.
+    ///
+    /// The entry is initially uncommitted, so it does not immediately
+    /// change either active membership or application-visible output.
+    /// A second configuration cannot be appended until this one commits.
+    pub open spec fn LAppendConfigurationEntry(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        phase: LMembershipPhase,
+        sent_packets: Seq<LRaftMessage>,
+    ) -> bool {
+        let initial_phase = MembershipPhase::Stable {
+            config: c.servers,
+        };
+
+        let current_phase = active_membership_phase_from_raft_log(
+            s.log,
+            s.commit_index,
+            initial_phase,
+        );
+
+        let requested_phase = membership_phase_view(phase);
+
+        &&& s.role is Leader
+        &&& 0 <= s.commit_index
+        &&& s.commit_index <= s.log.len()
+        &&& uncommitted_suffix_has_no_configuration(
+            s.log,
+            s.commit_index,
+        )
+        &&& is_legal_phase_progression(
+            current_phase,
+            requested_phase,
+        )
+        &&& s_.current_term == s.current_term
+        &&& s_.role == s.role
+        &&& s_.has_voted == s.has_voted
+        &&& s_.voted_for == s.voted_for
+        &&& s_.log == s.log.push(
+            LLogEntry {
+                term: s.current_term,
+                value: 0int,
+                payload: LLogValue::Configuration {
+                    phase,
+                },
+            },
+        )
+        &&& s_.commit_index == s.commit_index
+        &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase
+            == s.election_membership_phase
+        &&& s_.match_index == s.match_index
+        &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 

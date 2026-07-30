@@ -181,4 +181,59 @@ verus! {
             active_membership_phase_for_state(s, c),
         )
     }
+
+    /// Legal membership-phase progression for joint consensus.
+    ///
+    /// A stable configuration may remain stable or enter a joint phase
+    /// whose old configuration matches it. A joint phase may remain
+    /// unchanged or finish at its new configuration.
+    pub open spec fn is_legal_phase_progression(
+        phase: MembershipPhase,
+        phase_: MembershipPhase,
+    ) -> bool {
+        match phase {
+            MembershipPhase::Stable { config } => {
+                match phase_ {
+                    MembershipPhase::Stable { config: config_ } => {
+                        config_ == config
+                    },
+                    MembershipPhase::Joint {
+                        old_config,
+                        new_config: _,
+                    } => {
+                        old_config == config
+                    },
+                }
+            },
+            MembershipPhase::Joint {
+                old_config,
+                new_config,
+            } => {
+                match phase_ {
+                    MembershipPhase::Joint {
+                        old_config: old_config_,
+                        new_config: new_config_,
+                    } => {
+                        old_config_ == old_config
+                            && new_config_ == new_config
+                    },
+                    MembershipPhase::Stable { config } => {
+                        config == new_config
+                    },
+                }
+            },
+        }
+    }
+
+    /// No configuration change is already waiting in the uncommitted
+    /// suffix. This enforces one membership transition at a time.
+    pub open spec fn uncommitted_suffix_has_no_configuration(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+    ) -> bool {
+        &&& 0 <= committed_len <= log.len()
+        &&& forall |index: int|
+            committed_len <= index < log.len()
+            ==> !(log[index].payload is Configuration)
+    }
 }
