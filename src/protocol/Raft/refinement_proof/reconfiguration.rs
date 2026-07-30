@@ -2257,6 +2257,168 @@ verus! {
         )
     }
 
+    /// The next physical Raft-log entry is legal for membership.
+    /// Data entries preserve the phase; Configuration entries must
+    /// follow the Stable-to-Joint-to-Stable progression.
+    pub open spec fn is_legal_next_raft_membership_log_entry(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    ) -> bool {
+        &&& 0 <= committed_len < log.len()
+        &&& match log[committed_len].payload {
+            LLogValue::Data { value: _ } => true,
+            LLogValue::Configuration { phase } => {
+                is_legal_phase_progression(
+                    active_membership_phase_from_raft_log(
+                        log,
+                        committed_len,
+                        initial_phase,
+                    ),
+                    membership_phase_view(phase),
+                )
+            },
+        }
+    }
+
+    /// Committing one legal next entry extends a well-formed committed
+    /// history of the actual tagged Raft log.
+    pub proof fn lemma_legal_next_raft_entry_extends_actual_history(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            committed_raft_membership_history_is_well_formed(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+            is_legal_next_raft_membership_log_entry(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+        ensures
+            committed_raft_membership_history_is_well_formed(
+                log,
+                committed_len + 1,
+                initial_phase,
+            ),
+    {
+        let history = membership_history_from_raft_log(
+            log,
+            committed_len,
+        );
+
+        let entry = membership_log_entry_view(
+            log[committed_len].payload,
+        );
+
+        let extended_history = membership_history_from_raft_log(
+            log,
+            committed_len + 1,
+        );
+
+        lemma_membership_history_from_raft_log_len(
+            log,
+            committed_len,
+        );
+
+        assert(extended_history == history.push(entry));
+
+        lemma_projected_membership_history_has_same_active_phase(
+            log,
+            committed_len,
+            initial_phase,
+        );
+
+        match log[committed_len].payload {
+            LLogValue::Data { value } => {
+                assert(entry == (MembershipLogEntry::Data {
+                    value,
+                }));
+                assert(is_legal_next_membership_log_entry(
+                    history,
+                    committed_len,
+                    initial_phase,
+                    entry,
+                ));
+            },
+            LLogValue::Configuration { phase } => {
+                assert(entry == (MembershipLogEntry::Configuration {
+                    phase: membership_phase_view(phase),
+                }));
+                assert(is_legal_phase_progression(
+                    active_membership_phase(
+                        history,
+                        committed_len,
+                        initial_phase,
+                    ),
+                    membership_phase_view(phase),
+                ));
+                assert(is_legal_next_membership_log_entry(
+                    history,
+                    committed_len,
+                    initial_phase,
+                    entry,
+                ));
+            },
+        }
+
+        lemma_legal_entry_extends_well_formed_committed_log(
+            history,
+            initial_phase,
+            entry,
+        );
+    }
+
+    /// Committing an interval of individually legal actual-log entries
+    /// preserves the full legal joint-consensus membership history.
+    pub proof fn lemma_legal_actual_commit_interval_extends_history(
+        log: Seq<LLogEntry>,
+        earlier_len: int,
+        later_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            committed_raft_membership_history_is_well_formed(
+                log,
+                earlier_len,
+                initial_phase,
+            ),
+            earlier_len <= later_len <= log.len(),
+            forall |committed_len: int|
+                earlier_len <= committed_len < later_len
+                ==> is_legal_next_raft_membership_log_entry(
+                    log,
+                    committed_len,
+                    initial_phase,
+                ),
+        ensures
+            committed_raft_membership_history_is_well_formed(
+                log,
+                later_len,
+                initial_phase,
+            ),
+        decreases later_len - earlier_len,
+    {
+        if earlier_len < later_len {
+            lemma_legal_next_raft_entry_extends_actual_history(
+                log,
+                earlier_len,
+                initial_phase,
+            );
+
+            lemma_legal_actual_commit_interval_extends_history(
+                log,
+                earlier_len + 1,
+                later_len,
+                initial_phase,
+            );
+        }
+    }
+
     /// An empty committed actual-log prefix is always a legal
     /// membership history.
     pub proof fn lemma_empty_committed_raft_membership_history_is_well_formed(
