@@ -3278,6 +3278,62 @@ verus! {
         );
     }
 
+    /// Every physical entry in an interval of a well-formed Raft log
+    /// advances membership by one legal step.
+    ///
+    /// This deliberately describes a chain of adjacent steps rather than
+    /// claiming that quorums at arbitrarily distant endpoints overlap.
+    pub proof fn lemma_well_formed_raft_log_interval_progresses_legally(
+        log: Seq<LLogEntry>,
+        earlier_len: int,
+        later_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                log,
+                initial_phase,
+            ),
+            0 <= earlier_len <= later_len <= log.len(),
+        ensures
+            forall |committed_len: int|
+                earlier_len < committed_len <= later_len
+                ==> is_legal_phase_progression(
+                    active_membership_phase_from_raft_log(
+                        log,
+                        committed_len - 1,
+                        initial_phase,
+                    ),
+                    #[trigger] active_membership_phase_from_raft_log(
+                        log,
+                        committed_len,
+                        initial_phase,
+                    ),
+                ),
+    {
+        assert forall |committed_len: int|
+            earlier_len < committed_len <= later_len
+            implies is_legal_phase_progression(
+                active_membership_phase_from_raft_log(
+                    log,
+                    committed_len - 1,
+                    initial_phase,
+                ),
+                #[trigger] active_membership_phase_from_raft_log(
+                    log,
+                    committed_len,
+                    initial_phase,
+                ),
+            )
+        by {
+            lemma_adjacent_committed_raft_prefixes_progress_legally(
+                log,
+                committed_len,
+                initial_phase,
+            );
+        };
+    }
+
     /// A normal client command is a Data entry, so appending it cannot
     /// violate the legal Stable-to-Joint-to-Stable membership order.
     pub proof fn lemma_client_request_preserves_full_membership_history(
