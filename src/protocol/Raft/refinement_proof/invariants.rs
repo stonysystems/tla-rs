@@ -494,6 +494,25 @@ verus! {
     // Composite Invariant
     // =========================================================================
 
+    /// Every server's complete physical Raft log follows the legal
+    /// Stable-to-Joint-to-Stable membership progression.
+    ///
+    /// This is deliberately stronger than checking only commit_index:
+    /// a follower may later commit an entry it replicated earlier, so
+    /// legality must already hold when that entry enters its log.
+    pub open spec fn AllRaftMembershipLogsWellFormed(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |server_id: int|
+            0 <= server_id < ds.num_servers
+            ==> raft_membership_log_is_well_formed(
+                ds.server_states[server_id].log,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[server_id].servers,
+                },
+            )
+    }
+
     /// The full inductive invariant: conjunction of all safety invariants
     pub open spec fn RaftSafetyInvariant(ds: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
@@ -578,6 +597,39 @@ verus! {
         // - AppendEntriesLeaderCommitBound: no packets, vacuously true
         // Log structure invariants: empty logs + current_term = 0, vacuously/trivially true
         // - CurrentTermGeLogTerms, LogTermsMonotonic, TermsNonNegative
+    }
+
+    /// Initialization establishes full membership-history legality:
+    /// every server starts with the empty Raft log.
+    pub proof fn lemma_init_establishes_all_raft_membership_logs_well_formed(
+        ds: RaftDistributedState,
+    )
+        requires
+            RaftDistributedInit(ds),
+        ensures
+            AllRaftMembershipLogsWellFormed(ds),
+    {
+        assert forall |server_id: int|
+            0 <= server_id < ds.num_servers
+            implies raft_membership_log_is_well_formed(
+                ds.server_states[server_id].log,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[server_id].servers,
+                },
+            )
+        by {
+            assert(LInit(
+                ds.server_states[server_id],
+                ds.server_constants[server_id],
+            ));
+            assert(ds.server_states[server_id].log
+                == Seq::<LLogEntry>::empty());
+            lemma_empty_raft_membership_log_is_well_formed(
+                MembershipPhase::Stable {
+                    config: ds.server_constants[server_id].servers,
+                },
+            );
+        };
     }
 
     // =========================================================================
@@ -5310,6 +5362,8 @@ verus! {
                 == ds_.server_states[server_id].log[k].term,
             ds.server_states[ae_leader].log[k].value
                 == ds_.server_states[server_id].log[k].value,
+            ds.server_states[ae_leader].log[k].payload
+                == ds_.server_states[server_id].log[k].payload,
     {
         let s = ds.server_states[server_id];
         let s_ = ds_.server_states[server_id];
@@ -5323,6 +5377,7 @@ verus! {
             &&& ds.server_states[al].log.len() > k
             &&& ds.server_states[al].log[k].term == s_.log[k].term
             &&& ds.server_states[al].log[k].value == s_.log[k].value
+            &&& ds.server_states[al].log[k].payload == s_.log[k].payload
         }
     }
 
@@ -5672,6 +5727,8 @@ verus! {
                 &&& ds.server_states[ae_leader].log.len() > k
                 &&& ds.server_states[ae_leader].log[k].term == s_.log[k].term
                 &&& ds.server_states[ae_leader].log[k].value == s_.log[k].value
+                &&& ds.server_states[ae_leader].log[k].payload
+                    == s_.log[k].payload
                 &&& (k > 0 ==> s.log[k - 1].term
                         == ds.server_states[ae_leader].log[k - 1].term)
             }

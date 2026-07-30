@@ -3399,6 +3399,78 @@ verus! {
         }
     }
 
+    /// If two logs have the same prefix and the same tagged payload at
+    /// the next index, legality of that next entry transfers between
+    /// the logs. Terms and legacy scalar values do not affect membership.
+    pub proof fn lemma_equal_prefix_and_payload_transfer_next_entry_legality(
+        source_log: Seq<LLogEntry>,
+        target_log: Seq<LLogEntry>,
+        index: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                source_log,
+                initial_phase,
+            ),
+            0 <= index < source_log.len(),
+            index < target_log.len(),
+            forall |prefix_index: int|
+                0 <= prefix_index < index
+                ==> source_log[prefix_index]
+                    == target_log[prefix_index],
+            source_log[index].payload
+                == target_log[index].payload,
+        ensures
+            is_legal_next_raft_membership_log_entry(
+                target_log,
+                index,
+                initial_phase,
+            ),
+    {
+        lemma_full_history_next_raft_entry_is_legal(
+            source_log,
+            index,
+            initial_phase,
+        );
+
+        lemma_equal_committed_raft_prefixes_have_same_active_phase(
+            source_log,
+            target_log,
+            index,
+            initial_phase,
+        );
+
+        match target_log[index].payload {
+            LLogValue::Data { value: _ } => {
+            },
+            LLogValue::Configuration { phase } => {
+                assert(source_log[index].payload
+                    == (LLogValue::Configuration {
+                        phase,
+                    }));
+
+                assert(is_legal_phase_progression(
+                    active_membership_phase_from_raft_log(
+                        source_log,
+                        index,
+                        initial_phase,
+                    ),
+                    membership_phase_view(phase),
+                ));
+
+                assert(is_legal_phase_progression(
+                    active_membership_phase_from_raft_log(
+                        target_log,
+                        index,
+                        initial_phase,
+                    ),
+                    membership_phase_view(phase),
+                ));
+            },
+        }
+    }
+
     /// Advancing commit_index never changes the physical Raft log,
     /// so it preserves legality of every log prefix.
     pub proof fn lemma_try_advance_commit_preserves_full_membership_history(
