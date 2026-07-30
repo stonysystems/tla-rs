@@ -345,6 +345,102 @@ verus! {
         }
     }
 
+    /// Two actual Raft logs with identical committed entries derive
+    /// the same active membership phase.
+    pub proof fn lemma_equal_committed_raft_prefixes_have_same_active_phase(
+        left_log: Seq<LLogEntry>,
+        right_log: Seq<LLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            0 <= committed_len <= left_log.len(),
+            committed_len <= right_log.len(),
+            forall |index: int|
+                0 <= index < committed_len
+                ==> left_log[index] == right_log[index],
+        ensures
+            active_membership_phase_from_raft_log(
+                left_log,
+                committed_len,
+                initial_phase,
+            ) == active_membership_phase_from_raft_log(
+                right_log,
+                committed_len,
+                initial_phase,
+            ),
+        decreases
+            committed_len,
+    {
+        if committed_len > 0 {
+            assert(
+                left_log[committed_len - 1]
+                == right_log[committed_len - 1]
+            );
+
+            match left_log[committed_len - 1].payload {
+                LLogValue::Data { value: _ } => {
+                    assert forall |index: int|
+                        0 <= index < committed_len - 1
+                        implies left_log[index] == right_log[index]
+                    by {
+                    };
+                    lemma_equal_committed_raft_prefixes_have_same_active_phase(
+                        left_log,
+                        right_log,
+                        committed_len - 1,
+                        initial_phase,
+                    );
+                },
+                LLogValue::Configuration { phase: _ } => {
+                },
+            }
+        }
+    }
+
+    /// Server states with the same committed log prefix and initial
+    /// configuration therefore make decisions under the same phase.
+    pub proof fn lemma_states_with_equal_committed_prefix_have_same_active_phase(
+        left_state: LState,
+        left_constants: LConstants,
+        right_state: LState,
+        right_constants: LConstants,
+    )
+        requires
+            left_state.commit_index == right_state.commit_index,
+            0 <= left_state.commit_index,
+            left_state.commit_index <= left_state.log.len(),
+            right_state.commit_index <= right_state.log.len(),
+            left_constants.servers == right_constants.servers,
+            forall |index: int|
+                0 <= index < left_state.commit_index
+                ==> left_state.log[index] == right_state.log[index],
+        ensures
+            active_membership_phase_for_state(
+                left_state,
+                left_constants,
+            ) == active_membership_phase_for_state(
+                right_state,
+                right_constants,
+            ),
+    {
+        lemma_equal_committed_raft_prefixes_have_same_active_phase(
+            left_state.log,
+            right_state.log,
+            left_state.commit_index,
+            MembershipPhase::Stable {
+                config: left_constants.servers,
+            },
+        );
+        assert(
+            (MembershipPhase::Stable {
+                config: left_constants.servers,
+            }) == (MembershipPhase::Stable {
+                config: right_constants.servers,
+            })
+        );
+    }
+
     /// Committing an ordinary data payload in the actual Raft log
     /// does not change the active membership phase.
     pub proof fn lemma_committed_raft_data_preserves_active_phase(
