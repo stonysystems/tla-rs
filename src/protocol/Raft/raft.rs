@@ -1,6 +1,7 @@
 use crate::protocol::Raft::membership::{
     active_membership_phase_from_raft_log,
     active_membership_phase_for_state,
+    commit_interval_stops_at_first_configuration,
     has_active_commit_quorum,
     has_active_election_quorum,
     has_active_election_quorum_after_vote,
@@ -383,6 +384,11 @@ verus! {
         &&& new_commit_index <= s.log.len()
         &&& s.log[new_commit_index - 1].term == s.current_term
         &&& has_active_commit_quorum(s, c, new_commit_index)
+        &&& commit_interval_stops_at_first_configuration(
+            s.log,
+            s.commit_index,
+            new_commit_index,
+        )
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
@@ -407,6 +413,11 @@ verus! {
         &&& new_commit_index <= s.log.len()
         &&& s.log[new_commit_index - 1].term == s.current_term
         &&& has_active_commit_quorum(s, c, new_commit_index)
+        &&& commit_interval_stops_at_first_configuration(
+            s.log,
+            s.commit_index,
+            new_commit_index,
+        )
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role
         &&& s_.has_voted == s.has_voted
@@ -739,6 +750,11 @@ verus! {
         if !(s.role is Leader)
             || new_commit_index <= s.commit_index
             || !has_active_commit_quorum(s, c, new_commit_index)
+            || !commit_interval_stops_at_first_configuration(
+                s.log,
+                s.commit_index,
+                new_commit_index,
+            )
         {
             // Not leader or no advancement: stutter
             &&& s_ == s
@@ -759,6 +775,11 @@ verus! {
         if !(s.role is Leader)
             || new_commit_index <= s.commit_index
             || !has_active_commit_quorum(s, c, new_commit_index)
+            || !commit_interval_stops_at_first_configuration(
+                s.log,
+                s.commit_index,
+                new_commit_index,
+            )
         {
             &&& s_ == s
             &&& sent_packets == Seq::<LRaftMessage>::empty()

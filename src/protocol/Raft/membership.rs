@@ -236,4 +236,24 @@ verus! {
             committed_len <= index < log.len()
             ==> !(log[index].payload is Configuration)
     }
+
+    /// One commit-index advancement may cross ordinary Data entries, but
+    /// it must stop when it reaches the first Configuration entry.
+    ///
+    /// `new_committed_len` is a prefix length, so its final newly committed
+    /// entry is at `new_committed_len - 1`. That final entry may itself be a
+    /// Configuration entry; every earlier entry in the newly committed
+    /// interval must be Data.
+    pub open spec fn commit_interval_stops_at_first_configuration(
+        log: Seq<LLogEntry>,
+        old_committed_len: int,
+        new_committed_len: int,
+    ) -> bool {
+        &&& 0 <= old_committed_len
+        &&& old_committed_len < new_committed_len
+        &&& new_committed_len <= log.len()
+        &&& forall |index: int|
+            old_committed_len <= index < new_committed_len - 1
+            ==> !(log[index].payload is Configuration)
+    }
 }
