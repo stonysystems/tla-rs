@@ -3157,6 +3157,127 @@ verus! {
         }
     }
 
+    /// Advancing a well-formed physical Raft log by one committed entry
+    /// performs one legal membership-phase step. Data entries are a
+    /// reflexive step; Configuration entries follow the guarded progression.
+    pub proof fn lemma_adjacent_committed_raft_prefixes_progress_legally(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                log,
+                initial_phase,
+            ),
+            0 < committed_len <= log.len(),
+        ensures
+            is_legal_phase_progression(
+                active_membership_phase_from_raft_log(
+                    log,
+                    committed_len - 1,
+                    initial_phase,
+                ),
+                active_membership_phase_from_raft_log(
+                    log,
+                    committed_len,
+                    initial_phase,
+                ),
+            ),
+    {
+        let previous_phase =
+            active_membership_phase_from_raft_log(
+                log,
+                committed_len - 1,
+                initial_phase,
+            );
+
+        lemma_full_history_next_raft_entry_is_legal(
+            log,
+            committed_len - 1,
+            initial_phase,
+        );
+
+        match log[committed_len - 1].payload {
+            LLogValue::Data { value: _ } => {
+                assert(active_membership_phase_from_raft_log(
+                    log,
+                    committed_len,
+                    initial_phase,
+                ) == previous_phase);
+
+                lemma_phase_progression_reflexive(
+                    previous_phase,
+                );
+            },
+            LLogValue::Configuration { phase } => {
+                assert(active_membership_phase_from_raft_log(
+                    log,
+                    committed_len,
+                    initial_phase,
+                ) == membership_phase_view(phase));
+            },
+        }
+    }
+
+    /// Quorums attached to adjacent committed Raft prefixes overlap.
+    /// This is the concrete-log temporal bridge for one physical entry.
+    pub proof fn lemma_adjacent_committed_raft_prefix_quorums_intersect(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+        earlier_quorum: Set<int>,
+        later_quorum: Set<int>,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                log,
+                initial_phase,
+            ),
+            0 < committed_len <= log.len(),
+            is_quorum_for_phase(
+                earlier_quorum,
+                active_membership_phase_from_raft_log(
+                    log,
+                    committed_len - 1,
+                    initial_phase,
+                ),
+            ),
+            is_quorum_for_phase(
+                later_quorum,
+                active_membership_phase_from_raft_log(
+                    log,
+                    committed_len,
+                    initial_phase,
+                ),
+            ),
+        ensures
+            exists |server: int|
+                earlier_quorum.contains(server)
+                && later_quorum.contains(server),
+    {
+        lemma_adjacent_committed_raft_prefixes_progress_legally(
+            log,
+            committed_len,
+            initial_phase,
+        );
+
+        lemma_legal_phase_progression_quorums_intersect(
+            earlier_quorum,
+            later_quorum,
+            active_membership_phase_from_raft_log(
+                log,
+                committed_len - 1,
+                initial_phase,
+            ),
+            active_membership_phase_from_raft_log(
+                log,
+                committed_len,
+                initial_phase,
+            ),
+        );
+    }
+
     /// A normal client command is a Data entry, so appending it cannot
     /// violate the legal Stable-to-Joint-to-Stable membership order.
     pub proof fn lemma_client_request_preserves_full_membership_history(
