@@ -3334,6 +3334,133 @@ verus! {
         };
     }
 
+    /// A legal commit-index advancement changes membership by at most one
+    /// phase step.
+    ///
+    /// The boundary guard makes every entry before the final newly committed
+    /// entry Data, so that prefix preserves the old phase. The final entry is
+    /// then either Data (a reflexive step) or one legal Configuration entry.
+    pub proof fn lemma_commit_boundary_progresses_membership_once(
+        log: Seq<LLogEntry>,
+        old_committed_len: int,
+        new_committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                log,
+                initial_phase,
+            ),
+            commit_interval_stops_at_first_configuration(
+                log,
+                old_committed_len,
+                new_committed_len,
+            ),
+        ensures
+            is_legal_phase_progression(
+                active_membership_phase_from_raft_log(
+                    log,
+                    old_committed_len,
+                    initial_phase,
+                ),
+                active_membership_phase_from_raft_log(
+                    log,
+                    new_committed_len,
+                    initial_phase,
+                ),
+            ),
+    {
+        lemma_configuration_free_interval_preserves_active_phase(
+            log,
+            old_committed_len,
+            new_committed_len - 1,
+            initial_phase,
+        );
+
+        lemma_adjacent_committed_raft_prefixes_progress_legally(
+            log,
+            new_committed_len,
+            initial_phase,
+        );
+
+        assert(
+            active_membership_phase_from_raft_log(
+                log,
+                new_committed_len - 1,
+                initial_phase,
+            ) == active_membership_phase_from_raft_log(
+                log,
+                old_committed_len,
+                initial_phase,
+            )
+        );
+    }
+
+    /// Quorums used immediately before and after one legal commit-index
+    /// advancement overlap, even when that step commits a Configuration
+    /// entry as its final entry.
+    pub proof fn lemma_commit_boundary_quorums_intersect(
+        log: Seq<LLogEntry>,
+        old_committed_len: int,
+        new_committed_len: int,
+        initial_phase: MembershipPhase,
+        old_quorum: Set<int>,
+        new_quorum: Set<int>,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                log,
+                initial_phase,
+            ),
+            commit_interval_stops_at_first_configuration(
+                log,
+                old_committed_len,
+                new_committed_len,
+            ),
+            is_quorum_for_phase(
+                old_quorum,
+                active_membership_phase_from_raft_log(
+                    log,
+                    old_committed_len,
+                    initial_phase,
+                ),
+            ),
+            is_quorum_for_phase(
+                new_quorum,
+                active_membership_phase_from_raft_log(
+                    log,
+                    new_committed_len,
+                    initial_phase,
+                ),
+            ),
+        ensures
+            exists |server: int|
+                old_quorum.contains(server)
+                && new_quorum.contains(server),
+    {
+        lemma_commit_boundary_progresses_membership_once(
+            log,
+            old_committed_len,
+            new_committed_len,
+            initial_phase,
+        );
+
+        lemma_legal_phase_progression_quorums_intersect(
+            old_quorum,
+            new_quorum,
+            active_membership_phase_from_raft_log(
+                log,
+                old_committed_len,
+                initial_phase,
+            ),
+            active_membership_phase_from_raft_log(
+                log,
+                new_committed_len,
+                initial_phase,
+            ),
+        );
+    }
+
     /// If an interval contains only Data entries, its endpoint membership
     /// phases are equal and any valid endpoint quorums overlap.
     pub proof fn lemma_configuration_free_raft_interval_quorums_intersect(
