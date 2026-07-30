@@ -513,6 +513,102 @@ verus! {
             )
     }
 
+    /// Any log length committed by two servers determines the same
+    /// membership phase on both servers.
+    ///
+    /// This is configuration provenance at a shared committed prefix:
+    /// StateMachineSafety makes the physical entries equal, and the
+    /// active-membership projection is a deterministic scan of those entries.
+    pub open spec fn CommittedMembershipPrefixAgreement(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |left: int, right: int, committed_len: int|
+            0 <= left < ds.num_servers
+            && 0 <= right < ds.num_servers
+            && 0 <= committed_len
+            && committed_len
+                <= ds.server_states[left].commit_index
+            && committed_len
+                <= ds.server_states[right].commit_index
+            ==> active_membership_phase_from_raft_log(
+                ds.server_states[left].log,
+                committed_len,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[left].servers,
+                },
+            ) == active_membership_phase_from_raft_log(
+                ds.server_states[right].log,
+                committed_len,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[right].servers,
+                },
+            )
+    }
+
+    /// Ordinary Raft committed-log agreement implies committed-membership
+    /// agreement because both servers scan the same configuration entries.
+    pub proof fn lemma_state_machine_safety_implies_committed_membership_prefix_agreement(
+        ds: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            StateMachineSafety(ds),
+            CommitIndexBounded(ds),
+        ensures
+            CommittedMembershipPrefixAgreement(ds),
+    {
+        assert forall |left: int, right: int, committed_len: int|
+            0 <= left < ds.num_servers
+            && 0 <= right < ds.num_servers
+            && 0 <= committed_len
+            && committed_len
+                <= ds.server_states[left].commit_index
+            && committed_len
+                <= ds.server_states[right].commit_index
+            implies active_membership_phase_from_raft_log(
+                ds.server_states[left].log,
+                committed_len,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[left].servers,
+                },
+            ) == active_membership_phase_from_raft_log(
+                ds.server_states[right].log,
+                committed_len,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[right].servers,
+                },
+            )
+        by {
+            assert(committed_len
+                <= ds.server_states[left].log.len());
+            assert(committed_len
+                <= ds.server_states[right].log.len());
+
+            assert forall |index: int|
+                0 <= index < committed_len
+                implies ds.server_states[left].log[index]
+                    == ds.server_states[right].log[index]
+            by {
+                assert(index
+                    < ds.server_states[left].commit_index);
+                assert(index
+                    < ds.server_states[right].commit_index);
+            };
+
+            assert(ds.server_constants[left].servers
+                == ds.server_constants[right].servers);
+
+            lemma_equal_committed_raft_prefixes_have_same_active_phase(
+                ds.server_states[left].log,
+                ds.server_states[right].log,
+                committed_len,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[left].servers,
+                },
+            );
+        };
+    }
+
     /// The full inductive invariant: conjunction of all safety invariants
     pub open spec fn RaftSafetyInvariant(ds: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
@@ -521,6 +617,7 @@ verus! {
         &&& AllRaftMembershipLogsWellFormed(ds)
         &&& LeaderCompleteness(ds)
         &&& StateMachineSafety(ds)
+        &&& CommittedMembershipPrefixAgreement(ds)
         &&& LeaderHasQuorum(ds)
         &&& LeaderHasRecordedElectionQuorum(ds)
         &&& LeaderHasRecordedElectionLogProvenance(ds)
@@ -571,6 +668,9 @@ verus! {
         ensures RaftSafetyInvariant(ds)
     {
         lemma_init_establishes_all_raft_membership_logs_well_formed(ds);
+        lemma_state_machine_safety_implies_committed_membership_prefix_agreement(
+            ds,
+        );
 
         // All servers start as Followers with empty votes_granted:
         // - ElectionSafety: no Leaders, vacuously true
@@ -10711,6 +10811,9 @@ verus! {
         lemma_log_matching_inductive(ds, ds_);
         lemma_leader_completeness_inductive(ds, ds_);
         lemma_state_machine_safety_inductive(ds, ds_);
+        lemma_state_machine_safety_implies_committed_membership_prefix_agreement(
+            ds_,
+        );
 
         // Message invariants
         lemma_sender_integrity_inductive(ds, ds_);
