@@ -4205,6 +4205,180 @@ verus! {
         );
     }
 
+    /// If one committed membership snapshot is no later than another,
+    /// both servers agree at the earlier length and the later server's
+    /// log supplies a legal step-by-step membership path afterward.
+    pub proof fn lemma_ordered_committed_membership_snapshots_have_legal_bridge(
+        ds: RaftDistributedState,
+        earlier_server: int,
+        later_server: int,
+        earlier_len: int,
+        later_len: int,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            0 <= earlier_server < ds.num_servers,
+            0 <= later_server < ds.num_servers,
+            0 <= earlier_len,
+            earlier_len
+                <= ds.server_states[earlier_server].commit_index,
+            earlier_len <= later_len,
+            later_len
+                <= ds.server_states[later_server].commit_index,
+        ensures
+            active_membership_phase_from_raft_log(
+                ds.server_states[earlier_server].log,
+                earlier_len,
+                MembershipPhase::Stable {
+                    config:
+                        ds.server_constants[earlier_server].servers,
+                },
+            ) == active_membership_phase_from_raft_log(
+                ds.server_states[later_server].log,
+                earlier_len,
+                MembershipPhase::Stable {
+                    config:
+                        ds.server_constants[later_server].servers,
+                },
+            ),
+            forall |committed_len: int|
+                earlier_len < committed_len <= later_len
+                ==> is_legal_phase_progression(
+                    active_membership_phase_from_raft_log(
+                        ds.server_states[later_server].log,
+                        committed_len - 1,
+                        MembershipPhase::Stable {
+                            config:
+                                ds.server_constants[later_server].servers,
+                        },
+                    ),
+                    #[trigger] active_membership_phase_from_raft_log(
+                        ds.server_states[later_server].log,
+                        committed_len,
+                        MembershipPhase::Stable {
+                            config:
+                                ds.server_constants[later_server].servers,
+                        },
+                    ),
+                ),
+    {
+        assert(CommittedMembershipPrefixAgreement(ds));
+        assert(CommitIndexBounded(ds));
+        assert(AllRaftMembershipLogsWellFormed(ds));
+
+        assert(later_len
+            <= ds.server_states[later_server].log.len());
+
+        assert(active_membership_phase_from_raft_log(
+            ds.server_states[earlier_server].log,
+            earlier_len,
+            MembershipPhase::Stable {
+                config:
+                    ds.server_constants[earlier_server].servers,
+            },
+        ) == active_membership_phase_from_raft_log(
+            ds.server_states[later_server].log,
+            earlier_len,
+            MembershipPhase::Stable {
+                config:
+                    ds.server_constants[later_server].servers,
+            },
+        ));
+
+        lemma_well_formed_raft_log_interval_progresses_legally(
+            ds.server_states[later_server].log,
+            earlier_len,
+            later_len,
+            MembershipPhase::Stable {
+                config:
+                    ds.server_constants[later_server].servers,
+            },
+        );
+    }
+
+    /// Two leaders whose saved election prefixes have ordered lengths
+    /// therefore have ordered, log-justified membership snapshots.
+    ///
+    /// The earlier saved phase equals the phase at the start of the later
+    /// leader's log interval, and every step to the later saved phase is legal.
+    pub proof fn lemma_ordered_leader_election_snapshots_have_legal_bridge(
+        ds: RaftDistributedState,
+        earlier_leader: int,
+        later_leader: int,
+        earlier_election_len: int,
+        later_election_len: int,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            0 <= earlier_leader < ds.num_servers,
+            0 <= later_leader < ds.num_servers,
+            ds.server_states[earlier_leader].role is Leader,
+            ds.server_states[later_leader].role is Leader,
+            0 <= earlier_election_len,
+            earlier_election_len
+                <= ds.server_states[earlier_leader].commit_index,
+            earlier_election_len <= later_election_len,
+            later_election_len
+                <= ds.server_states[later_leader].commit_index,
+            ds.server_states[earlier_leader].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[earlier_leader].log,
+                    earlier_election_len,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[earlier_leader].servers,
+                    },
+                )),
+            ds.server_states[later_leader].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[later_leader].log,
+                    later_election_len,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[later_leader].servers,
+                    },
+                )),
+        ensures
+            ds.server_states[earlier_leader].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[later_leader].log,
+                    earlier_election_len,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[later_leader].servers,
+                    },
+                )),
+            forall |committed_len: int|
+                earlier_election_len < committed_len
+                    <= later_election_len
+                ==> is_legal_phase_progression(
+                    active_membership_phase_from_raft_log(
+                        ds.server_states[later_leader].log,
+                        committed_len - 1,
+                        MembershipPhase::Stable {
+                            config:
+                                ds.server_constants[later_leader].servers,
+                        },
+                    ),
+                    #[trigger] active_membership_phase_from_raft_log(
+                        ds.server_states[later_leader].log,
+                        committed_len,
+                        MembershipPhase::Stable {
+                            config:
+                                ds.server_constants[later_leader].servers,
+                        },
+                    ),
+                ),
+    {
+        lemma_ordered_committed_membership_snapshots_have_legal_bridge(
+            ds,
+            earlier_leader,
+            later_leader,
+            earlier_election_len,
+            later_election_len,
+        );
+    }
+
     // =========================================================================
     // Supporting invariant induction: CommitIndexNonnegative
     // =========================================================================
