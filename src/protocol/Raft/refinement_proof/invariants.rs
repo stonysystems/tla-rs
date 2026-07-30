@@ -518,6 +518,7 @@ verus! {
         &&& WellFormedRaftDistributed(ds)
         &&& ElectionSafety(ds)
         &&& LogMatching(ds)
+        &&& AllRaftMembershipLogsWellFormed(ds)
         &&& LeaderCompleteness(ds)
         &&& StateMachineSafety(ds)
         &&& LeaderHasQuorum(ds)
@@ -569,6 +570,8 @@ verus! {
         requires RaftDistributedInit(ds)
         ensures RaftSafetyInvariant(ds)
     {
+        lemma_init_establishes_all_raft_membership_logs_well_formed(ds);
+
         // All servers start as Followers with empty votes_granted:
         // - ElectionSafety: no Leaders, vacuously true
         // - LogMatching: empty logs, vacuously true
@@ -5740,6 +5743,314 @@ verus! {
         // ae_has_entry must be true (log grew), ae_prev_index == k (position guard).
     }
 
+    /// A newly appended entry received in an AppendEntries packet is
+    /// legal for the follower's membership history.
+    ///
+    /// The sender's full log supplies legality. AppendEntriesIntegrity
+    /// supplies the exact tagged payload, while LogMatching transfers
+    /// the common prefix used to derive the active membership phase.
+    proof fn lemma_processed_append_entries_new_entry_is_legal(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+        server_id: int,
+        pkt: LRaftPacket,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            AllRaftMembershipLogsWellFormed(ds),
+            LogMatching(ds),
+            AppendEntriesIntegrity(ds),
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            0 <= server_id < ds.num_servers,
+            ds.network.contains(pkt),
+            pkt.dst == server_id,
+            LHandleMessage(
+                ds.server_states[server_id],
+                ds_.server_states[server_id],
+                ds.server_constants[server_id],
+                pkt.msg,
+                sent_packets,
+            ),
+            ds_.server_states[server_id].log.len()
+                == ds.server_states[server_id].log.len() + 1,
+        ensures
+            is_legal_next_raft_membership_log_entry(
+                ds_.server_states[server_id].log,
+                ds.server_states[server_id].log.len() as int,
+                MembershipPhase::Stable {
+                    config:
+                        ds.server_constants[server_id].servers,
+                },
+            ),
+    {
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+        let k = s.log.len() as int;
+
+        assert(pkt.msg is AppendEntries);
+
+        let ae_term = pkt.msg->AppendEntries_term;
+        let ae_leader = pkt.msg->AppendEntries_leader;
+        let ae_prev_index = pkt.msg->AppendEntries_prev_index;
+        let ae_prev_term = pkt.msg->AppendEntries_prev_term;
+        let ae_payload = pkt.msg->AppendEntries_payload;
+        let ae_has_entry = pkt.msg->AppendEntries_has_entry;
+
+        assert(ae_has_entry);
+        assert(ae_prev_index == k);
+        assert(0 <= ae_leader < ds.num_servers);
+
+        assert(ds.server_states[ae_leader].log.len() > k);
+        assert(ds.server_states[ae_leader].log[k].payload
+            == ae_payload);
+        assert(s_.log[k].payload == ae_payload);
+        assert(ds.server_states[ae_leader].log[k].payload
+            == s_.log[k].payload);
+
+        assert forall |prefix_index: int|
+            0 <= prefix_index < k
+            implies ds.server_states[ae_leader].log[prefix_index]
+                == s_.log[prefix_index]
+        by {
+            assert(s_.log[prefix_index]
+                == s.log[prefix_index]);
+
+            if k > 0 {
+                assert(ds.server_states[ae_leader].log[k - 1].term
+                    == ae_prev_term);
+                assert(s.log[k - 1].term == ae_prev_term);
+                assert(ds.server_states[ae_leader].log[k - 1].term
+                    == s.log[k - 1].term);
+
+                assert forall |matching_index: int|
+                    0 <= matching_index <= k - 1
+                    && matching_index
+                        < ds.server_states[ae_leader].log.len()
+                    && matching_index < s.log.len()
+                    implies ds.server_states[ae_leader].log[matching_index]
+                        == s.log[matching_index]
+                by {
+                    assert(LogMatching(ds));
+                };
+            }
+        };
+
+        assert(ds.server_constants[ae_leader].servers
+            == c.servers);
+
+        assert(raft_membership_log_is_well_formed(
+            ds.server_states[ae_leader].log,
+            MembershipPhase::Stable {
+                config:
+                    ds.server_constants[ae_leader].servers,
+            },
+        ));
+
+        assert(raft_membership_log_is_well_formed(
+            ds.server_states[ae_leader].log,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        ));
+
+        lemma_equal_prefix_and_payload_transfer_next_entry_legality(
+            ds.server_states[ae_leader].log,
+            s_.log,
+            k,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        );
+    }
+
+    /// One concrete server action preserves the stepping server's
+    /// full legal membership history.
+    ///
+    /// Client requests append Data. Incoming AppendEntries use the
+    /// provenance helper above. Every other current LNext branch leaves
+    /// the physical log unchanged.
+    proof fn lemma_raft_action_preserves_full_membership_history(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+        server_id: int,
+        sent_packets: Seq<LRaftMessage>,
+        received_from: Option<int>,
+    )
+        requires
+            AllRaftMembershipLogsWellFormed(ds),
+            LogMatching(ds),
+            AppendEntriesIntegrity(ds),
+            WellFormedRaftDistributed(ds),
+            WellFormedRaftDistributed(ds_),
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            0 <= server_id < ds.num_servers,
+            LNext(
+                ds.server_states[server_id],
+                ds_.server_states[server_id],
+                ds.server_constants[server_id],
+            ),
+            RaftActionProduces(
+                ds,
+                server_id,
+                ds.server_states[server_id],
+                ds_.server_states[server_id],
+                ds.server_constants[server_id],
+                sent_packets,
+                received_from,
+            ),
+        ensures
+            raft_membership_log_is_well_formed(
+                ds_.server_states[server_id].log,
+                MembershipPhase::Stable {
+                    config:
+                        ds.server_constants[server_id].servers,
+                },
+            ),
+    {
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        assert(raft_membership_log_is_well_formed(
+            s.log,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        ));
+
+        lemma_lnext_log_preserved_or_extended(s, s_, c);
+
+        if s_.log != s.log {
+            assert(s_.log.len() == s.log.len() + 1);
+
+            if exists |value: int|
+                LClientRequest(
+                    s,
+                    s_,
+                    c,
+                    value,
+                    sent_packets,
+                )
+            {
+                let value = choose |value: int|
+                    LClientRequest(
+                        s,
+                        s_,
+                        c,
+                        value,
+                        sent_packets,
+                    );
+
+                lemma_client_request_preserves_full_membership_history(
+                    s,
+                    s_,
+                    c,
+                    value,
+                    sent_packets,
+                );
+            } else {
+                let pkt = choose |pkt: LRaftPacket| {
+                    &&& received_from == Some(pkt.src)
+                    &&& ds.network.contains(pkt)
+                    &&& pkt.dst == server_id
+                    &&& LHandleMessage(
+                        s,
+                        s_,
+                        c,
+                        pkt.msg,
+                        sent_packets,
+                    )
+                };
+
+                lemma_processed_append_entries_new_entry_is_legal(
+                    ds,
+                    ds_,
+                    server_id,
+                    pkt,
+                    sent_packets,
+                );
+
+                let entry = s_.log[s.log.len() as int];
+                assert(s_.log == s.log.push(entry));
+
+                lemma_legal_raft_append_preserves_full_history(
+                    s.log,
+                    entry,
+                    MembershipPhase::Stable {
+                        config: c.servers,
+                    },
+                );
+            }
+        }
+    }
+
+    /// One distributed Raft transition preserves legal membership
+    /// history for every server log.
+    pub proof fn lemma_all_raft_membership_logs_well_formed_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            AllRaftMembershipLogsWellFormed(ds),
+            LogMatching(ds),
+            AppendEntriesIntegrity(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            AllRaftMembershipLogsWellFormed(ds_),
+    {
+        let step = lemma_extract_step_with_network(ds, ds_);
+        let server_id = step.0;
+        let sent_packets = step.1;
+        let received_from = step.2;
+
+        assert(WellFormedRaftDistributed(ds));
+        assert(WellFormedRaftDistributed(ds_));
+        assert(ds_.num_servers == ds.num_servers);
+        assert(ds_.server_constants == ds.server_constants);
+
+        lemma_raft_action_preserves_full_membership_history(
+            ds,
+            ds_,
+            server_id,
+            sent_packets,
+            received_from,
+        );
+
+        assert forall |other_id: int|
+            0 <= other_id < ds_.num_servers
+            implies raft_membership_log_is_well_formed(
+                ds_.server_states[other_id].log,
+                MembershipPhase::Stable {
+                    config:
+                        ds_.server_constants[other_id].servers,
+                },
+            )
+        by {
+            if other_id == server_id {
+                assert(ds_.server_constants[other_id]
+                    == ds.server_constants[other_id]);
+            } else {
+                assert(ds_.server_states[other_id]
+                    == ds.server_states[other_id]);
+                assert(ds_.server_constants[other_id]
+                    == ds.server_constants[other_id]);
+
+                assert(raft_membership_log_is_well_formed(
+                    ds.server_states[other_id].log,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[other_id].servers,
+                    },
+                ));
+            }
+        };
+    }
+
     /// Helper for LogMatching: when server_id extends its log via
     /// LFollowerAppendEntries and another server sj has an entry at the
     /// same index k with the same term, all entries 0..k match.
@@ -10347,6 +10658,12 @@ verus! {
     {
         // Well-formedness: directly from RaftDistributedNext precondition
         assert(WellFormedRaftDistributed(ds_));
+
+        // Every server log remains a legal joint-consensus history.
+        lemma_all_raft_membership_logs_well_formed_inductive(
+            ds,
+            ds_,
+        );
 
         // Election Safety
         lemma_election_safety_inductive(ds, ds_);
