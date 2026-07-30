@@ -198,6 +198,19 @@ verus! {
             )
     }
 
+    /// Every leader's saved election membership phase is justified by
+    /// a prefix of its actual Raft log that was committed by election time.
+    pub open spec fn LeaderHasRecordedElectionLogProvenance(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |i: int|
+            0 <= i < ds.num_servers
+            ==> has_recorded_election_log_provenance(
+                ds.server_states[i],
+                ds.server_constants[i],
+            )
+    }
+
     /// The existing fixed-membership election invariants imply that
     /// every leader has a valid quorum for the stable membership phase.
     pub proof fn lemma_fixed_leader_quorum_implies_stable_phase_quorum(
@@ -263,6 +276,13 @@ verus! {
         forall |i: int|
             0 <= i < ds.num_servers
             ==> ds.server_states[i].commit_index <= ds.server_states[i].log.len()
+    }
+
+    /// Commit indexes are lengths and therefore never negative.
+    pub open spec fn CommitIndexNonnegative(ds: RaftDistributedState) -> bool {
+        forall |i: int|
+            0 <= i < ds.num_servers
+            ==> 0 <= ds.server_states[i].commit_index
     }
 
     /// Match index implies log agreement: if a leader has match_index[f] >= k+1
@@ -483,7 +503,9 @@ verus! {
         &&& StateMachineSafety(ds)
         &&& LeaderHasQuorum(ds)
         &&& LeaderHasRecordedElectionQuorum(ds)
+        &&& LeaderHasRecordedElectionLogProvenance(ds)
         &&& CommitIndexBounded(ds)
+        &&& CommitIndexNonnegative(ds)
         &&& LeaderLogLongEnough(ds)
         &&& EntryTermLeaderWitness(ds)
         &&& EntryTermHasVoteQuorum(ds)
@@ -3864,6 +3886,114 @@ verus! {
             implies has_recorded_election_quorum(
                 ds_.server_states[i],
             )
+        by {
+            if i != server_id {
+                assert(ds_.server_states[i]
+                    == ds.server_states[i]);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Dynamic election invariant: actual-log provenance
+    // =========================================================================
+
+    proof fn lemma_leader_has_recorded_election_log_provenance_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            LeaderHasRecordedElectionLogProvenance(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            LeaderHasRecordedElectionLogProvenance(ds_),
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |server_id: int| {
+            &&& 0 <= server_id < ds.num_servers
+            &&& LNext(
+                ds.server_states[server_id],
+                ds_.server_states[server_id],
+                ds.server_constants[server_id],
+            )
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        lemma_lnext_preserves_recorded_election_log_provenance(
+            ds.server_states[server_id],
+            ds_.server_states[server_id],
+            ds.server_constants[server_id],
+        );
+
+        assert forall |i: int|
+            0 <= i < ds_.num_servers
+            implies has_recorded_election_log_provenance(
+                ds_.server_states[i],
+                ds_.server_constants[i],
+            )
+        by {
+            if i != server_id {
+                assert(ds_.server_states[i]
+                    == ds.server_states[i]);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Supporting invariant induction: CommitIndexNonnegative
+    // =========================================================================
+
+    proof fn lemma_lnext_commit_nonnegative(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+    )
+        requires
+            LNext(s, s_, c),
+            0 <= s.commit_index,
+        ensures
+            0 <= s_.commit_index,
+    {
+    }
+
+    proof fn lemma_commit_index_nonnegative_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            CommitIndexNonnegative(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            CommitIndexNonnegative(ds_),
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |server_id: int| {
+            &&& 0 <= server_id < ds.num_servers
+            &&& LNext(
+                ds.server_states[server_id],
+                ds_.server_states[server_id],
+                ds.server_constants[server_id],
+            )
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        lemma_lnext_commit_nonnegative(
+            ds.server_states[server_id],
+            ds_.server_states[server_id],
+            ds.server_constants[server_id],
+        );
+
+        assert forall |i: int|
+            0 <= i < ds_.num_servers
+            implies 0 <= ds_.server_states[i].commit_index
         by {
             if i != server_id {
                 assert(ds_.server_states[i]
@@ -10065,7 +10195,9 @@ verus! {
         lemma_voters_voted_for_candidate_inductive(ds, ds_);
         lemma_leader_has_quorum_inductive(ds, ds_);
         lemma_leader_has_recorded_election_quorum_inductive(ds, ds_);
+        lemma_leader_has_recorded_election_log_provenance_inductive(ds, ds_);
         lemma_commit_index_bounded_inductive(ds, ds_);
+        lemma_commit_index_nonnegative_inductive(ds, ds_);
         lemma_leader_log_long_enough_inductive(ds, ds_);
         lemma_entry_term_leader_witness_inductive(ds, ds_);
         lemma_entry_term_has_vote_quorum_inductive(ds, ds_);

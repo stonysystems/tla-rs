@@ -1386,6 +1386,176 @@ verus! {
     {
     }
 
+    /// A leader's saved election phase has actual-log provenance when
+    /// it is derived from a prefix that was committed by election time.
+    pub open spec fn has_recorded_election_log_provenance(
+        s: LState,
+        c: LConstants,
+    ) -> bool {
+        if s.role is Leader {
+            exists |election_commit_len: int| {
+                &&& 0 <= election_commit_len
+                &&& election_commit_len <= s.commit_index
+                &&& s.commit_index <= s.log.len()
+                &&& s.election_membership_phase == Some(
+                    active_membership_phase_from_raft_log(
+                        s.log,
+                        election_commit_len,
+                        MembershipPhase::Stable {
+                            config: c.servers,
+                        },
+                    ),
+                )
+            }
+        } else {
+            true
+        }
+    }
+
+    /// The Candidate-to-Leader action saves the phase derived from the
+    /// candidate's current committed actual-log prefix.
+    pub proof fn lemma_receive_vote_and_become_leader_records_log_provenance(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        term: int,
+        granted: bool,
+        voter: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LReceiveVoteAndBecomeLeader(
+                s,
+                s_,
+                c,
+                term,
+                granted,
+                voter,
+                sent_packets,
+            ),
+            0 <= s.commit_index <= s.log.len(),
+        ensures
+            has_recorded_election_log_provenance(s_, c),
+    {
+        let election_commit_len = s.commit_index;
+        assert(0 <= election_commit_len);
+        assert(election_commit_len <= s_.commit_index);
+        assert(s_.commit_index <= s_.log.len());
+        assert(s_.election_membership_phase == Some(
+            active_membership_phase_from_raft_log(
+                s_.log,
+                election_commit_len,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ));
+    }
+
+    proof fn lemma_lnext_existing_leader_preserves_log_provenance(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+    )
+        requires
+            LNext(s, s_, c),
+            s.role is Leader,
+            s_.role is Leader,
+            has_recorded_election_log_provenance(s, c),
+            0 <= s.commit_index <= s.log.len(),
+        ensures
+            has_recorded_election_log_provenance(s_, c),
+    {
+        let election_commit_len = choose |election_commit_len: int| {
+            &&& 0 <= election_commit_len
+            &&& election_commit_len <= s.commit_index
+            &&& s.commit_index <= s.log.len()
+            &&& s.election_membership_phase == Some(
+                active_membership_phase_from_raft_log(
+                    s.log,
+                    election_commit_len,
+                    MembershipPhase::Stable {
+                        config: c.servers,
+                    },
+                ),
+            )
+        };
+
+        assert(s.commit_index <= s_.commit_index);
+        assert(s_.commit_index <= s_.log.len());
+
+        assert forall |index: int|
+            0 <= index < election_commit_len
+            implies s.log[index] == s_.log[index]
+        by {
+        };
+
+        lemma_equal_committed_raft_prefixes_have_same_active_phase(
+            s.log,
+            s_.log,
+            election_commit_len,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        );
+
+        assert(s_.election_membership_phase
+            == s.election_membership_phase);
+
+        assert(s_.election_membership_phase == Some(
+            active_membership_phase_from_raft_log(
+                s_.log,
+                election_commit_len,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ));
+    }
+
+    proof fn lemma_lnext_new_leader_records_log_provenance(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+    )
+        requires
+            LNext(s, s_, c),
+            !(s.role is Leader),
+            s_.role is Leader,
+            0 <= s.commit_index <= s.log.len(),
+        ensures
+            has_recorded_election_log_provenance(s_, c),
+    {
+    }
+
+    /// Every local Raft step preserves a leader's actual-log election
+    /// provenance. A newly elected leader uses its current commit index;
+    /// an existing leader keeps the old prefix as its log grows.
+    pub proof fn lemma_lnext_preserves_recorded_election_log_provenance(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+    )
+        requires
+            LNext(s, s_, c),
+            has_recorded_election_log_provenance(s, c),
+            0 <= s.commit_index <= s.log.len(),
+        ensures
+            has_recorded_election_log_provenance(s_, c),
+    {
+        if s_.role is Leader {
+            if s.role is Leader {
+                lemma_lnext_existing_leader_preserves_log_provenance(
+                    s, s_, c,
+                );
+            } else {
+                lemma_lnext_new_leader_records_log_provenance(
+                    s, s_, c,
+                );
+            }
+        }
+    }
+
     /// Any two majorities of the same configuration overlap.
     pub proof fn lemma_majorities_intersect(
         quorum1: Set<int>,
