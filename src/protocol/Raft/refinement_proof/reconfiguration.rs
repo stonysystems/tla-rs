@@ -3158,4 +3158,278 @@ verus! {
             )
         );
     }
+
+    /// If every prefix of a Raft log is a legal membership history,
+    /// then each existing physical entry is legal at the point where
+    /// it was appended.
+    pub proof fn lemma_full_history_next_raft_entry_is_legal(
+        log: Seq<LLogEntry>,
+        index: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                log,
+                initial_phase,
+            ),
+            0 <= index < log.len(),
+        ensures
+            is_legal_next_raft_membership_log_entry(
+                log,
+                index,
+                initial_phase,
+            ),
+    {
+        let previous_history =
+            membership_history_from_raft_log(
+                log,
+                index,
+            );
+
+        let history =
+            membership_history_from_raft_log(
+                log,
+                index + 1,
+            );
+
+        let entry = membership_log_entry_view(
+            log[index].payload,
+        );
+
+        lemma_membership_history_from_raft_log_len(
+            log,
+            index,
+        );
+
+        lemma_membership_history_from_raft_log_index(
+            log,
+            index + 1,
+            index,
+        );
+
+        assert(history == previous_history.push(entry));
+
+        assert(committed_raft_membership_history_is_well_formed(
+            log,
+            index + 1,
+            initial_phase,
+        ));
+
+        assert(committed_membership_log_is_well_formed(
+            history,
+            index + 1,
+            initial_phase,
+        ));
+
+        lemma_well_formed_committed_log_decomposes(
+            history,
+            index + 1,
+            initial_phase,
+        );
+
+        lemma_uncommitted_entry_does_not_affect_active_phase(
+            previous_history,
+            entry,
+            index,
+            initial_phase,
+        );
+
+        lemma_projected_membership_history_has_same_active_phase(
+            log,
+            index,
+            initial_phase,
+        );
+
+        match log[index].payload {
+            LLogValue::Data { value: _ } => {
+            },
+            LLogValue::Configuration { phase } => {
+                assert(entry
+                    == (MembershipLogEntry::Configuration {
+                        phase: membership_phase_view(phase),
+                    }));
+                assert(is_legal_phase_progression(
+                    active_membership_phase(
+                        history,
+                        index,
+                        initial_phase,
+                    ),
+                    membership_phase_view(phase),
+                ));
+                assert(is_legal_phase_progression(
+                    active_membership_phase_from_raft_log(
+                        log,
+                        index,
+                        initial_phase,
+                    ),
+                    membership_phase_view(phase),
+                ));
+            },
+        }
+    }
+
+    /// A normal client command is a Data entry, so appending it cannot
+    /// violate the legal Stable-to-Joint-to-Stable membership order.
+    pub proof fn lemma_client_request_preserves_full_membership_history(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        value: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LClientRequest(
+                s,
+                s_,
+                c,
+                value,
+                sent_packets,
+            ),
+            raft_membership_log_is_well_formed(
+                s.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ensures
+            raft_membership_log_is_well_formed(
+                s_.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+    {
+        let initial_phase = MembershipPhase::Stable {
+            config: c.servers,
+        };
+
+        let entry = LLogEntry {
+            term: s.current_term,
+            value,
+            payload: LLogValue::Data {
+                value,
+            },
+        };
+
+        assert(s_.log == s.log.push(entry));
+        assert(s_.log[s.log.len() as int] == entry);
+        assert(is_legal_next_raft_membership_log_entry(
+            s_.log,
+            s.log.len() as int,
+            initial_phase,
+        ));
+
+        lemma_legal_raft_append_preserves_full_history(
+            s.log,
+            entry,
+            initial_phase,
+        );
+    }
+
+    /// A follower append preserves full membership-history legality
+    /// once provenance reasoning has established that the received
+    /// entry is a legal next entry for the follower's prefix.
+    pub proof fn lemma_follower_append_preserves_full_membership_history_if_legal(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        ae_term: int,
+        ae_leader: int,
+        ae_prev_index: int,
+        ae_prev_term: int,
+        ae_value: int,
+        ae_payload: LLogValue,
+        ae_has_entry: bool,
+        ae_leader_commit: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LFollowerAppendEntries(
+                s,
+                s_,
+                c,
+                ae_term,
+                ae_leader,
+                ae_prev_index,
+                ae_prev_term,
+                ae_value,
+                ae_payload,
+                ae_has_entry,
+                ae_leader_commit,
+                sent_packets,
+            ),
+            raft_membership_log_is_well_formed(
+                s.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+            ae_has_entry ==> is_legal_next_raft_membership_log_entry(
+                s_.log,
+                s.log.len() as int,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ensures
+            raft_membership_log_is_well_formed(
+                s_.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+    {
+        if ae_has_entry {
+            let entry = LLogEntry {
+                term: ae_term,
+                value: ae_value,
+                payload: ae_payload,
+            };
+
+            assert(s_.log == s.log.push(entry));
+            lemma_legal_raft_append_preserves_full_history(
+                s.log,
+                entry,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            );
+        } else {
+            assert(s_.log == s.log);
+        }
+    }
+
+    /// Advancing commit_index never changes the physical Raft log,
+    /// so it preserves legality of every log prefix.
+    pub proof fn lemma_try_advance_commit_preserves_full_membership_history(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+        new_commit_index: int,
+        sent_packets: Seq<LRaftMessage>,
+    )
+        requires
+            LTryAdvanceCommitIndex(
+                s,
+                s_,
+                c,
+                new_commit_index,
+                sent_packets,
+            ),
+            raft_membership_log_is_well_formed(
+                s.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ensures
+            raft_membership_log_is_well_formed(
+                s_.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+    {
+        assert(s_.log == s.log);
+    }
 }
