@@ -7,7 +7,12 @@ use crate::protocol::Raft::types::{
     LState,
 };
 use vstd::prelude::*;
-pub use crate::protocol::Raft::types::MembershipPhase;
+pub use crate::protocol::Raft::types::{
+    membership_config_view,
+    membership_phase_view,
+    stable_phase_from_config,
+    MembershipPhase,
+};
 
 
 verus! {
@@ -33,50 +38,6 @@ verus! {
         &&& quorum.subset_of(old_config + new_config)
         &&& is_majority_of(quorum.intersect(old_config), old_config)
         &&& is_majority_of(quorum.intersect(new_config), new_config)
-    }
-
-    /// Mathematical view of an executable membership configuration.
-    ///
-    /// The concrete representation is a sequence because it can be
-    /// transpiled to executable Rust. Quorum proofs use its set view.
-    pub open spec fn membership_config_view(
-        config: LMembershipConfig,
-    ) -> Set<int> {
-        config.servers.to_set()
-    }
-
-    /// Interpret an executable configuration as a stable proof phase.
-    pub open spec fn stable_phase_from_config(
-        config: LMembershipConfig,
-    ) -> MembershipPhase {
-        MembershipPhase::Stable {
-            config: membership_config_view(config),
-        }
-    }
-
-    /// Convert an executable membership phase into the mathematical
-    /// phase used by the quorum proofs.
-    pub open spec fn membership_phase_view(
-        phase: LMembershipPhase,
-    ) -> MembershipPhase {
-        match phase {
-            LMembershipPhase::Stable {
-                config,
-            } => {
-                MembershipPhase::Stable {
-                    config: membership_config_view(config),
-                }
-            },
-            LMembershipPhase::Joint {
-                old_config,
-                new_config,
-            } => {
-                MembershipPhase::Joint {
-                    old_config: membership_config_view(old_config),
-                    new_config: membership_config_view(new_config),
-                }
-            },
-        }
     }
 
     /// Derive the active membership phase directly from the committed

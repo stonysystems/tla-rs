@@ -43,6 +43,47 @@ verus! {
         },
     }
 
+    /// Mathematical set view of the executable membership sequence.
+    pub open spec fn membership_config_view(
+        config: LMembershipConfig,
+    ) -> Set<int> {
+        config.servers.to_set()
+    }
+
+    /// Interpret an executable configuration as a stable proof phase.
+    pub open spec fn stable_phase_from_config(
+        config: LMembershipConfig,
+    ) -> MembershipPhase {
+        MembershipPhase::Stable {
+            config: membership_config_view(config),
+        }
+    }
+
+    /// Convert an executable membership phase into the mathematical
+    /// phase used by quorum and provenance proofs.
+    pub open spec fn membership_phase_view(
+        phase: LMembershipPhase,
+    ) -> MembershipPhase {
+        match phase {
+            LMembershipPhase::Stable {
+                config,
+            } => {
+                MembershipPhase::Stable {
+                    config: membership_config_view(config),
+                }
+            },
+            LMembershipPhase::Joint {
+                old_config,
+                new_config,
+            } => {
+                MembershipPhase::Joint {
+                    old_config: membership_config_view(old_config),
+                    new_config: membership_config_view(new_config),
+                }
+            },
+        }
+    }
+
     /// A value that can be replicated through the Raft log.
     ///
     /// Ordinary data commands retain their integer value, while
