@@ -256,7 +256,8 @@ verus! {
         forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::AppendEntries { term: t, leader: l, prev_index,
-                                               prev_term, value, has_entry, .. } => {
+                                               prev_term, value, payload,
+                                               has_entry, .. } => {
                     &&& 0 <= l < ds.num_servers
                     &&& p.src == l
                     &&& prev_index >= 0
@@ -271,6 +272,9 @@ verus! {
                     // The entry value matches leader's log
                     &&& (has_entry ==>
                         ds.server_states[l].log[prev_index].value == value)
+                    // The tagged Data/Configuration payload also matches.
+                    &&& (has_entry ==>
+                        ds.server_states[l].log[prev_index].payload == payload)
                     // The entry's term in leader's log matches the message term
                     // (leader only sends entries from current term)
                     &&& (has_entry ==>
