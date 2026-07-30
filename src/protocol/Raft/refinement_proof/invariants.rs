@@ -186,6 +186,18 @@ verus! {
             )
     }
 
+    /// Every leader carries the membership-aware quorum certificate
+    /// recorded when it won its election.
+    pub open spec fn LeaderHasRecordedElectionQuorum(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |i: int|
+            0 <= i < ds.num_servers
+            ==> has_recorded_election_quorum(
+                ds.server_states[i],
+            )
+    }
+
     /// The existing fixed-membership election invariants imply that
     /// every leader has a valid quorum for the stable membership phase.
     pub proof fn lemma_fixed_leader_quorum_implies_stable_phase_quorum(
@@ -470,6 +482,7 @@ verus! {
         &&& LeaderCompleteness(ds)
         &&& StateMachineSafety(ds)
         &&& LeaderHasQuorum(ds)
+        &&& LeaderHasRecordedElectionQuorum(ds)
         &&& CommitIndexBounded(ds)
         &&& LeaderLogLongEnough(ds)
         &&& EntryTermLeaderWitness(ds)
@@ -3809,6 +3822,53 @@ verus! {
                 assert(ds_.server_states[i] == ds.server_states[i]);
             }
             // For i == server_id: lemma_lnext_leader_quorum_preserved gives the result
+        }
+    }
+
+    // =========================================================================
+    // Dynamic election invariant: saved election membership quorum
+    // =========================================================================
+
+    proof fn lemma_leader_has_recorded_election_quorum_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            LeaderHasRecordedElectionQuorum(ds_),
+    {
+        lemma_distributed_next_implies_legacy(ds, ds_);
+        let server_id = choose |server_id: int| {
+            &&& 0 <= server_id < ds.num_servers
+            &&& LNext(
+                ds.server_states[server_id],
+                ds_.server_states[server_id],
+                ds.server_constants[server_id],
+            )
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != server_id ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        lemma_lnext_preserves_recorded_election_quorum(
+            ds.server_states[server_id],
+            ds_.server_states[server_id],
+            ds.server_constants[server_id],
+        );
+
+        assert forall |i: int|
+            0 <= i < ds_.num_servers
+            implies has_recorded_election_quorum(
+                ds_.server_states[i],
+            )
+        by {
+            if i != server_id {
+                assert(ds_.server_states[i]
+                    == ds.server_states[i]);
+            }
         }
     }
 
@@ -10004,6 +10064,7 @@ verus! {
         lemma_candidate_or_leader_voted_for_self_id_inductive(ds, ds_);
         lemma_voters_voted_for_candidate_inductive(ds, ds_);
         lemma_leader_has_quorum_inductive(ds, ds_);
+        lemma_leader_has_recorded_election_quorum_inductive(ds, ds_);
         lemma_commit_index_bounded_inductive(ds, ds_);
         lemma_leader_log_long_enough_inductive(ds, ds_);
         lemma_entry_term_leader_witness_inductive(ds, ds_);

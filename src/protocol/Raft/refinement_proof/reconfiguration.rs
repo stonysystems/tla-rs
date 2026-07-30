@@ -9,6 +9,7 @@ use crate::protocol::Raft::raft::{
     LHandleVoteResponseMsg,
     LHandleVoteResponseMsgWithMembership,
     LReceiveVoteAndBecomeLeader,
+    LNext,
     LTryAdvanceCommitIndex,
     LTryAdvanceCommitIndexWithMembership,
     LFollowerAppendEntries,
@@ -1199,6 +1200,22 @@ verus! {
                 s_mid, s_, c, term, granted, voter, sent_packets,
             );
         }
+    }
+
+    /// Every local Raft step preserves a leader's saved election
+    /// certificate. The only step that creates a new leader is the
+    /// vote-response path proved above.
+    pub proof fn lemma_lnext_preserves_recorded_election_quorum(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+    )
+        requires
+            LNext(s, s_, c),
+            has_recorded_election_quorum(s),
+        ensures
+            has_recorded_election_quorum(s_),
+    {
     }
 
     /// Any two majorities of the same configuration overlap.
