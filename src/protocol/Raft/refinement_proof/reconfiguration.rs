@@ -782,10 +782,23 @@ verus! {
         }
     }
 
+    /// No configuration change is already waiting in the uncommitted
+    /// suffix. This enforces one membership transition at a time.
+    pub open spec fn uncommitted_suffix_has_no_configuration(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+    ) -> bool {
+        &&& 0 <= committed_len <= log.len()
+        &&& forall |index: int|
+            committed_len <= index < log.len()
+            ==> !(log[index].payload is Configuration)
+    }
+
     /// A leader appends a legal membership configuration entry.
     ///
     /// The entry is initially uncommitted, so it does not immediately
     /// change either active membership or application-visible output.
+    /// A second configuration cannot be appended until this one commits.
     pub open spec fn LAppendConfigurationEntry(
         s: LState,
         s_: LState,
@@ -808,6 +821,10 @@ verus! {
         &&& s.role is Leader
         &&& 0 <= s.commit_index
         &&& s.commit_index <= s.log.len()
+        &&& uncommitted_suffix_has_no_configuration(
+            s.log,
+            s.commit_index,
+        )
         &&& is_legal_phase_progression(
             current_phase,
             requested_phase,
@@ -827,6 +844,8 @@ verus! {
         )
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
+        &&& s_.election_membership_phase
+            == s.election_membership_phase
         &&& s_.match_index == s.match_index
         &&& s_.next_index == s.next_index
         &&& sent_packets == Seq::<LRaftMessage>::empty()
@@ -881,6 +900,16 @@ verus! {
                 s.log,
                 s.commit_index,
             ),
+            s_.election_membership_phase
+                == s.election_membership_phase,
+            forall |index: int|
+                s_.commit_index <= index < s_.log.len()
+                && s_.log[index].payload is Configuration
+                ==> index == s.log.len(),
+            !uncommitted_suffix_has_no_configuration(
+                s_.log,
+                s_.commit_index,
+            ),
     {
         let entry = LLogEntry {
             term: s.current_term,
@@ -906,6 +935,28 @@ verus! {
             entry,
             s.commit_index,
         );
+
+        assert forall |index: int|
+            s_.commit_index <= index < s_.log.len()
+            && s_.log[index].payload is Configuration
+            implies index == s.log.len()
+        by {
+            if index < s.log.len() {
+                assert(s_.log[index] == s.log[index]);
+                assert(!(s.log[index].payload is Configuration));
+                assert(false);
+            } else {
+                assert(index == s.log.len());
+            }
+        };
+
+        assert(s_.log[s.log.len() as int] == entry);
+        assert(s_.log[s.log.len() as int].payload
+            is Configuration);
+        assert(!uncommitted_suffix_has_no_configuration(
+            s_.log,
+            s_.commit_index,
+        ));
     }
 
     /// Committing an ordinary data entry appends exactly its payload
