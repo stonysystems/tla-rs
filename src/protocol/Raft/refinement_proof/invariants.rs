@@ -4379,6 +4379,120 @@ verus! {
         );
     }
 
+    /// Leaders elected from ordered committed prefixes separated only by
+    /// Data entries used the same membership phase, so their saved election
+    /// quorums overlap.
+    pub proof fn lemma_configuration_free_election_prefixes_imply_quorum_overlap(
+        ds: RaftDistributedState,
+        earlier_leader: int,
+        later_leader: int,
+        earlier_election_len: int,
+        later_election_len: int,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            0 <= earlier_leader < ds.num_servers,
+            0 <= later_leader < ds.num_servers,
+            ds.server_states[earlier_leader].role is Leader,
+            ds.server_states[later_leader].role is Leader,
+            0 <= earlier_election_len,
+            earlier_election_len
+                <= ds.server_states[earlier_leader].commit_index,
+            earlier_election_len <= later_election_len,
+            later_election_len
+                <= ds.server_states[later_leader].commit_index,
+            ds.server_states[earlier_leader].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[earlier_leader].log,
+                    earlier_election_len,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[earlier_leader].servers,
+                    },
+                )),
+            ds.server_states[later_leader].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[later_leader].log,
+                    later_election_len,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[later_leader].servers,
+                    },
+                )),
+            has_recorded_election_quorum(
+                ds.server_states[earlier_leader],
+            ),
+            has_recorded_election_quorum(
+                ds.server_states[later_leader],
+            ),
+            forall |index: int|
+                earlier_election_len <= index
+                    < later_election_len
+                ==> !(ds.server_states[later_leader]
+                    .log[index].payload is Configuration),
+        ensures
+            exists |server: int|
+                ds.server_states[earlier_leader]
+                    .votes_granted.contains(server)
+                && ds.server_states[later_leader]
+                    .votes_granted.contains(server),
+    {
+        let later_log =
+            ds.server_states[later_leader].log;
+        let initial_phase = MembershipPhase::Stable {
+            config:
+                ds.server_constants[later_leader].servers,
+        };
+        let earlier_phase =
+            active_membership_phase_from_raft_log(
+                later_log,
+                earlier_election_len,
+                initial_phase,
+            );
+        let later_phase =
+            active_membership_phase_from_raft_log(
+                later_log,
+                later_election_len,
+                initial_phase,
+            );
+
+        lemma_ordered_leader_election_snapshots_have_legal_bridge(
+            ds,
+            earlier_leader,
+            later_leader,
+            earlier_election_len,
+            later_election_len,
+        );
+
+        assert(ds.server_states[earlier_leader]
+            .election_membership_phase
+                == Some(earlier_phase));
+        assert(ds.server_states[later_leader]
+            .election_membership_phase
+                == Some(later_phase));
+
+        assert(is_quorum_for_phase(
+            ds.server_states[earlier_leader].votes_granted,
+            earlier_phase,
+        ));
+        assert(is_quorum_for_phase(
+            ds.server_states[later_leader].votes_granted,
+            later_phase,
+        ));
+
+        assert(CommitIndexBounded(ds));
+        assert(later_election_len <= later_log.len());
+
+        lemma_configuration_free_raft_interval_quorums_intersect(
+            later_log,
+            earlier_election_len,
+            later_election_len,
+            initial_phase,
+            ds.server_states[earlier_leader].votes_granted,
+            ds.server_states[later_leader].votes_granted,
+        );
+    }
+
     // =========================================================================
     // Supporting invariant induction: CommitIndexNonnegative
     // =========================================================================
