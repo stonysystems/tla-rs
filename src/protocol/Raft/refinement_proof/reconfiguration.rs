@@ -1496,6 +1496,106 @@ verus! {
         }
     }
 
+    /// Every shorter committed prefix of a well-formed membership
+    /// history is itself well formed.
+    pub proof fn lemma_well_formed_committed_log_prefix(
+        log: Seq<MembershipLogEntry>,
+        longer_len: int,
+        prefix_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            committed_membership_log_is_well_formed(
+                log,
+                longer_len,
+                initial_phase,
+            ),
+            0 <= prefix_len <= longer_len,
+        ensures
+            committed_membership_log_is_well_formed(
+                log,
+                prefix_len,
+                initial_phase,
+            ),
+        decreases
+            longer_len - prefix_len,
+    {
+        if prefix_len < longer_len {
+            assert(longer_len > 0);
+            lemma_well_formed_committed_log_decomposes(
+                log,
+                longer_len,
+                initial_phase,
+            );
+            lemma_well_formed_committed_log_prefix(
+                log,
+                longer_len - 1,
+                prefix_len,
+                initial_phase,
+            );
+        }
+    }
+
+    /// Every committed step in an interval of a well-formed history
+    /// follows the legal joint-consensus phase order.
+    pub proof fn lemma_well_formed_committed_log_interval_is_legal(
+        log: Seq<MembershipLogEntry>,
+        earlier_len: int,
+        later_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            committed_membership_log_is_well_formed(
+                log,
+                later_len,
+                initial_phase,
+            ),
+            0 <= earlier_len <= later_len,
+        ensures
+            forall |committed_len: int|
+                earlier_len < committed_len <= later_len
+                ==> is_legal_phase_progression(
+                    active_membership_phase(
+                        log,
+                        committed_len - 1,
+                        initial_phase,
+                    ),
+                    #[trigger] active_membership_phase(
+                        log,
+                        committed_len,
+                        initial_phase,
+                    ),
+                ),
+    {
+        assert forall |committed_len: int|
+            earlier_len < committed_len <= later_len
+            implies is_legal_phase_progression(
+                active_membership_phase(
+                    log,
+                    committed_len - 1,
+                    initial_phase,
+                ),
+                #[trigger] active_membership_phase(
+                    log,
+                    committed_len,
+                    initial_phase,
+                ),
+            )
+        by {
+            lemma_well_formed_committed_log_prefix(
+                log,
+                later_len,
+                committed_len,
+                initial_phase,
+            );
+            lemma_well_formed_committed_log_last_step_is_legal(
+                log,
+                committed_len,
+                initial_phase,
+            );
+        };
+    }
+
     /// Appending an entry beyond committed_len cannot change whether
     /// the existing committed prefix is a well-formed membership history.
     pub proof fn lemma_uncommitted_entry_does_not_affect_membership_log_well_formed(
