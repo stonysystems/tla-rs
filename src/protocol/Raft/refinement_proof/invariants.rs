@@ -6695,6 +6695,142 @@ verus! {
         };
     }
 
+    /// Every server's newly committed membership interval is legal across
+    /// one distributed Raft transition.
+    ///
+    /// Only one server steps. For that server, the local LNext theorem gives
+    /// commit monotonicity, pre/post prefix agreement at the old commit point,
+    /// and a legal adjacent membership chain through the new commit point.
+    /// Every other server stutters, so its newly committed interval is empty.
+    pub proof fn lemma_distributed_next_membership_commit_intervals_are_legal(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            forall |server_id: int|
+                #![trigger ds.server_states[server_id]]
+                0 <= server_id < ds.num_servers
+                ==> {
+                    let pre_state = ds.server_states[server_id];
+                    let post_state = ds_.server_states[server_id];
+                    let initial_phase = MembershipPhase::Stable {
+                        config: ds.server_constants[server_id].servers,
+                    };
+
+                    &&& pre_state.commit_index
+                        <= post_state.commit_index
+                    &&& active_membership_phase_from_raft_log(
+                        pre_state.log,
+                        pre_state.commit_index,
+                        initial_phase,
+                    ) == active_membership_phase_from_raft_log(
+                        post_state.log,
+                        pre_state.commit_index,
+                        initial_phase,
+                    )
+                    &&& forall |committed_len: int|
+                        pre_state.commit_index < committed_len
+                            <= post_state.commit_index
+                        ==> is_legal_phase_progression(
+                            active_membership_phase_from_raft_log(
+                                post_state.log,
+                                committed_len - 1,
+                                initial_phase,
+                            ),
+                            #[trigger] active_membership_phase_from_raft_log(
+                                post_state.log,
+                                committed_len,
+                                initial_phase,
+                            ),
+                        )
+                },
+    {
+        lemma_all_raft_membership_logs_well_formed_inductive(
+            ds,
+            ds_,
+        );
+
+        lemma_commit_index_nonnegative_inductive(
+            ds,
+            ds_,
+        );
+
+        lemma_commit_index_bounded_inductive(
+            ds,
+            ds_,
+        );
+
+        let step = lemma_extract_step_with_network(ds, ds_);
+        let stepping = step.0;
+
+        assert forall |server_id: int|
+            #![trigger ds.server_states[server_id]]
+            0 <= server_id < ds.num_servers
+            implies {
+                let pre_state = ds.server_states[server_id];
+                let post_state = ds_.server_states[server_id];
+                let initial_phase = MembershipPhase::Stable {
+                    config: ds.server_constants[server_id].servers,
+                };
+
+                &&& pre_state.commit_index
+                    <= post_state.commit_index
+                &&& active_membership_phase_from_raft_log(
+                    pre_state.log,
+                    pre_state.commit_index,
+                    initial_phase,
+                ) == active_membership_phase_from_raft_log(
+                    post_state.log,
+                    pre_state.commit_index,
+                    initial_phase,
+                )
+                &&& forall |committed_len: int|
+                    pre_state.commit_index < committed_len
+                        <= post_state.commit_index
+                    ==> is_legal_phase_progression(
+                        active_membership_phase_from_raft_log(
+                            post_state.log,
+                            committed_len - 1,
+                            initial_phase,
+                        ),
+                        #[trigger] active_membership_phase_from_raft_log(
+                            post_state.log,
+                            committed_len,
+                            initial_phase,
+                        ),
+                    )
+            }
+        by {
+            if server_id == stepping {
+                assert(0 <= ds.server_states[server_id].commit_index);
+                assert(ds.server_states[server_id].commit_index
+                    <= ds.server_states[server_id].log.len());
+                assert(0 <= ds_.server_states[server_id].commit_index);
+                assert(ds_.server_states[server_id].commit_index
+                    <= ds_.server_states[server_id].log.len());
+                assert(raft_membership_log_is_well_formed(
+                    ds_.server_states[server_id].log,
+                    MembershipPhase::Stable {
+                        config:
+                            ds.server_constants[server_id].servers,
+                    },
+                ));
+
+                lemma_lnext_newly_committed_membership_interval_is_legal(
+                    ds.server_states[server_id],
+                    ds_.server_states[server_id],
+                    ds.server_constants[server_id],
+                );
+            } else {
+                assert(ds_.server_states[server_id]
+                    == ds.server_states[server_id]);
+            }
+        };
+    }
+
     /// Helper for LogMatching: when server_id extends its log via
     /// LFollowerAppendEntries and another server sj has an entry at the
     /// same index k with the same term, all entries 0..k match.
