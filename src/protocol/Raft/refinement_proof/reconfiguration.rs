@@ -3886,4 +3886,134 @@ verus! {
     {
         assert(s_.log == s.log);
     }
+
+    /// Every protocol action preserves all physical log entries that were
+    /// already present before the action. An action may append one entry,
+    /// but it never rewrites the existing prefix in this Raft model.
+    pub proof fn lemma_lnext_preserves_existing_raft_log_prefix(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+    )
+        requires
+            LNext(s, s_, c),
+        ensures
+            s.log.len() <= s_.log.len(),
+            forall |index: int|
+                0 <= index < s.log.len()
+                ==> s_.log[index] == s.log[index],
+    {
+    }
+
+    /// No protocol action moves a server's commit index backward.
+    /// The old commit bound is needed for the follower AppendEntries branch,
+    /// whose new index is capped by the (possibly extended) log length.
+    pub proof fn lemma_lnext_commit_index_nondecreasing_for_membership(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+    )
+        requires
+            LNext(s, s_, c),
+            0 <= s.commit_index <= s.log.len(),
+        ensures
+            s.commit_index <= s_.commit_index,
+    {
+    }
+
+    /// Across any one local Raft transition, the newly committed portion of
+    /// the post-state log follows a legal Stable-to-Joint-to-Stable chain.
+    ///
+    /// This theorem deliberately permits a follower to learn several already
+    /// committed configuration changes from a leader in one AppendEntries
+    /// step. It proves legality of every adjacent boundary in that interval;
+    /// it does not incorrectly claim that the two distant endpoint quorums
+    /// must overlap directly.
+    pub proof fn lemma_lnext_newly_committed_membership_interval_is_legal(
+        s: LState,
+        s_: LState,
+        c: LConstants,
+    )
+        requires
+            LNext(s, s_, c),
+            0 <= s.commit_index <= s.log.len(),
+            0 <= s_.commit_index <= s_.log.len(),
+            raft_membership_log_is_well_formed(
+                s_.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+        ensures
+            s.commit_index <= s_.commit_index,
+            active_membership_phase_from_raft_log(
+                s.log,
+                s.commit_index,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ) == active_membership_phase_from_raft_log(
+                s_.log,
+                s.commit_index,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+            forall |committed_len: int|
+                s.commit_index < committed_len
+                    <= s_.commit_index
+                ==> is_legal_phase_progression(
+                    active_membership_phase_from_raft_log(
+                        s_.log,
+                        committed_len - 1,
+                        MembershipPhase::Stable {
+                            config: c.servers,
+                        },
+                    ),
+                    #[trigger] active_membership_phase_from_raft_log(
+                        s_.log,
+                        committed_len,
+                        MembershipPhase::Stable {
+                            config: c.servers,
+                        },
+                    ),
+                ),
+    {
+        let initial_phase = MembershipPhase::Stable {
+            config: c.servers,
+        };
+
+        lemma_lnext_preserves_existing_raft_log_prefix(
+            s,
+            s_,
+            c,
+        );
+
+        lemma_lnext_commit_index_nondecreasing_for_membership(
+            s,
+            s_,
+            c,
+        );
+
+        assert forall |index: int|
+            0 <= index < s.commit_index
+            implies s.log[index] == s_.log[index]
+        by {
+            assert(index < s.log.len());
+        };
+
+        lemma_equal_committed_raft_prefixes_have_same_active_phase(
+            s.log,
+            s_.log,
+            s.commit_index,
+            initial_phase,
+        );
+
+        lemma_well_formed_raft_log_interval_progresses_legally(
+            s_.log,
+            s.commit_index,
+            s_.commit_index,
+            initial_phase,
+        );
+    }
 }
