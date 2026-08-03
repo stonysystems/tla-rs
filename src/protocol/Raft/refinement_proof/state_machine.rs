@@ -201,6 +201,22 @@ verus! {
                         == replicator_set(s, c, s_.commit_index)
                 }
             )
+            // Every Configuration entry in the stepping server's committed
+            // post-state prefix is tied to the same global history
+            // certificate. Followers therefore reuse an existing leader-created
+            // certificate rather than inventing a new one.
+            &&& (forall |index: int|
+                0 <= index < s_.commit_index
+                && index < s_.log.len()
+                && s_.log[index].payload is Configuration
+                ==> {
+                    &&& ds_.configuration_commit_certificates.dom().contains(index)
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == s_.log[index]
+                }
+            )
         }
     }
 

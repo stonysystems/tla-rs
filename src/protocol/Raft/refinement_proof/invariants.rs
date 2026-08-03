@@ -211,6 +211,85 @@ verus! {
             )
     }
 
+    /// Every stored configuration-commit certificate is internally valid and
+    /// is backed by matching log prefixes on every member of its saved quorum.
+    pub open spec fn ConfigurationCommitCertificatesValid(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |index: int|
+            #![trigger ds.configuration_commit_certificates[index]]
+            ds.configuration_commit_certificates.dom().contains(index)
+            ==> {
+                let certificate = ds.configuration_commit_certificates[index];
+                &&& certificate.log_index == index
+                &&& is_quorum_for_phase(
+                    certificate.quorum,
+                    certificate.governing_phase,
+                )
+                &&& certificate.entry.payload is Configuration
+                &&& forall |replica: int|
+                    #![trigger ds.server_states[replica].log[index]]
+                    certificate.quorum.contains(replica)
+                    ==> {
+                        &&& 0 <= replica < ds.num_servers
+                        &&& configuration_commit_certificate_matches_log(
+                            certificate,
+                            ds.server_states[replica].log,
+                            MembershipPhase::Stable {
+                                config: ds.server_constants[replica].servers,
+                            },
+                        )
+                    }
+            }
+    }
+
+    /// Every Configuration entry that any server considers committed has the
+    /// unique global certificate for that physical log position and entry.
+    pub open spec fn CommittedConfigurationsHaveCertificates(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |server_id: int, index: int|
+            #![trigger ds.server_states[server_id].log[index]]
+            0 <= server_id < ds.num_servers
+            && 0 <= index < ds.server_states[server_id].commit_index
+            && index < ds.server_states[server_id].log.len()
+            && ds.server_states[server_id].log[index].payload is Configuration
+            ==> {
+                &&& ds.configuration_commit_certificates.dom().contains(index)
+                &&& ds.configuration_commit_certificates[index].log_index
+                    == index
+                &&& ds.configuration_commit_certificates[index].entry
+                    == ds.server_states[server_id].log[index]
+            }
+    }
+
+    /// Empty initial logs and an empty certificate map establish both
+    /// certificate invariants.
+    pub proof fn lemma_init_establishes_configuration_certificate_invariants(
+        ds: RaftDistributedState,
+    )
+        requires RaftDistributedInit(ds)
+        ensures
+            ConfigurationCommitCertificatesValid(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+    {
+        assert(ds.configuration_commit_certificates
+            == Map::<int, ConfigurationCommitCertificate>::empty());
+        assert forall |server_id: int, index: int|
+            #![trigger ds.server_states[server_id].log[index]]
+            0 <= server_id < ds.num_servers
+            && 0 <= index < ds.server_states[server_id].commit_index
+            && index < ds.server_states[server_id].log.len()
+            implies false
+        by {
+            assert(LInit(
+                ds.server_states[server_id],
+                ds.server_constants[server_id],
+            ));
+            assert(ds.server_states[server_id].commit_index == 0);
+        };
+    }
+
     /// The existing fixed-membership election invariants imply that
     /// every leader has a valid quorum for the stable membership phase.
     pub proof fn lemma_fixed_leader_quorum_implies_stable_phase_quorum(
@@ -621,6 +700,7 @@ verus! {
         &&& LeaderHasQuorum(ds)
         &&& LeaderHasRecordedElectionQuorum(ds)
         &&& LeaderHasRecordedElectionLogProvenance(ds)
+        &&& CommittedConfigurationsHaveCertificates(ds)
         &&& CommitIndexBounded(ds)
         &&& CommitIndexNonnegative(ds)
         &&& LeaderLogLongEnough(ds)
@@ -668,6 +748,7 @@ verus! {
         ensures RaftSafetyInvariant(ds)
     {
         lemma_init_establishes_all_raft_membership_logs_well_formed(ds);
+        lemma_init_establishes_configuration_certificate_invariants(ds);
         lemma_state_machine_safety_implies_committed_membership_prefix_agreement(
             ds,
         );
@@ -7838,6 +7919,30 @@ verus! {
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != server_id ==>
                 ds_.server_states[j] == ds.server_states[j])
+            &&& (forall |index: int|
+                ds.configuration_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& ds_.configuration_commit_certificates.dom().contains(index)
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == ds.configuration_commit_certificates[index].log_index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == ds.configuration_commit_certificates[index].entry
+                    &&& ds_.configuration_commit_certificates[index].governing_phase
+                        == ds.configuration_commit_certificates[index].governing_phase
+                    &&& ds_.configuration_commit_certificates[index].quorum
+                        == ds.configuration_commit_certificates[index].quorum
+                })
+            &&& (forall |index: int|
+                0 <= index < ds_.server_states[server_id].commit_index
+                && index < ds_.server_states[server_id].log.len()
+                && ds_.server_states[server_id].log[index].payload is Configuration
+                ==> {
+                    &&& ds_.configuration_commit_certificates.dom().contains(index)
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == ds_.server_states[server_id].log[index]
+                })
             &&& RaftActionProduces(ds, server_id,
                     ds.server_states[server_id], ds_.server_states[server_id],
                     ds.server_constants[server_id], sent_pkts, recv_from)
@@ -7892,6 +7997,52 @@ verus! {
         lemma_distributed_next_implies_legacy(ds, ds_);
 
         (server_id, sent_pkts, recv_from)
+    }
+
+    /// The global certificate map continues to cover every committed
+    /// Configuration entry after one distributed step.
+    pub proof fn lemma_committed_configurations_have_certificates_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            CommittedConfigurationsHaveCertificates(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            CommittedConfigurationsHaveCertificates(ds_),
+    {
+        let (server_id, sent_pkts, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+
+        assert forall |server: int, index: int|
+            #![trigger ds_.server_states[server].log[index]]
+            0 <= server < ds_.num_servers
+            && 0 <= index < ds_.server_states[server].commit_index
+            && index < ds_.server_states[server].log.len()
+            && ds_.server_states[server].log[index].payload is Configuration
+            implies {
+                &&& ds_.configuration_commit_certificates.dom().contains(index)
+                &&& ds_.configuration_commit_certificates[index].log_index
+                    == index
+                &&& ds_.configuration_commit_certificates[index].entry
+                    == ds_.server_states[server].log[index]
+            }
+        by {
+            if server == server_id {
+                assert(ds_.server_states[server]
+                    == ds_.server_states[server_id]);
+            } else {
+                assert(ds_.server_states[server]
+                    == ds.server_states[server]);
+                assert(CommittedConfigurationsHaveCertificates(ds));
+                assert(ds.configuration_commit_certificates
+                    .dom().contains(index));
+                assert(ds.configuration_commit_certificates[index].log_index
+                    == index);
+                assert(ds.configuration_commit_certificates[index].entry
+                    == ds.server_states[server].log[index]);
+            }
+        };
     }
 
     proof fn lemma_vote_response_integrity_inductive(
@@ -11456,6 +11607,8 @@ verus! {
         lemma_leader_has_quorum_inductive(ds, ds_);
         lemma_leader_has_recorded_election_quorum_inductive(ds, ds_);
         lemma_leader_has_recorded_election_log_provenance_inductive(ds, ds_);
+        lemma_committed_configurations_have_certificates_inductive(
+            ds, ds_);
         lemma_commit_index_bounded_inductive(ds, ds_);
         lemma_commit_index_nonnegative_inductive(ds, ds_);
         lemma_leader_log_long_enough_inductive(ds, ds_);
