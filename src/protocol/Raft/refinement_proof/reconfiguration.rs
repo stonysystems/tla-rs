@@ -4016,4 +4016,57 @@ verus! {
             initial_phase,
         );
     }
+
+    /// A valid configuration-commit certificate's saved quorum overlaps every
+    /// quorum for the membership phase installed by its Configuration entry.
+    /// This is the local handoff from Stable-old to Joint, or from Joint to
+    /// Stable-new.
+    pub proof fn lemma_configuration_certificate_quorum_intersects_resulting_phase(
+        certificate: ConfigurationCommitCertificate,
+        witness_log: Seq<LLogEntry>,
+        initial_phase: MembershipPhase,
+        resulting_quorum: Set<int>,
+    )
+        requires
+            configuration_commit_certificate_matches_log(
+                certificate,
+                witness_log,
+                initial_phase,
+            ),
+            match certificate.entry.payload {
+                LLogValue::Configuration { phase } => {
+                    is_quorum_for_phase(
+                        resulting_quorum,
+                        membership_phase_view(phase),
+                    )
+                },
+                LLogValue::Data { value: _ } => false,
+            },
+        ensures
+            exists |server: int|
+                certificate.quorum.contains(server)
+                && resulting_quorum.contains(server),
+    {
+        match certificate.entry.payload {
+            LLogValue::Configuration { phase } => {
+                assert(is_quorum_for_phase(
+                    certificate.quorum,
+                    certificate.governing_phase,
+                ));
+                assert(is_legal_phase_progression(
+                    certificate.governing_phase,
+                    membership_phase_view(phase),
+                ));
+                lemma_legal_phase_progression_quorums_intersect(
+                    certificate.quorum,
+                    resulting_quorum,
+                    certificate.governing_phase,
+                    membership_phase_view(phase),
+                );
+            },
+            LLogValue::Data { value: _ } => {
+                assert(false);
+            },
+        }
+    }
 }

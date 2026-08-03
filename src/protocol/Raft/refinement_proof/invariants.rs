@@ -245,6 +245,367 @@ verus! {
             }
     }
 
+    /// Extract the non-replica-specific facts stored by one valid certificate.
+    pub proof fn lemma_configuration_commit_certificate_basic_validity(
+        ds: RaftDistributedState,
+        index: int,
+    )
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+        ensures ({
+            let certificate =
+                ds.configuration_commit_certificates[index];
+            &&& certificate.log_index == index
+            &&& is_quorum_for_phase(
+                certificate.quorum,
+                certificate.governing_phase,
+            )
+            &&& certificate.entry.payload is Configuration
+        })
+    {
+        assert(ConfigurationCommitCertificatesValid(ds));
+    }
+
+    /// The quorum that committed a Configuration entry overlaps any election
+    /// quorum governed by the phase immediately before that entry. This is the
+    /// key local fact for the first committed boundary a stale candidate lacks.
+    pub proof fn lemma_configuration_certificate_quorum_intersects_election_phase(
+        ds: RaftDistributedState,
+        index: int,
+        election_quorum: Set<int>,
+    )
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            is_quorum_for_phase(
+                election_quorum,
+                ds.configuration_commit_certificates[index].governing_phase,
+            ),
+        ensures
+            exists |server: int|
+                ds.configuration_commit_certificates[index].quorum
+                    .contains(server)
+                && election_quorum.contains(server),
+    {
+        lemma_configuration_commit_certificate_basic_validity(ds, index);
+        let certificate = ds.configuration_commit_certificates[index];
+        lemma_phase_quorums_intersect(
+            certificate.quorum,
+            election_quorum,
+            certificate.governing_phase,
+        );
+    }
+
+    /// If a leader's saved election phase is the phase immediately before a
+    /// certified Configuration entry, one of that leader's voters belongs to
+    /// the certificate quorum and still has the certified entry in its log.
+    pub proof fn lemma_configuration_certificate_overlaps_recorded_leader_election(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+    ) -> (overlap_voter: int)
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            has_recorded_election_quorum(ds.server_states[leader_id]),
+            ds.server_states[leader_id].election_membership_phase
+                == Some(
+                    ds.configuration_commit_certificates[index]
+                        .governing_phase,
+                ),
+        ensures
+            0 <= overlap_voter < ds.num_servers,
+            ds.configuration_commit_certificates[index].quorum
+                .contains(overlap_voter),
+            ds.server_states[leader_id].votes_granted
+                .contains(overlap_voter),
+            ds.server_states[overlap_voter].log.len() > index,
+            ds.server_states[overlap_voter].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        let certificate = ds.configuration_commit_certificates[index];
+        let leader = ds.server_states[leader_id];
+        assert(is_quorum_for_phase(
+            leader.votes_granted,
+            certificate.governing_phase,
+        ));
+        lemma_configuration_certificate_quorum_intersects_election_phase(
+            ds,
+            index,
+            leader.votes_granted,
+        );
+        let overlap_voter = choose |server: int|
+            certificate.quorum.contains(server)
+            && leader.votes_granted.contains(server);
+        lemma_configuration_commit_certificate_valid_for_replica(
+            ds,
+            index,
+            overlap_voter,
+        );
+        assert(configuration_commit_certificate_matches_log(
+            certificate,
+            ds.server_states[overlap_voter].log,
+            MembershipPhase::Stable {
+                config: ds.server_constants[overlap_voter].servers,
+            },
+        ));
+        assert(0 <= certificate.log_index
+            < ds.server_states[overlap_voter].log.len());
+        assert(certificate.log_index == index);
+        assert(ds.server_states[overlap_voter].log[index]
+            == certificate.entry);
+        overlap_voter
+    }
+
+    /// For the first certified Configuration boundary after a leader's saved
+    /// election prefix, the leader's recorded election phase is exactly the
+    /// phase that governed that certificate.
+    pub proof fn lemma_first_missing_certificate_matches_recorded_election_phase(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        certificate_witness: int,
+        election_commit_len: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            ds.configuration_commit_certificates[index].quorum
+                .contains(certificate_witness),
+            0 <= leader_id < ds.num_servers,
+            0 <= election_commit_len
+                <= ds.server_states[leader_id].log.len(),
+            election_commit_len <= index,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[leader_id].log,
+                    election_commit_len,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[leader_id].servers,
+                    },
+                )),
+            forall |prefix_index: int|
+                0 <= prefix_index < election_commit_len
+                ==> ds.server_states[leader_id].log[prefix_index]
+                    == ds.server_states[certificate_witness].log[prefix_index],
+            forall |prefix_index: int|
+                election_commit_len <= prefix_index < index
+                ==> !(ds.server_states[certificate_witness]
+                    .log[prefix_index].payload is Configuration),
+        ensures
+            ds.server_states[leader_id].election_membership_phase
+                == Some(
+                    ds.configuration_commit_certificates[index]
+                        .governing_phase,
+                ),
+    {
+        let certificate = ds.configuration_commit_certificates[index];
+        lemma_configuration_commit_certificate_valid_for_replica(
+            ds,
+            index,
+            certificate_witness,
+        );
+        assert(configuration_commit_certificate_matches_log(
+            certificate,
+            ds.server_states[certificate_witness].log,
+            MembershipPhase::Stable {
+                config: ds.server_constants[certificate_witness].servers,
+            },
+        ));
+        assert(ds.server_constants[leader_id].servers
+            == ds.server_constants[certificate_witness].servers);
+        lemma_equal_committed_raft_prefixes_have_same_active_phase(
+            ds.server_states[leader_id].log,
+            ds.server_states[certificate_witness].log,
+            election_commit_len,
+            MembershipPhase::Stable {
+                config: ds.server_constants[leader_id].servers,
+            },
+        );
+        lemma_configuration_free_interval_preserves_active_phase(
+            ds.server_states[certificate_witness].log,
+            election_commit_len,
+            index,
+            MembershipPhase::Stable {
+                config: ds.server_constants[certificate_witness].servers,
+            },
+        );
+    }
+
+    /// A later-term leader elected under the phase immediately before a
+    /// certified Configuration boundary must contain that Configuration entry.
+    /// Therefore a candidate missing the boundary cannot both use that old
+    /// phase and successfully become leader.
+    pub proof fn lemma_certified_configuration_present_in_recorded_leader(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            LogMatching(ds),
+            LogTermsMonotonic(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(
+                    ds.configuration_commit_certificates[index]
+                        .governing_phase,
+                ),
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        let certificate = ds.configuration_commit_certificates[index];
+        let overlap_voter =
+            lemma_configuration_certificate_overlaps_recorded_leader_election(
+                ds,
+                index,
+                leader_id,
+            );
+
+        if overlap_voter == leader_id {
+            lemma_configuration_commit_certificate_valid_for_replica(
+                ds,
+                index,
+                overlap_voter,
+            );
+            assert(configuration_commit_certificate_matches_log(
+                certificate,
+                ds.server_states[leader_id].log,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[leader_id].servers,
+                },
+            ));
+        } else {
+            assert(VotersVotedForCandidate(ds));
+            let vote = choose |packet: LRaftPacket| {
+                &&& ds.network.contains(packet)
+                &&& packet.dst == leader_id
+                &&& packet.msg matches LRaftMessage::VoteResponse {
+                    term,
+                    granted,
+                    voter,
+                    ..
+                }
+                &&& term == ds.server_states[leader_id].current_term
+                &&& granted
+                &&& voter == overlap_voter
+            };
+            assert(vote.src == overlap_voter) by {
+                assert(VoteResponseIntegrity(ds));
+            };
+            assert(
+                ds.server_states[overlap_voter].current_term
+                    > vote.msg->VoteResponse_term
+                || (ds.server_states[overlap_voter].current_term
+                        == vote.msg->VoteResponse_term
+                    && ds.server_states[overlap_voter].has_voted
+                    && ds.server_states[overlap_voter].voted_for
+                        == leader_id)
+            ) by {
+                assert(VoteResponseIntegrity(ds));
+            };
+
+            lemma_overlap_voter_entry_transfer(
+                ds,
+                leader_id,
+                overlap_voter,
+                index,
+                certificate.entry,
+            );
+        }
+    }
+
+    /// End-to-end first-boundary result: once the phase bridge hypotheses
+    /// identify a certified Configuration as the first membership boundary
+    /// missing after the leader's election prefix, a later-term leader must
+    /// contain that exact Configuration entry.
+    pub proof fn lemma_first_missing_certified_configuration_present_in_recorded_leader(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        certificate_witness: int,
+        election_commit_len: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            LogMatching(ds),
+            LogTermsMonotonic(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            ds.configuration_commit_certificates[index].quorum
+                .contains(certificate_witness),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+            0 <= election_commit_len
+                <= ds.server_states[leader_id].log.len(),
+            election_commit_len <= index,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[leader_id].log,
+                    election_commit_len,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[leader_id].servers,
+                    },
+                )),
+            forall |prefix_index: int|
+                0 <= prefix_index < election_commit_len
+                ==> ds.server_states[leader_id].log[prefix_index]
+                    == ds.server_states[certificate_witness]
+                        .log[prefix_index],
+            forall |prefix_index: int|
+                election_commit_len <= prefix_index < index
+                ==> !(ds.server_states[certificate_witness]
+                    .log[prefix_index].payload is Configuration),
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        lemma_first_missing_certificate_matches_recorded_election_phase(
+            ds,
+            index,
+            leader_id,
+            certificate_witness,
+            election_commit_len,
+        );
+        lemma_certified_configuration_present_in_recorded_leader(
+            ds,
+            index,
+            leader_id,
+        );
+    }
+
     /// Extract one quorum member's concrete log-prefix evidence from a valid
     /// configuration-commit certificate.
     pub proof fn lemma_configuration_commit_certificate_valid_for_replica(
