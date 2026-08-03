@@ -17,6 +17,22 @@ pub use crate::protocol::Raft::types::{
 
 verus! {
 
+    /// Proof-only evidence for one committed Configuration log entry.
+    ///
+    /// `log_index` is the zero-based physical Raft-log index of the
+    /// Configuration entry. `governing_phase` is the active membership just
+    /// before that entry became committed, and `quorum` is the set of replicas
+    /// whose logs justified committing it.
+    ///
+    /// This is ghost proof information: it does not change the executable
+    /// Raft messages, storage format, or host behavior.
+    pub struct ConfigurationCommitCertificate {
+        pub log_index: int,
+        pub entry: LLogEntry,
+        pub governing_phase: MembershipPhase,
+        pub quorum: Set<int>,
+    }
+
     /// A quorum is a majority of a particular finite configuration.
     pub open spec fn is_majority_of(
         quorum: Set<int>,
@@ -223,6 +239,54 @@ verus! {
                 }
             },
         }
+    }
+
+    /// Local mathematical validity of a configuration-commit certificate.
+    ///
+    /// The certificate points at an actual Configuration entry, records the
+    /// phase derived from the prefix immediately before that entry, carries a
+    /// valid quorum for that phase, and records a legal next membership phase.
+    pub open spec fn configuration_commit_certificate_matches_log(
+        certificate: ConfigurationCommitCertificate,
+        log: Seq<LLogEntry>,
+        initial_phase: MembershipPhase,
+    ) -> bool {
+        &&& 0 <= certificate.log_index < log.len()
+        &&& log[certificate.log_index] == certificate.entry
+        &&& certificate.governing_phase
+            == active_membership_phase_from_raft_log(
+                log,
+                certificate.log_index,
+                initial_phase,
+            )
+        &&& is_quorum_for_phase(
+            certificate.quorum,
+            certificate.governing_phase,
+        )
+        &&& match certificate.entry.payload {
+            LLogValue::Configuration { phase } => {
+                is_legal_phase_progression(
+                    certificate.governing_phase,
+                    membership_phase_view(phase),
+                )
+            },
+            LLogValue::Data { value: _ } => false,
+        }
+    }
+
+    /// A valid certificate's log position is exactly a Configuration entry.
+    pub proof fn lemma_configuration_commit_certificate_is_configuration(
+        certificate: ConfigurationCommitCertificate,
+        log: Seq<LLogEntry>,
+        initial_phase: MembershipPhase,
+    )
+        requires configuration_commit_certificate_matches_log(
+            certificate,
+            log,
+            initial_phase,
+        )
+        ensures log[certificate.log_index].payload is Configuration
+    {
     }
 
     /// No configuration change is already waiting in the uncommitted
