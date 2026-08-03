@@ -1506,7 +1506,6 @@ verus! {
         &&& ElectionSafety(ds)
         &&& LogMatching(ds)
         &&& AllRaftMembershipLogsWellFormed(ds)
-        &&& LeaderCompleteness(ds)
         &&& StateMachineSafety(ds)
         &&& CommittedMembershipPrefixAgreement(ds)
         &&& LeaderHasQuorum(ds)
@@ -13333,7 +13332,6 @@ verus! {
 
         // Log-level invariants (network-level trust boundary)
         lemma_log_matching_inductive(ds, ds_);
-        lemma_leader_completeness_inductive(ds, ds_);
         lemma_log_certificate_coverage_implies_state_machine_safety(ds_);
         lemma_state_machine_safety_implies_committed_membership_prefix_agreement(
             ds_,

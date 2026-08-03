@@ -68,6 +68,72 @@ verus! {
         }
     }
 
+    /// End-to-end dynamic-membership safety for physical Raft histories.
+    /// At every reachable behavior state, every committed Data or
+    /// Configuration entry is covered by one valid dynamic-quorum
+    /// certificate. Consequently, two servers cannot commit different
+    /// physical entries at the same log index.
+    pub proof fn lemma_dynamic_membership_committed_histories_are_safe(
+        b: RaftBehavior,
+        behavior_index: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+        ensures
+            CommittedEntriesHaveLogCertificates(b[behavior_index]),
+            LogCommitCertificatesValid(b[behavior_index]),
+            StateMachineSafety(b[behavior_index]),
+            forall |left: int, right: int, log_index: int|
+                0 <= left < b[behavior_index].num_servers
+                && 0 <= right < b[behavior_index].num_servers
+                && 0 <= log_index
+                    < b[behavior_index].server_states[left].commit_index
+                && 0 <= log_index
+                    < b[behavior_index].server_states[right].commit_index
+                && log_index
+                    < b[behavior_index].server_states[left].log.len()
+                && log_index
+                    < b[behavior_index].server_states[right].log.len()
+                ==> b[behavior_index].server_states[left].log[log_index]
+                    == b[behavior_index].server_states[right].log[log_index],
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
+        assert(RaftSafetyInvariant(b[behavior_index]));
+    }
+
+    /// Certificate-level formulation of dynamic commitment. Unlike the
+    /// legacy EntryCommittedAt predicate, this definition records which
+    /// membership phase and quorum authorized the physical entry.
+    pub open spec fn DynamicallyCommittedAt(
+        ds: RaftDistributedState,
+        log_index: int,
+        entry: LLogEntry,
+    ) -> bool {
+        &&& ds.log_commit_certificates.dom().contains(log_index)
+        &&& ds.log_commit_certificates[log_index].log_index == log_index
+        &&& ds.log_commit_certificates[log_index].entry == entry
+    }
+
+    /// Strong dynamic Leader Completeness statement. Its preservation is the
+    /// remaining election-provenance obligation for leaders elected from a
+    /// stale committed configuration; committed-history safety above does not
+    /// rely on this unproved strengthening.
+    pub open spec fn DynamicLeaderCompleteness(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |log_index: int, entry: LLogEntry, leader_id: int|
+            0 <= log_index
+            && DynamicallyCommittedAt(ds, log_index, entry)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term > entry.term
+            ==> {
+                &&& ds.server_states[leader_id].log.len() > log_index
+                &&& ds.server_states[leader_id].log[log_index] == entry
+            }
+    }
+
     /// Every concrete transition in a reachable Raft behavior commits only
     /// a legal chain of membership phases.
     ///
