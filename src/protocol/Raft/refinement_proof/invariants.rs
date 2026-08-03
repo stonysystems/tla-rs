@@ -245,6 +245,67 @@ verus! {
             }
     }
 
+    /// Dynamic-membership analogue of LeaderCompleteness for committed
+    /// Configuration entries: every higher-term leader contains every
+    /// certified membership boundary.
+    pub open spec fn CertifiedConfigurationLeaderCompleteness(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |index: int, leader_id: int|
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term
+            ==> {
+                &&& ds.server_states[leader_id].log.len() > index
+                &&& ds.server_states[leader_id].log[index]
+                    == ds.configuration_commit_certificates[index].entry
+            }
+    }
+
+    /// The one remaining provenance bridge needed by the certificate proof.
+    /// If a higher-term leader appears to miss a certified Configuration, the
+    /// certificate has a quorum member whose log agrees through the leader's
+    /// saved election prefix and contains no earlier missing Configuration.
+    pub open spec fn FirstMissingConfigurationBoundaryProvenance(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |index: int, leader_id: int|
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term
+            && !(ds.server_states[leader_id].log.len() > index
+                && ds.server_states[leader_id].log[index]
+                    == ds.configuration_commit_certificates[index].entry)
+            ==> exists |certificate_witness: int, election_commit_len: int| {
+                &&& ds.configuration_commit_certificates[index].quorum
+                    .contains(certificate_witness)
+                &&& 0 <= election_commit_len
+                    <= ds.server_states[leader_id].log.len()
+                &&& election_commit_len <= index
+                &&& ds.server_states[leader_id].election_membership_phase
+                    == Some(active_membership_phase_from_raft_log(
+                        ds.server_states[leader_id].log,
+                        election_commit_len,
+                        MembershipPhase::Stable {
+                            config: ds.server_constants[leader_id].servers,
+                        },
+                    ))
+                &&& forall |prefix_index: int|
+                    0 <= prefix_index < election_commit_len
+                    ==> ds.server_states[leader_id].log[prefix_index]
+                        == ds.server_states[certificate_witness]
+                            .log[prefix_index]
+                &&& forall |prefix_index: int|
+                    election_commit_len <= prefix_index < index
+                    ==> !(ds.server_states[certificate_witness]
+                        .log[prefix_index].payload is Configuration)
+            }
+    }
+
     /// Extract the non-replica-specific facts stored by one valid certificate.
     pub proof fn lemma_configuration_commit_certificate_basic_validity(
         ds: RaftDistributedState,
@@ -606,6 +667,104 @@ verus! {
         );
     }
 
+    /// The explicit first-missing-boundary provenance obligation is sufficient
+    /// to lift the local certificate/election argument to global
+    /// Configuration Leader Completeness.
+    pub proof fn lemma_first_missing_boundary_provenance_implies_configuration_leader_completeness(
+        ds: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            LogMatching(ds),
+            LogTermsMonotonic(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+            FirstMissingConfigurationBoundaryProvenance(ds),
+        ensures
+            CertifiedConfigurationLeaderCompleteness(ds),
+    {
+        assert forall |index: int, leader_id: int|
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term
+        implies {
+            &&& ds.server_states[leader_id].log.len() > index
+            &&& ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry
+        } by {
+            if !(ds.server_states[leader_id].log.len() > index
+                && ds.server_states[leader_id].log[index]
+                    == ds.configuration_commit_certificates[index].entry)
+            {
+                let certificate_witness = choose |certificate_witness: int|
+                    #![trigger ds.configuration_commit_certificates[index]
+                        .quorum.contains(certificate_witness)]
+                {
+                    exists |election_commit_len: int| {
+                        &&& ds.configuration_commit_certificates[index].quorum
+                            .contains(certificate_witness)
+                        &&& 0 <= election_commit_len
+                            <= ds.server_states[leader_id].log.len()
+                        &&& election_commit_len <= index
+                        &&& ds.server_states[leader_id].election_membership_phase
+                            == Some(active_membership_phase_from_raft_log(
+                                ds.server_states[leader_id].log,
+                                election_commit_len,
+                                MembershipPhase::Stable {
+                                    config: ds.server_constants[leader_id].servers,
+                                },
+                            ))
+                        &&& forall |prefix_index: int|
+                            0 <= prefix_index < election_commit_len
+                            ==> ds.server_states[leader_id].log[prefix_index]
+                                == ds.server_states[certificate_witness]
+                                    .log[prefix_index]
+                        &&& forall |prefix_index: int|
+                            election_commit_len <= prefix_index < index
+                            ==> !(ds.server_states[certificate_witness]
+                                .log[prefix_index].payload is Configuration)
+                    }
+                };
+                let election_commit_len = choose |election_commit_len: int| {
+                    &&& ds.configuration_commit_certificates[index].quorum
+                        .contains(certificate_witness)
+                    &&& 0 <= election_commit_len
+                        <= ds.server_states[leader_id].log.len()
+                    &&& election_commit_len <= index
+                    &&& ds.server_states[leader_id].election_membership_phase
+                        == Some(active_membership_phase_from_raft_log(
+                            ds.server_states[leader_id].log,
+                            election_commit_len,
+                            MembershipPhase::Stable {
+                                config: ds.server_constants[leader_id].servers,
+                            },
+                        ))
+                    &&& forall |prefix_index: int|
+                        0 <= prefix_index < election_commit_len
+                        ==> ds.server_states[leader_id].log[prefix_index]
+                            == ds.server_states[certificate_witness].log[prefix_index]
+                    &&& forall |prefix_index: int|
+                        election_commit_len <= prefix_index < index
+                        ==> !(ds.server_states[certificate_witness]
+                            .log[prefix_index].payload is Configuration)
+                };
+                lemma_first_missing_certified_configuration_present_in_recorded_leader(
+                    ds, index, leader_id, certificate_witness, election_commit_len,
+                );
+            }
+        };
+    }
+
     /// Extract one quorum member's concrete log-prefix evidence from a valid
     /// configuration-commit certificate.
     pub proof fn lemma_configuration_commit_certificate_valid_for_replica(
@@ -749,6 +908,8 @@ verus! {
         ensures
             ConfigurationCommitCertificatesValid(ds),
             CommittedConfigurationsHaveCertificates(ds),
+            CertifiedConfigurationLeaderCompleteness(ds),
+            FirstMissingConfigurationBoundaryProvenance(ds),
     {
         assert(ds.configuration_commit_certificates
             == Map::<int, ConfigurationCommitCertificate>::empty());
