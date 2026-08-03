@@ -962,6 +962,66 @@ verus! {
             }
     }
 
+    /// Every all-entry certificate is a genuine dynamic-quorum certificate.
+    /// Its committer has committed the entry, and every saved quorum member
+    /// permanently retains the same physical log prefix through that index.
+    pub open spec fn LogCommitCertificatesValid(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |index: int|
+            #![trigger ds.log_commit_certificates[index]]
+            ds.log_commit_certificates.dom().contains(index)
+            ==> {
+                let certificate = ds.log_commit_certificates[index];
+                &&& certificate.log_index == index
+                &&& 0 <= certificate.committer < ds.num_servers
+                &&& certificate.quorum.contains(certificate.committer)
+                &&& is_quorum_for_phase(
+                    certificate.quorum,
+                    certificate.governing_phase,
+                )
+                &&& certificate.governing_phase
+                    == active_membership_phase_from_raft_log(
+                        ds.server_states[certificate.committer].log,
+                        index,
+                        MembershipPhase::Stable {
+                            config: ds.server_constants[certificate.committer]
+                                .servers,
+                        },
+                    )
+                &&& 0 <= index
+                    < ds.server_states[certificate.committer].commit_index
+                &&& ds.server_states[certificate.committer].commit_index
+                    <= ds.server_states[certificate.committer].log.len()
+                &&& ds.server_states[certificate.committer].log[index]
+                    == certificate.entry
+                &&& forall |replica: int|
+                    #![trigger certificate.quorum.contains(replica)]
+                    certificate.quorum.contains(replica)
+                    ==> {
+                        &&& 0 <= replica < ds.num_servers
+                        &&& index < ds.server_states[replica].log.len()
+                        &&& ds.server_states[replica].log[index]
+                            == certificate.entry
+                        &&& forall |prefix_index: int|
+                            0 <= prefix_index <= index
+                            ==> ds.server_states[replica].log[prefix_index]
+                                == ds.server_states[certificate.committer]
+                                    .log[prefix_index]
+                    }
+            }
+    }
+
+    pub proof fn lemma_init_establishes_log_certificates_valid(
+        ds: RaftDistributedState,
+    )
+        requires RaftDistributedInit(ds)
+        ensures LogCommitCertificatesValid(ds)
+    {
+        assert(ds.log_commit_certificates
+            == Map::<int, LogCommitCertificate>::empty());
+    }
+
     pub proof fn lemma_init_establishes_log_certificate_coverage(
         ds: RaftDistributedState,
     )
@@ -1456,6 +1516,7 @@ verus! {
         &&& ConfigurationCommitCertificatesValid(ds)
         &&& ConfigurationCommittersRetainCertifiedPrefixes(ds)
         &&& CommittedEntriesHaveLogCertificates(ds)
+        &&& LogCommitCertificatesValid(ds)
         &&& CommitIndexBounded(ds)
         &&& CommitIndexNonnegative(ds)
         &&& LeaderLogLongEnough(ds)
@@ -1505,6 +1566,7 @@ verus! {
         lemma_init_establishes_all_raft_membership_logs_well_formed(ds);
         lemma_init_establishes_configuration_certificate_invariants(ds);
         lemma_init_establishes_log_certificate_coverage(ds);
+        lemma_init_establishes_log_certificates_valid(ds);
         lemma_log_certificate_coverage_implies_state_machine_safety(ds);
         lemma_state_machine_safety_implies_committed_membership_prefix_agreement(
             ds,
@@ -8749,6 +8811,35 @@ verus! {
                         == ds.log_commit_certificates[index].quorum
                 })
             &&& (forall |index: int|
+                ds_.log_commit_certificates.dom().contains(index)
+                && !ds.log_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& recv_from is None
+                    &&& ds_.server_states[server_id].commit_index
+                        > ds.server_states[server_id].commit_index
+                    &&& ds.server_states[server_id].commit_index
+                        <= index < ds_.server_states[server_id].commit_index
+                    &&& index < ds_.server_states[server_id].log.len()
+                    &&& ds_.log_commit_certificates[index].log_index == index
+                    &&& ds_.log_commit_certificates[index].entry
+                        == ds_.server_states[server_id].log[index]
+                    &&& ds_.log_commit_certificates[index].committer == server_id
+                    &&& ds_.log_commit_certificates[index].governing_phase
+                        == active_membership_phase_from_raft_log(
+                            ds.server_states[server_id].log,
+                            index,
+                            MembershipPhase::Stable {
+                                config: ds.server_constants[server_id].servers,
+                            },
+                        )
+                    &&& ds_.log_commit_certificates[index].quorum
+                        == replicator_set(
+                            ds.server_states[server_id],
+                            ds.server_constants[server_id],
+                            ds_.server_states[server_id].commit_index,
+                        )
+                })
+            &&& (forall |index: int|
                 0 <= index < ds_.server_states[server_id].commit_index
                 && index < ds_.server_states[server_id].log.len()
                 ==> {
@@ -8902,6 +8993,247 @@ verus! {
                     == ds.log_commit_certificates[index].log_index);
                 assert(ds_.log_commit_certificates[index].entry
                     == ds.log_commit_certificates[index].entry);
+            }
+        };
+    }
+
+    /// All-entry certificate validity is preserved. Old certificates retain
+    /// their meaning because logs only grow and commit indexes never move
+    /// backward. A new certificate is justified by the committing leader's
+    /// membership-aware replicator set and the matching prefixes recorded by
+    /// match_index.
+    pub proof fn lemma_log_commit_certificates_valid_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            LogCommitCertificatesValid(ds),
+            WellFormedRaftDistributed(ds),
+            MatchIndexImpliesLogAgreement(ds),
+            MatchIndexBounded(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            LogCommitCertificatesValid(ds_),
+    {
+        lemma_log_append_only(ds, ds_);
+        let (server_id, sent_pkts, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+        let leader = ds.server_states[server_id];
+        let leader_ = ds_.server_states[server_id];
+        let constants = ds.server_constants[server_id];
+
+        assert forall |index: int|
+            #![trigger ds_.log_commit_certificates[index]]
+            ds_.log_commit_certificates.dom().contains(index)
+        implies {
+            let certificate = ds_.log_commit_certificates[index];
+            &&& certificate.log_index == index
+            &&& 0 <= certificate.committer < ds_.num_servers
+            &&& certificate.quorum.contains(certificate.committer)
+            &&& is_quorum_for_phase(
+                certificate.quorum,
+                certificate.governing_phase,
+            )
+            &&& certificate.governing_phase
+                == active_membership_phase_from_raft_log(
+                    ds_.server_states[certificate.committer].log,
+                    index,
+                    MembershipPhase::Stable {
+                        config: ds_.server_constants[certificate.committer]
+                            .servers,
+                    },
+                )
+            &&& 0 <= index
+                < ds_.server_states[certificate.committer].commit_index
+            &&& ds_.server_states[certificate.committer].commit_index
+                <= ds_.server_states[certificate.committer].log.len()
+            &&& ds_.server_states[certificate.committer].log[index]
+                == certificate.entry
+            &&& forall |replica: int|
+                #![trigger certificate.quorum.contains(replica)]
+                certificate.quorum.contains(replica)
+                ==> {
+                    &&& 0 <= replica < ds_.num_servers
+                    &&& index < ds_.server_states[replica].log.len()
+                    &&& ds_.server_states[replica].log[index]
+                        == certificate.entry
+                    &&& forall |prefix_index: int|
+                        0 <= prefix_index <= index
+                        ==> ds_.server_states[replica].log[prefix_index]
+                            == ds_.server_states[certificate.committer]
+                                .log[prefix_index]
+                }
+        } by {
+            let certificate = ds_.log_commit_certificates[index];
+            if ds.log_commit_certificates.dom().contains(index) {
+                let old_certificate = ds.log_commit_certificates[index];
+                assert(LogCommitCertificatesValid(ds));
+                assert(certificate.log_index == old_certificate.log_index);
+                assert(certificate.entry == old_certificate.entry);
+                assert(certificate.committer == old_certificate.committer);
+                assert(certificate.governing_phase
+                    == old_certificate.governing_phase);
+                assert(certificate.quorum == old_certificate.quorum);
+                assert(certificate == old_certificate);
+                assert(ds_.num_servers == ds.num_servers);
+                assert(ds_.server_constants == ds.server_constants);
+
+                if certificate.committer != server_id {
+                    assert(ds_.server_states[certificate.committer]
+                        == ds.server_states[certificate.committer]);
+                } else {
+                    assert(leader_.commit_index >= leader.commit_index);
+                }
+                assert(ds_.server_states[certificate.committer].commit_index
+                    >= ds.server_states[certificate.committer].commit_index);
+                assert(ds_.server_states[certificate.committer].log.len()
+                    >= ds.server_states[certificate.committer].log.len());
+                assert forall |prefix_index: int|
+                    0 <= prefix_index < index
+                    implies ds_.server_states[certificate.committer]
+                        .log[prefix_index]
+                        == ds.server_states[certificate.committer]
+                            .log[prefix_index]
+                by {
+                    assert(LogAppendOnly(ds, ds_));
+                };
+                lemma_equal_committed_raft_prefixes_have_same_active_phase(
+                    ds.server_states[certificate.committer].log,
+                    ds_.server_states[certificate.committer].log,
+                    index,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[certificate.committer]
+                            .servers,
+                    },
+                );
+                assert(ds_.server_states[certificate.committer].log[index]
+                    == ds.server_states[certificate.committer].log[index]);
+
+                assert forall |replica: int|
+                    #![trigger certificate.quorum.contains(replica)]
+                    certificate.quorum.contains(replica)
+                    implies {
+                        &&& 0 <= replica < ds_.num_servers
+                        &&& index < ds_.server_states[replica].log.len()
+                        &&& ds_.server_states[replica].log[index]
+                            == certificate.entry
+                        &&& forall |prefix_index: int|
+                            0 <= prefix_index <= index
+                            ==> ds_.server_states[replica].log[prefix_index]
+                                == ds_.server_states[certificate.committer]
+                                    .log[prefix_index]
+                    }
+                by {
+                    assert(0 <= replica < ds.num_servers);
+                    assert(ds_.server_states[replica].log.len()
+                        >= ds.server_states[replica].log.len());
+                    assert(ds_.server_states[replica].log[index]
+                        == ds.server_states[replica].log[index]);
+                    assert forall |prefix_index: int|
+                        0 <= prefix_index <= index
+                        implies ds_.server_states[replica].log[prefix_index]
+                            == ds_.server_states[certificate.committer]
+                                .log[prefix_index]
+                    by {
+                        assert(ds_.server_states[replica].log[prefix_index]
+                            == ds.server_states[replica].log[prefix_index]);
+                        assert(ds.server_states[replica].log[prefix_index]
+                            == ds.server_states[certificate.committer]
+                                .log[prefix_index]);
+                        assert(ds_.server_states[certificate.committer]
+                            .log[prefix_index]
+                            == ds.server_states[certificate.committer]
+                                .log[prefix_index]);
+                    };
+                };
+            } else {
+                assert(recv_from is None);
+                assert(leader_.commit_index > leader.commit_index);
+                assert(leader.commit_index <= index < leader_.commit_index);
+                assert(index < leader_.log.len());
+                assert(certificate.committer == server_id);
+                assert(certificate.entry == leader_.log[index]);
+                assert(certificate.quorum == replicator_set(
+                    leader, constants, leader_.commit_index));
+                assert(LTryAdvanceCommitIndex(
+                    leader, leader_, constants,
+                    leader_.commit_index, sent_pkts));
+                assert(LAdvanceCommitIndex(
+                    leader, leader_, constants,
+                    leader_.commit_index, sent_pkts));
+                assert(leader.role is Leader);
+                assert(leader_.log == leader.log);
+                assert(0 < leader_.commit_index <= leader.log.len());
+                assert(has_active_commit_quorum(
+                    leader, constants, leader_.commit_index));
+                assert forall |data_index: int|
+                    leader.commit_index <= data_index < index
+                    implies !(leader.log[data_index].payload is Configuration)
+                by {
+                    assert(commit_interval_stops_at_first_configuration(
+                        leader.log,
+                        leader.commit_index,
+                        leader_.commit_index,
+                    ));
+                };
+                lemma_configuration_free_interval_preserves_active_phase(
+                    leader.log,
+                    leader.commit_index,
+                    index,
+                    MembershipPhase::Stable {
+                        config: constants.servers,
+                    },
+                );
+                assert(certificate.governing_phase
+                    == active_membership_phase_for_state(
+                        leader, constants));
+                assert(is_quorum_for_phase(
+                    certificate.quorum,
+                    certificate.governing_phase,
+                ));
+                assert(certificate.quorum.contains(server_id));
+                assert(ds_.num_servers == ds.num_servers);
+                assert(ds_.server_constants == ds.server_constants);
+
+                assert forall |replica: int|
+                    #![trigger certificate.quorum.contains(replica)]
+                    certificate.quorum.contains(replica)
+                    implies {
+                        &&& 0 <= replica < ds_.num_servers
+                        &&& index < ds_.server_states[replica].log.len()
+                        &&& ds_.server_states[replica].log[index]
+                            == certificate.entry
+                        &&& forall |prefix_index: int|
+                            0 <= prefix_index <= index
+                            ==> ds_.server_states[replica].log[prefix_index]
+                                == ds_.server_states[certificate.committer]
+                                    .log[prefix_index]
+                    }
+                by {
+                    lemma_replicator_set_member_has_matching_prefix(
+                        ds, server_id, replica, leader_.commit_index);
+                    assert(index < leader_.commit_index);
+                    assert(ds_.server_states[replica].log.len()
+                        >= ds.server_states[replica].log.len());
+                    assert(ds_.server_states[replica].log[index]
+                        == ds.server_states[replica].log[index]);
+                    assert(ds.server_states[replica].log[index]
+                        == leader.log[index]);
+                    assert forall |prefix_index: int|
+                        0 <= prefix_index <= index
+                        implies ds_.server_states[replica].log[prefix_index]
+                            == ds_.server_states[certificate.committer]
+                                .log[prefix_index]
+                    by {
+                        assert(prefix_index < leader_.commit_index);
+                        assert(ds_.server_states[replica].log[prefix_index]
+                            == ds.server_states[replica].log[prefix_index]);
+                        assert(ds.server_states[replica].log[prefix_index]
+                            == leader.log[prefix_index]);
+                        assert(leader_.log[prefix_index]
+                            == leader.log[prefix_index]);
+                    };
+                };
             }
         };
     }
@@ -12990,6 +13322,8 @@ verus! {
         lemma_configuration_committers_retain_certified_prefixes_inductive(
             ds, ds_);
         lemma_committed_entries_have_log_certificates_inductive(
+            ds, ds_);
+        lemma_log_commit_certificates_valid_inductive(
             ds, ds_);
         lemma_commit_index_bounded_inductive(ds, ds_);
         lemma_commit_index_nonnegative_inductive(ds, ds_);
