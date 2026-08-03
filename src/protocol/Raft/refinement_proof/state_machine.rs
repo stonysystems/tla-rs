@@ -1,5 +1,10 @@
 use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
+use crate::protocol::Raft::membership::{
+    ConfigurationCommitCertificate,
+    active_membership_phase_for_state,
+    replicator_set,
+};
 use crate::protocol::Raft::refinement_proof::invariants::CommitIndexBounded;
 use vstd::prelude::*;
 use vstd::{map::*, seq::*, set::*};
@@ -21,6 +26,10 @@ verus! {
         // Used for stale-vote provenance in LeaderCompleteness proof (Phase 34.7).
         // Only meaningful for granted votes; populated by LGrantVote.
         pub vote_log_len: Map<(int, int), int>,
+        // Ghost state: one persistent proof certificate for each Configuration
+        // entry that a leader commits. Keyed by the entry's physical log index.
+        pub configuration_commit_certificates:
+            Map<int, ConfigurationCommitCertificate>,
     }
 
     /// Well-formedness of the distributed state
@@ -42,6 +51,8 @@ verus! {
             LInit(ds.server_states[i], ds.server_constants[i]))
         &&& ds.network == Set::<LRaftPacket>::empty()
         &&& ds.vote_log_len == Map::<(int, int), int>::empty()
+        &&& ds.configuration_commit_certificates
+            == Map::<int, ConfigurationCommitCertificate>::empty()
     }
 
     /// Helper: which action branch was taken, producing the given sent_packets.
@@ -137,6 +148,59 @@ verus! {
                         && sent_packets[i]->VoteResponse_granted)
                 )
             })
+            // Existing configuration-commit certificates are immutable.
+            &&& (forall |index: int|
+                ds.configuration_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& ds_.configuration_commit_certificates.dom().contains(index)
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == ds.configuration_commit_certificates[index].log_index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == ds.configuration_commit_certificates[index].entry
+                    &&& ds_.configuration_commit_certificates[index].governing_phase
+                        == ds.configuration_commit_certificates[index].governing_phase
+                    &&& ds_.configuration_commit_certificates[index].quorum
+                        == ds.configuration_commit_certificates[index].quorum
+                })
+            // A new certificate can only be created when a local leader commit
+            // ends exactly at a Configuration entry.
+            &&& (forall |index: int|
+                ds_.configuration_commit_certificates.dom().contains(index)
+                && !ds.configuration_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& received_from is None
+                    &&& s_.commit_index > s.commit_index
+                    &&& index == s_.commit_index - 1
+                    &&& 0 <= index < s_.log.len()
+                    &&& s_.log[index].payload is Configuration
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == s_.log[index]
+                    &&& ds_.configuration_commit_certificates[index].governing_phase
+                        == active_membership_phase_for_state(s, c)
+                    &&& ds_.configuration_commit_certificates[index].quorum
+                        == replicator_set(s, c, s_.commit_index)
+                })
+            // A local commit ending at a Configuration entry must leave the
+            // corresponding certificate in the post-state map.
+            &&& (received_from is None
+                && s_.commit_index > s.commit_index
+                && 0 <= s_.commit_index - 1 < s_.log.len()
+                && s_.log[s_.commit_index - 1].payload is Configuration
+                ==> {
+                    let index = s_.commit_index - 1;
+                    &&& ds_.configuration_commit_certificates.dom().contains(index)
+                    &&& ds_.configuration_commit_certificates[index].log_index
+                        == index
+                    &&& ds_.configuration_commit_certificates[index].entry
+                        == s_.log[index]
+                    &&& ds_.configuration_commit_certificates[index].governing_phase
+                        == active_membership_phase_for_state(s, c)
+                    &&& ds_.configuration_commit_certificates[index].quorum
+                        == replicator_set(s, c, s_.commit_index)
+                }
+            )
         }
     }
 
@@ -307,6 +371,8 @@ verus! {
                 network: ds.network,
                 num_servers: ds.num_servers - 1,
                 vote_log_len: ds.vote_log_len,
+                configuration_commit_certificates:
+                    ds.configuration_commit_certificates,
             });
             if last_commit > rest_max { last_commit } else { rest_max }
         }
@@ -390,6 +456,8 @@ verus! {
                 network: ds.network,
                 num_servers: ds.num_servers - 1,
                 vote_log_len: ds.vote_log_len,
+                configuration_commit_certificates:
+                    ds.configuration_commit_certificates,
             };
             assert(sub_ds.server_states.len() == ds.num_servers - 1);
             lemma_max_commit_index_eq_seq(sub_ds);
@@ -488,6 +556,8 @@ verus! {
             network: ds.network,
             num_servers: n - 1,
             vote_log_len: ds.vote_log_len,
+            configuration_commit_certificates:
+                ds.configuration_commit_certificates,
         };
         let rest_max = MaxCommitIndex(sub_ds);
         if last_commit >= MaxCommitIndex(ds) {
