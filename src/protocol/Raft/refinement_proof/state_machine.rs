@@ -157,6 +157,8 @@ verus! {
                         == ds.configuration_commit_certificates[index].log_index
                     &&& ds_.configuration_commit_certificates[index].entry
                         == ds.configuration_commit_certificates[index].entry
+                    &&& ds_.configuration_commit_certificates[index].committer
+                        == ds.configuration_commit_certificates[index].committer
                     &&& ds_.configuration_commit_certificates[index].governing_phase
                         == ds.configuration_commit_certificates[index].governing_phase
                     &&& ds_.configuration_commit_certificates[index].quorum
@@ -177,6 +179,8 @@ verus! {
                         == index
                     &&& ds_.configuration_commit_certificates[index].entry
                         == s_.log[index]
+                    &&& ds_.configuration_commit_certificates[index].committer
+                        == server_id
                     &&& ds_.configuration_commit_certificates[index].governing_phase
                         == active_membership_phase_for_state(s, c)
                     &&& ds_.configuration_commit_certificates[index].quorum
@@ -195,6 +199,8 @@ verus! {
                         == index
                     &&& ds_.configuration_commit_certificates[index].entry
                         == s_.log[index]
+                    &&& ds_.configuration_commit_certificates[index].committer
+                        == server_id
                     &&& ds_.configuration_commit_certificates[index].governing_phase
                         == active_membership_phase_for_state(s, c)
                     &&& ds_.configuration_commit_certificates[index].quorum

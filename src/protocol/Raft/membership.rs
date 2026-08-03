@@ -29,6 +29,7 @@ verus! {
     pub struct ConfigurationCommitCertificate {
         pub log_index: int,
         pub entry: LLogEntry,
+        pub committer: int,
         pub governing_phase: MembershipPhase,
         pub quorum: Set<int>,
     }
