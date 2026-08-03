@@ -944,6 +944,74 @@ verus! {
             }
     }
 
+    /// Every physical entry below any server's commit index is represented by
+    /// the unique global all-entry certificate at that log position.
+    pub open spec fn CommittedEntriesHaveLogCertificates(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |server_id: int, index: int|
+            #![trigger ds.server_states[server_id].log[index]]
+            0 <= server_id < ds.num_servers
+            && 0 <= index < ds.server_states[server_id].commit_index
+            && index < ds.server_states[server_id].log.len()
+            ==> {
+                &&& ds.log_commit_certificates.dom().contains(index)
+                &&& ds.log_commit_certificates[index].log_index == index
+                &&& ds.log_commit_certificates[index].entry
+                    == ds.server_states[server_id].log[index]
+            }
+    }
+
+    pub proof fn lemma_init_establishes_log_certificate_coverage(
+        ds: RaftDistributedState,
+    )
+        requires RaftDistributedInit(ds)
+        ensures CommittedEntriesHaveLogCertificates(ds)
+    {
+        assert(ds.log_commit_certificates
+            == Map::<int, LogCommitCertificate>::empty());
+        assert forall |server_id: int, index: int|
+            #![trigger ds.server_states[server_id].log[index]]
+            0 <= server_id < ds.num_servers
+            && 0 <= index < ds.server_states[server_id].commit_index
+            && index < ds.server_states[server_id].log.len()
+            implies false
+        by {
+            assert(LInit(
+                ds.server_states[server_id],
+                ds.server_constants[server_id],
+            ));
+        };
+    }
+
+    /// Unique certificate coverage directly yields committed-log agreement:
+    /// both committed server entries at one physical index equal the same
+    /// global certificate entry.
+    pub proof fn lemma_log_certificate_coverage_implies_state_machine_safety(
+        ds: RaftDistributedState,
+    )
+        requires CommittedEntriesHaveLogCertificates(ds)
+        ensures StateMachineSafety(ds)
+    {
+        assert forall |left: int, right: int, index: int|
+            0 <= left < ds.num_servers
+            && 0 <= right < ds.num_servers
+            && 0 <= index < ds.server_states[left].commit_index
+            && 0 <= index < ds.server_states[right].commit_index
+            && index < ds.server_states[left].log.len()
+            && index < ds.server_states[right].log.len()
+        implies ds.server_states[left].log[index]
+            == ds.server_states[right].log[index]
+        by {
+            assert(ds.log_commit_certificates.dom().contains(index));
+            assert(ds.log_commit_certificates[index].log_index == index);
+            assert(ds.log_commit_certificates[index].entry
+                == ds.server_states[left].log[index]);
+            assert(ds.log_commit_certificates[index].entry
+                == ds.server_states[right].log[index]);
+        };
+    }
+
     /// Empty initial logs and an empty certificate map establish both
     /// certificate invariants.
     pub proof fn lemma_init_establishes_configuration_certificate_invariants(
@@ -1387,6 +1455,7 @@ verus! {
         &&& CommittedConfigurationsHaveCertificates(ds)
         &&& ConfigurationCommitCertificatesValid(ds)
         &&& ConfigurationCommittersRetainCertifiedPrefixes(ds)
+        &&& CommittedEntriesHaveLogCertificates(ds)
         &&& CommitIndexBounded(ds)
         &&& CommitIndexNonnegative(ds)
         &&& LeaderLogLongEnough(ds)
@@ -1435,6 +1504,8 @@ verus! {
     {
         lemma_init_establishes_all_raft_membership_logs_well_formed(ds);
         lemma_init_establishes_configuration_certificate_invariants(ds);
+        lemma_init_establishes_log_certificate_coverage(ds);
+        lemma_log_certificate_coverage_implies_state_machine_safety(ds);
         lemma_state_machine_safety_implies_committed_membership_prefix_agreement(
             ds,
         );
@@ -8662,6 +8733,30 @@ verus! {
                             ds_.server_states[server_id].commit_index,
                         )
                 })
+            &&& (forall |index: int|
+                ds.log_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& ds_.log_commit_certificates.dom().contains(index)
+                    &&& ds_.log_commit_certificates[index].log_index
+                        == ds.log_commit_certificates[index].log_index
+                    &&& ds_.log_commit_certificates[index].entry
+                        == ds.log_commit_certificates[index].entry
+                    &&& ds_.log_commit_certificates[index].committer
+                        == ds.log_commit_certificates[index].committer
+                    &&& ds_.log_commit_certificates[index].governing_phase
+                        == ds.log_commit_certificates[index].governing_phase
+                    &&& ds_.log_commit_certificates[index].quorum
+                        == ds.log_commit_certificates[index].quorum
+                })
+            &&& (forall |index: int|
+                0 <= index < ds_.server_states[server_id].commit_index
+                && index < ds_.server_states[server_id].log.len()
+                ==> {
+                    &&& ds_.log_commit_certificates.dom().contains(index)
+                    &&& ds_.log_commit_certificates[index].log_index == index
+                    &&& ds_.log_commit_certificates[index].entry
+                        == ds_.server_states[server_id].log[index]
+                })
             &&& RaftActionProduces(ds, server_id,
                     ds.server_states[server_id], ds_.server_states[server_id],
                     ds.server_constants[server_id], sent_pkts, recv_from)
@@ -8760,6 +8855,53 @@ verus! {
                     == index);
                 assert(ds.configuration_commit_certificates[index].entry
                     == ds.server_states[server].log[index]);
+            }
+        };
+    }
+
+    /// All-entry certificate coverage is preserved for the stepping server by
+    /// the transition rule and for every other server by certificate
+    /// immutability plus unchanged local state.
+    pub proof fn lemma_committed_entries_have_log_certificates_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            CommittedEntriesHaveLogCertificates(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            CommittedEntriesHaveLogCertificates(ds_),
+    {
+        let (server_id, sent_pkts, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+
+        assert forall |server: int, index: int|
+            #![trigger ds_.server_states[server].log[index]]
+            0 <= server < ds_.num_servers
+            && 0 <= index < ds_.server_states[server].commit_index
+            && index < ds_.server_states[server].log.len()
+        implies {
+            &&& ds_.log_commit_certificates.dom().contains(index)
+            &&& ds_.log_commit_certificates[index].log_index == index
+            &&& ds_.log_commit_certificates[index].entry
+                == ds_.server_states[server].log[index]
+        } by {
+            if server == server_id {
+                assert(ds_.server_states[server]
+                    == ds_.server_states[server_id]);
+            } else {
+                assert(ds_.server_states[server]
+                    == ds.server_states[server]);
+                assert(CommittedEntriesHaveLogCertificates(ds));
+                assert(ds.log_commit_certificates.dom().contains(index));
+                assert(ds.log_commit_certificates[index].log_index == index);
+                assert(ds.log_commit_certificates[index].entry
+                    == ds.server_states[server].log[index]);
+                assert(ds_.log_commit_certificates.dom().contains(index));
+                assert(ds_.log_commit_certificates[index].log_index
+                    == ds.log_commit_certificates[index].log_index);
+                assert(ds_.log_commit_certificates[index].entry
+                    == ds.log_commit_certificates[index].entry);
             }
         };
     }
@@ -12847,6 +12989,8 @@ verus! {
             ds, ds_);
         lemma_configuration_committers_retain_certified_prefixes_inductive(
             ds, ds_);
+        lemma_committed_entries_have_log_certificates_inductive(
+            ds, ds_);
         lemma_commit_index_bounded_inductive(ds, ds_);
         lemma_commit_index_nonnegative_inductive(ds, ds_);
         lemma_leader_log_long_enough_inductive(ds, ds_);
@@ -12856,7 +13000,7 @@ verus! {
         // Log-level invariants (network-level trust boundary)
         lemma_log_matching_inductive(ds, ds_);
         lemma_leader_completeness_inductive(ds, ds_);
-        lemma_state_machine_safety_inductive(ds, ds_);
+        lemma_log_certificate_coverage_implies_state_machine_safety(ds_);
         lemma_state_machine_safety_implies_committed_membership_prefix_agreement(
             ds_,
         );

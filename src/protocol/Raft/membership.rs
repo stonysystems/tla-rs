@@ -34,6 +34,16 @@ verus! {
         pub quorum: Set<int>,
     }
 
+    /// Proof-only evidence for any committed physical Raft-log entry.
+    /// Unlike ConfigurationCommitCertificate, this also covers Data entries.
+    pub struct LogCommitCertificate {
+        pub log_index: int,
+        pub entry: LLogEntry,
+        pub committer: int,
+        pub governing_phase: MembershipPhase,
+        pub quorum: Set<int>,
+    }
+
     /// A quorum is a majority of a particular finite configuration.
     pub open spec fn is_majority_of(
         quorum: Set<int>,

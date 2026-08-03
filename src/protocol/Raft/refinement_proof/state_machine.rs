@@ -2,7 +2,9 @@ use crate::protocol::Raft::types::*;
 use crate::protocol::Raft::raft::*;
 use crate::protocol::Raft::membership::{
     ConfigurationCommitCertificate,
+    LogCommitCertificate,
     active_membership_phase_for_state,
+    active_membership_phase_from_raft_log,
     replicator_set,
 };
 use crate::protocol::Raft::refinement_proof::invariants::CommitIndexBounded;
@@ -30,6 +32,10 @@ verus! {
         // entry that a leader commits. Keyed by the entry's physical log index.
         pub configuration_commit_certificates:
             Map<int, ConfigurationCommitCertificate>,
+        // Ghost state: one persistent certificate for every physical log
+        // entry that becomes committed, including Data entries.
+        pub log_commit_certificates:
+            Map<int, LogCommitCertificate>,
     }
 
     /// Well-formedness of the distributed state
@@ -53,6 +59,8 @@ verus! {
         &&& ds.vote_log_len == Map::<(int, int), int>::empty()
         &&& ds.configuration_commit_certificates
             == Map::<int, ConfigurationCommitCertificate>::empty()
+        &&& ds.log_commit_certificates
+            == Map::<int, LogCommitCertificate>::empty()
     }
 
     /// Helper: which action branch was taken, producing the given sent_packets.
@@ -223,6 +231,74 @@ verus! {
                         == s_.log[index]
                 }
             )
+            // Existing all-entry commit certificates are immutable.
+            &&& (forall |index: int|
+                ds.log_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& ds_.log_commit_certificates.dom().contains(index)
+                    &&& ds_.log_commit_certificates[index].log_index
+                        == ds.log_commit_certificates[index].log_index
+                    &&& ds_.log_commit_certificates[index].entry
+                        == ds.log_commit_certificates[index].entry
+                    &&& ds_.log_commit_certificates[index].committer
+                        == ds.log_commit_certificates[index].committer
+                    &&& ds_.log_commit_certificates[index].governing_phase
+                        == ds.log_commit_certificates[index].governing_phase
+                    &&& ds_.log_commit_certificates[index].quorum
+                        == ds.log_commit_certificates[index].quorum
+                })
+            // New all-entry certificates can only describe entries in one
+            // local leader's newly committed physical-log interval.
+            &&& (forall |index: int|
+                ds_.log_commit_certificates.dom().contains(index)
+                && !ds.log_commit_certificates.dom().contains(index)
+                ==> {
+                    &&& received_from is None
+                    &&& s_.commit_index > s.commit_index
+                    &&& s.commit_index <= index < s_.commit_index
+                    &&& index < s_.log.len()
+                    &&& ds_.log_commit_certificates[index].log_index == index
+                    &&& ds_.log_commit_certificates[index].entry == s_.log[index]
+                    &&& ds_.log_commit_certificates[index].committer == server_id
+                    &&& ds_.log_commit_certificates[index].governing_phase
+                        == active_membership_phase_from_raft_log(
+                            s.log,
+                            index,
+                            MembershipPhase::Stable { config: c.servers },
+                        )
+                    &&& ds_.log_commit_certificates[index].quorum
+                        == replicator_set(s, c, s_.commit_index)
+                })
+            // Every entry newly committed by a local leader receives an
+            // all-entry certificate backed by the quorum for the interval.
+            &&& (received_from is None
+                && s_.commit_index > s.commit_index
+                ==> forall |index: int|
+                    s.commit_index <= index < s_.commit_index
+                    ==> {
+                        &&& ds_.log_commit_certificates.dom().contains(index)
+                        &&& ds_.log_commit_certificates[index].log_index == index
+                        &&& ds_.log_commit_certificates[index].entry == s_.log[index]
+                        &&& ds_.log_commit_certificates[index].committer == server_id
+                        &&& ds_.log_commit_certificates[index].governing_phase
+                            == active_membership_phase_from_raft_log(
+                                s.log,
+                                index,
+                                MembershipPhase::Stable { config: c.servers },
+                            )
+                        &&& ds_.log_commit_certificates[index].quorum
+                            == replicator_set(s, c, s_.commit_index)
+                    })
+            // Every committed post-state entry, including follower-learned
+            // entries, is tied to the unique global certificate at its index.
+            &&& (forall |index: int|
+                0 <= index < s_.commit_index
+                && index < s_.log.len()
+                ==> {
+                    &&& ds_.log_commit_certificates.dom().contains(index)
+                    &&& ds_.log_commit_certificates[index].log_index == index
+                    &&& ds_.log_commit_certificates[index].entry == s_.log[index]
+                })
         }
     }
 
@@ -395,6 +471,7 @@ verus! {
                 vote_log_len: ds.vote_log_len,
                 configuration_commit_certificates:
                     ds.configuration_commit_certificates,
+                log_commit_certificates: ds.log_commit_certificates,
             });
             if last_commit > rest_max { last_commit } else { rest_max }
         }
@@ -480,6 +557,7 @@ verus! {
                 vote_log_len: ds.vote_log_len,
                 configuration_commit_certificates:
                     ds.configuration_commit_certificates,
+                log_commit_certificates: ds.log_commit_certificates,
             };
             assert(sub_ds.server_states.len() == ds.num_servers - 1);
             lemma_max_commit_index_eq_seq(sub_ds);
@@ -580,6 +658,7 @@ verus! {
             vote_log_len: ds.vote_log_len,
             configuration_commit_certificates:
                 ds.configuration_commit_certificates,
+            log_commit_certificates: ds.log_commit_certificates,
         };
         let rest_max = MaxCommitIndex(sub_ds);
         if last_commit >= MaxCommitIndex(ds) {
