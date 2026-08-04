@@ -494,6 +494,95 @@ verus! {
         };
     }
 
+    /// A certificate whose governing phase is Stable over the entire server
+    /// set is also a commitment in the legacy fixed-majority sense: a majority
+    /// of the full configuration is exactly the legacy quorum threshold. This
+    /// is the bridge that lets the inherited `LeaderCompleteness` development
+    /// apply to certified Configuration boundaries — but only while no
+    /// membership change is in flight, since a Joint quorum can be far smaller
+    /// than a majority of the universe.
+    pub proof fn lemma_stable_full_certificate_is_legacy_commit(
+        ds: RaftDistributedState,
+        index: int,
+        config: Set<int>,
+    )
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            ds.configuration_commit_certificates[index].governing_phase
+                == (MembershipPhase::Stable { config: config }),
+            config.len() == ds.num_servers,
+        ensures
+            EntryCommittedAt(
+                ds,
+                index,
+                ds.configuration_commit_certificates[index].entry,
+            ),
+    {
+        let certificate = ds.configuration_commit_certificates[index];
+
+        // Validity already gives a phase quorum; over the full configuration
+        // that is the legacy majority threshold.
+        assert(is_quorum_for_phase(
+            certificate.quorum,
+            certificate.governing_phase,
+        ));
+        assert(is_majority_of(certificate.quorum, config));
+        assert(certificate.quorum.len() >= config.len() / 2 + 1);
+        assert(certificate.quorum.len() >= ds.num_servers / 2 + 1);
+
+        // Every member of that quorum holds the certified entry.
+        assert forall |id: int| certificate.quorum.contains(id) implies {
+            &&& 0 <= id < ds.num_servers
+            &&& ds.server_states[id].log.len() > index
+            &&& ds.server_states[id].log[index] == certificate.entry
+        } by {
+            assert(ConfigurationCommitCertificatesValid(ds));
+            lemma_configuration_commit_certificate_valid_for_replica(
+                ds,
+                index,
+                id,
+            );
+        };
+
+        assert(EntryCommittedAt(ds, index, certificate.entry)) by {
+            assert(certificate.quorum.len() >= ds.num_servers / 2 + 1);
+        };
+    }
+
+    /// Consequence of the bridge: while membership is Stable over the whole
+    /// server set, the inherited `LeaderCompleteness` already delivers
+    /// certified-boundary Leader Completeness, with no extra provenance
+    /// hypothesis. The genuinely dynamic cases — a Joint phase, or a Stable
+    /// phase over a proper subset — are not covered, because their quorums need
+    /// not meet the legacy fixed-majority threshold.
+    pub proof fn lemma_legacy_leader_completeness_covers_stable_certificate(
+        ds: RaftDistributedState,
+        index: int,
+        config: Set<int>,
+        leader_id: int,
+    )
+        requires
+            LeaderCompleteness(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            ds.configuration_commit_certificates[index].governing_phase
+                == (MembershipPhase::Stable { config: config }),
+            config.len() == ds.num_servers,
+            0 <= index,
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        lemma_stable_full_certificate_is_legacy_commit(ds, index, config);
+        assert(LeaderCompleteness(ds));
+    }
+
     /// Configuration Leader Completeness survives every step that neither
     /// mints a certificate nor promotes a server to leader. Only two kinds of
     /// step can therefore threaten it: committing a Configuration entry, and
