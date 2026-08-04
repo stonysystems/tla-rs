@@ -1690,7 +1690,7 @@ impl<'a> ActionContext<'a> {
                     ProjectedType::Set(elem) => *elem,
                     _ => return None,
                 };
-                let mut inner = self.clone_with_param(var, elem);
+                let inner = self.clone_with_param(var, elem);
                 inner
                     .value_type(body)
                     .map(|t| ProjectedType::Set(Box::new(t)))
@@ -1936,11 +1936,11 @@ impl<'a> ActionContext<'a> {
                     // Routing does not survive into the payload: the framework
                     // delivers, so the sender is the dispatch's `src` and the
                     // destination is this node by construction.
-                    return Ok(match field.as_str() {
+                    Ok(match field.as_str() {
                         "src" | "source" | "sender" | "msource" => "src".to_string(),
                         "dst" | "dest" | "receiver" | "mdest" => "c.node_id".to_string(),
                         other => to_snake_case(other),
-                    });
+                    })
                 } else {
                     // A field of something else -- a log entry, say. The base
                     // has to project first; if it does not, the error names it.

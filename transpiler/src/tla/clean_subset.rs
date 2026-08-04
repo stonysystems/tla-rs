@@ -1296,6 +1296,40 @@ fn escape_json(s: &str) -> String {
     out
 }
 
+/// Every operator name applied or referenced in an expression.
+fn collect_called_names(expr: &TlaExpr, out: &mut Vec<String>) {
+    match expr {
+        TlaExpr::OpApply { op, .. } => {
+            if let TlaExpr::Ident(name) = &**op {
+                out.push(name.clone());
+            }
+        }
+        TlaExpr::Ident(name) => out.push(name.clone()),
+        _ => {}
+    }
+    walk_children(expr, &mut |child| collect_called_names(child, out));
+}
+
+/// Whether a body stands for a *group* of actions rather than for one action.
+///
+/// The distinction decides what gets inlined into `Next`. `ReplicaAction ==
+/// \E replica \in Replicas : ...` and `CommandLeaderAction == \/ .. \/ ..`
+/// are groups, and analysing them unexpanded loses the node binder. A leaf
+/// like `Terminating == pc' = pc` is one action with a name, and inlining it
+/// would replace a recognisable environment action with a bare state formula
+/// -- which C5 would then reject, because a name is exactly how a spec says
+/// "this disjunct is deliberate".
+fn groups_actions(body: &TlaExpr) -> bool {
+    matches!(
+        body,
+        TlaExpr::Exists { .. }
+            | TlaExpr::BinOp {
+                op: TlaBinOp::Or,
+                ..
+            }
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1706,38 +1740,4 @@ Next == \/ \E b \in Ballot : Phase1a(b)
             c5.message
         );
     }
-}
-
-/// Whether a body stands for a *group* of actions rather than for one action.
-///
-/// The distinction decides what gets inlined into `Next`. `ReplicaAction ==
-/// \E replica \in Replicas : ...` and `CommandLeaderAction == \/ .. \/ ..`
-/// are groups, and analysing them unexpanded loses the node binder. A leaf
-/// like `Terminating == pc' = pc` is one action with a name, and inlining it
-/// would replace a recognisable environment action with a bare state formula
-/// -- which C5 would then reject, because a name is exactly how a spec says
-/// "this disjunct is deliberate".
-fn groups_actions(body: &TlaExpr) -> bool {
-    matches!(
-        body,
-        TlaExpr::Exists { .. }
-            | TlaExpr::BinOp {
-                op: TlaBinOp::Or,
-                ..
-            }
-    )
-}
-
-/// Every operator name applied or referenced in an expression.
-fn collect_called_names(expr: &TlaExpr, out: &mut Vec<String>) {
-    match expr {
-        TlaExpr::OpApply { op, .. } => {
-            if let TlaExpr::Ident(name) = &**op {
-                out.push(name.clone());
-            }
-        }
-        TlaExpr::Ident(name) => out.push(name.clone()),
-        _ => {}
-    }
-    walk_children(expr, &mut |child| collect_called_names(child, out));
 }
