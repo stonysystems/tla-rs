@@ -238,7 +238,7 @@ verus! {
                 p.msg->bal_2a.proposer_id == proposer_idx,
                 // //   var s := b[i].replicas[proposer_idx].replica.proposer;
                 (BalLt(p.msg->bal_2a, b[i].replicas[proposer_idx].replica.proposer.max_ballot_i_sent_1a)
-                || (&& b[i].replicas[proposer_idx].replica.proposer.max_ballot_i_sent_1a == p.msg->bal_2a
+                || (b[i].replicas[proposer_idx].replica.proposer.max_ballot_i_sent_1a == p.msg->bal_2a
                         && b[i].replicas[proposer_idx].replica.proposer.current_state != 1
                         && b[i].replicas[proposer_idx].replica.proposer.next_operation_number_to_propose > p.msg->opn_2a)),
         decreases i

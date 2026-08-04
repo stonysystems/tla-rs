@@ -249,21 +249,27 @@ ensures
         assert(LNextAtomic(s, s_, c));
     } else {
         // No step-down: s_mid == s
-        if !(s_mid.role is Leader) || !c.servers.contains(follower_id) {
+        if !(s_mid.role is Leader) || !c.servers.contains(follower_id)
+            || follower_id < 0 || follower_id > u64::MAX as int {
             // Guard failure: stutter
             assert(s_ == s);
         } else if success {
-            let follower = follower_id as u64;
-            let new_match_index = match_index as u64;
-            if new_match_index as int > s_mid.log.len() {
-                // Out of bounds: stutter
+            if match_index < 0 || match_index > u64::MAX as int {
+                // The composite handler rejects the wire value before casting.
                 assert(s_ == s);
             } else {
-                // Success: direct match
-                assert(LHandleAppendResponse(s, s_, c, term, success, match_index,
-                                              follower_id, follower, new_match_index,
-                                              sent_packets));
-                assert(LNextAtomic(s, s_, c));
+                let follower = follower_id as u64;
+                let new_match_index = match_index as u64;
+                if new_match_index as int > s_mid.log.len() {
+                    // Out of bounds: stutter
+                    assert(s_ == s);
+                } else {
+                    // Success: direct match
+                    assert(LHandleAppendResponse(s, s_, c, term, success, match_index,
+                                                  follower_id, follower, new_match_index,
+                                                  sent_packets));
+                    assert(LNextAtomic(s, s_, c));
+                }
             }
         } else {
             // Reject: direct match

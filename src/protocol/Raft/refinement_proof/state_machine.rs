@@ -26,12 +26,13 @@ verus! {
     /// Well-formedness of the distributed state
     pub open spec fn WellFormedRaftDistributed(ds: RaftDistributedState) -> bool {
         &&& ds.num_servers > 0
+        &&& ds.num_servers <= u64::MAX as int
         &&& ds.server_states.len() == ds.num_servers
         &&& ds.server_constants.len() == ds.num_servers
         &&& (forall |i: int| 0 <= i < ds.num_servers ==> {
             &&& ds.server_constants[i].my_id == i
             &&& ds.server_constants[i].quorum_size == ds.num_servers / 2 + 1
-            &&& ds.server_constants[i].servers == Set::new(|j: int| 0 <= j < ds.num_servers)
+            &&& ds.server_constants[i].servers =~= Set::<int>::range(0, ds.num_servers)
         })
     }
 
@@ -120,6 +121,9 @@ verus! {
                     // Record voter log length at vote time
                     &&& ds_.vote_log_len.dom().contains((server_id, vt))
                     &&& ds_.vote_log_len[(server_id, vt)] == s.log.len()
+                    &&& ds_.vote_log_len
+                        == ds.vote_log_len.insert(
+                            (server_id, vt), s.log.len() as int)
                 })
                 ||| (
                     // No granted VoteResponse sent
@@ -127,6 +131,7 @@ verus! {
                         0 <= i < sent_packets.len()
                         && (sent_packets[i] is VoteResponse)
                         && sent_packets[i]->VoteResponse_granted)
+                    && ds_.vote_log_len == ds.vote_log_len
                 )
             })
         }
@@ -328,7 +333,7 @@ verus! {
         ds: RaftDistributedState,
         rs: RaftSystemState
     ) -> bool {
-        &&& rs.server_ids == Set::new(|j: int| 0 <= j < ds.num_servers)
+        &&& rs.server_ids =~= Set::<int>::range(0, ds.num_servers)
         &&& rs.committed_log == GetCommittedLog(ds)
     }
 
@@ -341,7 +346,7 @@ verus! {
         &&& high_level_behavior.len() > 0
         &&& RaftSystemInit(
             high_level_behavior[0],
-            Set::new(|j: int| 0 <= j < low_level_behavior[0].num_servers)
+            Set::<int>::range(0, low_level_behavior[0].num_servers)
         )
         &&& (forall |i: int| #![trigger low_level_behavior[i]] 0 <= i < low_level_behavior.len() ==>
             RaftSystemRefinement(low_level_behavior[i], high_level_behavior[i]))

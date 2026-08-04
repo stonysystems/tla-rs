@@ -224,8 +224,8 @@ verus! {
         &&& s_.log == s.log
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
-        &&& s_.match_index == s.match_index.insert(follower, new_match_index)
-        &&& s_.next_index == s.next_index.insert(follower, u64_inc(new_match_index))
+        &&& s_.match_index =~= s.match_index.insert(follower, new_match_index)
+        &&& s_.next_index =~= s.next_index.insert(follower, u64_inc(new_match_index))
         &&& sent_packets == Seq::<LRaftMessage>::empty()
     }
 
@@ -239,7 +239,7 @@ verus! {
         &&& resp_success == false
         &&& c.servers.contains(follower as int)
         // Backtrack next_index for this follower
-        &&& s_.next_index == (if s.next_index.dom().contains(follower) && s.next_index[follower] > 0 {
+        &&& s_.next_index =~= (if s.next_index.dom().contains(follower) && s.next_index[follower] > 0 {
             s.next_index.insert(follower, u64_dec(s.next_index[follower]))
         } else {
             s.next_index
@@ -504,18 +504,28 @@ verus! {
             // Unknown follower: no-op
             &&& s_ == s_mid
             &&& sent_packets == Seq::<LRaftMessage>::empty()
+        } else if follower_id < 0 || follower_id > u64::MAX as int {
+            // Reject an out-of-range wire ID before converting it to u64.
+            &&& s_ == s_mid
+            &&& sent_packets == Seq::<LRaftMessage>::empty()
         } else if success {
             // Success path: update match_index and next_index
-            let follower = follower_id as u64;
-            let new_match_index = match_index as u64;
-            if new_match_index as int > s_mid.log.len() {
-                // match_index out of bounds: no-op
+            if match_index < 0 || match_index > u64::MAX as int {
+                // Reject an out-of-range wire value before converting it to u64.
                 &&& s_ == s_mid
                 &&& sent_packets == Seq::<LRaftMessage>::empty()
             } else {
-                LHandleAppendResponse(s_mid, s_, c, term, success, match_index,
-                                      follower_id, follower, new_match_index,
-                                      sent_packets)
+                let follower = follower_id as u64;
+                let new_match_index = match_index as u64;
+                if new_match_index as int > s_mid.log.len() {
+                // match_index out of bounds: no-op
+                    &&& s_ == s_mid
+                    &&& sent_packets == Seq::<LRaftMessage>::empty()
+                } else {
+                    LHandleAppendResponse(s_mid, s_, c, term, success, match_index,
+                                          follower_id, follower, new_match_index,
+                                          sent_packets)
+                }
             }
         } else {
             // Failure path: backtrack next_index

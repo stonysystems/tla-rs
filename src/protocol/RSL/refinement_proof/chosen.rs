@@ -79,7 +79,9 @@ pub proof fn lemma_GetUpperBoundOnQuorumOf2bsOperationNumber(
         ensures bound >= 0,
                 !exists |q:QuorumOf2bs| IsValidQuorumOf2bs(b[i], q) && q.opn == bound
     {
-        let p2bs = Set::new(|p:RslPacket| b[i].environment.sentPackets.contains(p) && p.msg is RslMessage2b);
+        let p2bs = b[i].environment.sentPackets.filter(
+            |p: RslPacket| p.msg is RslMessage2b,
+        );
         let opns = p2bs.map(|p:RslPacket| p.msg->opn_2b);
 
         // Derive opns.finite(): sentPackets.finite() → p2bs ⊆ sentPackets → p2bs.finite() → opns.finite()
@@ -89,10 +91,7 @@ pub proof fn lemma_GetUpperBoundOnQuorumOf2bsOperationNumber(
                 implies b[i].environment.sentPackets.contains(p) by {};
         };
         vstd::set_lib::lemma_len_subset(p2bs, b[i].environment.sentPackets);
-        // p2bs.finite() established
-        let f = |p: RslPacket| p.msg->opn_2b;
-        p2bs.lemma_map_finite(f);
-        // opns.finite() established
+        // Set::map preserves finiteness, so opns is finite.
 
         let bound = if opns.len() > 0 && intsetmax(opns) >= 0 { intsetmax(opns) + 1 } else {1};
         if opns.len() > 0 && intsetmax(opns) >= 0 {

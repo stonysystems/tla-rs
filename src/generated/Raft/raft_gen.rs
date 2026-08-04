@@ -854,22 +854,38 @@ ensures
                 broadcast use vstd::std_specs::hash::group_hash_axioms;
                 lemma_set_map_contains(c.servers@, *follower_id);
             }
-            if success {
-                                let follower = ((*follower_id) as u64);
-                { let new_match_index = ((*match_index) as u64); if ((new_match_index as u64) > (s_mid.log.len() as u64)) {
-                                        proof {
-                        lemma_empty_msg_map();
-                    }
-                    (s_mid, vec![])
-
-                } else {
-                    CHandleAppendResponse(&s_mid, c, term, success, match_index, follower_id, &follower, &new_match_index)
-                } }
+            if (((*follower_id) < 0) || ((*follower_id) > (u64::MAX as u64))) {
+                                proof {
+                    lemma_empty_msg_map();
+                }
+                (s_mid, vec![])
 
             } else {
-                                let follower = ((*follower_id) as u64);
-                CHandleAppendReject(&s_mid, c, term, success, match_index, follower_id, &follower)
+                if success {
+                    if (((*match_index) < 0) || ((*match_index) > (u64::MAX as u64))) {
+                                                proof {
+                            lemma_empty_msg_map();
+                        }
+                        (s_mid, vec![])
 
+                    } else {
+                                                let follower = ((*follower_id) as u64);
+                        { let new_match_index = ((*match_index) as u64); if ((new_match_index as u64) > (s_mid.log.len() as u64)) {
+                                                        proof {
+                                lemma_empty_msg_map();
+                            }
+                            (s_mid, vec![])
+
+                        } else {
+                            CHandleAppendResponse(&s_mid, c, term, success, match_index, follower_id, &follower, &new_match_index)
+                        } }
+
+                    }
+                } else {
+                                        let follower = ((*follower_id) as u64);
+                    CHandleAppendReject(&s_mid, c, term, success, match_index, follower_id, &follower)
+
+                }
             }
 
         }

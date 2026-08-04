@@ -226,16 +226,12 @@ verus! {
         ensures
             LEnvironment_Next(le, le_next),
         {
-            // Derive le.sentPackets.finite() from de.sentPackets.finite():
-            // le.sentPackets = abstractify_concrete_env_sent_packets(de.sentPackets) = de.sentPackets.map(f)
-            let f_pkt = |p: NetPacket| abstractify_net_packet_to_lock_packet(p);
-            de.sentPackets.lemma_map_finite(f_pkt);
+            // Set::map preserves finiteness, so le.sentPackets is finite.
 
             // Derive de_next.sentPackets.finite() from de.sentPackets.finite() + LEnvironment_Next
             lemma_environment_next_preserves_sentpackets_finite(de, de_next);
 
-            // Derive le_next.sentPackets.finite() from de_next.sentPackets.finite()
-            de_next.sentPackets.lemma_map_finite(f_pkt);
+            // Set::map also makes le_next.sentPackets finite.
 
             lemma_is_valid_env_step(de, le);
             let id = de.nextStep->actor;
@@ -336,7 +332,7 @@ verus! {
                 ==> HostState::host_init(db[0].servers[id], config_abs, id));
 
             // 1. LEnvironment_Init bridging: empty concrete sentPackets → empty abstract sentPackets
-            broadcast use vstd::set::group_set_axioms;
+            broadcast use vstd::set::group_set_lemmas;
             assert(db[0].environment.sentPackets =~= Set::<NetPacket>::empty());
             assert(abstractify_concrete_env_sent_packets(db[0].environment.sentPackets)
                 =~= Set::<LockPacket>::empty());

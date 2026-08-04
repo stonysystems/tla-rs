@@ -329,7 +329,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
         proof {
             broadcast use vstd::std_specs::hash::group_hash_axioms;
             broadcast use vstd::hash_map::group_hash_map_axioms;
-            broadcast use vstd::map::group_map_axioms;
+            broadcast use vstd::map::group_map_lemmas;
             broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
             broadcast use crate::common::native::io_s::axiom_endpoint_view;
 
@@ -356,7 +356,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
                 new_abstract.dom().contains(ak) implies target.dom().contains(ak)
             by {
                 broadcast use crate::common::native::io_s::axiom_endpoint_view;
-                broadcast use vstd::map::group_map_axioms;
+                broadcast use vstd::map::group_map_lemmas;
                 // Unfold: new_abstract.dom().contains(ak) means exists ep in result@ with ep@ == ak
                 assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == ak);
                 let ep = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == ak;
@@ -373,7 +373,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
                 target.dom().contains(ak) implies new_abstract.dom().contains(ak)
             by {
                 broadcast use crate::common::native::io_s::axiom_endpoint_view;
-                broadcast use vstd::map::group_map_axioms;
+                broadcast use vstd::map::group_map_lemmas;
                 if ak == k@ {
                     // Witness: k is in result@ and k@ == ak
                     assert(result@.contains_key(k) && k@ == ak);
@@ -393,7 +393,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
                 new_abstract.dom().contains(ak) implies new_abstract[ak] == target[ak]
             by {
                 broadcast use crate::common::native::io_s::axiom_endpoint_view;
-                broadcast use vstd::map::group_map_axioms;
+                broadcast use vstd::map::group_map_lemmas;
                 assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == ak);
                 let ep_new = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == ak;
                 if ak == k@ {
@@ -546,7 +546,7 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
         proof {
             broadcast use vstd::std_specs::hash::group_hash_axioms;
             broadcast use vstd::hash_map::group_hash_map_axioms;
-            broadcast use vstd::map::group_map_axioms;
+            broadcast use vstd::map::group_map_lemmas;
             broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
             broadcast use crate::common::native::io_s::axiom_endpoint_view;
 
@@ -611,7 +611,7 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
     proof {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
-        broadcast use vstd::map::group_map_axioms;
+        broadcast use vstd::map::group_map_lemmas;
         broadcast use crate::common::native::io_s::axiom_endpoint_key_model;
         broadcast use crate::common::native::io_s::axiom_endpoint_view;
 

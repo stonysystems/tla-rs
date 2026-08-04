@@ -1,5 +1,9 @@
 #![allow(unused_imports)]
 #![allow(unused_attributes)]
+// Verus 0.2026.05 introduced first-class mutable references. Keep the old
+// postcondition interpretation temporarily while generated and handwritten
+// contracts are migrated to explicit `final(...)` post-state expressions.
+#![verifier::deprecated_postcondition_mut_ref_style(true)]
 #![verus::trusted]
 use vstd::modes::*;
 use vstd::multiset::*;

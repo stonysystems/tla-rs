@@ -176,10 +176,6 @@ verus! {
                 if k == opn {
                     assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
                     assert(s.unexecuted_learner_state[opn].received_2b_message_senders.finite());
-                    lemma_set_union_finite_iff(
-                        s.unexecuted_learner_state[opn].received_2b_message_senders,
-                        set![packet.src],
-                    );
                     assert(s_.unexecuted_learner_state[k].received_2b_message_senders.finite());
                     lemma_set_contains_implies_len_positive(
                         s_.unexecuted_learner_state[k].received_2b_message_senders,

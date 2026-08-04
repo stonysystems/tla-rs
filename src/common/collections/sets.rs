@@ -15,14 +15,25 @@ verus! {
     pub open spec fn MapSeqToSet<X,Y>(xs:Seq<X>, f: spec_fn(X) -> Y) -> Set<Y>
         recommends Injective(f)
     {
-        Set::new(|y:Y| exists |x:X| xs.contains(x) && f(x) == y)
+        xs.to_set().map(f)
     }
 
     pub proof fn lemma_MapSeqToSet<X,Y>(xs:Seq<X>, f: spec_fn(X) -> Y)
         requires Injective(f)
         ensures forall |x:X| #[trigger] xs.contains(x) <==> MapSeqToSet(xs, f).contains(f(x))
     {
-
+        broadcast use Set::lemma_map_contains;
+        broadcast use Seq::to_set_ensures;
+        assert forall |x: X| #[trigger] xs.contains(x)
+            implies MapSeqToSet(xs, f).contains(f(x)) by {
+            assert(xs.to_set().contains(x));
+        };
+        assert forall |x: X| #[trigger] MapSeqToSet(xs, f).contains(f(x))
+            implies xs.contains(x) by {
+            let x0 = choose |x0: X| xs.to_set().contains(x0) && f(x0) == f(x);
+            assert(xs.contains(x0));
+            assert(x0 == x);
+        };
     }
 
     pub open spec fn intsetmax(s: Set<int>) -> int
@@ -41,7 +52,7 @@ verus! {
             forall |i: int| s.contains(i) ==> intsetmax(s) >= i,
         decreases s.len()
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
 
         let x = s.choose();
         let s_minus = s.remove(x);
@@ -123,7 +134,7 @@ verus! {
             s.len() <= t.len(),
         decreases t.len(),
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
 
         if t.len() == 0 {
             vstd::set_lib::lemma_set_empty_equivalency_len(t);
@@ -173,7 +184,7 @@ verus! {
             xs.len() == ys.len(),
         decreases xs.len(),
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
 
         // Derive ys.finite(): ys ⊆ xs.map(f) and xs.map(f) is finite
         assert(ys.subset_of(xs.map(f))) by {
@@ -181,7 +192,6 @@ verus! {
                 let x = choose |x: X| xs.contains(x) && y == f(x);
             };
         };
-        xs.lemma_map_finite(f);
         vstd::set_lib::lemma_len_subset(ys, xs.map(f));
         // ys is now known to be finite
 
@@ -252,11 +262,11 @@ verus! {
             forall |y:T| s.contains(y) ==> y != x,
         ensures s.insert(x).len() == s.len() + 1
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         // forall y in s: y != x. Instantiate with y = x: s.contains(x) ==> x != x.
         // Since x == x, we get !s.contains(x).
         assert(!s.contains(x));
-        // axiom_set_insert_len (in group_set_axioms): s.insert(x).len() == s.len() + 1
+        // lemma_set_insert_len (in group_set_lemmas): s.insert(x).len() == s.len() + 1
     }
 
     pub proof fn subset_len_equal_implies_equal<T>(s1: Set<T>, s2: Set<T>)
@@ -267,7 +277,7 @@ verus! {
     ensures
         s1 == s2
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         if s1 != s2 {
             // s1 ⊆ s2 and s1 ≠ s2 ⟹ ∃x ∈ s2 \ s1
             assert(exists |x: T| s2.contains(x) && !s1.contains(x)) by {

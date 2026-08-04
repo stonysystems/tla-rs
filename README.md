@@ -33,8 +33,8 @@ A Rust implementation of the IronFleet verified distributed systems framework, f
 
 ## Requirements
 
-- **Verus**: v0.2026.02.04 or compatible (tested with 0.2026.02.04.175a879)
-- **Rust**: 1.80.1+ (tested with 1.92.0)
+- **Verus**: 0.2026.08.02.b677dd5 (latest stable tested; rolling is the same commit)
+- **Rust**: 1.97.1 for Verus; a recent stable toolchain for the transpiler
 - **.NET 6.0 SDK**: https://dotnet.microsoft.com/download
 - **scons**: `pip install scons`
 - **Python 3**: For running scons

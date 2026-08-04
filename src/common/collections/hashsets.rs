@@ -100,7 +100,7 @@ verus! {
         s.map(f).len() == s.len(),
     decreases s.len(),
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         if s.len() == 0 {
             assert(s =~= Set::<T>::empty());
             assert(s.map(f) =~= Set::<U>::empty());
@@ -127,8 +127,7 @@ verus! {
                 }
             };
 
-            // s_prime.map(f) is finite
-            s_prime.lemma_map_finite(f);
+            // Set::map preserves finiteness.
         }
     }
 

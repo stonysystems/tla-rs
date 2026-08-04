@@ -153,8 +153,7 @@ verus! {
       {
           match e.nextStep {
               LEnvStep::LEnvStepHostIos{actor, ios} => {
-                  broadcast use vstd::seq_lib::seq_to_set_is_finite;
-                  broadcast use vstd::set::group_set_axioms;
+                  broadcast use vstd::set::group_set_lemmas;
                   let new_set = ios.filter(|io: LIoOp<IdType, MessageType>| io is Send)
                       .map_values(|io: LIoOp<IdType, MessageType>| io->s).to_set();
                   assert(new_set.finite());
@@ -202,7 +201,7 @@ verus! {
       // #[verifier(opaque)] -> can't make it opaque for the proof to work???
       pub open spec fn EnvironmentNextTemporal<IdType,MessageType>(b:Behavior<LEnvironment<IdType, MessageType>>) -> temporal
       {
-        stepmap(Map::new(|i: int| i == i, |i: int| LEnvironment_Next(b[i], b[nextstep(i)])))
+        stepmap(IMap::new(|i: int| i == i, |i: int| LEnvironment_Next(b[i], b[nextstep(i)])))
       }
 
       pub proof fn lemma_EnvironmentNextTemporal<IdType,MessageType>(b:Behavior<LEnvironment<IdType, MessageType>>)

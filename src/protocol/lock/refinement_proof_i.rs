@@ -141,7 +141,9 @@ verus! {
             i
     {
         if i == 0 {
-            let locked_packets = Set::new(|p:LockPacket| glb[0].ls.environment.sentPackets.contains(p) && p.msg is Locked);
+            let locked_packets = glb[0].ls.environment.sentPackets.filter(
+                |p: LockPacket| p.msg is Locked,
+            );
             // TODO: Prove this
 
             // assert(locked_packets.len() == 0) by {

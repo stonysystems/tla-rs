@@ -26,7 +26,7 @@ verus! {
     pub open spec fn union<U, V>(m: Map<U,V>, m_: Map<U,V>) -> Map<U,V>
         recommends domain(m).disjoint(domain(m_)), m.dom().finite(), m_.dom().finite(),
      {
-        Map::new(|i: U| domain(m).union(domain(m_)).contains(i),
+        Map::new(domain(m).union(domain(m_)),
                  |i: U| if m.contains_key(i) { m[i] } else {m_[i]})
     }
 
@@ -82,7 +82,7 @@ verus! {
 
     pub proof fn lemma_maps_decrease<S,T>(before: Map<S,T>, after: Map<S,T>, item_removed:S)
       requires before.contains_key(item_removed),
-               after =~= Map::new(|s: S| before.contains_key(s) && s != item_removed, |s: S| before[s]),
+               after =~= Map::new(before.dom().remove(item_removed), |s: S| before[s]),
                before.dom().finite(),
                after.dom().finite(),
       ensures  after.len() < before.len()
@@ -138,7 +138,7 @@ verus! {
   requires
           before.dom().finite(), after.dom().finite(),
           before.contains_key(item_removed),
-           after =~= Map::new(|s: S| before.contains_key(s) && s != item_removed, |s: S| before[s]),
+           after =~= Map::new(before.dom().remove(item_removed), |s: S| before[s]),
   ensures after.len() + 1 == before.len()
 {
   lemma_maps_decrease(before, after, item_removed);

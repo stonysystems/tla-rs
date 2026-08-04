@@ -23,7 +23,6 @@ use vstd::map::*;
 use vstd::prelude::*;
 use vstd::set::*;
 use vstd::set_lib::*;
-use vstd::std_specs::hash::KeysAdditionalSpecFns;
 
 verus! {
 

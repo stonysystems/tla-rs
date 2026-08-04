@@ -105,7 +105,7 @@ impl CProposer{
             next_operation_number_to_propose: self.next_operation_number_to_propose as int,
             received_1b_packets: self.received_1b_packets@.map(|p:CPacket| p.view()),
             highest_seqno_requested_by_client_this_view: Map::new(
-                |ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak,
+                Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak),
                 |ak: AbstractEndPoint| {
                     let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak;
                     self.highest_seqno_requested_by_client_this_view@[k] as int
@@ -129,7 +129,7 @@ impl View for CProposer {
             next_operation_number_to_propose: self.next_operation_number_to_propose as int,
             received_1b_packets: self.received_1b_packets@.map(|p:CPacket| p.view()),
             highest_seqno_requested_by_client_this_view: Map::new(
-                |ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak,
+                Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak),
                 |ak: AbstractEndPoint| {
                     let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak;
                     self.highest_seqno_requested_by_client_this_view@[k] as int
@@ -179,7 +179,7 @@ impl CProposer{
             })
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
         let vec = hashset_to_vec(S);
@@ -241,7 +241,7 @@ impl CProposer{
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
         let vec = hashset_to_vec(S);
@@ -297,7 +297,7 @@ impl CProposer{
             res == LSetOfMessage1bAboutBallot(S@.map(|p:CPacket| p@), b@)
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
         // First check: all packets are Message1b
@@ -364,7 +364,7 @@ impl CProposer{
         })
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
         let vec = hashset_to_vec(S);
@@ -433,7 +433,7 @@ impl CProposer{
         result == (exists |opn: int| abstractify_cvotes(votes).contains_key(opn) && opn > op as int),
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::map::group_map_axioms;
+        broadcast use vstd::map::group_map_lemmas;
 
         let keys = hashmap_keys_to_vec(votes);
         let mut i: usize = 0;
@@ -514,7 +514,7 @@ impl CProposer{
     })
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
         broadcast use crate::implementation::RSL::cmessage::axiom_cpacket_key_model;
 
         let vec = hashset_to_vec(S);

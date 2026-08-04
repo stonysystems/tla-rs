@@ -39,7 +39,9 @@ pub proof fn lemma_GetIndicesFromNodes(
             forall |node: AbstractEndPoint| nodes.contains(node) ==> indices.contains(GetReplicaIndex(node, config)),
             indices.len() == nodes.len(),
     {
-        let indices_out = Set::new(|idx:int| 0 <= idx < config.replica_ids.len() && nodes.contains(config.replica_ids[idx]));
+        let indices_out = Set::<int>::range(0, config.replica_ids.len() as int).filter(
+            |idx: int| nodes.contains(config.replica_ids[idx]),
+        );
 
         // Define function mapping indices to nodes.
         let f = |idx: int| -> AbstractEndPoint {
@@ -109,9 +111,6 @@ pub proof fn lemma_GetIndicesFromPackets(
         // Construct the set of src nodes from the given packets.
         let nodes = packets.map(|p:RslPacket| p.src);
 
-        // nodes.finite() from packets.finite() via map_finite
-        packets.lemma_map_finite(|p:RslPacket| p.src);
-
         // Derive the set of indices from the set of nodes.
         let indices_out = lemma_GetIndicesFromNodes(nodes, config);
 
@@ -144,7 +143,7 @@ pub proof fn lemma_SetOfElementsOfRangeNoBiggerThanRange(
             Q.finite(),
         decreases n,
     {
-        broadcast use vstd::set::group_set_axioms, vstd::set_lib::lemma_set_remove_finite_iff;
+        broadcast use vstd::set::group_set_lemmas;
 
         if n == 0 {
             assert forall |idx: int| Q.contains(idx) implies false by {};
@@ -155,7 +154,7 @@ pub proof fn lemma_SetOfElementsOfRangeNoBiggerThanRange(
         } else if Q.contains(n - 1) {
             lemma_SetOfElementsOfRangeNoBiggerThanRange(Q.remove(n - 1), n - 1);
             // Induction: Q.remove(n-1).finite() and Q.remove(n-1).len() <= n-1
-            // lemma_set_remove_finite_iff: Q.remove(n-1).finite() <==> Q.finite()
+            // All Sets, including removals, are finite by construction.
             // axiom_set_remove_len: Q.len() == Q.remove(n-1).len() + 1
         } else {
             lemma_SetOfElementsOfRangeNoBiggerThanRange(Q, n - 1);
@@ -178,8 +177,8 @@ pub proof fn lemma_QuorumIndexOverlap(
             Q2.contains(common),
             0 <= common < n,
     {
-        broadcast use vstd::set::group_set_axioms, vstd::set_lib::group_set_properties,
-                     vstd::set_lib::axiom_is_empty;
+        broadcast use vstd::set::group_set_lemmas, vstd::set_lib::group_set_properties,
+                     vstd::set_lib::lemma_set_is_empty;
 
         // Establish finiteness for Q1 and Q2
         lemma_SetOfElementsOfRangeNoBiggerThanRange(Q1, n);
@@ -189,7 +188,7 @@ pub proof fn lemma_QuorumIndexOverlap(
             // Union is also bounded by [0, n)
             lemma_SetOfElementsOfRangeNoBiggerThanRange(Q1.union(Q2), n);
             // Convert is_empty to disjoint predicate
-            lemma_disjoint_iff_empty_intersection(Q1, Q2);
+            lemma_set_disjoint_iff_empty_intersection(Q1, Q2);
             // lemma_set_disjoint_lens: disjoint + finite → (Q1 + Q2).len() == Q1.len() + Q2.len()
             assert((Q1 + Q2).len() == Q1.len() + Q2.len());
             // But Q1.union(Q2).len() <= n and Q1.len() + Q2.len() > n — contradiction
@@ -198,7 +197,7 @@ pub proof fn lemma_QuorumIndexOverlap(
 
         // Intersection is non-empty: extract a common element
         let overlap_Q = Q1.intersect(Q2);
-        // axiom_is_empty: !overlap_Q.is_empty() → exists|a| overlap_Q.contains(a)
+        // lemma_set_is_empty: !overlap_Q.is_empty() → exists|a| overlap_Q.contains(a)
         // axiom_set_intersect: overlap_Q.contains(i) <==> Q1.contains(i) && Q2.contains(i)
         let common = choose |common: int| overlap_Q.contains(common);
         common

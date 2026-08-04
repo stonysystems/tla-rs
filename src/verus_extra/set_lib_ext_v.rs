@@ -24,8 +24,7 @@ pub open spec fn set_fold<A, B>(s: Set<A>, zero: B, f: spec_fn(B, A) -> B) -> B
 
 pub open spec fn flatten_sets<A>(sets: Set<Set<A>>) -> Set<A>
 {
-    // extra parens are for rust-analyzer
-    Set::new(|a: A| (exists |s: Set<A>| sets.contains(s) && s.contains(a)))
+    sets.flatten()
 }
 
 pub proof fn flatten_sets_spec<A>(sets: Set<Set<A>>)
@@ -33,27 +32,48 @@ pub proof fn flatten_sets_spec<A>(sets: Set<Set<A>>)
         (forall |e| #[trigger] flatten_sets(sets).contains(e) ==> exists |s| sets.contains(s) && s.contains(e)),
         (forall |s: Set<A>| #[trigger] sets.contains(s) ==> s.subset_of(flatten_sets(sets)))
 {
+    broadcast use Set::lemma_flatten_contains;
 }
 
 pub proof fn lemma_flatten_sets_insert<A>(sets: Set<Set<A>>, s: Set<A>)
-    ensures flatten_sets(sets.insert(s)) == flatten_sets(sets).union(s)
+    ensures flatten_sets(sets.insert(s)) =~= flatten_sets(sets).union(s)
 {
-    assert_sets_equal!(flatten_sets(sets.insert(s)) == flatten_sets(sets).union(s));
+    sets.flatten_insert_union_commute(s);
 }
 
 pub proof fn lemma_flatten_sets_union<A>(sets1: Set<Set<A>>, sets2: Set<Set<A>>)
-    ensures flatten_sets(sets1.union(sets2)) == flatten_sets(sets1).union(flatten_sets(sets2))
+    ensures flatten_sets(sets1.union(sets2)) =~= flatten_sets(sets1).union(flatten_sets(sets2))
 {
-    assert_sets_equal!(flatten_sets(sets1.union(sets2)) ==
-        flatten_sets(sets1).union(flatten_sets(sets2)));
+    broadcast use Set::lemma_flatten_contains;
+    let lhs = flatten_sets(sets1.union(sets2));
+    let rhs = flatten_sets(sets1).union(flatten_sets(sets2));
+    assert forall |elem: A| lhs.contains(elem) <==> rhs.contains(elem) by {
+        if lhs.contains(elem) {
+            let s = choose |s: Set<A>| sets1.union(sets2).contains(s) && s.contains(elem);
+            if sets1.contains(s) {
+                assert(flatten_sets(sets1).contains(elem));
+            } else {
+                assert(sets2.contains(s));
+                assert(flatten_sets(sets2).contains(elem));
+            }
+        } else if rhs.contains(elem) {
+            if flatten_sets(sets1).contains(elem) {
+                let s = choose |s: Set<A>| sets1.contains(s) && s.contains(elem);
+                assert(sets1.union(sets2).contains(s));
+            } else {
+                let s = choose |s: Set<A>| sets2.contains(s) && s.contains(elem);
+                assert(sets1.union(sets2).contains(s));
+            }
+        }
+    };
 }
 
 pub proof fn lemma_flatten_sets_union_auto<A>()
     ensures forall |sets1: Set<Set<A>>, sets2: Set<Set<A>>|
-        #[trigger] flatten_sets(sets1.union(sets2)) == flatten_sets(sets1).union(flatten_sets(sets2))
+        #[trigger] flatten_sets(sets1.union(sets2)) =~= flatten_sets(sets1).union(flatten_sets(sets2))
 {
     assert forall |sets1: Set<Set<A>>, sets2: Set<Set<A>>|
-        #[trigger] flatten_sets(sets1.union(sets2)) == flatten_sets(sets1).union(flatten_sets(sets2)) by {
+        #[trigger] flatten_sets(sets1.union(sets2)) =~= flatten_sets(sets1).union(flatten_sets(sets2)) by {
         lemma_flatten_sets_union(sets1, sets2);
     }
 }
@@ -306,6 +326,12 @@ pub proof fn flatten_sets_singleton_auto<A>()
 ensures
     forall |x: Set<A>| #[trigger] flatten_sets(set![x]) =~= x,
 {
+    assert forall |x: Set<A>| #[trigger] flatten_sets(set![x]) =~= x by {
+        lemma_flatten_sets_insert(Set::<Set<A>>::empty(), x);
+        assert(flatten_sets(Set::<Set<A>>::empty()) =~= Set::<A>::empty()) by {
+            broadcast use Set::lemma_flatten_contains;
+        };
+    };
 }
 
 }

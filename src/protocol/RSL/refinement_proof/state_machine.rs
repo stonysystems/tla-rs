@@ -27,7 +27,7 @@ verus! {
 
     pub open spec fn RslSystemNextServerExecutesRequest(s:RSLSystemState, s_:RSLSystemState, req:Request) -> bool
     {
-        && s_.server_addresses == s.server_addresses
+        s_.server_addresses == s.server_addresses
         && s_.requests == s.requests + set![req]
         && s_.app == AppHandleRequest(s.app, req.request).0
         && s_.replies == s.replies + set![Reply{client:req.client, seqno:req.seqno, reply:AppHandleRequest(s.app, req.request).1}]

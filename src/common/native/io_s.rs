@@ -280,7 +280,7 @@ verus! {
             ensures
                 net_client.state() is Receiving,
                 net_client.history() == Seq::<NetEvent>::empty(),
-                net_client.my_end_point() == end_point,
+                net_client.my_end_point() == end_point@,
         {
             NetClient{
                 state: Ghost(State::Receiving),

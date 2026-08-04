@@ -18,7 +18,7 @@ verus! {
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
-        broadcast use vstd::map::group_map_axioms;
+        broadcast use vstd::map::group_map_lemmas;
 
         let keys = hashmap_keys_to_vec(votes);
         let mut result: HashMap<u64, CVote> = HashMap::new();
@@ -103,7 +103,7 @@ verus! {
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
-        broadcast use vstd::map::group_map_axioms;
+        broadcast use vstd::map::group_map_lemmas;
 
         // Phase 1: Filter votes keeping only keys >= log_truncation_point
         let keys = hashmap_keys_to_vec(votes);
@@ -292,7 +292,7 @@ verus! {
         ensures
         ({
             let ss = s@.map(|i, t:u64| t as int);
-            && res == IsNthHighestValueInSequence(v as int, ss, n as int)
+            res == IsNthHighestValueInSequence(v as int, ss, n as int)
         })
     {
         let ghost ss = s@.map(|i, t:u64| t as int);

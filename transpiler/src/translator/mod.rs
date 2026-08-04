@@ -8198,6 +8198,32 @@ impl Translator {
             if segment.contains("::") {
                 // Split and translate each part
                 let parts: Vec<&str> = segment.split("::").collect();
+                // Primitive associated constants and functions are already exec
+                // Rust paths (for example, `u64::MAX`). They must not receive
+                // the spec-to-exec `C` prefix used for protocol datatypes.
+                if parts.first().is_some_and(|root| {
+                    matches!(
+                        *root,
+                        "u8" | "u16"
+                            | "u32"
+                            | "u64"
+                            | "u128"
+                            | "usize"
+                            | "i8"
+                            | "i16"
+                            | "i32"
+                            | "i64"
+                            | "i128"
+                            | "isize"
+                            | "f32"
+                            | "f64"
+                            | "bool"
+                            | "char"
+                            | "str"
+                    )
+                }) {
+                    return segment.clone();
+                }
                 if parts.len() >= 2 {
                     // Translate all parts except the last normally (no variant_remapping)
                     let mut result_parts: Vec<String> = parts[..parts.len() - 1]
@@ -16003,6 +16029,11 @@ mod tests {
             translator.translate_path(&path_combined),
             "CMessage::CMessage1b"
         );
+
+        // Rust primitive associated items are executable paths, not protocol
+        // names, so they must survive spec-to-exec translation unchanged.
+        let primitive_constant = Path::single("u64::MAX".to_string());
+        assert_eq!(translator.translate_path(&primitive_constant), "u64::MAX");
     }
 
     #[test]

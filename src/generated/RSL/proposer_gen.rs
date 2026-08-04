@@ -220,7 +220,7 @@ ensures
 /// Matches the inline definition in CProposer.view().highest_seqno_requested_by_client_this_view.
 spec fn abstractify_endpoint_seqno_map(m: Map<EndPoint, u64>) -> Map<AbstractEndPoint, int> {
     Map::new(
-        |ak: AbstractEndPoint| exists |k: EndPoint| m.contains_key(k) && k@ == ak,
+        Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k: EndPoint| m.contains_key(k) && k@ == ak),
         |ak: AbstractEndPoint| {
             let k = choose |k: EndPoint| m.contains_key(k) && k@ == ak;
             m[k] as int

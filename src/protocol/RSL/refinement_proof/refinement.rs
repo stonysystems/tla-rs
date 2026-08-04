@@ -61,12 +61,12 @@ verus! {
             0 <= reqs_in_last_batch <= batches.last().len(),
     {
         // let batch_num_ =
-        let requests = Set::new(|req:Request| exists |batch_num:int, req_num:int|
+        let requests = Set::new_assuming_finite(|req:Request| exists |batch_num:int, req_num:int|
                                  0 <= batch_num < batches.len()
                               && 0 <= req_num < (if batch_num == batches.len()-1 {reqs_in_last_batch} else {batches[batch_num].len() as int} )
                               && batches[batch_num][req_num] == req);
 
-        let replies = Set::new(|rep:Reply| exists |batch_num:int, req_num:int|
+        let replies = Set::new_assuming_finite(|rep:Reply| exists |batch_num:int, req_num:int|
                                   0 <= batch_num < batches.len()
                               && 0 <= req_num < (if batch_num == batches.len()-1 {reqs_in_last_batch} else {batches[batch_num].len() as int} )
                               && GetReplyFromRequestBatches(batches, batch_num, req_num) == rep);
@@ -79,12 +79,12 @@ verus! {
 
     pub open spec fn ProduceAbstractState(server_addresses:Set<AbstractEndPoint>, batches:Seq<RequestBatch>) -> RSLSystemState
     {
-        let requests = Set::new(|req:Request| exists |batch_num:int, req_num:int|
+        let requests = Set::new_assuming_finite(|req:Request| exists |batch_num:int, req_num:int|
                                                   0 <= batch_num < batches.len()
                                               && 0 <= req_num < batches[batch_num].len()
                                               && batches[batch_num][req_num] == req);
 
-        let replies = Set::new(|rep:Reply| exists |batch_num:int, req_num:int|
+        let replies = Set::new_assuming_finite(|rep:Reply| exists |batch_num:int, req_num:int|
                                                 0 <= batch_num < batches.len()
                                             && 0 <= req_num < batches[batch_num].len()
                                             && GetReplyFromRequestBatches(batches, batch_num, req_num) == rep);
@@ -279,13 +279,13 @@ verus! {
         assert(rs_prime.app == rs.app);
     }
 
-    pub open spec fn ConvertBehaviorSeqToImap<T>(s:Seq<T>) -> Map<int, T>
+    pub open spec fn ConvertBehaviorSeqToImap<T>(s:Seq<T>) -> IMap<int, T>
         recommends s.len() > 0
         // ensures  imaptotal(ConvertBehaviorSeqToImap(s))
         // ensures  forall i :: 0 <= i < |s| ==> ConvertBehaviorSeqToImap(s)[i] == s[i]
     {
         // imap i {:trigger s[i]} :: if i < 0 then s[0] else if 0 <= i < |s| then s[i] else last(s)
-        Map::new(|i:int| i == i, |i:int| if i < 0 { s[0] } else if 0 <= i < s.len() { s[i] } else { s.last() })
+        IMap::new(|i:int| i == i, |i:int| if i < 0 { s[0] } else if 0 <= i < s.len() { s[i] } else { s.last() })
     }
 
     pub proof fn lemma_ConvertBehaviorSeqToImap_ensures<T>(s:Seq<T>)
@@ -305,7 +305,7 @@ verus! {
         &&& high_level_behavior.len() == prefix_len
         &&& (forall|i: int| 0 <= i < prefix_len ==> RslSystemRefinement(b[i], high_level_behavior[i]))
         &&& high_level_behavior.len() > 0
-        &&& RslSystemInit(high_level_behavior[0], Set::new(|x: AbstractEndPoint| b[0].constants.config.replica_ids.contains(x)))
+        &&& RslSystemInit(high_level_behavior[0], b[0].constants.config.replica_ids.to_set())
         &&& (forall|i: int| #![trigger high_level_behavior[i]] 0 <= i < high_level_behavior.len() - 1 ==> RslSystemNext(high_level_behavior[i], high_level_behavior[i + 1]))
     }
 
@@ -340,7 +340,7 @@ verus! {
             // Now Verus knows q.indices is finite with len > 0
             assert(q.indices.finite());
             assert(q.indices.len() != 0);
-            vstd::set::axiom_set_choose_len(q.indices);
+            vstd::set::lemma_set_choose_len(q.indices);
             let idx = q.indices.choose();
             assert(q.indices.contains(idx));
             let packet = q.packets[idx];
@@ -541,11 +541,11 @@ verus! {
         };
 
         // Bridge: server_addresses
-        // MapSeqToSet(c.config.replica_ids, |x| x) =~= Set::new(|x| b[0].constants.config.replica_ids.contains(x))
+        // MapSeqToSet(c.config.replica_ids, |x| x) is the replica-id sequence's set view.
         lemma_ConstantsAllConsistent(b, c, 0);
         assert(b[0].constants == c);
         assert(MapSeqToSet(c.config.replica_ids, |x: AbstractEndPoint| x) =~=
-               Set::new(|x: AbstractEndPoint| b[0].constants.config.replica_ids.contains(x)));
+               b[0].constants.config.replica_ids.to_set());
 
         high_level_behavior
     }

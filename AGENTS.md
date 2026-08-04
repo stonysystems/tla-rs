@@ -1,4 +1,4 @@
-# CLAUDE.md - tla-rs Project Guide
+# AGENTS.md - tla-rs Project Guide
 
 ## Important: Generated Code Policy
 

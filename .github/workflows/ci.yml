@@ -88,11 +88,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     env:
-      # Pin to 0.2026.01.14 — later versions (e.g., 0.2026.03.17) removed
-      # vstd::std_specs::hash::{KeysAdditionalSpecFns, SetIterAdditionalSpecFns}
-      # which generated RSL code depends on. Updating to the new API requires
-      # transpiler changes and regeneration (tracked separately).
-      VERUS_VERSION: "0.2026.01.14.88f7396"
+      # Latest stable release validated by the incremental Verus migration.
+      # The rolling release currently points at the same b677dd5 commit.
+      VERUS_VERSION: "0.2026.08.02.b677dd5"
     steps:
       - uses: actions/checkout@v4
 
@@ -122,7 +120,7 @@ jobs:
       - name: Install Rust toolchain for Verus
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.97.1
           components: rustfmt
 
       - name: Verify with Verus

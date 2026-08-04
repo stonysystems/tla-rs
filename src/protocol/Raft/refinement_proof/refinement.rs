@@ -19,7 +19,7 @@ verus! {
     pub open spec fn AbstractifyRaftState(ds: RaftDistributedState) -> RaftSystemState {
         RaftSystemState {
             committed_log: GetCommittedLog(ds),
-            server_ids: Set::new(|j: int| 0 <= j < ds.num_servers),
+            server_ids: Set::<int>::range(0, ds.num_servers),
         }
     }
 

@@ -73,7 +73,7 @@ verus! {
         ensures
             q1.v == q2.v,
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
 
         lemma_ConstantsAllConsistent(b, c, i);
 
@@ -137,7 +137,6 @@ verus! {
         let quorum_of_1bs = lemma_2aMessageHas1bQuorumPermittingIt(b, c, i, packet2a);
 
         // Prove quorum_of_1bs.finite() via injective preimage into replica_ids
-        broadcast use vstd::seq_lib::seq_to_set_is_finite;
         let rid_set = c.config.replica_ids.to_set();
         let f_src = |p: RslPacket| p.src;
         assert forall |p: RslPacket| quorum_of_1bs.contains(p)
@@ -374,7 +373,6 @@ verus! {
         let q_new = lemma_DecidedOperationWasChosen_change_step(b, c, i, idx);
 
         lemma_Received2bMessageSendersAlwaysValidReplicas(b, c, i - 1, idx, opn);
-        broadcast use vstd::seq_lib::seq_to_set_is_finite;
         let rid_set = c.config.replica_ids.to_set();
         assert(senders.subset_of(rid_set)) by {
             assert forall |node: AbstractEndPoint| senders.contains(node) implies rid_set.contains(node) by
@@ -458,7 +456,7 @@ verus! {
             }),
         decreases c.config.replica_ids.len() - sender_idx
     {
-        broadcast use vstd::set::group_set_axioms;
+        broadcast use vstd::set::group_set_lemmas;
 
         let dummy_packet = LPacket{dst:c.config.replica_ids[0], src:c.config.replica_ids[0], msg:RslMessage::RslMessage1a{bal_1a:Ballot{seqno:0, proposer_id:0}}};
         if c.config.replica_ids.len() == sender_idx {
@@ -495,7 +493,7 @@ verus! {
                 };
                 let new_indices = set![sender_idx_unused] + rest_indices;
                 // set![sender_idx_unused] = Set::empty().insert(sender_idx_unused) is finite
-                // union of two finite sets is finite (axiom_set_union_finite in group_set_axioms)
+                // Set unions are finite by construction.
                 let new_packets = seq![p] + rest_packets;
                 assert(new_packets.len() == c.config.replica_ids.len() - sender_idx);
                 assert forall |sidx: int| new_indices.contains(sidx)

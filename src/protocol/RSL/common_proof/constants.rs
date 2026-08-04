@@ -15,7 +15,7 @@ verus! {
     {
         &&& ps.constants.config.replica_ids.len() == ps.replicas.len()
         &&& forall |idx:int| #![trigger ps.replicas[idx].replica.constants] 0 <= idx < ps.constants.config.replica_ids.len() ==>
-            && ps.replicas[idx].replica.constants.my_index == idx
+            ps.replicas[idx].replica.constants.my_index == idx
             && ps.replicas[idx].replica.constants.all == ps.constants
             && ps.replicas[idx].replica.proposer.constants == ps.replicas[idx].replica.constants
             && ps.replicas[idx].replica.proposer.election_state.constants == ps.replicas[idx].replica.constants

@@ -16,8 +16,8 @@ non-RSL protocols), and collect throughput numbers.
 
 | Tool | Version we used | Notes |
 |------|-----------------|-------|
-| **Verus** | `0.2026.02.04.175a879` | From <https://github.com/verus-lang/verus/releases>. Verification is sensitive to the Verus version — use this release (or newer, but expect to bump `--rlimit` on slow machines). Set `export VERUS=/path/to/verus/verus`. |
-| **Rust** | 1.92 (bundled with Verus) | Verus ships its own `rust-toolchain`; you do not need a separate rustc for the verify/compile steps. A system Rust (any recent stable) is needed to build the transpiler. |
+| **Verus** | `0.2026.08.02.b677dd5` | From <https://github.com/verus-lang/verus/releases>. This is the latest stable release tested by the project; rolling currently points at the same commit. Set `export VERUS=/path/to/verus/verus`. |
+| **Rust** | 1.97.1 | This is the toolchain required by the pinned Verus binary. A system Rust (any recent stable) is also sufficient to build the transpiler. |
 | **.NET SDK** | 6.0.x | For the C# runtime + client. `dotnet` must be on `PATH`. |
 | **SCons** | any recent | `pip install scons` — builds the C# projects. |
 | **Platform** | Linux x86-64 | The C# native interop loads `liblib.so`. |
