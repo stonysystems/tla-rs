@@ -492,6 +492,105 @@ verus! {
         };
     }
 
+    /// The transfer hypothesis is *discharged* by the inherited
+    /// `lemma_overlap_voter_entry_transfer`, so stating it explicitly is a
+    /// faithful reduction rather than a strengthening: the dynamic-membership
+    /// development assumes exactly what the inherited static-Raft proof base
+    /// already assumes, and nothing more. This is the only place the
+    /// membership development touches that lemma, so the inherited gap is
+    /// exactly one lemma wide.
+    pub proof fn lemma_transfer_obligation_discharged_by_inherited_lemma(
+        ds: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            VotersVotedForCandidate(ds),
+            VoteResponseIntegrity(ds),
+            LogMatching(ds),
+            LogTermsMonotonic(ds),
+            VoteResponseHasRequestVote(ds),
+            RequestVoteSummaryStillValidAtSameTerm(ds),
+            VoteLogLenCoversNetwork(ds),
+            VoteLogLenBounded(ds),
+            VoteLogLenEntryTermBound(ds),
+            VoteGrantedLogUpToDateAtVoteTime(ds),
+        ensures
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+    {
+        assert forall |index: int, leader_id: int, overlap_voter: int|
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && 0 <= overlap_voter < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term
+            && ds.configuration_commit_certificates[index].quorum
+                .contains(overlap_voter)
+            && ds.server_states[leader_id].votes_granted
+                .contains(overlap_voter)
+        implies {
+            &&& ds.server_states[leader_id].log.len() > index
+            &&& ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry
+        }
+        by {
+            let certificate = ds.configuration_commit_certificates[index];
+
+            // Membership of the certificate quorum already pins the entry
+            // into the voter's own log.
+            lemma_configuration_commit_certificate_valid_for_replica(
+                ds,
+                index,
+                overlap_voter,
+            );
+            assert(ds.server_states[overlap_voter].log.len() > index);
+            assert(ds.server_states[overlap_voter].log[index]
+                == certificate.entry);
+
+            if overlap_voter != leader_id {
+                // The leader collected this voter's grant, so the granting
+                // VoteResponse is still in the network.
+                assert(VotersVotedForCandidate(ds));
+                let vote = choose |packet: LRaftPacket| {
+                    &&& ds.network.contains(packet)
+                    &&& packet.dst == leader_id
+                    &&& packet.msg matches LRaftMessage::VoteResponse {
+                        term,
+                        granted,
+                        voter,
+                        ..
+                    }
+                    &&& term == ds.server_states[leader_id].current_term
+                    &&& granted
+                    &&& voter == overlap_voter
+                };
+                assert(vote.src == overlap_voter) by {
+                    assert(VoteResponseIntegrity(ds));
+                };
+                assert(
+                    ds.server_states[overlap_voter].current_term
+                        > vote.msg->VoteResponse_term
+                    || (ds.server_states[overlap_voter].current_term
+                            == vote.msg->VoteResponse_term
+                        && ds.server_states[overlap_voter].has_voted
+                        && ds.server_states[overlap_voter].voted_for
+                            == leader_id)
+                ) by {
+                    assert(VoteResponseIntegrity(ds));
+                };
+
+                lemma_overlap_voter_entry_transfer(
+                    ds,
+                    leader_id,
+                    overlap_voter,
+                    index,
+                    certificate.entry,
+                );
+            }
+        };
+    }
+
     /// Milestone B, mechanical half: an existing first-missing-boundary
     /// witness survives any step that carries the certificate over unchanged,
     /// leaves the leader's recorded election phase alone, and rewrites no
