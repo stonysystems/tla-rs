@@ -175,6 +175,40 @@ verus! {
         );
     }
 
+    /// Behaviour-level agreement at certified membership boundaries, with no
+    /// membership-phase hypothesis whatsoever.
+    ///
+    /// In every reachable state, any server that has committed past a certified
+    /// Configuration boundary holds exactly the certified entry there. This
+    /// holds under joint consensus as well as stable membership, and needs no
+    /// assumption about which phase anyone was elected under.
+    pub proof fn lemma_certified_boundary_agrees_throughout_behavior(
+        b: RaftBehavior,
+        behavior_index: int,
+        index: int,
+        server_id: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+            b[behavior_index].configuration_commit_certificates.dom()
+                .contains(index),
+            0 <= server_id < b[behavior_index].num_servers,
+            index < b[behavior_index].server_states[server_id].commit_index,
+            index < b[behavior_index].server_states[server_id].log.len(),
+        ensures
+            b[behavior_index].server_states[server_id].log[index]
+                == b[behavior_index].configuration_commit_certificates[index]
+                    .entry,
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
+        lemma_certified_boundary_agrees_with_committed_server(
+            b[behavior_index],
+            index,
+            server_id,
+        );
+    }
+
     /// Behaviour-level joint-consensus Configuration Leader Completeness.
     ///
     /// In every reachable state, a leader elected under a phase that is the

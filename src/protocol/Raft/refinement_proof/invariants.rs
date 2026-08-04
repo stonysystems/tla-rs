@@ -494,6 +494,52 @@ verus! {
         };
     }
 
+    /// Any server that has committed past a certified Configuration boundary
+    /// holds exactly the certified entry there — no membership-phase hypothesis
+    /// at all, so this covers joint consensus unconditionally.
+    ///
+    /// The certificate's committer has the boundary below its own commit index,
+    /// so both the configuration certificate and the unique all-entry
+    /// certificate at that position describe the same entry; any other server
+    /// that has committed that far must therefore agree with it.
+    pub proof fn lemma_certified_boundary_agrees_with_committed_server(
+        ds: RaftDistributedState,
+        index: int,
+        server_id: int,
+    )
+        requires
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= server_id < ds.num_servers,
+            index < ds.server_states[server_id].commit_index,
+            index < ds.server_states[server_id].log.len(),
+        ensures
+            0 <= index,
+            ds.server_states[server_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        let certificate = ds.configuration_commit_certificates[index];
+        let committer = certificate.committer;
+
+        // The committer retained the boundary below its own commit index.
+        assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(index < ds.server_states[committer].log.len());
+        assert(ds.server_states[committer].log[index] == certificate.entry);
+
+        // Both servers' committed entries at `index` are the unique all-entry
+        // certificate entry, hence equal to each other.
+        assert(CommittedEntriesHaveLogCertificates(ds));
+        assert(ds.log_commit_certificates[index].entry
+            == ds.server_states[committer].log[index]);
+        assert(ds.log_commit_certificates[index].entry
+            == ds.server_states[server_id].log[index]);
+    }
+
     /// The joint-consensus case. Whenever the phase a leader was elected under
     /// is the certificate's governing phase, or one legal progression step
     /// beyond it, the two quorums must intersect — this is exactly what the
