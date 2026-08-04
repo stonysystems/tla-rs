@@ -206,13 +206,41 @@ impl<'a> LintContext<'a> {
     /// `\E b \in Ballot : Phase1a(b)` alongside `\E a \in Acceptor : Phase1b(a)`.
     /// It is inferred instead from the variable declarations -- the set that
     /// per-node state is indexed by -- and only then confirmed against `Next`.
+    /// The next-state relation.
+    ///
+    /// Usually called `Next`, but a spec may name it anything and point at it
+    /// from `Spec == Init /\ [][TPNext]_vars`. Following that is more accurate
+    /// than insisting on a name -- otherwise a purely cosmetic difference
+    /// inflates a spec's measured distance from the subset.
+    fn next_relation(&self) -> Option<&'a TlaOperator> {
+        if let Some(next) = self.operator("Next") {
+            return Some(next);
+        }
+        // The spec operator is not always called `Spec` -- TwoPhase names its
+        // `TPSpec`. Any 0-ary operator of the form `Init /\ [][Action]_vars`
+        // identifies the next-state relation.
+        for op in &self.module.operators {
+            if !op.params.is_empty() {
+                continue;
+            }
+            let mut named = None;
+            find_boxed_action(&op.body, &mut named);
+            if let Some(name) = named {
+                if let Some(next) = self.operator(&name) {
+                    return Some(next);
+                }
+            }
+        }
+        None
+    }
+
     fn check_c5(&self, report: &mut CleanSubsetReport) {
-        let Some(next) = self.operator("Next") else {
+        let Some(next) = self.next_relation() else {
             report.findings.push(self.finding(
                 CleanRule::C5,
                 None,
-                "no `Next` operator: the spec has no next-state relation to project. \
-                 Name the top-level action `Next`, or state which operator plays that role.",
+                "no next-state relation: neither a `Next` operator nor a `Spec` of the \
+                 form `Init /\\ [][Action]_vars` that names one.",
             ));
             return;
         };
@@ -510,6 +538,27 @@ impl<'a> LintContext<'a> {
                 return true;
             }
         }
+        // Testing that a particular *message* is in the network is also a
+        // receive: `[type |-> "Prepared", rm |-> r] \in msgs` is how TwoPhase
+        // reads its network.
+        //
+        // The element has to be a record. A network carries messages, and
+        // messages are records; `p \in crit` tests membership of a node in an
+        // ordinary shared set, and treating that as a receive would designate
+        // LamportMutex's critical-section set as the network -- suppressing the
+        // C1 finding that is the real problem with it.
+        if let TlaExpr::BinOp {
+            op: TlaBinOp::In,
+            left,
+            right,
+        } = expr
+        {
+            if matches!(&**right, TlaExpr::Ident(name) if name == var)
+                && matches!(&**left, TlaExpr::Record(_))
+            {
+                return true;
+            }
+        }
         let mut found = false;
         walk_children(expr, &mut |child| {
             found |= Self::has_receive_from(child, var);
@@ -734,7 +783,7 @@ impl<'a> LintContext<'a> {
     /// another node's state is a violation at any depth.
     fn node_parameterized_operators(&self) -> BTreeMap<String, String> {
         let mut found: BTreeMap<String, String> = BTreeMap::new();
-        let Some(next) = self.operator("Next") else {
+        let Some(next) = self.next_relation() else {
             return found;
         };
 
@@ -1045,6 +1094,28 @@ fn walk_children(expr: &TlaExpr, f: &mut impl FnMut(&TlaExpr)) {
             f(action);
         }
     }
+}
+
+/// Find the action named inside `[][Action]_vars`, which the parser desugars to
+/// `Always(Action \/ UNCHANGED vars)`.
+fn find_boxed_action(expr: &TlaExpr, out: &mut Option<String>) {
+    if out.is_some() {
+        return;
+    }
+    if let TlaExpr::Always(inner) = expr {
+        if let TlaExpr::BinOp {
+            op: TlaBinOp::Or,
+            left,
+            ..
+        } = &**inner
+        {
+            if let TlaExpr::Ident(name) = &**left {
+                *out = Some(name.clone());
+                return;
+            }
+        }
+    }
+    walk_children(expr, &mut |child| find_boxed_action(child, out));
 }
 
 /// Flatten a `\/`-tree into its disjuncts.

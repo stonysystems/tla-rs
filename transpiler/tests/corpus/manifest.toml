@@ -109,28 +109,30 @@ notes = "Lamport 1978 distributed mutual exclusion. The CLEANEST tier-0 case and
 [[case]]
 id = "t1_01_paxos"
 tier = 1
-status = "planned"
+status = "intake"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/Paxos/Paxos.tla"
 source_commit = ""
 golden_kind = "bootstrapped_reviewed"
 reference = "src/protocol/Paxos/paxos.rs"
-clean_distance = "unmeasured"
+clean_distance = "1"
+expected_rules = ["C5"]
 milestone_gate = "52.M2"
 notes = "MVP. MUST use the message-passing Paxos (a 'msgs' variable, per-node arrays), NOT the Voting abstraction — Voting has no per-server arrays so projection is N/A."
 
 [[case]]
 id = "t1_02_twophase"
 tier = 1
-status = "planned"
+status = "intake"
 source_repo = "tlaplus/Examples"
-source_path = "specifications/TwoPhase/TwoPhase.tla"
+source_path = "specifications/transaction_commit/TwoPhase.tla"
 source_commit = ""
 golden_kind = "bootstrapped_reviewed"
 reference = "src/protocol/TwoPhase/twophase.rs"
-clean_distance = "unmeasured"
+clean_distance = "2"
+expected_rules = ["C1"]
 milestone_gate = "52.M2"
-notes = "2PC with an explicit msgs set. NOTE: the tla-rs reference spec keeps GLOBAL sets (rm_prepared etc.) rather than a pure per-node projection — the review must decide which shape the golden takes."
+notes = "Real two-phase commit. NOTE `specifications/TwoPhase/TwoPhase.tla` upstream is a two-phase *handshake* (producer/consumer), an entirely different protocol — 2PC lives under `transaction_commit/`. The linter designates `msgs` and finds `rmState` per-node; the two violations are `tmState` and `tmPrepared`, the transaction manager's own state. That is the case's real question: 2PC has two roles, and the rewrite must decide whether the TM is a node."
 
 # ============================================================
 # Tier 2 — complex, already message-passing (53.4)
