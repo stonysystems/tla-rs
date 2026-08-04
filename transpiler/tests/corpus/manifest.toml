@@ -34,7 +34,7 @@
 [[case]]
 id = "t0_01_simple"
 tier = 0
-status = "clean"
+status = "golden"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/TeachingConcurrency/Simple.tla"
 source_commit = "ab9a2c33566c2e8c9202f292540852282e1fbb32"

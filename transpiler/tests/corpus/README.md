@@ -81,6 +81,9 @@ partial spec. Do not present it as a golden-verified case.
 | `clean` | `clean.tla` + `rewrite.md` exist and the Phase 52 linter accepts `clean.tla`. |
 | `golden` | `golden.rs` exists and has been human-reviewed/frozen. |
 | `green` | Translator output byte-matches `golden.rs` (V3) **and** the output passes `verus` (V1) **and** TLC fidelity `clean.tla` ≡ `original.tla` holds (V2). |
+
+A `golden.rs` must itself pass `verus` before it is frozen. A golden that does
+not verify would make V1 unreachable no matter what the translator emits.
 | `blocked` | Case cannot progress; `notes` must say why. Never delete a case — mark it blocked. |
 
 A case only counts toward a Phase 52 milestone when it is `green`.
