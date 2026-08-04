@@ -138,6 +138,60 @@ class TestParse(unittest.TestCase):
         self.assertEqual(inv["total_notes"], 6)
 
 
+class TestSconsWrappedLog(unittest.TestCase):
+    """CI captures the notes out of a full `scons` run, not a bare verus call."""
+
+    def test_notes_are_found_inside_scons_output(self):
+        inv = ti.build_inventory(fixture("scons_wrapped_notes.log"))
+        self.assertEqual(inv["total_notes"], 3)
+        self.assertEqual(inv["total_triggers"], 5)
+
+    def test_runner_paths_are_relativized_to_the_repo(self):
+        inv = ti.build_inventory(
+            fixture("scons_wrapped_notes.log"),
+            root="/home/runner/work/tla-rs/tla-rs",
+        )
+        self.assertEqual(list(inv["by_file"]), ["src/protocol/RSL/replica.rs"])
+        self.assertEqual(list(inv["by_dir"]), ["src/protocol/RSL"])
+
+    def test_scons_chatter_is_not_mistaken_for_a_note(self):
+        inv = ti.build_inventory(fixture("scons_wrapped_notes.log"))
+        for entry in inv["entries"]:
+            self.assertNotIn("scons", entry["expr"])
+            self.assertTrue(entry["file"].endswith(".rs"))
+
+
+class TestCiWiring(unittest.TestCase):
+    """Guard the Phase 54.2.a capture wiring in .github/workflows/ci.yml.
+
+    The capture is only useful if it actually runs on every Verus job, and a
+    silently dropped step would look exactly like "no triggers left".
+    """
+
+    def setUp(self):
+        path = os.path.join(os.path.dirname(HERE), ".github", "workflows", "ci.yml")
+        with open(path) as f:
+            self.ci = f.read()
+
+    def test_verification_output_is_teed_with_pipefail(self):
+        self.assertIn("set -o pipefail", self.ci)
+        self.assertIn("tee verus-verify.log", self.ci)
+
+    def test_capture_step_runs_the_parser_and_reporter(self):
+        self.assertIn("scripts/trigger_inventory.py parse verus-verify.log", self.ci)
+        self.assertIn("scripts/trigger_inventory.py report trigger-inventory.json", self.ci)
+
+    def test_capture_cannot_change_the_job_verdict(self):
+        # --allow-empty keeps a note-free log from failing the capture step, and
+        # a missing log (an earlier step failed) is skipped rather than raising.
+        self.assertIn("--allow-empty", self.ci)
+        self.assertIn("if [ ! -f verus-verify.log ]", self.ci)
+
+    def test_inventory_is_uploaded_as_an_artifact(self):
+        self.assertIn("trigger-inventory-${{ env.VERUS_VERSION }}", self.ci)
+        self.assertIn("trigger-inventory.json", self.ci)
+
+
 class TestDiff(unittest.TestCase):
     def base(self):
         return ti.build_inventory(fixture("single_line_notes.log"), label="base")

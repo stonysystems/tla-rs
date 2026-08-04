@@ -1,6 +1,7 @@
 # Phase 54 — measuring and diffing Verus trigger choices
 
-Status: 54.1 (tooling) complete. 54.2 (baseline) blocked on toolchain, see §5.
+Status: 54.1 (tooling) and 54.2.a (CI capture) complete. The baseline itself
+(54.2.b) lands once a `verify` run has published the artifact; see §5 and §6.
 
 ## 1. Why the tool exists before the edits
 
@@ -122,34 +123,83 @@ joined and flagged `multiline`; their trigger notes are still parsed exactly.
 
 Two real Verus logs are checked in at
 `scripts/fixtures/trigger_inventory/` and asserted against by
-`scripts/test_trigger_inventory.py` (27 tests). If a future Verus release
+`scripts/test_trigger_inventory.py` (34 tests). If a future Verus release
 changes the diagnostic shape, those tests fail loudly instead of the inventory
 quietly going empty.
 
-## 5. Known constraint: capturing the 54.2 baseline
+## 5. How the baseline is actually captured (CI)
+
+The pinned verifier does not run on every development box (§6), but it already
+runs in CI on `ubuntu-24.04`. So the `verify` job captures the inventory as a
+side effect of the verification it was already doing:
+
+```yaml
+- name: Verify with Verus
+  run: |
+    set -o pipefail
+    scons --verus-path=$HOME/verus/verus --skip-dotnet 2>&1 | tee verus-verify.log
+
+- name: Capture trigger inventory
+  if: always()
+  run: |
+    python3 scripts/trigger_inventory.py parse verus-verify.log ... --allow-empty
+```
+
+Three properties this is designed to have:
+
+* **It cannot change the verdict.** The capture asserts nothing and passes
+  `--allow-empty`; `set -o pipefail` is there so that `tee` cannot swallow a
+  real verification failure.
+* **It runs on failure too.** `if: always()` — Verus still emits notes for the
+  modules it processed, and a failing run's inventory is still evidence.
+* **It cannot be silently dropped.** `TestCiWiring` in
+  `scripts/test_trigger_inventory.py` asserts the wiring exists. A capture step
+  that quietly disappeared would produce exactly the same signal as "we removed
+  all the triggers".
+
+The artifact is `trigger-inventory-<version>`, containing the JSON inventory
+and the Markdown summary; the summary is also written to the GitHub step
+summary so it is readable without downloading anything.
+
+The capture parses the whole `scons` log, not a bare verus invocation, so the
+parser has to find the notes among the build chatter — `scons_wrapped_notes.log`
+in the fixtures pins that case, including rewriting the runner's absolute paths
+back to repo-relative ones via `--root`.
+
+## 6. Known constraint: the pinned verifier does not run everywhere
 
 The baseline must come from the pinned verifier,
-`release/0.2026.08.02.b677dd5`. That binary requires **glibc ≥ 2.39**; this
-development box has 2.35, so it aborts before running:
+`release/0.2026.08.02.b677dd5`. That binary requires **glibc ≥ 2.39**; the
+development box this was written on has 2.35, so it aborts before running:
 
 ```
 verus: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found
 ```
 
-Older releases in the local cache (e.g. `0.2026.01.02.6f52890`) do run here and
-were used to capture the fixtures, but their trigger choices are not the
-baseline we need: the whole point is to pin what *the pinned release* decides.
-So 54.2 needs either a host with a newer glibc or a container image, and the
-tooling is ready for it — one command, no further code.
+`docker` is installed there but the daemon refuses the user
+(`permission denied while trying to connect to ... docker.sock`), and `bwrap`
+alone would need a full newer-glibc rootfs to be useful. Older releases in the
+local cache (e.g. `0.2026.01.02.6f52890`) do run and were used to capture the
+fixtures, but their trigger choices are not the baseline we need: the whole
+point is to pin what *the pinned release* decides.
+
+Hence §5: CI is the capture host. On a machine that does have a new enough
+glibc, the same inventory can be produced locally in one command:
+
+```bash
+scripts/collect_trigger_inventory.sh --verus-path <verus> --triggers-mode all-modules
+```
 
 Do not substitute an older release's inventory for the baseline. A diff across
 two different Verus versions is precisely the measurement Phase 54 wants to
 make *deliberately*, and mislabelling one as "the baseline" would poison every
 later comparison.
 
-## 6. Where this fits
+## 7. Where this fits
 
-* Plan: `TODO.md` Phase 54; this covers **54.1**, and unblocks **54.2**
-  (baseline) and **54.9** (CI guard, which is `diff --fail-on-regression` or
-  `--max-notes` wired into `.github/workflows/ci.yml`).
+* Plan: `TODO.md` Phase 54; this covers **54.1** and **54.2.a**, and leaves
+  **54.2.b** (commit the artifact as the baseline), **54.2.c** (per-module
+  wall-clock, which needs a `SConstruct` option to pass verus `--time`) and
+  **54.9** (turn the capture into a guard with `diff --fail-on-regression` or
+  `--max-notes`).
 * Artifacts: `reports/triggers/` (see the README there).

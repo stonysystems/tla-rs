@@ -16033,17 +16033,33 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       not read as remove+add. `--fail-on-regression` / `--max-notes` are ready for 54.9.
 - [ ] **54.2** Baseline: record per-module verification wall-clock and the full trigger
       inventory at `0.2026.08.02`. This is the regression baseline for every later batch.
-      **BLOCKED on toolchain, not on code.** The pinned verus
+      **Cannot be produced on this dev box.** The pinned verus
       (`release/0.2026.08.02.b677dd5`, cached at `/tmp/verus-test/verus/...`) needs
-      **glibc >= 2.39**; this box has 2.35 and the binary aborts before running. Older
-      cached releases (e.g. `0.2026.01.02.6f52890`) do run here and were used to capture the
-      parser fixtures, but their choices are NOT the baseline — substituting them would
-      poison every later comparison. Needs a host with newer glibc or a container; then it
-      is one command:
-      `scripts/collect_trigger_inventory.sh --verus-path <verus> --triggers-mode all-modules`.
-      Note the 534 figure was measured in Verus's default `selective` mode; `all-modules`
-      will report more, and counts across modes are not comparable (the mode is recorded in
-      the label and file name so a diff cannot silently mix them).
+      **glibc >= 2.39**; this box has 2.35 and the binary aborts before running. `docker` is
+      installed but the daemon refuses this user (`permission denied ... docker.sock`);
+      `bwrap` exists but would need a whole newer-glibc rootfs. Older cached releases (e.g.
+      `0.2026.01.02.6f52890`) do run here and produced the parser fixtures, but their choices
+      are NOT the baseline — substituting them would poison every later comparison. So the
+      capture is routed through CI, which already runs the pinned release on `ubuntu-24.04`.
+  - [x] **54.2.a** CI capture. **DONE (2026-08-04).** The `verify` job now tees the `scons`
+        verification output to `verus-verify.log`, parses it with
+        `scripts/trigger_inventory.py`, prints the summary to the job summary, and uploads
+        `trigger-inventory.{json,md}` as an artifact. `set -o pipefail` keeps `tee` from
+        masking a verification failure; the capture runs `if: always()` with `--allow-empty`
+        and asserts nothing, so it cannot change the job verdict. Guarded by
+        `TestCiWiring` in `scripts/test_trigger_inventory.py` — a silently dropped step
+        would otherwise look exactly like "no triggers left".
+  - [ ] **54.2.b** Commit the baseline: download the artifact from a green (or at least
+        note-emitting) `verify` run, check it in under `reports/triggers/`, and update
+        `reports/triggers/README.md`. This is the number every later batch diffs against.
+  - [ ] **54.2.c** Per-module wall-clock. Verus `--time` / `--time-expanded` gives it, but
+        `SConstruct:110` hard-codes the verus command line, so it needs a scons option
+        (e.g. `--verus-extra-args`) before CI can capture timings. Without this half, a
+        batch that verifies but doubled a module's solve time reads as green.
+      Note the 534 figure was measured in Verus's default `selective` mode, which is what CI
+      captures; `--triggers-mode all-modules` reports more, and counts across modes are not
+      comparable (the mode is recorded in the label and file name so a diff cannot silently
+      mix them).
 - [ ] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
       Small, low-coupling, exercises the whole workflow. **Gate: do not proceed to 54.4 until
       the pilot is green with no wall-clock regression.**
