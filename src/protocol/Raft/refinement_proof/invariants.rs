@@ -494,6 +494,92 @@ verus! {
         };
     }
 
+    /// Every Configuration entry lying below a certified boundary in that
+    /// certificate's committer log is itself certified. The committer holds
+    /// the boundary below its own commit index, so the whole prefix is
+    /// committed, and committed Configurations always carry certificates.
+    ///
+    /// This is the step that lets a minimal-missing-boundary argument conclude
+    /// that a leader holding every *certified* boundary below `index` in fact
+    /// holds every *Configuration* the committer has below `index`.
+    pub proof fn lemma_committer_prefix_configurations_are_certified(
+        ds: RaftDistributedState,
+        index: int,
+        j: int,
+    )
+        requires
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= j < index,
+            ds.server_states[
+                ds.configuration_commit_certificates[index].committer
+            ].log[j].payload is Configuration,
+        ensures
+            ds.configuration_commit_certificates.dom().contains(j),
+            ds.configuration_commit_certificates[j].entry
+                == ds.server_states[
+                    ds.configuration_commit_certificates[index].committer
+                ].log[j],
+    {
+        let committer = ds.configuration_commit_certificates[index].committer;
+
+        assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+
+        // `j` sits below the boundary, hence below the committer's commit
+        // index and inside its log.
+        assert(j < ds.server_states[committer].commit_index);
+        assert(j < ds.server_states[committer].log.len());
+
+        assert(CommittedConfigurationsHaveCertificates(ds));
+    }
+
+    /// A leader that holds every *certified* boundary below `index` therefore
+    /// agrees with the certificate's committer at every *Configuration*
+    /// position below `index` — because, by the previous lemma, all of those
+    /// Configurations are certified.
+    ///
+    /// This is the minimal-missing-boundary step: at the smallest index a
+    /// leader is missing, its membership history below that index coincides
+    /// with the committer's.
+    pub proof fn lemma_minimal_missing_leader_matches_committer_configurations(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        j: int,
+    )
+        requires
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            // The leader holds every certified boundary strictly below `index`.
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < index
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+            0 <= j < index,
+            ds.server_states[
+                ds.configuration_commit_certificates[index].committer
+            ].log[j].payload is Configuration,
+        ensures
+            ds.server_states[leader_id].log.len() > j,
+            ds.server_states[leader_id].log[j]
+                == ds.server_states[
+                    ds.configuration_commit_certificates[index].committer
+                ].log[j],
+    {
+        lemma_committer_prefix_configurations_are_certified(ds, index, j);
+        assert(ds.configuration_commit_certificates.dom().contains(j));
+    }
+
     /// The stale-leader direction. Quorum overlap is symmetric, so a leader
     /// elected under a phase that the certificate's governing phase legally
     /// progresses *from* is covered just as well as one that progresses *to*
