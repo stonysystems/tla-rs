@@ -3,7 +3,7 @@
 Status: 54.1 (tooling), 54.2.a (CI trigger capture), 54.2.c (per-module timing)
 and 54.9 (CI guard mechanism) complete. The measured baseline — and therefore
 the number the guard enforces — lands with 54.2.b, once a `verify` run has
-published the artifact; see §5, §6 and §8.
+published the artifact; see §5, §6 and §9.
 
 ## 1. Why the tool exists before the edits
 
@@ -131,7 +131,7 @@ quietly going empty.
 
 ## 5. How the baseline is actually captured (CI)
 
-The pinned verifier does not run on every development box (§8), but it already
+The pinned verifier does not run on every development box (§9), but it already
 runs in CI on `ubuntu-24.04`. So the `verify` job captures the inventory as a
 side effect of the verification it was already doing:
 
@@ -259,7 +259,43 @@ The timing half of the gate reuses `verus_timing.py diff
 --max-regression-pct 20 --fail-on-regression` and is skipped with an explicit
 message until `reports/triggers/timing-baseline.json` is committed.
 
-## 8. Known constraint: the pinned verifier does not run everywhere
+## 8. The work-list: which sites Phase 54 has to touch
+
+`scripts/trigger_inventory.py` answers "what is Verus guessing at?" but needs a
+verification log. `scripts/trigger_sites.py` answers "where are the quantifiers?"
+from the source alone, so the annotation batches (54.3 onwards) can be planned
+and split per file without waiting for CI:
+
+```bash
+scripts/trigger_sites.py src                       # Markdown, checked in as reports/triggers/sites.md
+scripts/trigger_sites.py src --json -o sites.json  # machine-readable
+```
+
+Each `forall|`/`exists|` is classified:
+
+| class | meaning |
+|---|---|
+| `annotated` | a `#[trigger]` / `#![trigger(...)]` governs it |
+| `auto` | `#![auto]` — automatic selection was asked for deliberately |
+| `ambiguous` | an annotation is in scope but only after a nested quantifier, so it may belong to the inner one |
+| `unannotated` | nothing in scope |
+
+**These are not note counts.** Verus's default `selective` mode reports only the
+choices it finds ambiguous, so an unannotated quantifier need not produce a
+note. Read the site count as the upper bound on the work and the inventory as
+what is actually being guessed at. The `ambiguous` bucket exists because the
+scanner is a heuristic, not a Rust parser: rather than credit a site with an
+annotation that may belong to a nested quantifier, it says so and leaves it for
+a human. It sits at ~2.5% of sites, and a test fails if it grows past 10% —
+that would mean the scope heuristic needs revisiting, not quiet acceptance.
+
+One bug this caught during development, worth recording because it is the kind
+that produces confident wrong numbers: a comma between binders
+(`forall |x1: X, x2: X|`) ended the scope scan, so a `#![trigger ...]` written
+after a multi-binder list was invisible and the site was reported as
+unannotated. The aggregate totals looked entirely plausible either way.
+
+## 9. Known constraint: the pinned verifier does not run everywhere
 
 The baseline must come from the pinned verifier,
 `release/0.2026.08.02.b677dd5`. That binary requires **glibc ≥ 2.39**; the
@@ -271,10 +307,17 @@ verus: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found
 
 `docker` is installed there but the daemon refuses the user
 (`permission denied while trying to connect to ... docker.sock`), and `bwrap`
-alone would need a full newer-glibc rootfs to be useful. Older releases in the
-local cache (e.g. `0.2026.01.02.6f52890`) do run and were used to capture the
-fixtures, but their trigger choices are not the baseline we need: the whole
-point is to pin what *the pinned release* decides.
+alone would need a full newer-glibc rootfs to be useful.
+
+Older releases in the local cache do run, and were used to capture the parser
+fixtures — but they cannot stand in for the pinned one. Measured 2026-08-04:
+`0.2026.01.02.6f52890` with `--no-verify` over `src/lib.rs` aborts with **72
+errors** (`IMap` undeclared, `lemma_set_disjoint_iff_empty_intersection`
+renamed, and so on) because the tree targets 0.2026.08 vstd. It cannot compile
+the crate, let alone verify it. So trigger edits (54.3 onwards) cannot be
+validated on such a box at all, and committing unverified proof edits is not an
+option — the whole point of the phase is that adding `#[trigger]` changes
+solver behaviour in ways only verification can reveal.
 
 Hence §5: CI is the capture host. On a machine that does have a new enough
 glibc, the same inventory can be produced locally in one command:
@@ -288,7 +331,7 @@ two different Verus versions is precisely the measurement Phase 54 wants to
 make *deliberately*, and mislabelling one as "the baseline" would poison every
 later comparison.
 
-## 9. Where this fits
+## 10. Where this fits
 
 * Plan: `TODO.md` Phase 54; this covers **54.1**, **54.2.a**, **54.2.c** and
   the **54.9** mechanism. What remains is **54.2.b** — commit the published

@@ -16072,9 +16072,33 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       captures; `--triggers-mode all-modules` reports more, and counts across modes are not
       comparable (the mode is recorded in the label and file name so a diff cannot silently
       mix them).
+- [x] **54.1.b** Work-list scanner (added 2026-08-04, unplanned but needed):
+      `scripts/trigger_sites.py` statically inventories every `forall|`/`exists|` in the
+      tree and classifies it `annotated` / `auto` / `ambiguous` / `unannotated`, so the
+      annotation batches can be planned and split per file without waiting for a CI
+      verification run. Checked in at `reports/triggers/sites.md`. **This is an upper bound
+      on the work, NOT a prediction of note counts** — Verus's default `selective` mode only
+      reports the choices it finds ambiguous, so an unannotated quantifier need not produce
+      a note. Current scan: 1435 sites, 882 unannotated, 445 annotated, 72 `#![auto]`,
+      36 ambiguous. By directory the unannotated load is Raft/refinement_proof 239,
+      implementation/RSL ~150, generated/RSL 111, protocol/RSL 75 + common_proof 74,
+      common/collections 68 — consistent with the note attribution table above.
+      NOTE `src/generated_backup/RSL` (65 sites) is a stale backup tree; exclude it from any
+      batch. 23 tests. One real bug caught by spot-checking during development: a comma
+      between binders (`forall |x1: X, x2: X|`) truncated the scope scan, so annotations
+      after a multi-binder list were misreported as unannotated.
 - [ ] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
       Small, low-coupling, exercises the whole workflow. **Gate: do not proceed to 54.4 until
       the pilot is green with no wall-clock regression.**
+      **BLOCKED on this dev box, measured 2026-08-04:** the pinned verus needs glibc >= 2.39
+      (box has 2.35) and the older cached releases cannot even compile the crate — running
+      `0.2026.01.02.6f52890` with `--no-verify` over `src/lib.rs` aborts with **72 errors**
+      (`IMap` undeclared, `lemma_set_disjoint_iff_empty_intersection` renamed, ... — the tree
+      targets 0.2026.08 vstd). So no trigger edit can be validated here, and committing
+      unverified proof edits is not an option. 54.3 onwards needs a host that can run the
+      pinned verifier. The work-list for it is `reports/triggers/sites.md`:
+      `src/common/collections/` has 68 unannotated sites and `src/verus_extra/` 31, of which
+      only the ambiguous subset (11 and 4 notes respectively) is what Verus currently guesses at.
 - [ ] **54.4** The 5 `broadcast` functions. Small but high-leverage — these are in scope
       crate-wide.
 - [ ] **54.5** `src/protocol/RSL/` (131). Ordered by module, each batch independently verified.
