@@ -89,6 +89,99 @@ pub struct ProjectedModule {
     pub spec: ProjectedSpec,
     pub helpers: Vec<ProjectedHelper>,
     pub actions: Vec<ProjectedAction>,
+    /// Conjuncts of the projected `LInit`.
+    pub init: Vec<String>,
+    pub init_gaps: Vec<String>,
+}
+
+/// Project `Init` to this node's initial state.
+///
+/// `Init` says what every node starts with (`clock = [p \in Proc |-> 1]`), so
+/// projecting it is reading off the per-node value. The network's initial value
+/// has no counterpart: after projection there is no network in the state.
+fn project_init(module: &TlaModule, spec: &ProjectedSpec) -> (Vec<String>, Vec<String>) {
+    let Some(init) = module.operators.iter().find(|o| o.name == "Init") else {
+        return (
+            Vec::new(),
+            vec!["no `Init` operator: the spec has no initial state".to_string()],
+        );
+    };
+
+    // `Init` is not a node action, so it has no node parameter. The binder of
+    // each function constructor plays that role for the conjunct it heads.
+    let ctx = ActionContext {
+        spec,
+        node_param: String::new(),
+        msg_param: None,
+        network: spec.network_variable.clone(),
+    };
+
+    let mut conjuncts = Vec::new();
+    let mut gaps = Vec::new();
+    for conjunct in flatten_conjunction(&init.body) {
+        let TlaExpr::BinOp {
+            op: TlaBinOp::Eq,
+            left,
+            right,
+        } = conjunct
+        else {
+            gaps.push(format!("`Init` conjunct {}", render_source(conjunct)));
+            continue;
+        };
+        let TlaExpr::Ident(var) = &**left else {
+            gaps.push(format!("`Init` conjunct {}", render_source(conjunct)));
+            continue;
+        };
+        if ctx.is_network(var) {
+            continue; // the network is not part of the projected state
+        }
+        let Some(field) = ctx.state_field(var) else {
+            gaps.push(format!("`Init` sets unknown variable `{var}`"));
+            continue;
+        };
+        // `[p \in Node |-> v]` -- the node's own initial value is `v`.
+        // `[p \in Node |-> v]` gives this node's value directly; the binder is
+        // the node for the purposes of that conjunct.
+        let (inner_expr, node_ctx);
+        match &**right {
+            TlaExpr::FnConstruct {
+                var: binder, body, ..
+            } => {
+                node_ctx = ActionContext {
+                    spec,
+                    node_param: binder.clone(),
+                    msg_param: None,
+                    network: spec.network_variable.clone(),
+                };
+                inner_expr = &**body;
+            }
+            other => {
+                node_ctx = ActionContext {
+                    spec,
+                    node_param: String::new(),
+                    msg_param: None,
+                    network: spec.network_variable.clone(),
+                };
+                inner_expr = other;
+            }
+        }
+
+        if let Some(variant) = node_ctx.enum_variant(field, inner_expr) {
+            conjuncts.push(format!("s.{field} is {variant}"));
+            continue;
+        }
+        if let Some(ty) = node_ctx.field_type(field).cloned() {
+            if let Some(text) = node_ctx.typed_value(&ty, inner_expr) {
+                conjuncts.push(format!("s.{field} == {text}"));
+                continue;
+            }
+        }
+        match node_ctx.project_expr(inner_expr) {
+            Ok(text) => conjuncts.push(format!("s.{field} == {text}")),
+            Err(gap) => gaps.push(format!("`Init` for `{var}`: {gap}")),
+        }
+    }
+    (conjuncts, gaps)
 }
 
 /// Project a clean-subset module end to end.
@@ -115,10 +208,14 @@ pub fn project(module: &TlaModule) -> Result<ProjectedModule, ProjectionError> {
         name == "node_id" || texts.iter().any(|t| references_constant(t, name))
     });
 
+    let (init, init_gaps) = project_init(module, &spec);
+
     Ok(ProjectedModule {
         spec,
         helpers,
         actions,
+        init,
+        init_gaps,
     })
 }
 
@@ -329,6 +426,67 @@ impl ActionContext<'_> {
             .map(|f| f.name.as_str())
     }
 
+    /// The projected type of a state field.
+    fn field_type(&self, field: &str) -> Option<&crate::tla::projection::ProjectedType> {
+        self.spec
+            .state_fields
+            .iter()
+            .find(|f| f.name == field)
+            .map(|f| &f.ty)
+    }
+
+    /// A string literal assigned to an enum-typed field names a variant, and
+    /// Verus spells that `x is Variant` rather than an equality.
+    fn enum_variant(&self, field: &str, expr: &TlaExpr) -> Option<String> {
+        let crate::tla::projection::ProjectedType::Enum { variants, .. } =
+            self.field_type(field)?
+        else {
+            return None;
+        };
+        let TlaExpr::String(literal) = expr else {
+            return None;
+        };
+        let wanted = variant_name(literal);
+        variants.iter().find(|v| **v == wanted).cloned()
+    }
+
+    /// Render a value in a position whose type is known, which is what makes
+    /// `Set::<int>::empty()` and the `int` suffix inside a `Map::new` closure
+    /// possible -- Verus cannot infer either from the expression alone.
+    fn typed_value(
+        &self,
+        ty: &crate::tla::projection::ProjectedType,
+        expr: &TlaExpr,
+    ) -> Option<String> {
+        use crate::tla::projection::ProjectedType;
+        match (ty, expr) {
+            (ProjectedType::Set(inner), TlaExpr::SetEnum(items)) if items.is_empty() => {
+                Some(format!("Set::<{}>::empty()", inner.render()))
+            }
+            (ProjectedType::Map(_, value_ty), TlaExpr::FnConstruct { var, domain, body }) => {
+                let set = self.project_node_set(domain).ok()?;
+                let inner = ActionContext {
+                    spec: self.spec,
+                    node_param: self.node_param.clone(),
+                    msg_param: self.msg_param.clone(),
+                    network: self.network.clone(),
+                };
+                let value = inner.project_expr_with_binder(body, var).ok()?;
+                // A bare integer literal in a closure body has no type to infer
+                // from; the suffix is what makes the map's value type explicit.
+                let value = if matches!(**body, TlaExpr::Number(_))
+                    && matches!(**value_ty, ProjectedType::Int)
+                {
+                    format!("{value}int")
+                } else {
+                    value
+                };
+                Some(format!("Map::new({set}, |{var}: int| {value})"))
+            }
+            _ => None,
+        }
+    }
+
     fn is_network(&self, var: &str) -> bool {
         self.network.as_deref() == Some(var)
     }
@@ -356,7 +514,25 @@ impl ActionContext<'_> {
                     let Some(field) = self.state_field(var) else {
                         return Err(format!("update of unknown variable `{var}`"));
                     };
+                    // `x' = x` is a frame conjunct written the other way --
+                    // PlusCal-generated specs use it instead of UNCHANGED.
+                    // P5 regenerates the frame, so it is dropped like UNCHANGED.
+                    if matches!(&**right, TlaExpr::Ident(rhs) if rhs == var) {
+                        return Ok(String::new());
+                    }
                     updated.push(field.to_string());
+                    // The value actually assigned to this node's component: for
+                    // `[x EXCEPT ![self] = v]` that is `v`, not the EXCEPT
+                    // wrapped around it. Typed rendering needs the value.
+                    let assigned = assigned_value(right, |e| self.is_node_index(e));
+                    if let Some(variant) = self.enum_variant(field, assigned) {
+                        return Ok(format!("s_.{field} is {variant}"));
+                    }
+                    if let Some(ty) = self.field_type(field).cloned() {
+                        if let Some(text) = self.typed_value(&ty, assigned) {
+                            return Ok(format!("s_.{field} == {text}"));
+                        }
+                    }
                     return Ok(format!(
                         "s_.{field} == {}",
                         self.project_update(var, right)?
@@ -837,9 +1013,30 @@ impl ActionContext<'_> {
                     self.project_expr(left)
                 }
             }
-            TlaExpr::BinOp { op, left, right } => {
+            // A comparison of an enum-typed field against a literal is a
+            // variant test, which Verus spells `x is Variant`.
+            TlaExpr::BinOp {
+                op: TlaBinOp::Eq,
+                left,
+                right,
+            } if self
+                .project_expr(left)
+                .ok()
+                .and_then(|l| l.strip_prefix("s.").map(str::to_string))
+                .and_then(|f| self.enum_variant(&f, right))
+                .is_some() =>
+            {
                 let l = self.project_expr(left)?;
-                let r = self.project_expr(right)?;
+                let field = l.trim_start_matches("s.").to_string();
+                let variant = self.enum_variant(&field, right).unwrap();
+                Ok(format!("{l} is {variant}"))
+            }
+            TlaExpr::BinOp { op, left, right } => {
+                // Parenthesise an operand that binds more loosely than this
+                // operator. Without it `(i - 1) % N` renders as
+                // `i - 1 % N`, which is a different expression.
+                let l = self.parenthesised(left, precedence(op))?;
+                let r = self.parenthesised(right, precedence(op))?;
                 let rendered = match op {
                     TlaBinOp::Eq => format!("{l} == {r}"),
                     TlaBinOp::Neq => format!("{l} != {r}"),
@@ -959,6 +1156,18 @@ impl ActionContext<'_> {
         }
     }
 
+    /// Project an operand, wrapping it when it binds more loosely than the
+    /// operator it sits under.
+    fn parenthesised(&self, expr: &TlaExpr, parent: u8) -> Result<String, String> {
+        let text = self.project_expr(expr)?;
+        if let TlaExpr::BinOp { op, .. } = expr {
+            if precedence(op) < parent {
+                return Ok(format!("({text})"));
+            }
+        }
+        Ok(text)
+    }
+
     /// `q \in Node \ {self}` -> `c.procs.contains(q) && q != c.node_id`.
     fn project_quantifier_domain(&self, var: &str, set: &TlaExpr) -> Result<String, String> {
         match set {
@@ -1056,6 +1265,42 @@ fn mentions_prime(expr: &TlaExpr) -> bool {
         return true;
     }
     children(expr).into_iter().any(mentions_prime)
+}
+
+/// Binding power, used only to decide parenthesisation. Higher binds tighter.
+fn precedence(op: &TlaBinOp) -> u8 {
+    match op {
+        TlaBinOp::Implies | TlaBinOp::Iff => 1,
+        TlaBinOp::Or => 2,
+        TlaBinOp::And => 3,
+        TlaBinOp::Eq
+        | TlaBinOp::Neq
+        | TlaBinOp::Lt
+        | TlaBinOp::Gt
+        | TlaBinOp::Leq
+        | TlaBinOp::Geq
+        | TlaBinOp::In
+        | TlaBinOp::NotIn
+        | TlaBinOp::Subseteq => 4,
+        TlaBinOp::Plus | TlaBinOp::Minus | TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus => 5,
+        TlaBinOp::Times | TlaBinOp::Div | TlaBinOp::Mod | TlaBinOp::Slash => 6,
+        _ => 7,
+    }
+}
+
+/// For `[x EXCEPT ![self] = v]`, the value `v`; otherwise the expression
+/// itself. Used where the *assigned* value's type matters.
+fn assigned_value(expr: &TlaExpr, is_node: impl Fn(&TlaExpr) -> bool) -> &TlaExpr {
+    if let TlaExpr::FnExcept { updates, .. } = expr {
+        if updates.len() == 1 {
+            if let [TlaExceptPath::Index(index)] = updates[0].path.as_slice() {
+                if is_node(index) {
+                    return &updates[0].value;
+                }
+            }
+        }
+    }
+    expr
 }
 
 /// Whether an expression is a literal, and so carries no information when a
@@ -1259,8 +1504,9 @@ Next == \E self \in Proc :
         let a = action(&acts, "a");
         assert_eq!(a.kind, ActionKind::Local);
         assert!(
-            a.conjuncts.contains(&"s.pc == \"a\"".to_string()),
-            "guard should read this node's pc: {:?}",
+            a.conjuncts.contains(&"s.pc is A".to_string()),
+            "a guard comparing an enum-typed field to a literal is a variant \
+             test, which Verus spells `is`: {:?}",
             a.conjuncts
         );
         assert!(

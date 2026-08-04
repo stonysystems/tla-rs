@@ -6,6 +6,7 @@
 pub mod action_projection;
 pub mod ast;
 pub mod clean_subset;
+pub mod emit;
 pub mod mc_wrapper;
 pub mod parser;
 pub mod projection;
@@ -22,6 +23,7 @@ pub use ast::{
     TlaNumber, TlaOperator, TlaParam, TlaQuantBound, TlaTheorem, TlaUnaryOp,
 };
 pub use clean_subset::{lint_module, report_to_json, CleanRule, CleanSubsetReport, Finding};
+pub use emit::emit;
 pub use mc_wrapper::{
     generate_relational_mc_wrapper, McWrapperArtifacts, McWrapperOptions, PacketProjectionMode,
 };
