@@ -494,6 +494,32 @@ verus! {
         };
     }
 
+    /// Legacy Leader Completeness holds vacuously in an initial state: no
+    /// server has been elected yet, so there is no higher-term leader to be
+    /// missing anything.
+    pub proof fn lemma_init_establishes_leader_completeness(
+        ds: RaftDistributedState,
+    )
+        requires
+            RaftDistributedInit(ds),
+        ensures
+            LeaderCompleteness(ds),
+    {
+        assert forall |k: int, entry: LLogEntry, leader_id: int|
+            0 <= k
+            && EntryCommittedAt(ds, k, entry)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term > entry.term
+        implies false
+        by {
+            assert(LInit(
+                ds.server_states[leader_id],
+                ds.server_constants[leader_id],
+            ));
+        };
+    }
+
     /// A certificate whose governing phase is Stable over the entire server
     /// set is also a commitment in the legacy fixed-majority sense: a majority
     /// of the full configuration is exactly the legacy quorum threshold. This
@@ -9117,7 +9143,7 @@ verus! {
     /// message parameters are existentially quantified with no provenance linking
     /// them to the sender's state, so we cannot formally connect the voter's log
     /// at vote time to the committed entry's presence.
-    proof fn lemma_leader_completeness_inductive(
+    pub proof fn lemma_leader_completeness_inductive(
         ds: RaftDistributedState, ds_: RaftDistributedState
     )
         requires

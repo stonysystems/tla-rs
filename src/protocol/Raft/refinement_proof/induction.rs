@@ -102,6 +102,79 @@ verus! {
         assert(RaftSafetyInvariant(b[behavior_index]));
     }
 
+    /// Legacy fixed-majority Leader Completeness at every reachable state.
+    ///
+    /// This is deliberately kept as its own induction rather than folded into
+    /// `RaftSafetyInvariant`: the inherited proof of
+    /// `lemma_leader_completeness_inductive` rests on `assume(false)` cases,
+    /// and the certificate-based committed-history theorem must stay
+    /// independent of them.
+    pub proof fn lemma_leader_completeness_holds_throughout_behavior(
+        b: RaftBehavior,
+        i: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= i < b.len(),
+        ensures
+            LeaderCompleteness(b[i]),
+        decreases i
+    {
+        if i == 0 {
+            lemma_init_establishes_leader_completeness(b[0]);
+        } else {
+            lemma_leader_completeness_holds_throughout_behavior(b, i - 1);
+            lemma_invariant_holds_throughout_behavior(b, i - 1);
+            lemma_leader_completeness_inductive(b[i - 1], b[i]);
+        }
+    }
+
+    /// Certified Configuration Leader Completeness, unconditionally, for every
+    /// certificate governed by a Stable phase over the whole server set: a
+    /// higher-term leader always holds such a certified boundary.
+    ///
+    /// This is the membership-stable fragment of Milestone B. The genuinely
+    /// dynamic cases — a Joint phase, or a Stable phase over a proper subset —
+    /// are out of reach of this route, because their quorums need not meet the
+    /// legacy fixed-majority threshold that `EntryCommittedAt` demands.
+    pub proof fn lemma_stable_certified_boundary_present_in_later_leader(
+        b: RaftBehavior,
+        behavior_index: int,
+        index: int,
+        config: Set<int>,
+        leader_id: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+            b[behavior_index].configuration_commit_certificates.dom()
+                .contains(index),
+            b[behavior_index].configuration_commit_certificates[index]
+                .governing_phase
+                == (MembershipPhase::Stable { config: config }),
+            config.len() == b[behavior_index].num_servers,
+            0 <= index,
+            0 <= leader_id < b[behavior_index].num_servers,
+            b[behavior_index].server_states[leader_id].role is Leader,
+            b[behavior_index].server_states[leader_id].current_term
+                > b[behavior_index].configuration_commit_certificates[index]
+                    .entry.term,
+        ensures
+            b[behavior_index].server_states[leader_id].log.len() > index,
+            b[behavior_index].server_states[leader_id].log[index]
+                == b[behavior_index].configuration_commit_certificates[index]
+                    .entry,
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
+        lemma_leader_completeness_holds_throughout_behavior(b, behavior_index);
+        lemma_legacy_leader_completeness_covers_stable_certificate(
+            b[behavior_index],
+            index,
+            config,
+            leader_id,
+        );
+    }
+
     /// Behaviour-level Configuration Leader Completeness under dynamic
     /// membership, conditional on the first-missing-boundary provenance.
     ///
