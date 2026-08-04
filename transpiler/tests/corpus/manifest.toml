@@ -123,7 +123,7 @@ notes = "MVP. MUST use the message-passing Paxos (a 'msgs' variable, per-node ar
 [[case]]
 id = "t1_02_twophase"
 tier = 1
-status = "intake"
+status = "golden"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/transaction_commit/TwoPhase.tla"
 source_commit = ""

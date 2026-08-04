@@ -233,12 +233,18 @@ fn emit_dispatch(out: &mut String, projected: &ProjectedModule) {
             .iter()
             .map(|p| p.split(':').next().unwrap_or(p).trim().to_string())
             .collect();
+        // A handler may take nothing beyond the state -- a `Commit` message
+        // carries no payload and this one does not use the sender -- so the
+        // argument list has to close up rather than leave an empty slot.
+        let mut call_args = vec!["s".to_string(), "s_".to_string(), "c".to_string()];
+        call_args.extend(args);
+        call_args.push("sent_packets".to_string());
         let _ = writeln!(
             out,
-            "            LMessage::{}{binding} =>\n                {}(s, s_, c, {}, sent_packets),",
+            "            LMessage::{}{binding} =>\n                {}({}),",
             variant.name,
             action.name,
-            args.join(", ")
+            call_args.join(", ")
         );
     }
     // A message kind no action handles cannot be acted on. Saying so is not the
