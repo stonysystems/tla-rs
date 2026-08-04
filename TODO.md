@@ -11,6 +11,15 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Current Status (last updated 2026-05-28)
 
+**🔝 CURRENT PRIORITY (2026-08-04): Phase 54 — Explicit Quantifier Triggers.**
+A full verification pass emits 534 `automatically chose triggers` notes, all in our own code.
+The Verus team raised this while evaluating tla-rs as a compatibility test target: an
+auto-chosen trigger can change between Verus releases, so a proof that verifies today can
+fail tomorrow as an uninformative `rlimit exceeded`. Work Phase 54 before Phases 52/53
+(clean-subset translator + corpus), which are on hold. See
+[Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+
+
 **Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-16).** After Phase 38.17 (direct-assignment solver optimization + DPOR reduction activation), the main `verus-transpile model-check` path is 5.7-19x faster on protocol cases (Paxos 511s → 77s, PBFT 87s → 4.6s, Raft 1115s → 195s). Sleep-set DPOR reduction now actively prunes transitions on all multi-process cases (5/5 reduction-gate hits: Paxos 82.9%, Raft 49.4%, PBFT 43.2%, Peterson 43.8%, counter 33.3%). With DPOR reduction enabled (`dpor-checker shadow-compare`), Paxos runs in 2.6s — a 29x end-to-end speedup from the pre-38.17 baseline with exact state parity preserved. See `transpiler/DPOR_based_model_tla_rs_checker/tests/reports/{latest.md,dpor_vs_tlc.md,sleep_set_reduction_table.md}` for full evidence. Remaining DPOR work is tracked in Phase 38.18 (explorer parallelism, helper-call inlining at IR, main-path DPOR reduction, Raft/PBFT internal-explorer parity).
 
 **✅ Phase 31 external_body milestone COMPLETE (2026-05-24).** All 22 `external_body` lemmas in RSL refinement proof eliminated (0 remaining). 104 proof functions verify across 17 modules. Phase 31.9.4 fully closed. Phase 34 (Raft) remains deprecated with 12 assumes (7 blocked on the `d_rli ≤ k` strict-term wall).
@@ -76,7 +85,13 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
 - **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. Remaining DPOR work is acceptance-criteria closure in `38.11`. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
-**Next steps (priority order, updated 2026-05-28):**
+**Next steps (priority order, updated 2026-08-04):**
+
+0. **🔝 Phase 54: Explicit Quantifier Triggers** — 534 auto-chosen triggers make our proofs
+   sensitive to Verus version changes. Raised by the Verus team while evaluating tla-rs as a
+   compatibility test target. **Do this first.** Phases 52/53 are on hold until it lands.
+   See [Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+
 
 *Phases 40-49 (performance optimization pipeline) are ALL COMPLETE.* Summary: transpiler emits `&mut self` calling convention by default, Arc removed, RSL at 48-51K ops/s (3× over pre-optimization, 80-85% of Sushant's hand-tuned 60K). Phase 48.7 regression fixed. See individual phase sections below for details.
 
@@ -15844,7 +15859,7 @@ at `docs/jetpack_reference/`.
 
 ---
 
-## Phase 52: Clean-Subset TLA+ → Verus Translator — PLANNED
+## Phase 52: Clean-Subset TLA+ → Verus Translator — PLANNED (on hold until Phase 54 completes)
 
 ### Background (2026-08)
 
@@ -15872,7 +15887,16 @@ independent golden — its translation is validated only by TLC fidelity + verus
 
 ### TODO (work queue)
 
-- [ ] **52.M0** Clean-subset spec (C1–C5) + linter that gates input (accept clean / reject dirty with precise errors).
+- [x] **52.M0** Clean-subset spec (C1–C5) + linter that gates input (accept clean / reject dirty with precise errors).
+      **DONE (2026-08-04, before the phase went on hold.)** `verus-transpile clean-lint`
+      (`transpiler/src/tla/clean_subset.rs`), 16 diagnostic codes across C1–C5, each with the
+      operator, source line and the rewrite the human must perform. Error count = "clean
+      distance" for Phase 53 intake grading. 26 unit + 5 fixture tests; three reference specs
+      under `transpiler/tests/fixtures/clean_subset/`. Spec + limits:
+      `docs/clean_tla_subset_spec.md`. Known gap found while building it: the TLA+ front-end
+      rejects multi-binding comprehensions (`{e : x \in S, y \in T}`) — that is what stops
+      `docs/jetpack_reference/base_raft.tla` at line 129, and 53.1 intake must report parse
+      failures separately from clean distance.
 - [ ] **52.M1** Projection pass (P1 state projection, P2 de-index actions, P5 auto frame-condition). Acceptance: Tier-0 micro end-to-end, verus passes.
 - [ ] **52.M2** messages→framework send/recv (P3) + quorum→counting (P4). Acceptance: Tier-1 (Paxos/TwoPhase) vs tla-rs hand-written spec.
 - [ ] **52.M3** Semantic fidelity V2 (STRONG: exact-state/observable parity, clean.tla vs original.tla) + golden regression V3. ⚠️ Phase 36 parity compares tla-rs source-first-checker vs TLC, NOT two TLA+ specs — verify reusability first; likely need a bespoke spec-vs-spec comparator (both specs → TLC + common observables + state-set diff).
@@ -15894,7 +15918,7 @@ Plan: `docs/clean_tla_to_verus_translator_plan.md`. Extends `transpiler/src/tla/
 
 ---
 
-## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — PLANNED
+## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — PLANNED (on hold until Phase 54 completes)
 
 ### Background (2026-08)
 
@@ -15932,7 +15956,7 @@ Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tu
 
 ---
 
-## Phase 54: Explicit Quantifier Triggers — PLANNED
+## Phase 54: Explicit Quantifier Triggers — 🔝 TOP PRIORITY (current work)
 
 ### Background (2026-08)
 
@@ -15995,11 +16019,31 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 
 ### Plan
 
-- [ ] **54.1** Tooling: script that parses a verification log into
+- [x] **54.1** Tooling: script that parses a verification log into
       `(file, line, expression, chosen triggers)` and diffs two runs. Without this, progress
       is unmeasurable and regressions are invisible. Output checked in under `reports/`.
+      **DONE (2026-08-04).** `scripts/trigger_inventory.py` (parse/report/diff) +
+      `scripts/collect_trigger_inventory.sh` (one-command capture) + 27 tests over two
+      checked-in real Verus logs. Manual + rationale: `docs/phase54-trigger-workflow.md`;
+      artifacts land in `reports/triggers/`. The diff splits changes into **removed**
+      (progress), **added** (regression) and **changed** — same expression, different
+      auto-chosen terms. That third category is the one this phase exists for: it moves no
+      counter, so a note-count check cannot see it. Entries are keyed on
+      `(file, normalised expr, ordinal)`, not line numbers, so edits above a quantifier do
+      not read as remove+add. `--fail-on-regression` / `--max-notes` are ready for 54.9.
 - [ ] **54.2** Baseline: record per-module verification wall-clock and the full trigger
       inventory at `0.2026.08.02`. This is the regression baseline for every later batch.
+      **BLOCKED on toolchain, not on code.** The pinned verus
+      (`release/0.2026.08.02.b677dd5`, cached at `/tmp/verus-test/verus/...`) needs
+      **glibc >= 2.39**; this box has 2.35 and the binary aborts before running. Older
+      cached releases (e.g. `0.2026.01.02.6f52890`) do run here and were used to capture the
+      parser fixtures, but their choices are NOT the baseline — substituting them would
+      poison every later comparison. Needs a host with newer glibc or a container; then it
+      is one command:
+      `scripts/collect_trigger_inventory.sh --verus-path <verus> --triggers-mode all-modules`.
+      Note the 534 figure was measured in Verus's default `selective` mode; `all-modules`
+      will report more, and counts across modes are not comparable (the mode is recorded in
+      the label and file name so a diff cannot silently mix them).
 - [ ] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
       Small, low-coupling, exercises the whole workflow. **Gate: do not proceed to 54.4 until
       the pilot is green with no wall-clock regression.**

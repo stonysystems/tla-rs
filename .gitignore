@@ -26,3 +26,7 @@ Phase14_Regeneration_Audit_Report.md
 
 # OSDI '26 poster submission working materials (local only)
 docs/osdi26_poster_briefing.md
+
+# Python bytecode (scripts/)
+__pycache__/
+*.pyc
