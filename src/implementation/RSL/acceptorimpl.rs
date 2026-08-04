@@ -24,7 +24,7 @@ verus! {
             &&& self.constants.abstractable()
             &&& self.max_bal.abstractable()
             &&& cvotes_is_abstractable(&self.votes)
-            &&& (forall |i:int| 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsAbstractable(self.last_checkpointed_operation[i]))
+            &&& (forall |i:int| #![trigger self.last_checkpointed_operation[i]] 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsAbstractable(self.last_checkpointed_operation[i]))
             &&& COperationNumberIsAbstractable(self.log_truncation_point)
         }
 
@@ -33,7 +33,7 @@ verus! {
             &&& self.constants.valid()
             &&& self.max_bal.valid()
             &&& cvotes_is_valid(&self.votes)
-            &&& (forall |i:int| 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsValid(self.last_checkpointed_operation[i]))
+            &&& (forall |i:int| #![trigger self.last_checkpointed_operation[i]] 0 <= i < self.last_checkpointed_operation.len() ==> COperationNumberIsValid(self.last_checkpointed_operation[i]))
             &&& COperationNumberIsValid(self.log_truncation_point)
             &&& self.last_checkpointed_operation.len() == self.constants.all.config.replica_ids.len()
         }
@@ -98,7 +98,7 @@ verus! {
     pub fn CIsLogTruncationPointValid(log_truncation_point: COperationNumber,last_checkpointed_operation:&Vec<COperationNumber>,config:&CConfiguration) -> (isValid: bool)
         requires
             COperationNumberIsValid(log_truncation_point),
-            forall |i: int| 0 <= i < last_checkpointed_operation.len() ==> COperationNumberIsValid(last_checkpointed_operation[i]),
+            forall |i: int| #![trigger last_checkpointed_operation[i]] 0 <= i < last_checkpointed_operation.len() ==> COperationNumberIsValid(last_checkpointed_operation[i]),
             config.valid()
         ensures
             isValid == IsLogTruncationPointValid(AbstractifyCOperationNumberToOperationNumber(log_truncation_point),last_checkpointed_operation@.map(|i, x| (x as int)), config@)

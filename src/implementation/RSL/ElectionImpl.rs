@@ -40,16 +40,16 @@ impl CElectionState {
     pub open spec fn abstractable(self) -> bool {
         &&& self.constants.abstractable()
         &&& self.current_view.abstractable()
-        &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].abstractable())
-        &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].abstractable())
+        &&& (forall |i:int| #![trigger self.requests_received_this_epoch@[i]] 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].abstractable())
+        &&& (forall |i:int| #![trigger self.requests_received_prev_epochs@[i]] 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].abstractable())
     }
 
     pub open spec fn valid(self) -> bool {
         &&& self.abstractable()
         &&& self.constants.valid()
         &&& self.current_view.valid()
-        &&& (forall |i:int| 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].valid())
-        &&& (forall |i:int| 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].valid())
+        &&& (forall |i:int| #![trigger self.requests_received_this_epoch@[i]] 0 <= i < self.requests_received_this_epoch@.len() ==> self.requests_received_this_epoch@[i].valid())
+        &&& (forall |i:int| #![trigger self.requests_received_prev_epochs@[i]] 0 <= i < self.requests_received_prev_epochs@.len() ==> self.requests_received_prev_epochs@[i].valid())
     }
 
     pub open spec fn view(self) -> ElectionState
@@ -211,9 +211,9 @@ impl CElectionState
     pub fn CBoundRequestSequence(s:&Vec<CRequest>, lengthBound: u64) -> (rc: Vec<CRequest>)
         requires
             s@.len() < 0x1_0000_0000_0000_0000,
-            forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),
+            forall |i: int| #![trigger s@[i]] 0 <= i < s@.len() ==> s@[i].valid(),
         ensures
-            forall |i: int| 0 <= i < rc@.len() ==> rc@[i].valid(),
+            forall |i: int| #![trigger rc@[i]] 0 <= i < rc@.len() ==> rc@[i].valid(),
             rc@.map(|i, r: CRequest| r@) == BoundRequestSequence(s@.map(|i, r: CRequest| r@), UpperBound::UpperBoundFinite{n: lengthBound as int}),
     {
         let s_len = s.len() as u64;
@@ -233,11 +233,11 @@ impl CElectionState
 
     pub fn clone_vec_crequest(v: &Vec<CRequest>) -> (res: Vec<CRequest>)
         requires
-            forall |i: int| 0 <= i < v.len() ==> v[i].valid()
+            forall |i: int| #![trigger v[i]] 0 <= i < v.len() ==> v[i].valid()
         ensures
             res@ == v@,
             res.len() == v.len(),
-            forall |i: int| 0 <= i < res.len() ==> res[i].valid(),
+            forall |i: int| #![trigger res[i]] 0 <= i < res.len() ==> res[i].valid(),
             forall |i: int| 0 <= i < res.len() ==> res@[i] == v@[i]
     {
         let mut result:Vec<CRequest> = Vec::new();
@@ -246,8 +246,8 @@ impl CElectionState
             invariant
                 0 <= i <= v.len(),
                 result.len() == i,
-                forall |j: int| 0 <= j < v.len() ==> v[j].valid(),
-                forall |j: int| 0 <= j < i ==> result[j].valid(),
+                forall |j: int| #![trigger v[j]] 0 <= j < v.len() ==> v[j].valid(),
+                forall |j: int| #![trigger result[j]] 0 <= j < i ==> result[j].valid(),
                 result@ == v@.subrange(0, i as int),
                 forall |j: int| 0 <= j < i ==> result@[j] == v@[j]
             decreases v.len() - i,

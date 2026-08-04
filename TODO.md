@@ -16293,8 +16293,18 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       false positive there costs exactly the trust the category exists to earn. Fixed by
       pairing each quoted line with the marker line that follows it; the baseline was
       re-parsed from the same log, and after the fix the 54.5 diff reads 0 changed.
-- [ ] **54.6** `src/implementation/RSL/` (101). Note 43 are in `gen_helpers.rs`, which is a
-      hand-written companion to generated code — check whether they should move to 54.7 instead.
+- [x] **54.6** `src/implementation/RSL/` (101 notes). **DONE (2026-08-04). Both gates clean.**
+      100 of 101 annotated across all 10 files; crate total 389 → **289**. `1044 verified,
+      0 errors` on three runs. Trigger diff vs the 54.2 baseline: **245 removed, 0 added,
+      0 changed**; timing (min-of-3 both sides) +1.0%, 0 regressions. Evidence:
+      `reports/triggers/54.6-implementation-rsl.{json,md}`, `54.6-trigger-diff.md`,
+      `54.6-timing-diff.md`.
+      **`gen_helpers.rs` (43 notes) belongs here, not in 54.7** — the open question in the
+      original 54.6 text. It is hand-written: its own header says "Shared helper functions
+      for generated RSL modules", no generator emits it (`regenerate_rsl.sh` does not name
+      it), and its history is ordinary hand edits. Only `src/generated/RSL/` is
+      transpiler-owned, and that is 54.7's scope.
+      One site skipped: `cconfiguration.rs:204`, trigger belongs to a nested quantifier.
 - [ ] **54.7** Transpiler codegen emits explicit triggers; regenerate; confirm all 109
       generated notes are gone and the regenerated tree still verifies.
 - [ ] **54.8** `src/protocol/Raft/` (177, of which 141 in `refinement_proof/invariants.rs`).

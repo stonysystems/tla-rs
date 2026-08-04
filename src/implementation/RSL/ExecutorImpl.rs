@@ -187,7 +187,7 @@ proof fn lemma_replies_are_reply_type(me: AbstractEndPoint, requests: RequestBat
             },
         };
         assert(packets =~= seq![first] + rest_packets);
-        assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {
+        assert forall |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) implies p.msg is RslMessageReply by {
             if rest_packets.contains(p) {
                 // By induction: RepliesAreReplyType(rest_packets)
             } else {
@@ -257,7 +257,7 @@ impl CExecutor{
                     &batch,
                     &replies
                 );
-                assert(forall |i:int| 0 <= i < pkt_vec.len() ==> pkt_vec@[i].valid());
+                assert(forall |i:int| #![trigger pkt_vec@[i]] 0 <= i < pkt_vec.len() ==> pkt_vec@[i].valid());
                 let outpackets = PacketSequence{s: pkt_vec};
 
                 proof {

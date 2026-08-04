@@ -218,8 +218,8 @@ verus! {
     pub fn clone_request_batch_up_to_view(batch: &CRequestBatch) -> (res: CRequestBatch)
         ensures
             res@ == batch@,
-            forall |i: int| 0 <= i < batch.len() ==> res[i]@ == batch[i]@,
-            forall |i: int| 0 <= i < batch.len() ==> res[i].valid() == batch[i].valid(),
+            forall |i: int| #![trigger res[i]] #![trigger batch[i]] 0 <= i < batch.len() ==> res[i]@ == batch[i]@,
+            forall |i: int| #![trigger res[i]] #![trigger batch[i]] 0 <= i < batch.len() ==> res[i].valid() == batch[i].valid(),
     {
         let mut cloned:Vec<CRequest> = Vec::new();
         let mut i = 0;
@@ -263,7 +263,7 @@ verus! {
             res@ == cache@,
             forall |k| cache@.contains_key(k) ==> res@.contains_key(k),
             forall |k| res@.contains_key(k) ==> cache@.contains_key(k),
-            forall |k| res@.contains_key(k) ==> res@[k] == cache@[k]
+            forall |k| #![trigger res@[k]] #![trigger cache@[k]] res@.contains_key(k) ==> res@[k] == cache@[k]
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
@@ -321,9 +321,9 @@ verus! {
         recommends creplycache_is_abstractable(m)
     {
         Map::new(
-            Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k:EndPoint| m@.contains_key(k) && k@ == ak),
+            Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k:EndPoint| #![trigger k@] m@.contains_key(k) && k@ == ak),
             |ak: AbstractEndPoint| {
-                let k = choose |k: EndPoint| m@.contains_key(k) && k@ == ak;
+                let k = choose |k: EndPoint| #![trigger k@] m@.contains_key(k) && k@ == ak;
                 m@[k]@
             }
         )
@@ -386,7 +386,7 @@ verus! {
             res@ == votes@,
             forall |k| votes@.contains_key(k) ==> res@.contains_key(k),
             forall |k| res@.contains_key(k) ==> votes@.contains_key(k),
-            forall |k| res@.contains_key(k) ==> res@.index(k) == votes@.index(k)
+            forall |k| #![trigger res@.index(k)] #![trigger votes@.index(k)] res@.contains_key(k) ==> res@.index(k) == votes@.index(k)
     {
         broadcast use vstd::std_specs::hash::group_hash_axioms;
         broadcast use vstd::hash_map::group_hash_map_axioms;
@@ -511,7 +511,7 @@ verus! {
         }
 
         pub open spec fn abstractable(self) -> bool{
-            &&& (forall |p| self.received_2b_message_senders@.contains(p) ==> p.abstractable())
+            &&& (forall |p| #![trigger self.received_2b_message_senders@.contains(p)] self.received_2b_message_senders@.contains(p) ==> p.abstractable())
             &&& crequestbatch_is_abstractable(&self.candidate_learned_value)
         }
 

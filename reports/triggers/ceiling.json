@@ -1,7 +1,7 @@
 {
   "schema": "trigger-ceiling/v1",
   "enforce": true,
-  "max_notes": 389,
+  "max_notes": 289,
   "mode": "selective",
   "set_on": "2026-08-04",
   "set_by": "Phase 54.2.b",
@@ -30,6 +30,12 @@
       "max_notes": 389,
       "verus": "0.2026.08.02.b677dd5",
       "note": "54.5 protocol/RSL: 130 sites annotated, 145 removed vs baseline, 0 added, 0 changed"
+    },
+    {
+      "date": "2026-08-04",
+      "max_notes": 289,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.6 implementation/RSL: 100 sites annotated, 245 removed vs baseline, 0 added, 0 changed"
     }
   ]
 }

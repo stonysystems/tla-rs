@@ -235,7 +235,7 @@ pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &C
     requires
         pkt.msg is CMessage1b,
     ensures
-        res == (forall |op: CPacket| received_1b_packets@.contains(op) ==> op.src@ != pkt.src@),
+        res == (forall |op: CPacket| #![trigger received_1b_packets@.contains(op)] received_1b_packets@.contains(op) ==> op.src@ != pkt.src@),
 {
     let vec = hashset_to_vec(received_1b_packets);
     let mut res = true;
@@ -255,12 +255,12 @@ pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &C
     }
     proof {
         if res {
-            assert forall |op: CPacket| received_1b_packets@.contains(op) implies op.src@ != pkt.src@ by {
+            assert forall |op: CPacket| #![trigger received_1b_packets@.contains(op)] received_1b_packets@.contains(op) implies op.src@ != pkt.src@ by {
                 let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == op;
                 assert(vec@[j].src@ != pkt.src@);
             };
         } else {
-            let j = choose |j: int| 0 <= j < i && vec@[j].src@ == pkt.src@;
+            let j = choose |j: int| #![trigger vec@[j]] 0 <= j < i && vec@[j].src@ == pkt.src@;
             assert(received_1b_packets@.contains(vec@[j]));
         }
     }
@@ -272,7 +272,7 @@ pub exec fn Packet1bHasUniqueSrc(received_1b_packets: &HashSet<CPacket>, pkt: &C
 /// LClientsInReplies(replies) = LClientsInReplies(replies.drop_first()).insert(replies[0].client, replies[0])
 pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
     requires
-        forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
+        forall |i: int| #![trigger replies[i]] 0 <= i < replies.len() ==> replies[i].valid(),
     ensures
         creplycache_is_valid(&result),
         abstractify_creplycache(&result) == LClientsInReplies(replies@.map(|i, r: CReply| r@)),
@@ -337,8 +337,8 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
             assert(result@ =~= old_map.insert(k, v));
             assert(result@.contains_key(k));
             assert(result@[k] == v);
-            assert(forall |e: EndPoint| e != k ==> (result@.contains_key(e) == old_map.contains_key(e)));
-            assert(forall |e: EndPoint| e != k && old_map.contains_key(e) ==> result@[e] == old_map[e]);
+            assert(forall |e: EndPoint| #![trigger old_map.contains_key(e)] e != k ==> (result@.contains_key(e) == old_map.contains_key(e)));
+            assert(forall |e: EndPoint| #![trigger old_map[e]] e != k && old_map.contains_key(e) ==> result@[e] == old_map[e]);
 
             // Step 1: Relate LClientsInReplies recursion
             let sub_i = abs_replies.subrange(i as int, len);
@@ -358,8 +358,8 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
                 broadcast use crate::common::native::io_s::axiom_endpoint_view;
                 broadcast use vstd::map::group_map_lemmas;
                 // Unfold: new_abstract.dom().contains(ak) means exists ep in result@ with ep@ == ak
-                assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == ak);
-                let ep = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == ak;
+                assert(exists |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == ak);
+                let ep = choose |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == ak;
                 if ep == k {
                     // ak == k@ → target contains k@
                 } else {
@@ -380,8 +380,8 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
                 } else {
                     // ak in old_abstract.dom() → exists ep in old_map with ep@ == ak
                     assert(old_abstract.dom().contains(ak));
-                    assert(exists |ep: EndPoint| old_map.contains_key(ep) && ep@ == ak);
-                    let ep = choose |ep: EndPoint| old_map.contains_key(ep) && ep@ == ak;
+                    assert(exists |ep: EndPoint| #![trigger ep@] old_map.contains_key(ep) && ep@ == ak);
+                    let ep = choose |ep: EndPoint| #![trigger ep@] old_map.contains_key(ep) && ep@ == ak;
                     assert(ep != k);
                     assert(result@.contains_key(ep));
                     assert(result@.contains_key(ep) && ep@ == ak);
@@ -389,13 +389,13 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
             };
 
             // Values match
-            assert forall |ak: AbstractEndPoint|
+            assert forall |ak: AbstractEndPoint| #![trigger new_abstract[ak]] #![trigger target[ak]]
                 new_abstract.dom().contains(ak) implies new_abstract[ak] == target[ak]
             by {
                 broadcast use crate::common::native::io_s::axiom_endpoint_view;
                 broadcast use vstd::map::group_map_lemmas;
-                assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == ak);
-                let ep_new = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == ak;
+                assert(exists |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == ak);
+                let ep_new = choose |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == ak;
                 if ak == k@ {
                     assert(ep_new == k);
                 } else {
@@ -439,7 +439,7 @@ pub exec fn CClientsInReplies(replies: &Vec<CReply>) -> (result: CReplyCache)
 /// then some reply has that client and LClientsInReplies maps to it.
 proof fn lemma_clients_in_replies_witness(replies: Seq<Reply>, client: AbstractEndPoint)
     requires LClientsInReplies(replies).contains_key(client),
-    ensures exists |idx: int| 0 <= idx < replies.len()
+    ensures exists |idx: int| #![trigger replies[idx]] 0 <= idx < replies.len()
         && replies[idx].client == client
         && LClientsInReplies(replies)[client] == replies[idx],
     decreases replies.len(),
@@ -457,7 +457,7 @@ proof fn lemma_clients_in_replies_witness(replies: Seq<Reply>, client: AbstractE
             // client must be in rest (insert of different key doesn't add client)
             assert(rest.contains_key(client));
             lemma_clients_in_replies_witness(replies.drop_first(), client);
-            let idx = choose |idx: int| 0 <= idx < replies.drop_first().len()
+            let idx = choose |idx: int| #![trigger replies.drop_first()[idx]] 0 <= idx < replies.drop_first().len()
                 && replies.drop_first()[idx].client == client
                 && LClientsInReplies(replies.drop_first())[client] == replies.drop_first()[idx];
             // drop_first()[idx] == replies[idx + 1]
@@ -475,7 +475,7 @@ proof fn lemma_clients_in_replies_witness(replies: Seq<Reply>, client: AbstractE
 pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime: CReplyCache)
     requires
         creplycache_is_valid(c),
-        forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
+        forall |i: int| #![trigger replies[i]] 0 <= i < replies.len() ==> replies[i].valid(),
     ensures
         creplycache_is_valid(&c_prime),
         UpdateNewCache(
@@ -516,7 +516,7 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
                 nc@.contains_key(ep)
                 || (exists |idx: int| 0 <= idx < j as int && c_keys@[idx] == ep),
             // nc-only keys (not in c) still have nc's values
-            forall |ep: EndPoint| nc@.contains_key(ep) && !c@.contains_key(ep)
+            forall |ep: EndPoint| #![trigger result@[ep]] #![trigger nc@[ep]] nc@.contains_key(ep) && !c@.contains_key(ep)
                 ==> result@[ep] == nc@[ep],
             // Validity
             creplycache_is_valid(&result),
@@ -576,7 +576,7 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
             };
 
             // nc-only keys still have nc's values
-            assert forall |ep: EndPoint| nc@.contains_key(ep) && !c@.contains_key(ep)
+            assert forall |ep: EndPoint| #![trigger result@[ep]] #![trigger nc@[ep]] nc@.contains_key(ep) && !c@.contains_key(ep)
                 implies result@[ep] == nc@[ep]
             by {
                 // ep is not in c, k IS in c, so ep != k
@@ -626,7 +626,7 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
             (nc@.contains_key(ep) || c@.contains_key(ep)) by {};
 
         // Concrete values: c keys get c's values
-        assert forall |ep: EndPoint| result@.contains_key(ep) && c@.contains_key(ep)
+        assert forall |ep: EndPoint| #![trigger result@[ep]] #![trigger c@[ep]] result@.contains_key(ep) && c@.contains_key(ep)
             implies result@[ep] == c@[ep] by {
             let idx = choose |idx: int| 0 <= idx < c_keys@.len() && c_keys@[idx] == ep;
         };
@@ -647,15 +647,15 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
 
         // Now prove all 4 conjuncts using abs_replies (exec-level ghost variable)
         // Conjunct 1: existential witness
-        assert forall |client: AbstractEndPoint|
+        assert forall |client: AbstractEndPoint| #![trigger abstractify_creplycache(&result)[client]] #![trigger abstractify_creplycache(c)[client]]
             abstractify_creplycache(&result).contains_key(client) implies
             (abstractify_creplycache(c).contains_key(client) && abstractify_creplycache(&result)[client] == abstractify_creplycache(c)[client])
             || (exists |req_idx: int| 0 <= req_idx < abs_replies.len()
                 && (#[trigger] abs_replies[req_idx]).client == client
                 && abstractify_creplycache(&result)[client] == abs_replies[req_idx])
         by {
-            assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == client);
-            let ep_r = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == client;
+            assert(exists |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == client);
+            let ep_r = choose |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == client;
             if c@.contains_key(ep_r) {
                 assert(result@[ep_r] == c@[ep_r]);
                 assert(abstractify_creplycache(c).contains_key(client));
@@ -673,44 +673,44 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
             (LClientsInReplies(abs_replies).contains_key(client) || abstractify_creplycache(c).contains_key(client))
         by {
             if abstractify_creplycache(&result).contains_key(client) {
-                assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == client);
-                let ep = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == client;
+                assert(exists |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == client);
+                let ep = choose |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == client;
                 if nc@.contains_key(ep) {
-                    assert(exists |ep2: EndPoint| nc@.contains_key(ep2) && ep2@ == client);
+                    assert(exists |ep2: EndPoint| #![trigger ep2@] nc@.contains_key(ep2) && ep2@ == client);
                     assert(abstractify_creplycache(&nc).contains_key(client));
                 } else {
                     assert(c@.contains_key(ep));
-                    assert(exists |ep2: EndPoint| c@.contains_key(ep2) && ep2@ == client);
+                    assert(exists |ep2: EndPoint| #![trigger ep2@] c@.contains_key(ep2) && ep2@ == client);
                     assert(abstractify_creplycache(c).contains_key(client));
                 }
             }
             if LClientsInReplies(abs_replies).contains_key(client) || abstractify_creplycache(c).contains_key(client) {
                 if LClientsInReplies(abs_replies).contains_key(client) {
                     assert(abstractify_creplycache(&nc).contains_key(client));
-                    assert(exists |ep: EndPoint| nc@.contains_key(ep) && ep@ == client);
-                    let ep = choose |ep: EndPoint| nc@.contains_key(ep) && ep@ == client;
+                    assert(exists |ep: EndPoint| #![trigger ep@] nc@.contains_key(ep) && ep@ == client);
+                    let ep = choose |ep: EndPoint| #![trigger ep@] nc@.contains_key(ep) && ep@ == client;
                     assert(result@.contains_key(ep));
-                    assert(exists |ep2: EndPoint| result@.contains_key(ep2) && ep2@ == client);
+                    assert(exists |ep2: EndPoint| #![trigger ep2@] result@.contains_key(ep2) && ep2@ == client);
                 }
                 if abstractify_creplycache(c).contains_key(client) {
-                    assert(exists |ep: EndPoint| c@.contains_key(ep) && ep@ == client);
-                    let ep = choose |ep: EndPoint| c@.contains_key(ep) && ep@ == client;
+                    assert(exists |ep: EndPoint| #![trigger ep@] c@.contains_key(ep) && ep@ == client);
+                    let ep = choose |ep: EndPoint| #![trigger ep@] c@.contains_key(ep) && ep@ == client;
                     assert(result@.contains_key(ep));
-                    assert(exists |ep2: EndPoint| result@.contains_key(ep2) && ep2@ == client);
+                    assert(exists |ep2: EndPoint| #![trigger ep2@] result@.contains_key(ep2) && ep2@ == client);
                 }
             }
         };
 
         // Conjunct 3: values
-        assert forall |client: AbstractEndPoint|
+        assert forall |client: AbstractEndPoint| #![trigger abstractify_creplycache(&result)[client]]
             abstractify_creplycache(&result).contains_key(client) implies
             abstractify_creplycache(&result)[client] == if abstractify_creplycache(c).contains_key(client) { abstractify_creplycache(c)[client] } else { LClientsInReplies(abs_replies)[client] }
         by {
-            assert(exists |ep: EndPoint| result@.contains_key(ep) && ep@ == client);
-            let ep_r = choose |ep: EndPoint| result@.contains_key(ep) && ep@ == client;
+            assert(exists |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == client);
+            let ep_r = choose |ep: EndPoint| #![trigger ep@] result@.contains_key(ep) && ep@ == client;
             if abstractify_creplycache(c).contains_key(client) {
-                assert(exists |ep: EndPoint| c@.contains_key(ep) && ep@ == client);
-                let ep_c = choose |ep: EndPoint| c@.contains_key(ep) && ep@ == client;
+                assert(exists |ep: EndPoint| #![trigger ep@] c@.contains_key(ep) && ep@ == client);
+                let ep_c = choose |ep: EndPoint| #![trigger ep@] c@.contains_key(ep) && ep@ == client;
                 assert(ep_c == ep_r);
                 assert(c@.contains_key(ep_r));
                 assert(result@[ep_r] == c@[ep_r]);
@@ -722,7 +722,7 @@ pub exec fn CUpdateNewCache(c: &CReplyCache, replies: &Vec<CReply>) -> (c_prime:
         };
 
         // Conjunct 4: reverse direction
-        assert forall |client: AbstractEndPoint|
+        assert forall |client: AbstractEndPoint| #![trigger abstractify_creplycache(&result)[client]]
             (LClientsInReplies(abs_replies).contains_key(client) || abstractify_creplycache(c).contains_key(client)) implies
             abstractify_creplycache(&result).contains_key(client)
             && abstractify_creplycache(&result)[client] == if abstractify_creplycache(c).contains_key(client) { abstractify_creplycache(c)[client] } else { LClientsInReplies(abs_replies)[client] }
@@ -741,8 +741,8 @@ pub exec fn CGetPacketsFromReplies(
     requires
         me.valid_public_key(),
         crequestbatch_is_valid(requests),
-        forall |i: int| 0 <= i < requests.len() ==> requests[i].valid(),
-        forall |i: int| 0 <= i < replies.len() ==> replies[i].valid(),
+        forall |i: int| #![trigger requests[i]] 0 <= i < requests.len() ==> requests[i].valid(),
+        forall |i: int| #![trigger replies[i]] 0 <= i < replies.len() ==> replies[i].valid(),
         requests.len() == replies.len(),
     ensures
         ({
@@ -751,7 +751,7 @@ pub exec fn CGetPacketsFromReplies(
                 requests@.map(|i, x: CRequest| x@),
                 replies@.map(|i, x: CReply| x@),
             );
-            &&& forall |i: int| 0 <= i < cr@.len() ==> cr@[i].valid()
+            &&& forall |i: int| #![trigger cr@[i]] 0 <= i < cr@.len() ==> cr@[i].valid()
             &&& cr@.map(|i, x: CPacket| x@) == lr
         }),
     decreases requests.len(),
@@ -823,8 +823,8 @@ pub fn outbound_packets_to_vec(sent: OutboundPackets) -> (result: Vec<CPacket>)
         sent.valid(),
     ensures
         result@.map(|i: int, p: CPacket| p@) =~= sent@,
-        forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-        forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+        forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
+        forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].abstractable(),
 {
     match sent {
         OutboundPackets::PacketSequence { s } => s,
