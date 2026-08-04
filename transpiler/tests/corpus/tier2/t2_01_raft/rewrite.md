@@ -56,6 +56,32 @@ complete** — see "State-space blow-up" below. Not yet translated, no golden.
    rule already supports it, and the fat record actively defeats that rule. This
    is the next step for the case.
 
+## TLC status: bounded evidence, not a completed check
+
+Messages were restructured per type after the blow-up above, and TLC still does
+not terminate. The honest reading is that this is a property of **Raft**, not of
+the rewrite: the reachable subsets of a message set grow combinatorially, which
+is why the original is model-checked with bounds too.
+
+With an in-flight bound (`Cardinality(msgs) <= 2`), `Server = {s1, s2}`,
+`MaxTerm = 2`, `MaxLogLen = 1`, TLC explores **3.7M states without finding a
+violation** of `TypeOK` or `OneLeaderPerTerm`, and does not close the space.
+
+That is evidence, and it is worth having, but it is **not** the completed check
+that `t1_02_twophase` has. It must not be written up as one.
+
+## Translator gaps: sequences, and a real hazard
+
+`clean-tla` reports eight, all about sequences:
+
+- `<<>>`, `Len`, `Append`, `SubSeq` are unsupported.
+- record access on a sequence element (`log[i][k].term`) is unsupported.
+- **TLA+ sequences are 1-indexed; Verus's `Seq` is 0-indexed.** Projecting an
+  index expression unchanged produces an off-by-one that **still verifies** —
+  the worst kind of bug, since nothing downstream would catch it. Whatever the
+  fix is (subtracting one at projection, or keeping a 1-based wrapper), it has
+  to be deliberate and documented.
+
 ## Not yet done
 
 - Restructure messages per type, then TLC to completion.

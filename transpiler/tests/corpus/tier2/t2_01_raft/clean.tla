@@ -15,10 +15,15 @@
 (*     votes instead (P4).                                                *)
 (*   - a `TypeOK` is added. The original has none, and the subset states   *)
 (*     per-node-ness in terms of declarations.                             *)
+(*                                                                        *)
+(* Each message type carries only the fields it needs, as in the original. *)
+(* An earlier draft gave every message all twelve fields with defaults in  *)
+(* the unused ones; that multiplies the reachable field combinations and   *)
+(* TLC did not finish even at two servers.                                *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 
-CONSTANT Server, Value, MaxTerm, MaxLogLen
+CONSTANT Server, Value, MaxTerm, MaxLogLen, MaxInFlight
 
 ASSUME ServerAssumption == IsFiniteSet(Server) /\ Server # {}
 
@@ -55,25 +60,14 @@ LogEntry == [term: Term, value: Value]
 
 Message ==
        [mtype: {RequestVoteRequest}, mterm: Term, mlastLogTerm: Term \cup {0},
-        mlastLogIndex: Index, mvoteGranted: BOOLEAN, msuccess: BOOLEAN,
-        mmatchIndex: Index, mprevLogIndex: Index, mprevLogTerm: Term \cup {0},
-        mentries: Seq(LogEntry), mcommitIndex: Index,
+        mlastLogIndex: Index, msource: Server, mdest: Server]
+  \cup [mtype: {RequestVoteResponse}, mterm: Term, mvoteGranted: BOOLEAN,
         msource: Server, mdest: Server]
-  \cup [mtype: {RequestVoteResponse}, mterm: Term, mlastLogTerm: Term \cup {0},
-        mlastLogIndex: Index, mvoteGranted: BOOLEAN, msuccess: BOOLEAN,
-        mmatchIndex: Index, mprevLogIndex: Index, mprevLogTerm: Term \cup {0},
-        mentries: Seq(LogEntry), mcommitIndex: Index,
-        msource: Server, mdest: Server]
-  \cup [mtype: {AppendEntriesRequest}, mterm: Term, mlastLogTerm: Term \cup {0},
-        mlastLogIndex: Index, mvoteGranted: BOOLEAN, msuccess: BOOLEAN,
-        mmatchIndex: Index, mprevLogIndex: Index, mprevLogTerm: Term \cup {0},
-        mentries: Seq(LogEntry), mcommitIndex: Index,
-        msource: Server, mdest: Server]
-  \cup [mtype: {AppendEntriesResponse}, mterm: Term, mlastLogTerm: Term \cup {0},
-        mlastLogIndex: Index, mvoteGranted: BOOLEAN, msuccess: BOOLEAN,
-        mmatchIndex: Index, mprevLogIndex: Index, mprevLogTerm: Term \cup {0},
-        mentries: Seq(LogEntry), mcommitIndex: Index,
-        msource: Server, mdest: Server]
+  \cup [mtype: {AppendEntriesRequest}, mterm: Term, mprevLogIndex: Index,
+        mprevLogTerm: Term \cup {0}, mentries: Seq(LogEntry),
+        mcommitIndex: Index, msource: Server, mdest: Server]
+  \cup [mtype: {AppendEntriesResponse}, mterm: Term, msuccess: BOOLEAN,
+        mmatchIndex: Index, msource: Server, mdest: Server]
 
 TypeOK ==
   /\ currentTerm \in [Server -> Term]
@@ -107,11 +101,22 @@ IsMajority(s) == Cardinality(s) * 2 > Cardinality(Server)
 
 LastTerm(xlog) == IF Len(xlog) = 0 THEN 0 ELSE xlog[Len(xlog)].term
 
-Msg(t, i, j) ==
-  [mtype |-> t, mterm |-> 1, mlastLogTerm |-> 0, mlastLogIndex |-> 0,
-   mvoteGranted |-> FALSE, msuccess |-> FALSE, mmatchIndex |-> 0,
-   mprevLogIndex |-> 0, mprevLogTerm |-> 0, mentries |-> << >>,
-   mcommitIndex |-> 0, msource |-> i, mdest |-> j]
+RVReq(i, j, term, lastTerm, lastIndex) ==
+  [mtype |-> RequestVoteRequest, mterm |-> term, mlastLogTerm |-> lastTerm,
+   mlastLogIndex |-> lastIndex, msource |-> i, mdest |-> j]
+
+RVResp(i, j, term, granted) ==
+  [mtype |-> RequestVoteResponse, mterm |-> term, mvoteGranted |-> granted,
+   msource |-> i, mdest |-> j]
+
+AEReq(i, j, term, prevIndex, prevTerm, entries, commit) ==
+  [mtype |-> AppendEntriesRequest, mterm |-> term, mprevLogIndex |-> prevIndex,
+   mprevLogTerm |-> prevTerm, mentries |-> entries, mcommitIndex |-> commit,
+   msource |-> i, mdest |-> j]
+
+AEResp(i, j, term, success, matchIdx) ==
+  [mtype |-> AppendEntriesResponse, mterm |-> term, msuccess |-> success,
+   mmatchIndex |-> matchIdx, msource |-> i, mdest |-> j]
 
 (***************************************************************************)
 (* Server i restarts, losing everything but currentTerm, votedFor and log. *)
@@ -147,10 +152,7 @@ RequestVote(i, j) ==
   /\ state[i] = Candidate
   /\ j \notin votesResponded[i]
   /\ msgs' = msgs \cup
-       {[Msg(RequestVoteRequest, i, j) EXCEPT
-           !.mterm = currentTerm[i],
-           !.mlastLogTerm = LastTerm(log[i]),
-           !.mlastLogIndex = Len(log[i])]}
+       {RVReq(i, j, currentTerm[i], LastTerm(log[i]), Len(log[i]))}
   /\ UNCHANGED <<currentTerm, state, votedFor, log, commitIndex,
                  votesResponded, votesGranted, nextIndex, matchIndex>>
 
@@ -186,17 +188,15 @@ AppendEntries(i, j) ==
   /\ i /= j
   /\ state[i] = Leader
   /\ msgs' = msgs \cup
-       {[Msg(AppendEntriesRequest, i, j) EXCEPT
-           !.mterm = currentTerm[i],
-           !.mprevLogIndex = nextIndex[i][j] - 1,
-           !.mprevLogTerm = IF nextIndex[i][j] - 1 > 0
-                              THEN log[i][nextIndex[i][j] - 1].term
-                              ELSE 0,
-           !.mentries = SubSeq(log[i], nextIndex[i][j],
-                               IF Len(log[i]) < nextIndex[i][j]
-                                 THEN Len(log[i]) ELSE nextIndex[i][j]),
-           !.mcommitIndex = IF commitIndex[i] < nextIndex[i][j]
-                              THEN commitIndex[i] ELSE nextIndex[i][j]]}
+       {AEReq(i, j, currentTerm[i],
+              nextIndex[i][j] - 1,
+              IF nextIndex[i][j] - 1 > 0
+                THEN log[i][nextIndex[i][j] - 1].term ELSE 0,
+              SubSeq(log[i], nextIndex[i][j],
+                     IF Len(log[i]) < nextIndex[i][j]
+                       THEN Len(log[i]) ELSE nextIndex[i][j]),
+              IF commitIndex[i] < nextIndex[i][j]
+                THEN commitIndex[i] ELSE nextIndex[i][j])}
   /\ UNCHANGED <<currentTerm, state, votedFor, log, commitIndex,
                  votesResponded, votesGranted, nextIndex, matchIndex>>
 
@@ -214,12 +214,10 @@ HandleRequestVoteRequest(i, m) ==
         /\ votedFor[i] \in {Nil, m.msource}
        THEN /\ votedFor' = [votedFor EXCEPT ![i] = m.msource]
             /\ msgs' = (msgs \ {m}) \cup
-                 {[Msg(RequestVoteResponse, i, m.msource) EXCEPT
-                     !.mterm = currentTerm[i], !.mvoteGranted = TRUE]}
+                 {RVResp(i, m.msource, currentTerm[i], TRUE)}
        ELSE /\ votedFor' = votedFor
             /\ msgs' = (msgs \ {m}) \cup
-                 {[Msg(RequestVoteResponse, i, m.msource) EXCEPT
-                     !.mterm = currentTerm[i], !.mvoteGranted = FALSE]}
+                 {RVResp(i, m.msource, currentTerm[i], FALSE)}
   /\ UNCHANGED <<currentTerm, state, log, commitIndex, votesResponded,
                  votesGranted, nextIndex, matchIndex>>
 
@@ -259,15 +257,12 @@ HandleAppendEntriesRequest(i, m) ==
                         THEN log
                         ELSE [log EXCEPT ![i] = Append(log[i], m.mentries[1])]
             /\ msgs' = (msgs \ {m}) \cup
-                 {[Msg(AppendEntriesResponse, i, m.msource) EXCEPT
-                     !.mterm = currentTerm[i], !.msuccess = TRUE,
-                     !.mmatchIndex = m.mprevLogIndex + Len(m.mentries)]}
+                 {AEResp(i, m.msource, currentTerm[i], TRUE,
+                         m.mprevLogIndex + Len(m.mentries))}
        ELSE /\ commitIndex' = commitIndex
             /\ log' = log
             /\ msgs' = (msgs \ {m}) \cup
-                 {[Msg(AppendEntriesResponse, i, m.msource) EXCEPT
-                     !.mterm = currentTerm[i], !.msuccess = FALSE,
-                     !.mmatchIndex = 0]}
+                 {AEResp(i, m.msource, currentTerm[i], FALSE, 0)}
   /\ UNCHANGED <<currentTerm, state, votedFor, votesResponded, votesGranted,
                  nextIndex, matchIndex>>
 
@@ -309,6 +304,14 @@ vars == <<currentTerm, state, votedFor, log, commitIndex, votesResponded,
           votesGranted, nextIndex, matchIndex, msgs>>
 
 Spec == Init /\ [][Next]_vars
+
+(***************************************************************************)
+(* A state constraint for model checking. The reachable subsets of a       *)
+(* message set grow combinatorially, which is a property of Raft rather    *)
+(* than of this rewrite -- the original is checked with bounds too. This   *)
+(* caps how many messages may be in flight at once.                        *)
+(***************************************************************************)
+InFlightConstraint == Cardinality(msgs) <= MaxInFlight
 
 (***************************************************************************)
 (* Safety: at most one leader per term.                                    *)
