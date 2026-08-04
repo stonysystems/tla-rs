@@ -11371,7 +11371,28 @@ Reported current state: the latest commit only has one of these five checks pass
   `hash_compaction_collisions`) stays pinned. This is the phase rule's "previous guard proven
   incorrect" case, not a weakening: asserting timing equality across hosts carries no
   correctness signal and actively blocked the evidence discipline it was meant to protect.
-- [ ] **37.2.1.j** Normalized artifact-drift guard. 37.2.1.f deliberately rejected a
+- [x] **37.2.1.j** Normalized artifact-drift guard. **DONE (2026-08-04).**
+  `scripts/check_model_check_drift.py` + a `Guard against structural artifact drift` step
+  that runs immediately after the existing regeneration step in the evidence job. It
+  normalizes both sides (working tree vs `git show HEAD:<path>`) by dropping the volatile
+  keys, then compares exactly and names the changed key paths
+  (`~ /summary/states: 1 -> 42`). Proven both ways on the real tree: a +999 ms `elapsed_ms`
+  edit passes, while a changed state count plus a `../src/...` path — the exact 37.2.1.i
+  drift — fails with both differences pinpointed.
+  Design points: (a) the volatile set is an **explicit list, not a `_ms$` rule**, because
+  `timeout_ms` also ends in `_ms` but is a configuration input whose change must be caught —
+  a suffix heuristic would have silenced exactly the wrong thing; (b) `MANIFEST.txt`'s
+  `git_rev:` line is dropped, since it changes on every commit by construction;
+  (c) `.jsonl` parity exports are normalized per line; (d) a deleted artifact is reported as
+  `missing` rather than silently skipped; (e) `--warn-only` exists for local use but a test
+  asserts CI does **not** use it; (f) scope comes from `MANIFEST.txt`, i.e. only what the
+  matrix script actually generates — `reports/model_check/` also holds a hand-written
+  README and parity exports from other scripts, and a guard that goes red on a doc edit is
+  a guard someone deletes (caught while testing: the first version flagged this task's own
+  README edit). `--all-files` overrides. 29 tests, including an end-to-end suite against a
+  real throwaway git repository, since the guard shells out to git.
+
+  Original rationale: 37.2.1.f deliberately rejected a
   git-diff check because `elapsed_ms` varies per runner — correct, but the consequence is
   that structural drift (new telemetry fields, changed state counts, wrong-cwd paths) rots
   silently, as 37.2.1.i shows. The fix is not to reinstate a raw diff but to diff

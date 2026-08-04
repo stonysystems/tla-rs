@@ -253,5 +253,14 @@ jobs:
       - name: Rebuild source-first matrix artifacts
         run: ./scripts/run_model_check_matrix.sh
 
+      # Phase 37.2.1.j: the regeneration above proves the artifacts can be
+      # rebuilt; this proves the rebuild still matches what is committed.
+      # Volatile keys (elapsed_ms and the timing subtree) are ignored, so
+      # runner-to-runner timing noise cannot make it red -- which is what
+      # 37.2.1.f was worried about when it rejected a raw git diff. Everything
+      # else (state counts, telemetry fields, paths) is compared exactly.
+      - name: Guard against structural artifact drift
+        run: ./scripts/check_model_check_drift.py
+
       - name: Verify status-doc evidence paths
         run: ./scripts/verify_model_check_evidence_paths.sh
