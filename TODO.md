@@ -15859,7 +15859,33 @@ at `docs/jetpack_reference/`.
 
 ---
 
-## Phase 52: Clean-Subset TLA+ → Verus Translator — PLANNED
+## Phase 52: Clean-Subset TLA+ → Verus Translator — **COMPLETE 2026-08-04**
+
+> **Every milestone met.** M0 (subset + linter), M0.0 (frontend), M1 (projection),
+> M2 (messages + quorums), M3 (V2 + V3), M4 (tier 2), M4b (Jetpack), M5 (docs +
+> pipeline). Eight `clean.tla` specs translate; **all eight goldens pass `verus`**,
+> enforced by `corpus_v1_guard.rs` rather than asserted; five cases are `green`
+> (V1 + V2 + V3) and three are `golden` for reasons each records.
+>
+> Evidence: [`docs/clean_tla_translator_evidence.md`](docs/clean_tla_translator_evidence.md).
+> Contract: [`docs/clean_tla_subset.md`](docs/clean_tla_subset.md).
+> Playbook: [`docs/clean_tla_rewrite_playbook.md`](docs/clean_tla_rewrite_playbook.md).
+>
+> **What the corpus bought.** Twenty-eight translator defects, and the ones that
+> mattered were the *silent* ones — three would have produced a plausible,
+> verifying spec that says something else: `----` read as a module terminator
+> (ReadersWriters was parsing 7 of 21 definitions and reporting success),
+> expressions emitted without parentheses (`(i-1) % N` → `i - 1 % N`), and `..`
+> parsed at the additive level (`0 .. N - 1`, `t0_01_simple`'s node set,
+> mis-parsed for the whole project). None would have been found by a unit test
+> over hand-written input.
+>
+> **What it cost to be honest.** Three claims were weaker than first written and
+> are now stated as they are: V2 is *observable state-set equality*, not
+> behavioural equivalence (deleting `RMChooseToAbort` from 2PC still reports
+> EQUAL); Raft's TLC evidence is *bounded*, not a completed check; and two
+> clean-distance measurements were failures to measure rather than small
+> numbers.
 
 ### Background (2026-08)
 
@@ -15994,7 +16020,7 @@ independent golden — its translation is validated only by TLC fidelity + verus
   - [x] **V1 is now enforced, not asserted** (2026-08-04). `transpiler/tests/corpus_v1_guard.rs` runs `verus` over every `golden.rs`. Until now the manifest *claimed* this for each `golden`/`green` case and nothing checked it — the runs were done by hand and written into `rewrite.md`. **A claim nobody re-checks decays**, and this one especially: a translator change can break a golden's typecheck while V3 stays green, because V3 compares the golden against fresh output and both sides move together. The guard skips loudly when no Verus is on the machine and never passes having checked nothing; confirmed non-vacuous by injecting an unknown type into a golden. All 8 goldens pass.
   - [x] **Pipeline integration** (2026-08-04). `verus-transpile pipeline --clean-subset` produces the spec stage with the Phase 52 projection instead of the global-model translator, and **the two entry points are guarded against drift**: `corpus_v3_guard.rs::the_pipeline_mode_agrees_with_clean_tla` byte-compares the pipeline's output against a frozen golden, so the pipeline mode cannot become a second implementation. A spec outside the subset is refused with the **linter's own findings** rather than a debug dump — the message tells the reader to run `tla-lint`, so it had better show what `tla-lint` would have said.
     **It stops after the spec stage, deliberately, and says so.** Wiring it into the exec stage failed on the first try with `Parameter count mismatch: function has 1 params, annotation has 2`, and the cause is real rather than incidental: the mode annotations describe the *source* module's operators, and projection removes the node parameter, so `Left(p)` becomes `LLeft(c)`. Producing annotations for a projected module is separate work, and the exec stage is outside Phase 52 in any case — the plan's **R3** is "only generate a spec, never a proof". Recorded as a follow-on rather than papered over.
-- [ ] **52.corpus** Consumes the graded dataset built in **Phase 53** (each milestone pulls its tier: M1←Tier-0, M2←Tier-1, M4←Tier-2, M4b←Tier-3). Dataset construction + golden strategy live in Phase 53.
+- [x] **52.corpus** Consumes the graded dataset built in **Phase 53** (each milestone pulls its tier: M1←Tier-0, M2←Tier-1, M4←Tier-2, M4b←Tier-3). Dataset construction + golden strategy live in Phase 53. **All four tiers consumed** (2026-08-04).
 
 ### MVP
 
@@ -16009,7 +16035,27 @@ Plan: `docs/clean_tla_to_verus_translator_plan.md`. Extends `transpiler/src/tla/
 
 ---
 
-## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — PLANNED
+## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — **COMPLETE 2026-08-04**
+
+> **Ten cases across four tiers**, eight of them translation cases with a full
+> four-tuple (`original.tla` / `clean.tla` / `rewrite.md` / `golden.rs`) and two
+> deliberately `reject-only`, with `why_reject_only.md` saying why rewriting them
+> would produce a *different algorithm* rather than a rewrite.
+>
+> **The stated completion condition is met**: Jetpack's `clean.tla` is accepted
+> by the linter, translates, and its `golden.rs` passes `verus` — each on the
+> first attempt, the only case in the corpus to do any of those, because Raft had
+> already paid for every type-shaped gap it would have hit. TLC closes Jetpack's
+> state space at both 2 and 3 servers (19.5M distinct, depth 78).
+>
+> **The corpus is a working instrument, not an archive.** It found 28 translator
+> defects, a fidelity defect in an already-frozen golden (Paxos's `LNext`
+> quantifying over every integer), and — via the V2 comparator — a defect in one
+> of its own rewrites before that golden was frozen (DiningPhilosophers reaching
+> 11 `hungry` states the original cannot). It also nearly produced a false
+> accusation, when an unmatched state constraint made LamportMutex's correct
+> rewrite look like it had lost 4,214 states; that trap is now in the script's
+> header and the playbook.
 
 ### Background (2026-08)
 
