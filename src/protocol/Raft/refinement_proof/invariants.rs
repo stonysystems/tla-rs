@@ -580,6 +580,133 @@ verus! {
         assert(ds.configuration_commit_certificates.dom().contains(j));
     }
 
+    /// Assembly of the minimal-missing-boundary argument.
+    ///
+    /// At the smallest certified boundary a leader is missing, the leader's
+    /// membership history below that boundary coincides with the committer's,
+    /// so its committed phase is the certificate's governing phase; its
+    /// election phase is then at most one legal joint-consensus step beyond
+    /// that; and one-step phase separation forces the quorums to overlap. The
+    /// overlapping voter carries the boundary into the leader's log — so the
+    /// leader was not missing it after all.
+    ///
+    /// The one residual hypothesis is that the leader holds no Configuration
+    /// in the stretch between its commit index and the boundary.
+    pub proof fn lemma_certified_boundary_present_at_minimal_missing_index(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+            ds.server_constants[leader_id].servers
+                == ds.server_constants[
+                    ds.configuration_commit_certificates[index].committer
+                ].servers,
+            // Minimality: every certified boundary below `index` is held.
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < index
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+            index <= ds.server_states[leader_id].log.len(),
+            ds.server_states[leader_id].commit_index <= index,
+            // Residual hypothesis: no membership boundary waits between the
+            // leader's commit index and `index`.
+            forall |j: int|
+                #![trigger ds.server_states[leader_id].log[j]]
+                ds.server_states[leader_id].commit_index <= j < index
+                ==> !(ds.server_states[leader_id].log[j].payload
+                    is Configuration),
+            // Structural facts the one-step-ahead result needs.
+            raft_membership_log_is_well_formed(
+                ds.server_states[leader_id].log,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[leader_id].servers,
+                },
+            ),
+            uncommitted_suffix_has_at_most_one_configuration(
+                ds.server_states[leader_id].log,
+                ds.server_states[leader_id].commit_index,
+            ),
+            ds.server_states[leader_id].election_membership_phase
+                == Some(election_membership_phase_for_state(
+                    ds.server_states[leader_id],
+                    ds.server_constants[leader_id],
+                )),
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        let leader = ds.server_states[leader_id];
+        let constants = ds.server_constants[leader_id];
+        let initial_phase = MembershipPhase::Stable {
+            config: constants.servers,
+        };
+
+        // Every Configuration the leader holds below `index` is committed —
+        // the residual hypothesis rules out the uncommitted stretch — and
+        // committed ones are shared with the committer.
+        assert forall |j: int|
+            0 <= j < index
+            && ds.server_states[leader_id].log[j].payload is Configuration
+        implies ds.server_states[
+            ds.configuration_commit_certificates[index].committer
+        ].log[j].payload is Configuration
+        by {
+            assert(j < ds.server_states[leader_id].commit_index);
+            lemma_leader_committed_configuration_is_shared_with_committer(
+                ds, index, leader_id, j);
+        };
+
+        // Hence the leader's phase over its prefix of length `index` is the
+        // certificate's governing phase.
+        lemma_minimal_missing_boundary_phases_agree(ds, index, leader_id);
+
+        // No boundary between the commit index and `index`, so that prefix
+        // phase is the leader's committed phase.
+        assert(CommitIndexNonnegative(ds));
+        lemma_configuration_free_interval_preserves_active_phase(
+            leader.log,
+            leader.commit_index,
+            index,
+            initial_phase,
+        );
+        assert(active_membership_phase_for_state(leader, constants)
+            == ds.configuration_commit_certificates[index].governing_phase);
+
+        // The election phase is at most one legal step beyond it.
+        lemma_latest_log_election_phase_is_at_most_one_step_ahead(
+            leader,
+            constants,
+        );
+
+        // One legal step apart, so the quorums overlap and the transfer
+        // obligation carries the boundary into the leader's log.
+        lemma_certified_boundary_present_when_phases_are_related(
+            ds,
+            index,
+            leader_id,
+            election_membership_phase_for_state(leader, constants),
+        );
+    }
+
     /// Half of the remaining hypothesis, discharged: any Configuration the
     /// leader holds *below its own commit index* is one the committer holds
     /// too. Committed Configurations carry certificates, and the committer has
