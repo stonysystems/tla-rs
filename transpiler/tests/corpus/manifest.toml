@@ -90,7 +90,7 @@ notes = "Queue-based reader/writer lock. State is global (readers/writers/waitin
 [[case]]
 id = "t0_05_lamport_mutex"
 tier = 0
-status = "intake"
+status = "clean"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/lamport_mutex/LamportMutex.tla"
 source_commit = "b17be0a959108701a89b5cadec1a1ee1b216f7a4"
