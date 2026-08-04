@@ -165,6 +165,20 @@ impl Canonicalizer {
                 var: var.clone(),
                 set: Box::new(self.canonicalize_expr(set)),
             },
+            TlaExpr::Lambda { params, body } => TlaExpr::Lambda {
+                params: params.clone(),
+                body: Box::new(self.canonicalize_expr(body)),
+            },
+            TlaExpr::SetMapMulti { expr, bindings } => TlaExpr::SetMapMulti {
+                expr: Box::new(self.canonicalize_expr(expr)),
+                bindings: bindings
+                    .iter()
+                    .map(|b| TlaQuantBound {
+                        var: b.var.clone(),
+                        set: b.set.as_ref().map(|s| self.canonicalize_expr(s)),
+                    })
+                    .collect(),
+            },
 
             // Functions
             TlaExpr::FnConstruct { var, domain, body } => TlaExpr::FnConstruct {

@@ -1030,6 +1030,15 @@ fn walk_children(expr: &TlaExpr, f: &mut impl FnMut(&TlaExpr)) {
             f(expr);
             f(set);
         }
+        TlaExpr::Lambda { body, .. } => f(body),
+        TlaExpr::SetMapMulti { expr, bindings } => {
+            f(expr);
+            for binding in bindings {
+                if let Some(set) = &binding.set {
+                    f(set);
+                }
+            }
+        }
         TlaExpr::FnConstruct { domain, body, .. } => {
             f(domain);
             f(body);

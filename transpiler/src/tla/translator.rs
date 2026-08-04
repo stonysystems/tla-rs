@@ -300,6 +300,13 @@ impl<'a> ExprTranslator<'a> {
             TlaExpr::SetEnum(elements) => self.translate_set_enum(elements),
             TlaExpr::SetFilter { var, set, filter } => self.translate_set_filter(var, set, filter),
             TlaExpr::SetMap { expr, var, set } => self.translate_set_map(expr, var, set),
+            // The global-model codegen has no multi-binder comprehension. The
+            // clean-subset pipeline (`clean-tla`) is what handles these; saying
+            // so is better than emitting something for a different expression.
+            TlaExpr::SetMapMulti { .. } => {
+                "/* unsupported: set comprehension over more than one binder */".to_string()
+            }
+            TlaExpr::Lambda { .. } => "/* unsupported: LAMBDA */".to_string(),
 
             // Functions
             TlaExpr::FnConstruct { var, domain, body } => {
@@ -3234,6 +3241,15 @@ impl ModuleTranslator {
                 Self::collect_symbolic_atoms_from_expr(expr, blocked_names, seen, atoms);
                 Self::collect_symbolic_atoms_from_expr(set, blocked_names, seen, atoms);
             }
+            TlaExpr::Lambda { body, .. } => {
+                Self::collect_symbolic_atoms_from_expr(body, blocked_names, seen, atoms);
+            }
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                Self::collect_symbolic_atoms_from_expr(expr, blocked_names, seen, atoms);
+                for set in bindings.iter().filter_map(|b| b.set.as_ref()) {
+                    Self::collect_symbolic_atoms_from_expr(set, blocked_names, seen, atoms);
+                }
+            }
             TlaExpr::FnConstruct { domain, body, .. } => {
                 Self::collect_symbolic_atoms_from_expr(domain, blocked_names, seen, atoms);
                 Self::collect_symbolic_atoms_from_expr(body, blocked_names, seen, atoms);
@@ -3923,6 +3939,21 @@ impl ModuleTranslator {
                     filter, root_names, hints, peer_hints,
                 );
             }
+            TlaExpr::Lambda { body, .. } => {
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    body, root_names, hints, peer_hints,
+                );
+            }
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                changed |= Self::collect_record_root_field_hints_from_expr(
+                    expr, root_names, hints, peer_hints,
+                );
+                for set in bindings.iter().filter_map(|b| b.set.as_ref()) {
+                    changed |= Self::collect_record_root_field_hints_from_expr(
+                        set, root_names, hints, peer_hints,
+                    );
+                }
+            }
             TlaExpr::SetMap { expr, set, .. } => {
                 changed |= Self::collect_record_root_field_hints_from_expr(
                     expr, root_names, hints, peer_hints,
@@ -4123,6 +4154,15 @@ impl ModuleTranslator {
                 Self::collect_record_root_field_names_from_expr(expr, root_names, fields);
                 Self::collect_record_root_field_names_from_expr(set, root_names, fields);
             }
+            TlaExpr::Lambda { body, .. } => {
+                Self::collect_record_root_field_names_from_expr(body, root_names, fields);
+            }
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                Self::collect_record_root_field_names_from_expr(expr, root_names, fields);
+                for set in bindings.iter().filter_map(|b| b.set.as_ref()) {
+                    Self::collect_record_root_field_names_from_expr(set, root_names, fields);
+                }
+            }
             TlaExpr::FnConstruct { domain, body, .. } => {
                 Self::collect_record_root_field_names_from_expr(domain, root_names, fields);
                 Self::collect_record_root_field_names_from_expr(body, root_names, fields);
@@ -4284,6 +4324,15 @@ impl ModuleTranslator {
             TlaExpr::SetMap { expr, set, .. } => {
                 Self::collect_state_fields_from_expr(expr, state_var_names, state_fields);
                 Self::collect_state_fields_from_expr(set, state_var_names, state_fields);
+            }
+            TlaExpr::Lambda { body, .. } => {
+                Self::collect_state_fields_from_expr(body, state_var_names, state_fields);
+            }
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                Self::collect_state_fields_from_expr(expr, state_var_names, state_fields);
+                for set in bindings.iter().filter_map(|b| b.set.as_ref()) {
+                    Self::collect_state_fields_from_expr(set, state_var_names, state_fields);
+                }
             }
             TlaExpr::FnConstruct { domain, body, .. } => {
                 Self::collect_state_fields_from_expr(domain, state_var_names, state_fields);
@@ -5445,6 +5494,15 @@ impl ModuleTranslator {
                 Self::collect_recursive_self_calls(expr, op_name, out);
                 Self::collect_recursive_self_calls(set, op_name, out);
             }
+            TlaExpr::Lambda { body, .. } => {
+                Self::collect_recursive_self_calls(body, op_name, out);
+            }
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                Self::collect_recursive_self_calls(expr, op_name, out);
+                for set in bindings.iter().filter_map(|b| b.set.as_ref()) {
+                    Self::collect_recursive_self_calls(set, op_name, out);
+                }
+            }
             TlaExpr::FnConstruct { domain, body, .. } => {
                 Self::collect_recursive_self_calls(domain, op_name, out);
                 Self::collect_recursive_self_calls(body, op_name, out);
@@ -5778,6 +5836,16 @@ impl ModuleTranslator {
             TlaExpr::SetMap { expr, set, .. } => {
                 Self::expr_has_record_access_root_ident(expr, ident)
                     || Self::expr_has_record_access_root_ident(set, ident)
+            }
+            TlaExpr::Lambda { body, .. } => {
+                Self::expr_has_record_access_root_ident(body, ident)
+            }
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                Self::expr_has_record_access_root_ident(expr, ident)
+                    || bindings
+                        .iter()
+                        .filter_map(|b| b.set.as_ref())
+                        .any(|set| Self::expr_has_record_access_root_ident(set, ident))
             }
             TlaExpr::FnConstruct { domain, body, .. } => {
                 Self::expr_has_record_access_root_ident(domain, ident)

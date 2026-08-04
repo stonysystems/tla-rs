@@ -16079,7 +16079,14 @@ Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tu
     Also added: `tests/corpus/scripts/refresh_goldens.sh`, because a golden is two things at once — the bytes V3 compares and the human-written review header explaining why those bytes are right — and `clean-tla --output` destroys the second.
     **Original finding, kept for the record — eight gaps, all sequence-related, one a real hazard**: `<<>>`, `Len`, `Append`, `SubSeq`, and record access on a sequence element (`log[i][k].term`) are unsupported; and **TLA+ sequences are 1-indexed while Verus's `Seq` is 0-indexed**. Projecting an index expression unchanged would produce an off-by-one that still *verifies* — the worst kind. Sequence support is on the critical path anyway, since Jetpack's spec is sequence-heavy.
   - [ ] **53.4.d** EPaxos.
-- [ ] **53.5** Tier-3: Jetpack — clean-rewrite + Phase 51 partial golden.
+- [~] **53.5** Tier-3: Jetpack — clean-rewrite + Phase 51 partial golden.
+  - [x] **53.5.a** Jetpack intake + measurement (2026-08-04). `original.tla` is the **composition** module (`jetpack_raft_composition.tla`) — the only one of the three with `Init`/`Next`/`Spec`; `jetpack.tla` and `base_raft.tla` sit beside it as `original_jetpack_layer.tla` / `original_base_raft.tla`.
+    Getting there needed **two parser gaps closed**, both of which the earlier tiers had never exercised:
+    - **Set comprehension over more than one binder** — `{ [cmd_id |-> id, key |-> k] : id \in CmdId, k \in Key }`. Added `TlaExpr::SetMapMulti`, kept separate from `SetMap` so the single-binder form — what almost every spec writes — keeps its shape and its handling.
+    - **`LAMBDA`** — `SelectSeq(seq, LAMBDA x : x # NoOpCmd)`. TLA+ allows an anonymous operator only where an operator is expected, so it is a value in the AST and nowhere else. The global-model translator says "unsupported" for both rather than emitting something for a different expression; the clean-subset pipeline is what handles them.
+    **Clean-distance 2, and it is NOT comparable to the other cases** — recorded as such in the manifest. The composition module has **no type invariant**, so the linter cannot identify the node set and never reaches C1/C2 at all. The two findings are the message *array* (C4: `messages` is only ever updated with `EXCEPT`, i.e. a per-connection queue structure) and that failure itself (C5). Reading "2" as "nearly clean" would be badly wrong: the real distance is unmeasured, and the rewrite has to supply the declarations before the interesting rules can even run.
+  - [ ] **53.5.b** Jetpack clean-rewrite (R1 recovery slice, matching Phase 51's `src/protocol/Jetpack/`).
+  - [ ] **53.5.c** Translate + verus + freeze golden.
 - [ ] **53.6** Rewrite playbook + TLC strong-fidelity script (clean-vs-original per case, per Q3/D2 bespoke comparator).
 
 ### Files

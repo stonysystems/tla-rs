@@ -88,6 +88,7 @@ pub enum TlaTokenKind {
     Forall, // \A
     Exists, // \E
     Choose, // CHOOSE
+    Lambda, // LAMBDA
 
     // Set Operators
     SetIn,        // \in (set membership)
@@ -224,6 +225,7 @@ impl fmt::Display for TlaTokenKind {
             TlaTokenKind::Forall => write!(f, "\\A"),
             TlaTokenKind::Exists => write!(f, "\\E"),
             TlaTokenKind::Choose => write!(f, "CHOOSE"),
+            TlaTokenKind::Lambda => write!(f, "LAMBDA"),
             TlaTokenKind::SetIn => write!(f, "\\in"),
             TlaTokenKind::NotIn => write!(f, "\\notin"),
             TlaTokenKind::Subseteq => write!(f, "\\subseteq"),
@@ -1000,6 +1002,7 @@ impl<'a> TlaTokenizer<'a> {
             "SUBSET" => TlaTokenKind::Subset,
             "UNION" => TlaTokenKind::Union,
             "CHOOSE" => TlaTokenKind::Choose,
+            "LAMBDA" => TlaTokenKind::Lambda,
             "TRUE" => TlaTokenKind::True,
             "FALSE" => TlaTokenKind::False,
             _ => {

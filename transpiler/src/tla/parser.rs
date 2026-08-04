@@ -945,6 +945,7 @@ impl TlaParser {
             Some(TlaTokenKind::Forall) => self.parse_forall(),
             Some(TlaTokenKind::Exists) => self.parse_exists(),
             Some(TlaTokenKind::Choose) => self.parse_choose(),
+            Some(TlaTokenKind::Lambda) => self.parse_lambda(),
             // UNCHANGED
             Some(TlaTokenKind::Unchanged) => self.parse_unchanged(),
             // ENABLED
@@ -1014,6 +1015,34 @@ impl TlaParser {
         if self.check(TlaTokenKind::Colon) {
             self.advance();
             let second = self.parse_expr()?;
+            // `{ e : x \in S, y \in T }` binds more than one variable. Only the
+            // map form does; a filter's extra commas would be part of its
+            // predicate.
+            let mut bindings = Vec::new();
+            while self.check(TlaTokenKind::Comma) {
+                self.advance();
+                let TlaExpr::BinOp {
+                    op: TlaBinOp::In,
+                    left,
+                    right,
+                } = self.parse_expr()?
+                else {
+                    return Err(TlaParseError::new(
+                        "expected a `x \\in S` binding after `,` in a set comprehension",
+                        self.current_span(),
+                    ));
+                };
+                let TlaExpr::Ident(var) = *left else {
+                    return Err(TlaParseError::new(
+                        "a set comprehension binds a name",
+                        self.current_span(),
+                    ));
+                };
+                bindings.push(TlaQuantBound {
+                    var,
+                    set: Some(*right),
+                });
+            }
             self.expect(TlaTokenKind::RBrace)?;
 
             // Determine if this is filter or map based on structure:
@@ -1044,10 +1073,21 @@ impl TlaParser {
             {
                 // Map form: {f(x) : x \in S}
                 if let TlaExpr::Ident(var) = left.as_ref() {
-                    return Ok(TlaExpr::SetMap {
-                        expr: Box::new(first),
+                    if bindings.is_empty() {
+                        return Ok(TlaExpr::SetMap {
+                            expr: Box::new(first),
+                            var: var.clone(),
+                            set: right.clone(),
+                        });
+                    }
+                    let mut all = vec![TlaQuantBound {
                         var: var.clone(),
-                        set: right.clone(),
+                        set: Some((**right).clone()),
+                    }];
+                    all.extend(bindings);
+                    return Ok(TlaExpr::SetMapMulti {
+                        expr: Box::new(first),
+                        bindings: all,
                     });
                 }
             }
@@ -1390,6 +1430,22 @@ impl TlaParser {
 
         Ok(TlaExpr::Exists {
             vars,
+            body: Box::new(body),
+        })
+    }
+
+    /// Parse `LAMBDA x, y : e`.
+    fn parse_lambda(&mut self) -> ParseResult<TlaExpr> {
+        self.expect(TlaTokenKind::Lambda)?;
+        let mut params = vec![self.expect_ident()?];
+        while self.check(TlaTokenKind::Comma) {
+            self.advance();
+            params.push(self.expect_ident()?);
+        }
+        self.expect(TlaTokenKind::Colon)?;
+        let body = self.parse_expr()?;
+        Ok(TlaExpr::Lambda {
+            params,
             body: Box::new(body),
         })
     }

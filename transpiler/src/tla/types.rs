@@ -656,6 +656,26 @@ impl ConstraintCollector {
                 set_type
             }
 
+            // A lambda is an operator value; the projection is what gives it a
+            // type, from the operator it is passed to.
+            TlaExpr::Lambda { .. } => TlaType::Unknown,
+
+            // Set map over several binders: each one is typed from its own set.
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                for binding in bindings {
+                    let Some(set) = &binding.set else { continue };
+                    if let TlaType::Set(elem_type) = &self.collect_from_expr(set) {
+                        let elem = (**elem_type).clone();
+                        self.name_types.insert(binding.var.clone(), elem.clone());
+                        self.add(TypeConstraint::HasType {
+                            name: binding.var.clone(),
+                            ty: elem,
+                        });
+                    }
+                }
+                TlaType::set(self.collect_from_expr(expr))
+            }
+
             // Set map: {f(x) : x \in S}
             TlaExpr::SetMap { expr, var, set } => {
                 let set_type = self.collect_from_expr(set);

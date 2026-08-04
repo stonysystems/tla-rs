@@ -300,6 +300,32 @@ impl TlaPrinter {
                 format!("{}{{{}:{} \\in {}}}", indent, expr_str, var, set_str)
             }
 
+            TlaExpr::Lambda { params, body } => format!(
+                "{}LAMBDA {} : {}",
+                indent,
+                params.join(", "),
+                self.print_expr_no_indent(body)
+            ),
+
+            TlaExpr::SetMapMulti { expr, bindings } => {
+                let bound = bindings
+                    .iter()
+                    .map(|b| match &b.set {
+                        Some(set) => {
+                            format!("{} \\in {}", b.var, self.print_expr_no_indent(set))
+                        }
+                        None => b.var.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "{}{{{} : {}}}",
+                    indent,
+                    self.print_expr_no_indent(expr),
+                    bound
+                )
+            }
+
             TlaExpr::FnConstruct { var, domain, body } => {
                 let domain_str = self.print_expr_no_indent(domain);
                 let body_str = self.print_expr_no_indent(body);
