@@ -16054,6 +16054,54 @@ Plan: `docs/clean_tla_to_verus_translator_plan.md`. Extends `transpiler/src/tla/
 
 ---
 
+### Follow-up from the origin/main merge: soundness holes in our linter
+
+Found by adversarially reviewing our linter against the parallel Phase 52.M0
+implementation (`b6245c76`) during the merge. **Two were fixed in the merge; the
+rest are open and are recorded here rather than left implicit.** All are cases
+where our linter stamps something clean that is not projectable — the direction
+that matters, because a false "clean" ships a wrong spec while a false finding
+merely annoys.
+
+- [x] **C2 was silently disabled on any spec with a grouped `Next`.**
+  `node_parameterized_operators` seeded from the *raw* `Next` body rather than
+  `expand_action_groups`, so `Next == \/ CommandLeaderAction \/ ReplicaAction`
+  produced an empty operator map and C2 iterated over nothing. `check_c5` had
+  been taught to expand during the EPaxos work; this had not, and nothing caught
+  it because every `clean.tla` in the corpus quantifies directly in `Next`.
+  Proved with a two-line probe: the same spec with a blatant
+  `state' = [state EXCEPT ![self] = state[peer]]` reports **clean** when grouped
+  and C2 when inlined. **EPaxos's pinned clean-distance was 3 — C1 running
+  alone — and is now 4, the extra finding being a real cross-node read of
+  `crtInst[cleader]`.** Only that one case was affected.
+- [x] **A C4 diagnostic asserted a mechanism it never checked.** The near-miss
+  branch fired on any variable with a conventional network *name* and stated
+  "it is only ever updated with EXCEPT, so it is a per-connection structure (a
+  queue array)" — false on a spec whose only update is `msgs' = {}` (zero
+  EXCEPTs) and on Jetpack's `messages`, which the module never assigns at all.
+  It now reports what it observed, including "this module never assigns it".
+- [ ] **Whole-array reads and writes are not checked.** `Cardinality(state)` in
+  an action observes every node at once, and `x' = [i \in Node |-> ..]` in an
+  action rewrites every node's state. Both are accepted today. The *contract*
+  now states both rules (harvested into `docs/clean_tla_subset.md` from the
+  parallel implementation) — the linter has not caught up.
+- [ ] **Messages with no `src`/`dst` are accepted**, though the framework cannot
+  route them. Also now in the contract, not in the linter.
+- [ ] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally**, with
+  no inspection of its body. This is what blesses `t0_01_simple`'s
+  `Terminating`, whose guard `\A i \in Proc : pc[i] = "Done"` reads every
+  node's `pc` — and whose own golden header already documents it as *"one node
+  cannot observe that, so the guard is not projectable"*. That is exactly the
+  unchecked prose a linter exists to replace. Fixing it will newly reject
+  `t0_01_simple/clean.tla`, and the right response is to fix the spec, not relax
+  the rule.
+- [ ] **`clean_distance` degrades to silence.** C1/C2/C3 all return early when
+  the node set is unknown, so a spec the linter understands *less* scores
+  *lower*. Jetpack's 2 and ReadersWriters' 1 are both this. The manifest should
+  record which rules actually executed, not only which fired — the playbook
+  already warns a reader to check `node_set` first, but the number itself is
+  still the misleading part.
+
 ## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — **COMPLETE 2026-08-04**
 
 > **Ten cases across four tiers**, eight of them translation cases with a full

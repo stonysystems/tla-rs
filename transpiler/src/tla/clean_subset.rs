@@ -581,16 +581,47 @@ impl<'a> LintContext<'a> {
         for var in &self.module.variables {
             if CONVENTIONAL_NETWORK_NAMES.contains(&var.as_str()) {
                 report.network_near_miss = Some(var.clone());
+                // Say what was actually observed. This message used to assert
+                // "it is only ever updated with EXCEPT, so it is a
+                // per-connection structure (a queue array)" on the sole
+                // evidence that the variable had a conventional *name* -- and
+                // that was false on three specs, including a spec whose only
+                // update is `msgs' = {}` (zero EXCEPTs) and Jetpack's
+                // `messages`, which the module never assigns at all. A
+                // diagnostic that invents a mechanism is worse than one that
+                // admits it does not know.
+                let mut updates = Vec::new();
+                for op in &self.module.operators {
+                    self.collect_updates_of(&op.body, var, &mut updates);
+                }
+                let observed = if updates.is_empty() {
+                    "this module never assigns it, so its shape cannot be read here".to_string()
+                } else if updates
+                    .iter()
+                    .all(|rhs| matches!(rhs, TlaExpr::FnExcept { .. }))
+                {
+                    "it is only ever updated with EXCEPT, so it is a per-connection \
+                     structure (a queue array) rather than one set"
+                        .to_string()
+                } else {
+                    format!(
+                        "its updates are not the send/receive/discard shapes ({})",
+                        updates
+                            .iter()
+                            .map(|rhs| self.show(rhs))
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    )
+                };
                 report.findings.push(self.finding(
                     CleanRule::C4,
                     None,
                     format!(
-                        "`{var}` carries the messages but is not a message set: it is only \
-                         ever updated with EXCEPT, so it is a per-connection structure \
-                         (a queue array) rather than one set. Flatten it into a single set \
-                         of messages tagged with sender and recipient. Note that doing so \
-                         drops any per-connection ordering the original relied on -- that \
-                         is a real semantic change and belongs in the rewrite notes."
+                        "`{var}` carries the messages but is not a message set: {observed}. \
+                         Flatten it into a single set of messages tagged with sender and \
+                         recipient. If it was a per-connection structure, note that doing so \
+                         drops any ordering the original relied on -- that is a real semantic \
+                         change and belongs in the rewrite notes."
                     ),
                 ));
                 return;
@@ -884,9 +915,21 @@ impl<'a> LintContext<'a> {
             return found;
         };
 
-        // Seed from `\E self \in Node : ... Action(self) ...`.
+        // Seed from `\E self \in Node : ... Action(self) ...`, over the
+        // **expanded** `Next`.
+        //
+        // A spec that groups its disjuncts behind 0-ary names -- `Next ==
+        // \/ CommandLeaderAction \/ ReplicaAction`, which is how EPaxos is
+        // written -- puts the quantifier one level down. Seeding from the raw
+        // body finds no `Exists`, returns an empty map, and **C2 then iterates
+        // over nothing**: the rule the whole subset exists for is silently
+        // disabled on exactly the specs most likely to need it. `check_c5`
+        // was taught to expand; this was not, and nothing caught the
+        // difference because the corpus's `clean.tla` rewrites all quantify
+        // directly in `Next`.
+        let expanded = self.expand_action_groups(&next.body);
         let mut seeds = Vec::new();
-        for disjunct in flatten_disjunction(&next.body) {
+        for disjunct in flatten_disjunction(&expanded) {
             if let TlaExpr::Exists { vars, body } = disjunct {
                 for bound in vars {
                     seeds.push((bound.var.clone(), body));
