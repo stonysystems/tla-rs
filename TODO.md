@@ -19,7 +19,7 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 | Rust | ✅ 1.97.1 via rustup | Installed 2026-08-04. The system `cargo` 1.75 **cannot** build the transpiler (`clap_lex` needs `edition2024`); always `export PATH="$HOME/.cargo/bin:$PATH"`. |
 | transpiler | ✅ `cargo check --all-targets` clean | ~80 s cold. |
 | TLC | ✅ `tla2tools.jar` 2.19, Java 17 | Kept out of the repo; fetch from `tlaplus/tlaplus` releases. |
-| Verus | ⚠️ built from source | The **prebuilt** 0.2026.08.02 release links glibc 2.39; this box has **2.35**, so it cannot run. Built from source at commit `b677dd5` under `~/verus-src` with **z3 4.14.1** (the newest z3 with a glibc-2.35 build; Verus pins 4.16.0, bypassed with `vargo --no-solver-version-check build --release`). Solver-version skew can change proof stability — treat proof-level results from this box as advisory and re-check on a glibc-2.39 machine or in CI. |
+| Verus | ⚠️ built from source | The **prebuilt** 0.2026.08.02 release links glibc 2.39; this box has **2.35**, so it cannot run. Built from source at commit `b677dd5` under `~/verus-src` with **z3 4.14.1** (the newest z3 with a glibc-2.35 build; Verus pins 4.16.0). Building z3 4.16.0 from source also fails here — it needs C++20 `<format>`, which libstdc++ only ships from GCC 13 and this box has GCC 12. So the version check must be bypassed at **both** layers: `vargo --no-solver-version-check build --release` when building, and `-V no-solver-version-check` on every `verus` invocation. Solver-version skew can change proof stability — treat proof-level results from this box as advisory and re-check on a glibc-2.39 machine or in CI. |
 | .NET | ❌ absent | No `dotnet` — C# runtime, cluster runs, and throughput benches cannot be reproduced here. |
 
 ## Current Status (last updated 2026-05-28)
@@ -15846,7 +15846,9 @@ epoch; our fixed-membership slice must keep it or cross-recovery agreement break
 - [ ] **51.10** Complete `LNext` to include the entry actions.
 - [ ] **51.11** Safety invariant: agreement (no two recoveries choose conflicting values); prove it inductive.
 - [ ] **51.12** `finite` invariant for `prep_rcvd`/`accept_rcvd` (required by `.len()`-based quorum).
-- [ ] **51.13** Mount module (uncomment `pub mod Jetpack;` in `protocol/mod.rs`) + `verus` verify (needs a machine with verus).
+- [x] **51.13** Mount module + `verus` check (2026-08-04). `pub mod Jetpack;` is uncommented in `src/protocol/mod.rs`; the module type-checks under Verus 0.2026.08.02.b677dd5:
+  `verus --crate-type=lib src/lib.rs --verify-module protocol::Jetpack::jetpack --verify-module protocol::Jetpack::types` → `0 verified, 0 errors`.
+  **Read that result correctly**: the module is spec-only (`pub open spec fn`), so there are no proof obligations and "0 verified" is expected — what the run establishes is that the whole crate, Jetpack included, passes Verus's frontend type-check. Confirmed **non-vacuous** by injecting a deliberate type error (`s.jepoch == Set::<int>::empty()`), which produced `error[E0277] ... SpecEq<Set<int>> is not satisfied`, then reverting. Safety/`finite` invariants (51.11/51.12) are still absent, so this is type-correctness, not correctness.
 - [ ] **51.14** Implementation layer (exec) + refinement proof (code-level, the RSL-scale part).
 - [ ] **51.15** Later slices: multi-value (single→multi like Paxos→RSL), then reconfiguration (view/epoch).
 
