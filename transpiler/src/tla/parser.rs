@@ -247,6 +247,15 @@ impl TlaParser {
     /// Parse ASSUME declaration
     fn parse_assume(&mut self) -> ParseResult<TlaExpr> {
         self.expect(TlaTokenKind::Assume)?;
+        // A named assumption -- `ASSUME NAssump == N \in Nat` -- binds a name to
+        // the assumed formula so proofs can cite it. The name carries no
+        // semantic content for us, so it is consumed and the formula returned.
+        if matches!(self.peek_kind(), Some(TlaTokenKind::Ident(_)))
+            && matches!(self.peek_ahead_kind(1), Some(TlaTokenKind::DefEq))
+        {
+            self.advance();
+            self.advance();
+        }
         self.parse_expr()
     }
 
@@ -310,6 +319,24 @@ impl TlaParser {
     fn parse_operator_def(&mut self) -> ParseResult<TlaOperator> {
         let start_span = self.current_span();
         let name = self.expect_ident()?;
+
+        // Infix operator definition: `a \prec b == body`. The name parsed above
+        // is the left operand, not the operator. Bakery defines `\prec` this
+        // way for lexicographic ticket comparison.
+        if let Some(TlaTokenKind::InfixOp(op)) = self.peek_kind() {
+            self.advance();
+            let rhs = self.expect_ident()?;
+            self.expect(TlaTokenKind::DefEq)?;
+            let body = self.parse_expr()?;
+            return Ok(TlaOperator {
+                name: format!("\\{}", op),
+                params: vec![TlaParam::new(name), TlaParam::new(rhs)],
+                body,
+                is_recursive: false,
+                is_local: false,
+                span: start_span,
+            });
+        }
 
         // Parse optional parameters
         let params = if self.check(TlaTokenKind::LParen) {
@@ -487,6 +514,20 @@ impl TlaParser {
         let mut left = self.parse_set_expr()?;
 
         loop {
+            // Application of an infix operator with no dedicated token kind
+            // (`a \prec b`, `s \o t`). It becomes an ordinary operator
+            // application named `\prec` / `\o`, which is how the definition
+            // side records it too.
+            if let Some(TlaTokenKind::InfixOp(op)) = self.peek_kind() {
+                self.advance();
+                let right = self.parse_set_expr()?;
+                left = TlaExpr::OpApply {
+                    op: Box::new(TlaExpr::Ident(format!("\\{}", op))),
+                    args: vec![left, right],
+                };
+                continue;
+            }
+
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Eq) => TlaBinOp::Eq,
                 Some(TlaTokenKind::Neq) => TlaBinOp::Neq,
@@ -698,6 +739,15 @@ impl TlaParser {
                 self.expect(TlaTokenKind::RParen)?;
                 Ok(expr)
             }
+            // `@` inside an EXCEPT update: the value the updated component had
+            // before the update, as in `[f EXCEPT ![i] = @ + 1]`. It is only
+            // meaningful inside `EXCEPT`, which the parser does not track, so it
+            // is carried as the reserved identifier `@` and interpreted by
+            // whoever walks the FnExcept node.
+            Some(TlaTokenKind::At) => {
+                self.advance();
+                Ok(TlaExpr::ident("@"))
+            }
             // Set enumeration or comprehension
             Some(TlaTokenKind::LBrace) => self.parse_set_expr_inner(),
             // Tuple/sequence
@@ -852,7 +902,25 @@ impl TlaParser {
         }
 
         self.expect(TlaTokenKind::RAngle)?;
-        Ok(TlaExpr::Tuple(elements))
+        let tuple = TlaExpr::Tuple(elements);
+
+        // Angle-bracket action subscript: `<<A>>_vars` is `A /\ ~UNCHANGED vars`
+        // (the dual of `[A]_vars`), used to state that a step is not stuttering.
+        if self.check(TlaTokenKind::Underscore) {
+            self.advance();
+            let subscript = self.parse_subscript_vars()?;
+            let action = match tuple {
+                TlaExpr::Tuple(mut elements) if elements.len() == 1 => elements.remove(0),
+                other => other,
+            };
+            return Ok(TlaExpr::binop(
+                TlaBinOp::And,
+                action,
+                TlaExpr::unary(TlaUnaryOp::Not, TlaExpr::Unchanged(subscript)),
+            ));
+        }
+
+        Ok(tuple)
     }
 
     /// Parse bracket expression (function, record, EXCEPT, or function set type)
@@ -957,7 +1025,33 @@ impl TlaParser {
         }
 
         self.expect(TlaTokenKind::RBracket)?;
+
+        // Action subscript: `[A]_vars` is by definition `A \/ UNCHANGED vars`.
+        // Desugaring here keeps the AST free of a construct that means exactly
+        // a disjunction, and makes `Spec == Init /\ [][Next]_vars` parse.
+        if self.check(TlaTokenKind::Underscore) {
+            self.advance();
+            let subscript = self.parse_subscript_vars()?;
+            return Ok(TlaExpr::binop(
+                TlaBinOp::Or,
+                expr,
+                TlaExpr::Unchanged(subscript),
+            ));
+        }
+
         Ok(expr)
+    }
+
+    /// Parse the variable list of an action subscript (`_vars` or `_<<x, y>>`).
+    fn parse_subscript_vars(&mut self) -> ParseResult<Vec<TlaExpr>> {
+        if self.check(TlaTokenKind::LAngle) {
+            match self.parse_tuple()? {
+                TlaExpr::Tuple(elements) => Ok(elements),
+                other => Ok(vec![other]),
+            }
+        } else {
+            Ok(vec![self.parse_primary_expr()?])
+        }
     }
 
     /// Parse EXCEPT updates
@@ -1894,5 +1988,224 @@ mod tests {
             }
             other => panic!("Expected Record, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_parse_named_assume() {
+        // TLAPS-style named assumption: the name is bound for proof citation
+        // and carries no semantic content for us.
+        let source = r#"
+            ---- MODULE Test ----
+            CONSTANT N
+            ASSUME NAssump == (N \in Nat) /\ (N > 0)
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.assumptions.len(), 1);
+        match &module.assumptions[0] {
+            TlaExpr::BinOp {
+                op: TlaBinOp::And, ..
+            } => {}
+            other => panic!("Expected the assumed conjunction, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_infix_operator_definition_and_application() {
+        // Bakery defines \prec as lexicographic less-than on pairs.
+        let source = r#"
+            ---- MODULE Test ----
+            a \prec b == \/ a[1] < b[1]
+                         \/ /\ a[1] = b[1]
+                            /\ a[2] < b[2]
+            Cmp == <<1, 2>> \prec <<1, 3>>
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        let def = module
+            .operators
+            .iter()
+            .find(|o| o.name == "\\prec")
+            .expect("infix definition should be recorded under its operator name");
+        assert_eq!(
+            def.params.len(),
+            2,
+            "infix def takes both operands as params"
+        );
+        assert_eq!(def.params[0].name, "a");
+        assert_eq!(def.params[1].name, "b");
+
+        let cmp = module.operators.iter().find(|o| o.name == "Cmp").unwrap();
+        match &cmp.body {
+            TlaExpr::OpApply { op, args } => {
+                assert_eq!(**op, TlaExpr::Ident("\\prec".to_string()));
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("Expected an infix application, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_union_and_intersect_aliases() {
+        // \union / \intersect are the ASCII long names for \cup / \cap.
+        let source = r#"
+            ---- MODULE Test ----
+            A == S \union {x}
+            B == S \intersect T
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        match &module.operators[0].body {
+            TlaExpr::BinOp { op, .. } => assert_eq!(*op, TlaBinOp::Cup),
+            other => panic!("Expected Cup, got {:?}", other),
+        }
+        match &module.operators[1].body {
+            TlaExpr::BinOp { op, .. } => assert_eq!(*op, TlaBinOp::Cap),
+            other => panic!("Expected Cap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_backslash_o_is_concat_not_octal_without_digits() {
+        // `\o` introduces an octal literal only when a digit follows it;
+        // otherwise it is sequence concatenation.
+        let source = r#"
+            ---- MODULE Test ----
+            Cat == s \o t
+            Oct == \o777
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        match &module.operators[0].body {
+            TlaExpr::OpApply { op, args } => {
+                assert_eq!(**op, TlaExpr::Ident("\\o".to_string()));
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("Expected concat application, got {:?}", other),
+        }
+        match &module.operators[1].body {
+            TlaExpr::Number(_) => {}
+            other => panic!("Expected an octal literal, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_except_with_at() {
+        // `@` is the pre-update value of the component being updated.
+        let source = r#"
+            ---- MODULE Test ----
+            Bump == [clock EXCEPT ![p] = @ + 1]
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        match &module.operators[0].body {
+            TlaExpr::FnExcept { updates, .. } => {
+                assert_eq!(updates.len(), 1);
+                match &updates[0].value {
+                    TlaExpr::BinOp { op, left, .. } => {
+                        assert_eq!(*op, TlaBinOp::Plus);
+                        assert_eq!(**left, TlaExpr::Ident("@".to_string()));
+                    }
+                    other => panic!("Expected `@ + 1`, got {:?}", other),
+                }
+            }
+            other => panic!("Expected FnExcept, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_except_multi_index_path() {
+        // Pairwise-FIFO networks index twice: `![q][p]`.
+        let source = r#"
+            ---- MODULE Test ----
+            Recv == [network EXCEPT ![q][p] = Tail(@), ![p][q] = Append(@, m)]
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        match &module.operators[0].body {
+            TlaExpr::FnExcept { updates, .. } => {
+                assert_eq!(updates.len(), 2, "both EXCEPT updates are kept");
+                assert_eq!(updates[0].path.len(), 2, "![q][p] is a two-step path");
+            }
+            other => panic!("Expected FnExcept, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_action_subscript_desugars_to_its_meaning() {
+        // `[A]_vars` IS `A \/ UNCHANGED vars` in TLA+, so the parser stores that
+        // rather than inventing a node for it.
+        let source = r#"
+            ---- MODULE Test ----
+            Spec == Init /\ [][Next]_vars
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        let body = &module.operators[0].body;
+        let TlaExpr::BinOp { op, right, .. } = body else {
+            panic!("Expected a conjunction, got {:?}", body)
+        };
+        assert_eq!(*op, TlaBinOp::And);
+        let TlaExpr::Always(inner) = &**right else {
+            panic!(
+                "Expected [] applied to the subscripted action, got {:?}",
+                right
+            )
+        };
+        match &**inner {
+            TlaExpr::BinOp { op, left, right } => {
+                assert_eq!(*op, TlaBinOp::Or);
+                assert_eq!(**left, TlaExpr::Ident("Next".to_string()));
+                assert!(matches!(**right, TlaExpr::Unchanged(_)));
+            }
+            other => panic!("Expected `Next \\/ UNCHANGED vars`, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_angle_action_subscript() {
+        // `<<A>>_vars` is the non-stuttering dual: `A /\ ~UNCHANGED vars`.
+        let source = r#"
+            ---- MODULE Test ----
+            Live == WF_vars(Next) /\ <<Next>>_vars
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::BinOp { right, .. } = &module.operators[0].body else {
+            panic!("Expected a conjunction")
+        };
+        match &**right {
+            TlaExpr::BinOp { op, left, right } => {
+                assert_eq!(*op, TlaBinOp::And);
+                assert_eq!(**left, TlaExpr::Ident("Next".to_string()));
+                assert!(matches!(
+                    &**right,
+                    TlaExpr::UnaryOp {
+                        op: TlaUnaryOp::Not,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("Expected `Next /\\ ~UNCHANGED vars`, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_underscore_is_not_an_identifier_prefix() {
+        // `_vars` in `[Next]_vars` is `_` + `vars`, not one identifier. Getting
+        // this wrong silently truncates the enclosing definition.
+        let source = r#"
+            ---- MODULE Test ----
+            Spec == [][Next]_vars
+            After == 1
+            ====
+        "#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(
+            module.operators.len(),
+            2,
+            "the definition after a subscripted action must still be seen"
+        );
+        assert_eq!(module.operators[1].name, "After");
     }
 }

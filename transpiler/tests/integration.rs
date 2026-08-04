@@ -4670,11 +4670,13 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
 
 /// Phase 16.8.5: D1 on LLM-authored TLA+ specs
 /// Tests parser robustness against TLA+ written by an LLM without knowledge of parser limitations.
-/// 3/16 pass (simple flat-variable specs), remaining failures are currently
-/// dominated by temporal-subscript and unsupported-syntax parser gaps.
-/// Full specs: Raft, Paxos, PBFT, EPaxos, BullyElection, ChainRep, PrimaryBackup,
-/// TwoPhaseCommit, VerticalPaxos — all fail on parser gaps (range, EXCEPT, CHOOSE, \o)
-/// Simple* pass: SimpleConsensus, SimpleLeader, SimplePrimary (flat variables only)
+///
+/// History: this started at 3/16 and asserted that the temporal-subscript gap
+/// still existed. Phase 52.M0.0.b closed that gap -- `[A]_vars` and
+/// `<<A>>_vars` now desugar to the disjunction/conjunction they denote -- and
+/// 52.M0.0.a made unknown `\name` operators tokenize instead of erroring, which
+/// took the suite to 12/16. The assertions below lock in that improvement
+/// rather than continuing to assert the defect.
 #[test]
 fn test_d1_on_llm_tla_specs() {
     use verus_transpiler::tla::{parse_module, translator::ModuleTranslator};
@@ -4740,16 +4742,16 @@ fn test_d1_on_llm_tla_specs() {
         "Should process at least 16 .tla files (7 simple + 9 full), got {total}"
     );
     assert!(
-        passed >= 3,
-        "At least 3 simple specs should pass, got {passed}"
+        passed >= 12,
+        "Phase 52.M0.0 took this corpus to 12/16; got {passed} -- a drop is a parser regression"
+    );
+    assert_eq!(
+        temporal_fails, 0,
+        "the temporal-subscript gap was closed in 52.M0.0.b; {temporal_fails} spec(s) hit it again"
     );
     assert!(
         range_fails >= 1,
         "Expected at least one range-related parser limitation, got {range_fails}"
-    );
-    assert!(
-        temporal_fails >= 1,
-        "Expected at least one temporal-subscript parser limitation, got {temporal_fails}"
     );
     if !other_fails.is_empty() {
         eprintln!("Unexpected failures:\n{}", other_fails.join("\n"));
