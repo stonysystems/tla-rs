@@ -4671,12 +4671,12 @@ fn test_d2_spec_to_exec_on_generated_workspace() {
 /// Phase 16.8.5: D1 on LLM-authored TLA+ specs
 /// Tests parser robustness against TLA+ written by an LLM without knowledge of parser limitations.
 ///
-/// History: this started at 3/16 and asserted that the temporal-subscript gap
-/// still existed. Phase 52.M0.0.b closed that gap -- `[A]_vars` and
-/// `<<A>>_vars` now desugar to the disjunction/conjunction they denote -- and
-/// 52.M0.0.a made unknown `\name` operators tokenize instead of erroring, which
-/// took the suite to 12/16. The assertions below lock in that improvement
-/// rather than continuing to assert the defect.
+/// History: this started at 3/16 and asserted that the parser gaps it hit
+/// (temporal subscripts, range syntax) still existed. Phase 52.M0.0 closed
+/// them -- `\name` operators tokenize instead of erroring (a), `[A]_vars`
+/// desugars to the disjunction it denotes (b), junction lists are scoped by
+/// their bullet column (c) -- taking the suite to 16/16. The assertion below
+/// locks in that result rather than continuing to assert the defects.
 #[test]
 fn test_d1_on_llm_tla_specs() {
     use verus_transpiler::tla::{parse_module, translator::ModuleTranslator};
@@ -4741,17 +4741,12 @@ fn test_d1_on_llm_tla_specs() {
         total >= 16,
         "Should process at least 16 .tla files (7 simple + 9 full), got {total}"
     );
-    assert!(
-        passed >= 12,
-        "Phase 52.M0.0 took this corpus to 12/16; got {passed} -- a drop is a parser regression"
-    );
     assert_eq!(
-        temporal_fails, 0,
-        "the temporal-subscript gap was closed in 52.M0.0.b; {temporal_fails} spec(s) hit it again"
-    );
-    assert!(
-        range_fails >= 1,
-        "Expected at least one range-related parser limitation, got {range_fails}"
+        passed, total,
+        "Phase 52.M0.0 took this corpus to {total}/{total}; got {passed} -- any \
+         drop is a parser regression. Range fails: {range_fails}, temporal \
+         fails: {temporal_fails}, other: {:?}",
+        other_fails
     );
     if !other_fails.is_empty() {
         eprintln!("Unexpected failures:\n{}", other_fails.join("\n"));

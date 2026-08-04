@@ -78,6 +78,14 @@ pub type ParseResult<T> = Result<T, TlaParseError>;
 pub struct TlaParser {
     tokens: Vec<TlaToken>,
     pos: usize,
+    /// Columns of the junction lists currently being parsed, innermost last.
+    ///
+    /// TLA+ scopes a bulleted `/\` or `\/` list by the column of its bullets:
+    /// every item of the list starts at that column, and everything belonging to
+    /// an item is indented further. A token at or left of the bullet column
+    /// therefore ends the current item -- which is the only thing that tells
+    /// `IF c THEN /\ a /\ b ELSE d` where the THEN branch stops.
+    junction_columns: Vec<usize>,
 }
 
 impl TlaParser {
@@ -85,12 +93,20 @@ impl TlaParser {
     pub fn new(source: &str) -> ParseResult<Self> {
         let mut tokenizer = TlaTokenizer::new(source);
         let tokens = tokenizer.tokenize()?;
-        Ok(Self { tokens, pos: 0 })
+        Ok(Self {
+            tokens,
+            pos: 0,
+            junction_columns: Vec::new(),
+        })
     }
 
     /// Create a parser from pre-tokenized input
     pub fn from_tokens(tokens: Vec<TlaToken>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            junction_columns: Vec::new(),
+        }
     }
 
     /// Parse a complete TLA+ module
@@ -426,13 +442,14 @@ impl TlaParser {
     /// \/ expr2
     /// ```
     fn parse_or_expr(&mut self) -> ParseResult<TlaExpr> {
-        // Handle bullet-list disjunction: \/ expr1 \/ expr2 ...
+        // A leading `\/` opens a bulleted list scoped by its own column.
         if self.check(TlaTokenKind::Or) {
+            let bullet_col = self.current_column().unwrap_or(1);
             self.advance();
-            let mut left = self.parse_and_expr()?;
-            while self.check(TlaTokenKind::Or) {
+            let mut left = self.parse_junction_item(bullet_col)?;
+            while self.at_bullet(&TlaTokenKind::Or, bullet_col) {
                 self.advance();
-                let right = self.parse_and_expr()?;
+                let right = self.parse_junction_item(bullet_col)?;
                 left = TlaExpr::binop(TlaBinOp::Or, left, right);
             }
             return Ok(left);
@@ -440,7 +457,7 @@ impl TlaParser {
 
         let mut left = self.parse_and_expr()?;
 
-        while self.check(TlaTokenKind::Or) {
+        while self.check(TlaTokenKind::Or) && !self.at_junction_boundary() {
             self.advance();
             let right = self.parse_and_expr()?;
             left = TlaExpr::binop(TlaBinOp::Or, left, right);
@@ -456,13 +473,14 @@ impl TlaParser {
     /// /\ expr2
     /// ```
     fn parse_and_expr(&mut self) -> ParseResult<TlaExpr> {
-        // Handle bullet-list conjunction: /\ expr1 /\ expr2 ...
+        // A leading `/\` opens a bulleted list scoped by its own column.
         if self.check(TlaTokenKind::And) {
+            let bullet_col = self.current_column().unwrap_or(1);
             self.advance();
-            let mut left = self.parse_implies_expr()?;
-            while self.check(TlaTokenKind::And) {
+            let mut left = self.parse_junction_item(bullet_col)?;
+            while self.at_bullet(&TlaTokenKind::And, bullet_col) {
                 self.advance();
-                let right = self.parse_implies_expr()?;
+                let right = self.parse_junction_item(bullet_col)?;
                 left = TlaExpr::binop(TlaBinOp::And, left, right);
             }
             return Ok(left);
@@ -470,7 +488,7 @@ impl TlaParser {
 
         let mut left = self.parse_implies_expr()?;
 
-        while self.check(TlaTokenKind::And) {
+        while self.check(TlaTokenKind::And) && !self.at_junction_boundary() {
             self.advance();
             let right = self.parse_implies_expr()?;
             left = TlaExpr::binop(TlaBinOp::And, left, right);
@@ -483,9 +501,10 @@ impl TlaParser {
     fn parse_implies_expr(&mut self) -> ParseResult<TlaExpr> {
         let mut left = self.parse_comparison_expr()?;
 
-        while self.check(TlaTokenKind::Implies)
+        while (self.check(TlaTokenKind::Implies)
             || self.check(TlaTokenKind::Iff)
-            || self.check(TlaTokenKind::LeadsTo)
+            || self.check(TlaTokenKind::LeadsTo))
+            && !self.at_junction_boundary()
         {
             if self.check(TlaTokenKind::LeadsTo) {
                 self.advance();
@@ -514,6 +533,11 @@ impl TlaParser {
         let mut left = self.parse_set_expr()?;
 
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             // Application of an infix operator with no dedicated token kind
             // (`a \prec b`, `s \o t`). It becomes an ordinary operator
             // application named `\prec` / `\o`, which is how the definition
@@ -553,6 +577,11 @@ impl TlaParser {
         let mut left = self.parse_additive_expr()?;
 
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Cup) => TlaBinOp::Cup,
                 Some(TlaTokenKind::Cap) => TlaBinOp::Cap,
@@ -573,6 +602,11 @@ impl TlaParser {
         let mut left = self.parse_multiplicative_expr()?;
 
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Plus) => TlaBinOp::Plus,
                 Some(TlaTokenKind::Minus) => TlaBinOp::Minus,
@@ -592,6 +626,11 @@ impl TlaParser {
         let mut left = self.parse_unary_expr()?;
 
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Star) => TlaBinOp::Times,
                 Some(TlaTokenKind::Slash) => TlaBinOp::Slash,
@@ -613,7 +652,15 @@ impl TlaParser {
         match self.peek_kind() {
             Some(TlaTokenKind::Not) => {
                 self.advance();
-                let operand = self.parse_unary_expr()?;
+                // `~` normally binds tighter than `/\`, but a bulleted list
+                // written directly after it is its operand:
+                //     ~ /\ pc[i] = "cs"
+                //       /\ pc[j] = "cs"
+                let operand = if self.check(TlaTokenKind::And) || self.check(TlaTokenKind::Or) {
+                    self.parse_or_expr()?
+                } else {
+                    self.parse_unary_expr()?
+                };
                 Ok(TlaExpr::unary(TlaUnaryOp::Not, operand))
             }
             Some(TlaTokenKind::Minus) => {
@@ -650,6 +697,11 @@ impl TlaParser {
     /// Handles `.field`, `[index]`, `(args)`, and `'` (prime).
     fn parse_postfix_chain(&mut self, mut expr: TlaExpr) -> ParseResult<TlaExpr> {
         loop {
+            // A token at or left of the enclosing bullet column belongs to the
+            // junction list, not to this expression.
+            if self.at_junction_boundary() {
+                break;
+            }
             match self.peek_kind() {
                 Some(TlaTokenKind::Prime) => {
                     self.advance();
@@ -1100,9 +1152,13 @@ impl TlaParser {
         self.expect(TlaTokenKind::Then)?;
         let then_expr = self.parse_expr()?;
         self.expect(TlaTokenKind::Else)?;
-        // Parse ELSE with implication-level precedence so top-level conjunction/disjunction
-        // outside the IF expression is not absorbed into the ELSE branch.
-        let else_expr = self.parse_implies_expr()?;
+        // The ELSE branch is a full expression, including a bulleted junction
+        // list of its own (`ELSE /\ a /\ b`). It used to be parsed at
+        // implication precedence to stop it absorbing an enclosing conjunction;
+        // junction-column scoping now does that correctly, and precisely -- a
+        // bullet of the enclosing list is at or left of that list's column, so
+        // it ends the branch, while an inline `/\` on the same line does not.
+        let else_expr = self.parse_expr()?;
 
         Ok(TlaExpr::IfThenElse {
             cond: Box::new(cond),
@@ -1309,6 +1365,37 @@ impl TlaParser {
     /// Get current token kind
     fn peek_kind(&self) -> Option<TlaTokenKind> {
         self.peek().map(|t| t.kind.clone())
+    }
+
+    /// Column of the current token, 1-indexed.
+    fn current_column(&self) -> Option<usize> {
+        self.peek().map(|t| t.span.start.column)
+    }
+
+    /// Whether the current token ends the innermost junction-list item.
+    ///
+    /// A token at or left of the enclosing bullet column cannot belong to the
+    /// item being parsed: it is either the next bullet of that list or
+    /// something that closes the list entirely.
+    fn at_junction_boundary(&self) -> bool {
+        match (self.junction_columns.last(), self.current_column()) {
+            (Some(&bullet_col), Some(col)) => col <= bullet_col,
+            _ => false,
+        }
+    }
+
+    /// Parse one item of a junction list whose bullets sit at `bullet_col`.
+    fn parse_junction_item(&mut self, bullet_col: usize) -> ParseResult<TlaExpr> {
+        self.junction_columns.push(bullet_col);
+        let item = self.parse_expr();
+        self.junction_columns.pop();
+        item
+    }
+
+    /// Whether the current token is a bullet of kind `kind` at exactly `col`,
+    /// i.e. the next item of the list being parsed.
+    fn at_bullet(&self, kind: &TlaTokenKind, col: usize) -> bool {
+        self.peek_kind().as_ref() == Some(kind) && self.current_column() == Some(col)
     }
 
     /// Look ahead n tokens
@@ -2207,5 +2294,120 @@ mod tests {
             "the definition after a subscripted action must still be seen"
         );
         assert_eq!(module.operators[1].name, "After");
+    }
+
+    #[test]
+    fn test_junction_list_scoped_by_bullet_column() {
+        // The `/\ d` at the outer bullet column (8) belongs to the outer list,
+        // not to the ELSE branch whose list sits at column 19. Column is the
+        // only thing that says so.
+        let source = r#"---- MODULE Test ----
+Act == /\ a
+       /\ IF c
+             THEN /\ x
+                  /\ y
+             ELSE /\ z
+       /\ d
+===="#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::BinOp {
+            op: TlaBinOp::And,
+            left,
+            right,
+        } = &module.operators[0].body
+        else {
+            panic!("Expected a conjunction, got {:?}", module.operators[0].body)
+        };
+        assert_eq!(
+            **right,
+            TlaExpr::Ident("d".to_string()),
+            "the last outer bullet must be `d`, i.e. it was not absorbed into \
+             the ELSE branch"
+        );
+        let TlaExpr::BinOp { right: middle, .. } = &**left else {
+            panic!("Expected `a /\\ IF...`, got {:?}", left)
+        };
+        assert!(
+            matches!(**middle, TlaExpr::IfThenElse { .. }),
+            "second item should be the IF, got {:?}",
+            middle
+        );
+    }
+
+    #[test]
+    fn test_inline_junction_is_infix_not_a_new_bullet() {
+        // On one line there are no bullets to align, so `/\` is infix and ELSE
+        // still terminates the THEN branch.
+        let source = r#"---- MODULE Test ----
+Act == IF c THEN /\ x /\ y ELSE z
+===="#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::IfThenElse {
+            then_expr,
+            else_expr,
+            ..
+        } = &module.operators[0].body
+        else {
+            panic!("Expected IF-THEN-ELSE, got {:?}", module.operators[0].body)
+        };
+        assert!(matches!(
+            **then_expr,
+            TlaExpr::BinOp {
+                op: TlaBinOp::And,
+                ..
+            }
+        ));
+        assert_eq!(**else_expr, TlaExpr::Ident("z".to_string()));
+    }
+
+    #[test]
+    fn test_nested_junction_lists_alternate_kind() {
+        // A `\/` list (column 11) nested inside one item of a `/\` list
+        // (column 8), with its own `/\` sub-list at column 14.
+        let source = r#"---- MODULE Test ----
+Act == /\ p
+       /\ \/ /\ q
+             /\ r
+          \/ s
+       /\ t
+===="#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::BinOp { right, .. } = &module.operators[0].body else {
+            panic!("Expected a conjunction, got {:?}", module.operators[0].body)
+        };
+        assert_eq!(
+            **right,
+            TlaExpr::Ident("t".to_string()),
+            "the outer list must continue past the nested disjunction"
+        );
+    }
+
+    #[test]
+    fn test_negated_junction_list() {
+        // `~` takes a bulleted list as its operand when one follows directly,
+        // as in Bakery's MutualExclusion.
+        let source = r#"---- MODULE Test ----
+Mutex == ~ /\ p
+           /\ q
+===="#;
+        let module = parse_module(source).unwrap();
+        let TlaExpr::UnaryOp {
+            op: TlaUnaryOp::Not,
+            operand,
+        } = &module.operators[0].body
+        else {
+            panic!("Expected a negation, got {:?}", module.operators[0].body)
+        };
+        assert!(
+            matches!(
+                **operand,
+                TlaExpr::BinOp {
+                    op: TlaBinOp::And,
+                    ..
+                }
+            ),
+            "the negation must cover both items of the list, got {:?}",
+            operand
+        );
     }
 }
