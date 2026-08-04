@@ -109,7 +109,7 @@ notes = "Lamport 1978 distributed mutual exclusion. The CLEANEST tier-0 case and
 [[case]]
 id = "t1_01_paxos"
 tier = 1
-status = "intake"
+status = "clean"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/Paxos/Paxos.tla"
 source_commit = ""
