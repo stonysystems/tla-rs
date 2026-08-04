@@ -1,0 +1,37 @@
+# V2 strong fidelity: what `clean.tla` and `original.tla` must agree on.
+#
+# `x` and `y` are the algorithm. `PCorrect` is stated over them
+# (`(\A i : pc[i] = "Done") => (\E i : y[i] = 1)`), and the whole question the
+# rewrite had to answer — does message-ifying `x[(self-1) % N]` still let a
+# process read a 0? — is a question about which `<<x, y>>` pairs are reachable.
+#
+# `pc` does NOT compare, and the reason is the rewrite itself: the clean spec
+# adds a `"w"` state for the process waiting on its neighbour's reply, which the
+# original has no counterpart for because its read is instantaneous. Comparing
+# `pc` would report that difference as a fidelity failure when it is the
+# rewrite working as intended. `network` has no counterpart at all.
+#
+# `N = 3`, not `clean.cfg`'s 4: the comparison has to *close* to mean anything,
+# and the request/response rewrite multiplies the state space. See rewrite.md
+# for the 4-process invariant runs.
+#
+# Run: tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier0/t0_01_simple <tla2tools.jar>
+
+[clean]
+module = "SimpleClean"
+config = """
+CONSTANT N = 3
+SPECIFICATION Spec
+"""
+
+[original]
+module = "Simple"
+config = """
+CONSTANT N = 3
+SPECIFICATION Spec
+"""
+extra_modules = ["TLAPS.tla"]
+
+[observables]
+x = "x"
+y = "y"

@@ -132,10 +132,38 @@ both, plus the refutation history above: the intermediate version that dropped
 FIFO ordering *failed* this check, which is what gives the passing result its
 meaning.
 
-A stronger observable-behaviour comparison (per Q3/D2) needs the bespoke
-spec-vs-spec comparator planned in **53.6**. This case is exactly the one that
-comparator has to handle, since a naive state-count diff would call a correct
-rewrite a failure.
+### The comparator exists now, and this case is EQUAL
+
+`tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier0/t0_05_lamport_mutex`,
+at `N = 3`, `maxClock = 3`, `Nat <- 0..4`, observables `clock`, `req`, `ack`:
+
+| | clean | original |
+|---|---|---|
+| states dumped | 10,401 | 10,209 |
+| distinct `<<clock, req, ack>>` | 8,562 | 8,562 |
+| result | **EQUAL** | |
+
+Those three variables are what Lamport's algorithm *is*: `beats(p,q)` — the
+whole mutual-exclusion decision — reads only `req`, so if they agree then the
+two specs make the same decisions. `crit` is deliberately **not** compared: the
+original's is a global set of processes and the rewrite's is a per-node boolean,
+which is the C1 decision this case exists to make, and comparing them would
+report that decision as a failure.
+
+**This case was also where the comparator's own worst trap showed up.** The
+first run reported **4,214 states only in the original** — a correct rewrite
+looking like it had lost behaviour. The cause was that the clean side ran with
+`CONSTRAINT ClockConstraint /\ SeqConstraint` while the original ran with
+`ClockConstraint` alone: a state constraint applied to one side truncates that
+side. Held equal, the two specs are equal. The script now warns when the two
+sides declare different numbers of `CONSTRAINT` lines, and this case's
+`observables.toml` says why both use exactly one.
+
+So the paragraph above — "the state counts are not comparable and are not
+expected to match" — remains true of the *raw* counts (10,401 vs 10,209, and
+1,064,028 vs 724,274 at the larger model), and is now joined by a comparison
+that does hold: **projected onto what the two specs share, the state sets are
+identical.**
 
 ## Golden review (before freezing golden.rs)
 

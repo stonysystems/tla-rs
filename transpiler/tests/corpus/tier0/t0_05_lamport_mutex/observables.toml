@@ -1,0 +1,63 @@
+# V2 strong fidelity: what `clean.tla` and `original.tla` must agree on.
+#
+# `clock`, `req` and `ack` are what Lamport's algorithm *is*: the logical clock,
+# the table of requests each process has been told about, and who has
+# acknowledged. `beats(p,q)` — the whole mutual-exclusion decision — reads only
+# `req`, so if these three agree then the two specs make the same decisions.
+#
+# `crit` does NOT compare, and that is a C1 rewrite: the original's `crit` is a
+# **global set of processes**, the clean spec's is a per-node boolean. Comparing
+# them would report the rewrite's central decision as a fidelity failure.
+# `network`, `sendSeq` and `recvSeq` have no counterpart either — the first
+# changed shape (per-connection queues to one tagged set), the last two exist
+# only because of that change.
+#
+# This case is the one that most needed a real comparison. Its rewrite.md
+# records raw state counts of 1,064,028 vs 724,274 and says outright that they
+# are *not* comparable across a rewrite that changes the state's shape. This
+# file is what replaces that non-comparison with a comparison.
+#
+# Both sides go through their MC wrappers, which override `Nat` with a finite
+# range — the same override, so the models match.
+#
+# **Both sides use `CONSTRAINT ClockConstraint`, and nothing else.** The clean
+# spec also defines a `SeqConstraint` bounding its sequence numbers, and the
+# first attempt here used it — with the result that the comparison reported
+# **4,214 states only in the original**, i.e. a correct rewrite as a defect. A
+# state constraint on one side alone truncates that side. Held equal, the two
+# specs are EQUAL. This is the trap the script now warns about.
+#
+# Run: tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier0/t0_05_lamport_mutex <tla2tools.jar>
+
+[clean]
+module = "MCLamportMutexClean"
+source_as = "LamportMutexClean.tla"
+config = """
+CONSTANTS
+  N = 3
+  MaxNat = 4
+  maxClock = 3
+  Nat <- NatOverride
+SPECIFICATION Spec
+CONSTRAINT ClockConstraint
+"""
+extra_modules = ["MCLamportMutexClean.tla"]
+
+[original]
+module = "MCLamportMutex"
+source_as = "LamportMutex.tla"
+config = """
+CONSTANTS
+  N = 3
+  MaxNat = 4
+  maxClock = 3
+  Nat <- NatOverride
+SPECIFICATION Spec
+CONSTRAINT ClockConstraint
+"""
+extra_modules = ["MCLamportMutex.tla"]
+
+[observables]
+clock = "clock"
+req = "req"
+ack = "ack"

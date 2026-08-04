@@ -114,6 +114,28 @@ and TLC **refutes it on both** — the original and the rewrite agree that readi
 a 0 is a real behaviour. This is the observable-behaviour agreement the V2 check
 is supposed to establish, done by hand for one property; 53.6 generalises it.
 
+### 53.6 generalised it, and the answer is EQUAL
+
+`tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier0/t0_01_simple`, at
+`N = 3`, observables `x` and `y`:
+
+| | clean | original |
+|---|---|---|
+| states dumped | 293 | 51 |
+| distinct `<<x, y>>` | 18 | 18 |
+| result | **EQUAL** | |
+
+The hand-written one-property check above asked "does the rewrite still allow
+reading a 0?". This asks the general form of the same question — *which*
+`<<x, y>>` pairs are reachable — and the answer is: exactly the original's. The
+5.7× difference in raw state count is the three-step exchange and the network,
+and it does not touch the values.
+
+`pc` is deliberately **not** compared: the clean spec adds a `"w"` state for the
+process waiting on its neighbour's reply, which the original has no counterpart
+for precisely because its read is instantaneous. Comparing `pc` would report the
+rewrite working as intended as a fidelity failure.
+
 ## Golden review (before freezing golden.rs)
 
 Not yet done — `golden.rs` is still to be produced (53.2.d). `reference` is empty:

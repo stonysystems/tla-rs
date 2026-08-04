@@ -45,6 +45,18 @@
 # - **only in original** — the rewrite lost behaviour. Often intended (a slice,
 #   a dropped branch), but it must be *stated* in the case's rewrite.md.
 #
+# ## Both sides must run under the same model
+#
+# The comparison is only about the two *specs* if everything else is held
+# equal: the same constants, the same overrides, and above all the same state
+# constraints. A constraint on one side alone truncates that side, and the
+# result reads as "the rewrite lost behaviour" — a correct rewrite reported as
+# a defect. That is not hypothetical: a `SeqConstraint` left on LamportMutex's
+# clean side alone made 4,214 states look lost. The script warns when the two
+# sides declare different numbers of CONSTRAINT or SPECIFICATION lines, but it
+# cannot check that the constants agree, so a case's observables.toml has to
+# say why any asymmetry is there.
+#
 # ## What this does NOT catch, and it matters
 #
 # Reachable *states*, not reachable *behaviours*. Deleting an action whose
@@ -221,6 +233,29 @@ def canonical(value):
     deterministic order, and reordering by hand would risk equating values that
     differ. A spurious difference is visible; a spurious equality is not."""
     return re.sub(r"\s+", " ", value).strip()
+
+def cfg_lines(side, keyword):
+    return [
+        line.strip()
+        for line in spec[side]["config"].splitlines()
+        if line.strip().upper().startswith(keyword)
+    ]
+
+# A state constraint applied to one side and not the other silently truncates
+# that side's state space, and the difference shows up as "the rewrite lost
+# behaviour" -- a correct rewrite reported as a defect. LamportMutex is where
+# this happened: a `SeqConstraint` on the clean side alone made 4,214 states
+# look lost. The two sides must be checked under the same model.
+for keyword in ("CONSTRAINT", "SPECIFICATION"):
+    left, right = cfg_lines("clean", keyword), cfg_lines("original", keyword)
+    if len(left) != len(right):
+        print(
+            f"WARNING: the two sides declare a different number of {keyword} "
+            f"lines ({len(left)} vs {len(right)}). An unmatched state "
+            f"constraint truncates one side, and the difference will read as "
+            f"lost behaviour.",
+            file=sys.stderr,
+        )
 
 print("running TLC on both sides", file=sys.stderr)
 clean_dump, _ = dump_states("clean", "clean.tla")
