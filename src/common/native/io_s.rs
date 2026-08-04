@@ -121,7 +121,7 @@ verus! {
 
     #[verifier(external_body)]
     pub broadcast proof fn axiom_endpoint_view()
-        ensures forall |e1:EndPoint, e2:EndPoint| e1@ == e2@ ==> e1 == e2
+        ensures forall |e1:EndPoint, e2:EndPoint| #![trigger e1@, e2@] e1@ == e2@ ==> e1 == e2
     {
 
     }

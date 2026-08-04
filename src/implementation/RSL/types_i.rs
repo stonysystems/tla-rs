@@ -375,7 +375,7 @@ verus! {
     /// The only gap is Vec identity ≠ Seq identity in Verus's SMT model.
     #[verifier(external_body)]
     pub broadcast proof fn axiom_cvote_view()
-        ensures forall |v1: CVote, v2: CVote| v1@ == v2@ ==> v1 == v2
+        ensures forall |v1: CVote, v2: CVote| #![trigger v1@, v2@] v1@ == v2@ ==> v1 == v2
     {
     }
 
@@ -548,7 +548,7 @@ verus! {
     /// The only gap is HashSet/Vec identity ≠ Set/Seq identity in Verus's SMT model.
     #[verifier(external_body)]
     pub broadcast proof fn axiom_clearner_tuple_view()
-        ensures forall |t1: CLearnerTuple, t2: CLearnerTuple| t1@ == t2@ ==> t1 == t2
+        ensures forall |t1: CLearnerTuple, t2: CLearnerTuple| #![trigger t1@, t2@] t1@ == t2@ ==> t1 == t2
     {
     }
 

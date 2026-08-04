@@ -86,6 +86,20 @@ SECTIONS = OrderedDict(
     ]
 )
 
+# Noise floor for the 20% gate, chosen by measurement rather than taste.
+# Across three runs of *identical* code on this crate (127-thread parallel
+# verification), per-module spread was:
+#
+#     >= 500 ms   40 modules, max spread 22.6%  <- one module exceeds the gate
+#     >= 1000 ms  28 modules, max spread 16.8%  <- gate is noise-free
+#     >= 5000 ms  13 modules, max spread 16.8%
+#
+# So 1000 ms is the smallest floor at which a 20% threshold cannot fire on
+# noise alone, and it still covers every module where a real regression would
+# matter. Below it, report but never fail.
+DEFAULT_MIN_MS = 1000
+
+
 
 # ---------------------------------------------------------------------------
 # parse
@@ -298,7 +312,58 @@ def fmt(v):
 # ---------------------------------------------------------------------------
 
 
-def confirm_regressions(delta, confirm, max_regression_pct=20.0, min_ms=500,
+def merge_min(inventories, label=None):
+    """Element-wise minimum across runs of the same code.
+
+    A single run is not a usable baseline. Verus verifies modules in parallel,
+    so one module's wall-clock depends on what else was scheduled beside it:
+    measured here, an untouched module read 1967 ms in the original baseline
+    run but 2372-2490 ms across three later runs of that *same commit*. Taking
+    the minimum gives the least-contended estimate of each module's real cost,
+    which is the standard choice for timing benchmarks and the only one that
+    makes a 20% per-module gate meaningful.
+    """
+    if not inventories:
+        raise ValueError("no inventories to merge")
+    merged = OrderedDict()
+    for inv in inventories:
+        for name, m in inv["modules"].items():
+            cur = merged.setdefault(
+                name,
+                OrderedDict(
+                    [("module", name)] + [(f, None) for f in SECTIONS.values()]
+                ),
+            )
+            for field in list(SECTIONS.values()) + ["rlimit"]:
+                v = m.get(field)
+                if v is None:
+                    continue
+                cur[field] = v if cur.get(field) is None else min(cur[field], v)
+    ordered = OrderedDict(
+        sorted(merged.items(), key=lambda kv: (-(kv[1].get("verify_ms") or 0), kv[0]))
+    )
+    first = inventories[0]
+    return OrderedDict(
+        [
+            ("schema", SCHEMA),
+            ("label", label or first.get("label", "")),
+            ("verus_version", first.get("verus_version", "")),
+            ("source_log", "min of {} runs".format(len(inventories))),
+            ("parsed_from", first.get("parsed_from", "")),
+            ("runs_merged", len(inventories)),
+            ("module_count", len(ordered)),
+            (
+                "total_verify_ms",
+                sum((m.get("verify_ms") or 0) for m in ordered.values()),
+            ),
+            ("totals", first.get("totals", {})),
+            ("modules", ordered),
+        ]
+    )
+
+
+def confirm_regressions(delta, confirm, max_regression_pct=20.0,
+                        min_ms=DEFAULT_MIN_MS,
                         field="verify_ms"):
     """Demote regressions that a second run of the same code does not reproduce.
 
@@ -329,12 +394,13 @@ def confirm_regressions(delta, confirm, max_regression_pct=20.0, min_ms=500,
     return delta
 
 
-def diff_inventories(base, new, max_regression_pct=20.0, min_ms=500, field="verify_ms"):
+
+def diff_inventories(base, new, max_regression_pct=20.0, min_ms=DEFAULT_MIN_MS,
+                     field="verify_ms"):
     """Compare per-module times.
 
-    `min_ms` is a noise floor: a 20% swing on a 40 ms module is scheduler
-    jitter, not a proof regression, so modules below the floor in *both* runs
-    are measured and reported but never counted as regressions.
+    `min_ms` is the noise floor described above: modules smaller than it are
+    measured and reported but never counted as regressions.
     """
     base_mods = base["modules"]
     new_mods = new["modules"]
@@ -370,7 +436,15 @@ def diff_inventories(base, new, max_regression_pct=20.0, min_ms=500, field="veri
             ]
         )
         if pct > max_regression_pct:
-            if max(b_ms, n_ms) < min_ms:
+            # Floor on the BASE value, because the percentage is computed
+            # relative to it: if the baseline measurement sits in the regime
+            # where identical-code runs already vary by more than the
+            # threshold, the ratio says nothing. Measured case: a module with
+            # base 953 ms (same-code spread 953-1168) read 1213 ms after an
+            # unrelated change -- "+27%" that a third sample dissolved to +12%.
+            # A large absolute jump from a small base is not lost: it is listed
+            # under "below the noise floor", which is sorted by absolute delta.
+            if b_ms < min_ms:
                 below_floor.append(record)
             else:
                 regressions.append(record)
@@ -378,6 +452,7 @@ def diff_inventories(base, new, max_regression_pct=20.0, min_ms=500, field="veri
             improvements.append(record)
 
     regressions.sort(key=lambda r: -(r["delta_ms"]))
+    below_floor.sort(key=lambda r: -(r["delta_ms"]))
     improvements.sort(key=lambda r: r["delta_ms"])
 
     base_total = base["total_verify_ms"]
@@ -534,6 +609,13 @@ def main(argv=None):
         help="do not fail when the log has no timing breakdown",
     )
 
+    m = sub.add_parser(
+        "merge", help="combine runs of the same code by per-module minimum"
+    )
+    m.add_argument("inventories", nargs="+")
+    m.add_argument("-o", "--out")
+    m.add_argument("--label")
+
     r = sub.add_parser("report", help="JSON inventory -> Markdown")
     r.add_argument("inventory")
     r.add_argument("-o", "--out")
@@ -553,8 +635,10 @@ def main(argv=None):
     d.add_argument(
         "--min-ms",
         type=int,
-        default=500,
-        help="noise floor; modules smaller than this never count as regressions",
+        default=DEFAULT_MIN_MS,
+        help="noise floor; modules smaller than this never count as "
+        "regressions (default measured: below 1000 ms, identical-code runs "
+        "already swing more than 20%%)",
     )
     d.add_argument(
         "--confirm-with",
@@ -590,6 +674,11 @@ def main(argv=None):
                 "if the log really has no timings.\n".format(args.log)
             )
             return 1
+        return 0
+
+    if args.mode == "merge":
+        merged = merge_min([_load(p) for p in args.inventories], label=args.label)
+        _write(args.out, json.dumps(merged, indent=2))
         return 0
 
     if args.mode == "report":

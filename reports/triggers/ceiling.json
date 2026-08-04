@@ -18,6 +18,12 @@
       "max_notes": 519,
       "verus": "0.2026.08.02.b677dd5",
       "note": "54.3 pilot: common/collections + verus_extra annotated, 15 notes removed, 0 added, 0 changed"
+    },
+    {
+      "date": "2026-08-04",
+      "max_notes": 519,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.4 broadcast axioms pinned; count unchanged (these emit no note in selective mode)"
     }
   ]
 }

@@ -218,6 +218,48 @@ the verifier command line, so it now accepts
 `scons ... --verus-extra-args="--time-expanded"`. The flag changes no verifier
 behaviour, only what is printed.
 
+## 6b. Measuring timing honestly
+
+Three corrections the pilot forced, each from measurement rather than taste.
+They matter because a timing gate that fires on noise gets switched off, and
+one that never fires is decoration.
+
+**A single run is not a baseline.** Verus verifies modules in parallel (127
+threads here), so a module's wall-clock depends on what was scheduled beside
+it. `implementation::RSL::replicaimpl_no_receive_clock` recorded 1967 ms in the
+first baseline run but 2372 / 2438 / 2490 ms across three runs of *that same
+commit*. Every later comparison inherited the lucky number and reported a ~30%
+regression in code that never touched it. Use `verus_timing.py merge` to
+combine N runs by per-module minimum — the least-contended estimate — and merge
+**both** sides of a comparison the same way. Two samples are not enough: a Raft
+module read "+27%" on two and +12% on three.
+
+**The noise floor is 1000 ms, and that number is measured.** Across three
+identical-code runs:
+
+| floor | modules | max spread | exceed 20% |
+|---:|---:|---:|---:|
+| 500 ms | 40 | 22.6% | 1 |
+| 1000 ms | 28 | 16.8% | 0 |
+| 5000 ms | 13 | 16.8% | 0 |
+
+1000 ms is the smallest floor at which a 20% threshold cannot fire on noise
+alone, and it still covers every module where a real regression would matter.
+
+**The floor applies to the base value**, because the percentage is computed
+relative to it: a baseline sitting inside the noisy regime cannot support a
+ratio claim. A large absolute jump from a small base is not lost — the "below
+the noise floor" table is sorted by absolute delta so it surfaces at the top.
+
+Procedure for an annotation batch:
+
+```bash
+for i in 1 2 3; do LOG=/tmp/r$i.log scripts/verify_local.sh --time-expanded --output-json; \
+  scripts/verus_timing.py parse /tmp/r$i.log -o /tmp/t$i.json; done
+scripts/verus_timing.py merge /tmp/t1.json /tmp/t2.json /tmp/t3.json -o new.json
+scripts/verus_timing.py diff reports/triggers/timing-baseline.json new.json --fail-on-regression
+```
+
 ## 7. The guard (54.9)
 
 Progress has to be defended, or the auto-chosen triggers simply regrow. The

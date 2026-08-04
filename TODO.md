@@ -16209,10 +16209,44 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       gate that cries wolf gets ignored. `verus_timing.py diff --confirm-with <second run of
       the same code>` now demotes any regression that does not reproduce, reporting it under
       "Not reproduced by the confirmation run" rather than dropping it. With confirmation the
-      pilot gate is clean. **54.4+ must pass `--confirm-with`**; without it the 20% criterion
-      is not trustworthy at this granularity.
-- [ ] **54.4** The 5 `broadcast` functions. Small but high-leverage — these are in scope
-      crate-wide.
+      pilot gate is clean. **Superseded by 54.4.a**: `--confirm-with` handles two samples,
+      but the correct procedure is min-of-3 on both sides (see 54.4.a) — the flagged module
+      turned out to be an artifact of a single-run *baseline*, not of the new code.
+- [x] **54.4** The 5 `broadcast` functions. **DONE (2026-08-04). Gate clean.** The
+      injectivity axioms `axiom_cmessage_view`, `axiom_cpacket_view`, `axiom_cvote_view`,
+      `axiom_clearner_tuple_view` (`cmessage.rs`, `types_i.rs`) and `axiom_endpoint_view`
+      (`io_s.rs`) now pin `#![trigger x1@, x2@]` — exactly the multi-trigger Verus was
+      already choosing, confirmed with `--triggers-mode verbose`. `1044 verified, 0 errors`;
+      trigger diff vs 54.3: **0 added, 0 changed**; timing +0.6% total, 0 regressions.
+      Evidence: `reports/triggers/54.4-broadcast.{json,md}`, `54.4-trigger-diff.md`,
+      `54.4-timing-diff.md`.
+      Note the **note count does not move** (519 → 519): these five emit no note in
+      `selective` mode, so they were invisible to the 534 inventory. Their risk is different
+      and larger — a broadcast axiom is in scope for every proof in the crate, so whatever
+      trigger Verus picks silently applies everywhere and can change between releases with
+      no diagnostic at all. Finding them needs `--triggers-mode verbose` (1336 notes vs 534).
+      The other 3 broadcast axioms (`*_key_model`) already carried `#[trigger]`.
+- [x] **54.4.a** Timing methodology corrected — the 54.3 gate was measuring noise.
+      Chasing a flagged module (`implementation::RSL::replicaimpl_no_receive_clock`, +30%)
+      to its cause showed the **baseline itself was a single lucky run**: at the very commit
+      the baseline documents, that module measures 2372 / 2438 / 2490 ms across three runs,
+      while the committed baseline recorded 1967. Every later comparison inherited that
+      error. Three fixes, each measured rather than guessed:
+      (a) `verus_timing.py merge` combines N runs by per-module minimum (least-contended
+      estimate); the baseline is now **min of 3 runs** and both sides of a gate must be
+      merged the same way. Two samples are not enough — a Raft module read "+27%" on two
+      samples and +12% on three;
+      (b) the noise floor moved 500 → **1000 ms**, chosen from data: across three
+      identical-code runs, modules ≥500 ms spread up to 22.6% (one exceeds the 20% gate)
+      while modules ≥1000 ms spread at most 16.8% and none exceed it. 1000 ms is the
+      smallest floor at which the gate cannot fire on noise, and it still covers 28 modules
+      including every expensive one;
+      (c) the floor applies to the **base** value, since the percentage is relative to it —
+      a baseline inside the noisy regime cannot support a ratio claim. Large absolute jumps
+      from a small base are not lost: the "below the noise floor" table is sorted by
+      absolute delta.
+      **Procedure for 54.5+**: 3 runs of the new code, `merge`, then `diff` against the
+      merged baseline.
 - [ ] **54.5** `src/protocol/RSL/` (131). Ordered by module, each batch independently verified.
 - [ ] **54.6** `src/implementation/RSL/` (101). Note 43 are in `gen_helpers.rs`, which is a
       hand-written companion to generated code — check whether they should move to 54.7 instead.

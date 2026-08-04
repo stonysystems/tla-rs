@@ -242,6 +242,79 @@ class TestDiff(unittest.TestCase):
         self.assertEqual([r["module"] for r in d["regressions"]], ["a", "b"])
 
 
+class TestMergeMin(unittest.TestCase):
+    """A single run is not a usable baseline.
+
+    Measured: the module `implementation::RSL::replicaimpl_no_receive_clock`
+    read 1967 ms in the original single-run baseline but 2372/2438/2490 ms
+    across three runs of that *same commit*. Comparing a later run against the
+    lucky 1967 produced a 30% "regression" in code that never touched it.
+    Min-of-N on both sides is the fix.
+    """
+
+    def inv(self, modules, label="r"):
+        return vt.build_inventory(synthetic_log(modules), label=label)
+
+    def test_minimum_is_taken_per_module(self):
+        m = vt.merge_min(
+            [self.inv({"a": 2490, "b": 100}), self.inv({"a": 2372, "b": 150})]
+        )
+        self.assertEqual(m["modules"]["a"]["verify_ms"], 2372)
+        self.assertEqual(m["modules"]["b"]["verify_ms"], 100)
+
+    def test_run_count_is_recorded(self):
+        m = vt.merge_min([self.inv({"a": 10})] * 3)
+        self.assertEqual(m["runs_merged"], 3)
+        self.assertIn("min of 3 runs", m["source_log"])
+
+    def test_modules_absent_from_one_run_are_kept(self):
+        m = vt.merge_min([self.inv({"a": 10}), self.inv({"b": 20})])
+        self.assertEqual(set(m["modules"]), {"a", "b"})
+
+    def test_merged_inventory_diffs_like_any_other(self):
+        base = vt.merge_min([self.inv({"a": 2372}), self.inv({"a": 2490})])
+        new = vt.merge_min([self.inv({"a": 2400}), self.inv({"a": 2571})])
+        d = vt.diff_inventories(base, new)
+        self.assertEqual(d["regressions"], [])
+
+    def test_empty_input_is_rejected(self):
+        with self.assertRaises(ValueError):
+            vt.merge_min([])
+
+    def test_schema_is_preserved(self):
+        m = vt.merge_min([self.inv({"a": 10})])
+        self.assertEqual(m["schema"], vt.SCHEMA)
+
+
+class TestNoiseFloor(unittest.TestCase):
+    def test_default_floor_is_the_measured_one(self):
+        # Below 1000 ms, identical-code runs on this crate already swing >20%.
+        self.assertEqual(vt.DEFAULT_MIN_MS, 1000)
+
+    def test_a_small_baseline_never_fails(self):
+        # The real case: base 953 ms (same-code spread 953-1168) vs 1213 ms
+        # after an unrelated change. "+27%" that a third sample dissolved to
+        # +12%. The percentage is relative to the base, so a base inside the
+        # noisy regime cannot support the claim.
+        base = vt.build_inventory(synthetic_log({"m": 953}))
+        new = vt.build_inventory(synthetic_log({"m": 1213}))
+        d = vt.diff_inventories(base, new)
+        self.assertEqual(d["regressions"], [])
+        self.assertEqual(len(d["below_noise_floor"]), 1)
+
+    def test_a_large_baseline_still_fails(self):
+        base = vt.build_inventory(synthetic_log({"m": 10000}))
+        new = vt.build_inventory(synthetic_log({"m": 13000}))
+        self.assertEqual(len(vt.diff_inventories(base, new)["regressions"]), 1)
+
+    def test_below_floor_rows_are_sorted_by_absolute_delta(self):
+        base = vt.build_inventory(synthetic_log({"small": 100, "mid": 900}))
+        new = vt.build_inventory(synthetic_log({"small": 5000, "mid": 1200}))
+        d = vt.diff_inventories(base, new)
+        # A 100ms -> 5000ms jump must not hide behind a smaller one.
+        self.assertEqual(d["below_noise_floor"][0]["module"], "small")
+
+
 class TestConfirmation(unittest.TestCase):
     """A regression must reproduce against a second run of the same new code.
 
@@ -274,8 +347,10 @@ class TestConfirmation(unittest.TestCase):
         self.assertIsNone(d["unconfirmed_regressions"][0]["confirm_ms"])
 
     def test_confirmation_respects_the_noise_floor(self):
+        # Base is above the floor, so the diff flags it; the confirmation run
+        # lands below the floor, which cannot support the claim either.
         d = vt.diff_inventories(
-            self.inv({"m": 100}), self.inv({"m": 900}), min_ms=500
+            self.inv({"m": 600}), self.inv({"m": 2000}), min_ms=500
         )
         self.assertEqual(len(d["regressions"]), 1)
         d = vt.confirm_regressions(d, self.inv({"m": 400}, label="c"), min_ms=500)

@@ -220,7 +220,7 @@ verus! {
 
     #[verifier(external_body)]
     pub broadcast proof fn axiom_cmessage_view()
-        ensures forall |p1:CMessage, p2:CMessage| p1@ == p2@ ==> p1 == p2
+        ensures forall |p1:CMessage, p2:CMessage| #![trigger p1@, p2@] p1@ == p2@ ==> p1 == p2
     {
 
     }
@@ -292,7 +292,7 @@ verus! {
     }
 
     pub broadcast proof fn axiom_cpacket_view()
-        ensures forall |p1:CPacket, p2:CPacket| p1@ == p2@ ==> p1 == p2
+        ensures forall |p1:CPacket, p2:CPacket| #![trigger p1@, p2@] p1@ == p2@ ==> p1 == p2
     {
         broadcast use crate::common::native::io_s::axiom_endpoint_view;
         broadcast use axiom_cmessage_view;
