@@ -527,7 +527,7 @@ fn expand_enum_variants(
                 for tuple in cartesian_values(&field_domains, expansion_limit)? {
                     let named_fields = fields
                         .iter()
-                        .zip(tuple.into_iter())
+                        .zip(tuple)
                         .map(|(field, value)| (field.name.clone(), value))
                         .collect::<Vec<_>>();
                     out.push(RuntimeValue::enum_value(

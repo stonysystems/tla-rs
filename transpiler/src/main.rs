@@ -9839,9 +9839,22 @@ max = 1
         use verus_transpiler::modelcheck::config::parse_model_config_str;
         use verus_transpiler::modelcheck::value::{RuntimeCollectionBounds, RuntimeValue, SetRepr};
         use verus_transpiler::spec_analyzer::ingest_protocol_sources_with_types_and_entrypoints;
+        use verus_transpiler::tla::{parse_module, ModuleConfig, ModuleTranslator, TypeInference};
 
-        let protocol_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("DPOR_based_model_tla_rs_checker/tests/tla-rs/19_epaxos_small/Epaxos.rs");
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let tla_path = manifest_dir
+            .join("DPOR_based_model_tla_rs_checker/tests/tla/19_epaxos_small/Epaxos.tla");
+        let tla_source = std::fs::read_to_string(tla_path).unwrap();
+        let module = parse_module(&tla_source).unwrap();
+        let mut inference = TypeInference::new();
+        let inferred_types = inference.infer_types(&module);
+        let type_env = inference.resolve_with_fallback(&inferred_types);
+        let mut translator =
+            ModuleTranslator::with_config(ModuleConfig::default()).with_types(type_env);
+        let generated_verus = translator.translate(&module);
+        let generated_dir = tempfile::tempdir().unwrap();
+        let protocol_path = generated_dir.path().join("Epaxos.rs");
+        std::fs::write(&protocol_path, generated_verus).unwrap();
         let bundle = ingest_protocol_sources_with_types_and_entrypoints(
             protocol_path.as_path(),
             None,
@@ -12715,18 +12728,20 @@ verus! {
 
     #[test]
     fn test_mut_self_types_clears_arc_wrap_fields() {
-        let mut file_config = FileConfig::default();
-        file_config.mut_self_types = vec!["CProposer".to_string()];
-        file_config.arc_wrap_fields = {
-            let mut m = HashMap::new();
-            m.insert(
-                "CProposer".to_string(),
-                vec![
-                    "request_queue".to_string(),
-                    "received_1b_packets".to_string(),
-                ],
-            );
-            m
+        let file_config = FileConfig {
+            mut_self_types: vec!["CProposer".to_string()],
+            arc_wrap_fields: {
+                let mut m = HashMap::new();
+                m.insert(
+                    "CProposer".to_string(),
+                    vec![
+                        "request_queue".to_string(),
+                        "received_1b_packets".to_string(),
+                    ],
+                );
+                m
+            },
+            ..FileConfig::default()
         };
         let config = convert_file_config(file_config, Path::new(".")).unwrap();
         assert!(
@@ -12737,9 +12752,11 @@ verus! {
 
     #[test]
     fn test_mut_self_types_clears_arc_wrap_types() {
-        let mut file_config = FileConfig::default();
-        file_config.mut_self_types = vec!["CState".to_string()];
-        file_config.arc_wrap_types = vec!["CState".to_string()];
+        let file_config = FileConfig {
+            mut_self_types: vec!["CState".to_string()],
+            arc_wrap_types: vec!["CState".to_string()],
+            ..FileConfig::default()
+        };
         let config = convert_file_config(file_config, Path::new(".")).unwrap();
         assert!(
             config.arc_wrap_types.is_empty(),
@@ -12749,11 +12766,13 @@ verus! {
 
     #[test]
     fn test_no_mut_self_preserves_arc_wrap_fields() {
-        let mut file_config = FileConfig::default();
-        file_config.arc_wrap_fields = {
-            let mut m = HashMap::new();
-            m.insert("CState".to_string(), vec!["field_a".to_string()]);
-            m
+        let file_config = FileConfig {
+            arc_wrap_fields: {
+                let mut m = HashMap::new();
+                m.insert("CState".to_string(), vec!["field_a".to_string()]);
+                m
+            },
+            ..FileConfig::default()
         };
         let config = convert_file_config(file_config, Path::new(".")).unwrap();
         assert!(

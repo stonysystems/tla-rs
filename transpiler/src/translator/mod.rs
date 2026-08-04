@@ -14443,10 +14443,11 @@ impl Translator {
                 receiver,
                 method,
                 args,
-            } if method == "ext_equal" && args.len() == 1 => {
-                if self.is_output_indexed(receiver, idx_var, output_name) {
-                    return Some(args[0].clone());
-                }
+            } if method == "ext_equal"
+                && args.len() == 1
+                && self.is_output_indexed(receiver, idx_var, output_name) =>
+            {
+                return Some(args[0].clone());
             }
             _ => {}
         }
@@ -15211,12 +15212,8 @@ impl Translator {
         if let Expr::Disjunction(parts) = expr {
             let mut containers = Vec::new();
             for part in parts {
-                if let Some(container) = self.extract_contains_receiver(part, element_var) {
-                    containers.push(container);
-                } else {
-                    // Not a pure disjunction of contains calls
-                    return None;
-                }
+                let container = self.extract_contains_receiver(part, element_var)?;
+                containers.push(container);
             }
             if !containers.is_empty() {
                 return Some(containers);
@@ -15229,18 +15226,16 @@ impl Translator {
             // Try to extract from lhs
             if let Some(container) = self.extract_contains_receiver(lhs, element_var) {
                 containers.push(container);
-            } else if let Some(mut nested) = self.extract_contains_disjunction(lhs, element_var) {
-                containers.append(&mut nested);
             } else {
-                return None;
+                let mut nested = self.extract_contains_disjunction(lhs, element_var)?;
+                containers.append(&mut nested);
             }
             // Try to extract from rhs
             if let Some(container) = self.extract_contains_receiver(rhs, element_var) {
                 containers.push(container);
-            } else if let Some(mut nested) = self.extract_contains_disjunction(rhs, element_var) {
-                containers.append(&mut nested);
             } else {
-                return None;
+                let mut nested = self.extract_contains_disjunction(rhs, element_var)?;
+                containers.append(&mut nested);
             }
             return Some(containers);
         }

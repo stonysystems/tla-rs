@@ -1500,7 +1500,7 @@ pub fn format_conflict_profile(
         lines.push(format!("  {:-<20} {:->8} {:->8} {:->10}", "", "", "", ""));
 
         let mut fields: Vec<_> = runtime_stats.write_field_stats.iter().collect();
-        fields.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // sort by static count desc
+        fields.sort_by_key(|field| std::cmp::Reverse(field.1 .0)); // static count desc
 
         for (field, (static_count, actual_count)) in &fields {
             let sc = *static_count;

@@ -85,7 +85,8 @@ jobs:
 
   verify:
     name: Verus Verification
-    runs-on: ubuntu-22.04
+    # Verus 0.2026.08.02 is linked against glibc 2.39.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       # Latest stable release validated by the incremental Verus migration.
@@ -105,7 +106,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/verus
-          key: verus-ubuntu-22.04-${{ env.VERUS_VERSION }}
+          key: verus-ubuntu-24.04-${{ env.VERUS_VERSION }}
 
       - name: Download Verus
         if: steps.cache-verus.outputs.cache-hit != 'true'

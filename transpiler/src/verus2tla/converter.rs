@@ -499,7 +499,7 @@ impl Verus2TlaConverter {
                             fname
                                 .parse::<usize>()
                                 .ok()
-                                .and_then(|idx| self.convert_expr(fexpr).ok().map(|e| (idx, e)))
+                                .zip(self.convert_expr(fexpr).ok())
                         })
                         .collect();
                     indexed_exprs.sort_by_key(|(idx, _)| *idx);

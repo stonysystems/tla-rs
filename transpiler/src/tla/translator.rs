@@ -361,32 +361,24 @@ impl<'a> ExprTranslator<'a> {
                         return "arbitrary()".to_string();
                     }
                 }
-                TlaExpr::OpApply { op, .. } => {
-                    if is_generated_d1_context {
-                        if let TlaExpr::Ident(name) = op.as_ref() {
-                            if self.config.operator_info.contains_key(name) {
-                                return "arbitrary()".to_string();
-                            }
-                        }
-                    }
+                TlaExpr::OpApply { op, .. }
+                    if is_generated_d1_context
+                        && matches!(op.as_ref(), TlaExpr::Ident(name)
+                            if self.config.operator_info.contains_key(name)) =>
+                {
+                    return "arbitrary()".to_string();
                 }
                 TlaExpr::SetEnum(_)
                 | TlaExpr::SetFilter { .. }
                 | TlaExpr::SetMap { .. }
                 | TlaExpr::FnConstruct { .. }
                 | TlaExpr::FnSet { .. }
-                | TlaExpr::Tuple(_) => {
-                    if is_generated_d1_context {
-                        return "arbitrary()".to_string();
-                    }
-                }
-                TlaExpr::UnaryOp {
+                | TlaExpr::Tuple(_)
+                | TlaExpr::UnaryOp {
                     op: TlaUnaryOp::Subset | TlaUnaryOp::Union | TlaUnaryOp::Domain,
                     ..
-                } => {
-                    if is_generated_d1_context {
-                        return "arbitrary()".to_string();
-                    }
+                } if is_generated_d1_context => {
+                    return "arbitrary()".to_string();
                 }
                 _ => {}
             }
