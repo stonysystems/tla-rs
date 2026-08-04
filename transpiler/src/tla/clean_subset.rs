@@ -10,10 +10,15 @@
 //! owes for each violation. A message that only says "unsupported" is a bug
 //! here.
 //!
-//! Rules implemented so far: **C5** (actions parameterized by node), **C1**
-//! (per-node state) and **C2** (no instantaneous cross-node reads). C5 runs
-//! first because it is what identifies the node set that every other rule is
-//! stated against, and C1 second because C2 only applies to per-node state.
+//! Rule order matters and is not arbitrary:
+//!
+//! 1. **C5** identifies the node set every other rule is stated against.
+//! 2. **C4** designates the network. It runs before C1 and C2 because the
+//!    network is deliberately *not* per-node state and is deliberately read
+//!    across nodes — flagging it under those rules would be wrong.
+//! 3. **C1** classifies the remaining variables as per-node or global.
+//! 4. **C2** checks reads of per-node variables.
+//! 5. **C3** looks for history variables among what C1 called global.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -66,7 +71,22 @@ pub struct Finding {
 /// The rules `lint_module` actually evaluates today. Reported alongside the
 /// verdict: "clean" means "no violation of these rules", and claiming more than
 /// that would be dishonest while C2/C3/C4 are unimplemented.
-pub const RULES_CHECKED: &[CleanRule] = &[CleanRule::C1, CleanRule::C2, CleanRule::C5];
+pub const RULES_CHECKED: &[CleanRule] = &[
+    CleanRule::C1,
+    CleanRule::C2,
+    CleanRule::C3,
+    CleanRule::C4,
+    CleanRule::C5,
+];
+
+/// Variable names conventionally used for the message network. Used only to
+/// recognise a *near-miss* -- a variable that plays the network's role but is
+/// not in the required shape -- so the linter can say "this is your network,
+/// and here is what is wrong with it" instead of reporting it as unexplained
+/// global state.
+const CONVENTIONAL_NETWORK_NAMES: &[&str] = &[
+    "network", "msgs", "messages", "sentMsg", "sentMsgs", "net", "msgQueue",
+];
 
 /// The verdict for one module.
 #[derive(Debug, Clone, Default)]
@@ -80,6 +100,13 @@ pub struct CleanSubsetReport {
     pub per_node_variables: Vec<String>,
     /// Variables that are neither per-node nor the network.
     pub global_variables: Vec<String>,
+    /// The variable designated as the message network, if one was identified.
+    pub network_variable: Option<String>,
+    /// A variable that plays the network's role but is not in the required
+    /// shape. C4 explains what to do with it; other rules stay quiet about it,
+    /// because "flatten the network" is the one decision to make, not one
+    /// decision per read.
+    pub network_near_miss: Option<String>,
 }
 
 impl CleanSubsetReport {
@@ -113,8 +140,10 @@ pub fn lint_module(module: &TlaModule) -> CleanSubsetReport {
     let ctx = LintContext::new(module);
 
     ctx.check_c5(&mut report);
+    ctx.check_c4(&mut report);
     ctx.check_c1(&mut report);
     ctx.check_c2(&mut report);
+    ctx.check_c3(&mut report);
 
     report.findings.sort_by_key(|f| (f.rule, f.line, f.column));
     // The same read can appear in several branches of one action; reporting it
@@ -169,11 +198,14 @@ impl<'a> LintContext<'a> {
 
     // ===================== C5: actions parameterized by node =====================
 
-    /// `Next` must be a disjunction whose disjuncts are either
-    /// `\E self \in Node : Action(self)` or a parameterless environment action.
+    /// `Next` must be a disjunction whose disjuncts are either an action taken
+    /// by a node, or a parameterless environment action.
     ///
-    /// This runs first: the node set it recovers is what C1 and C2 are stated
-    /// against, so a module that fails C5 cannot be meaningfully checked at all.
+    /// The node set is **not** simply "the set `Next` quantifies over": real
+    /// specs quantify over value domains in the same breath, as in Paxos's
+    /// `\E b \in Ballot : Phase1a(b)` alongside `\E a \in Acceptor : Phase1b(a)`.
+    /// It is inferred instead from the variable declarations -- the set that
+    /// per-node state is indexed by -- and only then confirmed against `Next`.
     fn check_c5(&self, report: &mut CleanSubsetReport) {
         let Some(next) = self.operator("Next") else {
             report.findings.push(self.finding(
@@ -185,83 +217,164 @@ impl<'a> LintContext<'a> {
             return;
         };
 
-        let mut node_sets: BTreeSet<String> = BTreeSet::new();
-        let disjuncts = flatten_disjunction(&next.body);
-        for disjunct in &disjuncts {
-            self.check_c5_disjunct(disjunct, next, &mut node_sets, report);
-        }
+        let node_set = self.infer_node_set(next);
+        let Some(node_set) = node_set else {
+            report.findings.push(self.finding(
+                CleanRule::C5,
+                Some(next),
+                "cannot identify the node set: no set is both the domain of a declared \
+                 per-node variable (`x \\in [Node -> T]`) and quantified over in `Next`. \
+                 Declare the per-node state over the node set, and let `Next` read \
+                 `\\E self \\in Node : Action(self)`.",
+            ));
+            return;
+        };
 
-        match node_sets.len() {
-            0 => {
-                // Every disjunct was an environment action or unrecognized; the
-                // C5 disjunct checks have already said why.
-            }
-            1 => report.node_set = node_sets.into_iter().next(),
-            _ => {
-                let listed = node_sets.into_iter().collect::<Vec<_>>().join(", ");
-                report.findings.push(self.finding(
-                    CleanRule::C5,
-                    Some(next),
-                    format!(
-                        "`Next` quantifies over more than one node set ({listed}). \
-                         Projection targets one node, so the spec must have a single \
-                         node set; unify them, or move the extra role out of `Next` \
-                         as an environment action."
-                    ),
-                ));
+        for disjunct in flatten_disjunction(&next.body) {
+            self.check_c5_disjunct(disjunct, next, &node_set, report);
+        }
+        report.node_set = Some(node_set);
+    }
+
+    /// The set that per-node state is indexed by.
+    ///
+    /// Candidates are the domains of variables declared as functions; the node
+    /// set is the candidate that `Next` also quantifies over, and where several
+    /// qualify, the one carrying the most state.
+    fn infer_node_set(&self, next: &TlaOperator) -> Option<String> {
+        let mut domain_counts: BTreeMap<String, usize> = BTreeMap::new();
+        for var in &self.module.variables {
+            for domain in self.declared_domains(var) {
+                *domain_counts.entry(domain).or_default() += 1;
             }
         }
+        let quantified = Self::quantified_sets(&next.body, self);
+
+        domain_counts
+            .into_iter()
+            .filter(|(domain, _)| quantified.contains(domain))
+            .max_by_key(|(domain, count)| (*count, domain.clone()))
+            .map(|(domain, _)| domain)
+    }
+
+    /// The sets `Next` quantifies over, at any depth.
+    fn quantified_sets(expr: &TlaExpr, ctx: &LintContext<'_>) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        Self::collect_quantified_sets(expr, ctx, &mut out);
+        out
+    }
+
+    fn collect_quantified_sets(expr: &TlaExpr, ctx: &LintContext<'_>, out: &mut BTreeSet<String>) {
+        if let TlaExpr::Exists { vars, .. } | TlaExpr::Forall { vars, .. } = expr {
+            for bound in vars {
+                if let Some(set) = &bound.set {
+                    out.insert(ctx.show(set));
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            Self::collect_quantified_sets(child, ctx, out)
+        });
+    }
+
+    /// The domains a variable is declared over, from either the type-invariant
+    /// idiom (`x \in [S -> T]`) or the `Init` idiom (`x = [n \in S |-> ...]`).
+    fn declared_domains(&self, var: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for op in &self.module.operators {
+            self.collect_declared_domains(&op.body, var, &mut out);
+        }
+        out
+    }
+
+    fn collect_declared_domains(&self, expr: &TlaExpr, var: &str, out: &mut Vec<String>) {
+        match expr {
+            TlaExpr::BinOp {
+                op: TlaBinOp::In,
+                left,
+                right,
+            } if self.is_var_ref(left, var) => {
+                if let TlaExpr::FnSet { domain, .. } = &**right {
+                    out.push(self.show(domain));
+                }
+            }
+            TlaExpr::BinOp {
+                op: TlaBinOp::Eq,
+                left,
+                right,
+            } if self.is_var_ref(left, var) => {
+                if let TlaExpr::FnConstruct { domain, .. } = &**right {
+                    out.push(self.show(domain));
+                }
+            }
+            _ => {}
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_declared_domains(child, var, out)
+        });
     }
 
     fn check_c5_disjunct(
         &self,
         disjunct: &TlaExpr,
         next: &TlaOperator,
-        node_sets: &mut BTreeSet<String>,
+        node_set: &str,
         report: &mut CleanSubsetReport,
     ) {
         match disjunct {
             TlaExpr::Exists { vars, body } => {
-                if vars.len() > 1 {
+                let over_node_set: Vec<&str> = vars
+                    .iter()
+                    .filter(|b| b.set.as_ref().map(|s| self.show(s)).as_deref() == Some(node_set))
+                    .map(|b| b.var.as_str())
+                    .collect();
+
+                if over_node_set.len() > 1 {
                     report.findings.push(self.finding(
                         CleanRule::C5,
                         Some(next),
                         format!(
-                            "`Next` quantifies over {} nodes at once ({}). A step that \
-                             involves two nodes atomically is a cross-node read in \
-                             disguise (C2): decide which node takes the step and what \
-                             message carries the other one's part.",
-                            vars.len(),
-                            vars.iter()
-                                .map(|v| v.var.clone())
-                                .collect::<Vec<_>>()
-                                .join(", ")
+                            "`Next` binds {} nodes at once ({}). A step involving two nodes \
+                             atomically is a cross-node read in disguise (C2): decide which \
+                             node takes the step and what message carries the other one's part.",
+                            over_node_set.len(),
+                            over_node_set.join(", ")
                         ),
                     ));
                 }
-                for bound in vars {
-                    if let Some(set) = &bound.set {
-                        node_sets.insert(self.show(set));
-                    } else {
+                if over_node_set.is_empty() {
+                    // A disjunct quantifying only over value domains still has
+                    // to reach a node action somewhere inside it.
+                    let inner = Self::quantified_sets(body, self);
+                    if !inner.contains(node_set) {
                         report.findings.push(self.finding(
                             CleanRule::C5,
                             Some(next),
                             format!(
-                                "`\\E {}` is unbounded in `Next`; the node set must be \
-                                 explicit for the projection to know what it is \
-                                 projecting from.",
+                                "a `Next` disjunct never binds a node from `{node_set}`: `{}`. \
+                                 Every step must be taken by some node, or be an environment \
+                                 action the framework performs.",
+                                self.show(disjunct)
+                            ),
+                        ));
+                    }
+                }
+                for bound in vars {
+                    if bound.set.is_none() {
+                        report.findings.push(self.finding(
+                            CleanRule::C5,
+                            Some(next),
+                            format!(
+                                "`\\E {}` is unbounded in `Next`; the domain must be explicit \
+                                 for the projection to know what it is projecting from.",
                                 bound.var
                             ),
                         ));
                     }
                 }
-                // The body may itself be a disjunction of actions applied to the
-                // bound node -- that is the normal shape and needs no further
-                // C5 checking.
-                let _ = body;
             }
-            // A parameterless environment action (`Terminating`, message delivery,
-            // crash) is allowed: the framework performs it, not the projected node.
+            // A parameterless environment action (`Terminating`, message
+            // delivery, crash) is allowed: the framework performs it.
             TlaExpr::Ident(_) => {}
             TlaExpr::OpApply { op, args } => {
                 let named = self.show(op);
@@ -271,8 +384,8 @@ impl<'a> LintContext<'a> {
                     Some(next),
                     format!(
                         "`Next` applies `{named}` to fixed argument(s) ({}) instead of \
-                         quantifying over the node set. Projection needs \
-                         `\\E self \\in Node : {named}(self, ...)`, otherwise the spec \
+                         quantifying over `{node_set}`. Projection needs \
+                         `\\E self \\in {node_set} : {named}(self, ...)`, otherwise the spec \
                          describes one particular node rather than any node.",
                         rendered.join(", ")
                     ),
@@ -283,13 +396,284 @@ impl<'a> LintContext<'a> {
                     CleanRule::C5,
                     Some(next),
                     format!(
-                        "`Next` has a disjunct that is neither `\\E self \\in Node : ...` \
-                         nor an environment action: `{}`.",
+                        "`Next` has a disjunct that is neither a node action nor an \
+                         environment action: `{}`.",
                         self.show(other)
                     ),
                 ));
             }
         }
+    }
+
+    // ===================== C4: one designated network =====================
+
+    /// Exactly one variable is the message network: a set of messages touched
+    /// only by send (`net' = net \cup {m}`), receive (`\E m \in net`) and
+    /// discard (`net' = net \ {m}`).
+    ///
+    /// The projection rewrites the network away entirely -- sends become an
+    /// action's output messages and receives become an action's input, because
+    /// the tla-rs framework owns delivery. That rewrite is only sound if the
+    /// tool knows which variable is the network and that nothing else is done
+    /// to it.
+    fn check_c4(&self, report: &mut CleanSubsetReport) {
+        let candidates: Vec<&String> = self
+            .module
+            .variables
+            .iter()
+            .filter(|v| self.is_set_valued_network(v))
+            .collect();
+
+        match candidates.len() {
+            1 => {
+                report.network_variable = Some(candidates[0].clone());
+                return;
+            }
+            n if n > 1 => {
+                let listed = candidates
+                    .iter()
+                    .map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                report.findings.push(self.finding(
+                    CleanRule::C4,
+                    None,
+                    format!(
+                        "more than one variable looks like the network ({listed}). The \
+                         projection turns exactly one variable into framework send/receive; \
+                         merge them into a single message set, or say which one is the \
+                         network and re-model the others as per-node state."
+                    ),
+                ));
+                return;
+            }
+            _ => {}
+        }
+
+        // No variable is in the required shape. If one is *playing* the
+        // network's role, say what is wrong with it rather than letting C1
+        // report it as unexplained state.
+        for var in &self.module.variables {
+            if CONVENTIONAL_NETWORK_NAMES.contains(&var.as_str()) {
+                report.network_near_miss = Some(var.clone());
+                report.findings.push(self.finding(
+                    CleanRule::C4,
+                    None,
+                    format!(
+                        "`{var}` carries the messages but is not a message set: it is only \
+                         ever updated with EXCEPT, so it is a per-connection structure \
+                         (a queue array) rather than one set. Flatten it into a single set \
+                         of messages tagged with sender and recipient. Note that doing so \
+                         drops any per-connection ordering the original relied on -- that \
+                         is a real semantic change and belongs in the rewrite notes."
+                    ),
+                ));
+                return;
+            }
+        }
+    }
+
+    /// Whether `var` is a set-valued network.
+    ///
+    /// Two pieces of evidence are required, and both matter:
+    ///
+    /// - every update is `var \cup ...` / `var \ ...` applied to the variable
+    ///   itself (send and discard), and
+    /// - somewhere an action *receives* from it: `\E m \in var : ...`.
+    ///
+    /// The receive requirement is what separates a network from an ordinary
+    /// shared set. Without it, LamportMutex's `crit` -- the set of nodes in the
+    /// critical section, updated with exactly the same `\cup` / `\` idiom --
+    /// gets designated as the network, which then suppresses the C1 finding
+    /// that is the real problem with it.
+    fn is_set_valued_network(&self, var: &str) -> bool {
+        let mut updates = Vec::new();
+        for op in &self.module.operators {
+            self.collect_updates_of(&op.body, var, &mut updates);
+        }
+        if updates.is_empty() || !updates.iter().all(|rhs| self.is_set_delta_of(rhs, var)) {
+            return false;
+        }
+        self.module
+            .operators
+            .iter()
+            .any(|op| Self::has_receive_from(&op.body, var))
+    }
+
+    /// Whether `expr` receives from `var`: `\E m \in var : ...`.
+    fn has_receive_from(expr: &TlaExpr, var: &str) -> bool {
+        if let TlaExpr::Exists { vars, .. } = expr {
+            if vars
+                .iter()
+                .any(|b| matches!(&b.set, Some(TlaExpr::Ident(name)) if name == var))
+            {
+                return true;
+            }
+        }
+        let mut found = false;
+        walk_children(expr, &mut |child| {
+            found |= Self::has_receive_from(child, var);
+        });
+        found
+    }
+
+    /// Collect the right-hand sides of `var' = rhs`. The right-hand sides are
+    /// cloned rather than borrowed: `walk_children` hands out children with an
+    /// anonymous lifetime, and a handful of small expressions is not worth a
+    /// second, lifetime-preserving walker.
+    fn collect_updates_of(&self, expr: &TlaExpr, var: &str, out: &mut Vec<TlaExpr>) {
+        if let TlaExpr::BinOp {
+            op: TlaBinOp::Eq,
+            left,
+            right,
+        } = expr
+        {
+            if matches!(&**left, TlaExpr::Prime(inner)
+                if matches!(&**inner, TlaExpr::Ident(name) if name == var))
+            {
+                out.push((**right).clone());
+            }
+        }
+        walk_children(expr, &mut |child| self.collect_updates_of(child, var, out));
+    }
+
+    /// Whether `expr` is `var` modified only by `\cup` / `\` (set difference),
+    /// possibly nested: `(net \cup {m}) \ {old}`.
+    fn is_set_delta_of(&self, expr: &TlaExpr, var: &str) -> bool {
+        match expr {
+            TlaExpr::Ident(name) => name == var,
+            TlaExpr::BinOp {
+                op: TlaBinOp::Cup | TlaBinOp::Setminus | TlaBinOp::Cap,
+                left,
+                right,
+            } => self.is_set_delta_of(left, var) || self.is_set_delta_of(right, var),
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => self.is_set_delta_of(then_expr, var) && self.is_set_delta_of(else_expr, var),
+            _ => false,
+        }
+    }
+
+    // ===================== C3: no history variables =====================
+
+    /// A variable that exists only to record the past or to aggregate across
+    /// nodes for the benefit of an invariant.
+    ///
+    /// It is recognised by what its update does: gathering per-node state over
+    /// the whole node set, as in Raft's
+    /// `allLogs' = allLogs \cup {log[i] : i \in Server}`. Such a variable is
+    /// global by construction and has no runtime meaning -- the implementation
+    /// would maintain state the protocol never consults.
+    fn check_c3(&self, report: &mut CleanSubsetReport) {
+        let Some(node_set) = report.node_set.clone() else {
+            return;
+        };
+        let per_node: BTreeSet<&str> = report
+            .per_node_variables
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+
+        for var in report.global_variables.clone() {
+            let mut updates = Vec::new();
+            for op in &self.module.operators {
+                self.collect_updates_of(&op.body, &var, &mut updates);
+            }
+            let aggregating = updates
+                .iter()
+                .any(|rhs| self.aggregates_over_nodes(rhs, &node_set, &per_node));
+            if aggregating {
+                report.findings.push(self.finding(
+                    CleanRule::C3,
+                    None,
+                    format!(
+                        "`{var}` is a history variable: it is built by gathering per-node \
+                         state over all of `{node_set}`. No node can maintain it, and the \
+                         protocol never consults it -- it exists for the invariants. Delete \
+                         it and restate those invariants over reachable state, recording the \
+                         change in the rewrite notes."
+                    ),
+                ));
+            }
+        }
+    }
+
+    /// Whether `expr` gathers per-node state over the node set: a comprehension
+    /// or quantifier bound to the node set whose body reads a per-node variable
+    /// at that bound variable.
+    fn aggregates_over_nodes(
+        &self,
+        expr: &TlaExpr,
+        node_set: &str,
+        per_node: &BTreeSet<&str>,
+    ) -> bool {
+        let bound_over_nodes = match expr {
+            TlaExpr::SetMap {
+                expr: body,
+                var,
+                set,
+            } => {
+                if self.show(set) == node_set {
+                    Some((var.clone(), &**body))
+                } else {
+                    None
+                }
+            }
+            TlaExpr::SetFilter { var, set, filter } => {
+                if self.show(set) == node_set {
+                    Some((var.clone(), &**filter))
+                } else {
+                    None
+                }
+            }
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => vars
+                .iter()
+                .find(|b| b.set.as_ref().map(|s| self.show(s)) == Some(node_set.to_string()))
+                .map(|b| (b.var.clone(), &**body)),
+            _ => None,
+        };
+
+        if let Some((bound_var, body)) = bound_over_nodes {
+            let mut reads = Vec::new();
+            self.collect_reads_at(body, &bound_var, per_node, &mut reads);
+            if !reads.is_empty() {
+                return true;
+            }
+        }
+
+        let mut found = false;
+        walk_children(expr, &mut |child| {
+            found |= self.aggregates_over_nodes(child, node_set, per_node);
+        });
+        found
+    }
+
+    /// Collect `x[bound_var]` reads of per-node variables.
+    fn collect_reads_at(
+        &self,
+        expr: &TlaExpr,
+        bound_var: &str,
+        per_node: &BTreeSet<&str>,
+        out: &mut Vec<String>,
+    ) {
+        if let TlaExpr::FnApply { func, arg } = expr {
+            let base: &TlaExpr = match &**func {
+                TlaExpr::Prime(inner) => inner,
+                other => other,
+            };
+            if let TlaExpr::Ident(var) = base {
+                if per_node.contains(var.as_str())
+                    && matches!(&**arg, TlaExpr::Ident(a) if a == bound_var)
+                {
+                    out.push(var.clone());
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_reads_at(child, bound_var, per_node, out)
+        });
     }
 
     // ===================== C2: no instantaneous cross-node reads =====================
@@ -307,10 +691,17 @@ impl<'a> LintContext<'a> {
             // Nothing to state the rule against; C5/C1 have said why.
             return;
         }
+        // The network is exempt: reading messages other nodes sent is what a
+        // network is for, and a malformed one is C4's single decision, not one
+        // C2 finding per read of it.
         let per_node: BTreeSet<&str> = report
             .per_node_variables
             .iter()
             .map(|s| s.as_str())
+            .filter(|v| {
+                report.network_variable.as_deref() != Some(v)
+                    && report.network_near_miss.as_deref() != Some(v)
+            })
             .collect();
 
         for (op_name, node_param) in self.node_parameterized_operators() {
@@ -463,6 +854,11 @@ impl<'a> LintContext<'a> {
         let mut per_node = Vec::new();
         let mut global = Vec::new();
         for var in &self.module.variables {
+            // The network is state by design and is exempt: C4 owns it, and the
+            // projection replaces it with framework send/receive.
+            if report.network_variable.as_deref() == Some(var.as_str()) {
+                continue;
+            }
             if self.is_per_node(var, &node_set) {
                 per_node.push(var.clone());
             } else {
@@ -712,10 +1108,11 @@ pub fn report_to_json(report: &CleanSubsetReport) -> String {
         .join(",");
 
     format!(
-        r#"{{"clean":{},"violations":{},"rules_checked":[{rules_checked}],"rules_not_implemented":[{rules_unchecked}],"node_set":{},"per_node_variables":[{}],"global_variables":[{}],"findings":[{}]}}"#,
+        r#"{{"clean":{},"violations":{},"rules_checked":[{rules_checked}],"rules_not_implemented":[{rules_unchecked}],"node_set":{},"network_variable":{},"per_node_variables":[{}],"global_variables":[{}],"findings":[{}]}}"#,
         report.is_clean(),
         report.violations(),
         quoted(&report.node_set),
+        quoted(&report.network_variable),
         list(&report.per_node_variables),
         list(&report.global_variables),
         findings
@@ -807,9 +1204,11 @@ Next == \E p \in Proc : Enter(p)
     }
 
     #[test]
-    fn reports_a_fully_global_spec_once() {
-        // ReadersWriters: nothing is per-node, so the spec has no projection at
-        // all. One finding is more useful than one per variable.
+    fn reports_a_spec_with_no_per_node_state_as_having_no_node_set() {
+        // ReadersWriters: nothing is declared per-node, so no set qualifies as
+        // the node set and the spec has no projection at all. Reporting the
+        // missing node set names the root cause; listing each variable would
+        // only describe the symptom.
         let source = r#"---- MODULE Test ----
 VARIABLES readers, writers
 Init == /\ readers = {}
@@ -818,22 +1217,26 @@ Acquire(p) == readers' = readers \union {p}
 Next == \E p \in Proc : Acquire(p)
 ===="#;
         let report = lint(source);
-        assert_eq!(rules(&report), vec![CleanRule::C1]);
+        assert_eq!(rules(&report), vec![CleanRule::C5]);
         assert!(
             report.findings[0]
                 .message
-                .contains("no variable is per-node"),
+                .contains("cannot identify the node set"),
             "got {}",
             report.findings[0].message
         );
+        assert!(report.node_set.is_none());
     }
 
     #[test]
     fn rejects_next_without_node_quantification() {
+        // The node set is inferred from the declaration, then `Next` is checked
+        // against it: the second disjunct names a node instead of binding one.
         let source = r#"---- MODULE Test ----
 VARIABLES x
+TypeOK == x \in [Proc -> Nat]
 Step(p) == x' = x
-Next == Step(1)
+Next == (\E p \in Proc : Step(p)) \/ Step(1)
 ===="#;
         let report = lint(source);
         let c5 = report
@@ -848,6 +1251,7 @@ Next == Step(1)
     fn rejects_two_node_atomic_step() {
         let source = r#"---- MODULE Test ----
 VARIABLES x
+TypeOK == x \in [Proc -> Nat]
 Transfer(p, q) == x' = x
 Next == \E p, q \in Proc : Transfer(p, q)
 ===="#;
@@ -858,7 +1262,7 @@ Next == \E p, q \in Proc : Transfer(p, q)
             .find(|f| f.rule == CleanRule::C5)
             .unwrap_or_else(|| panic!("expected a C5 finding, got {:?}", report.findings));
         assert!(
-            c5.message.contains("nodes at once") && c5.message.contains("cross-node read"),
+            c5.message.contains("binds 2 nodes at once") && c5.message.contains("cross-node read"),
             "the finding must explain that an atomic two-node step hides a \
              cross-node read: {}",
             c5.message
@@ -902,13 +1306,11 @@ Next == \E p \in Proc : Step(p)
         assert!(json.contains(r#""violations":0"#), "{json}");
         assert!(json.contains(r#""node_set":"Proc""#), "{json}");
         assert!(
-            json.contains(r#""rules_checked":["C1","C2","C5"]"#),
+            json.contains(r#""rules_checked":["C1","C2","C3","C4","C5"]"#),
             "{json}"
         );
-        assert!(
-            json.contains(r#""rules_not_implemented":["C3","C4"]"#),
-            "a 'clean' verdict must say which rules were not evaluated: {json}"
-        );
+        assert!(json.contains(r#""rules_not_implemented":[]"#), "{json}");
+        assert!(json.contains(r#""network_variable":null"#), "{json}");
         assert!(json.contains(r#""per_node_variables":["clock"]"#), "{json}");
     }
 
@@ -999,6 +1401,133 @@ Next == \E p \in Proc : Step(p)
             1,
             "one decision, one finding: {:?}",
             report.findings
+        );
+    }
+
+    #[test]
+    fn designates_a_message_set_as_the_network() {
+        // Paxos's `msgs`: sent with \cup, received with `\E m \in msgs`.
+        let source = r#"---- MODULE Test ----
+VARIABLES maxBal, msgs
+TypeOK == maxBal \in [Acceptor -> Nat]
+Send(m) == msgs' = msgs \cup {m}
+Phase1b(a) == \E m \in msgs : maxBal' = [maxBal EXCEPT ![a] = m.bal]
+Next == \E a \in Acceptor : Phase1b(a)
+===="#;
+        let report = lint(source);
+        assert_eq!(report.network_variable.as_deref(), Some("msgs"));
+        assert!(
+            !report.global_variables.contains(&"msgs".to_string()),
+            "the network is not unexplained global state: {:?}",
+            report.global_variables
+        );
+    }
+
+    #[test]
+    fn a_shared_set_without_receives_is_not_the_network() {
+        // LamportMutex's `crit` is updated with exactly the network idiom
+        // (\cup / \) but nothing ever receives from it. Designating it would
+        // suppress the C1 finding that is the real problem with it.
+        let source = r#"---- MODULE Test ----
+VARIABLES clock, crit
+TypeOK == clock \in [Proc -> Nat]
+Enter(p) == crit' = crit \cup {p}
+Exit(p) == crit' = crit \ {p}
+Next == \E p \in Proc : Enter(p) \/ Exit(p)
+===="#;
+        let report = lint(source);
+        assert_eq!(report.network_variable, None);
+        let c1 = report
+            .findings
+            .iter()
+            .find(|f| f.rule == CleanRule::C1)
+            .unwrap_or_else(|| panic!("expected C1 for crit, got {:?}", report.findings));
+        assert!(c1.message.contains("crit"), "got {}", c1.message);
+    }
+
+    #[test]
+    fn reports_a_network_that_is_not_a_message_set() {
+        // LamportMutex: `network` is [Proc -> [Proc -> Seq(Msg)]], a queue per
+        // connection. It IS the network, so say what is wrong with it rather
+        // than reporting each read of it.
+        let source = r#"---- MODULE Test ----
+VARIABLES clock, network
+TypeOK == /\ clock \in [Proc -> Nat]
+          /\ network \in [Proc -> [Proc -> Seq(Msg)]]
+Send(p, q) == network' = [network EXCEPT ![p][q] = Append(@, m)]
+Recv(p, q) == /\ network[q][p] # << >>
+              /\ network' = [network EXCEPT ![q][p] = Tail(@)]
+Next == \E p \in Proc : \A q \in Proc : Recv(p, q)
+===="#;
+        let report = lint(source);
+        let c4 = report
+            .findings
+            .iter()
+            .find(|f| f.rule == CleanRule::C4)
+            .unwrap_or_else(|| panic!("expected a C4 finding, got {:?}", report.findings));
+        assert!(
+            c4.message.contains("not a message set") && c4.message.contains("ordering"),
+            "the finding must name the shape problem and the ordering it costs: {}",
+            c4.message
+        );
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C2 && f.message.contains("network")),
+            "a malformed network is one decision, not one C2 finding per read: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn rejects_a_history_variable() {
+        // Raft's allLogs: built by gathering every node's log. No node can
+        // maintain it and the protocol never consults it.
+        let source = r#"---- MODULE Test ----
+VARIABLES log, allLogs
+TypeOK == log \in [Server -> Seq(Nat)]
+Append(i) == /\ log' = [log EXCEPT ![i] = Append(log[i], 1)]
+             /\ allLogs' = allLogs \cup {log[j] : j \in Server}
+Next == \E i \in Server : Append(i)
+===="#;
+        let report = lint(source);
+        let c3 = report
+            .findings
+            .iter()
+            .find(|f| f.rule == CleanRule::C3)
+            .unwrap_or_else(|| panic!("expected a C3 finding, got {:?}", report.findings));
+        assert!(
+            c3.message.contains("allLogs") && c3.message.contains("history variable"),
+            "got {}",
+            c3.message
+        );
+    }
+
+    #[test]
+    fn infers_the_node_set_from_declarations_not_from_next() {
+        // Real Paxos quantifies over Ballot and Value in `Next` alongside
+        // Acceptor. Only Acceptor indexes per-node state, so only it is the
+        // node set.
+        let source = r#"---- MODULE Test ----
+VARIABLES maxBal
+TypeOK == maxBal \in [Acceptor -> Nat]
+Phase1a(b) == maxBal' = maxBal
+Phase1b(a) == maxBal' = [maxBal EXCEPT ![a] = 0]
+Next == \/ \E b \in Ballot : Phase1a(b)
+        \/ \E a \in Acceptor : Phase1b(a)
+===="#;
+        let report = lint(source);
+        assert_eq!(report.node_set.as_deref(), Some("Acceptor"));
+        let c5 = report
+            .findings
+            .iter()
+            .find(|f| f.rule == CleanRule::C5)
+            .unwrap_or_else(|| panic!("expected C5 for the node-less disjunct"));
+        assert!(
+            c5.message.contains("never binds a node"),
+            "a disjunct that binds only a value domain must be reported: {}",
+            c5.message
         );
     }
 }
