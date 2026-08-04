@@ -492,6 +492,24 @@ verus! {
         };
     }
 
+    /// Every hypothesis of the two lemmas above is already a conjunct of
+    /// `RaftSafetyInvariant`, so the whole reduction collapses to a single
+    /// step: in any state satisfying the global safety invariant, the
+    /// first-missing-boundary provenance is the only additional thing needed
+    /// for Configuration Leader Completeness.
+    pub proof fn lemma_safety_invariant_implies_configuration_leader_completeness(
+        ds: RaftDistributedState,
+    )
+        requires
+            RaftSafetyInvariant(ds),
+            FirstMissingConfigurationBoundaryProvenance(ds),
+        ensures
+            CertifiedConfigurationLeaderCompleteness(ds),
+    {
+        lemma_transfer_obligation_discharged_by_inherited_lemma(ds);
+        lemma_configuration_leader_completeness_under_transfer_obligation(ds);
+    }
+
     /// Configuration Leader Completeness implies the first-missing-boundary
     /// provenance obligation vacuously: the provenance predicate is guarded by
     /// "some higher-term leader is missing a certified boundary", which is

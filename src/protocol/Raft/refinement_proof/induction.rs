@@ -102,6 +102,32 @@ verus! {
         assert(RaftSafetyInvariant(b[behavior_index]));
     }
 
+    /// Behaviour-level Configuration Leader Completeness under dynamic
+    /// membership, conditional on the first-missing-boundary provenance.
+    ///
+    /// In every reachable state of every valid behaviour, a leader whose term
+    /// exceeds a certified Configuration entry's term contains that exact
+    /// entry at its certified log index. The only hypothesis beyond
+    /// reachability is `FirstMissingConfigurationBoundaryProvenance`; the
+    /// log-transfer step it ultimately rests on is discharged by the inherited
+    /// static-Raft lemma, not by anything specific to membership changes.
+    pub proof fn lemma_configuration_leader_completeness_throughout_behavior(
+        b: RaftBehavior,
+        behavior_index: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+            FirstMissingConfigurationBoundaryProvenance(b[behavior_index]),
+        ensures
+            CertifiedConfigurationLeaderCompleteness(b[behavior_index]),
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
+        lemma_safety_invariant_implies_configuration_leader_completeness(
+            b[behavior_index],
+        );
+    }
+
     /// Certificate-level formulation of dynamic commitment. Unlike the
     /// legacy EntryCommittedAt predicate, this definition records which
     /// membership phase and quorum authorized the physical entry.
