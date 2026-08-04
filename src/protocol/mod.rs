@@ -1,4 +1,5 @@
 // pub mod lock;
+// pub mod Jetpack; // WIP: recovery-layer single-process spec (R1 slice); mount + `scons --verus-path=...` to verify
 pub mod ChainReplication;
 pub mod EPaxos;
 pub mod LeaderElection;
