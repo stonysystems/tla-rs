@@ -443,9 +443,35 @@ impl<'a> LintContext<'a> {
                 // rather than rejecting a legitimate shape.
                 if over_node_set.is_empty() {
                     // A disjunct quantifying only over value domains still has
-                    // to reach a node action somewhere inside it.
+                    // to reach a node action somewhere inside it -- unless it
+                    // quantifies over the **network**, which is what an
+                    // environment action looks like.
+                    //
+                    // `\E m \in messages : DropMessage(m)` is message loss: the
+                    // framework performs it, no node does, and the subset
+                    // contract has always permitted it ("or is an environment
+                    // action (message delivery, loss, crash) that the framework
+                    // -- not the projected node -- performs"). The rule was
+                    // rejecting it because our own corpus has no lossy network
+                    // and never exercised the shape; the fixture that found it
+                    // came from the parallel Phase 52.M0 implementation.
+                    // C4 has not run yet -- C5 goes first, because the node set
+                    // it recovers is what every other rule is stated against --
+                    // so the network is identified the same way C4 identifies it
+                    // rather than read off the report.
+                    let over_network = vars.iter().any(|b| {
+                        b.set
+                            .as_ref()
+                            .map(|set| self.show(set))
+                            .is_some_and(|name| {
+                                self.module
+                                    .variables
+                                    .iter()
+                                    .any(|v| *v == name && self.is_set_valued_network(v))
+                            })
+                    });
                     let inner = Self::quantified_sets(body, self);
-                    if !inner.contains(node_set) {
+                    if !over_network && !inner.contains(node_set) {
                         report.findings.push(self.finding(
                             CleanRule::C5,
                             Some(next),

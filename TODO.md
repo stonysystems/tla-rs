@@ -24,6 +24,15 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 
 ## Current Status (last updated 2026-05-28)
 
+**🔝 CURRENT PRIORITY (2026-08-04): Phase 54 — Explicit Quantifier Triggers.**
+A full verification pass emits 534 `automatically chose triggers` notes, all in our own code.
+The Verus team raised this while evaluating tla-rs as a compatibility test target: an
+auto-chosen trigger can change between Verus releases, so a proof that verifies today can
+fail tomorrow as an uninformative `rlimit exceeded`. Work Phase 54 before Phases 52/53
+(clean-subset translator + corpus), which are on hold. See
+[Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+
+
 **Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-16).** After Phase 38.17 (direct-assignment solver optimization + DPOR reduction activation), the main `verus-transpile model-check` path is 5.7-19x faster on protocol cases (Paxos 511s → 77s, PBFT 87s → 4.6s, Raft 1115s → 195s). Sleep-set DPOR reduction now actively prunes transitions on all multi-process cases (5/5 reduction-gate hits: Paxos 82.9%, Raft 49.4%, PBFT 43.2%, Peterson 43.8%, counter 33.3%). With DPOR reduction enabled (`dpor-checker shadow-compare`), Paxos runs in 2.6s — a 29x end-to-end speedup from the pre-38.17 baseline with exact state parity preserved. See `transpiler/DPOR_based_model_tla_rs_checker/tests/reports/{latest.md,dpor_vs_tlc.md,sleep_set_reduction_table.md}` for full evidence. Remaining DPOR work is tracked in Phase 38.18 (explorer parallelism, helper-call inlining at IR, main-path DPOR reduction, Raft/PBFT internal-explorer parity).
 
 **✅ Phase 31 external_body milestone COMPLETE (2026-05-24).** All 22 `external_body` lemmas in RSL refinement proof eliminated (0 remaining). 104 proof functions verify across 17 modules. Phase 31.9.4 fully closed. Phase 34 (Raft) remains deprecated with 12 assumes (7 blocked on the `d_rli ≤ k` strict-term wall).
@@ -89,7 +98,13 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 - **Current CI does not pass** — the active GitHub Actions workflow in `.github/workflows/ci.yml` has 5 push checks (`CI / Format`, `CI / Lint`, `CI / Model-Check Evidence Drift Guard`, `CI / Verus Verification`, `CI / Test`), and the phase goal is to get all 5 back to green by fixing bugs in this repo rather than weakening the workflow.
 - **Standalone DPOR-based checker prototype is still incomplete** — `transpiler/DPOR_based_model_tla_rs_checker/` exists. The Phase 38.14 audit/recovery track is now complete through 38.14.11.c.c: honest baseline score is **20 real / 0 vacuous** (`run_full_suite.sh --timeout 1200`, `2026-04-10T05:34:44Z`), Bug A/B closure is reflected in `tests/reports/latest.{json,md}` plus `hard_case_blocker_ledger.md`, reduction gate 38.14.10 is **MET** (`3/3` measured cases above 10% transition reduction), and 38.10.1 exact-parity re-evaluation now reports `12 cases / 8 positive_exact / 4 negative_witness_match / 0 parity_failures` under the documented witness-first negative-case policy. The staged integration-discipline leaves in `38.10.3` are complete, `38.10.4.a` shadow-mode CLI wiring is in place, `38.10.4.b` reproducible parity-subset reporting is landed via `scripts/run_shadow_subset_report.sh` + `tests/reports/shadow_parity_subset_latest.{json,md}`, and `38.10.4.c` report-schema drift guard is landed via `scripts/verify_shadow_subset_report_schema.sh`. Remaining DPOR work is acceptance-criteria closure in `38.11`. Structural detector output currently reports 4 generated `Types.rs` constructor-style `arbitrary::<...>()` findings (cases 14/15/16/19); this is tracked separately from vacuous-pass scoring.
 
-**Next steps (priority order, updated 2026-05-28):**
+**Next steps (priority order, updated 2026-08-04):**
+
+0. **🔝 Phase 54: Explicit Quantifier Triggers** — 534 auto-chosen triggers make our proofs
+   sensitive to Verus version changes. Raised by the Verus team while evaluating tla-rs as a
+   compatibility test target. **Do this first.** Phases 52/53 are on hold until it lands.
+   See [Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+
 
 *Phases 40-49 (performance optimization pipeline) are ALL COMPLETE.* Summary: transpiler emits `&mut self` calling convention by default, Arc removed, RSL at 48-51K ops/s (3× over pre-optimization, 80-85% of Sushant's hand-tuned 60K). Phase 48.7 regression fixed. See individual phase sections below for details.
 
@@ -16022,6 +16037,10 @@ independent golden — its translation is validated only by TLC fidelity + verus
     **It stops after the spec stage, deliberately, and says so.** Wiring it into the exec stage failed on the first try with `Parameter count mismatch: function has 1 params, annotation has 2`, and the cause is real rather than incidental: the mode annotations describe the *source* module's operators, and projection removes the node parameter, so `Left(p)` becomes `LLeft(c)`. Producing annotations for a projected module is separate work, and the exec stage is outside Phase 52 in any case — the plan's **R3** is "only generate a spec, never a proof". Recorded as a follow-on rather than papered over.
 - [x] **52.corpus** Consumes the graded dataset built in **Phase 53** (each milestone pulls its tier: M1←Tier-0, M2←Tier-1, M4←Tier-2, M4b←Tier-3). Dataset construction + golden strategy live in Phase 53. **All four tiers consumed** (2026-08-04).
 
+  - [x] **A second, independent 52.M0 landed on `main` in parallel** (`b6245c76`), and its facts are recorded here because the code did not survive the merge. It shipped `verus-transpile clean-lint` with **16 diagnostic codes** across C1–C5 (each carrying operator, source line, and the rewrite the human must perform), **26 unit + 5 fixture tests**, three reference specs under `transpiler/tests/fixtures/clean_subset/`, and a contract document `docs/clean_tla_subset_spec.md`.
+    **Why ours was kept instead**, verified rather than asserted: (i) its API is incompatible with the projection stack built on top of ours — `cargo check` fails on five imports (`CleanSubsetReport`, `Finding`, `CleanRule`, `report_to_json`, `node_parameterized_operators`), and `projection.rs` needs a `per_node_variables` field its `CleanReport` does not have; (ii) its front-end **cannot parse any of the eight `clean.tla` rewrites** in `tests/corpus/` — 8/8 parse errors — because it predates the 52.M0.0 frontend work.
+    **What survived**: its three fixtures, kept as a live regression suite, and `transpiler/tests/clean_subset_lint_test.rs` ported to our API. They paid for themselves immediately — `CleanVoting.tla` exposed a real defect in **our** C5, which rejected `\E m \in messages : DropMessage(m)`: message loss is an environment action our own contract has always permitted, and our corpus has no lossy network so nothing had ever exercised the shape. Fixed. Its `docs/clean_tla_subset_spec.md` is folded into `docs/clean_tla_subset.md` rather than kept as a second contract.
+
 ### MVP
 
 M0–M2 + **Paxos** as the killer demo (has a tla-rs hand-written spec to diff against). ⚠️ Use the
@@ -16195,3 +16214,160 @@ Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tu
 ### Files
 
 `transpiler/tests/corpus/`; plan §3.
+
+---
+
+## Phase 54: Explicit Quantifier Triggers — 🔝 TOP PRIORITY (current work)
+
+### Background (2026-08)
+
+Verus reports **534 `automatically chose triggers for this expression` notes** on a full
+verification pass (`0.2026.08.02`, `1044 verified, 0 errors`). All 534 are in our own code —
+none come from `vstd`.
+
+Raised by the Verus team while evaluating tla-rs as a compatibility test target:
+
+> The trigger notes suggest some instability that may make it not work well with future
+> versions of Verus.
+
+The concern is well-founded. When Verus picks triggers automatically, the choice is an
+implementation detail that can change between releases. A change silently alters which
+quantifier instantiations the solver performs, so a proof that verifies today can fail
+tomorrow — and the failure surfaces as `rlimit exceeded`, which carries no information about
+the cause.
+
+We already paid this price once. `lemma_getsent2b_value_matches_candidate`
+(`common_proof/learner_state.rs`) sat broken for five months; the root cause was
+quantifier-instantiation blowup and the only symptom was a resource-limit error. Nine
+structural fix attempts failed before the real fix (further decomposition) landed. Explicit
+triggers are the standing defence against that class of failure.
+
+### Scope
+
+534 notes, split by whether the source is editable:
+
+| Location | Count | How to fix |
+|---|---|---|
+| `src/protocol/Raft/` | 177 | edit source |
+| `src/protocol/RSL/` | 131 | edit source |
+| `src/implementation/RSL/` | 101 | edit source |
+| `src/common/`, `src/verus_extra/` | 16 | edit source |
+| **`src/generated/RSL/`** | **109** | **fix transpiler codegen, then regenerate** |
+
+The 109 generated ones must not be hand-edited (see `CLAUDE.md`). They come from
+`replica_gen.rs` (44), `proposer_gen.rs` (25), `election_gen.rs` (17), `executor_gen.rs` (10),
+`learner_gen.rs` (7), `acceptor_gen.rs` (4), `broadcast_gen.rs` (2) — so the fix is a
+codegen change in `transpiler/src/` plus `scripts/regenerate_all.sh`.
+
+By trigger count: 447 expressions got a single trigger, 73 got two, 14 got three. The
+single-trigger cases are the ones most likely to be over- or under-restrictive.
+
+Also in scope, same class of problem, much smaller: **5 `broadcast` functions without an
+explicit `#[trigger]`** (`cmessage.rs`, `types_i.rs`, `io_s.rs`). Broadcast axioms are in
+scope for every proof in the crate, so a bad auto-chosen trigger there is global.
+
+### Why this is not mechanical
+
+Adding `#[trigger]` changes solver behaviour. Three ways it can go wrong:
+
+- **Too restrictive** — the needed instantiation never fires; the proof fails outright.
+- **Too permissive** — instantiation explodes; the proof hits `rlimit`.
+- **Silent slowdown** — it still verifies, but a later change tips it over the limit.
+
+So each annotation needs re-verification, and a batch that verifies is not yet known to be
+*stable* — wall-clock per module should be recorded before and after, since a proof that got
+2× slower is a regression even when green.
+
+### Plan
+
+- [x] **54.1** Tooling: script that parses a verification log into
+      `(file, line, expression, chosen triggers)` and diffs two runs. Without this, progress
+      is unmeasurable and regressions are invisible. Output checked in under `reports/`.
+      **DONE (2026-08-04).** `scripts/trigger_inventory.py` (parse/report/diff) +
+      `scripts/collect_trigger_inventory.sh` (one-command capture) + 27 tests over two
+      checked-in real Verus logs. Manual + rationale: `docs/phase54-trigger-workflow.md`;
+      artifacts land in `reports/triggers/`. The diff splits changes into **removed**
+      (progress), **added** (regression) and **changed** — same expression, different
+      auto-chosen terms. That third category is the one this phase exists for: it moves no
+      counter, so a note-count check cannot see it. Entries are keyed on
+      `(file, normalised expr, ordinal)`, not line numbers, so edits above a quantifier do
+      not read as remove+add. `--fail-on-regression` / `--max-notes` are ready for 54.9.
+- [ ] **54.2** Baseline: record per-module verification wall-clock and the full trigger
+      inventory at `0.2026.08.02`. This is the regression baseline for every later batch.
+      **Cannot be produced on this dev box.** The pinned verus
+      (`release/0.2026.08.02.b677dd5`, cached at `/tmp/verus-test/verus/...`) needs
+      **glibc >= 2.39**; this box has 2.35 and the binary aborts before running. `docker` is
+      installed but the daemon refuses this user (`permission denied ... docker.sock`);
+      `bwrap` exists but would need a whole newer-glibc rootfs. Older cached releases (e.g.
+      `0.2026.01.02.6f52890`) do run here and produced the parser fixtures, but their choices
+      are NOT the baseline — substituting them would poison every later comparison. So the
+      capture is routed through CI, which already runs the pinned release on `ubuntu-24.04`.
+  - [x] **54.2.a** CI capture. **DONE (2026-08-04).** The `verify` job now tees the `scons`
+        verification output to `verus-verify.log`, parses it with
+        `scripts/trigger_inventory.py`, prints the summary to the job summary, and uploads
+        `trigger-inventory.{json,md}` as an artifact. `set -o pipefail` keeps `tee` from
+        masking a verification failure; the capture runs `if: always()` with `--allow-empty`
+        and asserts nothing, so it cannot change the job verdict. Guarded by
+        `TestCiWiring` in `scripts/test_trigger_inventory.py` — a silently dropped step
+        would otherwise look exactly like "no triggers left".
+  - [ ] **54.2.b** Commit the baseline: download the `trigger-inventory-<version>`
+        artifact from a `verify` run (it now carries both the trigger inventory and the
+        timing inventory), check both in under `reports/triggers/`, and update
+        `reports/triggers/README.md`. These are the numbers every later batch diffs
+        against. Blocked only on a CI run of the `verify` job publishing the artifact.
+  - [x] **54.2.c** Per-module wall-clock. **DONE (2026-08-04).** `SConstruct` gained
+        `--verus-extra-args` (shlex-split, appended to the verus command line; verified by
+        `scons -n` dry run), CI passes `--verus-extra-args="--time-expanded"`, and
+        `scripts/verus_timing.py` (parse/report/diff) turns the breakdown into per-module
+        `verify/air/smt-init/smt-run` times plus rlimit counts. `diff
+        --max-regression-pct 20 --fail-on-regression` is the phase's acceptance criterion
+        made checkable. Two deliberate choices: a `--min-ms` noise floor (default 500) so a
+        40ms→80ms module is not called a 100% regression — those rows are still printed
+        under "below the noise floor" rather than silently dropped — and improvements
+        reported separately, since a large speedup can mean a trigger became too
+        restrictive. Verus prints the crate root with an empty module name; it is recorded
+        as `<root>` so it cannot be confused with a missing module. 30 tests
+        (`scripts/test_verus_timing.py`), including guards that CI really passes the flag
+        and that `SConstruct` really forwards it.
+      Note the 534 figure was measured in Verus's default `selective` mode, which is what CI
+      captures; `--triggers-mode all-modules` reports more, and counts across modes are not
+      comparable (the mode is recorded in the label and file name so a diff cannot silently
+      mix them).
+- [ ] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
+      Small, low-coupling, exercises the whole workflow. **Gate: do not proceed to 54.4 until
+      the pilot is green with no wall-clock regression.**
+- [ ] **54.4** The 5 `broadcast` functions. Small but high-leverage — these are in scope
+      crate-wide.
+- [ ] **54.5** `src/protocol/RSL/` (131). Ordered by module, each batch independently verified.
+- [ ] **54.6** `src/implementation/RSL/` (101). Note 43 are in `gen_helpers.rs`, which is a
+      hand-written companion to generated code — check whether they should move to 54.7 instead.
+- [ ] **54.7** Transpiler codegen emits explicit triggers; regenerate; confirm all 109
+      generated notes are gone and the regenerated tree still verifies.
+- [ ] **54.8** `src/protocol/Raft/` (177, of which 141 in `refinement_proof/invariants.rs`).
+      Deliberately last: this file also holds the 12 Phase 34 `assume`s and is the most
+      fragile proof in the tree.
+- [ ] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
+      ceiling, so this does not silently regrow.
+
+### Acceptance
+
+- 0 `automatically chose triggers` notes on a full pass, or a checked-in list of the
+  deliberate exceptions with a reason for each
+- `1044 verified, 0 errors` still holds
+- No module's verification wall-clock regresses more than 20% against the 54.2 baseline
+- CI guard from 54.9 in place
+
+### Non-goals
+
+- Not fixing the 12 Raft `assume`s (Phase 34, deprecated) — but 54.8 touches the same file,
+  so the two should not run concurrently.
+- Not the 876 `non_snake_case` warnings. Those are noise from the deliberate `L*`/`C*`
+  naming that mirrors the IronFleet Dafny identifiers; suppress with one crate-level
+  `#![allow(non_snake_case)]` rather than renaming. Separate, ten-minute task.
+- Not the ~88 deprecated-API warnings from the `0.2026.08` `Set` change (68 always-true
+  `.finite()` calls, 20 `Set::new_assuming_finite`). Also separate.
+
+### Files
+
+`src/protocol/{RSL,Raft}/`, `src/implementation/RSL/`, `src/common/`, `src/verus_extra/`,
+`transpiler/src/` (codegen), `scripts/regenerate_all.sh`, `reports/` (trigger inventory).

@@ -92,6 +92,22 @@ others is state it accumulated, not state it peeks at.
 `x[e]` must have `e` syntactically equal to `self`. Anything else is a violation reported with
 the variable, the index expression, and the position.
 
+### Four clarifications, from the parallel 52.M0
+
+A second, independent implementation of this milestone (`b6245c76`) stated C2 more precisely
+than the text above. Its linter did not survive the merge; these distinctions should:
+
+- **Indexing by a message header is not automatically a cross-node read.** `votes[m.src]` is
+  fine — `m.src` is a node *id*, and `votes` is this node's own table about others. But
+  `log[m.src]` reads the *sender's* state through the back door, and is exactly what C2
+  forbids. The difference is whether the indexed variable is this node's or the peer's.
+- **Reading the whole array is a cross-node read**, even without an index:
+  `Cardinality(state)` observes every node at once.
+- **Writing the whole array is out**, too: `x' = [i \in Node |-> ...]` in an action is a
+  step that updates every node. Only `Init` may do it.
+- **Frame conditions are exempt.** `x' = x` and `\A j \in Node : x'[j] = x[j]` mention a
+  non-`self` index but carry no information across nodes, and P5 regenerates them anyway.
+
 ---
 
 ## C3 — No history variables
@@ -139,6 +155,25 @@ exactly what the V2 TLC check exists to catch.
 
 **Reject** (any spec with two message-like variables, or one that also filters/rewrites the
 network in place): ambiguous, so the human must designate and normalize first.
+
+### The permitted idioms, exhaustively
+
+Also from the parallel 52.M0, and more complete than the three-idiom list above. The network
+may only be:
+
+- **sent to** — `net' = net \cup {m}`
+- **discarded from** — `net' = net \ {m}`
+- **replied on** — `net' = (net \ {m}) \cup {m2}`
+- **received from** — `\E m \in net : ...`
+- or passed to a helper that does one of those (`Send`, `Reply`, `Discard`, `Broadcast`,
+  `Receive`, `WithMessage`, `WithoutMessage`).
+
+Anything else — `net' = {}`, indexing the network, taking its cardinality — assumes a global
+view of the channel that the framework does not provide.
+
+**Every sent message must carry a source and a destination** (`src`/`source`/`msource`/`from`/
+`sender`, and `dst`/`dest`/`mdest`/`to`/`receiver`/`target`), because the runtime routes on
+them.
 
 ---
 

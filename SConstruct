@@ -2,6 +2,7 @@
 import atexit
 import os, os.path
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -42,6 +43,15 @@ AddOption('--debug-build',
   default=False,
   action='store_true',
   help="Build executables in debug mode")
+
+AddOption('--verus-extra-args',
+  dest='verus_extra_args',
+  type='string',
+  nargs=1,
+  default='',
+  action='store',
+  help='Extra arguments appended to every Verus invocation, e.g. '
+       '--verus-extra-args="--time-expanded" (Phase 54.2.c timing capture)')
 
 verus_path = GetOption('verus_path')
 if verus_path is None and not GetOption('skip_verus'):
@@ -110,6 +120,11 @@ def generate_verus_actions(source, target, env, for_signature):
   cmd_line = [verus_script, "--crate-type=dylib", "--expand-errors"] + opt_flag + ["--compile", str(source[0])]
   if GetOption("no_verify"):
       cmd_line.append("--no-verify")
+  # Phase 54.2.c: let callers append verifier flags (e.g. --time-expanded)
+  # without editing this file. Parsed with shlex so quoted arguments survive.
+  extra = GetOption("verus_extra_args")
+  if extra:
+      cmd_line += shlex.split(extra)
   return [ cmd_line ]
 
 def get_verus_dependencies(target, source, env):
