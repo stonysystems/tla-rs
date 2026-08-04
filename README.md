@@ -1,6 +1,26 @@
-# tla-rs (IronFleet Verus)
+# tla-rs: IronFleet and AutoMan in Verus
 
-A Rust implementation of the IronFleet verified distributed systems framework, featuring formally verified Byzantine fault-tolerant consensus protocols using [Verus](https://github.com/verus-lang/verus).
+`tla-rs` lets you write TLA-style distributed-system specifications in
+Rust/[Verus](https://github.com/verus-lang/verus), then automatically derive executable Rust
+implementations and the proof obligations connecting them to their specifications. It is
+primarily a reimplementation of the systems and methodology described in two papers:
+
+- [**IronFleet: Proving Practical Distributed Systems Correct**](https://doi.org/10.1145/2815400.2815428)
+  ([code](https://github.com/microsoft/Ironclad/tree/main/ironfleet)) — the verified
+  distributed-systems framework, refinement methodology, and Multi-Paxos replicated state
+  machine on which this project is based.
+- [**AutoMan: Facilitating Verified Distributed Systems Development Through Automatic Code
+  Generation and Manual Optimizations**](https://doi.org/10.1145/3731569.3764822)
+  ([code](https://github.com/stonysystems/automan)) — the workflow for generating executable
+  implementations and their verification obligations from protocol specifications.
+
+Both original systems use Dafny. This project re-expresses their core ideas in verified Rust:
+IronFleet's specifications, proofs, and runtime structure are ported to Verus, while AutoMan's
+specification-to-implementation workflow is reimplemented as a Rust/Verus transpiler.
+
+The repository also extends that foundation with additional distributed protocols, bidirectional
+TLA+/Verus translation, source-first and DPOR-based model checking, mutation-oriented code
+generation, and deployable C# networking/runtime integration.
 
 ## Features
 
@@ -331,7 +351,9 @@ Some code borrowed from [IronKV](https://github.com/verus-lang/verified-ironkv):
 - Binding to C# (`src/lib.rs`)
 - Common marshalling library (`src/implementation/common/marshalling.rs`)
 
-The transpiler is inspired by [AutoMan](https://github.com/stonysystems/automan) (for Dafny), reimplemented in Rust for Verus.
+The transpiler reimplements the [AutoMan](https://github.com/stonysystems/automan) workflow
+for Rust and Verus. The additional protocols, translation/model-checking tools, and Rust-specific
+code-generation optimizations are extensions developed in this repository.
 
 ## License
 
