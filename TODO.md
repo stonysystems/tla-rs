@@ -16178,18 +16178,39 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       batch. 23 tests. One real bug caught by spot-checking during development: a comma
       between binders (`forall |x1: X, x2: X|`) truncated the scope scan, so annotations
       after a multi-binder list were misreported as unannotated.
-- [ ] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
-      Small, low-coupling, exercises the whole workflow. **Gate: do not proceed to 54.4 until
-      the pilot is green with no wall-clock regression.**
-      **BLOCKED on this dev box, measured 2026-08-04:** the pinned verus needs glibc >= 2.39
-      (box has 2.35) and the older cached releases cannot even compile the crate — running
-      `0.2026.01.02.6f52890` with `--no-verify` over `src/lib.rs` aborts with **72 errors**
-      (`IMap` undeclared, `lemma_set_disjoint_iff_empty_intersection` renamed, ... — the tree
-      targets 0.2026.08 vstd). So no trigger edit can be validated here, and committing
-      unverified proof edits is not an option. 54.3 onwards needs a host that can run the
-      pinned verifier. The work-list for it is `reports/triggers/sites.md`:
-      `src/common/collections/` has 68 unannotated sites and `src/verus_extra/` 31, of which
-      only the ambiguous subset (11 and 4 notes respectively) is what Verus currently guesses at.
+- [x] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
+      **DONE (2026-08-04). Gate passed; 54.4 may proceed.** All 15 notes eliminated — both
+      directories are now at 0 — with `1044 verified, 0 errors` unchanged and the crate total
+      534 → 519. Evidence: `reports/triggers/54.3-pilot.{json,md}` plus the two diffs
+      (`54.3-pilot-trigger-diff.md`, `54.3-pilot-timing-diff.md`): 15 removed, **0 added,
+      0 changed**, total verify time −0.3%, and every touched module flat or slightly faster
+      (sets 200→196, hashsets 285→279, vecs 186→178, set_lib_ext_v 362→270, count_matches
+      344→349 ms).
+      Method: annotate with **exactly the trigger Verus already chose**, so behaviour is
+      preserved by construction and the diff's `changed` count stays 0. Three things learned
+      that 54.4+ will hit:
+      (a) **`#![trigger ...]` after the binder works on `choose` and `assert forall`**, not
+      just `forall`/`exists`;
+      (b) **a trigger may not contain a lambda** — Verus auto-chose
+      `s.map(<closure>).contains(op)` in `hashsets.rs`, then rejected both
+      `#![trigger ...]` and inline `#[trigger]` with *"triggers cannot contain
+      let/forall/exists/lambda/choose"*. It auto-chooses terms it forbids you to write. The
+      resolution was not an exception after all: annotating the **inner** quantifiers made
+      the outer note disappear on its own, so the site is now clean. Where that trick does
+      not work, hoisting the closure to a named `spec fn` is the fallback — but check the
+      callers first, since this lemma's only caller is generated code;
+      (c) nested `assert forall` needs the outer binder annotated too; annotating only the
+      inner one leaves the outer note in place.
+- [x] **54.3.a** Timing gate made usable (found by the pilot). The first gate run flagged
+      `implementation::RSL::replicaimpl_no_receive_clock` at +24.5% — a module the pilot never
+      touched. Verus verifies modules in parallel (127 threads here) so per-module wall-clock
+      tracks contention: that module measured 1967 / 2448 / 2241 ms across three runs of two
+      code states. A single-sample 20% threshold therefore flags untouched modules, and a
+      gate that cries wolf gets ignored. `verus_timing.py diff --confirm-with <second run of
+      the same code>` now demotes any regression that does not reproduce, reporting it under
+      "Not reproduced by the confirmation run" rather than dropping it. With confirmation the
+      pilot gate is clean. **54.4+ must pass `--confirm-with`**; without it the 20% criterion
+      is not trustworthy at this granularity.
 - [ ] **54.4** The 5 `broadcast` functions. Small but high-leverage — these are in scope
       crate-wide.
 - [ ] **54.5** `src/protocol/RSL/` (131). Ordered by module, each batch independently verified.

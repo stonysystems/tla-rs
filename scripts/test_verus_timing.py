@@ -242,6 +242,51 @@ class TestDiff(unittest.TestCase):
         self.assertEqual([r["module"] for r in d["regressions"]], ["a", "b"])
 
 
+class TestConfirmation(unittest.TestCase):
+    """A regression must reproduce against a second run of the same new code.
+
+    Measured during the 54.3 pilot: an *untouched* module read 1967 / 2448 /
+    2241 ms across three runs, because Verus verifies modules in parallel and
+    wall-clock moves with contention. Without confirmation the 20% gate flags
+    modules nobody edited, and a gate that cries wolf gets ignored.
+    """
+
+    def inv(self, modules, label="x"):
+        return vt.build_inventory(synthetic_log(modules), label=label)
+
+    def test_reproduced_regression_stays(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}), self.inv({"m": 2000}))
+        d = vt.confirm_regressions(d, self.inv({"m": 1900}, label="confirm"))
+        self.assertEqual(len(d["regressions"]), 1)
+        self.assertEqual(d["regressions"][0]["confirm_ms"], 1900)
+
+    def test_unreproduced_regression_is_demoted(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}), self.inv({"m": 2000}))
+        d = vt.confirm_regressions(d, self.inv({"m": 1050}, label="confirm"))
+        self.assertEqual(d["regressions"], [])
+        self.assertEqual(len(d["unconfirmed_regressions"]), 1)
+        self.assertEqual(d["unconfirmed_regressions"][0]["confirm_ms"], 1050)
+
+    def test_module_absent_from_the_confirmation_run_is_demoted(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}), self.inv({"m": 2000}))
+        d = vt.confirm_regressions(d, self.inv({"other": 10}, label="confirm"))
+        self.assertEqual(d["regressions"], [])
+        self.assertIsNone(d["unconfirmed_regressions"][0]["confirm_ms"])
+
+    def test_confirmation_respects_the_noise_floor(self):
+        d = vt.diff_inventories(
+            self.inv({"m": 100}), self.inv({"m": 900}), min_ms=500
+        )
+        self.assertEqual(len(d["regressions"]), 1)
+        d = vt.confirm_regressions(d, self.inv({"m": 400}, label="c"), min_ms=500)
+        self.assertEqual(d["regressions"], [])
+
+    def test_confirmation_source_is_recorded(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}), self.inv({"m": 2000}))
+        d = vt.confirm_regressions(d, self.inv({"m": 1900}, label="run-2"))
+        self.assertEqual(d["confirmed_against"], "run-2")
+
+
 class TestCli(unittest.TestCase):
     def parse_to(self, tmp, name, log_text):
         log = os.path.join(tmp, name + ".log")

@@ -298,6 +298,37 @@ def fmt(v):
 # ---------------------------------------------------------------------------
 
 
+def confirm_regressions(delta, confirm, max_regression_pct=20.0, min_ms=500,
+                        field="verify_ms"):
+    """Demote regressions that a second run of the same code does not reproduce.
+
+    Verus verifies modules in parallel (127 threads on this box), so a module's
+    wall-clock moves with contention: measured here, an *untouched* module read
+    1967 / 2448 / 2241 ms across three runs of two code states. A single-sample
+    20% threshold therefore flags modules nobody edited. Requiring the
+    regression to appear against a second, independent run of the *new* code
+    keeps the criterion meaningful without lowering it.
+    """
+    confirmed, unconfirmed = [], []
+    for r in delta["regressions"]:
+        entry = confirm["modules"].get(r["module"])
+        c_ms = (entry or {}).get(field)
+        if c_ms is None:
+            unconfirmed.append(dict(r, confirm_ms=None))
+            continue
+        base_ms = r["base_ms"]
+        pct = ((c_ms - base_ms) * 100.0 / base_ms) if base_ms else 0.0
+        record = dict(r, confirm_ms=c_ms, confirm_pct=round(pct, 1))
+        if pct > max_regression_pct and max(base_ms, c_ms) >= min_ms:
+            confirmed.append(record)
+        else:
+            unconfirmed.append(record)
+    delta["regressions"] = confirmed
+    delta["unconfirmed_regressions"] = unconfirmed
+    delta["confirmed_against"] = confirm.get("label", "")
+    return delta
+
+
 def diff_inventories(base, new, max_regression_pct=20.0, min_ms=500, field="verify_ms"):
     """Compare per-module times.
 
@@ -418,6 +449,26 @@ def render_diff(d):
         out.append("")
 
     table("Regressions", d["regressions"])
+    if d.get("unconfirmed_regressions"):
+        out.append("## Not reproduced by the confirmation run")
+        out.append("")
+        out.append(
+            "Over threshold against the first run but not against `{}`, which "
+            "verified the same code. Parallel verification makes per-module "
+            "wall-clock contention-sensitive, so these are noise, not proof "
+            "regressions.".format(d.get("confirmed_against") or "the second run")
+        )
+        out.append("")
+        out.append("| module | base ms | new ms | confirm ms |")
+        out.append("|---|---:|---:|---:|")
+        for r in d["unconfirmed_regressions"]:
+            out.append(
+                "| `{}` | {} | {} | {} |".format(
+                    r["module"], r["base_ms"], r["new_ms"],
+                    "n/a" if r.get("confirm_ms") is None else r["confirm_ms"],
+                )
+            )
+        out.append("")
     table(
         "Below the noise floor",
         d["below_noise_floor"],
@@ -506,6 +557,12 @@ def main(argv=None):
         help="noise floor; modules smaller than this never count as regressions",
     )
     d.add_argument(
+        "--confirm-with",
+        help="a second timing inventory of the SAME new code; a regression is "
+        "only reported if it reproduces there (parallel verification makes "
+        "per-module wall-clock noisy)",
+    )
+    d.add_argument(
         "--fail-on-regression",
         action="store_true",
         help="exit 1 if any module regressed past the threshold",
@@ -545,6 +602,13 @@ def main(argv=None):
         max_regression_pct=args.max_regression_pct,
         min_ms=args.min_ms,
     )
+    if args.confirm_with:
+        delta = confirm_regressions(
+            delta,
+            _load(args.confirm_with),
+            max_regression_pct=args.max_regression_pct,
+            min_ms=args.min_ms,
+        )
     _write(args.out, json.dumps(delta, indent=2) if args.json else render_diff(delta))
     if args.fail_on_regression and delta["regressions"]:
         sys.stderr.write(

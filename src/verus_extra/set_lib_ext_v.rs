@@ -29,7 +29,7 @@ pub open spec fn flatten_sets<A>(sets: Set<Set<A>>) -> Set<A>
 
 pub proof fn flatten_sets_spec<A>(sets: Set<Set<A>>)
     ensures
-        (forall |e| #[trigger] flatten_sets(sets).contains(e) ==> exists |s| sets.contains(s) && s.contains(e)),
+        (forall |e| #[trigger] flatten_sets(sets).contains(e) ==> exists |s| #![trigger sets.contains(s)] sets.contains(s) && s.contains(e)),
         (forall |s: Set<A>| #[trigger] sets.contains(s) ==> s.subset_of(flatten_sets(sets)))
 {
     broadcast use Set::lemma_flatten_contains;
@@ -49,7 +49,8 @@ pub proof fn lemma_flatten_sets_union<A>(sets1: Set<Set<A>>, sets2: Set<Set<A>>)
     let rhs = flatten_sets(sets1).union(flatten_sets(sets2));
     assert forall |elem: A| lhs.contains(elem) <==> rhs.contains(elem) by {
         if lhs.contains(elem) {
-            let s = choose |s: Set<A>| sets1.union(sets2).contains(s) && s.contains(elem);
+            let s = choose |s: Set<A>| #![trigger sets1.union(sets2).contains(s)]
+                sets1.union(sets2).contains(s) && s.contains(elem);
             if sets1.contains(s) {
                 assert(flatten_sets(sets1).contains(elem));
             } else {
@@ -58,10 +59,12 @@ pub proof fn lemma_flatten_sets_union<A>(sets1: Set<Set<A>>, sets2: Set<Set<A>>)
             }
         } else if rhs.contains(elem) {
             if flatten_sets(sets1).contains(elem) {
-                let s = choose |s: Set<A>| sets1.contains(s) && s.contains(elem);
+                let s = choose |s: Set<A>| #![trigger sets1.contains(s)]
+                    sets1.contains(s) && s.contains(elem);
                 assert(sets1.union(sets2).contains(s));
             } else {
-                let s = choose |s: Set<A>| sets2.contains(s) && s.contains(elem);
+                let s = choose |s: Set<A>| #![trigger sets2.contains(s)]
+                    sets2.contains(s) && s.contains(elem);
                 assert(sets1.union(sets2).contains(s));
             }
         }
