@@ -544,6 +544,9 @@ impl ActionContext<'_> {
             (ProjectedType::Set(inner), TlaExpr::SetEnum(items)) if items.is_empty() => {
                 Some(format!("Set::<{}>::empty()", inner.render()))
             }
+            (ProjectedType::Seq(inner), TlaExpr::Tuple(items)) if items.is_empty() => {
+                Some(format!("Seq::<{}>::empty()", inner.render()))
+            }
             (ProjectedType::Map(_, value_ty), TlaExpr::FnConstruct { var, domain, body }) => {
                 let set = self.project_node_set(domain).ok()?;
                 let inner = ActionContext {
@@ -645,6 +648,24 @@ impl ActionContext<'_> {
                              branches must assign the same variables"
                         ));
                     };
+                    // A conditional that sends in both branches is a send whose
+                    // value is the conditional.
+                    if self.is_network(var) {
+                        *sends_seen = true;
+                        rendered.push(format!(
+                            "sent_packets == if {} {{ {} }} else {{ {} }}",
+                            self.project_expr(cond)?,
+                            self.collect_sent_or_empty(then_value)?,
+                            self.collect_sent_or_empty(else_value)?
+                        ));
+                        continue;
+                    }
+                    let Some(_) = else_updates.iter().find(|(v, _)| v == var) else {
+                        return Err(format!(
+                            "conditional assigns `{var}` in one branch only; both \
+                             branches must assign the same variables"
+                        ));
+                    };
                     let Some(field) = self.state_field(var) else {
                         return Err(format!("conditional update of unknown variable `{var}`"));
                     };
@@ -721,6 +742,16 @@ impl ActionContext<'_> {
         Ok(format!("sent_packets == {sent}"))
     }
 
+    /// The packets a network update adds, or an explicit empty set.
+    fn collect_sent_or_empty(&self, expr: &TlaExpr) -> Result<String, String> {
+        let sent = self.collect_sent(expr)?;
+        if sent.is_empty() {
+            Ok("Set::<LPacket>::empty()".to_string())
+        } else {
+            Ok(sent)
+        }
+    }
+
     /// Pull the *added* messages out of a network update, ignoring the removal
     /// of the message being consumed -- after projection the framework owns
     /// delivery, so consuming is not something the node states.
@@ -775,19 +806,19 @@ impl ActionContext<'_> {
         let mut fields = Vec::new();
         for (name, value) in &record {
             match name.as_str() {
-                "dst" => dst = Some(self.project_expr(value)?),
-                "type" | "kind" | "tag" => match value {
-                    TlaExpr::String(t) => tag = Some(t.clone()),
-                    other => {
+                "dst" | "mdest" => dst = Some(self.project_expr(value)?),
+                "type" | "kind" | "tag" | "mtype" => match self.resolve_tag(value) {
+                    Some(t) => tag = Some(t),
+                    None => {
                         return Err(format!(
                             "message tag {} is not a literal",
-                            render_source(other)
+                            render_source(value)
                         ))
                     }
                 },
                 // `src` is the sender: after projection that is this node, and
                 // the framework stamps it on the packet.
-                "src" | "source" | "sender" => {}
+                "src" | "source" | "sender" | "msource" => {}
                 // A field a constructor fills with a literal carries no
                 // information -- it is there because every message shares one
                 // record type. The enum declaration drops it too.
@@ -898,17 +929,17 @@ impl ActionContext<'_> {
                 }
             };
             match name.as_str() {
-                "dst" => dst = Some(projected(value)?),
-                "type" | "kind" | "tag" => match value {
-                    TlaExpr::String(t) => tag = Some(t.clone()),
-                    other => {
+                "dst" | "mdest" => dst = Some(projected(value)?),
+                "type" | "kind" | "tag" | "mtype" => match self.resolve_tag(value) {
+                    Some(t) => tag = Some(t),
+                    None => {
                         return Err(format!(
                             "message tag {} is not a literal",
-                            render_source(other)
+                            render_source(value)
                         ))
                     }
                 },
-                "src" | "source" | "sender" => {}
+                "src" | "source" | "sender" | "msource" => {}
                 _ if is_literal(value) => {}
                 other => fields.push((to_snake_case(other), projected(value)?)),
             }
@@ -1080,6 +1111,42 @@ impl ActionContext<'_> {
         }
     }
 
+    /// A message tag as a string, following a 0-ary operator when the spec
+    /// names its tags (`RequestVoteRequest == "rvq"`), which is the usual style.
+    fn resolve_tag(&self, expr: &TlaExpr) -> Option<String> {
+        match expr {
+            TlaExpr::String(t) => Some(t.clone()),
+            TlaExpr::Ident(name) => match self.spec.operator_bodies.get(name.as_str()) {
+                Some((params, TlaExpr::String(t))) if params.is_empty() => Some(t.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Project an index into a state field.
+    ///
+    /// **TLA+ sequences are 1-indexed and Verus's `Seq` is 0-indexed.** An
+    /// index into a sequence therefore loses one; an index into a map is a key
+    /// and must not be touched. Getting this wrong produces an off-by-one that
+    /// still verifies, which is why it is decided from the field's projected
+    /// type rather than guessed.
+    fn project_index(&self, field: &str, index: &TlaExpr) -> Result<String, String> {
+        let text = self.project_expr(index)?;
+        match self.field_type(field) {
+            Some(crate::tla::projection::ProjectedType::Seq(_)) => {
+                // A literal is folded so the common case reads naturally.
+                if let TlaExpr::Number(n) = index {
+                    if let Some(v) = n.to_i64() {
+                        return Ok((v - 1).to_string());
+                    }
+                }
+                Ok(format!("{text} - 1"))
+            }
+            _ => Ok(text),
+        }
+    }
+
     /// Whether an index expression denotes the acting node.
     fn is_node_index(&self, expr: &TlaExpr) -> bool {
         matches!(expr, TlaExpr::Ident(name) if *name == self.node_param)
@@ -1108,7 +1175,11 @@ impl ActionContext<'_> {
                     if let TlaExpr::Ident(var) = &**inner_func {
                         if let Some(field) = self.state_field(var) {
                             if self.is_node_index(outer_index) {
-                                return Ok(format!("s.{field}[{}]", self.project_expr(arg)?));
+                                let field = field.to_string();
+                                return Ok(format!(
+                                    "s.{field}[{}]",
+                                    self.project_index(&field, arg)?
+                                ));
                             }
                         }
                     }
@@ -1156,7 +1227,13 @@ impl ActionContext<'_> {
                 if matches!(&**record, TlaExpr::Ident(n) if Some(n) == self.msg_param.as_ref()) {
                     Ok(to_snake_case(field))
                 } else {
-                    Err(format!("record access {}", render_source(expr)))
+                    // A field of something else -- a log entry, say. The base
+                    // has to project first; if it does not, the error names it.
+                    Ok(format!(
+                        "{}.{}",
+                        self.project_expr(record)?,
+                        to_snake_case(field)
+                    ))
                 }
             }
             TlaExpr::Number(n) => Ok(n.to_i64().map(|v| v.to_string()).unwrap_or_default()),
@@ -1266,6 +1343,34 @@ impl ActionContext<'_> {
                 Ok(format!(
                     "{keyword}|{}: int| {domain} {joiner} {inner}",
                     bound.var
+                ))
+            }
+            // TLA+ sequence operators. `Len` and `Append` map directly;
+            // `SubSeq(s, a, b)` is 1-based and inclusive at both ends, while
+            // Verus's `subrange` is 0-based and exclusive at the end, so the
+            // start moves back one and the end stays put.
+            TlaExpr::OpApply { op, args }
+                if matches!(&**op, TlaExpr::Ident(n) if n == "Len") && args.len() == 1 =>
+            {
+                Ok(format!("{}.len()", self.project_expr(&args[0])?))
+            }
+            TlaExpr::OpApply { op, args }
+                if matches!(&**op, TlaExpr::Ident(n) if n == "Append") && args.len() == 2 =>
+            {
+                Ok(format!(
+                    "{}.push({})",
+                    self.project_expr(&args[0])?,
+                    self.project_expr(&args[1])?
+                ))
+            }
+            TlaExpr::OpApply { op, args }
+                if matches!(&**op, TlaExpr::Ident(n) if n == "SubSeq") && args.len() == 3 =>
+            {
+                Ok(format!(
+                    "{}.subrange({} - 1, {})",
+                    self.project_expr(&args[0])?,
+                    self.parenthesised(&args[1], 7)?,
+                    self.project_expr(&args[2])?
                 ))
             }
             // `Cardinality(S)` -- the counting half of P4. A quorum written as
@@ -1941,6 +2046,101 @@ Next == \E p \in Proc : Step(p)
                 .any(|c| c == "s_.ack == s.ack.union(set![c.node_id])"),
             "got {:?}",
             action(&acts, "Step").conjuncts
+        );
+    }
+
+    #[test]
+    fn a_sequence_index_loses_one_but_a_map_key_does_not() {
+        // TLA+ sequences are 1-indexed and Verus's Seq is 0-indexed, so an
+        // index into a sequence must lose one. A map key must not: it is a
+        // peer id, not a position. Getting this wrong is an off-by-one that
+        // still verifies.
+        let source = r#"---- MODULE Test ----
+VARIABLES log, nextIndex
+TypeOK == /\ log \in [Proc -> Seq(Nat)]
+          /\ nextIndex \in [Proc -> [Proc -> Nat]]
+Step(p, k) == /\ log[p][k] = 0
+              /\ nextIndex[p][k] = 0
+              /\ log' = log
+Next == \E p \in Proc : \E k \in Proc : Step(p, k)
+===="#;
+        let module = parse_module(source).unwrap();
+        let spec = project_module(&module).unwrap();
+        let acts = project_actions(&module, &spec);
+        let step = action(&acts, "Step");
+        assert!(
+            step.conjuncts.iter().any(|c| c == "s.log[k - 1] == 0"),
+            "a sequence index must lose one: {:?}",
+            step.conjuncts
+        );
+        assert!(
+            step.conjuncts.iter().any(|c| c == "s.next_index[k] == 0"),
+            "a map key must not be adjusted: {:?}",
+            step.conjuncts
+        );
+    }
+
+    #[test]
+    fn projects_the_sequence_operators() {
+        let source = r#"---- MODULE Test ----
+VARIABLES log
+TypeOK == log \in [Proc -> Seq(Nat)]
+Step(p) == /\ Len(log[p]) < 5
+           /\ log' = [log EXCEPT ![p] = Append(log[p], 1)]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let module = parse_module(source).unwrap();
+        let spec = project_module(&module).unwrap();
+        let acts = project_actions(&module, &spec);
+        let step = action(&acts, "Step");
+        assert!(
+            step.conjuncts.iter().any(|c| c == "s.log.len() < 5"),
+            "{:?}",
+            step.conjuncts
+        );
+        assert!(
+            step.conjuncts
+                .iter()
+                .any(|c| c == "s_.log == s.log.push(1)"),
+            "{:?}",
+            step.conjuncts
+        );
+    }
+
+    #[test]
+    fn resolves_a_named_message_tag() {
+        // Specs usually name their tags rather than writing the literal.
+        let source = r#"---- MODULE Test ----
+VARIABLES x, network
+Ping == "ping"
+Message == [mtype: {Ping}, msource: Proc, mdest: Proc, val: Nat]
+Mk(i, j, v) == [mtype |-> Ping, msource |-> i, mdest |-> j, val |-> v]
+TypeOK == x \in [Proc -> Nat]
+Send(p) == /\ network' = network \cup {Mk(p, 1, x[p])}
+           /\ x' = x
+Recv(p, m) == /\ m.mdest = p
+              /\ m.mtype = Ping
+              /\ x' = [x EXCEPT ![p] = m.val]
+              /\ network' = network
+Next == \E p \in Proc : Send(p) \/ \E m \in network : Recv(p, m)
+===="#;
+        let module = parse_module(source).unwrap();
+        let spec = project_module(&module).unwrap();
+        assert_eq!(
+            spec.messages
+                .iter()
+                .map(|m| m.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["Ping".to_string()]
+        );
+        let acts = project_actions(&module, &spec);
+        assert!(
+            action(&acts, "Send")
+                .conjuncts
+                .iter()
+                .any(|c| c.contains("LMessage::Ping")),
+            "{:?}",
+            action(&acts, "Send").conjuncts
         );
     }
 }

@@ -380,8 +380,10 @@ impl ProjectionContext<'_> {
     /// (`src`, `dst`) are dropped from the payload — after projection they
     /// belong to the packet, not to the message.
     fn project_messages(&self, gaps: &mut Vec<String>) -> Vec<MessageVariant> {
-        const TAG_FIELDS: &[&str] = &["type", "kind", "tag"];
-        const ROUTING_FIELDS: &[&str] = &["src", "dst", "source", "dest", "sender", "receiver"];
+        const TAG_FIELDS: &[&str] = &["type", "kind", "tag", "mtype"];
+        const ROUTING_FIELDS: &[&str] = &[
+            "src", "dst", "source", "dest", "sender", "receiver", "msource", "mdest",
+        ];
 
         // The message type may be a single record set, or a union of them --
         // Paxos declares one per phase and unions them. Collecting the union's
@@ -437,10 +439,23 @@ impl ProjectionContext<'_> {
 
         let mut variants = Vec::new();
         for tag in tags {
-            let TlaExpr::String(tag) = tag else {
-                gaps.push(format!("message tag {tag:?} is not a string literal"));
-                continue;
+            // A spec usually names its tags (`RequestVoteRequest == "rvq"`),
+            // so follow a 0-ary operator to the literal behind it.
+            let tag = match tag {
+                TlaExpr::String(t) => t.clone(),
+                TlaExpr::Ident(name) => match self.resolve(name) {
+                    Some(TlaExpr::String(t)) => t.clone(),
+                    _ => {
+                        gaps.push(format!("message tag `{name}` is not a string literal"));
+                        continue;
+                    }
+                },
+                other => {
+                    gaps.push(format!("message tag {other:?} is not a string literal"));
+                    continue;
+                }
             };
+            let tag = &tag;
             // A variant carries only the fields its constructor actually fills
             // in. A field a constructor sets to a literal (`clock |-> 0` in an
             // acknowledgement) carries no information and is not payload; the
