@@ -7,6 +7,7 @@ pub mod ast;
 pub mod clean_subset;
 pub mod mc_wrapper;
 pub mod parser;
+pub mod projection;
 pub mod tokenizer;
 pub mod translator;
 pub mod types;
@@ -20,6 +21,7 @@ pub use mc_wrapper::{
     generate_relational_mc_wrapper, McWrapperArtifacts, McWrapperOptions, PacketProjectionMode,
 };
 pub use parser::{parse_module, ParseResult, TlaParseError, TlaParser};
+pub use projection::{project_module, ProjectedSpec, ProjectedType, ProjectionError};
 pub use tokenizer::{TlaToken, TlaTokenKind, TlaTokenizer, TlaTokenizerError};
 pub use translator::{
     generate_mode_annotations, translate_expr, translate_expr_with_config, translate_module,
