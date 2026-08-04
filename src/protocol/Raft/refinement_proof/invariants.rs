@@ -494,6 +494,76 @@ verus! {
         };
     }
 
+    /// The stale-leader direction. Quorum overlap is symmetric, so a leader
+    /// elected under a phase that the certificate's governing phase legally
+    /// progresses *from* is covered just as well as one that progresses *to*
+    /// it. Together with
+    /// `lemma_certified_boundary_present_when_phases_are_related` this covers
+    /// every leader whose election phase is within one legal joint-consensus
+    /// step of the certificate's governing phase, in either direction.
+    pub proof fn lemma_certified_boundary_present_in_one_step_stale_leader(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        election_phase: MembershipPhase,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(election_phase),
+            is_legal_phase_progression(
+                election_phase,
+                ds.configuration_commit_certificates[index].governing_phase,
+            ),
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        let certificate = ds.configuration_commit_certificates[index];
+
+        assert(has_recorded_election_quorum(ds.server_states[leader_id]));
+        assert(is_quorum_for_phase(
+            ds.server_states[leader_id].votes_granted,
+            election_phase,
+        ));
+
+        lemma_configuration_commit_certificate_basic_validity(ds, index);
+        assert(is_quorum_for_phase(
+            certificate.quorum,
+            certificate.governing_phase,
+        ));
+
+        // Progression runs from the leader's phase to the certificate's, so
+        // the overlap lemma is applied in that order.
+        lemma_legal_phase_progression_quorums_intersect(
+            ds.server_states[leader_id].votes_granted,
+            certificate.quorum,
+            election_phase,
+            certificate.governing_phase,
+        );
+
+        let overlap_voter = choose |server: int|
+            ds.server_states[leader_id].votes_granted.contains(server)
+            && certificate.quorum.contains(server);
+
+        assert(ds.server_states[leader_id].votes_granted
+            .contains(overlap_voter));
+        assert(VotesGrantedAreServers(ds));
+        assert(0 <= overlap_voter < ds.num_servers);
+
+        assert(CertifiedBoundaryTransfersToVotedLeader(ds));
+    }
+
     /// Any server that has committed past a certified Configuration boundary
     /// holds exactly the certified entry there — no membership-phase hypothesis
     /// at all, so this covers joint consensus unconditionally.
