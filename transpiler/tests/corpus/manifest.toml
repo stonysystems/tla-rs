@@ -173,7 +173,7 @@ notes = "Hardest tier-2 case; do it after Raft is green."
 [[case]]
 id = "t3_01_jetpack"
 tier = 3
-status = "intake"
+status = "golden"
 source_repo = "local"
 source_path = "docs/jetpack_reference/jetpack_raft_composition.tla"
 source_commit = ""
@@ -182,4 +182,4 @@ reference = "src/protocol/Jetpack/jetpack.rs"
 clean_distance = "2"
 expected_rules = ["C4", "C5"]
 milestone_gate = "52.M4b"
-notes = "Heavy rewrite: instantaneous global reads, 3-D log, INSTANCE composition. `original.tla` is the *composition* module, the only one of the three with Init/Next/Spec; the other two are kept beside it as `original_jetpack_layer.tla` and `original_base_raft.tla`. The clean-distance of 2 is NOT comparable to the other cases: the composition module has no type invariant, so the linter cannot identify the node set and never reaches C1/C2 — the two findings are the message *array* (C4) and that failure itself (C5). Reading it as 'nearly clean' would be wrong. The Phase 51 reference spec is PARTIAL (entry actions 51.9 missing) — it is a review aid, not a golden."
+notes = "Heavy rewrite: instantaneous global reads, 3-D log, INSTANCE composition. `original.tla` is the *composition* module, the only one of the three with Init/Next/Spec; the other two are kept beside it as `original_jetpack_layer.tla` and `original_base_raft.tla`. The clean-distance of 2 is NOT comparable to the other cases: the composition module has no type invariant, so the linter cannot identify the node set and never reaches C1/C2 — the two findings are the message *array* (C4) and that failure itself (C5). Reading it as 'nearly clean' would be wrong. The Phase 51 reference spec is PARTIAL (entry actions 51.9 missing) — it is a review aid, not a golden, and golden.rs is MORE complete than it. `clean.tla` translated first try and passed verus first try, the only case in the corpus to do so; Raft is what paid for that. TLC closes the state space at both 2 and 3 servers (19.5M distinct at 3, depth 78, TypeOK + Consistency hold), which is stronger than Raft. `golden` not `green` only because V2 as defined is clean-vs-original and the slice shares no observable with the composition module — the same gap Paxos has."
