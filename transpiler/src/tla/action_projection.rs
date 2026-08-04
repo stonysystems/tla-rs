@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use crate::tla::ast::{TlaBinOp, TlaExceptPath, TlaExpr, TlaModule, TlaUnaryOp};
 use crate::tla::clean_subset::node_parameterized_operators;
-use crate::tla::projection::{to_snake_case, ProjectedSpec};
+use crate::tla::projection::{to_snake_case, ProjectedSpec, ProjectionError};
 
 /// How an action is reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +81,61 @@ pub struct ProjectedAction {
     /// What could not be projected. A non-empty list means the action is not
     /// finished, and the emitter must not present it as if it were.
     pub gaps: Vec<String>,
+}
+
+/// Everything the projection produces for one module.
+#[derive(Debug, Clone)]
+pub struct ProjectedModule {
+    pub spec: ProjectedSpec,
+    pub helpers: Vec<ProjectedHelper>,
+    pub actions: Vec<ProjectedAction>,
+}
+
+/// Project a clean-subset module end to end.
+///
+/// Constants are pruned to those the projected output actually references. The
+/// source's `N` defines the node set, which projection turns into a constant in
+/// its own right, and `maxClock` exists only for a model-checking constraint
+/// that does not project — carrying either into the spec would state knobs the
+/// spec does not use.
+pub fn project(module: &TlaModule) -> Result<ProjectedModule, ProjectionError> {
+    let mut spec = crate::tla::projection::project_module(module)?;
+    let helpers = project_helpers(module, &spec);
+    let actions = project_actions(module, &spec);
+
+    let mut texts: Vec<&String> = Vec::new();
+    for helper in &helpers {
+        texts.push(&helper.body);
+    }
+    for action in &actions {
+        texts.extend(action.conjuncts.iter());
+        texts.extend(action.frame.iter());
+    }
+    spec.constants.retain(|(name, _)| {
+        name == "node_id" || texts.iter().any(|t| references_constant(t, name))
+    });
+
+    Ok(ProjectedModule {
+        spec,
+        helpers,
+        actions,
+    })
+}
+
+/// Whether `text` references `c.<name>` as a whole field, not as a prefix of a
+/// longer one — `c.n` must not be found inside `c.node_id`.
+fn references_constant(text: &str, name: &str) -> bool {
+    let needle = format!("c.{name}");
+    let mut from = 0;
+    while let Some(at) = text[from..].find(&needle) {
+        let end = from + at + needle.len();
+        let next = text[end..].chars().next();
+        if !next.is_some_and(|ch| ch.is_alphanumeric() || ch == '_') {
+            return true;
+        }
+        from = end;
+    }
+    false
 }
 
 /// Project the helpers a module's actions call **as functions**.
@@ -216,9 +271,24 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
             frame.push("sent_packets == Set::<LPacket>::empty()".to_string());
         }
 
-        let params = match (&msg_param, &ctx.msg_param) {
-            (Some(_), _) => vec!["src: int".to_string()],
-            _ => Vec::new(),
+        // A receive's parameters are the sender plus the payload of the variant
+        // it handles: the message itself does not survive projection, so every
+        // field the action reads has to arrive as a parameter.
+        let params = if msg_param.is_some() {
+            let mut params = vec!["src: int".to_string()];
+            if let Some(tag) = &handles_tag {
+                if let Some(variant) = spec.messages.iter().find(|m| m.tag == *tag) {
+                    params.extend(
+                        variant
+                            .fields
+                            .iter()
+                            .map(|(name, ty)| format!("{name}: {}", ty.render())),
+                    );
+                }
+            }
+            params
+        } else {
+            Vec::new()
         };
 
         actions.push(ProjectedAction {

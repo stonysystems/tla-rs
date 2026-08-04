@@ -14,7 +14,8 @@ pub mod translator;
 pub mod types;
 
 pub use action_projection::{
-    project_actions, project_helpers, ActionKind, ProjectedAction, ProjectedHelper,
+    project, project_actions, project_helpers, ActionKind, ProjectedAction, ProjectedHelper,
+    ProjectedModule,
 };
 pub use ast::{
     TlaBinOp, TlaConstantDecl, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaInstance, TlaModule,

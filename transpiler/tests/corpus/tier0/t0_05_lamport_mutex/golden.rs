@@ -22,6 +22,13 @@
 //!   there is no counting rule to apply here.
 //! - **P5 frame conditions.** Every action states what it leaves unchanged.
 //!
+//! Naming is uniform: a projected definition is `L` + the source's own name
+//! (`beats` → `Lbeats`, `AdvanceAll` → `LAdvanceAll`), a constant keeps the
+//! source's name (`Proc` → `c.proc`), and a receive's parameter is named after
+//! the message field it carries. Helpers over node state survive as their own
+//! functions rather than being inlined, which is what lets a reviewer match this
+//! file against `clean.tla` concept by concept.
+//!
 //! `sent_packets` is a **`Set`**, not a `Seq`. The clean subset designates the
 //! network as a set (C4), and a broadcast is written there as a set
 //! comprehension over the peers; a sequence would require a delivery order that
@@ -67,7 +74,7 @@ verus! {
 
     /// Protocol constants, including this node's own identity.
     pub struct LConstants {
-        pub procs: Set<int>,
+        pub proc: Set<int>,
         pub node_id: int,
     }
 
@@ -79,20 +86,25 @@ verus! {
     }
 
     /// Every peer's counter advances on a broadcast; this node's own does not.
-    pub open spec fn Ladvance_all(s: LState, c: LConstants) -> Map<int, int> {
+    /// One peer's counter advances on a point-to-point send.
+    pub open spec fn LAdvanceOne(s: LState, c: LConstants, d: int) -> Map<int, int> {
+        s.send_seq.insert(d, s.send_seq[d] + 1)
+    }
+
+    pub open spec fn LAdvanceAll(s: LState, c: LConstants) -> Map<int, int> {
         Map::new(
-            c.procs,
-            |q: int| if q == c.node_id { s.send_seq[q] } else { s.send_seq[q] + 1 },
+            c.proc,
+            |d: int| if d == c.node_id { s.send_seq[d] } else { s.send_seq[d] + 1 },
         )
     }
 
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
         &&& s.clock == 1
-        &&& s.req == Map::new(c.procs, |q: int| 0int)
+        &&& s.req == Map::new(c.proc, |q: int| 0int)
         &&& s.ack == Set::<int>::empty()
         &&& s.crit == false
-        &&& s.send_seq == Map::new(c.procs, |q: int| 0int)
-        &&& s.recv_seq == Map::new(c.procs, |q: int| 0int)
+        &&& s.send_seq == Map::new(c.proc, |q: int| 0int)
+        &&& s.recv_seq == Map::new(c.proc, |q: int| 0int)
     }
 
     /// Request access to the critical section, broadcasting to every peer.
@@ -104,13 +116,13 @@ verus! {
     ) -> bool {
         &&& s.req[c.node_id] == 0
         &&& s_.req == s.req.insert(c.node_id, s.clock)
-        &&& sent_packets == c.procs.remove(c.node_id).map(
+        &&& sent_packets == c.proc.remove(c.node_id).map(
                 |d: int| LPacket {
                     dst: d,
                     msg: LMessage::Req { clock: s.clock, seq: s.send_seq[d] },
                 },
             )
-        &&& s_.send_seq == Ladvance_all(s, c)
+        &&& s_.send_seq == LAdvanceAll(s, c)
         &&& s_.ack == set![c.node_id]
         &&& s_.clock == s.clock
         &&& s_.crit == s.crit
@@ -123,17 +135,17 @@ verus! {
         s_: LState,
         c: LConstants,
         src: int,
-        msg_clock: int,
+        clock: int,
         seq: int,
         sent_packets: Set<LPacket>,
     ) -> bool {
         &&& seq == s.recv_seq[src]
-        &&& s_.req == s.req.insert(src, msg_clock)
-        &&& s_.clock == if msg_clock > s.clock { msg_clock + 1 } else { s.clock + 1 }
+        &&& s_.req == s.req.insert(src, clock)
+        &&& s_.clock == if clock > s.clock { clock + 1 } else { s.clock + 1 }
         &&& sent_packets == set![
                 LPacket { dst: src, msg: LMessage::Ack { seq: s.send_seq[src] } },
             ]
-        &&& s_.send_seq == s.send_seq.insert(src, s.send_seq[src] + 1)
+        &&& s_.send_seq == LAdvanceOne(s, c, src)
         &&& s_.recv_seq == s.recv_seq.insert(src, s.recv_seq[src] + 1)
         &&& s_.ack == s.ack
         &&& s_.crit == s.crit
@@ -166,8 +178,8 @@ verus! {
         c: LConstants,
         sent_packets: Set<LPacket>,
     ) -> bool {
-        &&& s.ack == c.procs
-        &&& forall|q: int| c.procs.contains(q) && q != c.node_id ==> Lbeats(s, c, q)
+        &&& s.ack == c.proc
+        &&& forall|q: int| c.proc.contains(q) && q != c.node_id ==> Lbeats(s, c, q)
         &&& s_.crit == true
         &&& sent_packets == Set::<LPacket>::empty()
         &&& s_.clock == s.clock
@@ -186,10 +198,10 @@ verus! {
     ) -> bool {
         &&& s.crit
         &&& s_.crit == false
-        &&& sent_packets == c.procs.remove(c.node_id).map(
+        &&& sent_packets == c.proc.remove(c.node_id).map(
                 |d: int| LPacket { dst: d, msg: LMessage::Rel { seq: s.send_seq[d] } },
             )
-        &&& s_.send_seq == Ladvance_all(s, c)
+        &&& s_.send_seq == LAdvanceAll(s, c)
         &&& s_.req == s.req.insert(c.node_id, 0)
         &&& s_.ack == Set::<int>::empty()
         &&& s_.clock == s.clock

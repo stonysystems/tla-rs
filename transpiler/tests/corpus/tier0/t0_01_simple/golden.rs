@@ -50,11 +50,13 @@ verus! {
         Done,
     }
 
-    /// Wire messages. `dst` lives on the packet, not the message, matching the
-    /// hand-written specs' split between payload and routing.
+    /// Wire messages. Routing lives on the packet, not in the payload: `dst` is
+    /// the packet's, and `src` reaches a handler as a parameter the framework
+    /// supplies. Carrying either here would duplicate it, and would let a spec
+    /// state a sender inconsistent with the packet's.
     pub enum LMessage {
-        Read { src: int },
-        Val { src: int, val: int },
+        Read,
+        Val { val: int },
     }
 
     /// A message addressed to a peer.
@@ -113,7 +115,7 @@ verus! {
         &&& s_.x == s.x
         &&& s_.y == s.y
         &&& sent_packets == set![
-            LPacket { dst: LLeft(c), msg: LMessage::Read { src: c.node_id } },
+            LPacket { dst: LLeft(c), msg: LMessage::Read },
         ]
     }
 
@@ -130,7 +132,7 @@ verus! {
         &&& s_.y == s.y
         &&& s_.pc == s.pc
         &&& sent_packets == set![
-            LPacket { dst: src, msg: LMessage::Val { src: c.node_id, val: s.x } },
+            LPacket { dst: src, msg: LMessage::Val { val: s.x } },
         ]
     }
 
@@ -154,12 +156,13 @@ verus! {
         s: LState,
         s_: LState,
         c: LConstants,
+        src: int,
         msg: LMessage,
         sent_packets: Set<LPacket>,
     ) -> bool {
         match msg {
-            LMessage::Read { src } => LReply(s, s_, c, src, sent_packets),
-            LMessage::Val { src: _, val } => LRecv(s, s_, c, val, sent_packets),
+            LMessage::Read => LReply(s, s_, c, src, sent_packets),
+            LMessage::Val { val } => LRecv(s, s_, c, val, sent_packets),
         }
     }
 
@@ -171,6 +174,6 @@ verus! {
     ) -> bool {
         ||| La(s, s_, c, sent_packets)
         ||| Lb(s, s_, c, sent_packets)
-        ||| (exists |msg: LMessage| LHandleMessage(s, s_, c, msg, sent_packets))
+        ||| (exists|src: int, msg: LMessage| LHandleMessage(s, s_, c, src, msg, sent_packets))
     }
 }
