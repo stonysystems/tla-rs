@@ -137,8 +137,12 @@ def dump_states(side, source_name):
     run = os.path.join(work, side)
     os.makedirs(run, exist_ok=True)
     text = open(src).read()
-    # TLC requires the file name to match the module name.
-    open(os.path.join(run, module + ".tla"), "w").write(text)
+    # TLC requires the file name to match the module name. A side may run
+    # through a wrapper module instead -- `Ballot == Nat` has to be overridden
+    # to something finite, and TLC only overrides a definition with another
+    # definition -- in which case `source_as` says what to call the spec and
+    # `module` names the wrapper, which arrives via `extra_modules`.
+    open(os.path.join(run, cfg.get("source_as", module + ".tla")), "w").write(text)
     open(os.path.join(run, module + ".cfg"), "w").write(cfg["config"])
     for extra in cfg.get("extra_modules", []):
         open(os.path.join(run, extra), "w").write(

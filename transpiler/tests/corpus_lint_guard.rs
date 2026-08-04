@@ -25,6 +25,8 @@ fn corpus_dir() -> PathBuf {
 struct ManifestCase {
     id: String,
     tier: String,
+    status: String,
+    role: String,
     clean_distance: String,
     expected_rules: Vec<String>,
 }
@@ -54,6 +56,10 @@ fn manifest_cases() -> Vec<ManifestCase> {
             case.id = rest.trim_matches('"').to_string();
         } else if let Some(rest) = line.strip_prefix("tier = ") {
             case.tier = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("status = ") {
+            case.status = rest.trim().trim_matches('"').to_string();
+        } else if let Some(rest) = line.strip_prefix("role = ") {
+            case.role = rest.trim().trim_matches('"').to_string();
         } else if let Some(rest) = line.strip_prefix("clean_distance = ") {
             case.clean_distance = rest.trim().trim_matches('"').to_string();
         } else if let Some(rest) = line.strip_prefix("expected_rules = ") {
@@ -191,5 +197,91 @@ fn corpus_exercises_both_verdicts() {
         !clean.is_empty(),
         "every rewritten clean.tla is still rejected by the linter: {dirty:?}. \
          Either the rewrites are not in the subset or the linter is over-strict."
+    );
+}
+
+/// A case's `role` says what it is *for*, and the two roles have opposite
+/// obligations. Without this guard a `reject-only` case is indistinguishable
+/// from a `translate` case somebody forgot to finish, which is exactly the
+/// confusion the role was introduced to end.
+#[test]
+fn roles_match_what_the_cases_actually_contain() {
+    let corpus = corpus_dir();
+    let mut problems = Vec::new();
+    let mut reject_only = 0;
+
+    for case in manifest_cases() {
+        let dir = corpus.join(format!("tier{}", case.tier)).join(&case.id);
+        let role = if case.role.is_empty() {
+            "translate"
+        } else {
+            &case.role
+        };
+        match role {
+            "reject-only" => {
+                reject_only += 1;
+                // The point of a reject-only case is that it is never
+                // rewritten. A clean.tla would mean somebody rewrote it
+                // anyway, and the manifest would be lying about why it exists.
+                for artefact in ["clean.tla", "golden.rs", "rewrite.md"] {
+                    if dir.join(artefact).exists() {
+                        problems.push(format!(
+                            "{}: role is reject-only but it has a {artefact}",
+                            case.id
+                        ));
+                    }
+                }
+                // The decision has to be written down where a reader looks for
+                // it. Without this, "reject-only" reads as an excuse.
+                if !dir.join("why_reject_only.md").exists() {
+                    problems.push(format!(
+                        "{}: role is reject-only but nothing says why -- write \
+                         why_reject_only.md",
+                        case.id
+                    ));
+                }
+                if case.status != "intake" && case.status != "blocked" {
+                    problems.push(format!(
+                        "{}: role is reject-only, so its status should stay at \
+                         intake (or blocked), not `{}`",
+                        case.id, case.status
+                    ));
+                }
+                if case.clean_distance == "unmeasured" {
+                    problems.push(format!(
+                        "{}: a reject-only case exists to be rejected, so its \
+                         clean-distance has to be measured",
+                        case.id
+                    ));
+                }
+            }
+            "translate" => {
+                if dir.join("golden.rs").exists() && !dir.join("clean.tla").exists() {
+                    problems.push(format!(
+                        "{}: has a golden.rs but no clean.tla to generate it from",
+                        case.id
+                    ));
+                }
+                if dir.join("clean.tla").exists() && !dir.join("rewrite.md").exists() {
+                    problems.push(format!(
+                        "{}: has a clean.tla but no rewrite.md recording what \
+                         the human decided",
+                        case.id
+                    ));
+                }
+            }
+            other => problems.push(format!("{}: unknown role `{other}`", case.id)),
+        }
+    }
+
+    assert!(
+        reject_only > 0,
+        "no case is reject-only, so this guard is checking nothing -- the \
+         corpus is supposed to keep specimens the linter must reject"
+    );
+    assert!(
+        problems.is_empty(),
+        "corpus roles do not match the cases on disk:\n  {}",
+        problems.join("\n  ")
     );
 }

@@ -88,6 +88,23 @@ not verify would make V1 unreachable no matter what the translator emits.
 
 A case only counts toward a Phase 52 milestone when it is `green`.
 
+## Roles (`role` in `manifest.toml`)
+
+Not every case is on the road to `green`. `role` says what a case is *for*, and
+omitting it means the default, `translate`.
+
+| Role | Meaning |
+|---|---|
+| `translate` (default) | The case is meant to be rewritten, translated, and driven to `green`. |
+| `reject-only` | The case exists so the **linter** has something it must reject, with a pinned clean-distance. It is never rewritten, so it never has a `clean.tla`, a `golden.rs`, or a V2 comparison, and its `status` stays at `intake` by design. |
+
+A `reject-only` case is not an unfinished `translate` case. Its `notes` must say
+why rewriting it would not produce a rewrite *of that algorithm* — see
+`t0_02_bakery` and `t0_04_readers_writers`, where a message-passing version is a
+**different algorithm that solves the same problem**, so there would be nothing
+for V2 to compare and, for Bakery, the honest counterpart is literally
+`t0_05_lamport_mutex`.
+
 ## Parse status
 
 `parse_status` in the manifest records whether the tla-rs TLA+ frontend can read

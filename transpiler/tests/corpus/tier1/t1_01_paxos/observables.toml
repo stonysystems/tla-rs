@@ -1,0 +1,45 @@
+# V2 strong fidelity: what `clean.tla` and `original.tla` must agree on.
+#
+# The acceptor triple. `maxBal`/`maxVBal`/`maxVal` are the whole of Paxos's
+# safety-relevant state -- what "a value is chosen" is defined over -- and all
+# three survive the rewrite under their own names, so the comparison covers
+# everything the original specifies.
+#
+# `msgs` does not compare: the rewrite adds `src`/`dst` to every message,
+# because the original broadcasts by leaving messages unaddressed and letting
+# any acceptor read any of them. The leader-side state (`leaderBal`,
+# `promises`, `promiseBal`, `promiseVal`, `proposed`) has no counterpart at all
+# -- the original's leader is not a node.
+#
+# The original runs through `PaxosMC.tla`; see that module for why.
+#
+# Run: tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier1/t1_01_paxos <tla2tools.jar>
+
+[clean]
+module = "PaxosClean"
+config = """
+CONSTANTS
+  Value = {v1, v2}
+  Acceptor = {a1, a2, a3}
+  MaxBallot = 1
+SPECIFICATION Spec
+"""
+
+[original]
+module = "PaxosMC"
+source_as = "Paxos.tla"
+config = """
+CONSTANTS
+  Value = {v1, v2}
+  Acceptor = {a1, a2, a3}
+  Quorum = {{a1,a2},{a2,a3},{a1,a3},{a1,a2,a3}}
+  Ballot <- MCBallot
+  None <- MCNone
+SPECIFICATION Spec
+"""
+extra_modules = ["PaxosMC.tla", "Voting.tla", "Consensus.tla", "TLAPS.tla", "FiniteSetTheorems.tla"]
+
+[observables]
+maxBal = "maxBal"
+maxVBal = "maxVBal"
+maxVal = "maxVal"

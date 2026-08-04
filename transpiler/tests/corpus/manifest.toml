@@ -14,6 +14,7 @@
 #   id             directory name under tier<N>/
 #   tier           0..3
 #   status         planned | intake | clean | golden | green | blocked
+#   role           translate (default) | reject-only — see README "Roles"
 #   source_repo    upstream repo, "handwritten" if authored here
 #   source_path    path inside that repo
 #   source_commit  pinned upstream commit (filled by intake_case.sh)
@@ -49,6 +50,7 @@ notes = "Lamport's TeachingConcurrency 'Simple'. Smallest per-node-array case: x
 id = "t0_02_bakery"
 tier = 0
 status = "intake"
+role = "reject-only"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/Bakery-Boulangerie/Bakery.tla"
 source_commit = "dc6470ac55fe7f4f395ac62dba60ec6fd5d87c24"
@@ -57,7 +59,7 @@ reference = ""
 clean_distance = "3"
 expected_rules = ["C2"]
 milestone_gate = "52.M1"
-notes = "Lamport's bakery. Heavy C2 case: the doorway/ticket protocol reads num[j] and flag[j] for other processes. Deliberately kept as the corpus's 'dirty' end of tier 0 so the linter has a spec it must reject."
+notes = "Lamport's bakery. Heavy C2 case: the doorway/ticket protocol reads num[j] and flag[j] for other processes. **reject-only, decided 2026-08-04.** Bakery is shared-memory, and a clean-subset version of it is not a rewrite of Bakery — it is a different algorithm that solves the same problem, so V2 would have nothing to compare. Worse, the message-passing counterpart of 'distributed mutual exclusion by timestamps' is literally `t0_05_lamport_mutex`, which is already in the corpus: rewriting this case would duplicate that one. Its value is as the specimen the linter must reject, with clean-distance pinned at 3."
 
 [[case]]
 id = "t0_03_dining_philosophers"
@@ -77,6 +79,7 @@ notes = "Deadlock-capable; gives the corpus a negative (deadlock) case for TLC f
 id = "t0_04_readers_writers"
 tier = 0
 status = "intake"
+role = "reject-only"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/ReadersWriters/ReadersWriters.tla"
 source_commit = "ee05f259276db2b878a55a442ea6daa8429db7e9"
@@ -85,7 +88,7 @@ reference = ""
 clean_distance = "1"
 expected_rules = ["C5"]
 milestone_gate = "52.M1"
-notes = "Queue-based reader/writer lock. State is global (readers/writers/waiting sets), not per-node -> exercises the C1 boundary: what does projection do when there is no [Node -> T] array at all?"
+notes = "Queue-based reader/writer lock. State is global (readers/writers/waiting sets), not per-node -> exercises the C1 boundary: what does projection do when there is no [Node -> T] array at all? **reject-only, decided 2026-08-04.** The answer to that question is 'nothing' — a spec with no per-node state has no projection, and the linter says so plainly rather than reporting three separate C1 violations. Turning it into a distributed lock would be designing a new protocol, not rewriting this one. Its value is that boundary, and the linter's handling of it."
 
 [[case]]
 id = "t0_05_lamport_mutex"
