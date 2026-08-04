@@ -175,6 +175,47 @@ verus! {
         );
     }
 
+    /// Milestone C's membership-stable fragment: for every dynamically
+    /// certified log entry — Data or Configuration — governed by a Stable
+    /// phase over the whole server set, every strictly higher-term leader
+    /// holds that exact entry at that index, in every reachable state.
+    ///
+    /// This is `DynamicLeaderCompleteness` restricted to the stable fragment.
+    /// The Joint-phase cases remain open for the same quorum-threshold reason
+    /// that bounds the Configuration-only result.
+    pub proof fn lemma_stable_certified_entry_present_in_later_leader(
+        b: RaftBehavior,
+        behavior_index: int,
+        index: int,
+        config: Set<int>,
+        leader_id: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+            b[behavior_index].log_commit_certificates.dom().contains(index),
+            b[behavior_index].log_commit_certificates[index].governing_phase
+                == (MembershipPhase::Stable { config: config }),
+            config.len() == b[behavior_index].num_servers,
+            0 <= leader_id < b[behavior_index].num_servers,
+            b[behavior_index].server_states[leader_id].role is Leader,
+            b[behavior_index].server_states[leader_id].current_term
+                > b[behavior_index].log_commit_certificates[index].entry.term,
+        ensures
+            b[behavior_index].server_states[leader_id].log.len() > index,
+            b[behavior_index].server_states[leader_id].log[index]
+                == b[behavior_index].log_commit_certificates[index].entry,
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
+        lemma_leader_completeness_holds_throughout_behavior(b, behavior_index);
+        lemma_legacy_leader_completeness_covers_stable_log_certificate(
+            b[behavior_index],
+            index,
+            config,
+            leader_id,
+        );
+    }
+
     /// Behaviour-level Configuration Leader Completeness under dynamic
     /// membership, conditional on the first-missing-boundary provenance.
     ///

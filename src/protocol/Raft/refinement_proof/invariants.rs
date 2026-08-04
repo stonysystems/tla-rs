@@ -494,6 +494,81 @@ verus! {
         };
     }
 
+    /// All-entry analogue of the Configuration bridge: an entry certified
+    /// under a Stable phase covering the whole server set is committed in the
+    /// legacy fixed-majority sense too. This carries the bridge from
+    /// Configuration boundaries to *every* committed log entry.
+    pub proof fn lemma_stable_full_log_certificate_is_legacy_commit(
+        ds: RaftDistributedState,
+        index: int,
+        config: Set<int>,
+    )
+        requires
+            LogCommitCertificatesValid(ds),
+            ds.log_commit_certificates.dom().contains(index),
+            ds.log_commit_certificates[index].governing_phase
+                == (MembershipPhase::Stable { config: config }),
+            config.len() == ds.num_servers,
+        ensures
+            EntryCommittedAt(
+                ds,
+                index,
+                ds.log_commit_certificates[index].entry,
+            ),
+            0 <= index,
+    {
+        let certificate = ds.log_commit_certificates[index];
+
+        assert(LogCommitCertificatesValid(ds));
+        assert(is_quorum_for_phase(
+            certificate.quorum,
+            certificate.governing_phase,
+        ));
+        assert(is_majority_of(certificate.quorum, config));
+        assert(certificate.quorum.len() >= ds.num_servers / 2 + 1);
+
+        assert forall |id: int| certificate.quorum.contains(id) implies {
+            &&& 0 <= id < ds.num_servers
+            &&& ds.server_states[id].log.len() > index
+            &&& ds.server_states[id].log[index] == certificate.entry
+        } by {
+            assert(LogCommitCertificatesValid(ds));
+        };
+
+        assert(EntryCommittedAt(ds, index, certificate.entry)) by {
+            assert(certificate.quorum.len() >= ds.num_servers / 2 + 1);
+        };
+    }
+
+    /// While membership is Stable over the whole server set, the inherited
+    /// Leader Completeness already covers every dynamically certified entry —
+    /// Data entries as well as Configuration boundaries.
+    pub proof fn lemma_legacy_leader_completeness_covers_stable_log_certificate(
+        ds: RaftDistributedState,
+        index: int,
+        config: Set<int>,
+        leader_id: int,
+    )
+        requires
+            LeaderCompleteness(ds),
+            LogCommitCertificatesValid(ds),
+            ds.log_commit_certificates.dom().contains(index),
+            ds.log_commit_certificates[index].governing_phase
+                == (MembershipPhase::Stable { config: config }),
+            config.len() == ds.num_servers,
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[index].entry.term,
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.log_commit_certificates[index].entry,
+    {
+        lemma_stable_full_log_certificate_is_legacy_commit(ds, index, config);
+        assert(LeaderCompleteness(ds));
+    }
+
     /// Legacy Leader Completeness holds vacuously in an initial state: no
     /// server has been elected yet, so there is no higher-term leader to be
     /// missing anything.
