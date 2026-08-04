@@ -158,42 +158,47 @@ def dump_states(side, source_name):
     if not os.path.exists(dump):
         sys.stderr.write(proc.stdout[-3000:])
         raise SystemExit(f"{side}: TLC produced no state dump")
-    states = parse_dump(open(dump).read())
-    if not states:
-        sys.stderr.write(proc.stdout[-3000:])
-        raise SystemExit(f"{side}: the dump parsed to no states at all")
-    print(f"  {side}: {len(states)} states dumped", file=sys.stderr)
-    return states
+    return dump, proc
 
-def parse_dump(text):
+def parse_dump(path):
     # TLC's dump is "State N:" followed by conjunct lines. A value may run over
     # several lines, so a line that does not start a new conjunct continues the
     # previous one.
-    states, current, var = [], None, None
-    for line in text.splitlines():
-        if re.match(r"^State \d+:", line):
-            if current:
-                states.append(current)
-            current, var = {}, None
-            continue
-        if current is None:
-            continue
-        m = re.match(r"^/\\ (\w+) = (.*)$", line)
-        if m:
-            var = m.group(1)
-            current[var] = m.group(2).strip()
-        elif line.strip() and var is not None:
-            current[var] += " " + line.strip()
-        elif not line.strip():
-            var = None
+    #
+    # Streamed, one state at a time. Paxos's dump is 5.7 GB at three acceptors,
+    # so reading the file into a list of dicts is not an option -- and it does
+    # not need to be, since only the *projection* is kept.
+    current, var = None, None
+    with open(path) as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if line.startswith("State ") and line.endswith(":"):
+                if current:
+                    yield current
+                current, var = {}, None
+                continue
+            if current is None:
+                continue
+            if line.startswith("/\\ "):
+                name, _, value = line[3:].partition(" = ")
+                var = name.strip()
+                current[var] = value.strip()
+            elif line.strip() and var is not None:
+                current[var] += " " + line.strip()
+            elif not line.strip():
+                var = None
     if current:
-        states.append(current)
-    return states
+        yield current
 
-def project(states, name_of):
-    """Keep only the observables, renamed to the comparison's own names."""
-    out = set()
+def project(states, name_of, side):
+    """Keep only the observables, renamed to the comparison's own names.
+
+    Consumes the stream, so peak memory is the number of *distinct observable*
+    states -- which is the number the comparison is about, and is small even
+    when the raw state space is not."""
+    out, seen = set(), 0
     for state in states:
+        seen += 1
         row = []
         for shared, source_var in name_of.items():
             if source_var not in state:
@@ -203,6 +208,10 @@ def project(states, name_of):
                 )
             row.append((shared, canonical(state[source_var])))
         out.add(tuple(sorted(row)))
+    if not seen:
+        raise SystemExit(f"{side}: the dump parsed to no states at all")
+    print(f"  {side}: {seen} states dumped, {len(out)} distinct observable",
+          file=sys.stderr)
     return out
 
 def canonical(value):
@@ -214,10 +223,10 @@ def canonical(value):
     return re.sub(r"\s+", " ", value).strip()
 
 print("running TLC on both sides", file=sys.stderr)
-clean = project(dump_states("clean", "clean.tla"),
-                {k: k for k in observables})
-original = project(dump_states("original", "original.tla"),
-                   {k: v for k, v in observables.items()})
+clean_dump, _ = dump_states("clean", "clean.tla")
+clean = project(parse_dump(clean_dump), {k: k for k in observables}, "clean")
+original_dump, _ = dump_states("original", "original.tla")
+original = project(parse_dump(original_dump), dict(observables), "original")
 
 only_clean = clean - original
 only_original = original - clean

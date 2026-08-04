@@ -13,6 +13,14 @@
 #
 # The original runs through `PaxosMC.tla`; see that module for why.
 #
+# **The model is two acceptors, not the three `clean.cfg` uses.** A fidelity
+# comparison is worth having only if it is *complete*, and at three acceptors
+# the clean spec's dump passes 5.7 GB without finishing. A closed comparison at
+# two beats an unfinished one at three. Note what two acceptors costs: a
+# majority is both of them, so the quorum logic is degenerate here. That is
+# fine, because quorum *size* is not what this check is about — the
+# `Consistency` invariant at three acceptors, recorded in rewrite.md, is.
+#
 # Run: tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier1/t1_01_paxos <tla2tools.jar>
 
 [clean]
@@ -20,7 +28,7 @@ module = "PaxosClean"
 config = """
 CONSTANTS
   Value = {v1, v2}
-  Acceptor = {a1, a2, a3}
+  Acceptor = {a1, a2}
   MaxBallot = 1
 SPECIFICATION Spec
 """
@@ -31,8 +39,8 @@ source_as = "Paxos.tla"
 config = """
 CONSTANTS
   Value = {v1, v2}
-  Acceptor = {a1, a2, a3}
-  Quorum = {{a1,a2},{a2,a3},{a1,a3},{a1,a2,a3}}
+  Acceptor = {a1, a2}
+  Quorum = {{a1,a2}}
   Ballot <- MCBallot
   None <- MCNone
 SPECIFICATION Spec

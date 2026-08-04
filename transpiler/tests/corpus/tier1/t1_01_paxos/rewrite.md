@@ -88,12 +88,54 @@ TLC 2.19, `Acceptor = {a1, a2, a3}`, `Value = {v1, v2}`, `MaxBallot = 1`:
 | `TypeOK` | holds |
 | `Consistency` | holds |
 
-The original is **not** checked side by side here, and that is a real gap: its
-correctness is the `Voting` refinement, so it has no directly checkable safety
-property and there is no common observable to compare against. What this run
-establishes is that the rewrite is a *correct Paxos*, which is the property the
-rewrite had to preserve. A behaviour-level comparison needs the spec-vs-spec
-comparator planned in 53.6.
+**The gap this section used to record is now closed.** It said the original was
+not checked side by side because "there is no common observable to compare
+against". That was wrong, and finding out required building the comparator: the
+common observable is the **acceptor triple** `maxBal`/`maxVBal`/`maxVal`, which
+is the whole of Paxos's safety-relevant state — what "a value is chosen" is
+defined over — and all three survive the rewrite under their own names. The
+`Voting` refinement is how the *original* states its correctness; it is not what
+the two specs have in common.
+
+### The side-by-side comparison (53.6)
+
+`tests/corpus/scripts/tlc_fidelity.sh tests/corpus/tier1/t1_01_paxos`, at
+`Acceptor = {a1, a2}`, `Value = {v1, v2}`, ballots `0..1`:
+
+| | clean | original |
+|---|---|---|
+| states dumped | 3,850 | 145 |
+| distinct `<<maxBal, maxVBal, maxVal>>` | 43 | 43 |
+| result | **EQUAL** | |
+
+The raw state counts differ by 26×, and that is expected rather than alarming:
+the clean spec carries five extra per-node variables for the leader role the
+original abstracts away. **The observable projection is identical** — the
+rewrite's acceptors reach exactly the states the original's acceptors reach,
+despite the leader being folded into every node and the abstract `Quorum`
+becoming a majority count.
+
+Two things had to be arranged, both recorded in `PaxosMC.tla` rather than done
+quietly: the original's `Ballot == Nat` and `None == CHOOSE v : v \notin Value`
+are not enumerable, so TLC overrides them with `0..1` and `-1`. `-1` is the
+original's own "no ballot" sentinel and matches `clean.tla`'s `None == -1`, so
+`maxVal` compares on behaviour rather than on notation.
+
+**The model is two acceptors, not the three used above**, because a fidelity
+comparison is worth having only if it is *complete*, and at three the clean
+spec's state dump passes 5.7 GB without finishing. A closed comparison at two
+beats an unfinished one at three. What two acceptors costs is that a majority is
+both of them, so quorum *size* is not tested here — the three-acceptor
+`Consistency` run above is what tests that.
+
+**Confirmed non-vacuous**: deleting `Phase2b`'s `m.bal >= maxBal[a]` guard makes
+the comparator report **14 states only in clean** — correctly, and in the defect
+direction, since a rewrite that reaches states the original cannot is not a
+specialisation of it.
+
+And the standing caveat, from the script's own header: this compares reachable
+*states*, not reachable *behaviours*. EQUAL here does not mean the two specs are
+behaviourally equivalent.
 
 The first draft, which consumed messages on receipt, was refuted by TLC with a
 deadlock — the check has already caught one error in this rewrite.
