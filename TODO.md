@@ -15791,3 +15791,141 @@ transpiler unit tests ran; no whole-crate `verus --compile`):
   land green again.
 - Optional future work: teach the `&mut self` body transform to lift intermediate functional
   state (`s_mid = helper(s, ..)`) into `*self = s_mid`, which would let Raft rejoin `&mut self`.
+
+---
+
+## Phase 51: Jetpack Recovery-Layer Single-Process Verus Spec (R1) — PAUSED 2026-08 (superseded by Phase 52; 51.1–51.8 kept as design reference + partial Jetpack golden, 51.9+ deferred)
+
+### Background (2026-08)
+
+Jetpack ("Consensus Made Generally Fast", OSDI '26, stonysystems/jetpack) is a plugin
+recovery protocol. Goal: a code-level (deductive, Verus) proof via tla-rs. Feasibility
+analysis (`docs/jetpack_verus_feasibility.md`) showed `jetpack.tla` CANNOT be fed through
+tla-rs's `tla+2tlars` frontend: it is a global-multi-server model (per-server arrays,
+`INSTANCE` composition, 3-D log, message bag), while the frontend only accepts single-process
+`s/s_` specs. A paradigm survey confirmed mainstream Raft/EPaxos TLA+ are ALSO global-multi-
+server, and global→single-process is not automatable (message-ification is a human design
+decision). Decision: **R1 = hand-rewrite Jetpack's recovery layer as a single-process Verus
+spec**, starting from a minimal slice, using the closed `src/protocol/Paxos` proof as template.
+
+### Slice boundary (R1 first slice)
+
+Fixed membership + single value + base-as-contract + no client/execution.
+`jstate` option B: 5 states (Ready → Recovery → AfterBeginRecovery → AfterPrepare →
+AfterAccept → back to Ready; `AfterResubmit` dropped as out-of-slice). `FinishRecovery`
+PRESERVES the acceptor triple (Paxos-persistent) — original resets jpool because it bumps
+epoch; our fixed-membership slice must keep it or cross-recovery agreement breaks.
+
+### Done
+
+- [x] **51.1** Feasibility report — `docs/jetpack_verus_feasibility.md` (paradigm mismatch + gap table).
+- [x] **51.2** Paradigm survey — Raft (ongardie 517★, Vanlightly 91★) + EPaxos (efficient/epaxos 628★) all global-multi-server; global→single-process needs human; PGo/MPCal is the semi-auto path.
+- [x] **51.3** `src/protocol/Jetpack/types.rs` — `LState` (11 fields) + `LJState` (5) + `LConstants` + `Command`.
+- [x] **51.4** `jetpack.rs` — `LInit`.
+- [x] **51.5** Acceptor actions — `L_HandlePrepareReq` (Paxos 1b), `L_HandleAcceptReq` (2b).
+- [x] **51.6** Proposer actions — `L_HandlePrepareResp`, `L_CompletePrepare` (online value selection + count-based quorum), `L_HandleAcceptResp`, `L_CompleteAccept`, `L_FinishRecovery`.
+- [x] **51.7** `LNext` — disjunction of the 7 actions (entry actions still missing).
+- [x] **51.8** Manual review — fixed frame-condition bug: acceptor actions missed `highest_seen_*` after the field was added.
+
+### TODO (work queue)
+
+- [ ] **51.9** (DEFERRED — Phase 52 supersedes) Entry actions: trigger recovery + BeginRecovery. Decided A1 (assumed `base_says_recover` predicate as trigger guard) + B1 (keep all 4 BeginRecovery actions; ignore out-of-slice old_view/new_view/oepoch), but NOT pursued by hand.
+- [ ] **51.10** Complete `LNext` to include the entry actions.
+- [ ] **51.11** Safety invariant: agreement (no two recoveries choose conflicting values); prove it inductive.
+- [ ] **51.12** `finite` invariant for `prep_rcvd`/`accept_rcvd` (required by `.len()`-based quorum).
+- [ ] **51.13** Mount module (uncomment `pub mod Jetpack;` in `protocol/mod.rs`) + `verus` verify (needs a machine with verus).
+- [ ] **51.14** Implementation layer (exec) + refinement proof (code-level, the RSL-scale part).
+- [ ] **51.15** Later slices: multi-value (single→multi like Paxos→RSL), then reconfiguration (view/epoch).
+
+### Files
+
+`src/protocol/Jetpack/{types.rs, jetpack.rs, mod.rs}` (not yet mounted); original TLA+ reference
+at `docs/jetpack_reference/`.
+
+---
+
+## Phase 52: Clean-Subset TLA+ → Verus Translator — PLANNED
+
+### Background (2026-08)
+
+Full plan: `docs/clean_tla_to_verus_translator_plan.md`. An **AST-level deterministic translator**
+from a **"clean subset" of global-multi-server TLA+** (no instantaneous cross-node reads, no history
+vars, `messages` designated as the network, per-node arrays) → single-process Verus spec (tla-rs).
+Rationale: global→single-process is generally NOT automatable (message-ification is human design),
+but on a clean subset the rest (de-index `[i]` projection, messages→framework send/recv, quorum→count,
+frame generation) IS mechanical. Generates the SPEC only, not the refinement/safety proof. Reuse and
+extend `transpiler/src/tla/` (note: Verus-0.2026.08.02 migration just touched `translator.rs` — assess
+against the new version). Phase 51's partial hand-written Jetpack spec (51.1–51.8) is kept as design reference for the
+projection passes + a PARTIAL Jetpack golden. NOTE: with Phase 51 paused, Jetpack has NO complete
+independent golden — its translation is validated only by TLC fidelity + verus pass (see M3/M4b).
+
+### Decisions
+
+- Q1 = rule-based (deterministic AST translator; corpus is dev/test/eval, not a training set).
+- Q2 = no reconfig in the clean subset (strip view/epoch during rewrite).
+- Q3 = strong semantic-fidelity check (exact-state / observable behavior parity; see M3 caveat on Phase 36).
+
+### Prerequisites
+
+- **TLA+ tools** (`tla2tools.jar` / TLC) — needed for V2 fidelity checking.
+- A machine with **`verus`** (this dev box has none) — needed for V1: translator output must actually verify.
+
+### TODO (work queue)
+
+- [ ] **52.M0** Clean-subset spec (C1–C5) + linter that gates input (accept clean / reject dirty with precise errors).
+- [ ] **52.M1** Projection pass (P1 state projection, P2 de-index actions, P5 auto frame-condition). Acceptance: Tier-0 micro end-to-end, verus passes.
+- [ ] **52.M2** messages→framework send/recv (P3) + quorum→counting (P4). Acceptance: Tier-1 (Paxos/TwoPhase) vs tla-rs hand-written spec.
+- [ ] **52.M3** Semantic fidelity V2 (STRONG: exact-state/observable parity, clean.tla vs original.tla) + golden regression V3. ⚠️ Phase 36 parity compares tla-rs source-first-checker vs TLC, NOT two TLA+ specs — verify reusability first; likely need a bespoke spec-vs-spec comparator (both specs → TLC + common observables + state-set diff).
+- [ ] **52.M4** Tier-2 (already message-passing): Raft → EPaxos. Acceptance: translate + verus pass + TLC fidelity vs original.
+- [ ] **52.M4b** Tier-3 (hardest, LAST): Jetpack — heavy rewrite (strip 3-D log / INSTANCE / cross-node reads). NO full golden (Phase 51 gives only a partial one; validated via TLC fidelity + verus pass).
+- [ ] **52.M5** Docs (subset spec, rewrite playbook, evidence) + integrate into tla-rs pipeline.
+- [ ] **52.corpus** Consumes the graded dataset built in **Phase 53** (each milestone pulls its tier: M1←Tier-0, M2←Tier-1, M4←Tier-2, M4b←Tier-3). Dataset construction + golden strategy live in Phase 53.
+
+### MVP
+
+M0–M2 + **Paxos** as the killer demo (has a tla-rs hand-written spec to diff against). ⚠️ Use the
+**message-passing** Paxos (a `msgs` variable, per-node), NOT the Voting abstraction (no per-server
+arrays → projection N/A). Proves the core claim "clean global TLA+ auto-projects to single-process
+Verus spec". Then Raft; Jetpack (M4b) last.
+
+### Files
+
+Plan: `docs/clean_tla_to_verus_translator_plan.md`. Extends `transpiler/src/tla/`.
+
+---
+
+## Phase 53: Corpus & Golden Dataset (clean TLA+ + golden Verus specs) — PLANNED
+
+### Background (2026-08)
+
+The dataset is the FOUNDATION of the Phase 52 translator: a graded set of test cases from simple
+to hard, each with a golden. Previously buried as a one-line `52.corpus`; promoted to its own phase
+because it is a substantial, standalone task (collect → rewrite → golden → fidelity-check). Per plan §3.
+
+### Structure
+
+Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tuple:
+- `original.tla` — spec from the wild (mainly `tlaplus/Examples`).
+- `clean.tla` — hand-rewritten to the clean subset (C1–C5).
+- `rewrite.md` — what changed (history vars removed, cross-node reads message-ified, which var is the network).
+- `golden.rs` — expected single-process Verus spec output.
+
+### Golden strategy (how each tier gets its golden)
+
+- **Tier-1/2 with an existing tla-rs spec**: reuse the hand-written spec as golden (Paxos → `src/protocol/Paxos/paxos.rs`, TwoPhase → `twophase.rs`, ...).
+- **Tier-0 simple**: hand-write small goldens (cheap).
+- **New cases without a reference**: bootstrap — human-review the translator output once, freeze as golden; TLC strong-fidelity (clean vs original, Q3) backstops correctness.
+- **Jetpack**: Phase 51's partial hand-written spec.
+
+### TODO (work queue, simple → hard)
+
+- [ ] **53.1** Corpus dir layout + four-tuple convention + intake script (download from `tlaplus/Examples`, run the Phase-52 linter to measure clean-distance).
+- [ ] **53.2** Tier-0 simple (5–8 cases): Bakery / Peterson / DiningPhilosophers / BlockingQueue / Readers-Writers — collect + clean-rewrite + hand-written golden.
+- [ ] **53.3** Tier-1 consensus: Paxos (message-passing variant) + TwoPhase — golden = existing tla-rs hand-written spec.
+- [ ] **53.4** Tier-2: Raft (ongardie) + EPaxos — clean-rewrite (drop history vars) + bootstrapped golden.
+- [ ] **53.5** Tier-3: Jetpack — clean-rewrite + Phase 51 partial golden.
+- [ ] **53.6** Rewrite playbook + TLC strong-fidelity script (clean-vs-original per case, per Q3/D2 bespoke comparator).
+
+### Files
+
+`transpiler/tests/corpus/`; plan §3.
