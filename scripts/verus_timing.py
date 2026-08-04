@@ -144,6 +144,71 @@ def parse_log(text):
     return totals, modules
 
 
+def extract_json_payload(text):
+    """The `--output-json` object embedded in a log, or None.
+
+    Verus writes diagnostics to stderr and the JSON report to stdout; a merged
+    log therefore has the object starting at the first line that is exactly
+    `{` and running to the end.
+    """
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line == "{":
+            try:
+                return json.loads("\n".join(lines[i:]))
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
+def parse_json_times(payload):
+    """(totals, modules) from a `--output-json` payload.
+
+    Strongly preferred over the text breakdown: `--time-expanded` prints only
+    the top 3 modules per section, while the JSON carries every module. A
+    per-module regression gate over 3 of 148 modules would be mostly decorative.
+    """
+    tm = payload.get("times-ms")
+    if not tm:
+        return None
+    totals = OrderedDict()
+    for key in ("total", "estimated-cpu-time", "total-verify", "num-threads"):
+        if key in tm:
+            totals[key] = tm[key]
+    if isinstance(tm.get("verification"), dict):
+        totals["verification-time"] = tm["verification"].get("total")
+    if isinstance(tm.get("rust"), dict):
+        totals["rust-time"] = tm["rust"].get("total")
+    totals["total-time"] = tm.get("total")
+
+    modules = OrderedDict()
+
+    def absorb(entries, field, with_rlimit=False):
+        # Verus emits one entry per verification chunk, so a module can appear
+        # several times (148 entries / 142 modules on this crate). The module's
+        # cost is their sum -- summing every entry reproduces the reported
+        # `total-verify`, whereas keeping one entry silently under-reports the
+        # very modules that were split because they are expensive.
+        for e in entries or []:
+            name = e.get("module") or ROOT_MODULE
+            entry = modules.setdefault(
+                name,
+                OrderedDict(
+                    [("module", name)] + [(f, None) for f in SECTIONS.values()]
+                ),
+            )
+            entry[field] = (entry.get(field) or 0) + (e.get("time") or 0)
+            if with_rlimit and e.get("rlimit") is not None:
+                entry["rlimit"] = (entry.get("rlimit") or 0) + e["rlimit"]
+
+    absorb(tm.get("total-verify-module-times"), "verify_ms")
+    absorb((tm.get("air") or {}).get("module-times"), "air_ms")
+    smt = tm.get("smt") or {}
+    absorb(smt.get("smt-init-module-times"), "smt_init_ms")
+    absorb(smt.get("smt-run-module-times"), "smt_run_ms", with_rlimit=True)
+    return totals, modules
+
+
 def detect_version(text):
     for line in text.splitlines():
         m = VERSION_RE.match(line)
@@ -153,7 +218,13 @@ def detect_version(text):
 
 
 def build_inventory(text, label=None, verus_version=None, source=None):
-    totals, modules = parse_log(text)
+    parsed = None
+    payload = extract_json_payload(text)
+    if payload is not None:
+        parsed = parse_json_times(payload)
+        if verus_version is None:
+            verus_version = (payload.get("verus") or {}).get("version")
+    totals, modules = parsed if parsed else parse_log(text)
     ordered = OrderedDict(
         sorted(
             modules.items(),
@@ -166,6 +237,7 @@ def build_inventory(text, label=None, verus_version=None, source=None):
             ("label", label or ""),
             ("verus_version", verus_version or detect_version(text) or ""),
             ("source_log", source or ""),
+            ("parsed_from", "output-json" if parsed else "time-expanded-text"),
             ("module_count", len(ordered)),
             ("total_verify_ms", sum((m.get("verify_ms") or 0) for m in ordered.values())),
             ("totals", totals),

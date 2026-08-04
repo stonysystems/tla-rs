@@ -16131,11 +16131,20 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
         and asserts nothing, so it cannot change the job verdict. Guarded by
         `TestCiWiring` in `scripts/test_trigger_inventory.py` — a silently dropped step
         would otherwise look exactly like "no triggers left".
-  - [ ] **54.2.b** Commit the baseline: download the `trigger-inventory-<version>`
-        artifact from a `verify` run (it now carries both the trigger inventory and the
-        timing inventory), check both in under `reports/triggers/`, and update
-        `reports/triggers/README.md`. These are the numbers every later batch diffs
-        against. Blocked only on a CI run of the `verify` job publishing the artifact.
+  - [x] **54.2.b** Baseline committed. **DONE (2026-08-04).** Captured locally from the
+        pinned release, not from CI: `1044 verified, 0 errors` in ~40 s, **534 trigger
+        notes**, matching the phase's stated attribution exactly (Raft 177, generated/RSL
+        109, implementation/RSL 101, protocol/RSL 53+44+34=131, common/collections 11,
+        verus_extra 4, common/framework 1). Artifacts: `reports/triggers/baseline.{json,md}`
+        and `timing-baseline.{json,md}`; ceiling set to 534 with `enforce=true`, so 54.9's
+        guard is now live and the `changed`-trigger check has something to compare against.
+        **The "no verifier on this box" conclusion recorded in earlier notes was wrong**:
+        glibc 2.39 blocks only the `verus` *launcher*, not `rust_verify` (needs 2.34). The
+        launcher just sets `RUSTUP_TOOLCHAIN`, `LD_LIBRARY_PATH` and `VERUS_Z3_PATH` and
+        execs `rust_verify`; reproducing those three runs the real verifier. The bundled z3
+        4.16.0 wants glibc 2.38, but the PyPI `z3-solver==4.16.0` wheel is manylinux_2_27 and
+        passes Verus's version check. Wrapped as `scripts/verify_local.sh` so this is a
+        one-liner on any similarly-old host.
   - [x] **54.2.c** Per-module wall-clock. **DONE (2026-08-04).** `SConstruct` gained
         `--verus-extra-args` (shlex-split, appended to the verus command line; verified by
         `scons -n` dry run), CI passes `--verus-extra-args="--time-expanded"`, and

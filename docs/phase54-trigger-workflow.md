@@ -1,9 +1,9 @@
 # Phase 54 — measuring and diffing Verus trigger choices
 
-Status: 54.1 (tooling), 54.2.a (CI trigger capture), 54.2.c (per-module timing)
-and 54.9 (CI guard mechanism) complete. The measured baseline — and therefore
-the number the guard enforces — lands with 54.2.b, once a `verify` run has
-published the artifact; see §5, §6 and §9.
+Status: 54.1, 54.2 (a/b/c) and 54.9 complete. The baseline is measured and
+committed (534 notes at `0.2026.08.02.b677dd5`), the ceiling is enforced, and
+the annotation batches (54.3 onward) can proceed. §9 explains how to run the
+pinned verifier on a host whose glibc is too old for its launcher.
 
 ## 1. Why the tool exists before the edits
 
@@ -131,8 +131,7 @@ quietly going empty.
 
 ## 5. How the baseline is actually captured (CI)
 
-The pinned verifier does not run on every development box (§9), but it already
-runs in CI on `ubuntu-24.04`. So the `verify` job captures the inventory as a
+CI runs the pinned verifier on `ubuntu-24.04`; §9 covers running it locally. So the `verify` job captures the inventory as a
 side effect of the verification it was already doing:
 
 ```yaml
@@ -295,7 +294,48 @@ that produces confident wrong numbers: a comma between binders
 after a multi-binder list was invisible and the site was reported as
 unannotated. The aggregate totals looked entirely plausible either way.
 
-## 9. Known constraint: the pinned verifier does not run everywhere
+## 9. Running the pinned verifier on an old host
+
+The release `verus` launcher is linked against **glibc 2.39**, so on an older
+host it aborts immediately. That is a property of the launcher, not of the
+verifier: `rust_verify` itself needs only 2.34. The launcher's job is to set
+three variables and exec it, so reproducing them runs the real thing:
+
+```
+RUSTUP_TOOLCHAIN=<toolchain rust_verify was built against>
+LD_LIBRARY_PATH=<that toolchain>/lib
+VERUS_Z3_PATH=<a z3 of the version Verus checks for>
+```
+
+The bundled z3 4.16.0 also wants glibc 2.38; the PyPI `z3-solver==4.16.0` wheel
+is `manylinux_2_27` and satisfies Verus's version check, so it drops in.
+
+`scripts/verify_local.sh` wraps all of this:
+
+```bash
+scripts/verify_local.sh                              # verify the working tree
+scripts/verify_local.sh --time-expanded --output-json # ... plus timings
+```
+
+On the 2.35-glibc box this repo was developed on, that gives
+`1044 verified, 0 errors` in about 40 s.
+
+Earlier revisions of this document claimed the pinned verifier could not run
+here at all and that 54.3 onward was blocked. That was wrong — the launcher was
+tested and the conclusion drawn without checking what it execs. The note is
+kept rather than quietly deleted because the same mistake is easy to repeat
+whenever a release binary fails to start.
+
+### Prefer `--output-json` for timings
+
+`--time-expanded` prints only the **top 3 modules per section**; the JSON
+report carries all 142. `verus_timing.py` parses the JSON when present and says
+which source it used in `parsed_from`. Note Verus emits one entry per
+verification chunk, so a module can appear several times — the tool sums them,
+which reproduces the reported `total-verify`; keeping a single entry would
+under-report exactly the expensive modules that got split.
+
+## 10. Known constraint: none currently blocking
 
 The baseline must come from the pinned verifier,
 `release/0.2026.08.02.b677dd5`. That binary requires **glibc ≥ 2.39**; the
@@ -331,7 +371,7 @@ two different Verus versions is precisely the measurement Phase 54 wants to
 make *deliberately*, and mislabelling one as "the baseline" would poison every
 later comparison.
 
-## 10. Where this fits
+## 11. Where this fits
 
 * Plan: `TODO.md` Phase 54; this covers **54.1**, **54.2.a**, **54.2.c** and
   the **54.9** mechanism. What remains is **54.2.b** — commit the published

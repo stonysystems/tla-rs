@@ -115,6 +115,67 @@ class TestParse(unittest.TestCase):
         self.assertEqual(set(inv["modules"]), {"alpha", "beta", vt.ROOT_MODULE})
 
 
+class TestJsonPayload(unittest.TestCase):
+    """`--output-json` is the preferred source: the text breakdown prints only
+    the top 3 modules per section, so a per-module gate built on it would cover
+    3 of 142 modules."""
+
+    def payload(self, entries, air=None):
+        return "some diagnostic line\n" + json.dumps(
+            {
+                "times-ms": {
+                    "total": 1000,
+                    "total-verify": sum(e["time"] for e in entries),
+                    "verification": {"total": 900},
+                    "rust": {"total": 100},
+                    "total-verify-module-times": entries,
+                    "air": {"module-times": air or []},
+                    "smt": {"smt-run-module-times": []},
+                },
+                "verus": {"version": "0.2026.08.02.b677dd5"},
+            },
+            indent=2,
+        )
+
+    def test_json_is_preferred_and_recorded(self):
+        inv = vt.build_inventory(self.payload([{"module": "a", "time": 10}]))
+        self.assertEqual(inv["parsed_from"], "output-json")
+        self.assertEqual(inv["module_count"], 1)
+
+    def test_version_comes_from_the_payload(self):
+        inv = vt.build_inventory(self.payload([{"module": "a", "time": 10}]))
+        self.assertEqual(inv["verus_version"], "0.2026.08.02.b677dd5")
+
+    def test_repeated_module_entries_are_summed(self):
+        # Verus emits one entry per verification chunk; the module's cost is
+        # their sum, and summing reproduces the reported total-verify.
+        inv = vt.build_inventory(
+            self.payload(
+                [
+                    {"module": "a", "time": 10},
+                    {"module": "a", "time": 5},
+                    {"module": "b", "time": 3},
+                ]
+            )
+        )
+        self.assertEqual(inv["modules"]["a"]["verify_ms"], 15)
+        self.assertEqual(inv["modules"]["b"]["verify_ms"], 3)
+        self.assertEqual(inv["total_verify_ms"], 18)
+
+    def test_unnamed_module_becomes_root(self):
+        inv = vt.build_inventory(self.payload([{"module": "", "time": 4}]))
+        self.assertIn(vt.ROOT_MODULE, inv["modules"])
+
+    def test_text_log_still_parses_when_no_json_present(self):
+        inv = vt.build_inventory(fixture("time_expanded_modules.log"))
+        self.assertEqual(inv["parsed_from"], "time-expanded-text")
+        self.assertEqual(inv["module_count"], 3)
+
+    def test_malformed_json_falls_back_to_text(self):
+        inv = vt.build_inventory(fixture("time_expanded_modules.log") + "\n{\nnot json\n")
+        self.assertEqual(inv["parsed_from"], "time-expanded-text")
+
+
 class TestDiff(unittest.TestCase):
     def inv(self, modules, label="x"):
         return vt.build_inventory(synthetic_log(modules), label=label)
