@@ -159,9 +159,16 @@ parameter has no node to be about.
 
 **Accept** (Simple): `Next == (\E self \in 0..N-1: proc(self)) \/ Terminating`.
 
-**Reject**: a `Next` disjunct that names a specific node (`Action(1)`), or that quantifies over
-two nodes at once (`\E p, q \in Node : Transfer(p, q)` — an atomic two-node step is a
-cross-node read in disguise, C2).
+**Reject**: a `Next` disjunct that names a specific node (`Action(1)`).
+
+**Not a violation**: binding more than one node. The first is the acting node; the rest are
+parameters, and the commonest thing a spec does with one is address a message — Raft's
+`\E i, j \in Server : RequestVote(i, j)` reads only `i`'s state and sends to `j`. Whether an
+action actually reaches into another node's state is exactly what **C2** decides, so C5 leaves
+it there rather than rejecting a legitimate shape.
+
+An earlier draft of this rule did reject two-node binding outright, and Raft is what showed that
+to be wrong.
 
 ---
 

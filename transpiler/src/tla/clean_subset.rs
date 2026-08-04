@@ -357,19 +357,15 @@ impl<'a> LintContext<'a> {
                     .map(|b| b.var.as_str())
                     .collect();
 
-                if over_node_set.len() > 1 {
-                    report.findings.push(self.finding(
-                        CleanRule::C5,
-                        Some(next),
-                        format!(
-                            "`Next` binds {} nodes at once ({}). A step involving two nodes \
-                             atomically is a cross-node read in disguise (C2): decide which \
-                             node takes the step and what message carries the other one's part.",
-                            over_node_set.len(),
-                            over_node_set.join(", ")
-                        ),
-                    ));
-                }
+                // Binding more than one node is *not* itself a violation. The
+                // first is the acting node; the rest are parameters, and the
+                // commonest thing a spec does with one is address a message:
+                // Raft's `\E i, j \in Server : RequestVote(i, j)` reads only
+                // `i`'s state and sends to `j`.
+                //
+                // Whether the action actually reaches into another node's state
+                // is exactly what C2 decides, so this rule leaves it to C2
+                // rather than rejecting a legitimate shape.
                 if over_node_set.is_empty() {
                     // A disjunct quantifying only over value domains still has
                     // to reach a node action somewhere inside it.
@@ -1329,24 +1325,39 @@ Next == (\E p \in Proc : Step(p)) \/ Step(1)
     }
 
     #[test]
-    fn rejects_two_node_atomic_step() {
+    fn a_second_node_binder_is_a_destination_not_a_violation() {
         let source = r#"---- MODULE Test ----
 VARIABLES x
 TypeOK == x \in [Proc -> Nat]
 Transfer(p, q) == x' = x
 Next == \E p, q \in Proc : Transfer(p, q)
 ===="#;
+        // Binding a second node is how a spec names a message's destination --
+        // Raft's `\E i, j \in Server : RequestVote(i, j)` reads only i's state.
+        // Whether the action reaches into the other node is C2's question.
         let report = lint(source);
-        let c5 = report
-            .findings
-            .iter()
-            .find(|f| f.rule == CleanRule::C5)
-            .unwrap_or_else(|| panic!("expected a C5 finding, got {:?}", report.findings));
         assert!(
-            c5.message.contains("binds 2 nodes at once") && c5.message.contains("cross-node read"),
-            "the finding must explain that an atomic two-node step hides a \
-             cross-node read: {}",
-            c5.message
+            !report.findings.iter().any(|f| f.rule == CleanRule::C5),
+            "a second node binder is a destination, not a C5 violation: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn a_read_at_the_second_node_is_still_caught() {
+        // The shape is allowed; reaching into the other node's state is not,
+        // and that is C2's job.
+        let source = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+Transfer(p, q) == x' = [x EXCEPT ![p] = x[q]]
+Next == \E p, q \in Proc : Transfer(p, q)
+===="#;
+        let report = lint(source);
+        assert!(
+            report.findings.iter().any(|f| f.rule == CleanRule::C2),
+            "reading x[q] at a second bound node must be a C2 finding: {:?}",
+            report.findings
         );
     }
 
