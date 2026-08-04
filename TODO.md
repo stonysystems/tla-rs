@@ -11343,6 +11343,44 @@ Reported current state: the latest commit only has one of these five checks pass
 
 ### 37.2 Restore green CI without weakening checks
 
+- [x] **37.2.1.i** (2026-08-04) Local re-run of all 5 CI jobs after the Lint fix:
+  **Format PASS, Lint PASS, Test PASS (2608), Model-Check Evidence PASS, Verus Verification
+  not runnable here** (pinned release needs glibc >= 2.39; box has 2.35). 4/5 verified green.
+  Running the evidence job surfaced a separate problem it is structurally unable to catch:
+  **the checked-in model-check artifacts had drifted from what the code produces.**
+  Regenerating changed 16 files (+668/-132):
+  (a) telemetry fields added in Phase 36.3.2 / 36.3.7 (`deferred_constraint_evaluations`,
+  `direct_assigned_fields`, `eq_constraints`, `evaluator_calls`, `fallback_reason`,
+  `guard_pruned_assignments`, `predicate_constraints`) were missing from every artifact;
+  (b) `spec`/`types` paths were `../src/...`, i.e. generated from `transpiler/`, while the CI
+  job has no `working-directory` and runs from the repo root, so `src/...` is canonical;
+  (c) `OPTIMIZATION_DELTAS.md` still claimed `primarybackup_small.json` guard `3/3`, last
+  written 2599743b (March) — it predates and contradicts 6f9baf70 (May 24), which corrected
+  that case to 2 states after the Phase 38.17.2 inlining fix. Checked-in evidence was
+  disagreeing with itself for over two months.
+  Artifacts regenerated and committed; full suite re-run against them.
+  **Root cause of the rot, found while regenerating**:
+  `test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts` asserted that
+  every metric in the artifact — **including `elapsed_ms`** — appears verbatim in the baseline
+  table in `docs/model_checker_status.md`. That pins one host's wall-clock into a checked-in
+  document, so regenerating on any other machine fails the test (here: artifact `8` ms vs
+  table `1` ms). Refreshing the evidence honestly was therefore *guaranteed* to look like a
+  regression, which is why nobody did it for months. Fixed by dropping `elapsed_ms` from the
+  asserted tokens and marking that column indicative in the status doc; every structural
+  metric (`states`, `transitions`, `depth`, `pruned_by_por`, `symmetry_collapses`,
+  `hash_compaction_collisions`) stays pinned. This is the phase rule's "previous guard proven
+  incorrect" case, not a weakening: asserting timing equality across hosts carries no
+  correctness signal and actively blocked the evidence discipline it was meant to protect.
+- [ ] **37.2.1.j** Normalized artifact-drift guard. 37.2.1.f deliberately rejected a
+  git-diff check because `elapsed_ms` varies per runner — correct, but the consequence is
+  that structural drift (new telemetry fields, changed state counts, wrong-cwd paths) rots
+  silently, as 37.2.1.i shows. The fix is not to reinstate a raw diff but to diff
+  **normalized** artifacts: drop the volatile keys (`elapsed_ms`, timestamps, `git_rev`) and
+  compare the rest against git HEAD. That is a strictly stronger correct guard replacing a
+  weaker one, which the phase rules allow. Needs: normalizer + comparison script, tests over
+  fixture pairs (timing-only diff must pass, field/count/path diff must fail), and a CI step
+  after the existing regeneration step.
+
 - [x] **37.2.1.h** (2026-08-04) `CI / Lint` was red again: `cargo clippy --all-targets
   --all-features -- -D warnings` reported **18 `clippy::only_used_in_recursion`** warnings
   across `tla/translator.rs`, `tla/types.rs`, `translator/mod.rs`, `verus2tla/converter.rs`.

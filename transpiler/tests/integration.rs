@@ -8299,11 +8299,19 @@ fn test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts() 
                     case.protocol, case.artifact_path
                 )
             });
+        // `elapsed_ms` is deliberately NOT asserted. It is wall-clock, so it
+        // differs between the machine that wrote the table and any machine that
+        // regenerates the artifacts -- asserting equality pins a timing value
+        // from one host into a checked-in document and makes every honest
+        // evidence refresh look like a failure. That is what kept the artifacts
+        // stale (Phase 37.2.1.i): they had drifted structurally for months
+        // because refreshing them tripped this assertion. The structural
+        // metrics below are the ones that carry meaning, and they stay pinned.
+        let _ = elapsed_ms;
         for value in [
             states,
             transitions,
             depth,
-            elapsed_ms,
             pruned_by_por,
             symmetry_collapses,
             hash_compaction_collisions,
