@@ -707,6 +707,133 @@ verus! {
         );
     }
 
+    /// Strengthened assembly. The earlier version required the leader to hold
+    /// *no* Configuration between its commit index and the boundary; this one
+    /// only requires that the leader holds no Configuration the committer
+    /// lacks — an uncommitted boundary that agrees with the committer is fine.
+    ///
+    /// Two situations arise. If no boundary waits below `index`, the previous
+    /// assembly applies directly. Otherwise the single permitted uncommitted
+    /// boundary lies below `index`, so none lies above it; the leader's
+    /// election phase is then exactly its prefix phase, which the crux lemma
+    /// identifies with the certificate's governing phase, and legal phase
+    /// progression is reflexive.
+    ///
+    /// What remains open is only a *divergent* uncommitted Configuration —
+    /// one sitting where the committer holds a Data entry.
+    pub proof fn lemma_certified_boundary_present_without_divergent_configuration(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+            ds.server_constants[leader_id].servers
+                == ds.server_constants[
+                    ds.configuration_commit_certificates[index].committer
+                ].servers,
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < index
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+            index <= ds.server_states[leader_id].log.len(),
+            ds.server_states[leader_id].commit_index <= index,
+            // No Configuration the committer lacks.
+            forall |j: int|
+                #![trigger ds.server_states[leader_id].log[j]]
+                0 <= j < index
+                && ds.server_states[leader_id].log[j].payload is Configuration
+                ==> ds.server_states[
+                        ds.configuration_commit_certificates[index].committer
+                    ].log[j].payload is Configuration,
+            raft_membership_log_is_well_formed(
+                ds.server_states[leader_id].log,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[leader_id].servers,
+                },
+            ),
+            uncommitted_suffix_has_at_most_one_configuration(
+                ds.server_states[leader_id].log,
+                ds.server_states[leader_id].commit_index,
+            ),
+            ds.server_states[leader_id].election_membership_phase
+                == Some(election_membership_phase_for_state(
+                    ds.server_states[leader_id],
+                    ds.server_constants[leader_id],
+                )),
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        let leader = ds.server_states[leader_id];
+        let constants = ds.server_constants[leader_id];
+        let initial_phase = MembershipPhase::Stable {
+            config: constants.servers,
+        };
+
+        if forall |j: int|
+            leader.commit_index <= j < index
+            ==> !(leader.log[j].payload is Configuration)
+        {
+            lemma_certified_boundary_present_at_minimal_missing_index(
+                ds, index, leader_id);
+        } else {
+            // Some boundary waits below `index`.
+            let waiting = choose |j: int|
+                leader.commit_index <= j < index
+                && leader.log[j].payload is Configuration;
+
+            // At most one boundary waits, so none sits at or above `index`.
+            assert forall |m: int|
+                index <= m < leader.log.len()
+            implies !(leader.log[m].payload is Configuration)
+            by {
+                if leader.log[m].payload is Configuration {
+                    assert(uncommitted_suffix_has_at_most_one_configuration(
+                        leader.log, leader.commit_index));
+                    assert(waiting == m);
+                }
+            };
+
+            // Hence the election phase is exactly the prefix phase at `index`,
+            // which the crux lemma identifies with the governing phase.
+            lemma_minimal_missing_boundary_phases_agree(ds, index, leader_id);
+            lemma_configuration_free_interval_preserves_active_phase(
+                leader.log,
+                index,
+                leader.log.len() as int,
+                initial_phase,
+            );
+            assert(election_membership_phase_for_state(leader, constants)
+                == ds.configuration_commit_certificates[index]
+                    .governing_phase);
+
+            lemma_certified_boundary_present_when_phases_are_related(
+                ds,
+                index,
+                leader_id,
+                election_membership_phase_for_state(leader, constants),
+            );
+        }
+    }
+
     /// Half of the remaining hypothesis, discharged: any Configuration the
     /// leader holds *below its own commit index* is one the committer holds
     /// too. Committed Configurations carry certificates, and the committer has
