@@ -13,6 +13,7 @@ precise reason for every rejection.
 Plan of record: [`clean_tla_to_verus_translator_plan.md`](clean_tla_to_verus_translator_plan.md).
 Corpus: [`transpiler/tests/corpus/`](../transpiler/tests/corpus/README.md).
 How to get a spec *into* the subset: [`clean_tla_rewrite_playbook.md`](clean_tla_rewrite_playbook.md).
+What the translator has been shown to do: [`clean_tla_translator_evidence.md`](clean_tla_translator_evidence.md).
 
 ---
 

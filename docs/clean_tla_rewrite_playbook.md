@@ -7,6 +7,7 @@ every step here is a step that went wrong at least once.
 - The contract: [`clean_tla_subset.md`](clean_tla_subset.md) (C1–C5).
 - The corpus: [`transpiler/tests/corpus/`](../transpiler/tests/corpus/README.md).
 - Plan of record: [`clean_tla_to_verus_translator_plan.md`](clean_tla_to_verus_translator_plan.md).
+- Results so far: [`clean_tla_translator_evidence.md`](clean_tla_translator_evidence.md).
 
 **The rewrite is the human's job and the translation is the tool's.** The subset
 exists to draw that line. If you find yourself deciding *which message carries

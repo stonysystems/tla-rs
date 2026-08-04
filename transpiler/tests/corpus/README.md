@@ -6,6 +6,7 @@ rule-based AST translator — *not* a training set.
 
 Plan of record: [`docs/clean_tla_to_verus_translator_plan.md`](../../../docs/clean_tla_to_verus_translator_plan.md).
 How to add a case: [`docs/clean_tla_rewrite_playbook.md`](../../../docs/clean_tla_rewrite_playbook.md).
+Results so far: [`docs/clean_tla_translator_evidence.md`](../../../docs/clean_tla_translator_evidence.md).
 Work queue: `TODO.md` Phase 53 (dataset) and Phase 52 (translator).
 
 ## Layout
