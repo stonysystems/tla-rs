@@ -7,30 +7,60 @@
 > Fill this in while writing `clean.tla`. It is the record of what a human decided,
 > and it is what makes the rewrite reviewable. Do not leave TODOs in a case that is
 > marked `clean` in the manifest.
+**Status**: `clean.tla` written and the linter accepts it; **TLC does not yet
+complete** — see "State-space blow-up" below. Not yet translated, no golden.
 
-## Which variable is the network (C4)
+## What the linter found (clean-distance 6)
 
-TODO — name the message variable, and the operators used to send/receive it.
+- **C3 caught `allLogs`** — the history-variable rule's first real hit: "built by
+  gathering per-node state over all of `Server`".
+- `elections` is global; `messages` is a **bag**, not a set (ongardie's Raft
+  models duplication with a message→count function), so C4 reported a near-miss.
+- The single C5 finding was *caused by* the history variable: `Next` is the whole
+  disjunction **conjoined** with `allLogs' = allLogs \cup {log[i] : i \in Server}`.
+  Removing `allLogs` fixes C3 and C5 together.
 
-## History variables removed (C3)
+## The rewrite
 
-TODO — list each removed ghost/history variable and why it was safe to drop.
+- **History variables deleted**: `allLogs`, `elections`, `voterLog`, and the
+  `mlog` field carried in messages. The original labels the last two itself —
+  *"used as a history variable for the proof … would not exist in a real
+  implementation"*.
+- **Bag → set.** `DuplicateMessage` disappears: a set cannot express it. Receipt
+  still **consumes**, as the original's `Discard`/`Reply` do.
+- **`Quorum` → counting** (P4): `Cardinality(votesGranted[i]) * 2 >
+  Cardinality(Server)`.
+- **A `TypeOK` was added.** The original has none, and the subset states
+  per-node-ness in terms of declarations.
+- Log-conflict truncation is out of this slice.
 
-## Instantaneous cross-node reads message-ified (C2)
+## Two mistakes this rewrite made, and what they teach
 
-TODO — for each `x[other]` read: what message now carries that value, who sends it,
-and what the receiving action does with it.
+1. **Non-consuming receipt was copied from Paxos, where it belongs, to Raft,
+   where it does not.** Paxos's spec says messages are never removed; Raft's
+   discards on receipt. Applying the wrong one made `msgs` accumulate without
+   bound and the state space diverge (depth climbing past 190 with no sign of
+   closing). Fixed. **The lesson is that "does receipt consume?" is a per-spec
+   fact to read off the source, not a rule of the subset.**
 
-## Out-of-subset constructs stripped
+2. **State-space blow-up from a fat message record.** The clean subset's message
+   type is a union of record sets, and the projection derives each variant's
+   payload from its constructor. To keep the union's members structurally
+   identical this rewrite gave *every* message all twelve fields and filled the
+   unused ones with a default. That multiplies the reachable field combinations,
+   and TLC does not finish even at 2 servers, `MaxTerm = 2`, `MaxLogLen = 1`
+   (86M states generated, 11M distinct, still growing).
 
-TODO — reconfiguration (view/epoch) per Q2, and anything else dropped.
+   The original avoids this by giving each message type only the fields it
+   needs. **The fix is to do the same** — the projection's per-variant payload
+   rule already supports it, and the fat record actively defeats that rule. This
+   is the next step for the case.
 
-## Semantic-fidelity claim (V2)
+## Not yet done
 
-TODO — how `clean.tla` was checked against `original.tla` with TLC: config, bounds,
-observables compared, result.
-
-## Golden review (before freezing golden.rs)
-
-TODO — what was diffed against `reference.rs` (if any) and what differences were
-accepted, with reasons.
+- Restructure messages per type, then TLC to completion.
+- Translate + freeze golden.
+- The projection currently requires a **declaration** to read an element type
+  from (`x \in [Node -> T]`, or an `Init` function constructor). ongardie's Raft
+  has no `TypeOK` at all, which is why this rewrite adds one; a spec without
+  either would not project today. Worth revisiting.
