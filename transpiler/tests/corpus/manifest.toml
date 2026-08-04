@@ -1,6 +1,6 @@
 # Clean-Subset TLA+ Corpus Manifest (Phase 53)
 #
-# One [[case]] per corpus entry. See README.md for the four-tuple convention,
+# One case table per corpus entry. See README.md for the four-tuple convention,
 # the status vocabulary, and the per-tier golden strategy.
 #
 # Tier gating (plan §"咬合"): a translator milestone may not be claimed before its
@@ -30,69 +30,69 @@
 # ============================================================
 
 [[case]]
-id = "t0_01_peterson"
+id = "t0_01_simple"
 tier = 0
-status = "planned"
+status = "intake"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/TeachingConcurrency/Simple.tla"
-source_commit = ""
+source_commit = "ab9a2c33566c2e8c9202f292540852282e1fbb32"
 golden_kind = "handwritten"
 reference = ""
 clean_distance = "unmeasured"
 milestone_gate = "52.M1"
-notes = "Two-process mutual exclusion. Smallest per-node-array case: pc/flag/turn are [Proc -> T]."
+notes = "Lamport's TeachingConcurrency 'Simple'. Smallest per-node-array case: x, y, pc are all [0..N-1 -> T] and Next is `\\E self \\in 0..N-1: proc(self)`. proc(self) reads y[j] for j /= self, so it violates C2 and the rewrite must message-ify that read. Ships with a TLAPS proof upstream."
 
 [[case]]
 id = "t0_02_bakery"
 tier = 0
-status = "planned"
+status = "intake"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/Bakery-Boulangerie/Bakery.tla"
-source_commit = ""
+source_commit = "dc6470ac55fe7f4f395ac62dba60ec6fd5d87c24"
 golden_kind = "handwritten"
 reference = ""
 clean_distance = "unmeasured"
 milestone_gate = "52.M1"
-notes = "Lamport's bakery. Exercises per-node arrays read by other nodes -> expect C2 violations; the rewrite message-ifies the ticket reads."
+notes = "Lamport's bakery. Heavy C2 case: the doorway/ticket protocol reads num[j] and flag[j] for other processes. Deliberately kept as the corpus's 'dirty' end of tier 0 so the linter has a spec it must reject."
 
 [[case]]
 id = "t0_03_dining_philosophers"
 tier = 0
-status = "planned"
+status = "intake"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/DiningPhilosophers/DiningPhilosophers.tla"
-source_commit = ""
+source_commit = "41faafbabe549530ad54bd4301b07ca4fd93e65b"
 golden_kind = "handwritten"
 reference = ""
 clean_distance = "unmeasured"
 milestone_gate = "52.M1"
-notes = "Deadlock-capable; gives the corpus a negative (deadlock) case for TLC fidelity."
+notes = "Deadlock-capable; gives the corpus a negative (deadlock) case for TLC fidelity. Forks are shared between neighbours -> C2 violations at the fork pickup."
 
 [[case]]
-id = "t0_04_blocking_queue"
+id = "t0_04_readers_writers"
 tier = 0
-status = "planned"
-source_repo = "tlaplus/Examples"
-source_path = "specifications/BlockingQueue/BlockingQueue.tla"
-source_commit = ""
-golden_kind = "handwritten"
-reference = ""
-clean_distance = "unmeasured"
-milestone_gate = "52.M1"
-notes = "Producer/consumer. Shared buffer is global state, not per-node -> tests the C1 'global constant/shared var' escape hatch."
-
-[[case]]
-id = "t0_05_readers_writers"
-tier = 0
-status = "planned"
+status = "intake"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/ReadersWriters/ReadersWriters.tla"
-source_commit = ""
+source_commit = "ee05f259276db2b878a55a442ea6daa8429db7e9"
 golden_kind = "handwritten"
 reference = ""
 clean_distance = "unmeasured"
 milestone_gate = "52.M1"
-notes = "Queue-based reader/writer lock."
+notes = "Queue-based reader/writer lock. State is global (readers/writers/waiting sets), not per-node -> exercises the C1 boundary: what does projection do when there is no [Node -> T] array at all?"
+
+[[case]]
+id = "t0_05_lamport_mutex"
+tier = 0
+status = "intake"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/lamport_mutex/LamportMutex.tla"
+source_commit = "b17be0a959108701a89b5cadec1a1ee1b216f7a4"
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "unmeasured"
+milestone_gate = "52.M1"
+notes = "Lamport 1978 distributed mutual exclusion. The CLEANEST tier-0 case and the most valuable one: already message-passing (`network` is [Proc -> [Proc -> Seq(Message)]], pairwise FIFO), all of clock/req/ack are per-node, Next is `\\E p \\in Proc`. Rewrite work is mostly (a) network 2-D queue array -> one message set with src/dst, (b) `crit` global set -> per-node boolean. Swapped in for BlockingQueue, which is an upstream submodule (lemmy/BlockingQueue) and has no per-node arrays."
 
 # ============================================================
 # Tier 1 — medium consensus (53.3). MVP / killer demo.
