@@ -415,16 +415,56 @@ impl ProjectionContext<'_> {
                 gaps.push(format!("message tag {tag:?} is not a string literal"));
                 continue;
             };
+            // A variant carries only the fields its constructor actually fills
+            // in. A field a constructor sets to a literal (`clock |-> 0` in an
+            // acknowledgement) carries no information and is not payload; the
+            // record-set declaration lists it only because every message shares
+            // one record type.
+            let fields = match self.constructor_payload(tag) {
+                Some(informative) => payload
+                    .iter()
+                    .filter(|(name, _)| informative.contains(name))
+                    .cloned()
+                    .collect(),
+                None => payload.clone(),
+            };
             variants.push(MessageVariant {
                 name: to_variant_name(tag),
                 tag: tag.clone(),
-                // Which payload fields a given variant actually uses is decided
-                // by the constructors; until those are analysed (52.M1.b) every
-                // variant carries the full payload.
-                fields: payload.clone(),
+                fields,
             });
         }
         variants
+    }
+
+    /// The fields a constructor for `tag` fills with something other than a
+    /// literal, i.e. the ones that carry information.
+    fn constructor_payload(&self, tag: &str) -> Option<Vec<String>> {
+        for op in &self.module.operators {
+            let TlaExpr::Record(fields) = &op.body else {
+                continue;
+            };
+            let tags_match = fields.iter().any(|(name, value)| {
+                matches!(name.as_str(), "type" | "kind" | "tag")
+                    && matches!(value, TlaExpr::String(t) if t == tag)
+            });
+            if !tags_match {
+                continue;
+            }
+            return Some(
+                fields
+                    .iter()
+                    .filter(|(_, value)| {
+                        !matches!(
+                            value,
+                            TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_)
+                        )
+                    })
+                    .map(|(name, _)| to_snake_case(name))
+                    .collect(),
+            );
+        }
+        None
     }
 }
 

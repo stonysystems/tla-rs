@@ -13,7 +13,9 @@ pub mod tokenizer;
 pub mod translator;
 pub mod types;
 
-pub use action_projection::{project_actions, ActionKind, ProjectedAction};
+pub use action_projection::{
+    project_actions, project_helpers, ActionKind, ProjectedAction, ProjectedHelper,
+};
 pub use ast::{
     TlaBinOp, TlaConstantDecl, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaInstance, TlaModule,
     TlaNumber, TlaOperator, TlaParam, TlaQuantBound, TlaTheorem, TlaUnaryOp,

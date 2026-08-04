@@ -33,6 +33,31 @@ pub enum ActionKind {
     Receive,
 }
 
+/// A helper operator kept as its own projected spec function.
+///
+/// Helpers are *not* inlined by default. Keeping `beats` as `Lbeats` preserves
+/// the source spec's own factoring, so a human can match the output against the
+/// input concept by concept — which is the point of a deterministic translator.
+/// The exception is a helper the call site hands the received *message*: after
+/// projection the message is destructured into parameters, so that signature
+/// cannot survive and the helper must be inlined.
+#[derive(Debug, Clone)]
+pub struct ProjectedHelper {
+    pub name: String,
+    pub source_name: String,
+    /// Whether the helper reads node state, i.e. whether it needs `s`.
+    pub reads_state: bool,
+    /// Parameters beyond `s` and `c`, in source order with the node parameter
+    /// removed.
+    pub params: Vec<String>,
+    pub body: String,
+    pub gaps: Vec<String>,
+}
+
+/// Marks an identifier whose text is already projected Verus, so the projector
+/// passes it through instead of trying to resolve it as a TLA+ name.
+const PROJECTED_MARK: &str = "\u{1}";
+
 /// Marker for a conjunct that the dispatch consumes rather than the action.
 const DISPATCH_PREFIX: &str = "\u{0}dispatch:";
 
@@ -56,6 +81,82 @@ pub struct ProjectedAction {
     /// What could not be projected. A non-empty list means the action is not
     /// finished, and the emitter must not present it as if it were.
     pub gaps: Vec<String>,
+}
+
+/// Project the helpers a module's actions call **as functions**.
+///
+/// Only helpers that survive projection are emitted. A message constructor or a
+/// broadcast is inlined at its use site, and a helper handed the received
+/// message cannot keep its signature; emitting those would produce definitions
+/// nothing calls, and in the constructors' case ones that cannot be projected
+/// at all. So the set is taken from what action projection actually referenced.
+pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<ProjectedHelper> {
+    let called = called_helpers(module, spec);
+    let node_params = node_parameterized_operators(module);
+    let mut helpers = Vec::new();
+
+    for (op_name, node_param) in &node_params {
+        if !called.contains(op_name.as_str()) {
+            continue;
+        }
+        let Some(op) = module.operators.iter().find(|o| o.name == *op_name) else {
+            continue;
+        };
+        // Actions are handled by `project_actions`; helpers are the rest.
+        if mentions_prime(&op.body) {
+            continue;
+        }
+        let ctx = ActionContext {
+            spec,
+            node_param: node_param.clone(),
+            msg_param: None,
+            network: spec.network_variable.clone(),
+        };
+        let (body, gaps) = match ctx.project_expr(&op.body) {
+            Ok(text) => (text, Vec::new()),
+            Err(gap) => (String::new(), vec![gap]),
+        };
+        helpers.push(ProjectedHelper {
+            name: format!("L{op_name}"),
+            source_name: op_name.clone(),
+            reads_state: reads_state(&op.body, spec),
+            params: op
+                .params
+                .iter()
+                .filter(|p| p.name != *node_param)
+                .map(|p| format!("{}: int", to_snake_case(&p.name)))
+                .collect(),
+            body,
+            gaps,
+        });
+    }
+
+    helpers.sort_by(|a, b| a.source_name.cmp(&b.source_name));
+    helpers
+}
+
+/// Helper names that action projection emitted calls to.
+fn called_helpers(module: &TlaModule, spec: &ProjectedSpec) -> std::collections::BTreeSet<String> {
+    let mut called = std::collections::BTreeSet::new();
+    for action in project_actions(module, spec) {
+        for text in action.conjuncts.iter().chain(action.frame.iter()) {
+            for op in module.operators.iter() {
+                if text.contains(&format!("L{}(", op.name)) {
+                    called.insert(op.name.clone());
+                }
+            }
+        }
+    }
+    called
+}
+
+/// Whether an expression reads any per-node state, i.e. whether the projected
+/// helper needs an `s` parameter at all.
+fn reads_state(expr: &TlaExpr, spec: &ProjectedSpec) -> bool {
+    if let TlaExpr::Ident(name) = expr {
+        return spec.state_fields.iter().any(|f| f.source_name == *name);
+    }
+    children(expr).into_iter().any(|c| reads_state(c, spec))
 }
 
 /// Project every action of a module that the linter accepted.
@@ -322,6 +423,10 @@ impl ActionContext<'_> {
                 // `src` is the sender: after projection that is this node, and
                 // the framework stamps it on the packet.
                 "src" | "source" | "sender" => {}
+                // A field a constructor fills with a literal carries no
+                // information -- it is there because every message shares one
+                // record type. The enum declaration drops it too.
+                _ if is_literal(value) => {}
                 other => fields.push((to_snake_case(other), self.project_expr(value)?)),
             }
         }
@@ -439,6 +544,7 @@ impl ActionContext<'_> {
                     }
                 },
                 "src" | "source" | "sender" => {}
+                _ if is_literal(value) => {}
                 other => fields.push((to_snake_case(other), projected(value)?)),
             }
         }
@@ -535,7 +641,25 @@ impl ActionContext<'_> {
                     ));
                 }
                 let update = &updates[0];
-                let value = self.project_expr(&update.value)?;
+                // `@` inside an EXCEPT is the component's old value. What that
+                // is depends on the path, so it is substituted before the value
+                // is projected.
+                let old_value = match update.path.as_slice() {
+                    [TlaExceptPath::Index(index)] if self.is_node_index(index) => {
+                        TlaExpr::Ident(format!("{PROJECTED_MARK}s.{field}"))
+                    }
+                    [TlaExceptPath::Index(outer), TlaExceptPath::Index(inner)]
+                        if self.is_node_index(outer) =>
+                    {
+                        TlaExpr::FnApply {
+                            func: Box::new(TlaExpr::Ident(format!("{PROJECTED_MARK}s.{field}"))),
+                            arg: Box::new(inner.clone()),
+                        }
+                    }
+                    _ => TlaExpr::Ident("@".to_string()),
+                };
+                let value_expr = substitute(&update.value, "@", &old_value);
+                let value = self.project_expr(&value_expr)?;
                 match update.path.as_slice() {
                     // `![self] = e` -- one index, the acting node: the whole
                     // projected field becomes `e`.
@@ -595,6 +719,11 @@ impl ActionContext<'_> {
             }
             // The acting node's own identity.
             TlaExpr::Ident(name) if *name == self.node_param => Ok("c.node_id".to_string()),
+            // Text the projector itself substituted in (the old value of an
+            // EXCEPT component); it is already projected.
+            TlaExpr::Ident(name) if name.starts_with(PROJECTED_MARK) => {
+                Ok(name.trim_start_matches(PROJECTED_MARK).to_string())
+            }
             TlaExpr::Ident(name) => {
                 if self
                     .spec
@@ -623,6 +752,21 @@ impl ActionContext<'_> {
             TlaExpr::Number(n) => Ok(n.to_i64().map(|v| v.to_string()).unwrap_or_default()),
             TlaExpr::Bool(b) => Ok(b.to_string()),
             TlaExpr::String(s) => Ok(format!("\"{s}\"")),
+            // A conjunction may carry dispatch guards in from an inlined
+            // helper (`Deliverable(p, m)` expands to a `dst` check and a
+            // sequence check); the `dst` half is the framework's, as it is at
+            // the top level of an action.
+            TlaExpr::BinOp {
+                op: TlaBinOp::And,
+                left,
+                right,
+            } if self.dispatch_guard(left).is_some() || self.dispatch_guard(right).is_some() => {
+                if self.dispatch_guard(left).is_some() {
+                    self.project_expr(right)
+                } else {
+                    self.project_expr(left)
+                }
+            }
             TlaExpr::BinOp { op, left, right } => {
                 let l = self.project_expr(left)?;
                 let r = self.project_expr(right)?;
@@ -636,6 +780,8 @@ impl ActionContext<'_> {
                     TlaBinOp::Plus => format!("{l} + {r}"),
                     TlaBinOp::Minus => format!("{l} - {r}"),
                     TlaBinOp::Times => format!("{l} * {r}"),
+                    TlaBinOp::Div => format!("{l} / {r}"),
+                    TlaBinOp::Mod => format!("{l} % {r}"),
                     TlaBinOp::And => format!("{l} && {r}"),
                     TlaBinOp::Or => format!("{l} || {r}"),
                     TlaBinOp::Implies => format!("{l} ==> {r}"),
@@ -668,7 +814,98 @@ impl ActionContext<'_> {
                     items.iter().map(|i| self.project_expr(i)).collect();
                 Ok(format!("set![{}]", rendered?.join(", ")))
             }
+            // `\A q \in Node \ {self} : P` -- a statement about every peer.
+            TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } if vars.len() == 1 => {
+                let bound = &vars[0];
+                let Some(set) = &bound.set else {
+                    return Err("unbounded quantifier".to_string());
+                };
+                let domain = self.project_quantifier_domain(&bound.var, set)?;
+                let inner = self.project_expr(body)?;
+                let keyword = if matches!(expr, TlaExpr::Forall { .. }) {
+                    "forall"
+                } else {
+                    "exists"
+                };
+                let joiner = if keyword == "forall" { "==>" } else { "&&" };
+                Ok(format!(
+                    "{keyword}|{}: int| {domain} {joiner} {inner}",
+                    bound.var
+                ))
+            }
+            // A call to a user-defined operator: either a helper the projected
+            // spec keeps, or one that must be inlined because it was handed the
+            // received message.
+            TlaExpr::OpApply { op, args } => {
+                let TlaExpr::Ident(name) = &**op else {
+                    return Err(format!("call {}", render_source(expr)));
+                };
+                let takes_message = self.msg_param.as_deref().is_some_and(|msg| {
+                    args.iter()
+                        .any(|a| matches!(a, TlaExpr::Ident(v) if v == msg))
+                });
+                if takes_message {
+                    // The message is destructured into parameters after
+                    // projection, so the helper's signature cannot survive.
+                    let inlined = self.inline_call(expr)?;
+                    return self.project_expr(&inlined);
+                }
+                let Some((params, body)) = self.spec.operator_bodies.get(name.as_str()) else {
+                    return Err(format!("unknown operator `{name}`"));
+                };
+                let mut rendered = Vec::new();
+                if reads_state(body, self.spec) {
+                    rendered.push("s".to_string());
+                }
+                rendered.push("c".to_string());
+                for arg in args.iter() {
+                    // The acting node disappears from the argument list: the
+                    // projected helper is already about this node. It is the
+                    // *argument* that identifies it, not the parameter name --
+                    // the helper may call its own parameter something else.
+                    if self.is_node_index(arg) {
+                        continue;
+                    }
+                    rendered.push(self.project_expr(arg)?);
+                }
+                let _ = params;
+                Ok(format!("L{name}({})", rendered.join(", ")))
+            }
+            // `[x EXCEPT ![self] ...]` used as a value, which is how a helper
+            // that returns an updated table is written.
+            TlaExpr::FnExcept { func, .. } => {
+                let TlaExpr::Ident(var) = &**func else {
+                    return Err(format!("EXCEPT over {}", render_source(func)));
+                };
+                self.project_update(var, expr)
+            }
+            // `[d \in Node |-> e]` -- a table built over the peers.
+            TlaExpr::FnConstruct { var, domain, body } => {
+                let set = self.project_node_set(domain)?;
+                let value = self.project_expr_with_binder(body, var)?;
+                Ok(format!("Map::new({set}, |{var}: int| {value})"))
+            }
             other => Err(format!("expression {}", render_source(other))),
+        }
+    }
+
+    /// `q \in Node \ {self}` -> `c.procs.contains(q) && q != c.node_id`.
+    fn project_quantifier_domain(&self, var: &str, set: &TlaExpr) -> Result<String, String> {
+        match set {
+            TlaExpr::BinOp {
+                op: TlaBinOp::Setminus,
+                left,
+                right,
+            } => {
+                let base = self.project_node_set(left)?;
+                if let TlaExpr::SetEnum(items) = &**right {
+                    if items.len() == 1 && self.is_node_index(&items[0]) {
+                        return Ok(format!("{base}.contains({var}) && {var} != c.node_id"));
+                    }
+                }
+                Err(format!("quantifier domain {}", render_source(set)))
+            }
+            other => Ok(format!("{}.contains({var})", self.project_node_set(other)?)),
         }
     }
 }
@@ -749,6 +986,15 @@ fn mentions_prime(expr: &TlaExpr) -> bool {
         return true;
     }
     children(expr).into_iter().any(mentions_prime)
+}
+
+/// Whether an expression is a literal, and so carries no information when a
+/// constructor uses it to fill a shared record field.
+fn is_literal(expr: &TlaExpr) -> bool {
+    matches!(
+        expr,
+        TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_)
+    )
 }
 
 /// `"req"` -> `Req`.
@@ -902,6 +1148,7 @@ fn children(expr: &TlaExpr) -> Vec<&TlaExpr> {
 
 #[cfg(test)]
 mod tests {
+    use super::project_helpers;
     use super::*;
     use crate::tla::parse_module;
     use crate::tla::projection::project_module;
@@ -1089,6 +1336,116 @@ Next == \E self \in Proc : \E m \in network : Recv(self, m)
             !recv.conjuncts.iter().any(|c| c.contains("dst")),
             "the delivery guard is the framework's, not the action's: {:?}",
             recv.conjuncts
+        );
+    }
+
+    #[test]
+    fn keeps_a_state_helper_as_its_own_function() {
+        // Preserving the source's factoring is what lets a human match output
+        // against input concept by concept.
+        let source = r#"---- MODULE Test ----
+VARIABLES req
+TypeOK == req \in [Proc -> [Proc -> Nat]]
+beats(p, q) == req[p][q] = 0
+Step(p) == /\ beats(p, 1)
+           /\ req' = [req EXCEPT ![p][p] = 1]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let module = parse_module(source).unwrap();
+        let spec = project_module(&module).unwrap();
+        let acts = project_actions(&module, &spec);
+        assert!(
+            action(&acts, "Step")
+                .conjuncts
+                .iter()
+                .any(|c| c == "Lbeats(s, c, 1)"),
+            "the helper should be called, not inlined: {:?}",
+            action(&acts, "Step").conjuncts
+        );
+        let helpers = project_helpers(&module, &spec);
+        let beats = helpers
+            .iter()
+            .find(|h| h.source_name == "beats")
+            .expect("beats should be emitted");
+        assert!(beats.reads_state);
+        assert_eq!(beats.params, vec!["q: int".to_string()]);
+        assert_eq!(beats.body, "s.req[q] == 0");
+    }
+
+    #[test]
+    fn inlines_a_helper_that_takes_the_message() {
+        // The message is destructured into parameters, so a helper's signature
+        // over it cannot survive projection.
+        let source = r#"---- MODULE Test ----
+VARIABLES seen, network
+Message == [type: {"ping"}, src: Proc, dst: Proc, n: Nat]
+TypeOK == seen \in [Proc -> [Proc -> Nat]]
+Deliverable(p, m) == m.n = seen[p][m.src]
+Recv(p, m) == /\ Deliverable(p, m)
+              /\ m.type = "ping"
+              /\ seen' = [seen EXCEPT ![p][m.src] = m.n]
+              /\ network' = network \ {m}
+Next == \E p \in Proc : \E m \in network : Recv(p, m)
+===="#;
+        let module = parse_module(source).unwrap();
+        let spec = project_module(&module).unwrap();
+        let acts = project_actions(&module, &spec);
+        let recv = action(&acts, "Recv");
+        assert!(
+            recv.conjuncts.iter().any(|c| c == "n == s.seen[src]"),
+            "the helper should be inlined and projected: {:?}",
+            recv.conjuncts
+        );
+        assert!(
+            project_helpers(&module, &spec)
+                .iter()
+                .all(|h| h.source_name != "Deliverable"),
+            "an inlined helper must not also be emitted as a function"
+        );
+    }
+
+    #[test]
+    fn projects_a_quantifier_over_the_peers() {
+        let source = r#"---- MODULE Test ----
+VARIABLES ok
+TypeOK == ok \in [Proc -> BOOLEAN]
+Step(p) == /\ \A q \in Proc \ {p} : ok[p]
+           /\ ok' = [ok EXCEPT ![p] = FALSE]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let module = parse_module(source).unwrap();
+        let spec = project_module(&module).unwrap();
+        let acts = project_actions(&module, &spec);
+        assert!(
+            action(&acts, "Step")
+                .conjuncts
+                .iter()
+                .any(|c| c.contains("forall|q: int|") && c.contains("q != c.node_id")),
+            "got {:?}",
+            action(&acts, "Step").conjuncts
+        );
+    }
+
+    #[test]
+    fn resolves_the_except_at_marker() {
+        // `@` is the component's old value, and what that is depends on the
+        // EXCEPT path.
+        let source = r#"---- MODULE Test ----
+VARIABLES ack
+TypeOK == ack \in [Proc -> SUBSET Proc]
+Step(p) == ack' = [ack EXCEPT ![p] = @ \union {p}]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let module = parse_module(source).unwrap();
+        let spec = project_module(&module).unwrap();
+        let acts = project_actions(&module, &spec);
+        assert!(
+            action(&acts, "Step")
+                .conjuncts
+                .iter()
+                .any(|c| c == "s_.ack == s.ack.union(set![c.node_id])"),
+            "got {:?}",
+            action(&acts, "Step").conjuncts
         );
     }
 }
