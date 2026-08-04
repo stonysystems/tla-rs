@@ -10161,9 +10161,10 @@ impl Translator {
                         format!("result.{}", i)
                     };
                     for pred in &self.config.vec_element_ensures {
+                        // Phase 54.7: emit the trigger explicitly (see lib.rs).
                         ensures.push(format!(
-                            "forall |i:int| 0 <= i < {}@.len() ==> {}@[i].{}()",
-                            accessor, accessor, pred
+                            "forall |i:int| #![trigger {}@[i]] 0 <= i < {}@.len() ==> {}@[i].{}()",
+                            accessor, accessor, accessor, pred
                         ));
                     }
                 }

@@ -23917,3 +23917,77 @@ fn test_regenerate_rsl_validate_only_passes() {
         "validate-only should report PASSED when existing files match transpiler output"
     );
 }
+
+/// Phase 54.7: `vec_element_ensures` quantifiers must carry an explicit trigger.
+///
+/// The transpiler synthesises `forall |i:int| 0 <= i < X@.len() ==> X@[i].pred()`
+/// for every entry in `vec_element_ensures`. Verus otherwise picks `X@[i]` itself
+/// and reports it — 60 of the 109 notes in `src/generated/RSL/` were this one
+/// shape. An auto-chosen trigger is an implementation detail of the release, so
+/// pinning it is the point of the phase.
+///
+/// This asserts the emitted text rather than a regenerated file on purpose:
+/// `scripts/regenerate_rsl.sh` is currently lossy (it drops hand-added imports
+/// from `types_gen.rs` — Phase 42), so regenerating to check would trade one
+/// correctness problem for another.
+#[test]
+fn test_vec_element_ensures_emits_explicit_trigger() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let out = std::env::temp_dir().join("phase54_7_broadcast_gen.rs");
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_verus-transpile"))
+        .args([
+            "--input",
+            repo_root
+                .join("src/protocol/RSL/broadcast.rs")
+                .to_str()
+                .unwrap(),
+            "--annotations",
+            repo_root
+                .join("src/protocol/RSL/broadcast.automan")
+                .to_str()
+                .unwrap(),
+            "--config",
+            repo_root
+                .join("src/protocol/RSL/broadcast_transpile.toml")
+                .to_str()
+                .unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run transpiler");
+    assert!(
+        status.status.success(),
+        "transpiler failed: {}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+
+    let emitted = std::fs::read_to_string(&out).expect("read generated output");
+    let quantifiers: Vec<&str> = emitted
+        .lines()
+        .filter(|l| l.contains("forall |i:int| ") && l.contains("@.len() ==>"))
+        .collect();
+    assert!(
+        !quantifiers.is_empty(),
+        "expected vec_element_ensures quantifiers in the generated output"
+    );
+    for line in &quantifiers {
+        assert!(
+            line.contains("#![trigger "),
+            "vec_element_ensures quantifier emitted without an explicit trigger: {}",
+            line.trim()
+        );
+    }
+    // The trigger must name the indexed element, which is what Verus chose.
+    assert!(
+        quantifiers
+            .iter()
+            .any(|l| l.contains("#![trigger result@[i]]")),
+        "expected `#![trigger result@[i]]`, got: {:?}",
+        quantifiers
+    );
+    let _ = std::fs::remove_file(&out);
+}

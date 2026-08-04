@@ -16305,8 +16305,37 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       it), and its history is ordinary hand edits. Only `src/generated/RSL/` is
       transpiler-owned, and that is 54.7's scope.
       One site skipped: `cconfiguration.rs:204`, trigger belongs to a nested quantifier.
-- [ ] **54.7** Transpiler codegen emits explicit triggers; regenerate; confirm all 109
-      generated notes are gone and the regenerated tree still verifies.
+- [x] **54.7.a** Transpiler codegen emits explicit triggers for `vec_element_ensures`.
+      **DONE (2026-08-04).** The transpiler synthesises
+      `forall |i:int| 0 <= i < X@.len() ==> X@[i].pred()` for every entry in
+      `vec_element_ensures`; it now emits `#![trigger X@[i]]` — the term Verus was choosing
+      anyway. Two emission sites (`lib.rs:772`, `translator/mod.rs:10165`). This shape is
+      **60 of the 109** generated notes. Guarded by
+      `test_vec_element_ensures_emits_explicit_trigger`, which asserts the emitted text
+      rather than a regenerated file, for the reason in 54.7.b.
+- [ ] **54.7.b** Regenerate `src/generated/RSL/` and confirm the notes are gone.
+      **BLOCKED on Phase 42 (RSL regen is lossy), measured 2026-08-04.** Running
+      `scripts/regenerate_rsl.sh` rewrites `types_gen.rs` with **53 lines deleted**, dropping
+      hand-added imports (`pub use ...acceptorimpl::CAcceptor`,
+      `...ElectionImpl::{CElectionState, ...}`, and more), and also rewrites `acceptor_gen.rs`.
+      Verified pre-existing: the identical loss occurs when regenerating at clean HEAD with
+      the unmodified transpiler, so it is not caused by the 54.7.a change (which adds only
+      the `#![trigger ...]` text). Landing a regeneration today would trade a trigger problem
+      for an import-correctness one. Sequence: Phase 42 (lossless RSL regen) → regenerate →
+      re-measure. Until then the 60 emitted notes remain in the checked-in files even though
+      the codegen that produces them is fixed.
+- [ ] **54.7.c** The other **33** of the 109 generated notes are **not transpiler output**.
+      They sit inside `skip_functions` hand-written bodies that regeneration preserves
+      verbatim (`CRemoveExecutedRequestBatch`, the `lemma_*_bridge` proofs, and others across
+      election/executor/learner/proposer/replica). Classified by regenerating into a temp dir
+      and checking which functions the transpiler actually emits: 76 emitted / 33 preserved.
+      They live under `src/generated/` but are hand-maintained, so `CLAUDE.md`'s
+      "do not hand-edit generated files" rule does not obviously bind — that rule exists to
+      stop people patching transpiler *output* instead of the transpiler. Needs an explicit
+      decision before annotating; the honest options are (i) treat preserved bodies as
+      hand-written and annotate them in place, or (ii) move them out of `src/generated/`
+      into a companion module like `gen_helpers.rs`, which is where the equivalent RSL
+      helpers already live.
 - [ ] **54.8** `src/protocol/Raft/` (177, of which 141 in `refinement_proof/invariants.rs`).
       Deliberately last: this file also holds the 12 Phase 34 `assume`s and is the most
       fragile proof in the tree.

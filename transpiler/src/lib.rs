@@ -768,9 +768,12 @@ impl Transpiler {
                         "result".to_string()
                     };
                     for pred in &self.config.translator.vec_element_ensures {
+                        // Phase 54.7: emit the trigger explicitly. Verus
+                        // otherwise picks `X@[i]` itself and reports it, and an
+                        // auto-chosen trigger can change between releases.
                         ensures_lines.push(format!(
-                            "    forall |i:int| 0 <= i < {}@.len() ==> {}@[i].{}(),",
-                            accessor, accessor, pred
+                            "    forall |i:int| #![trigger {}@[i]] 0 <= i < {}@.len() ==> {}@[i].{}(),",
+                            accessor, accessor, accessor, pred
                         ));
                     }
                 }
