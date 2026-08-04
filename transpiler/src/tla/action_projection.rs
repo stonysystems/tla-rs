@@ -221,11 +221,18 @@ pub fn project(module: &TlaModule) -> Result<ProjectedModule, ProjectionError> {
         texts.extend(action.conjuncts.iter());
         texts.extend(action.frame.iter());
     }
-    spec.constants.retain(|(name, _)| {
-        name == "node_id" || texts.iter().any(|t| references_constant(t, name))
-    });
-
+    // `Init` is projected *before* pruning and counts towards it. Projecting
+    // it afterwards let the node-set constant be pruned as unused -- the
+    // actions did not mention it -- and then `Init`, which builds a table over
+    // every peer, found no set constant and emitted a name for one that no
+    // longer existed.
     let (init, init_gaps) = project_init(module, &spec);
+    let init_texts: Vec<&String> = init.iter().collect();
+    spec.constants.retain(|(name, _)| {
+        name == "node_id"
+            || texts.iter().any(|t| references_constant(t, name))
+            || init_texts.iter().any(|t| references_constant(t, name))
+    });
 
     Ok(ProjectedModule {
         spec,
@@ -1406,11 +1413,39 @@ impl<'a> ActionContext<'a> {
                 if !matches!(&**func, TlaExpr::Ident(name) if name == var) {
                     return Err(format!("EXCEPT over `{}`", render_source(func)));
                 }
-                if updates.len() != 1 {
-                    return Err(format!(
-                        "EXCEPT with {} updates is not yet projectable",
-                        updates.len()
-                    ));
+                // Several updates to the same table chain: `[f EXCEPT ![p][a] = x,
+                // ![p][b] = y]` is `s.f.insert(a, x).insert(b, y)`. Every `@`
+                // still resolves against the *original* function, which is
+                // TLA+'s rule and is what the per-update substitution below does.
+                if updates.len() > 1 {
+                    let mut acc = format!("s.{field}");
+                    for update in updates {
+                        let [TlaExceptPath::Index(outer), TlaExceptPath::Index(inner)] =
+                            update.path.as_slice()
+                        else {
+                            return Err(format!(
+                                "EXCEPT with {} updates needs each to index the acting \
+                                 node and then the table",
+                                updates.len()
+                            ));
+                        };
+                        if !self.is_node_index(outer) {
+                            return Err(format!(
+                                "EXCEPT updates `{var}` at a node other than the acting one"
+                            ));
+                        }
+                        let old_value = TlaExpr::FnApply {
+                            func: Box::new(TlaExpr::Ident(format!("{PROJECTED_MARK}s.{field}"))),
+                            arg: Box::new(inner.clone()),
+                        };
+                        let value_expr = substitute(&update.value, "@", &old_value);
+                        acc = format!(
+                            "{acc}.insert({}, {})",
+                            self.project_expr(inner)?,
+                            self.project_expr(&value_expr)?
+                        );
+                    }
+                    return Ok(acc);
                 }
                 let update = &updates[0];
                 // `@` inside an EXCEPT is the component's old value. What that

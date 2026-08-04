@@ -64,7 +64,7 @@ notes = "Lamport's bakery. Heavy C2 case: the doorway/ticket protocol reads num[
 [[case]]
 id = "t0_03_dining_philosophers"
 tier = 0
-status = "intake"
+status = "green"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/DiningPhilosophers/DiningPhilosophers.tla"
 source_commit = "41faafbabe549530ad54bd4301b07ca4fd93e65b"
@@ -73,7 +73,7 @@ reference = ""
 clean_distance = "6"
 expected_rules = ["C2"]
 milestone_gate = "52.M1"
-notes = "Deadlock-capable; gives the corpus a negative (deadlock) case for TLC fidelity. Forks are shared between neighbours -> C2 violations at the fork pickup."
+notes = "Forks are shared between neighbours -> C2 violations at the fork pickup. The rewrite is NOT a redesign: Chandy-Misra is natively a message algorithm and the original merely declines to model the handing, so a fork stops being a global object with a `holder` and becomes a per-edge fact held at each end. V2 EQUAL on `hungry` (5 distinct each side at NP=4) -- and the comparison **caught a defect in this rewrite before the golden was frozen**: an earlier draft split `Think` from becoming hungry again, reaching 11 `hungry` states the original cannot. First time V2 caught a rewrite error rather than a configuration one."
 
 [[case]]
 id = "t0_04_readers_writers"
