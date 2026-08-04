@@ -1,6 +1,7 @@
 use crate::protocol::Raft::membership::{
     active_membership_phase_from_raft_log,
     active_membership_phase_for_state,
+    election_membership_phase_for_state,
     commit_interval_stops_at_first_configuration,
     has_active_commit_quorum,
     has_active_election_quorum,
@@ -121,7 +122,7 @@ verus! {
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
         &&& s_.election_membership_phase == Some(
-            active_membership_phase_for_state(s, c),
+            election_membership_phase_for_state(s, c),
         )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
@@ -143,7 +144,7 @@ verus! {
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted
         &&& s_.election_membership_phase == Some(
-            active_membership_phase_for_state(s, c),
+            election_membership_phase_for_state(s, c),
         )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()
@@ -602,7 +603,7 @@ verus! {
         &&& s_.commit_index == s.commit_index
         &&& s_.votes_granted == s.votes_granted.insert(voter)
         &&& s_.election_membership_phase == Some(
-            active_membership_phase_for_state(s, c),
+            election_membership_phase_for_state(s, c),
         )
         &&& s_.match_index == Map::<u64, u64>::empty()
         &&& s_.next_index == Map::<u64, u64>::empty()

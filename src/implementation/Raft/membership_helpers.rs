@@ -16,6 +16,7 @@ use crate::generated::Raft::types_gen::{
 use crate::protocol::Raft::membership::{
     active_membership_phase_from_raft_log,
     active_membership_phase_for_state,
+    election_membership_phase_for_state,
     has_active_commit_quorum,
     commit_interval_stops_at_first_configuration,
     has_active_election_quorum,
@@ -1010,8 +1011,37 @@ pub fn active_membership_phase_exec(
     result
 }
 
+/// Return the concrete membership phase selected by the latest
+/// configuration entry present anywhere in the candidate's log.
+pub fn election_membership_phase_exec(
+    s: &CState,
+    c: &CConstants,
+) -> (result: CMembershipPhase)
+    requires
+        s.valid(),
+        c.valid(),
+    ensures
+        membership_phase_view(result@)
+            == election_membership_phase_for_state(s@, c@),
+{
+    let mut s_with_full_log = s.clone();
+    s_with_full_log.commit_index = s.log.len() as u64;
+
+    proof {
+        assert(s_with_full_log@.log == s@.log);
+        assert(s_with_full_log@.commit_index == s@.log.len());
+        assert(s_with_full_log.valid());
+        assert(
+            active_membership_phase_for_state(s_with_full_log@, c@)
+                == election_membership_phase_for_state(s@, c@)
+        );
+    }
+
+    active_membership_phase_exec(&s_with_full_log, c)
+}
+
 /// Executably derive the election quorum from the latest configuration
-/// in the committed log prefix.
+/// present anywhere in the candidate's current log.
 pub fn has_active_election_quorum_exec(
     s: &CState,
     c: &CConstants,
@@ -1019,8 +1049,7 @@ pub fn has_active_election_quorum_exec(
     ensures
         result == has_active_election_quorum(s@, c@),
 {
-    if s.commit_index == 0
-        || s.commit_index > s.log.len() as u64
+    if s.log.len() == 0
     {
         let result = is_majority_of_hashset_membership_view(
             &s.votes_granted,
@@ -1030,7 +1059,7 @@ pub fn has_active_election_quorum_exec(
             assert(
                 active_membership_phase_from_raft_log(
                     s@.log,
-                    s@.commit_index,
+                    s@.log.len() as int,
                     MembershipPhase::Stable {
                         config: c@.servers,
                     },
@@ -1042,15 +1071,15 @@ pub fn has_active_election_quorum_exec(
         return result;
     }
 
-    let mut remaining = s.commit_index;
+    let mut remaining = s.log.len() as u64;
 
     while remaining > 0
         invariant
-            0 <= remaining <= s.commit_index,
+            0 <= remaining <= s.log.len() as u64,
             remaining <= s.log.len() as u64,
             active_membership_phase_from_raft_log(
                 s@.log,
-                s@.commit_index,
+                s@.log.len() as int,
                 MembershipPhase::Stable {
                     config: c@.servers,
                 },
@@ -1092,26 +1121,26 @@ pub fn has_active_election_quorum_exec(
                     assert(
                         active_membership_phase_from_raft_log(
                             s@.log,
-                            s@.commit_index,
+                            s@.log.len() as int,
                             MembershipPhase::Stable {
                                 config: c@.servers,
                             },
                         ) == membership_phase_view(phase@)
                     );
                     assert(
-                        active_membership_phase_for_state(
+                        election_membership_phase_for_state(
                             s@,
                             c@,
                         ) == active_membership_phase_from_raft_log(
                             s@.log,
-                            s@.commit_index,
+                            s@.log.len() as int,
                             MembershipPhase::Stable {
                                 config: c@.servers,
                             },
                         )
                     );
                     assert(
-                        active_membership_phase_for_state(
+                        election_membership_phase_for_state(
                             s@,
                             c@,
                         ) == membership_phase_view(phase@)
@@ -1163,7 +1192,7 @@ pub fn has_active_election_quorum_exec(
         assert(
             active_membership_phase_from_raft_log(
                 s@.log,
-                s@.commit_index,
+                s@.log.len() as int,
                 MembershipPhase::Stable {
                     config: c@.servers,
                 },
@@ -1172,19 +1201,19 @@ pub fn has_active_election_quorum_exec(
             })
         );
         assert(
-            active_membership_phase_for_state(
+            election_membership_phase_for_state(
                 s@,
                 c@,
             ) == active_membership_phase_from_raft_log(
                 s@.log,
-                s@.commit_index,
+                s@.log.len() as int,
                 MembershipPhase::Stable {
                     config: c@.servers,
                 },
             )
         );
         assert(
-            active_membership_phase_for_state(
+            election_membership_phase_for_state(
                 s@,
                 c@,
             ) == (MembershipPhase::Stable {
@@ -1251,8 +1280,8 @@ pub fn has_active_election_quorum_after_vote_exec(
             == s@.votes_granted.insert(*voter as int)
         );
         assert(
-            active_membership_phase_for_state(s_with_vote@, c@)
-            == active_membership_phase_for_state(s@, c@)
+            election_membership_phase_for_state(s_with_vote@, c@)
+            == election_membership_phase_for_state(s@, c@)
         );
     }
     result
@@ -1665,38 +1694,33 @@ pub fn has_active_commit_quorum_exec(
         idx,
     );
 
-    let mut s_with_replicators = s.clone();
-    s_with_replicators.votes_granted =
-        Arc::new(replicators);
-
-    let result = has_active_election_quorum_exec(
-        &s_with_replicators,
-        c,
+    let phase = active_membership_phase_exec(s, c);
+    let result = is_quorum_for_membership_phase(
+        &replicators,
+        &phase,
     );
 
     proof {
         assert(
-            s_with_replicators@.votes_granted
-            == replicator_set(
+            replicators@.map(|server: u64| server as int)
+                == replicator_set(
                 s@,
                 c@,
                 *idx as int,
             )
         );
         assert(
-            active_membership_phase_for_state(
-                s_with_replicators@,
-                c@,
-            ) == active_membership_phase_for_state(
-                s@,
-                c@,
+            membership_phase_view(phase@)
+                == active_membership_phase_for_state(s@, c@)
+        );
+        assert(
+            result == is_quorum_for_phase(
+                replicator_set(s@, c@, *idx as int),
+                active_membership_phase_for_state(s@, c@),
             )
         );
         assert(
-            has_active_election_quorum(
-                s_with_replicators@,
-                c@,
-            ) == has_active_commit_quorum(
+            result == has_active_commit_quorum(
                 s@,
                 c@,
                 *idx as int,

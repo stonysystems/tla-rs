@@ -1500,6 +1500,20 @@ verus! {
         };
     }
 
+    /// Every reachable server is separated from its committed prefix by at
+    /// most one pending membership boundary. Data entries may appear on
+    /// either side of that one boundary.
+    pub open spec fn UncommittedSuffixesHaveAtMostOneConfiguration(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |server_id: int|
+            0 <= server_id < ds.num_servers ==>
+            uncommitted_suffix_has_at_most_one_configuration(
+                ds.server_states[server_id].log,
+                ds.server_states[server_id].commit_index,
+            )
+    }
+
     /// The full inductive invariant: conjunction of all safety invariants
     pub open spec fn RaftSafetyInvariant(ds: RaftDistributedState) -> bool {
         &&& WellFormedRaftDistributed(ds)
@@ -1548,6 +1562,8 @@ verus! {
         &&& MatchIndexImpliesLogAgreement(ds)
         &&& MatchIndexBounded(ds)
         &&& AppendEntriesLeaderCommitBound(ds)
+        &&& UncommittedSuffixesHaveAtMostOneConfiguration(ds)
+        &&& AppendEntriesConfigurationBoundaryIntegrity(ds)
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         &&& CurrentTermGeLogTerms(ds)
         &&& LogTermsMonotonic(ds)
@@ -13281,6 +13297,196 @@ verus! {
     }
 
     // =========================================================================
+    // Membership-boundary provenance induction
+    // =========================================================================
+
+    proof fn lemma_append_entries_configuration_boundary_integrity_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            AppendEntriesConfigurationBoundaryIntegrity(ds),
+            AppendEntriesIntegrity(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            AppendEntriesConfigurationBoundaryIntegrity(ds_),
+    {
+        let (server_id, sent_packets, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        lemma_log_append_only(ds, ds_);
+
+        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+            match p.msg {
+                LRaftMessage::AppendEntries {
+                    leader,
+                    prev_index,
+                    payload,
+                    has_entry,
+                    leader_commit,
+                    ..
+                } => (has_entry && payload is Configuration) ==> {
+                    &&& 0 <= leader < ds_.num_servers
+                    &&& forall |index: int|
+                        0 <= index < prev_index
+                        && ds_.server_states[leader].log[index].payload
+                            is Configuration
+                        ==> index < leader_commit
+                },
+                _ => true,
+            }
+        by {
+            if p.msg is AppendEntries
+                && p.msg->AppendEntries_has_entry
+                && p.msg->AppendEntries_payload is Configuration
+            {
+                let leader = p.msg->AppendEntries_leader;
+                let boundary = p.msg->AppendEntries_prev_index;
+                let leader_commit = p.msg->AppendEntries_leader_commit;
+                if ds.network.contains(p) {
+                    assert(AppendEntriesConfigurationBoundaryIntegrity(ds));
+                    assert(0 <= leader < ds.num_servers);
+                    assert forall |index: int|
+                        0 <= index < boundary
+                        && ds_.server_states[leader].log[index].payload
+                            is Configuration
+                        implies index < leader_commit
+                    by {
+                        assert(ds.server_states[leader].log[index]
+                            == ds_.server_states[leader].log[index]);
+                    };
+                } else {
+                    assert(leader == server_id);
+                    assert(p.msg == sent_packets[choose |i: int|
+                        0 <= i < sent_packets.len()
+                        && p.msg == sent_packets[i]]);
+                    assert(s.log.len() >= boundary + 1);
+                    assert(s.log[boundary].payload == p.msg->AppendEntries_payload);
+                    assert(leader_commit == s.commit_index);
+                    assert(UncommittedSuffixesHaveAtMostOneConfiguration(ds));
+                    assert(uncommitted_suffix_has_at_most_one_configuration(
+                        s.log, s.commit_index));
+                    assert forall |index: int|
+                        0 <= index < boundary
+                        && s_.log[index].payload is Configuration
+                        implies index < leader_commit
+                    by {
+                        assert(s_.log[index] == s.log[index]);
+                        if index >= s.commit_index {
+                            assert(boundary >= s.commit_index);
+                            assert(index == boundary);
+                            assert(false);
+                        }
+                    };
+                }
+            }
+        };
+    }
+
+    proof fn lemma_uncommitted_suffixes_have_at_most_one_configuration_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            AppendEntriesConfigurationBoundaryIntegrity(ds),
+            AppendEntriesIntegrity(ds),
+            LogMatching(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds_),
+    {
+        let (server_id, sent_packets, recv_from) =
+            lemma_extract_step_with_network(ds, ds_);
+        let s = ds.server_states[server_id];
+        let s_ = ds_.server_states[server_id];
+        let c = ds.server_constants[server_id];
+
+        assert forall |id: int| 0 <= id < ds_.num_servers implies
+            uncommitted_suffix_has_at_most_one_configuration(
+                ds_.server_states[id].log,
+                ds_.server_states[id].commit_index,
+            )
+        by {
+            if id != server_id {
+                assert(ds_.server_states[id] == ds.server_states[id]);
+            } else {
+                assert(0 <= s_.commit_index <= s_.log.len());
+                assert forall |left: int, right: int|
+                    s_.commit_index <= left < s_.log.len()
+                    && s_.commit_index <= right < s_.log.len()
+                    && s_.log[left].payload is Configuration
+                    && s_.log[right].payload is Configuration
+                    implies left == right
+                by {
+                    if left == right {
+                    } else if left < s.log.len() && right < s.log.len() {
+                        assert(s_.log[left] == s.log[left]);
+                        assert(s_.log[right] == s.log[right]);
+                        assert(s.commit_index <= s_.commit_index);
+                    } else if left == s.log.len() || right == s.log.len() {
+                        let old_index = if left == s.log.len() { right } else { left };
+                        let new_index = s.log.len() as int;
+                        assert(s_.log.len() == s.log.len() + 1);
+                        assert(old_index != new_index);
+                        assert(old_index <= new_index);
+                        assert(old_index < s.log.len());
+                        assert(s_.log[old_index] == s.log[old_index]);
+
+                        if recv_from is Some {
+                            let source = recv_from->Some_0;
+                            let pkt = choose |pkt: LRaftPacket| {
+                                &&& recv_from == Some(pkt.src)
+                                &&& ds.network.contains(pkt)
+                                &&& pkt.dst == server_id
+                                &&& LHandleMessage(s, s_, c, pkt.msg, sent_packets)
+                            };
+                            assert(pkt.msg is AppendEntries);
+                            assert(pkt.msg->AppendEntries_has_entry);
+                            assert(pkt.msg->AppendEntries_prev_index == new_index);
+                            assert(pkt.msg->AppendEntries_payload is Configuration);
+                            assert(AppendEntriesConfigurationBoundaryIntegrity(ds));
+                            assert(AppendEntriesIntegrity(ds));
+                            assert(source == pkt.msg->AppendEntries_leader);
+                            assert(ds.server_states[source].log.len()
+                                >= new_index + 1);
+                            assert(new_index > 0);
+                            assert(s.log[new_index - 1].term
+                                == pkt.msg->AppendEntries_prev_term);
+                            assert(ds.server_states[source].log[new_index - 1].term
+                                == pkt.msg->AppendEntries_prev_term);
+                            assert forall |index: int|
+                                0 <= index <= new_index - 1
+                                implies ds.server_states[source].log[index]
+                                    == s.log[index]
+                            by {
+                                assert(LogMatching(ds));
+                            };
+                            assert(ds.server_states[source].log[old_index]
+                                == s.log[old_index]);
+                            assert(old_index < pkt.msg->AppendEntries_leader_commit);
+                            assert(s_.commit_index
+                                >= pkt.msg->AppendEntries_leader_commit);
+                            assert(false);
+                        } else {
+                            // Only the guarded local configuration append can
+                            // add a Configuration without receiving a packet.
+                            assert(uncommitted_suffix_has_no_configuration(
+                                s.log, s.commit_index));
+                            assert(s.commit_index <= s_.commit_index);
+                            assert(false);
+                        }
+                    }
+                };
+            }
+        };
+    }
+
+    // =========================================================================
     // Composite induction step
     // =========================================================================
 
@@ -13362,6 +13568,10 @@ verus! {
         lemma_match_index_implies_log_agreement_inductive(ds, ds_);
         lemma_match_index_bounded_inductive(ds, ds_);
         lemma_append_entries_leader_commit_bound_inductive(ds, ds_);
+        lemma_append_entries_configuration_boundary_integrity_inductive(
+            ds, ds_);
+        lemma_uncommitted_suffixes_have_at_most_one_configuration_inductive(
+            ds, ds_);
 
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         lemma_current_term_ge_log_terms_inductive(ds, ds_);

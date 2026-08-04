@@ -1211,7 +1211,7 @@ verus! {
             c.quorum_size == c.servers.len() / 2 + 1,
             s.votes_granted.subset_of(c.servers),
             s.votes_granted.len() >= c.quorum_size,
-            active_membership_phase_for_state(s, c)
+            election_membership_phase_for_state(s, c)
                 == (MembershipPhase::Stable {
                     config: c.servers,
                 }),
@@ -1246,7 +1246,7 @@ verus! {
             c.servers.len() > 0,
             c.quorum_size == c.servers.len() / 2 + 1,
             s.votes_granted.subset_of(c.servers),
-            active_membership_phase_for_state(s, c)
+            election_membership_phase_for_state(s, c)
                 == (MembershipPhase::Stable {
                     config: c.servers,
                 }),
@@ -1291,7 +1291,7 @@ verus! {
             c.quorum_size == c.servers.len() / 2 + 1,
             step_down_if_needed(s, term).votes_granted
                 .subset_of(c.servers),
-            active_membership_phase_for_state(
+            election_membership_phase_for_state(
                 step_down_if_needed(s, term),
                 c,
             ) == (MembershipPhase::Stable {
@@ -1385,10 +1385,10 @@ verus! {
         assert(s_.votes_granted
             == s.votes_granted.insert(voter));
         assert(s_.election_membership_phase
-            == Some(active_membership_phase_for_state(s, c)));
+            == Some(election_membership_phase_for_state(s, c)));
         assert(is_quorum_for_phase(
             s_.votes_granted,
-            active_membership_phase_for_state(s, c),
+            election_membership_phase_for_state(s, c),
         ));
     }
 
@@ -1447,14 +1447,12 @@ verus! {
         c: LConstants,
     ) -> bool {
         if s.role is Leader {
-            exists |election_commit_len: int| {
-                &&& 0 <= election_commit_len
-                &&& election_commit_len <= s.commit_index
-                &&& s.commit_index <= s.log.len()
+            exists |election_log_len: int| {
+                &&& 0 <= election_log_len <= s.log.len()
                 &&& s.election_membership_phase == Some(
                     active_membership_phase_from_raft_log(
                         s.log,
-                        election_commit_len,
+                        election_log_len,
                         MembershipPhase::Stable {
                             config: c.servers,
                         },
@@ -1491,14 +1489,13 @@ verus! {
         ensures
             has_recorded_election_log_provenance(s_, c),
     {
-        let election_commit_len = s.commit_index;
-        assert(0 <= election_commit_len);
-        assert(election_commit_len <= s_.commit_index);
-        assert(s_.commit_index <= s_.log.len());
+        let election_log_len = s.log.len() as int;
+        assert(s_.log == s.log);
+        assert(0 <= election_log_len <= s_.log.len());
         assert(s_.election_membership_phase == Some(
             active_membership_phase_from_raft_log(
                 s_.log,
-                election_commit_len,
+                election_log_len,
                 MembershipPhase::Stable {
                     config: c.servers,
                 },
@@ -1520,14 +1517,12 @@ verus! {
         ensures
             has_recorded_election_log_provenance(s_, c),
     {
-        let election_commit_len = choose |election_commit_len: int| {
-            &&& 0 <= election_commit_len
-            &&& election_commit_len <= s.commit_index
-            &&& s.commit_index <= s.log.len()
+        let election_log_len = choose |election_log_len: int| {
+            &&& 0 <= election_log_len <= s.log.len()
             &&& s.election_membership_phase == Some(
                 active_membership_phase_from_raft_log(
                     s.log,
-                    election_commit_len,
+                    election_log_len,
                     MembershipPhase::Stable {
                         config: c.servers,
                     },
@@ -1535,11 +1530,10 @@ verus! {
             )
         };
 
-        assert(s.commit_index <= s_.commit_index);
-        assert(s_.commit_index <= s_.log.len());
+        assert(election_log_len <= s_.log.len());
 
         assert forall |index: int|
-            0 <= index < election_commit_len
+            0 <= index < election_log_len
             implies s.log[index] == s_.log[index]
         by {
         };
@@ -1547,7 +1541,7 @@ verus! {
         lemma_equal_committed_raft_prefixes_have_same_active_phase(
             s.log,
             s_.log,
-            election_commit_len,
+            election_log_len,
             MembershipPhase::Stable {
                 config: c.servers,
             },
@@ -1559,7 +1553,7 @@ verus! {
         assert(s_.election_membership_phase == Some(
             active_membership_phase_from_raft_log(
                 s_.log,
-                election_commit_len,
+                election_log_len,
                 MembershipPhase::Stable {
                     config: c.servers,
                 },
@@ -2350,6 +2344,115 @@ verus! {
                     assert(false);
                 },
             }
+        }
+    }
+
+    /// If at most one Configuration entry is locally uncommitted, deriving
+    /// election membership from the full log can move at most one legal
+    /// joint-consensus step beyond the committed membership phase.
+    pub proof fn lemma_latest_log_election_phase_is_at_most_one_step_ahead(
+        s: LState,
+        c: LConstants,
+    )
+        requires
+            raft_membership_log_is_well_formed(
+                s.log,
+                MembershipPhase::Stable {
+                    config: c.servers,
+                },
+            ),
+            uncommitted_suffix_has_at_most_one_configuration(
+                s.log,
+                s.commit_index,
+            ),
+        ensures
+            is_legal_phase_progression(
+                active_membership_phase_for_state(s, c),
+                election_membership_phase_for_state(s, c),
+            ),
+    {
+        let initial_phase = MembershipPhase::Stable {
+            config: c.servers,
+        };
+
+        if forall |index: int|
+            s.commit_index <= index < s.log.len()
+            ==> !(s.log[index].payload is Configuration)
+        {
+            lemma_configuration_free_interval_preserves_active_phase(
+                s.log,
+                s.commit_index,
+                s.log.len() as int,
+                initial_phase,
+            );
+            lemma_phase_progression_reflexive(
+                active_membership_phase_for_state(s, c),
+            );
+        } else {
+            let boundary = choose |index: int|
+                s.commit_index <= index < s.log.len()
+                && s.log[index].payload is Configuration;
+
+            assert forall |index: int|
+                s.commit_index <= index < boundary
+                implies !(s.log[index].payload is Configuration)
+            by {
+                if s.log[index].payload is Configuration {
+                    assert(index == boundary) by {
+                        assert(uncommitted_suffix_has_at_most_one_configuration(
+                            s.log,
+                            s.commit_index,
+                        ));
+                    };
+                    assert(false);
+                }
+            };
+
+            assert forall |index: int|
+                boundary + 1 <= index < s.log.len()
+                implies !(s.log[index].payload is Configuration)
+            by {
+                if s.log[index].payload is Configuration {
+                    assert(index == boundary) by {
+                        assert(uncommitted_suffix_has_at_most_one_configuration(
+                            s.log,
+                            s.commit_index,
+                        ));
+                    };
+                    assert(false);
+                }
+            };
+
+            lemma_configuration_free_interval_preserves_active_phase(
+                s.log,
+                s.commit_index,
+                boundary,
+                initial_phase,
+            );
+            lemma_adjacent_committed_raft_prefixes_progress_legally(
+                s.log,
+                boundary + 1,
+                initial_phase,
+            );
+            lemma_configuration_free_interval_preserves_active_phase(
+                s.log,
+                boundary + 1,
+                s.log.len() as int,
+                initial_phase,
+            );
+
+            assert(active_membership_phase_for_state(s, c)
+                == active_membership_phase_from_raft_log(
+                    s.log,
+                    boundary,
+                    initial_phase,
+                ));
+            assert(election_membership_phase_for_state(s, c)
+                == active_membership_phase_from_raft_log(
+                    s.log,
+                    boundary + 1,
+                    initial_phase,
+                ));
         }
     }
 

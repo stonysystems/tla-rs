@@ -138,20 +138,37 @@ verus! {
         )
     }
 
+    /// Elections use the latest membership entry present in the candidate's
+    /// log, even if that entry has not yet reached the candidate's local
+    /// commit index. This prevents a candidate from campaigning under a
+    /// configuration older than a boundary it already carries.
+    pub open spec fn election_membership_phase_for_state(
+        s: LState,
+        c: LConstants,
+    ) -> MembershipPhase {
+        active_membership_phase_from_raft_log(
+            s.log,
+            s.log.len() as int,
+            MembershipPhase::Stable {
+                config: c.servers,
+            },
+        )
+    }
+
     /// A candidate has enough votes exactly when its collected voter set
-    /// is a quorum for the membership phase in its committed log.
+    /// is a quorum for the latest membership phase present in its log.
     pub open spec fn has_active_election_quorum(
         s: LState,
         c: LConstants,
     ) -> bool {
         is_quorum_for_phase(
             s.votes_granted,
-            active_membership_phase_for_state(s, c),
+            election_membership_phase_for_state(s, c),
         )
     }
 
     /// The candidate's vote set after accepting one additional vote is
-    /// a quorum for the membership phase in its committed log.
+    /// a quorum for the latest membership phase present in its log.
     pub open spec fn has_active_election_quorum_after_vote(
         s: LState,
         c: LConstants,
@@ -159,7 +176,7 @@ verus! {
     ) -> bool {
         is_quorum_for_phase(
             s.votes_granted.insert(voter),
-            active_membership_phase_for_state(s, c),
+            election_membership_phase_for_state(s, c),
         )
     }
 
@@ -310,6 +327,23 @@ verus! {
         &&& forall |index: int|
             committed_len <= index < log.len()
             ==> !(log[index].payload is Configuration)
+    }
+
+    /// At most one membership boundary is waiting after the local commit
+    /// index. This is the structural condition that keeps a candidate's
+    /// latest-log election phase no more than one legal phase step ahead of
+    /// its committed membership phase.
+    pub open spec fn uncommitted_suffix_has_at_most_one_configuration(
+        log: Seq<LLogEntry>,
+        committed_len: int,
+    ) -> bool {
+        &&& 0 <= committed_len <= log.len()
+        &&& forall |left: int, right: int|
+            committed_len <= left < log.len()
+            && committed_len <= right < log.len()
+            && log[left].payload is Configuration
+            && log[right].payload is Configuration
+            ==> left == right
     }
 
     /// One commit-index advancement may cross ordinary Data entries, but
