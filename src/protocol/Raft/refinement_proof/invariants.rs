@@ -297,6 +297,8 @@ verus! {
         ds: RaftDistributedState,
     ) -> bool {
         forall |index: int, leader_id: int|
+            #![trigger ds.configuration_commit_certificates[index],
+                       ds.server_states[leader_id].role]
             ds.configuration_commit_certificates.dom().contains(index)
             && 0 <= leader_id < ds.num_servers
             && ds.server_states[leader_id].role is Leader
@@ -489,6 +491,83 @@ verus! {
                 // The inherited transfer obligation closes the case.
                 assert(CertifiedBoundaryTransfersToVotedLeader(ds));
             }
+        };
+    }
+
+    /// Configuration Leader Completeness survives every step that neither
+    /// mints a certificate nor promotes a server to leader. Only two kinds of
+    /// step can therefore threaten it: committing a Configuration entry, and
+    /// winning an election. This isolates the remaining obligation precisely —
+    /// everything else is preserved for free by certificate immutability and
+    /// append-only logs.
+    pub proof fn lemma_configuration_leader_completeness_quiet_step(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            CertifiedConfigurationLeaderCompleteness(ds),
+            ds_.num_servers == ds.num_servers,
+            // No certificate is created, and existing ones are immutable.
+            forall |i: int|
+                #![trigger ds_.configuration_commit_certificates[i]]
+                ds_.configuration_commit_certificates.dom().contains(i)
+                ==> ds.configuration_commit_certificates.dom().contains(i)
+                    && ds_.configuration_commit_certificates[i]
+                        == ds.configuration_commit_certificates[i],
+            // Nobody is newly promoted: every post-state leader already led at
+            // the same term.
+            forall |i: int|
+                #![trigger ds_.server_states[i].role]
+                0 <= i < ds.num_servers
+                && ds_.server_states[i].role is Leader
+                ==> ds.server_states[i].role is Leader
+                    && ds.server_states[i].current_term
+                        == ds_.server_states[i].current_term,
+            // Certificate keys are genuine log positions.
+            forall |i: int|
+                #![trigger ds_.configuration_commit_certificates[i]]
+                ds_.configuration_commit_certificates.dom().contains(i)
+                ==> 0 <= i,
+            // Logs only grow.
+            forall |i: int|
+                #![trigger ds_.server_states[i].log]
+                0 <= i < ds.num_servers
+                ==> ds.server_states[i].log.len()
+                    <= ds_.server_states[i].log.len(),
+            forall |i: int, p: int|
+                #![trigger ds_.server_states[i].log[p]]
+                0 <= i < ds.num_servers
+                && 0 <= p < ds.server_states[i].log.len()
+                ==> ds_.server_states[i].log[p]
+                    == ds.server_states[i].log[p],
+        ensures
+            CertifiedConfigurationLeaderCompleteness(ds_),
+    {
+        assert forall |index: int, leader_id: int|
+            ds_.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds_.num_servers
+            && ds_.server_states[leader_id].role is Leader
+            && ds_.server_states[leader_id].current_term
+                > ds_.configuration_commit_certificates[index].entry.term
+        implies {
+            &&& ds_.server_states[leader_id].log.len() > index
+            &&& ds_.server_states[leader_id].log[index]
+                == ds_.configuration_commit_certificates[index].entry
+        }
+        by {
+            // The certificate and the leader's term both come from the
+            // pre-state, so the pre-state obligation applies verbatim.
+            assert(0 <= leader_id < ds.num_servers);
+            assert(ds.configuration_commit_certificates.dom().contains(index));
+            assert(ds.configuration_commit_certificates[index]
+                == ds_.configuration_commit_certificates[index]);
+            assert(ds.server_states[leader_id].role is Leader);
+            assert(ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term);
+            assert(CertifiedConfigurationLeaderCompleteness(ds));
+            assert(ds.server_states[leader_id].log.len() > index);
+            assert(ds_.server_states[leader_id].log[index]
+                == ds.server_states[leader_id].log[index]);
         };
     }
 
