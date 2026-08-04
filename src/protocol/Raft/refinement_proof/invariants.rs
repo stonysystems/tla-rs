@@ -351,6 +351,114 @@ verus! {
             }
     }
 
+    /// Milestone B, mechanical half: an existing first-missing-boundary
+    /// witness survives any step that carries the certificate over unchanged,
+    /// leaves the leader's recorded election phase alone, and rewrites no
+    /// existing log position. Logs may still grow — only the prefix below the
+    /// recorded election length and the stretch below `index` matter.
+    pub proof fn lemma_first_missing_boundary_witness_carries_over(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        certificate_witness: int,
+        election_commit_len: int,
+    )
+        requires
+            ds_.num_servers == ds.num_servers,
+            ds_.server_constants == ds.server_constants,
+            0 <= leader_id < ds.num_servers,
+            0 <= certificate_witness < ds.num_servers,
+            // The certificate at `index` is carried over unchanged.
+            ds.configuration_commit_certificates.dom().contains(index),
+            ds_.configuration_commit_certificates.dom().contains(index),
+            ds_.configuration_commit_certificates[index]
+                == ds.configuration_commit_certificates[index],
+            // The leader keeps the phase it recorded at election time.
+            ds_.server_states[leader_id].election_membership_phase
+                == ds.server_states[leader_id].election_membership_phase,
+            // Both logs only grow; no existing position is rewritten.
+            ds.server_states[leader_id].log.len()
+                <= ds_.server_states[leader_id].log.len(),
+            forall |p: int| 0 <= p < ds.server_states[leader_id].log.len()
+                ==> ds_.server_states[leader_id].log[p]
+                    == ds.server_states[leader_id].log[p],
+            ds.server_states[certificate_witness].log.len()
+                <= ds_.server_states[certificate_witness].log.len(),
+            forall |p: int|
+                0 <= p < ds.server_states[certificate_witness].log.len()
+                ==> ds_.server_states[certificate_witness].log[p]
+                    == ds.server_states[certificate_witness].log[p],
+            // The witness discharged the obligation in the pre-state.
+            ds.configuration_commit_certificates[index].quorum
+                .contains(certificate_witness),
+            0 <= election_commit_len <= ds.server_states[leader_id].log.len(),
+            election_commit_len <= index,
+            index <= ds.server_states[certificate_witness].log.len(),
+            ds.server_states[leader_id].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds.server_states[leader_id].log,
+                    election_commit_len,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[leader_id].servers,
+                    },
+                )),
+            forall |p: int| 0 <= p < election_commit_len
+                ==> ds.server_states[leader_id].log[p]
+                    == ds.server_states[certificate_witness].log[p],
+            forall |p: int| election_commit_len <= p < index
+                ==> !(ds.server_states[certificate_witness].log[p].payload
+                    is Configuration),
+        ensures
+            ds_.configuration_commit_certificates[index].quorum
+                .contains(certificate_witness),
+            0 <= election_commit_len <= ds_.server_states[leader_id].log.len(),
+            election_commit_len <= index,
+            ds_.server_states[leader_id].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds_.server_states[leader_id].log,
+                    election_commit_len,
+                    MembershipPhase::Stable {
+                        config: ds_.server_constants[leader_id].servers,
+                    },
+                )),
+            forall |p: int| 0 <= p < election_commit_len
+                ==> ds_.server_states[leader_id].log[p]
+                    == ds_.server_states[certificate_witness].log[p],
+            forall |p: int| election_commit_len <= p < index
+                ==> !(ds_.server_states[certificate_witness].log[p].payload
+                    is Configuration),
+    {
+        // The recorded phase reads only the leader's prefix below
+        // `election_commit_len`, and that prefix did not change.
+        lemma_equal_committed_raft_prefixes_have_same_active_phase(
+            ds.server_states[leader_id].log,
+            ds_.server_states[leader_id].log,
+            election_commit_len,
+            MembershipPhase::Stable {
+                config: ds.server_constants[leader_id].servers,
+            },
+        );
+
+        // Leader/witness prefix agreement is inherited position by position,
+        // because neither log rewrote an existing entry.
+        assert forall |p: int| 0 <= p < election_commit_len
+            implies ds_.server_states[leader_id].log[p]
+                == ds_.server_states[certificate_witness].log[p]
+        by {
+            assert(p < ds.server_states[leader_id].log.len());
+            assert(p < ds.server_states[certificate_witness].log.len());
+        };
+
+        // Likewise the absence of an earlier Configuration boundary.
+        assert forall |p: int| election_commit_len <= p < index
+            implies !(ds_.server_states[certificate_witness].log[p].payload
+                is Configuration)
+        by {
+            assert(p < ds.server_states[certificate_witness].log.len());
+        };
+    }
+
     /// Extract the non-replica-specific facts stored by one valid certificate.
     pub proof fn lemma_configuration_commit_certificate_basic_validity(
         ds: RaftDistributedState,
