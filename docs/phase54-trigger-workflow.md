@@ -1,8 +1,9 @@
 # Phase 54 — measuring and diffing Verus trigger choices
 
-Status: 54.1 (tooling), 54.2.a (CI trigger capture) and 54.2.c (per-module
-timing) complete. The baseline itself (54.2.b) lands once a `verify` run has
-published the artifact; see §5 and §7.
+Status: 54.1 (tooling), 54.2.a (CI trigger capture), 54.2.c (per-module timing)
+and 54.9 (CI guard mechanism) complete. The measured baseline — and therefore
+the number the guard enforces — lands with 54.2.b, once a `verify` run has
+published the artifact; see §5, §6 and §8.
 
 ## 1. Why the tool exists before the edits
 
@@ -124,13 +125,13 @@ joined and flagged `multiline`; their trigger notes are still parsed exactly.
 
 Two real Verus logs are checked in at
 `scripts/fixtures/trigger_inventory/` and asserted against by
-`scripts/test_trigger_inventory.py` (34 tests). If a future Verus release
+`scripts/test_trigger_inventory.py` (55 tests). If a future Verus release
 changes the diagnostic shape, those tests fail loudly instead of the inventory
 quietly going empty.
 
 ## 5. How the baseline is actually captured (CI)
 
-The pinned verifier does not run on every development box (§7), but it already
+The pinned verifier does not run on every development box (§8), but it already
 runs in CI on `ubuntu-24.04`. So the `verify` job captures the inventory as a
 side effect of the verification it was already doing:
 
@@ -218,7 +219,47 @@ the verifier command line, so it now accepts
 `scons ... --verus-extra-args="--time-expanded"`. The flag changes no verifier
 behaviour, only what is printed.
 
-## 7. Known constraint: the pinned verifier does not run everywhere
+## 7. The guard (54.9)
+
+Progress has to be defended, or the auto-chosen triggers simply regrow. The
+`Guard trigger inventory` CI step does that:
+
+```bash
+scripts/trigger_inventory.py guard trigger-inventory.json \
+    --ceiling reports/triggers/ceiling.json \
+    --capture-mode selective \
+    [--baseline reports/triggers/baseline.json]
+```
+
+| exit | meaning |
+|---:|---|
+| 0 | at or under the ceiling (or the ceiling is not set yet) |
+| 1 | over the ceiling, or notes were added / trigger choices changed |
+| 2 | the comparison itself is invalid — the inventory and the ceiling come from different `--triggers-mode` settings |
+
+Deliberate choices:
+
+* **The ceiling is data, not YAML.** `reports/triggers/ceiling.json` carries
+  `max_notes`, the mode it was agreed in, and a `rationale`. Raising it is a
+  reviewable diff that has to say why — not a quiet edit to a workflow file.
+* **It ships unset.** `enforce: false, max_notes: null`. The guard prints the
+  measured count and passes. Asserting a number nobody has measured on the
+  pinned release would be vacuous at best and would turn CI red for the wrong
+  reason at worst; 54.2.b sets it from the real artifact.
+* **Changed choices fail too**, once a baseline exists. A count-only ceiling
+  cannot see the case where Verus keeps the same number of notes and picks
+  different terms — the exact instability this phase was raised about.
+* **An empty capture is never judged.** If verification died early, Verus
+  printed no notes; "0 notes" is missing data, not success.
+* **`set -o pipefail` in the step.** The guards pipe into `tee` for the job
+  summary, and without it a failing guard would exit 0 and silently stop
+  guarding — the failure mode most likely to go unnoticed for months.
+
+The timing half of the gate reuses `verus_timing.py diff
+--max-regression-pct 20 --fail-on-regression` and is skipped with an explicit
+message until `reports/triggers/timing-baseline.json` is committed.
+
+## 8. Known constraint: the pinned verifier does not run everywhere
 
 The baseline must come from the pinned verifier,
 `release/0.2026.08.02.b677dd5`. That binary requires **glibc ≥ 2.39**; the
@@ -247,11 +288,11 @@ two different Verus versions is precisely the measurement Phase 54 wants to
 make *deliberately*, and mislabelling one as "the baseline" would poison every
 later comparison.
 
-## 8. Where this fits
+## 9. Where this fits
 
-* Plan: `TODO.md` Phase 54; this covers **54.1**, **54.2.a** and **54.2.c**,
-  and leaves **54.2.b** (commit the published artifacts as the baseline) and
-  **54.9** (turn both captures into guards: `trigger_inventory.py diff
-  --fail-on-regression` / `--max-notes`, and `verus_timing.py diff
-  --fail-on-regression`).
+* Plan: `TODO.md` Phase 54; this covers **54.1**, **54.2.a**, **54.2.c** and
+  the **54.9** mechanism. What remains is **54.2.b** — commit the published
+  artifacts as the baseline and set `max_notes` / `enforce` in the ceiling —
+  after which 54.3 onwards can start editing triggers with a measurement to
+  answer to.
 * Artifacts: `reports/triggers/` (see the README there).

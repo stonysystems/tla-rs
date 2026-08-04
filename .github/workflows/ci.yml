@@ -181,6 +181,40 @@ jobs:
             -o verus-timing.md
           cat verus-timing.md >> "$GITHUB_STEP_SUMMARY"
 
+      # Phase 54.9: keep the auto-chosen triggers from silently regrowing, and
+      # catch the case where Verus changes its mind about an expression nobody
+      # edited. The ceiling lives in reports/triggers/ceiling.json so raising it
+      # is a reviewable diff with a stated reason, not a workflow edit. Until a
+      # measured baseline is committed (54.2.b) the ceiling is unset and the
+      # guard reports without failing -- asserting an unmeasured number would
+      # either be vacuous or turn CI red for the wrong reason.
+      - name: Guard trigger inventory
+        if: always()
+        run: |
+          # pipefail: the guards below pipe into tee, and without it a failing
+          # guard would exit 0 and quietly stop guarding anything.
+          set -o pipefail
+          if [ ! -f trigger-inventory.json ]; then
+            echo "no inventory to guard (an earlier step failed)"
+            exit 0
+          fi
+          BASELINE=""
+          if [ -f reports/triggers/baseline.json ]; then
+            BASELINE="--baseline reports/triggers/baseline.json"
+          fi
+          python3 scripts/trigger_inventory.py guard trigger-inventory.json \
+            --ceiling reports/triggers/ceiling.json \
+            --capture-mode selective \
+            $BASELINE | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -f reports/triggers/timing-baseline.json ] && [ -f verus-timing.json ]; then
+            python3 scripts/verus_timing.py diff \
+              reports/triggers/timing-baseline.json verus-timing.json \
+              --max-regression-pct 20 --fail-on-regression \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no committed timing baseline yet (Phase 54.2.b); skipping the 20% gate"
+          fi
+
       - name: Upload trigger inventory and timing
         if: always()
         uses: actions/upload-artifact@v4

@@ -191,6 +191,155 @@ class TestCiWiring(unittest.TestCase):
         self.assertIn("trigger-inventory-${{ env.VERUS_VERSION }}", self.ci)
         self.assertIn("trigger-inventory.json", self.ci)
 
+    def test_guard_step_exists_and_reads_the_committed_ceiling(self):
+        self.assertIn(
+            "scripts/trigger_inventory.py guard trigger-inventory.json", self.ci
+        )
+        self.assertIn("--ceiling reports/triggers/ceiling.json", self.ci)
+        self.assertIn("--capture-mode selective", self.ci)
+
+    def test_guard_step_sets_pipefail(self):
+        # The guards pipe into tee; without pipefail a failing guard exits 0 and
+        # silently stops guarding.
+        block = self.ci.split("Guard trigger inventory", 1)[1][:600]
+        self.assertIn("set -o pipefail", block)
+
+
+class TestCeilingFile(unittest.TestCase):
+    """reports/triggers/ceiling.json is the agreed limit, as reviewable data."""
+
+    def setUp(self):
+        self.path = os.path.join(
+            os.path.dirname(HERE), "reports", "triggers", "ceiling.json"
+        )
+        with open(self.path) as f:
+            self.ceiling = json.load(f)
+
+    def test_schema_and_required_fields(self):
+        self.assertEqual(self.ceiling["schema"], ti.CEILING_SCHEMA)
+        for field in ("enforce", "max_notes", "mode", "rationale"):
+            self.assertIn(field, self.ceiling)
+
+    def test_loader_accepts_it(self):
+        self.assertEqual(ti.load_ceiling(self.path)["schema"], ti.CEILING_SCHEMA)
+
+    def test_an_enforcing_ceiling_must_carry_a_number(self):
+        # Guards against a half-edit that turns enforcement on but leaves the
+        # limit unset, which would make the guard silently vacuous.
+        if self.ceiling["enforce"]:
+            self.assertIsNotNone(self.ceiling["max_notes"])
+            self.assertTrue(self.ceiling.get("set_on"), "record when it was agreed")
+
+    def test_rationale_is_present(self):
+        self.assertGreater(len(self.ceiling["rationale"]), 40)
+
+
+class TestGuard(unittest.TestCase):
+    def inventory(self):
+        return ti.build_inventory(fixture("single_line_notes.log"), label="run")
+
+    def ceiling(self, **kw):
+        base = {
+            "schema": ti.CEILING_SCHEMA,
+            "enforce": False,
+            "max_notes": None,
+            "mode": "selective",
+            "rationale": "test",
+        }
+        base.update(kw)
+        return base
+
+    def test_unset_ceiling_reports_and_passes(self):
+        status, text = ti.guard(self.inventory(), self.ceiling())
+        self.assertEqual(status, 0)
+        self.assertIn("trigger notes measured: 3", text)
+        self.assertIn("not enforced yet", text)
+
+    def test_under_the_ceiling_passes(self):
+        status, text = ti.guard(
+            self.inventory(), self.ceiling(enforce=True, max_notes=10)
+        )
+        self.assertEqual(status, 0)
+        self.assertIn("under the ceiling by 7", text)
+
+    def test_over_the_ceiling_fails(self):
+        status, text = ti.guard(
+            self.inventory(), self.ceiling(enforce=True, max_notes=2)
+        )
+        self.assertEqual(status, 1)
+        self.assertIn("exceeds the agreed ceiling", text)
+
+    def test_mode_mismatch_is_an_invalid_comparison(self):
+        status, text = ti.guard(
+            self.inventory(),
+            self.ceiling(enforce=True, max_notes=2, mode="selective"),
+            mode="all-modules",
+        )
+        self.assertEqual(status, 2)
+        self.assertIn("not comparable", text)
+
+    def test_empty_capture_is_not_judged(self):
+        empty = ti.build_inventory("verification results:: 0 verified, 1 errors\n")
+        status, text = ti.guard(empty, self.ceiling(enforce=True, max_notes=0))
+        self.assertEqual(status, 0)
+        self.assertIn("failed early", text)
+
+    def test_changed_trigger_choice_fails_when_enforcing(self):
+        base = self.inventory()
+        new = self.inventory()
+        new["entries"][0]["triggers"][0]["terms"] = ["h(i)"]
+        status, text = ti.guard(
+            new, self.ceiling(enforce=True, max_notes=10), baseline=base
+        )
+        self.assertEqual(status, 1)
+        self.assertIn("1 expression(s) had their chosen triggers change", text)
+        self.assertIn("0 added", text)
+        # The count is unchanged; only the choice moved.
+        self.assertIn("under the ceiling", text)
+
+    def test_changed_trigger_choice_only_reports_when_not_enforcing(self):
+        base = self.inventory()
+        new = self.inventory()
+        new["entries"][0]["triggers"][0]["terms"] = ["h(i)"]
+        status, text = ti.guard(new, self.ceiling(), baseline=base)
+        self.assertEqual(status, 0)
+        self.assertIn("1 changed", text)
+
+    def test_cli_guard_exit_codes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inv = os.path.join(tmp, "inv.json")
+            run(
+                [
+                    "parse",
+                    os.path.join(FIXTURES, "single_line_notes.log"),
+                    "-o",
+                    inv,
+                ],
+                expect=0,
+            )
+            ceil_path = os.path.join(tmp, "ceiling.json")
+            with open(ceil_path, "w") as f:
+                json.dump(self.ceiling(enforce=True, max_notes=2), f)
+            result = run(["guard", inv, "--ceiling", ceil_path], expect=1)
+            self.assertIn("exceeds the agreed ceiling", result.stdout)
+            with open(ceil_path, "w") as f:
+                json.dump(self.ceiling(enforce=True, max_notes=3), f)
+            run(["guard", inv, "--ceiling", ceil_path], expect=0)
+
+    def test_cli_rejects_a_bad_ceiling_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inv = os.path.join(tmp, "inv.json")
+            run(
+                ["parse", os.path.join(FIXTURES, "single_line_notes.log"), "-o", inv],
+                expect=0,
+            )
+            bad = os.path.join(tmp, "bad.json")
+            with open(bad, "w") as f:
+                json.dump({"schema": "nope"}, f)
+            result = run(["guard", inv, "--ceiling", bad])
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("expected schema", result.stderr)
+
 
 class TestDiff(unittest.TestCase):
     def base(self):

@@ -504,6 +504,100 @@ def render_diff(d, limit=40):
 # ---------------------------------------------------------------------------
 
 
+CEILING_SCHEMA = "trigger-ceiling/v1"
+
+
+def load_ceiling(path):
+    with open(path) as f:
+        ceiling = json.load(f)
+    if ceiling.get("schema") != CEILING_SCHEMA:
+        raise SystemExit(
+            "{}: expected schema {}, found {!r}".format(
+                path, CEILING_SCHEMA, ceiling.get("schema")
+            )
+        )
+    return ceiling
+
+
+def guard(inventory, ceiling, mode=None, baseline=None, out=None):
+    """Check an inventory against the agreed ceiling. Returns (status, text).
+
+    status 0 = pass, 1 = over the ceiling / regressed, 2 = the comparison
+    itself is invalid (e.g. the inventory was captured in a different
+    `--triggers-mode` than the ceiling was agreed in, which makes the numbers
+    incomparable).
+    """
+    lines = []
+    total = inventory["total_notes"]
+    lines.append("trigger notes measured: {}".format(total))
+
+    declared_mode = ceiling.get("mode")
+    if mode and declared_mode and mode != declared_mode:
+        lines.append(
+            "ERROR: this inventory was captured in `{}` mode but the ceiling was "
+            "agreed in `{}` mode. Counts from different --triggers-mode settings "
+            "are not comparable.".format(mode, declared_mode)
+        )
+        return 2, "\n".join(lines)
+
+    if total == 0:
+        lines.append(
+            "no trigger notes in this capture — Verus only prints them for verified "
+            "modules, so the run probably failed early. Not judging a ceiling on an "
+            "empty capture."
+        )
+        return 0, "\n".join(lines)
+
+    status = 0
+
+    if not ceiling.get("enforce") or ceiling.get("max_notes") is None:
+        lines.append(
+            "ceiling not enforced yet (Phase 54.2.b): commit a measured baseline, "
+            "then set max_notes and enforce=true in the ceiling file."
+        )
+    else:
+        limit = ceiling["max_notes"]
+        lines.append("ceiling: {}".format(limit))
+        if total > limit:
+            lines.append(
+                "ERROR: {} trigger notes exceeds the agreed ceiling of {} by {}. "
+                "Either add #[trigger] to the new quantifiers, or raise the ceiling "
+                "deliberately in {} with a reason.".format(
+                    total, limit, total - limit, out or "the ceiling file"
+                )
+            )
+            status = 1
+        else:
+            lines.append("under the ceiling by {}".format(limit - total))
+
+    if baseline is not None:
+        delta = diff_inventories(baseline, inventory)
+        lines.append(
+            "vs baseline `{}`: {} removed, {} added, {} changed".format(
+                baseline.get("label") or "base",
+                delta["removed_count"],
+                delta["added_count"],
+                delta["changed_count"],
+            )
+        )
+        for c in delta["changed"][:10]:
+            lines.append(
+                "  changed: {}:{} {} -> {}".format(
+                    c["file"], c["line"], c["base_triggers"], c["new_triggers"]
+                )
+            )
+        if ceiling.get("enforce") and (delta["added_count"] or delta["changed_count"]):
+            lines.append(
+                "ERROR: {} note(s) added and {} expression(s) had their chosen "
+                "triggers change. A changed choice is the dangerous one: the count "
+                "can stay identical while the solver instantiates different "
+                "terms.".format(delta["added_count"], delta["changed_count"])
+            )
+            status = 1
+
+    return status, "\n".join(lines)
+
+
 def _write(path, text):
     if path:
         directory = os.path.dirname(path)
@@ -566,7 +660,40 @@ def main(argv=None):
         help="exit 1 if the new inventory exceeds this note count (54.9 CI guard)",
     )
 
+    g = sub.add_parser("guard", help="check an inventory against the agreed ceiling")
+    g.add_argument("inventory")
+    g.add_argument(
+        "--ceiling",
+        default=os.path.join("reports", "triggers", "ceiling.json"),
+        help="ceiling file (default: reports/triggers/ceiling.json)",
+    )
+    g.add_argument(
+        "--baseline",
+        help="optional committed baseline inventory; also checks added/changed",
+    )
+    g.add_argument(
+        "--capture-mode",
+        help="--triggers-mode this inventory was captured with; must match the "
+        "ceiling's mode",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.mode == "guard":
+        inventory = _load(args.inventory)
+        ceiling = load_ceiling(args.ceiling)
+        baseline = _load(args.baseline) if args.baseline else None
+        status, text = guard(
+            inventory,
+            ceiling,
+            mode=args.capture_mode,
+            baseline=baseline,
+            out=args.ceiling,
+        )
+        sys.stdout.write(text + "\n")
+        if status:
+            sys.stderr.write("trigger guard failed\n")
+        return status
 
     if args.mode == "parse":
         if args.log == "-":

@@ -1,0 +1,10 @@
+{
+  "schema": "trigger-ceiling/v1",
+  "enforce": false,
+  "max_notes": null,
+  "mode": "selective",
+  "set_on": "",
+  "set_by": "",
+  "rationale": "Not yet set. The ceiling must come from a measured baseline (Phase 54.2.b): a CI `verify` run publishes the trigger-inventory artifact, that inventory is committed under reports/triggers/, and its note count becomes max_notes with enforce=true. Until then the guard reports the measured count and passes, because asserting a number nobody has measured on the pinned release would either be vacuous or turn CI red for the wrong reason. The 534 figure quoted in TODO.md Phase 54 was measured in Verus's default `selective` mode and is the expected starting value, not a verified one.",
+  "history": []
+}

@@ -16085,8 +16085,27 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 - [ ] **54.8** `src/protocol/Raft/` (177, of which 141 in `refinement_proof/invariants.rs`).
       Deliberately last: this file also holds the 12 Phase 34 `assume`s and is the most
       fragile proof in the tree.
-- [ ] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
-      ceiling, so this does not silently regrow.
+- [x] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
+      ceiling, so this does not silently regrow. **Mechanism DONE (2026-08-04); the number
+      it enforces arrives with 54.2.b.** `trigger_inventory.py guard` + a new
+      `Guard trigger inventory` CI step. Design points:
+      (a) the ceiling lives in `reports/triggers/ceiling.json`, so raising it is a
+      reviewable diff with a stated reason rather than a workflow edit;
+      (b) it ships `enforce=false, max_notes=null` — the guard reports the measured count
+      and passes, because asserting a number nobody has measured on the pinned release
+      would be either vacuous or red-for-the-wrong-reason. 54.2.b sets it;
+      (c) with a committed baseline it also fails on **changed** trigger choices, not just
+      added notes — the count can stay identical while the solver instantiates different
+      terms, which is the whole reason this phase exists;
+      (d) a capture-mode mismatch (`selective` vs `all-modules`) exits 2 rather than
+      comparing incomparable numbers;
+      (e) an empty capture (verification failed early, so Verus printed no notes) is never
+      judged against a ceiling;
+      (f) `set -o pipefail` in the step, because the guards pipe into `tee` and would
+      otherwise exit 0 and silently stop guarding.
+      The timing half reuses `verus_timing.py diff --max-regression-pct 20
+      --fail-on-regression`, skipped with a message until `reports/triggers/timing-baseline.json`
+      exists. 21 new tests, incl. a guard that an `enforce=true` ceiling must carry a number.
 
 ### Acceptance
 
