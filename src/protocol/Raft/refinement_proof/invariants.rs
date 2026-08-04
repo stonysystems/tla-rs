@@ -494,6 +494,81 @@ verus! {
         };
     }
 
+    /// The joint-consensus case. Whenever the phase a leader was elected under
+    /// is the certificate's governing phase, or one legal progression step
+    /// beyond it, the two quorums must intersect — this is exactly what the
+    /// joint-consensus overlap mathematics buys — and the overlapping voter
+    /// carries the certified boundary into the leader's log.
+    ///
+    /// Unlike the fixed-majority bridge, this covers `Joint` phases and
+    /// `Stable` phases over proper subsets. The hypothesis is only that the
+    /// two phases are one legal step apart, which is far weaker than the full
+    /// first-missing-boundary provenance.
+    pub proof fn lemma_certified_boundary_present_when_phases_are_related(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        election_phase: MembershipPhase,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(election_phase),
+            is_legal_phase_progression(
+                ds.configuration_commit_certificates[index].governing_phase,
+                election_phase,
+            ),
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry,
+    {
+        let certificate = ds.configuration_commit_certificates[index];
+
+        // The leader's vote set is a quorum for the phase it was elected under.
+        assert(has_recorded_election_quorum(ds.server_states[leader_id]));
+        assert(is_quorum_for_phase(
+            ds.server_states[leader_id].votes_granted,
+            election_phase,
+        ));
+
+        // The certificate's quorum is a quorum for its governing phase.
+        lemma_configuration_commit_certificate_basic_validity(ds, index);
+        assert(is_quorum_for_phase(
+            certificate.quorum,
+            certificate.governing_phase,
+        ));
+
+        // One legal step apart, so the quorums overlap.
+        lemma_legal_phase_progression_quorums_intersect(
+            certificate.quorum,
+            ds.server_states[leader_id].votes_granted,
+            certificate.governing_phase,
+            election_phase,
+        );
+
+        let overlap_voter = choose |server: int|
+            certificate.quorum.contains(server)
+            && ds.server_states[leader_id].votes_granted.contains(server);
+
+        assert(ds.server_states[leader_id].votes_granted
+            .contains(overlap_voter));
+        assert(VotesGrantedAreServers(ds));
+        assert(0 <= overlap_voter < ds.num_servers);
+
+        // The transfer obligation carries the entry across.
+        assert(CertifiedBoundaryTransfersToVotedLeader(ds));
+    }
+
     /// All-entry analogue of the Configuration bridge: an entry certified
     /// under a Stable phase covering the whole server set is committed in the
     /// legacy fixed-majority sense too. This carries the bridge from

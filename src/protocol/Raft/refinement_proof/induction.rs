@@ -175,6 +175,58 @@ verus! {
         );
     }
 
+    /// Behaviour-level joint-consensus Configuration Leader Completeness.
+    ///
+    /// In every reachable state, a leader elected under a phase that is the
+    /// certificate's governing phase — or one legal joint-consensus step
+    /// beyond it — holds that certified boundary. This covers `Joint` phases
+    /// and `Stable` phases over proper subsets, so it is the genuinely
+    /// dynamic-membership case rather than the fixed-majority fragment.
+    ///
+    /// The only remaining hypothesis is that the two phases are one legal step
+    /// apart; the log-transfer step is discharged from the global invariant.
+    pub proof fn lemma_certified_boundary_present_in_related_phase_leader(
+        b: RaftBehavior,
+        behavior_index: int,
+        index: int,
+        leader_id: int,
+        election_phase: MembershipPhase,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+            b[behavior_index].configuration_commit_certificates.dom()
+                .contains(index),
+            0 <= leader_id < b[behavior_index].num_servers,
+            b[behavior_index].server_states[leader_id].role is Leader,
+            b[behavior_index].server_states[leader_id].current_term
+                > b[behavior_index].configuration_commit_certificates[index]
+                    .entry.term,
+            b[behavior_index].server_states[leader_id]
+                .election_membership_phase == Some(election_phase),
+            is_legal_phase_progression(
+                b[behavior_index].configuration_commit_certificates[index]
+                    .governing_phase,
+                election_phase,
+            ),
+        ensures
+            b[behavior_index].server_states[leader_id].log.len() > index,
+            b[behavior_index].server_states[leader_id].log[index]
+                == b[behavior_index].configuration_commit_certificates[index]
+                    .entry,
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
+        lemma_transfer_obligation_discharged_by_inherited_lemma(
+            b[behavior_index],
+        );
+        lemma_certified_boundary_present_when_phases_are_related(
+            b[behavior_index],
+            index,
+            leader_id,
+            election_phase,
+        );
+    }
+
     /// Milestone C's membership-stable fragment: for every dynamically
     /// certified log entry — Data or Configuration — governed by a Stable
     /// phase over the whole server set, every strictly higher-term leader
