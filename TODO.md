@@ -15929,3 +15929,112 @@ Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tu
 ### Files
 
 `transpiler/tests/corpus/`; plan §3.
+
+---
+
+## Phase 54: Explicit Quantifier Triggers — PLANNED
+
+### Background (2026-08)
+
+Verus reports **534 `automatically chose triggers for this expression` notes** on a full
+verification pass (`0.2026.08.02`, `1044 verified, 0 errors`). All 534 are in our own code —
+none come from `vstd`.
+
+Raised by the Verus team while evaluating tla-rs as a compatibility test target:
+
+> The trigger notes suggest some instability that may make it not work well with future
+> versions of Verus.
+
+The concern is well-founded. When Verus picks triggers automatically, the choice is an
+implementation detail that can change between releases. A change silently alters which
+quantifier instantiations the solver performs, so a proof that verifies today can fail
+tomorrow — and the failure surfaces as `rlimit exceeded`, which carries no information about
+the cause.
+
+We already paid this price once. `lemma_getsent2b_value_matches_candidate`
+(`common_proof/learner_state.rs`) sat broken for five months; the root cause was
+quantifier-instantiation blowup and the only symptom was a resource-limit error. Nine
+structural fix attempts failed before the real fix (further decomposition) landed. Explicit
+triggers are the standing defence against that class of failure.
+
+### Scope
+
+534 notes, split by whether the source is editable:
+
+| Location | Count | How to fix |
+|---|---|---|
+| `src/protocol/Raft/` | 177 | edit source |
+| `src/protocol/RSL/` | 131 | edit source |
+| `src/implementation/RSL/` | 101 | edit source |
+| `src/common/`, `src/verus_extra/` | 16 | edit source |
+| **`src/generated/RSL/`** | **109** | **fix transpiler codegen, then regenerate** |
+
+The 109 generated ones must not be hand-edited (see `CLAUDE.md`). They come from
+`replica_gen.rs` (44), `proposer_gen.rs` (25), `election_gen.rs` (17), `executor_gen.rs` (10),
+`learner_gen.rs` (7), `acceptor_gen.rs` (4), `broadcast_gen.rs` (2) — so the fix is a
+codegen change in `transpiler/src/` plus `scripts/regenerate_all.sh`.
+
+By trigger count: 447 expressions got a single trigger, 73 got two, 14 got three. The
+single-trigger cases are the ones most likely to be over- or under-restrictive.
+
+Also in scope, same class of problem, much smaller: **5 `broadcast` functions without an
+explicit `#[trigger]`** (`cmessage.rs`, `types_i.rs`, `io_s.rs`). Broadcast axioms are in
+scope for every proof in the crate, so a bad auto-chosen trigger there is global.
+
+### Why this is not mechanical
+
+Adding `#[trigger]` changes solver behaviour. Three ways it can go wrong:
+
+- **Too restrictive** — the needed instantiation never fires; the proof fails outright.
+- **Too permissive** — instantiation explodes; the proof hits `rlimit`.
+- **Silent slowdown** — it still verifies, but a later change tips it over the limit.
+
+So each annotation needs re-verification, and a batch that verifies is not yet known to be
+*stable* — wall-clock per module should be recorded before and after, since a proof that got
+2× slower is a regression even when green.
+
+### Plan
+
+- [ ] **54.1** Tooling: script that parses a verification log into
+      `(file, line, expression, chosen triggers)` and diffs two runs. Without this, progress
+      is unmeasurable and regressions are invisible. Output checked in under `reports/`.
+- [ ] **54.2** Baseline: record per-module verification wall-clock and the full trigger
+      inventory at `0.2026.08.02`. This is the regression baseline for every later batch.
+- [ ] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
+      Small, low-coupling, exercises the whole workflow. **Gate: do not proceed to 54.4 until
+      the pilot is green with no wall-clock regression.**
+- [ ] **54.4** The 5 `broadcast` functions. Small but high-leverage — these are in scope
+      crate-wide.
+- [ ] **54.5** `src/protocol/RSL/` (131). Ordered by module, each batch independently verified.
+- [ ] **54.6** `src/implementation/RSL/` (101). Note 43 are in `gen_helpers.rs`, which is a
+      hand-written companion to generated code — check whether they should move to 54.7 instead.
+- [ ] **54.7** Transpiler codegen emits explicit triggers; regenerate; confirm all 109
+      generated notes are gone and the regenerated tree still verifies.
+- [ ] **54.8** `src/protocol/Raft/` (177, of which 141 in `refinement_proof/invariants.rs`).
+      Deliberately last: this file also holds the 12 Phase 34 `assume`s and is the most
+      fragile proof in the tree.
+- [ ] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
+      ceiling, so this does not silently regrow.
+
+### Acceptance
+
+- 0 `automatically chose triggers` notes on a full pass, or a checked-in list of the
+  deliberate exceptions with a reason for each
+- `1044 verified, 0 errors` still holds
+- No module's verification wall-clock regresses more than 20% against the 54.2 baseline
+- CI guard from 54.9 in place
+
+### Non-goals
+
+- Not fixing the 12 Raft `assume`s (Phase 34, deprecated) — but 54.8 touches the same file,
+  so the two should not run concurrently.
+- Not the 876 `non_snake_case` warnings. Those are noise from the deliberate `L*`/`C*`
+  naming that mirrors the IronFleet Dafny identifiers; suppress with one crate-level
+  `#![allow(non_snake_case)]` rather than renaming. Separate, ten-minute task.
+- Not the ~88 deprecated-API warnings from the `0.2026.08` `Set` change (68 always-true
+  `.finite()` calls, 20 `Set::new_assuming_finite`). Also separate.
+
+### Files
+
+`src/protocol/{RSL,Raft}/`, `src/implementation/RSL/`, `src/common/`, `src/verus_extra/`,
+`transpiler/src/` (codegen), `scripts/regenerate_all.sh`, `reports/` (trigger inventory).
