@@ -7956,10 +7956,16 @@ impl Translator {
     /// For types with custom view expressions (e.g., Votes → abstractify_cvotes),
     /// uses the custom template. Otherwise uses `result@`.
     fn format_result_view(&self, return_type: &Type) -> String {
+        if matches!(return_type, Type::Int | Type::Nat) {
+            return "result as int".to_string();
+        }
         if let Type::Named(path) = return_type {
             if let Some(type_name) = path.last() {
                 if let Some(template) = self.config.type_view_exprs.get(type_name) {
                     return template.replace("{param}", "&result");
+                }
+                if self.config.is_strict_primitive(type_name) {
+                    return "result as int".to_string();
                 }
             }
         }
@@ -10224,21 +10230,32 @@ impl Translator {
                             }
                         }
                     }
-                    let base = if output_names.len() == 1 {
-                        "result@".to_string()
+                    let result_name = if output_names.len() == 1 {
+                        "result".to_string()
                     } else {
                         let output_idx = output_names
                             .iter()
                             .position(|n| n == &param.name)
                             .unwrap_or(0);
-                        format!("result.{}@", output_idx)
+                        format!("result.{}", output_idx)
                     };
                     // For Seq<StructType> outputs, add .map(|i, p: ExecType| p@)
                     // to convert Vec<ExecType>@ (= Seq<ExecType>) to Seq<SpecType>
                     if let Some(exec_elem_type) = self.output_needs_view_map(&param.ty) {
-                        format!("{}.map(|i, p: {}| p@)", base, exec_elem_type)
+                        format!("{}@.map(|i, p: {}| p@)", result_name, exec_elem_type)
+                    } else if matches!(param.ty, Type::Int | Type::Nat) {
+                        format!("{} as int", result_name)
+                    } else if let Type::Named(path) = &param.ty {
+                        if path
+                            .last()
+                            .is_some_and(|name| self.config.is_strict_primitive(name))
+                        {
+                            format!("{} as int", result_name)
+                        } else {
+                            format!("{}@", result_name)
+                        }
                     } else {
-                        base
+                        format!("{}@", result_name)
                     }
                 }
             })
@@ -23690,6 +23707,58 @@ mod tests {
             spec_call,
             "result@ == LAction(s@, *val as int, enabled, *count as int)"
         );
+    }
+
+    #[test]
+    fn test_build_spec_call_with_int_output() {
+        use crate::ast::{Generics, Parameter};
+        let translator = Translator::default();
+
+        let spec_fn = crate::ast::SpecFunction {
+            name: "LIncrement".to_string(),
+            generics: Generics::default(),
+            params: vec![
+                Parameter {
+                    name: "value".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+                Parameter {
+                    name: "value_".to_string(),
+                    ty: Type::Int,
+                    mode: None,
+                    variable_mode: crate::ast::VariableMode::Exec,
+                    span: None,
+                },
+            ],
+            return_type: Type::Bool,
+            requires: vec![],
+            ensures: vec![],
+            recommends: vec![],
+            decreases: vec![],
+            body: Expr::Literal(Literal::Bool(true)),
+            span: None,
+        };
+
+        let annotated = crate::moder::AnnotatedFunction {
+            spec_fn,
+            kind: FunctionKind::Predicate,
+            param_modes: vec![ParameterMode::Input, ParameterMode::Output],
+            return_type: Some("int".to_string()),
+            is_recursive: false,
+            is_functionalizable: true,
+            non_functionalizable_reason: None,
+        };
+
+        let spec_call = translator.build_spec_call(&annotated, &["value_".to_string()]);
+        assert_eq!(spec_call, "LIncrement(*value as int, result as int)");
+
+        // Scalar helper results need the same exec-to-spec integer conversion.
+        assert_eq!(translator.format_result_view(&Type::Int), "result as int");
+        assert_eq!(translator.format_result_view(&Type::Nat), "result as int");
+        assert_eq!(translator.format_result_view(&Type::Bool), "result@");
     }
 
     #[test]

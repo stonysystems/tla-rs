@@ -22,6 +22,56 @@ The repository also extends that foundation with additional distributed protocol
 TLA+/Verus translation, source-first and DPOR-based model checking, mutation-oriented code
 generation, and deployable C# networking/runtime integration.
 
+## Quick Start: From a Spec to a Program
+
+Here is a complete counter transition written as a TLA-style relation in Verus:
+
+```rust
+verus! {
+    pub open spec fn LInit(value: int) -> bool {
+        value == 0
+    }
+
+    pub open spec fn LIncrement(value: int, value_: int) -> bool {
+        value_ == value + 1
+    }
+}
+```
+
+The accompanying AutoMan annotation marks supplied inputs with `+` and outputs for the
+transpiler to synthesize with `-`:
+
+```text
+LInit(-);
+LIncrement(+, -);
+```
+
+From the repository root, generate the executable functions, verify them, compile them, and
+run the result:
+
+```bash
+cargo run --manifest-path transpiler/Cargo.toml -- \
+  -i examples/quickstart/counter_spec.rs \
+  -a examples/quickstart/counter_spec.automan \
+  -c examples/quickstart/counter_transpile.toml \
+  -o examples/quickstart/counter_gen.rs
+
+"$VERUS_PATH" --compile examples/quickstart/main.rs -o /tmp/tla-rs-counter
+/tmp/tla-rs-counter
+```
+
+The generated `CInit` and `CIncrement` functions have `ensures` clauses tying their concrete
+`i64` results back to `LInit` and `LIncrement`. The final output is:
+
+```text
+verification results:: 2 verified, 0 errors
+Counter: 0 -> 1
+```
+
+All source, annotation, configuration, generated code, and runner files are in
+[`examples/quickstart/`](examples/quickstart/). CI regenerates the code, rejects proof shortcuts,
+and verifies, compiles, and runs this example.
+
 ## Features
 
 - **10 Formally Verified Protocols**: RSL (Multi-Paxos RSM), Single-Decree Paxos, Raft,

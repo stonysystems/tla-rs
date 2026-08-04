@@ -38,6 +38,9 @@ jobs:
       - name: Regenerate DPOR test corpus
         run: DPOR_based_model_tla_rs_checker/scripts/regenerate_corpus.sh
 
+      - name: Check README quickstart generation
+        run: ../scripts/check_readme_quickstart.sh
+
       - name: Run tests
         run: cargo test --all-features
 
@@ -130,6 +133,9 @@ jobs:
       - name: Verify with Verus
         run: |
           scons --verus-path=$HOME/verus/verus --skip-dotnet
+
+      - name: Verify and run README quickstart
+        run: VERUS_PATH="$HOME/verus/verus" ./scripts/check_readme_quickstart.sh
 
   model-check-evidence:
     name: Model-Check Evidence Drift Guard
