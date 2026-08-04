@@ -4,10 +4,23 @@ A comprehensive plan to implement a transpiler that converts Rust/Verus TLA-styl
 
 ## Tools & Environment
 
-- **Verus**: `/home/users/zihao/verus/verus` (version 0.2026.02.04.175a879)
-- **Rust**: 1.92.0-x86_64-unknown-linux-gnu (required by Verus)
-- **Verification command**: `/home/users/zihao/verus/verus --crate-type=lib src/lib.rs`
-- **Build command**: `scons --verus-path=/home/users/zihao/verus`
+Repo-of-record versions (README / `.github/workflows/ci.yml`):
+
+- **Verus**: 0.2026.08.02.b677dd5 — pinned by CI; `VERUS_VERSION` in `ci.yml`
+- **Rust**: 1.97.1 (the toolchain that Verus binary requires)
+- **Verification command**: `$VERUS --crate-type=lib src/lib.rs`
+- **Build command**: `scons --verus-path=$VERUS`
+- **TLA+ tools**: `tla2tools.jar` (TLC 2.19) — needed by Phase 52/53 fidelity checking
+
+**This dev box (`ztang`, 2026-08-04)** — Step 0 of the Phase 52/53 work:
+
+| Tool | Status | Notes |
+|---|---|---|
+| Rust | ✅ 1.97.1 via rustup | Installed 2026-08-04. The system `cargo` 1.75 **cannot** build the transpiler (`clap_lex` needs `edition2024`); always `export PATH="$HOME/.cargo/bin:$PATH"`. |
+| transpiler | ✅ `cargo check --all-targets` clean | ~80 s cold. |
+| TLC | ✅ `tla2tools.jar` 2.19, Java 17 | Kept out of the repo; fetch from `tlaplus/tlaplus` releases. |
+| Verus | ⚠️ built from source | The **prebuilt** 0.2026.08.02 release links glibc 2.39; this box has **2.35**, so it cannot run. Built from source at commit `b677dd5` under `~/verus-src` with **z3 4.14.1** (the newest z3 with a glibc-2.35 build; Verus pins 4.16.0, bypassed with `vargo --no-solver-version-check build --release`). Solver-version skew can change proof stability — treat proof-level results from this box as advisory and re-check on a glibc-2.39 machine or in CI. |
+| .NET | ❌ absent | No `dotnet` — C# runtime, cluster runs, and throughput benches cannot be reproduced here. |
 
 ## Current Status (last updated 2026-05-28)
 
@@ -15919,7 +15932,8 @@ Each case is a directory `transpiler/tests/corpus/<tier>/<case>/` with a four-tu
 
 ### TODO (work queue, simple → hard)
 
-- [ ] **53.1** Corpus dir layout + four-tuple convention + intake script (download from `tlaplus/Examples`, run the Phase-52 linter to measure clean-distance).
+- [x] **53.1** Corpus dir layout + four-tuple convention + intake script (2026-08-04). `transpiler/tests/corpus/` now has `README.md` (four-tuple contract, tier table, status vocabulary, golden strategy), `manifest.toml` (10 planned cases across the 4 tiers, with the tier→milestone gating), and `scripts/intake_case.sh` (downloads a spec, **pins the upstream commit** via the GitHub API so re-runs are byte-reproducible, scaffolds `rewrite.md`, optionally copies a `reference.rs`, appends a manifest entry). Clean-distance measurement is wired to the contract `verus-transpile tla-lint --json <file>` → `{"violations": N}` and degrades to `unmeasured` until 52.M0 lands.
+  - **Refinement to the plan's golden strategy** (see corpus README §"Why `golden.rs` and `reference.rs` are different files"): a deterministic translator will not byte-match a hand-written spec, so byte-diffing against `src/protocol/*/*.rs` would be permanently red. The corpus splits the role: `golden.rs` = frozen expected translator output (V3 regression oracle), `reference.rs` = the hand-written tla-rs spec (human review oracle, never byte-diffed). The plan's intent survives — the hand-written spec is what a human diffs against *before* freezing the golden.
 - [ ] **53.2** Tier-0 simple (5–8 cases): Bakery / Peterson / DiningPhilosophers / BlockingQueue / Readers-Writers — collect + clean-rewrite + hand-written golden.
 - [ ] **53.3** Tier-1 consensus: Paxos (message-passing variant) + TwoPhase — golden = existing tla-rs hand-written spec.
 - [ ] **53.4** Tier-2: Raft (ongardie) + EPaxos — clean-rewrite (drop history vars) + bootstrapped golden.

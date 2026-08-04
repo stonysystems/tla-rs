@@ -1,0 +1,174 @@
+# Clean-Subset TLA+ Corpus Manifest (Phase 53)
+#
+# One [[case]] per corpus entry. See README.md for the four-tuple convention,
+# the status vocabulary, and the per-tier golden strategy.
+#
+# Tier gating (plan §"咬合"): a translator milestone may not be claimed before its
+# tier is green.
+#   tier 0 -> 52.M1 (projection P1/P2/P5)
+#   tier 1 -> 52.M2 (messages P3 / quorum P4)
+#   tier 2 -> 52.M4
+#   tier 3 -> 52.M4b
+#
+# Fields:
+#   id             directory name under tier<N>/
+#   tier           0..3
+#   status         planned | intake | clean | golden | green | blocked
+#   source_repo    upstream repo, "handwritten" if authored here
+#   source_path    path inside that repo
+#   source_commit  pinned upstream commit (filled by intake_case.sh)
+#   golden_kind    handwritten | bootstrapped | bootstrapped_reviewed | bootstrapped_partial_ref
+#   reference      repo-relative path to an existing hand-written tla-rs spec, or ""
+#   clean_distance linter-measured C1-C5 violations on original.tla, or "unmeasured"
+#   milestone_gate the Phase 52 milestone this case gates
+#   notes          free text; REQUIRED when status = "blocked"
+
+# ============================================================
+# Tier 0 — micro / classical concurrency (53.2)
+# Low clean-distance. Purpose: get the projection pass working end to end
+# and provide a fast regression smoke suite.
+# ============================================================
+
+[[case]]
+id = "t0_01_peterson"
+tier = 0
+status = "planned"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/TeachingConcurrency/Simple.tla"
+source_commit = ""
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "unmeasured"
+milestone_gate = "52.M1"
+notes = "Two-process mutual exclusion. Smallest per-node-array case: pc/flag/turn are [Proc -> T]."
+
+[[case]]
+id = "t0_02_bakery"
+tier = 0
+status = "planned"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/Bakery-Boulangerie/Bakery.tla"
+source_commit = ""
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "unmeasured"
+milestone_gate = "52.M1"
+notes = "Lamport's bakery. Exercises per-node arrays read by other nodes -> expect C2 violations; the rewrite message-ifies the ticket reads."
+
+[[case]]
+id = "t0_03_dining_philosophers"
+tier = 0
+status = "planned"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/DiningPhilosophers/DiningPhilosophers.tla"
+source_commit = ""
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "unmeasured"
+milestone_gate = "52.M1"
+notes = "Deadlock-capable; gives the corpus a negative (deadlock) case for TLC fidelity."
+
+[[case]]
+id = "t0_04_blocking_queue"
+tier = 0
+status = "planned"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/BlockingQueue/BlockingQueue.tla"
+source_commit = ""
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "unmeasured"
+milestone_gate = "52.M1"
+notes = "Producer/consumer. Shared buffer is global state, not per-node -> tests the C1 'global constant/shared var' escape hatch."
+
+[[case]]
+id = "t0_05_readers_writers"
+tier = 0
+status = "planned"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/ReadersWriters/ReadersWriters.tla"
+source_commit = ""
+golden_kind = "handwritten"
+reference = ""
+clean_distance = "unmeasured"
+milestone_gate = "52.M1"
+notes = "Queue-based reader/writer lock."
+
+# ============================================================
+# Tier 1 — medium consensus (53.3). MVP / killer demo.
+# Golden bootstrapped, reviewed against the existing tla-rs hand-written spec.
+# ============================================================
+
+[[case]]
+id = "t1_01_paxos"
+tier = 1
+status = "planned"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/Paxos/Paxos.tla"
+source_commit = ""
+golden_kind = "bootstrapped_reviewed"
+reference = "src/protocol/Paxos/paxos.rs"
+clean_distance = "unmeasured"
+milestone_gate = "52.M2"
+notes = "MVP. MUST use the message-passing Paxos (a 'msgs' variable, per-node arrays), NOT the Voting abstraction — Voting has no per-server arrays so projection is N/A."
+
+[[case]]
+id = "t1_02_twophase"
+tier = 1
+status = "planned"
+source_repo = "tlaplus/Examples"
+source_path = "specifications/TwoPhase/TwoPhase.tla"
+source_commit = ""
+golden_kind = "bootstrapped_reviewed"
+reference = "src/protocol/TwoPhase/twophase.rs"
+clean_distance = "unmeasured"
+milestone_gate = "52.M2"
+notes = "2PC with an explicit msgs set. NOTE: the tla-rs reference spec keeps GLOBAL sets (rm_prepared etc.) rather than a pure per-node projection — the review must decide which shape the golden takes."
+
+# ============================================================
+# Tier 2 — complex, already message-passing (53.4)
+# Rewrite work is mostly deleting history variables.
+# ============================================================
+
+[[case]]
+id = "t2_01_raft"
+tier = 2
+status = "planned"
+source_repo = "ongardie/raft.tla"
+source_path = "raft.tla"
+source_commit = ""
+golden_kind = "bootstrapped"
+reference = "src/protocol/Raft/raft.rs"
+clean_distance = "unmeasured"
+milestone_gate = "52.M4"
+notes = "Rewrite removes history vars (allLogs, elections, voterLog). Reconfiguration is out of the clean subset (Q2) and is stripped."
+
+[[case]]
+id = "t2_02_epaxos"
+tier = 2
+status = "planned"
+source_repo = "efficient/epaxos"
+source_path = "tla+/EgalitarianPaxos.tla"
+source_commit = ""
+golden_kind = "bootstrapped"
+reference = "src/protocol/EPaxos/epaxos.rs"
+clean_distance = "unmeasured"
+milestone_gate = "52.M4"
+notes = "Hardest tier-2 case; do it after Raft is green."
+
+# ============================================================
+# Tier 3 — hard (53.5)
+# ============================================================
+
+[[case]]
+id = "t3_01_jetpack"
+tier = 3
+status = "planned"
+source_repo = "local"
+source_path = "docs/jetpack_reference/jetpack.tla"
+source_commit = ""
+golden_kind = "bootstrapped_partial_ref"
+reference = "src/protocol/Jetpack/jetpack.rs"
+clean_distance = "unmeasured"
+milestone_gate = "52.M4b"
+notes = "Heavy rewrite: instantaneous global reads, 3-D log, INSTANCE composition. The Phase 51 reference spec is PARTIAL (entry actions 51.9 missing) and was never verus-checked — it is a review aid, not a golden."
