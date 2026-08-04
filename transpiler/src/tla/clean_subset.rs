@@ -10,11 +10,12 @@
 //! owes for each violation. A message that only says "unsupported" is a bug
 //! here.
 //!
-//! Rules implemented so far: **C5** (actions parameterized by node) and **C1**
-//! (per-node state). C5 runs first because it is what identifies the node set
-//! that every other rule is stated against.
+//! Rules implemented so far: **C5** (actions parameterized by node), **C1**
+//! (per-node state) and **C2** (no instantaneous cross-node reads). C5 runs
+//! first because it is what identifies the node set that every other rule is
+//! stated against, and C1 second because C2 only applies to per-node state.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::tla::ast::{TlaBinOp, TlaExpr, TlaModule, TlaOperator};
 use crate::tla::tokenizer::Span;
@@ -65,7 +66,7 @@ pub struct Finding {
 /// The rules `lint_module` actually evaluates today. Reported alongside the
 /// verdict: "clean" means "no violation of these rules", and claiming more than
 /// that would be dishonest while C2/C3/C4 are unimplemented.
-pub const RULES_CHECKED: &[CleanRule] = &[CleanRule::C1, CleanRule::C5];
+pub const RULES_CHECKED: &[CleanRule] = &[CleanRule::C1, CleanRule::C2, CleanRule::C5];
 
 /// The verdict for one module.
 #[derive(Debug, Clone, Default)]
@@ -113,8 +114,14 @@ pub fn lint_module(module: &TlaModule) -> CleanSubsetReport {
 
     ctx.check_c5(&mut report);
     ctx.check_c1(&mut report);
+    ctx.check_c2(&mut report);
 
     report.findings.sort_by_key(|f| (f.rule, f.line, f.column));
+    // The same read can appear in several branches of one action; reporting it
+    // once per occurrence would bury the distinct decisions a human has to make.
+    report.findings.dedup_by(|a, b| {
+        a.rule == b.rule && a.definition == b.definition && a.message == b.message
+    });
     report
 }
 
@@ -285,6 +292,160 @@ impl<'a> LintContext<'a> {
         }
     }
 
+    // ===================== C2: no instantaneous cross-node reads =====================
+
+    /// Inside an action taken by node `self`, a per-node variable may only be
+    /// read at `self`.
+    ///
+    /// This is the rule the whole subset exists for. `x[other]` says a node
+    /// atomically observes another node's current state, which no
+    /// implementation can do; turning it into something implementable means
+    /// deciding which message carries that value, who sends it, and what the
+    /// receiver does with a stale copy. That decision is not in the spec.
+    fn check_c2(&self, report: &mut CleanSubsetReport) {
+        if report.node_set.is_none() || report.per_node_variables.is_empty() {
+            // Nothing to state the rule against; C5/C1 have said why.
+            return;
+        }
+        let per_node: BTreeSet<&str> = report
+            .per_node_variables
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+
+        for (op_name, node_param) in self.node_parameterized_operators() {
+            let Some(op) = self.operator(&op_name) else {
+                continue;
+            };
+            let mut reads = Vec::new();
+            self.collect_foreign_reads(&op.body, &node_param, &per_node, &mut reads);
+            for (var, index) in reads {
+                report.findings.push(self.finding(
+                    CleanRule::C2,
+                    Some(op),
+                    format!(
+                        "reads `{var}[{index}]` -- another node's state, observed \
+                         instantaneously. A node taking this step can only read \
+                         `{var}[{node_param}]`. Decide which message carries \
+                         `{var}` from that node, who sends it and when, and what \
+                         this action does with a stale copy."
+                    ),
+                ));
+            }
+        }
+    }
+
+    /// Operators reachable from `Next` that act on behalf of a node, mapped to
+    /// the name that node goes by inside them.
+    ///
+    /// The node parameter is followed through calls: `Next` passes `self` to
+    /// `proc(self)`, which passes its own parameter to `a(self)`, and a read of
+    /// another node's state is a violation at any depth.
+    fn node_parameterized_operators(&self) -> BTreeMap<String, String> {
+        let mut found: BTreeMap<String, String> = BTreeMap::new();
+        let Some(next) = self.operator("Next") else {
+            return found;
+        };
+
+        // Seed from `\E self \in Node : ... Action(self) ...`.
+        let mut seeds = Vec::new();
+        for disjunct in flatten_disjunction(&next.body) {
+            if let TlaExpr::Exists { vars, body } = disjunct {
+                for bound in vars {
+                    seeds.push((bound.var.clone(), body));
+                }
+            }
+        }
+        for (node_var, body) in seeds {
+            self.enqueue_callees(body, &node_var, &mut found);
+        }
+
+        // Transitively follow the node parameter through further calls.
+        loop {
+            let mut grew = false;
+            let snapshot: Vec<(String, String)> =
+                found.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            for (op_name, node_param) in snapshot {
+                if let Some(op) = self.operator(&op_name) {
+                    let before = found.len();
+                    self.enqueue_callees(&op.body, &node_param, &mut found);
+                    grew |= found.len() != before;
+                }
+            }
+            if !grew {
+                break;
+            }
+        }
+        found
+    }
+
+    /// Record every operator `body` calls with `node_var` in some argument
+    /// position, under the name that argument has in the callee.
+    fn enqueue_callees(
+        &self,
+        body: &TlaExpr,
+        node_var: &str,
+        found: &mut BTreeMap<String, String>,
+    ) {
+        let mut calls = Vec::new();
+        Self::collect_calls_passing(body, node_var, &mut |callee, index| {
+            calls.push((callee.to_string(), index));
+        });
+        for (callee, index) in calls {
+            let Some(op) = self.operator(&callee) else {
+                continue;
+            };
+            let Some(param) = op.params.get(index) else {
+                continue;
+            };
+            found.entry(callee).or_insert_with(|| param.name.clone());
+        }
+    }
+
+    /// Visit `Callee(.., node_var, ..)` applications.
+    fn collect_calls_passing(expr: &TlaExpr, node_var: &str, sink: &mut impl FnMut(&str, usize)) {
+        if let TlaExpr::OpApply { op, args } = expr {
+            if let TlaExpr::Ident(name) = &**op {
+                for (i, arg) in args.iter().enumerate() {
+                    if matches!(arg, TlaExpr::Ident(a) if a == node_var) {
+                        sink(name, i);
+                    }
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            Self::collect_calls_passing(child, node_var, sink)
+        });
+    }
+
+    /// Collect `x[e]` reads of per-node variables where `e` is not the node.
+    fn collect_foreign_reads(
+        &self,
+        expr: &TlaExpr,
+        node_param: &str,
+        per_node: &BTreeSet<&str>,
+        out: &mut Vec<(String, String)>,
+    ) {
+        if let TlaExpr::FnApply { func, arg } = expr {
+            // Only the outermost index selects a node: in `req[p][q]`, `q`
+            // indexes into p's own table and is not a cross-node read.
+            let base: &TlaExpr = match &**func {
+                TlaExpr::Prime(inner) => inner,
+                other => other,
+            };
+            if let TlaExpr::Ident(var) = base {
+                if per_node.contains(var.as_str())
+                    && !matches!(&**arg, TlaExpr::Ident(a) if a == node_param)
+                {
+                    out.push((var.clone(), self.show(arg)));
+                }
+            }
+        }
+        walk_children(expr, &mut |child| {
+            self.collect_foreign_reads(child, node_param, per_node, out)
+        });
+    }
+
     // ===================== C1: per-node state =====================
 
     /// Every variable must be per-node (`[Node -> T]`), the network, or absent.
@@ -393,6 +554,100 @@ impl<'a> LintContext<'a> {
 
     fn is_var_ref(&self, expr: &TlaExpr, var: &str) -> bool {
         matches!(expr, TlaExpr::Ident(name) if name == var)
+    }
+}
+
+/// Apply `f` to each direct sub-expression.
+fn walk_children(expr: &TlaExpr, f: &mut impl FnMut(&TlaExpr)) {
+    match expr {
+        TlaExpr::Ident(_) | TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => {}
+        TlaExpr::Prime(inner)
+        | TlaExpr::UnaryOp { operand: inner, .. }
+        | TlaExpr::Enabled(inner)
+        | TlaExpr::Always(inner)
+        | TlaExpr::Eventually(inner) => f(inner),
+        TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
+            f(left);
+            f(right);
+        }
+        TlaExpr::OpApply { op, args } => {
+            f(op);
+            args.iter().for_each(f);
+        }
+        TlaExpr::FnApply { func, arg } => {
+            f(func);
+            f(arg);
+        }
+        TlaExpr::SetEnum(items) | TlaExpr::Tuple(items) | TlaExpr::Unchanged(items) => {
+            items.iter().for_each(f)
+        }
+        TlaExpr::SetFilter { set, filter, .. } => {
+            f(set);
+            f(filter);
+        }
+        TlaExpr::SetMap { expr, set, .. } => {
+            f(expr);
+            f(set);
+        }
+        TlaExpr::FnConstruct { domain, body, .. } => {
+            f(domain);
+            f(body);
+        }
+        TlaExpr::FnExcept { func, updates } => {
+            f(func);
+            for update in updates {
+                for step in &update.path {
+                    if let crate::tla::ast::TlaExceptPath::Index(index) = step {
+                        f(index);
+                    }
+                }
+                f(&update.value);
+            }
+        }
+        TlaExpr::FnSet { domain, range } => {
+            f(domain);
+            f(range);
+        }
+        TlaExpr::Record(fields) | TlaExpr::RecordSet(fields) => {
+            fields.iter().for_each(|(_, v)| f(v))
+        }
+        TlaExpr::RecordAccess { record, .. } => f(record),
+        TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
+            vars.iter().filter_map(|v| v.set.as_ref()).for_each(&mut *f);
+            f(body);
+        }
+        TlaExpr::Choose { set, body, .. } => {
+            if let Some(set) = set {
+                f(set);
+            }
+            f(body);
+        }
+        TlaExpr::IfThenElse {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            f(cond);
+            f(then_expr);
+            f(else_expr);
+        }
+        TlaExpr::Case { arms, other } => {
+            for (cond, result) in arms {
+                f(cond);
+                f(result);
+            }
+            if let Some(other) = other {
+                f(other);
+            }
+        }
+        TlaExpr::LetIn { defs, body } => {
+            defs.iter().for_each(|d| f(&d.body));
+            f(body);
+        }
+        TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
+            f(vars);
+            f(action);
+        }
     }
 }
 
@@ -646,11 +901,104 @@ Next == \E p \in Proc : Step(p)
         assert!(json.contains(r#""clean":true"#), "{json}");
         assert!(json.contains(r#""violations":0"#), "{json}");
         assert!(json.contains(r#""node_set":"Proc""#), "{json}");
-        assert!(json.contains(r#""rules_checked":["C1","C5"]"#), "{json}");
         assert!(
-            json.contains(r#""rules_not_implemented":["C2","C3","C4"]"#),
+            json.contains(r#""rules_checked":["C1","C2","C5"]"#),
+            "{json}"
+        );
+        assert!(
+            json.contains(r#""rules_not_implemented":["C3","C4"]"#),
             "a 'clean' verdict must say which rules were not evaluated: {json}"
         );
         assert!(json.contains(r#""per_node_variables":["clock"]"#), "{json}");
+    }
+
+    #[test]
+    fn rejects_a_read_of_another_node() {
+        // TeachingConcurrency `Simple`: the left neighbour's x.
+        let source = r#"---- MODULE Test ----
+VARIABLES x, y
+TypeOK == /\ x \in [Proc -> Nat]
+          /\ y \in [Proc -> Nat]
+b(self) == y' = [y EXCEPT ![self] = x[(self - 1) % N]]
+Next == \E self \in Proc : b(self)
+===="#;
+        let report = lint(source);
+        let c2 = report
+            .findings
+            .iter()
+            .find(|f| f.rule == CleanRule::C2)
+            .unwrap_or_else(|| panic!("expected a C2 finding, got {:?}", report.findings));
+        assert_eq!(c2.definition, "b");
+        assert!(
+            c2.message.contains("x[(self - 1) % N]") && c2.message.contains("which message"),
+            "the finding must quote the read and name the decision it forces: {}",
+            c2.message
+        );
+    }
+
+    #[test]
+    fn follows_the_node_parameter_through_calls() {
+        // Next -> proc(self) -> b(self): a foreign read two calls deep is still
+        // a violation, and it is attributed to the action that performs it.
+        let source = r#"---- MODULE Test ----
+VARIABLES x, y
+TypeOK == /\ x \in [Proc -> Nat]
+          /\ y \in [Proc -> Nat]
+b(p) == y' = [y EXCEPT ![p] = x[p - 1]]
+proc(q) == b(q)
+Next == \E self \in Proc : proc(self)
+===="#;
+        let report = lint(source);
+        let c2 = report
+            .findings
+            .iter()
+            .find(|f| f.rule == CleanRule::C2)
+            .unwrap_or_else(|| panic!("expected a C2 finding, got {:?}", report.findings));
+        assert_eq!(
+            c2.definition, "b",
+            "attributed to the action doing the read"
+        );
+    }
+
+    #[test]
+    fn allows_indexing_into_the_nodes_own_table() {
+        // LamportMutex `beats(p,q)`: req[p][q] is p's own accumulated table
+        // about q, not q's live state. Only the outermost index selects a node.
+        let source = r#"---- MODULE Test ----
+VARIABLES req
+TypeOK == req \in [Proc -> [Proc -> Nat]]
+beats(p, q) == \/ req[p][q] = 0
+               \/ req[p][p] < req[p][q]
+Step(p) == \A q \in Proc : beats(p, q)
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert!(
+            !report.findings.iter().any(|f| f.rule == CleanRule::C2),
+            "reading into one's own table is not a cross-node read: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn a_repeated_read_is_reported_once() {
+        let source = r#"---- MODULE Test ----
+VARIABLES x
+TypeOK == x \in [Proc -> Nat]
+Step(p) == \/ x' = [x EXCEPT ![p] = x[p + 1]]
+           \/ x' = [x EXCEPT ![p] = x[p + 1]]
+Next == \E p \in Proc : Step(p)
+===="#;
+        let report = lint(source);
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .filter(|f| f.rule == CleanRule::C2)
+                .count(),
+            1,
+            "one decision, one finding: {:?}",
+            report.findings
+        );
     }
 }
