@@ -21,6 +21,12 @@
 //!   framework's job.
 //! - **P5 frame conditions.** Every action states what it leaves unchanged.
 //!
+//! `sent_packets` is a **`Set`**, not a `Seq`: the clean subset designates the
+//! network as a set (C4), and a broadcast is a set comprehension over the
+//! peers, so a sequence would need a delivery order the source spec does not
+//! give. The rule is uniform across goldens; see
+//! `t0_05_lamport_mutex/golden.rs`, where a real broadcast makes it matter.
+//!
 //! Two things in `clean.tla` deliberately have **no counterpart** here, and a
 //! translator that emitted something for them would be wrong:
 //!
@@ -86,13 +92,13 @@ verus! {
         s: LState,
         s_: LState,
         c: LConstants,
-        sent_packets: Seq<LPacket>,
+        sent_packets: Set<LPacket>,
     ) -> bool {
         &&& s.pc is A
         &&& s_.x == 1
         &&& s_.pc is B
         &&& s_.y == s.y
-        &&& sent_packets == Seq::<LPacket>::empty()
+        &&& sent_packets == Set::<LPacket>::empty()
     }
 
     /// Step b, first half: ask the left neighbour for its value.
@@ -100,13 +106,13 @@ verus! {
         s: LState,
         s_: LState,
         c: LConstants,
-        sent_packets: Seq<LPacket>,
+        sent_packets: Set<LPacket>,
     ) -> bool {
         &&& s.pc is B
         &&& s_.pc is W
         &&& s_.x == s.x
         &&& s_.y == s.y
-        &&& sent_packets == seq![
+        &&& sent_packets == set![
             LPacket { dst: LLeft(c), msg: LMessage::Read { src: c.node_id } },
         ]
     }
@@ -118,12 +124,12 @@ verus! {
         s_: LState,
         c: LConstants,
         src: int,
-        sent_packets: Seq<LPacket>,
+        sent_packets: Set<LPacket>,
     ) -> bool {
         &&& s_.x == s.x
         &&& s_.y == s.y
         &&& s_.pc == s.pc
-        &&& sent_packets == seq![
+        &&& sent_packets == set![
             LPacket { dst: src, msg: LMessage::Val { src: c.node_id, val: s.x } },
         ]
     }
@@ -134,13 +140,13 @@ verus! {
         s_: LState,
         c: LConstants,
         val: int,
-        sent_packets: Seq<LPacket>,
+        sent_packets: Set<LPacket>,
     ) -> bool {
         &&& s.pc is W
         &&& s_.y == val
         &&& s_.pc is Done
         &&& s_.x == s.x
-        &&& sent_packets == Seq::<LPacket>::empty()
+        &&& sent_packets == Set::<LPacket>::empty()
     }
 
     /// Dispatch on the received message, as the hand-written specs do.
@@ -149,7 +155,7 @@ verus! {
         s_: LState,
         c: LConstants,
         msg: LMessage,
-        sent_packets: Seq<LPacket>,
+        sent_packets: Set<LPacket>,
     ) -> bool {
         match msg {
             LMessage::Read { src } => LReply(s, s_, c, src, sent_packets),
@@ -161,7 +167,7 @@ verus! {
         s: LState,
         s_: LState,
         c: LConstants,
-        sent_packets: Seq<LPacket>,
+        sent_packets: Set<LPacket>,
     ) -> bool {
         ||| La(s, s_, c, sent_packets)
         ||| Lb(s, s_, c, sent_packets)
