@@ -1066,6 +1066,16 @@ fn flatten_disjunction(expr: &TlaExpr) -> Vec<&TlaExpr> {
 /// Render a report as JSON. Hand-written to keep the linter free of a
 /// serialization dependency and to make the shape obvious at the call site;
 /// the schema is documented in `docs/clean_tla_subset.md`.
+/// The operators that act on behalf of a node, mapped to the name that node
+/// goes by inside each one.
+///
+/// C2 needs this to know which parameter is the node; the projection pass needs
+/// the same answer to know which parameter to remove. Sharing it keeps the two
+/// from disagreeing about what an action is.
+pub fn node_parameterized_operators(module: &TlaModule) -> BTreeMap<String, String> {
+    LintContext::new(module).node_parameterized_operators()
+}
+
 pub fn report_to_json(report: &CleanSubsetReport) -> String {
     let findings = report
         .findings

@@ -102,6 +102,9 @@ pub struct ProjectedSpec {
     /// Enums the projection had to introduce, in declaration order: a state
     /// field whose TLA+ type is a set of string literals becomes one.
     pub enums: Vec<(String, Vec<String>)>,
+    /// Operator definitions, so later passes can inline message constructors
+    /// and broadcast helpers without re-walking the module.
+    pub operator_bodies: BTreeMap<String, (Vec<String>, TlaExpr)>,
     /// Anything the pass could not project, stated plainly rather than guessed.
     pub gaps: Vec<String>,
 }
@@ -174,6 +177,19 @@ pub fn project_module(module: &TlaModule) -> Result<ProjectedSpec, ProjectionErr
         constants,
         messages,
         enums,
+        operator_bodies: module
+            .operators
+            .iter()
+            .map(|op| {
+                (
+                    op.name.clone(),
+                    (
+                        op.params.iter().map(|p| p.name.clone()).collect(),
+                        op.body.clone(),
+                    ),
+                )
+            })
+            .collect(),
         gaps,
     })
 }

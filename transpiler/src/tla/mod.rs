@@ -3,6 +3,7 @@
 //! This module provides functionality to parse TLA+ specifications and translate
 //! them to Verus/TLA-rs code.
 
+pub mod action_projection;
 pub mod ast;
 pub mod clean_subset;
 pub mod mc_wrapper;
@@ -12,6 +13,7 @@ pub mod tokenizer;
 pub mod translator;
 pub mod types;
 
+pub use action_projection::{project_actions, ActionKind, ProjectedAction};
 pub use ast::{
     TlaBinOp, TlaConstantDecl, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaInstance, TlaModule,
     TlaNumber, TlaOperator, TlaParam, TlaQuantBound, TlaTheorem, TlaUnaryOp,
