@@ -112,7 +112,7 @@ verus! {
         let recv = ios[0]->r;
         assert(LEnvironment_Next(e, e_));
         assert(IsValidLEnvStep(e, e.nextStep));
-        assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
+        assert(forall |io| #![trigger e.nextStep->ios.contains(io)] e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
         assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
         assert(ios[0] is Receive);
         // assert(ios[0]->r.dst == e.nextStep->actor);
@@ -125,7 +125,7 @@ verus! {
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+        assert(forall |io| #![trigger ios.contains(io)] ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));
@@ -207,7 +207,7 @@ verus! {
         let recv = ios[0]->r;
         assert(LEnvironment_Next(e, e_));
         assert(IsValidLEnvStep(e, e.nextStep));
-        assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
+        assert(forall |io| #![trigger e.nextStep->ios.contains(io)] e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
         assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
         assert(ios[0] is Receive);
         // assert(ios[0]->r.dst == e.nextStep->actor);
@@ -220,7 +220,7 @@ verus! {
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+        assert(forall |io| #![trigger ios.contains(io)] ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));
@@ -433,7 +433,7 @@ verus! {
         let recv = ios[0]->r;
         assert(LEnvironment_Next(e, e_));
         assert(IsValidLEnvStep(e, e.nextStep));
-        assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
+        assert(forall |io| #![trigger e.nextStep->ios.contains(io)] e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
         assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
         assert(ios[0] is Receive);
         // assert(ios[0]->r.dst == e.nextStep->actor);
@@ -446,7 +446,7 @@ verus! {
 
         assert(e.nextStep is LEnvStepHostIos);
         assert(LEnvironment_PerformIos(e, e_, e.nextStep->actor, ios));
-        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+        assert(forall |io| #![trigger ios.contains(io)] ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(ios.contains(ios[0]) && ios[0] is Receive);
         assert(match_ios_recv(ios[0], e.sentPackets));
         assert(e.sentPackets.contains(ios[0]->r));

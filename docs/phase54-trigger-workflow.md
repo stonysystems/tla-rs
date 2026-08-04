@@ -260,6 +260,39 @@ scripts/verus_timing.py merge /tmp/t1.json /tmp/t2.json /tmp/t3.json -o new.json
 scripts/verus_timing.py diff reports/triggers/timing-baseline.json new.json --fail-on-regression
 ```
 
+## 6c. Applying annotations in bulk
+
+`scripts/apply_triggers.py` reads an inventory and writes back **exactly the
+trigger Verus already chose**, so behaviour is preserved by construction and
+the diff's `changed` count stays 0. With 400+ sites left after 54.5, doing this
+by hand would be neither uniform nor reviewable.
+
+```bash
+scripts/apply_triggers.py reports/triggers/baseline.json \
+    --filter src/protocol/RSL/ --dry-run
+```
+
+It skips rather than guesses, printing a reason for each: already annotated; a
+closure in the term (Verus forbids writing those, even though it chose one);
+no binder found; or the trigger names a variable bound by a *nested*
+quantifier, which would not compile.
+
+Three traps it exists to avoid, all of which bit on the first batch:
+
+* **Alternative triggers are not a conjunction.** The inventory records
+  `[[a], [b]]` for "either may fire" and `[[a, b]]` for "both needed to bind
+  the variables". Flattening the first into `#![trigger a, b]` is strictly more
+  restrictive and broke a postcondition and an assertion — the "too
+  restrictive" failure mode this phase warns about, on the very first run.
+* **A binder list is not a comma-separated list of names.**
+  `|opn: OperationNumber|` binds one variable, not two; a regex that scans for
+  `name:` or `name|` also matches the type and rejects every typed binder.
+* **The spec files are also the transpiler's input.** Verus accepting an
+  annotation says nothing about `transpiler/src/parser`, which accepted
+  `#![trigger ...]` on `forall` but not on `exists`/`choose`. Note also that
+  `scripts/regenerate_rsl.sh` runs the **release** binary, so a debug-only
+  rebuild leaves the old parser in place.
+
 ## 7. The guard (54.9)
 
 Progress has to be defended, or the auto-chosen triggers simply regrow. The

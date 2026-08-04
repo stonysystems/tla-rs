@@ -16247,7 +16247,52 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       absolute delta.
       **Procedure for 54.5+**: 3 runs of the new code, `merge`, then `diff` against the
       merged baseline.
-- [ ] **54.5** `src/protocol/RSL/` (131). Ordered by module, each batch independently verified.
+- [x] **54.5** `src/protocol/RSL/` (131 notes). **DONE (2026-08-04). Both gates clean.**
+      130 of 131 annotated across all 25 files in one batch; crate total 534 → **389**.
+      `1044 verified, 0 errors` on three independent runs. Trigger diff vs the 54.2 baseline:
+      **145 removed, 0 added, 0 changed**; timing (min-of-3 both sides) +0.8%, 0 regressions.
+      Evidence: `reports/triggers/54.5-protocol-rsl.{json,md}`, `54.5-trigger-diff.md`,
+      `54.5-timing-diff.md`.
+      One site skipped and left auto-triggered: `refinement_proof/state_machine.rs:54`, where
+      the chosen trigger belongs to a nested `exists |p|` while the note points at the outer
+      `forall |req|` — annotating the outer binder there is a compile error.
+- [x] **54.5.a** `scripts/apply_triggers.py` — annotates from an inventory, writing back
+      exactly what Verus chose. Built because 54.5–54.8 hold 400+ more sites and hand-editing
+      them would be neither reviewable nor uniform. It skips rather than guesses (already
+      annotated; closure in the term; no binder found; trigger belongs to a nested
+      quantifier), and every skip prints a reason. 15 tests.
+      **Two bugs it had, both caught by verification, both now pinned by tests:**
+      (a) it flattened *alternative* trigger groups into one multi-term trigger.
+      `#![trigger a] #![trigger b]` (either fires) and `#![trigger a, b]` (both needed) mean
+      different things; the flattened form is strictly more restrictive and broke
+      `state_machine.rs`'s postcondition and a `replica.rs` assertion. This is the
+      "too restrictive" failure mode the phase warns about, and it showed up on the first
+      run of the very first batch;
+      (b) its binder-variable check parsed `|opn: OperationNumber|` as binding *two* names,
+      so it rejected every typed binder as "nested". The check itself is sound and necessary
+      — it is what catches case (a)'s sibling, a trigger naming a variable bound by an inner
+      quantifier — but it has to split the binder list on top-level commas and take the name
+      before the colon.
+- [x] **54.5.c** Transpiler parser fix, found by the Rust suite after 54.5 landed. The RSL
+      protocol specs are not only Verus input — they are also **this transpiler's input**, so
+      annotating them broke `test_election_recursive_functions_generate_loop_code` and
+      `test_regenerate_rsl_validate_only_passes` with `Parse error: Expected identifier,
+      found '#'`. `parse_forall_expr` accepted `#![trigger ...]` but `parse_exists_expr` and
+      `parse_choose_expr` did not. Both now accept and discard them, matching what `forall`
+      already did in practice: `Trigger` is parsed and never emitted, because triggers are
+      proof-only and do not affect exec codegen. Adding a `triggers` field to `Expr::Exists`
+      would have touched 92 match sites for no downstream consumer.
+      Lesson for 54.6–54.8: **annotating a spec file can break the transpiler even when Verus
+      is happy**, and `scripts/regenerate_rsl.sh` uses the *release* binary, so a debug-only
+      rebuild leaves the old parser in place and the failure looks unfixed.
+- [x] **54.5.b** Inventory parser fix, found by the 54.5 diff reporting `1 changed`.
+      A trigger's terms can straddle several source lines, each with its own caret run; the
+      parser treated "more than one quoted line" as "no terms" and dropped **29 of the
+      crate's trigger groups**. An empty term list meeting a non-empty one then reported as
+      `changed` — the one diff category that is supposed to mean genuine instability, so a
+      false positive there costs exactly the trust the category exists to earn. Fixed by
+      pairing each quoted line with the marker line that follows it; the baseline was
+      re-parsed from the same log, and after the fix the 54.5 diff reads 0 changed.
 - [ ] **54.6** `src/implementation/RSL/` (101). Note 43 are in `gen_helpers.rs`, which is a
       hand-written companion to generated code — check whether they should move to 54.7 instead.
 - [ ] **54.7** Transpiler codegen emits explicit triggers; regenerate; confirm all 109

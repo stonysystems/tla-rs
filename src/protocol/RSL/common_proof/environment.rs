@@ -71,7 +71,7 @@ verus! {
                  packets <= b[i].environment.sentPackets
         ensures  packets <= b[j].environment.sentPackets
     {
-        assert forall |p: RslPacket| packets.contains(p) implies b[j].environment.sentPackets.contains(p) by{
+        assert forall |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) implies b[j].environment.sentPackets.contains(p) by{
             lemma_PacketStaysInSentPackets(b, c, i, j, p);
         };
     }

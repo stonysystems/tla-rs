@@ -122,8 +122,24 @@ def _carets(marker_line, source_line):
     return spans
 
 
+def _line_index(block_lines, raw):
+    for i, line in enumerate(block_lines):
+        if line is raw or line == raw:
+            return i
+    return -1
+
+
+def _following_marker(block_lines, idx):
+    """The caret line immediately after `idx`, if there is one."""
+    if idx < 0 or idx + 1 >= len(block_lines):
+        return None
+    nxt = block_lines[idx + 1]
+    return nxt if MARKER_LINE_RE.match(nxt) and "^" in nxt else None
+
+
 def _parse_block(lines):
     """Parse one diagnostic block into (location, snippet, spans, multiline)."""
+    lines_of_block = list(lines)
     location = None
     source_lines = []  # (lineno, raw line)
     marker_lines = []
@@ -146,8 +162,27 @@ def _parse_block(lines):
 
     multiline = len(source_lines) > 1
     spans = []
-    if source_lines and marker_lines and not multiline:
-        spans = _carets(marker_lines[0], source_lines[0][1])
+    if source_lines and marker_lines:
+        if not multiline:
+            spans = _carets(marker_lines[0], source_lines[0][1])
+        else:
+            # A trigger's terms can straddle several source lines, each with
+            # its own caret run:
+            #
+            #   91 |     s.received_1b_packets.contains(p1)
+            #      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            #   92 |     && s.received_1b_packets.contains(p2)
+            #      |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            #
+            # Treating "more than one quoted line" as "no terms" silently
+            # dropped 29 of the crate's trigger groups, and made a diff report
+            # a spurious `changed` when the empty term list met a non-empty
+            # one. Pair each source line with the marker line that follows it.
+            for lineno, raw in source_lines:
+                idx = _line_index(lines_of_block, raw)
+                marker = _following_marker(lines_of_block, idx)
+                if marker is not None:
+                    spans.extend(_carets(marker, raw))
 
     if multiline:
         # A multi-line span: the whole quoted region is the snippet.

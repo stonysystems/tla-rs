@@ -138,6 +138,59 @@ class TestParse(unittest.TestCase):
         self.assertEqual(inv["total_notes"], 6)
 
 
+class TestMultiLineTriggerTerms(unittest.TestCase):
+    """A trigger's terms can straddle several source lines.
+
+    Treating "more than one quoted line" as "no terms" dropped 29 of this
+    crate's trigger groups, and an empty term list meeting a non-empty one made
+    the diff report a spurious `changed` -- the one category that is supposed
+    to mean real instability.
+    """
+
+    LOG = """note: automatically chose triggers for this expression:
+  --> src/a.rs:90:13
+   |
+90 |             assert forall |p1: RslPacket, p2: RslPacket|
+   |             ^^^^^^
+
+note:   trigger 1 of 1:
+  --> src/a.rs:91:17
+   |
+91 |                 s.received_1b_packets.contains(p1)
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+92 |                 && s.received_1b_packets.contains(p2)
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+"""
+
+    def test_terms_from_every_quoted_line_are_captured(self):
+        inv = ti.build_inventory(self.LOG)
+        terms = inv["entries"][0]["triggers"][0]["terms"]
+        self.assertEqual(
+            terms,
+            [
+                "s.received_1b_packets.contains(p1)",
+                "s.received_1b_packets.contains(p2)",
+            ],
+        )
+
+    def test_no_trigger_group_is_left_termless(self):
+        inv = ti.build_inventory(self.LOG)
+        for entry in inv["entries"]:
+            for tr in entry["triggers"]:
+                self.assertTrue(tr["terms"], "trigger group lost its terms")
+
+    def test_empty_versus_nonempty_terms_would_read_as_changed(self):
+        # Guards the failure this fixed: same expression, one side parsed with
+        # terms and the other without, reported as instability.
+        good = ti.build_inventory(self.LOG)
+        blank = ti.build_inventory(self.LOG)
+        blank["entries"][0]["triggers"][0]["terms"] = []
+        d = ti.diff_inventories(good, blank)
+        self.assertEqual(d["changed_count"], 1)
+        d_same = ti.diff_inventories(good, good)
+        self.assertEqual(d_same["changed_count"], 0)
+
+
 class TestSconsWrappedLog(unittest.TestCase):
     """CI captures the notes out of a full `scons` run, not a bare verus call."""
 

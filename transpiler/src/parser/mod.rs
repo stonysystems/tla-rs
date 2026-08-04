@@ -1724,6 +1724,15 @@ impl<'a> VerusBlockParser<'a> {
         self.expect('|')?;
         self.skip_whitespace();
 
+        // Accept and discard trigger annotations, as `forall` already does.
+        // Verus allows `#![trigger ...]` on every binder, and Phase 54 adds
+        // them throughout the protocol specs -- which are also this
+        // transpiler's input. They are proof-only: nothing downstream emits a
+        // Trigger, so parsing them is all that is required to keep the specs
+        // readable by both tools.
+        let _triggers = self.parse_triggers()?;
+        self.skip_whitespace();
+
         // Parse body
         let body = self.parse_expression()?;
 
@@ -1741,6 +1750,10 @@ impl<'a> VerusBlockParser<'a> {
         self.expect('|')?;
         let vars = self.parse_binding_list()?;
         self.expect('|')?;
+        self.skip_whitespace();
+
+        // Trigger annotations are legal on `choose` too; see parse_exists_expr.
+        let _triggers = self.parse_triggers()?;
         self.skip_whitespace();
 
         // Parse body (the predicate)

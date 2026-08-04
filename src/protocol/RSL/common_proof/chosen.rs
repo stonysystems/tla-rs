@@ -46,7 +46,7 @@ verus! {
     {
         &&& q.indices.len() >= LMinQuorumSize(ps.constants.config)
         &&& q.packets.len() == ps.constants.config.replica_ids.len()
-        &&& (forall |idx:int| q.indices.contains(idx) ==> 0 <= idx < ps.constants.config.replica_ids.len()
+        &&& (forall |idx:int| #![trigger q.indices.contains(idx)] q.indices.contains(idx) ==> 0 <= idx < ps.constants.config.replica_ids.len()
                                         //  && let p = q.packets[idx];
                                          && q.packets[idx].src == ps.constants.config.replica_ids[idx]
                                          && q.packets[idx].msg is RslMessage2b
@@ -158,7 +158,7 @@ verus! {
         let quorum_of_1bs_indices = lemma_GetIndicesFromPackets(quorum_of_1bs, c.config);
 
         let overlap_idx = lemma_QuorumIndexOverlap(quorum_of_1bs_indices, quorum_of_2bs.indices, c.config.replica_ids.len() as int);
-        let packet1b_overlap = choose|p| quorum_of_1bs.contains(p) && p.src == c.config.replica_ids[overlap_idx];
+        let packet1b_overlap = choose|p| #![trigger quorum_of_1bs.contains(p)] quorum_of_1bs.contains(p) && p.src == c.config.replica_ids[overlap_idx];
         let packet2b_overlap = quorum_of_2bs.packets[overlap_idx];
 
         if !packet1b_overlap.msg->votes.contains_key(opn) {
@@ -178,7 +178,7 @@ verus! {
 
         // LExistsBallotInS gives a witness packet for the highest ballot
         assert(LExistsBallotInS(packet2a.msg->val_2a, highestballot_in_1b_set, quorum_of_1bs, opn));
-        let packet1b_highestballot = choose |p| quorum_of_1bs.contains(p) &&
+        let packet1b_highestballot = choose |p| #![trigger quorum_of_1bs.contains(p)] quorum_of_1bs.contains(p) &&
             p.msg->votes.contains_key(opn) && p.msg->votes[opn] == Vote{max_value_bal:highestballot_in_1b_set, max_val:packet2a.msg->val_2a};
         assert(quorum_of_1bs.contains(packet1b_highestballot) &&
             packet1b_highestballot.msg->votes.contains_key(opn) &&
@@ -236,7 +236,7 @@ verus! {
         lemma_ConstantsAllConsistent(b, c, i);
         lemma_ConstantsAllConsistent(b, c, j);
 
-        assert forall |idx: int| q.indices.contains(idx) implies b[j].environment.sentPackets.contains(q.packets.index(idx)) by {
+        assert forall |idx: int| #![trigger q.indices.contains(idx)] q.indices.contains(idx) implies b[j].environment.sentPackets.contains(q.packets.index(idx)) by {
             lemma_PacketStaysInSentPackets(b, c, i, j, q.packets[idx]);
         }
     }
@@ -279,7 +279,7 @@ verus! {
                 &&& p.msg->bal_2b == q.bal
                 &&& b[i].environment.sentPackets.contains(p)
             }),
-            forall |sidx: int|
+            forall |sidx: int| #![trigger q.indices.contains(sidx)]
                 0 <= sidx < c.config.replica_ids.len()
                 && b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[
                     b[i - 1].replicas[idx].replica.executor.ops_complete
@@ -315,7 +315,7 @@ verus! {
             assert(p.msg->val_2b == v);
             assert(p.msg->bal_2b == bal);
         };
-        assert forall |sidx: int|
+        assert forall |sidx: int| #![trigger q_out.indices.contains(sidx)]
             0 <= sidx < c.config.replica_ids.len()
             && b[i - 1].replicas[idx].replica.learner.unexecuted_learner_state[
                 b[i - 1].replicas[idx].replica.executor.ops_complete
@@ -383,7 +383,7 @@ verus! {
         vstd::set_lib::lemma_len_subset(senders, rid_set);
 
         let alt_indices = lemma_GetIndicesFromNodes(senders, c.config);
-        assert forall |sidx: int| alt_indices.contains(sidx) implies q_new.indices.contains(sidx) by {
+        assert forall |sidx: int| #![trigger alt_indices.contains(sidx)] alt_indices.contains(sidx) implies q_new.indices.contains(sidx) by {
             assert(0 <= sidx < c.config.replica_ids.len());
             assert(senders.contains(c.config.replica_ids[sidx]));
         }
@@ -395,7 +395,7 @@ verus! {
         assert(IsValidQuorumOf2bs(b[i], q_new)) by {
             assert(q_new.indices.len() >= LMinQuorumSize(b[i].constants.config));
             assert(q_new.packets.len() == b[i].constants.config.replica_ids.len());
-            assert forall |sidx: int| q_new.indices.contains(sidx) implies
+            assert forall |sidx: int| #![trigger q_new.indices.contains(sidx)] q_new.indices.contains(sidx) implies
                 0 <= sidx < b[i].constants.config.replica_ids.len()
                 && q_new.packets[sidx].src == b[i].constants.config.replica_ids[sidx]
                 && q_new.packets[sidx].msg is RslMessage2b
@@ -441,7 +441,7 @@ verus! {
             rc.1.len() == c.config.replica_ids.len() - sender_idx,
             forall |sidx: int| rc.0.contains(sidx)
                 ==> sender_idx <= sidx < c.config.replica_ids.len(),
-            forall |sidx: int|
+            forall |sidx: int| #![trigger rc.0.contains(sidx)]
                 sender_idx <= sidx < c.config.replica_ids.len()
                 && senders.contains(c.config.replica_ids[sidx])
                 ==> rc.0.contains(sidx),
@@ -526,7 +526,7 @@ verus! {
                         assert(new_packets[sidx - sender_idx] == rest_packets[sidx - (sender_idx + 1)]);
                     }
                 };
-                assert forall |sidx: int|
+                assert forall |sidx: int| #![trigger new_indices.contains(sidx)]
                     sender_idx <= sidx < c.config.replica_ids.len()
                     && senders.contains(c.config.replica_ids[sidx])
                     implies new_indices.contains(sidx) by {
@@ -560,7 +560,7 @@ verus! {
                     assert(0 <= sidx - (sender_idx + 1) < rest_packets.len());
                     assert(new_packets[sidx - sender_idx] == rest_packets[sidx - (sender_idx + 1)]);
                 };
-                assert forall |sidx: int|
+                assert forall |sidx: int| #![trigger rest_indices.contains(sidx)]
                     sender_idx <= sidx < c.config.replica_ids.len()
                     && senders.contains(c.config.replica_ids[sidx])
                     implies rest_indices.contains(sidx) by {

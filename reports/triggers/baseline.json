@@ -3630,7 +3630,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 19,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "ds.server_states[i]",
+            "ds.server_states[j]"
+          ],
           "snippet": "&& ds.server_states[i].role is Leader && ds.server_states[j].role is Leader",
           "multiline": true
         }
@@ -3711,7 +3714,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 66,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "EntryCommittedAt(ds, k, entry)",
+            "ds.server_states[leader_id]"
+          ],
           "snippet": "&& EntryCommittedAt(ds, k, entry) && 0 <= leader_id < ds.num_servers && ds.server_states[leader_id].role is Leader",
           "multiline": true
         }
@@ -3732,7 +3738,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 90,
           "col": 20,
-          "terms": [],
+          "terms": [
+            "ds.server_states[i]",
+            "ds.server_states[j].log[k]"
+          ],
           "snippet": "&& k < ds.server_states[i].log.len() && k < ds.server_states[j].log.len() ==> ds.server_states[i].log[k] == ds.server_states[j].log[k]",
           "multiline": true
         },
@@ -3742,7 +3751,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 91,
           "col": 20,
-          "terms": [],
+          "terms": [
+            "ds.server_states[j]",
+            "ds.server_states[i].log[k]"
+          ],
           "snippet": "&& k < ds.server_states[j].log.len() ==> ds.server_states[i].log[k] == ds.server_states[j].log[k]",
           "multiline": true
         }
@@ -3902,7 +3914,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 232,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "ds.server_states[l]",
+            "ds.server_states[i].log[k]"
+          ],
           "snippet": "&& ds.server_states[l].role is Leader && ds.server_states[l].current_term == ds.server_states[i].log[k].term",
           "multiline": true
         }
@@ -3923,7 +3938,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 325,
           "col": 13,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src, dst, msg: LRaftMessage::VoteResponse { }, })",
           "multiline": true
         }
@@ -7409,7 +7426,10 @@
           "file": "src/protocol/RSL/common_proof/max_ballot_sent_1a.rs",
           "line": 91,
           "col": 17,
-          "terms": [],
+          "terms": [
+            "s_prime.received_1b_packets.contains(p1)",
+            "s_prime.received_1b_packets.contains(p2)"
+          ],
           "snippet": "s_prime.received_1b_packets.contains(p1) && s_prime.received_1b_packets.contains(p2)",
           "multiline": true
         }
@@ -9825,7 +9845,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 1419,
           "col": 13,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src: ov, dst: d, msg: LRaftMessage::VoteResponse { }, })",
           "multiline": true
         }
@@ -9892,7 +9914,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 2009,
           "col": 17,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src: w, dst: d1, msg: LRaftMessage::VoteResponse { term: T, granted: true, voter: w, }, });",
           "multiline": true
         }
@@ -9913,7 +9937,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 2026,
           "col": 17,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src: w, dst: d2, msg: LRaftMessage::VoteResponse { term: T, granted: true, voter: w, }, });",
           "multiline": true
         }
@@ -9934,7 +9960,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 2056,
           "col": 17,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src: d1, dst: d2, msg: LRaftMessage::VoteResponse { term: T, granted: true, voter: d1, }, });",
           "multiline": true
         }
@@ -9955,7 +9983,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 2081,
           "col": 17,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src: sv, dst: d1, msg: LRaftMessage::VoteResponse { term: T, granted: true, voter: sv, }, });",
           "multiline": true
         }
@@ -9999,7 +10029,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 2127,
           "col": 17,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src: d2, dst: d1, msg: LRaftMessage::VoteResponse { term: T, granted: true, voter: d2, }, });",
           "multiline": true
         }
@@ -10020,7 +10052,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 2151,
           "col": 17,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src: sv2, dst: d2, msg: LRaftMessage::VoteResponse { term: T, granted: true, voter: sv2, }, });",
           "multiline": true
         }
@@ -10657,7 +10691,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 3459,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[i]",
+            "ds_.server_states[j]"
+          ],
           "snippet": "&& ds_.server_states[i].role is Leader && ds_.server_states[j].role is Leader",
           "multiline": true
         }
@@ -10982,7 +11019,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4104,
           "col": 30,
-          "terms": [],
+          "terms": [
+            "L",
+            "}"
+          ],
           "snippet": "msg: LRaftMessage::VoteResponse { term: T, granted: true, voter: voters[0], voter_last_log_index: summary.0, voter_last_log_term: summary.1, },",
           "multiline": true
         }
@@ -11049,7 +11089,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4198,
           "col": 13,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src: w, dst: d, msg: LRaftMessage::VoteResponse { }, });",
           "multiline": true
         }
@@ -11211,7 +11253,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4538,
           "col": 20,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[l]",
+            "ds_.server_states[i].log[k]"
+          ],
           "snippet": "&& ds_.server_states[l].role is Leader && ds_.server_states[l].current_term == ds_.server_states[i].log[k].term",
           "multiline": true
         }
@@ -11232,7 +11277,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4548,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[l]",
+            "ds_.server_states[i].log[k]"
+          ],
           "snippet": "&& ds_.server_states[l].role is Leader && ds_.server_states[l].current_term == ds_.server_states[i].log[k].term",
           "multiline": true
         }
@@ -11253,7 +11301,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4596,
           "col": 20,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[l]",
+            "ds_.server_states[i].log[k]"
+          ],
           "snippet": "&& ds_.server_states[l].role is Leader && ds_.server_states[l].current_term == ds_.server_states[i].log[k].term",
           "multiline": true
         }
@@ -11274,7 +11325,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4606,
           "col": 20,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[l]",
+            "ds_.server_states[i].log[k]"
+          ],
           "snippet": "&& ds_.server_states[l].role is Leader && ds_.server_states[l].current_term == ds_.server_states[i].log[k].term",
           "multiline": true
         }
@@ -11295,7 +11349,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4615,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[l]",
+            "ds_.server_states[i].log[k]"
+          ],
           "snippet": "&& ds_.server_states[l].role is Leader && ds_.server_states[l].current_term == ds_.server_states[i].log[k].term",
           "multiline": true
         }
@@ -11316,7 +11373,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4657,
           "col": 20,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[l]",
+            "ds_.server_states[server_id].log[k]"
+          ],
           "snippet": "&& ds_.server_states[l].role is Leader && ds_.server_states[l].current_term == ds_.server_states[server_id].log[k].term",
           "multiline": true
         }
@@ -11337,7 +11397,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4665,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[l]",
+            "ds_.server_states[server_id].log[k]"
+          ],
           "snippet": "&& ds_.server_states[l].role is Leader && ds_.server_states[l].current_term == ds_.server_states[server_id].log[k].term",
           "multiline": true
         }
@@ -11358,7 +11421,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 4699,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[l]",
+            "ds_.server_states[i].log[k]"
+          ],
           "snippet": "&& ds_.server_states[l].role is Leader && ds_.server_states[l].current_term == ds_.server_states[i].log[k].term",
           "multiline": true
         }
@@ -11402,7 +11468,9 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 5148,
           "col": 13,
-          "terms": [],
+          "terms": [
+            ")"
+          ],
           "snippet": "ds.network.contains(LRaftPacket { src, dst, msg: LRaftMessage::VoteResponse { }, });",
           "multiline": true
         }
@@ -11866,7 +11934,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 6490,
           "col": 16,
-          "terms": [],
+          "terms": [
+            "EntryCommittedAt(ds_, k, entry)",
+            "ds_.server_states[leader_id]"
+          ],
           "snippet": "&& EntryCommittedAt(ds_, k, entry) && 0 <= leader_id < ds_.num_servers && ds_.server_states[leader_id].role is Leader",
           "multiline": true
         }
@@ -11934,7 +12005,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 6562,
           "col": 20,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[i]",
+            "ds_.server_states[j].log[k]"
+          ],
           "snippet": "&& k < ds_.server_states[i].log.len() && k < ds_.server_states[j].log.len() implies ds_.server_states[i].log[k] == ds_.server_states[j].log[k]",
           "multiline": true
         },
@@ -11944,7 +12018,10 @@
           "file": "src/protocol/Raft/refinement_proof/invariants.rs",
           "line": 6563,
           "col": 20,
-          "terms": [],
+          "terms": [
+            "ds_.server_states[j]",
+            "ds_.server_states[i].log[k]"
+          ],
           "snippet": "&& k < ds_.server_states[j].log.len() implies ds_.server_states[i].log[k] == ds_.server_states[j].log[k]",
           "multiline": true
         }

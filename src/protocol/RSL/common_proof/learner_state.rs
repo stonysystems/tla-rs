@@ -43,7 +43,7 @@ verus! {
             0 <= learner_idx < b[i].replicas.len(),
             b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state.contains_key(opn),
         ensures
-            forall |sender: AbstractEndPoint| b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender) ==> c.config.replica_ids.contains(sender),
+            forall |sender: AbstractEndPoint| #![trigger c.config.replica_ids.contains(sender)] b[i].replicas[learner_idx].replica.learner.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender) ==> c.config.replica_ids.contains(sender),
         decreases i, 1int,
     {
         if i == 0 {
@@ -57,7 +57,7 @@ verus! {
         let s = b[i - 1].replicas[learner_idx].replica.learner;
         let s_prime = b[i].replicas[learner_idx].replica.learner;
 
-        assert forall |sender: AbstractEndPoint| s_prime.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender) implies c.config.replica_ids.contains(sender) by {
+        assert forall |sender: AbstractEndPoint| #![trigger c.config.replica_ids.contains(sender)] s_prime.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender) implies c.config.replica_ids.contains(sender) by {
             if s.unexecuted_learner_state.contains_key(opn) && s.unexecuted_learner_state[opn].received_2b_message_senders.contains(sender) {
                 lemma_Received2bMessageSendersAlwaysValidReplicas(b, c, i - 1, learner_idx, opn);
             } else {
@@ -106,15 +106,15 @@ verus! {
         assert(RslNextOneReplica(b[i - 1], b[i], learner_idx, ios));
         assert(LSchedulerNext(sched, sched_prime, ios));
 
-        assert forall |k: OperationNumber|
+        assert forall |k: OperationNumber| #![trigger s.unexecuted_learner_state.contains_key(k)]
             s.unexecuted_learner_state.contains_key(k) implies s.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
             lemma_Received2bMessageSendersAlwaysNonempty(b, c, i - 1, learner_idx, k);
         }
-        assert forall |k: OperationNumber|
+        assert forall |k: OperationNumber| #![trigger s.unexecuted_learner_state.contains_key(k)]
             s.unexecuted_learner_state.contains_key(k) implies s.unexecuted_learner_state[k].received_2b_message_senders.finite() by {
             lemma_Received2bMessageSendersAlwaysValidReplicas(b, c, i - 1, learner_idx, k);
             assert(s.unexecuted_learner_state[k].received_2b_message_senders.subset_of(c.config.replica_ids.to_set())) by {
-                assert forall |sender: AbstractEndPoint|
+                assert forall |sender: AbstractEndPoint| #![trigger c.config.replica_ids.to_set().contains(sender)]
                     s.unexecuted_learner_state[k].received_2b_message_senders.contains(sender) implies c.config.replica_ids.to_set().contains(sender) by {
                     assert(c.config.replica_ids.contains(sender));
                 }
@@ -326,7 +326,7 @@ verus! {
         assert(LEnvironment_Next(e, e_));
         assert(e.nextStep == LEnvStep::LEnvStepHostIos { actor, ios });
         assert(LEnvironment_PerformIos(e, e_, actor, ios));
-        assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+        assert(forall |io| #![trigger ios.contains(io)] ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
         assert(match_ios_recv(LIoOp::Receive { r: p }, e.sentPackets));
         assert(e.sentPackets.contains(p));
         lemma_PacketStaysInSentPackets(b, c, i - 1, i, p);

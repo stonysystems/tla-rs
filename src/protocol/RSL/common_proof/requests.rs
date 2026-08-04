@@ -39,7 +39,7 @@ verus! {
             assert(s_ == RemoveAllSatisfiedRequestsInSequence(s.drop_first(), r));
             assert(s.drop_first().len() == s.len() - 1);
             lemma_RemoveAllSatisfiedRequestsInSequenceProducesSubsequence(s_, s.drop_first(), r);
-            assert(forall |x:Request| s_.contains(x) ==> s.drop_first().contains(x));
+            assert(forall |x:Request| #![trigger s_.contains(x)] s_.contains(x) ==> s.drop_first().contains(x));
             assert(forall |x:Request| s_.contains(x) ==> s.contains(x));
         } else {
             assert(forall |x:Request| s_.contains(x) ==> s.contains(x));

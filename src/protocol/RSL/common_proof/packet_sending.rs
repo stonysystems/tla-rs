@@ -113,7 +113,7 @@ pub proof fn lemma_ActionThatSends2aIsMaybeNominateValueAndSend2a(
 
         if nextActionIndex != 3
         {
-            assert(!exists |p:RslPacket| pkts.contains(p) && p.msg is RslMessage2a);
+            assert(!exists |p:RslPacket| #![trigger pkts.contains(p)] pkts.contains(p) && p.msg is RslMessage2a);
             assert(false);
         }
         (idx, ios)

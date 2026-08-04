@@ -114,7 +114,7 @@ verus! {
         if s.proposer.constants.all.config.replica_ids.contains(received_packet.src)
             && received_packet.msg->bal_1b == s.proposer.max_ballot_i_sent_1a
             && s.proposer.current_state == 1
-            && (forall |other_packet:RslPacket| s.proposer.received_1b_packets.contains(other_packet) ==> other_packet.src != received_packet.src)
+            && (forall |other_packet:RslPacket| #![trigger s.proposer.received_1b_packets.contains(other_packet)] s.proposer.received_1b_packets.contains(other_packet) ==> other_packet.src != received_packet.src)
         {
             &&& LProposerProcess1b(s.proposer, s_.proposer, received_packet)
             &&& LAcceptorTruncateLog(s.acceptor, s_.acceptor, received_packet.msg->log_truncation_point)
@@ -346,7 +346,7 @@ verus! {
         sent_packets:Seq<RslPacket>
     ) -> bool
     {
-        exists |opn:OperationNumber| s.acceptor.last_checkpointed_operation.contains(opn)
+        exists |opn:OperationNumber| #![trigger s.acceptor.last_checkpointed_operation.contains(opn)] s.acceptor.last_checkpointed_operation.contains(opn)
                                     && IsLogTruncationPointValid(opn, s.acceptor.last_checkpointed_operation, s.constants.all.config)
                                     && if opn > s.acceptor.log_truncation_point {
                                         &&& LAcceptorTruncateLog(s.acceptor, s_.acceptor, opn)
@@ -505,18 +505,18 @@ verus! {
     }
 
     pub proof fn lemma_ExtractSentPacketsFromIos(ios:Seq<RslIo>)
-        ensures forall |p:RslPacket| ExtractSentPacketsFromIos(ios).contains(p) <==> ios.contains(LIoOp::Send{s:p})
+        ensures forall |p:RslPacket| #![trigger ExtractSentPacketsFromIos(ios).contains(p)] ExtractSentPacketsFromIos(ios).contains(p) <==> ios.contains(LIoOp::Send{s:p})
     {
         ExtractSentPacketsFromIos_Ensures1(ios);
         ExtractSentPacketsFromIos_Ensures2(ios);
     }
 
     pub proof fn ExtractSentPacketsFromIos_Ensures1(ios:Seq<RslIo>)
-        ensures forall |p:RslPacket| ExtractSentPacketsFromIos(ios).contains(p) ==> ios.contains(LIoOp::Send{s:p})
+        ensures forall |p:RslPacket| #![trigger ExtractSentPacketsFromIos(ios).contains(p)] ExtractSentPacketsFromIos(ios).contains(p) ==> ios.contains(LIoOp::Send{s:p})
         decreases ios.len()
     {
         if ios.len() == 0 {
-            assert(forall |p:RslPacket| ExtractSentPacketsFromIos(ios).contains(p) ==> ios.contains(LIoOp::Send{s:p}));
+            assert(forall |p:RslPacket| #![trigger ExtractSentPacketsFromIos(ios).contains(p)] ExtractSentPacketsFromIos(ios).contains(p) ==> ios.contains(LIoOp::Send{s:p}));
         } else {
             ExtractSentPacketsFromIos_Ensures1(ios.drop_first());
 
@@ -527,15 +527,15 @@ verus! {
                 let p = first->s;
                 let rest_p = ExtractSentPacketsFromIos(rest);
                 let front_p = seq![ios[0]->s];
-                assert(forall |p:RslPacket| rest_p.contains(p) ==> ios.contains(LIoOp::Send{s:p}));
-                assert(forall |p:RslPacket| front_p.contains(p) ==> ios.contains(LIoOp::Send{s:p}));
+                assert(forall |p:RslPacket| #![trigger rest_p.contains(p)] rest_p.contains(p) ==> ios.contains(LIoOp::Send{s:p}));
+                assert(forall |p:RslPacket| #![trigger front_p.contains(p)] front_p.contains(p) ==> ios.contains(LIoOp::Send{s:p}));
                 assert(ExtractSentPacketsFromIos(ios) == front_p + rest_p);
 
                 let pkts = front_p + rest_p;
                 SeqConcatenate(front_p, rest_p);
                 assert(forall |p:RslPacket| front_p.contains(p) || rest_p.contains(p) <==> pkts.contains(p));
-                assert(forall |p:RslPacket| pkts.contains(p) ==> ios.contains(LIoOp::Send{s:p}));
-                assert(forall |p:RslPacket| ExtractSentPacketsFromIos(ios).contains(p) ==> ios.contains(LIoOp::Send{s:p}));
+                assert(forall |p:RslPacket| #![trigger pkts.contains(p)] pkts.contains(p) ==> ios.contains(LIoOp::Send{s:p}));
+                assert(forall |p:RslPacket| #![trigger ExtractSentPacketsFromIos(ios).contains(p)] ExtractSentPacketsFromIos(ios).contains(p) ==> ios.contains(LIoOp::Send{s:p}));
 
 
                 // assert(forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) ==> ExtractSentPacketsFromIos(ios).contains(p));
@@ -546,7 +546,7 @@ verus! {
     }
 
     pub proof fn ExtractSentPacketsFromIos_Ensures2(ios:Seq<RslIo>)
-        ensures forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) ==> ExtractSentPacketsFromIos(ios).contains(p)
+        ensures forall |p:RslPacket| #![trigger ExtractSentPacketsFromIos(ios).contains(p)] ios.contains(LIoOp::Send{s:p}) ==> ExtractSentPacketsFromIos(ios).contains(p)
         decreases ios.len()
     {
         if ios.len() == 0 {
@@ -557,7 +557,7 @@ verus! {
             let first = ios[0];
             let rest = ios.drop_first();
 
-            assert forall |p:RslPacket| ios.contains(LIoOp::Send{s:p}) implies ExtractSentPacketsFromIos(ios).contains(p) by {
+            assert forall |p:RslPacket| #![trigger ExtractSentPacketsFromIos(ios).contains(p)] ios.contains(LIoOp::Send{s:p}) implies ExtractSentPacketsFromIos(ios).contains(p) by {
                 if ios.contains(LIoOp::Send{s:p}) {
                     // Either the Send{s:p} is ios[0] or in ios.drop_first()
                     if first == (LIoOp::Send{s:p}) {
@@ -594,7 +594,7 @@ verus! {
     }
 
     pub proof fn SeqConcatenate<T>(s1:Seq<T>, s2:Seq<T>)
-        ensures forall |i:T| s1.contains(i) || s2.contains(i) <==> (s1+s2).contains(i)
+        ensures forall |i:T| #![trigger s1.contains(i)] #![trigger s2.contains(i)] s1.contains(i) || s2.contains(i) <==> (s1+s2).contains(i)
     {
         let s = s1+s2;
         assert forall |i: T| s1.contains(i) || s2.contains(i) implies s.contains(i) by {

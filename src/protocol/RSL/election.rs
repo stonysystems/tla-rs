@@ -178,7 +178,7 @@ verus! {
         req:Request
     ) -> bool
     {
-        if exists |earlier_req:Request| (es.requests_received_prev_epochs.contains(earlier_req) || es.requests_received_this_epoch.contains(earlier_req))
+        if exists |earlier_req:Request| #![trigger RequestsMatch(earlier_req, req)] (es.requests_received_prev_epochs.contains(earlier_req) || es.requests_received_this_epoch.contains(earlier_req))
                                         && RequestsMatch(earlier_req, req)
         {
             es_ == es
