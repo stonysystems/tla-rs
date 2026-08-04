@@ -2028,7 +2028,7 @@ fn flatten_conjunction(expr: &TlaExpr) -> Vec<&TlaExpr> {
     }
 }
 
-fn mentions_prime(expr: &TlaExpr) -> bool {
+pub(crate) fn mentions_prime(expr: &TlaExpr) -> bool {
     if matches!(expr, TlaExpr::Prime(_)) {
         return true;
     }

@@ -159,15 +159,16 @@ notes = "Rewrite removes history vars (allLogs, elections, voterLog). Reconfigur
 [[case]]
 id = "t2_02_epaxos"
 tier = 2
-status = "planned"
+status = "intake"
 source_repo = "efficient/epaxos"
 source_path = "tla+/EgalitarianPaxos.tla"
-source_commit = ""
+source_commit = "ab4dbeae58a7eabcb514865e9ccf1ab0386abfc3"
 golden_kind = "bootstrapped"
 reference = "src/protocol/EPaxos/epaxos.rs"
-clean_distance = "unmeasured"
+clean_distance = "3"
+expected_rules = ["C1"]
 milestone_gate = "52.M4"
-notes = "Hardest tier-2 case; do it after Raft is green."
+notes = "Hardest tier-2 case. Already message-passing (`sentMsg` is one set), so C2 and C4 are clean out of the box and the node set `Replicas` is found: the three findings are all C1 globals — `proposed` (commands offered), `committed` (per-instance decisions), `ballots` (a shared counter). NOTE the first measurement said 1, and it was wrong: `Next == \/ CommandLeaderAction \/ ReplicaAction` pushes the node quantifier one level down, and the linter could not see through it. Fixed in the linter; this case is what found it."
 
 # ============================================================
 # Tier 3 — hard (53.5)

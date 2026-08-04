@@ -6068,6 +6068,14 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
             if *json {
                 println!("{}", report_to_json(&report));
+                // The exit code is the contract (docs/clean_tla_subset.md:
+                // "Exit 0 when the module is in the subset, non-zero
+                // otherwise"), and `--json` changes the *output format*, not
+                // the verdict. Exiting 0 here made every dirty spec look clean
+                // to any script that used the machine-readable form.
+                if !report.is_clean() {
+                    std::process::exit(1);
+                }
             } else if report.is_clean() {
                 let unchecked = report
                     .unchecked_rules()

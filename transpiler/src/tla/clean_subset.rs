@@ -245,7 +245,13 @@ impl<'a> LintContext<'a> {
             return;
         };
 
-        let node_set = self.infer_node_set(next);
+        // A `Next` of the form `\/ CommandLeaderAction \/ ReplicaAction`
+        // pushes the quantification one level down, into 0-ary grouping
+        // operators. Analysing the literal body would find no node binder and
+        // report a violation the spec does not have -- EPaxos is written this
+        // way, and so are plenty of others.
+        let expanded = self.expand_action_groups(&next.body);
+        let node_set = self.infer_node_set(next, &expanded);
         let Some(node_set) = node_set else {
             report.findings.push(self.finding(
                 CleanRule::C5,
@@ -258,7 +264,7 @@ impl<'a> LintContext<'a> {
             return;
         };
 
-        for disjunct in flatten_disjunction(&next.body) {
+        for disjunct in flatten_disjunction(&expanded) {
             self.check_c5_disjunct(disjunct, next, &node_set, report);
         }
         report.node_set = Some(node_set);
@@ -269,14 +275,83 @@ impl<'a> LintContext<'a> {
     /// Candidates are the domains of variables declared as functions; the node
     /// set is the candidate that `Next` also quantifies over, and where several
     /// qualify, the one carrying the most state.
-    fn infer_node_set(&self, next: &TlaOperator) -> Option<String> {
+    /// Whether an operator is an action: its body is primed, or it calls
+    /// something that is.
+    ///
+    /// The transitive part is what matters. EPaxos's `ReplicaAction` contains
+    /// no `'` of its own -- it is `\E replica \in Replicas : Phase1Reply(replica)
+    /// \/ ...`, and the primes live one call further down. Testing the literal
+    /// body would classify it as a value and leave it unexpanded.
+    fn is_action(&self, name: &str, seen: &mut Vec<String>) -> bool {
+        if seen.iter().any(|s| s == name) {
+            return false;
+        }
+        let Some(op) = self.operator(name) else {
+            return false;
+        };
+        if crate::tla::action_projection::mentions_prime(&op.body) {
+            return true;
+        }
+        seen.push(name.to_string());
+        let mut called = Vec::new();
+        collect_called_names(&op.body, &mut called);
+        let result = called.iter().any(|c| self.is_action(c, seen));
+        seen.pop();
+        result
+    }
+
+    /// Replace 0-ary *action* operators by their bodies, so a `Next` that
+    /// groups its disjuncts behind names is analysed as the disjunction it is.
+    ///
+    /// Only operators whose body is primed are expanded. A 0-ary *value*
+    /// operator (`Ballot == 0 .. MaxBallot`) is left alone: inlining it would
+    /// turn a set name into a set expression and the node set would lose the
+    /// name the rest of the projection refers to it by.
+    fn expand_action_groups(&self, expr: &TlaExpr) -> TlaExpr {
+        fn go(expr: &TlaExpr, ctx: &LintContext<'_>, seen: &mut Vec<String>) -> TlaExpr {
+            match expr {
+                TlaExpr::Ident(name) => {
+                    if seen.contains(name) {
+                        return expr.clone();
+                    }
+                    match ctx.operator(name) {
+                        Some(op)
+                            if op.params.is_empty()
+                                && groups_actions(&op.body)
+                                && ctx.is_action(name, &mut Vec::new()) =>
+                        {
+                            seen.push(name.clone());
+                            let body = go(&op.body, ctx, seen);
+                            seen.pop();
+                            body
+                        }
+                        _ => expr.clone(),
+                    }
+                }
+                TlaExpr::BinOp {
+                    op: op @ (TlaBinOp::Or | TlaBinOp::And),
+                    left,
+                    right,
+                } => TlaExpr::BinOp {
+                    op: *op,
+                    left: Box::new(go(left, ctx, seen)),
+                    right: Box::new(go(right, ctx, seen)),
+                },
+                other => other.clone(),
+            }
+        }
+        go(expr, self, &mut Vec::new())
+    }
+
+    fn infer_node_set(&self, next: &TlaOperator, expanded: &TlaExpr) -> Option<String> {
         let mut domain_counts: BTreeMap<String, usize> = BTreeMap::new();
         for var in &self.module.variables {
             for domain in self.declared_domains(var) {
                 *domain_counts.entry(domain).or_default() += 1;
             }
         }
-        let quantified = Self::quantified_sets(&next.body, self);
+        let _ = next;
+        let quantified = Self::quantified_sets(expanded, self);
 
         domain_counts
             .into_iter()
@@ -1631,4 +1706,38 @@ Next == \/ \E b \in Ballot : Phase1a(b)
             c5.message
         );
     }
+}
+
+/// Whether a body stands for a *group* of actions rather than for one action.
+///
+/// The distinction decides what gets inlined into `Next`. `ReplicaAction ==
+/// \E replica \in Replicas : ...` and `CommandLeaderAction == \/ .. \/ ..`
+/// are groups, and analysing them unexpanded loses the node binder. A leaf
+/// like `Terminating == pc' = pc` is one action with a name, and inlining it
+/// would replace a recognisable environment action with a bare state formula
+/// -- which C5 would then reject, because a name is exactly how a spec says
+/// "this disjunct is deliberate".
+fn groups_actions(body: &TlaExpr) -> bool {
+    matches!(
+        body,
+        TlaExpr::Exists { .. }
+            | TlaExpr::BinOp {
+                op: TlaBinOp::Or,
+                ..
+            }
+    )
+}
+
+/// Every operator name applied or referenced in an expression.
+fn collect_called_names(expr: &TlaExpr, out: &mut Vec<String>) {
+    match expr {
+        TlaExpr::OpApply { op, .. } => {
+            if let TlaExpr::Ident(name) = &**op {
+                out.push(name.clone());
+            }
+        }
+        TlaExpr::Ident(name) => out.push(name.clone()),
+        _ => {}
+    }
+    walk_children(expr, &mut |child| collect_called_names(child, out));
 }

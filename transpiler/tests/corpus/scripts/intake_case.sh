@@ -125,10 +125,13 @@ fi
 # ---------------------------------------------------------------------------
 CLEAN_DISTANCE="unmeasured"
 measure_clean_distance() {
-  local out
-  if ! out=$(cd "$REPO_ROOT/transpiler" && cargo run --quiet -- tla-lint --json "$CASE_DIR/original.tla" 2>/dev/null); then
-    return 1
-  fi
+  local out status
+  # The linter's exit code is its verdict: 0 clean, 1 dirty, 2 unparseable.
+  # A dirty spec is precisely the one whose distance we want, so only 2 means
+  # "not measurable" -- and a spec that fails to parse is unmeasured, not
+  # dirty, which is the distinction the whole intake rests on.
+  out=$(cd "$REPO_ROOT/transpiler" && cargo run --quiet -- tla-lint --json "$CASE_DIR/original.tla" 2>/dev/null) && status=0 || status=$?
+  [ "$status" -le 1 ] || return 1
   python3 -c 'import json,sys
 try:
     print(json.loads(sys.stdin.read())["violations"])
@@ -139,7 +142,8 @@ if n=$(measure_clean_distance); then
   CLEAN_DISTANCE="$n"
   echo "intake: clean-distance = $n C1-C5 violations"
 else
-  echo "intake: clean-distance unmeasured (Phase 52.M0 linter not available yet)"
+  echo "intake: clean-distance unmeasured -- the spec did not parse, which is \
+not the same as dirty; fix the frontend gap before drawing conclusions"
 fi
 
 # ---------------------------------------------------------------------------
@@ -187,10 +191,10 @@ EOF
   echo "intake: rewrite.md scaffolded"
 fi
 
-[ -f "$CASE_DIR/clean.tla" ] || cat > "$CASE_DIR/clean.tla" <<EOF
-\\* $ID — clean-subset rewrite of original.tla.
-\\* Not yet written. See rewrite.md. Delete this placeholder when starting the rewrite.
-EOF
+# Deliberately NO placeholder clean.tla. A two-line file saying "not yet
+# written" is indistinguishable from a rewrite somebody abandoned, and the role
+# guard cannot tell them apart either. Absence is the honest signal, and
+# `tests/corpus_lint_guard.rs` reads it that way.
 
 # ---------------------------------------------------------------------------
 # Manifest entry.
