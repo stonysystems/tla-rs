@@ -599,6 +599,65 @@ verus! {
         }
     }
 
+    /// The derived membership phase only reads Configuration entries, so two
+    /// logs that place the same Configuration entries at the same positions
+    /// derive the same phase — even if their Data entries differ entirely.
+    ///
+    /// This is strictly weaker in its hypotheses than
+    /// `lemma_equal_committed_raft_prefixes_have_same_active_phase`, which
+    /// demands full prefix equality. It is what a minimal-missing-boundary
+    /// argument can actually supply, since such an argument recovers agreement
+    /// on membership boundaries but says nothing about application data.
+    pub proof fn lemma_logs_with_same_configurations_have_same_active_phase(
+        left_log: Seq<LLogEntry>,
+        right_log: Seq<LLogEntry>,
+        committed_len: int,
+        initial_phase: MembershipPhase,
+    )
+        requires
+            0 <= committed_len <= left_log.len(),
+            committed_len <= right_log.len(),
+            forall |index: int|
+                0 <= index < committed_len
+                ==> ((left_log[index].payload is Configuration)
+                    == (right_log[index].payload is Configuration)),
+            forall |index: int|
+                0 <= index < committed_len
+                && left_log[index].payload is Configuration
+                ==> left_log[index] == right_log[index],
+        ensures
+            active_membership_phase_from_raft_log(
+                left_log,
+                committed_len,
+                initial_phase,
+            ) == active_membership_phase_from_raft_log(
+                right_log,
+                committed_len,
+                initial_phase,
+            ),
+        decreases
+            committed_len,
+    {
+        if committed_len > 0 {
+            if left_log[committed_len - 1].payload is Configuration {
+                // Both logs carry the identical Configuration entry here, so
+                // both derivations stop at the same phase.
+                assert(left_log[committed_len - 1]
+                    == right_log[committed_len - 1]);
+            } else {
+                // Both carry Data here, so both derivations recurse.
+                assert(!(right_log[committed_len - 1].payload
+                    is Configuration));
+                lemma_logs_with_same_configurations_have_same_active_phase(
+                    left_log,
+                    right_log,
+                    committed_len - 1,
+                    initial_phase,
+                );
+            }
+        }
+    }
+
     /// Server states with the same committed log prefix and initial
     /// configuration therefore make decisions under the same phase.
     pub proof fn lemma_states_with_equal_committed_prefix_have_same_active_phase(

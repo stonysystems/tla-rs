@@ -580,6 +580,120 @@ verus! {
         assert(ds.configuration_commit_certificates.dom().contains(j));
     }
 
+    /// The crux of the minimal-missing-boundary argument: at the smallest
+    /// certified boundary a leader is missing, the membership phase derived
+    /// from the leader's own prefix is exactly the phase that governed the
+    /// certificate.
+    ///
+    /// The leader holds every certified boundary below `index`, and every
+    /// Configuration the committer has below `index` is certified, so the two
+    /// logs carry the same Configuration entries at the same positions there.
+    /// Since the derived phase reads only Configuration entries, the phases
+    /// coincide — the differing Data entries are irrelevant.
+    ///
+    /// The remaining hypothesis is that the leader carries no Configuration
+    /// below `index` that the committer lacks; discharging it is what stands
+    /// between this and unconditional Configuration Leader Completeness.
+    pub proof fn lemma_minimal_missing_boundary_phases_agree(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+    )
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_constants[leader_id].servers
+                == ds.server_constants[
+                    ds.configuration_commit_certificates[index].committer
+                ].servers,
+            // The leader holds every certified boundary strictly below `index`.
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < index
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+            // The leader's log reaches the boundary.
+            index <= ds.server_states[leader_id].log.len(),
+            // The leader carries no extra Configuration below the boundary.
+            forall |j: int|
+                #![trigger ds.server_states[leader_id].log[j]]
+                0 <= j < index
+                && ds.server_states[leader_id].log[j].payload is Configuration
+                ==> ds.server_states[
+                        ds.configuration_commit_certificates[index].committer
+                    ].log[j].payload is Configuration,
+        ensures
+            active_membership_phase_from_raft_log(
+                ds.server_states[leader_id].log,
+                index,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[leader_id].servers,
+                },
+            ) == ds.configuration_commit_certificates[index].governing_phase,
+    {
+        let certificate = ds.configuration_commit_certificates[index];
+        let committer = certificate.committer;
+
+        assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(index <= ds.server_states[committer].log.len());
+        assert(certificate.quorum.contains(committer));
+
+        // The certificate's governing phase is the committer's derived phase.
+        lemma_configuration_commit_certificate_valid_for_replica(
+            ds,
+            index,
+            committer,
+        );
+        assert(certificate.governing_phase
+            == active_membership_phase_from_raft_log(
+                ds.server_states[committer].log,
+                index,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[committer].servers,
+                },
+            ));
+
+        // Same Configuration entries at the same positions below `index`.
+        assert forall |j: int| 0 <= j < index implies
+            ((ds.server_states[leader_id].log[j].payload is Configuration)
+                == (ds.server_states[committer].log[j].payload
+                    is Configuration))
+        by {
+            if ds.server_states[committer].log[j].payload is Configuration {
+                lemma_minimal_missing_leader_matches_committer_configurations(
+                    ds, index, leader_id, j);
+            }
+        };
+
+        assert forall |j: int|
+            0 <= j < index
+            && ds.server_states[leader_id].log[j].payload is Configuration
+        implies ds.server_states[leader_id].log[j]
+            == ds.server_states[committer].log[j]
+        by {
+            lemma_minimal_missing_leader_matches_committer_configurations(
+                ds, index, leader_id, j);
+        };
+
+        lemma_logs_with_same_configurations_have_same_active_phase(
+            ds.server_states[leader_id].log,
+            ds.server_states[committer].log,
+            index,
+            MembershipPhase::Stable {
+                config: ds.server_constants[leader_id].servers,
+            },
+        );
+    }
+
     /// The stale-leader direction. Quorum overlap is symmetric, so a leader
     /// elected under a phase that the certificate's governing phase legally
     /// progresses *from* is covered just as well as one that progresses *to*
