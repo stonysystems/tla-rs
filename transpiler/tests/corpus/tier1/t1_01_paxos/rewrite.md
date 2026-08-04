@@ -111,10 +111,58 @@ deadlock — the check has already caught one error in this rewrite.
    common TLA+ shape and has to be supported.
 3. `IsMajority` itself — the counting rule (P4) that no tier-0 case needed.
 
-## Golden review (before freezing golden.rs)
+## Golden review, against the hand-written tla-rs spec
 
-Not yet done: the golden waits on the three gaps above, since it has to be the
-translator's actual output.
+The golden is the translator's actual output, frozen after the review below.
+`reference.rs` is `src/protocol/Paxos/paxos.rs` + its `types.rs`, the
+hand-written single-process Paxos this project already had. M2's acceptance
+criterion names this comparison, so here it is in full.
+
+**State corresponds one-to-one for everything the source spec covers:**
+
+| generated | hand-written | |
+|---|---|---|
+| `max_bal` | `promised_bal` | highest ballot promised |
+| `max_v_bal` | `accepted_bal` | ballot of the last vote |
+| `max_val` | `accepted_val` | value of the last vote |
+| `leader_bal` | `proposer_bal` | the ballot this node leads |
+| `promises` | `promises_rcvd` | acceptors that answered |
+| `promise_bal` | `highest_accepted_bal` | highest ballot reported |
+| `promise_val` | `highest_accepted_val` | value reported with it |
+| `proposed: bool` | `phase: LPhase` | see below |
+| — | `accepts_rcvd`, `decided_val`, `proposed_val` | learner state, see below |
+
+Actions correspond as well: `LPhase1a` ↔ `LSend1a`, `LPhase1b` ↔ `LSend1b`,
+`LPhase1bReply` ↔ `LRecvPromise`, `LPhase2a` ↔ `LSend2a`, `LPhase2b` ↔
+`LSend2b`.
+
+**Three differences, and none of them is the translator being wrong:**
+
+1. **Names.** The generated spec uses the source's vocabulary (`max_bal`), the
+   hand-written one uses protocol vocabulary (`promised_bal`). Preserving the
+   source's names is deliberate — it is what lets a reviewer read the output
+   beside `clean.tla`. Renaming to something more idiomatic would require
+   knowing what the names *mean*, which a translator does not.
+2. **`proposed: bool` vs `phase: LPhase`.** `clean.tla` tracks "have I already
+   sent 2a for this ballot" as a boolean, which is what the original's
+   `~ \E m \in msgs : m.type = "2a" /\ m.bal = b` guard amounts to once the
+   leader is a node. The hand-written spec models an explicit phase enum. Both
+   are faithful to their own source; the difference is in the specs, not the
+   translation.
+3. **No learner.** The hand-written spec has `accepts_rcvd`, `decided_val` and
+   an `LLearn` action. `Paxos.tla` explicitly does not: *"there will be learner
+   processes … The learners are omitted from this abstract specification."* The
+   generated output correctly reflects its input. This is the clearest case of a
+   difference that lives in the **inputs**, not in the translator.
+
+**Constants** differ in the same way: the hand-written spec carries a
+precomputed `quorum_size`, while the generated one counts
+(`s_arg.len() * 2 > c.acceptor.len()`) because that is what `clean.tla` says.
+Both are P4-shaped; one pre-computes what the other derives.
+
+**Conclusion.** For everything `Paxos.tla` specifies, the translator's output is
+structurally the same spec a human wrote by hand — which is the claim M2 exists
+to test.
 
 ## Reproducing the TLC run
 
