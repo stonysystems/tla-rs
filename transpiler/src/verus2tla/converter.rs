@@ -112,7 +112,7 @@ impl Verus2TlaConverter {
                         .fields
                         .iter()
                         .map(|f| {
-                            let mapper_type = self.convert_ast_type_to_mapper(&f.ty);
+                            let mapper_type = Self::convert_ast_type_to_mapper(&f.ty);
                             (f.name.clone(), mapper_type)
                         })
                         .collect();
@@ -131,7 +131,7 @@ impl Verus2TlaConverter {
                 TypeDef::Alias(alias) => {
                     // Type aliases become custom mappings
                     let name = self.strip_prefix(&alias.name);
-                    let target_type = self.convert_ast_type_to_mapper(&alias.ty);
+                    let target_type = Self::convert_ast_type_to_mapper(&alias.ty);
                     self.type_mapper
                         .add_mapping(&name, &target_type.to_tla_type());
                 }
@@ -143,28 +143,25 @@ impl Verus2TlaConverter {
     }
 
     /// Convert AST Type to mapper's VerusType.
-    fn convert_ast_type_to_mapper(&self, ty: &VerusType) -> MapperVerusType {
+    fn convert_ast_type_to_mapper(ty: &VerusType) -> MapperVerusType {
         match ty {
             VerusType::Int => MapperVerusType::Int,
             VerusType::Nat => MapperVerusType::Nat,
             VerusType::Bool => MapperVerusType::Bool,
             VerusType::Unit => MapperVerusType::Unit,
             VerusType::Seq(inner) => {
-                MapperVerusType::Seq(Box::new(self.convert_ast_type_to_mapper(inner)))
+                MapperVerusType::Seq(Box::new(Self::convert_ast_type_to_mapper(inner)))
             }
             VerusType::Set(inner) => {
-                MapperVerusType::Set(Box::new(self.convert_ast_type_to_mapper(inner)))
+                MapperVerusType::Set(Box::new(Self::convert_ast_type_to_mapper(inner)))
             }
             VerusType::Map(k, v) => MapperVerusType::Map(
-                Box::new(self.convert_ast_type_to_mapper(k)),
-                Box::new(self.convert_ast_type_to_mapper(v)),
+                Box::new(Self::convert_ast_type_to_mapper(k)),
+                Box::new(Self::convert_ast_type_to_mapper(v)),
             ),
-            VerusType::Tuple(parts) => MapperVerusType::Tuple(
-                parts
-                    .iter()
-                    .map(|p| self.convert_ast_type_to_mapper(p))
-                    .collect(),
-            ),
+            VerusType::Tuple(parts) => {
+                MapperVerusType::Tuple(parts.iter().map(Self::convert_ast_type_to_mapper).collect())
+            }
             VerusType::Named(path) => {
                 let name = path.last().unwrap_or("Unknown");
                 // Check if this is Option<T>
@@ -179,7 +176,7 @@ impl Verus2TlaConverter {
                 let name = path.last().unwrap_or("Unknown");
                 // Handle Option<T> as a special generic case
                 if name == "Option" && !args.is_empty() {
-                    MapperVerusType::Option(Box::new(self.convert_ast_type_to_mapper(&args[0])))
+                    MapperVerusType::Option(Box::new(Self::convert_ast_type_to_mapper(&args[0])))
                 } else {
                     // For other generic types, use the base name
                     MapperVerusType::Named(name.to_string())
@@ -187,7 +184,7 @@ impl Verus2TlaConverter {
             }
             VerusType::Reference { ty, .. } => {
                 // Strip reference and use underlying type
-                self.convert_ast_type_to_mapper(ty)
+                Self::convert_ast_type_to_mapper(ty)
             }
         }
     }
@@ -944,20 +941,20 @@ impl Verus2TlaConverter {
 
     /// Check if a function is recursive.
     fn is_recursive(&self, func: &SpecFunction) -> bool {
-        self.expr_contains_call(&func.body, &func.name)
+        Self::expr_contains_call(&func.body, &func.name)
     }
 
     /// Check if an expression contains a call to the given function.
-    fn expr_contains_call(&self, expr: &VerusExpr, func_name: &str) -> bool {
+    fn expr_contains_call(expr: &VerusExpr, func_name: &str) -> bool {
         match expr {
             VerusExpr::Call { func, args } => {
                 if path_to_string(func) == func_name {
                     return true;
                 }
-                args.iter().any(|a| self.expr_contains_call(a, func_name))
+                args.iter().any(|a| Self::expr_contains_call(a, func_name))
             }
             VerusExpr::Conjunction(exprs) | VerusExpr::Disjunction(exprs) => {
-                exprs.iter().any(|e| self.expr_contains_call(e, func_name))
+                exprs.iter().any(|e| Self::expr_contains_call(e, func_name))
             }
             VerusExpr::Implies(l, r)
             | VerusExpr::Iff(l, r)
@@ -968,35 +965,35 @@ impl Verus2TlaConverter {
             | VerusExpr::Gt(l, r)
             | VerusExpr::Ge(l, r)
             | VerusExpr::Binary(l, _, r) => {
-                self.expr_contains_call(l, func_name) || self.expr_contains_call(r, func_name)
+                Self::expr_contains_call(l, func_name) || Self::expr_contains_call(r, func_name)
             }
             VerusExpr::Not(inner)
             | VerusExpr::View(inner)
             | VerusExpr::Cast(inner, _)
-            | VerusExpr::Unary(_, inner) => self.expr_contains_call(inner, func_name),
+            | VerusExpr::Unary(_, inner) => Self::expr_contains_call(inner, func_name),
             VerusExpr::Forall { body, .. }
             | VerusExpr::Exists { body, .. }
             | VerusExpr::Closure { body, .. }
-            | VerusExpr::Choose { body, .. } => self.expr_contains_call(body, func_name),
+            | VerusExpr::Choose { body, .. } => Self::expr_contains_call(body, func_name),
             VerusExpr::If {
                 cond,
                 then_branch,
                 else_branch,
             } => {
-                self.expr_contains_call(cond, func_name)
-                    || self.expr_contains_call(then_branch, func_name)
+                Self::expr_contains_call(cond, func_name)
+                    || Self::expr_contains_call(then_branch, func_name)
                     || else_branch
                         .as_ref()
-                        .map(|e| self.expr_contains_call(e, func_name))
+                        .map(|e| Self::expr_contains_call(e, func_name))
                         .unwrap_or(false)
             }
             VerusExpr::Let { value, body, .. } => {
-                self.expr_contains_call(value, func_name)
-                    || self.expr_contains_call(body, func_name)
+                Self::expr_contains_call(value, func_name)
+                    || Self::expr_contains_call(body, func_name)
             }
             VerusExpr::MethodCall { receiver, args, .. } => {
-                self.expr_contains_call(receiver, func_name)
-                    || args.iter().any(|a| self.expr_contains_call(a, func_name))
+                Self::expr_contains_call(receiver, func_name)
+                    || args.iter().any(|a| Self::expr_contains_call(a, func_name))
             }
             _ => false,
         }
@@ -1374,50 +1371,40 @@ mod tests {
     fn test_convert_ast_type_to_mapper() {
         use crate::ast::{Path, Type};
 
-        let converter = Verus2TlaConverter::new();
+        let _converter = Verus2TlaConverter::new();
 
         // Test primitives
         assert_eq!(
-            converter
-                .convert_ast_type_to_mapper(&Type::Int)
-                .to_tla_type(),
+            Verus2TlaConverter::convert_ast_type_to_mapper(&Type::Int).to_tla_type(),
             "Int"
         );
         assert_eq!(
-            converter
-                .convert_ast_type_to_mapper(&Type::Nat)
-                .to_tla_type(),
+            Verus2TlaConverter::convert_ast_type_to_mapper(&Type::Nat).to_tla_type(),
             "Nat"
         );
         assert_eq!(
-            converter
-                .convert_ast_type_to_mapper(&Type::Bool)
-                .to_tla_type(),
+            Verus2TlaConverter::convert_ast_type_to_mapper(&Type::Bool).to_tla_type(),
             "BOOLEAN"
         );
 
         // Test Seq
         let seq_int = Type::Seq(Box::new(Type::Int));
         assert_eq!(
-            converter.convert_ast_type_to_mapper(&seq_int).to_tla_type(),
+            Verus2TlaConverter::convert_ast_type_to_mapper(&seq_int).to_tla_type(),
             "Seq(Int)"
         );
 
         // Test Map
         let map_type = Type::Map(Box::new(Type::Int), Box::new(Type::Bool));
         assert_eq!(
-            converter
-                .convert_ast_type_to_mapper(&map_type)
-                .to_tla_type(),
+            Verus2TlaConverter::convert_ast_type_to_mapper(&map_type).to_tla_type(),
             "[Int -> BOOLEAN]"
         );
 
         // Test Named with L prefix (spec type)
         let named_type = Type::Named(Path::single("LReplica".to_string()));
         assert_eq!(
-            converter
-                .convert_ast_type_to_mapper(&named_type)
-                .to_tla_type(),
+            Verus2TlaConverter::convert_ast_type_to_mapper(&named_type).to_tla_type(),
             "Replica"
         );
 
@@ -1427,9 +1414,7 @@ mod tests {
             mutable: false,
         };
         assert_eq!(
-            converter
-                .convert_ast_type_to_mapper(&ref_type)
-                .to_tla_type(),
+            Verus2TlaConverter::convert_ast_type_to_mapper(&ref_type).to_tla_type(),
             "Int"
         );
     }

@@ -1167,7 +1167,7 @@ impl TypeUnifier {
             // Type variables unify with anything
             (TlaType::TypeVar(id), other) | (other, TlaType::TypeVar(id)) => {
                 // Occurs check: prevent infinite types
-                if !self.occurs(*id, other) {
+                if !Self::occurs(*id, other) {
                     self.substitution.insert(*id, other.clone());
                     UnifyResult::Ok
                 } else {
@@ -1286,16 +1286,16 @@ impl TypeUnifier {
     }
 
     /// Check if a type variable occurs in a type (for occurs check)
-    fn occurs(&self, var_id: usize, ty: &TlaType) -> bool {
+    fn occurs(var_id: usize, ty: &TlaType) -> bool {
         match ty {
             TlaType::TypeVar(id) => *id == var_id,
-            TlaType::Set(elem) | TlaType::Seq(elem) => self.occurs(var_id, elem),
-            TlaType::Map { key, value } => self.occurs(var_id, key) || self.occurs(var_id, value),
+            TlaType::Set(elem) | TlaType::Seq(elem) => Self::occurs(var_id, elem),
+            TlaType::Map { key, value } => Self::occurs(var_id, key) || Self::occurs(var_id, value),
             TlaType::Function { domain, range } => {
-                self.occurs(var_id, domain) || self.occurs(var_id, range)
+                Self::occurs(var_id, domain) || Self::occurs(var_id, range)
             }
-            TlaType::Tuple(elems) => elems.iter().any(|e| self.occurs(var_id, e)),
-            TlaType::Record(rec) => rec.fields.values().any(|t| self.occurs(var_id, t)),
+            TlaType::Tuple(elems) => elems.iter().any(|e| Self::occurs(var_id, e)),
+            TlaType::Record(rec) => rec.fields.values().any(|t| Self::occurs(var_id, t)),
             _ => false,
         }
     }

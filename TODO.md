@@ -11343,6 +11343,29 @@ Reported current state: the latest commit only has one of these five checks pass
 
 ### 37.2 Restore green CI without weakening checks
 
+- [x] **37.2.1.h** (2026-08-04) `CI / Lint` was red again: `cargo clippy --all-targets
+  --all-features -- -D warnings` reported **18 `clippy::only_used_in_recursion`** warnings
+  across `tla/translator.rs`, `tla/types.rs`, `translator/mod.rs`, `verus2tla/converter.rs`.
+  Fixed the code, not the check: each flagged method takes `&self` but never touches state —
+  it only passes the receiver along to its own recursive call — so the receiver was dropped
+  and the methods became associated functions, with ~280 call sites requalified
+  `self.f(..)` -> `Self::f(..)` (and `x.f(..)` -> `Type::f(..)` where the receiver was a
+  local). All 18 are private, so no public API moved.
+  Three things worth knowing for the next person:
+  (a) **it cascades** — while a method still calls a sibling that takes `&self`, the sibling
+  keeps `self` "used", so fixing one exposes the next. It took a fixpoint loop
+  (`field_expr_to_raw_string` -> `field_expr_to_invariant_string` -> `field_expr_to_loop_string`);
+  (b) removing receivers turns `|e| Self::f(e)` into a `redundant_closure` warning, but the
+  closure is still **required** where the argument needs deref coercion
+  (`Option<Box<TlaExpr>>::is_some_and`) — 4 of those had to be restored after the compiler
+  rejected the point-free form;
+  (c) `cargo clippy` caches, so a re-run after an edit prints nothing and looks clean —
+  `touch src/lib.rs` first or the fixpoint loop terminates on a lie.
+  Verified locally: `clippy --all-targets --all-features -- -D warnings` exit 0, `cargo fmt
+  --check` clean, full test suite green. **Caveat**: verified with clippy 1.91.0 (the newest
+  toolchain cached on this box); CI uses `dtolnay/rust-toolchain@stable`, which may be newer
+  and carry lints 1.91 does not have.
+
 - [x] **37.2.1**: Fix the current CI failures across all 5 push checks without deleting coverage. **Status**: 4/5 jobs fixed (Format, Lint, Test, Model-Check Evidence). Verus Verification has infrastructure fixed (--skip-dotnet, 45min timeout) but 1 rlimit proof failure remains — this is a proof gap (Phase 34), not a CI gap.
   - No `continue-on-error`.
   - No disabling entire jobs.
