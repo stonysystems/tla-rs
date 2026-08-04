@@ -241,6 +241,22 @@ fn emit_dispatch(out: &mut String, projected: &ProjectedModule) {
             args.join(", ")
         );
     }
+    // A message kind no action handles cannot be acted on. Saying so is not the
+    // same as omitting it: without this arm the match is non-exhaustive, and
+    // with a silent `true` the node could take an arbitrary step on receipt.
+    let handled: Vec<&str> = receives
+        .iter()
+        .filter_map(|a| a.handles_tag.as_deref())
+        .collect();
+    if projected
+        .spec
+        .messages
+        .iter()
+        .any(|m| !handled.contains(&m.tag.as_str()))
+    {
+        out.push_str("            _ => false,\n");
+    }
+
     out.push_str("        }\n    }\n\n");
 }
 
@@ -256,7 +272,25 @@ fn emit_next(out: &mut String, projected: &ProjectedModule) {
     {
         // Verus's `|||` reads as a leading disjunct on every line, including
         // the first, so no special case is needed.
-        let _ = writeln!(out, "        ||| {}(s, s_, c, sent_packets)", action.name);
+        //
+        // A local action's own parameters are existentially quantified, as they
+        // are in the source: `\E b \in Ballot : Phase1a(a, b)`.
+        if action.params.is_empty() {
+            let _ = writeln!(out, "        ||| {}(s, s_, c, sent_packets)", action.name);
+        } else {
+            let names: Vec<String> = action
+                .params
+                .iter()
+                .map(|p| p.split(':').next().unwrap_or(p).trim().to_string())
+                .collect();
+            let _ = writeln!(
+                out,
+                "        ||| (exists|{}|\n                {}(s, s_, c, {}, sent_packets))",
+                action.params.join(", "),
+                action.name,
+                names.join(", ")
+            );
+        }
     }
     if projected
         .actions

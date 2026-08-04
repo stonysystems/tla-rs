@@ -247,10 +247,12 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
     let node_params = node_parameterized_operators(module);
     let mut helpers = Vec::new();
 
-    for (op_name, node_param) in &node_params {
-        if !called.contains(op_name.as_str()) {
-            continue;
-        }
+    // Driven by what the actions call, not by which operators take a node.
+    // `IsMajority(s)` takes a *set*, so it is not node-parameterized, but the
+    // actions call it and the emitted spec would not compile without it.
+    for op_name in &called {
+        let node_param = node_params.get(op_name).cloned().unwrap_or_default();
+        let node_param = &node_param;
         let Some(op) = module.operators.iter().find(|o| o.name == *op_name) else {
             continue;
         };
@@ -264,7 +266,16 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
             msg_param: None,
             network: spec.network_variable.clone(),
         };
-        let (body, gaps) = match ctx.project_expr(&op.body) {
+        // The signature renames parameters that would collide with the
+        // projected spec's own `s`, `s_` and `c`; the body has to agree.
+        let mut renamed = op.body.clone();
+        for param in &op.params {
+            let safe = safe_param_name(&param.name);
+            if safe != param.name {
+                renamed = substitute(&renamed, &param.name, &TlaExpr::Ident(safe));
+            }
+        }
+        let (body, gaps) = match ctx.project_expr(&renamed) {
             Ok(text) => (text, Vec::new()),
             Err(gap) => (String::new(), vec![gap]),
         };
@@ -276,7 +287,13 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
                 .params
                 .iter()
                 .filter(|p| p.name != *node_param)
-                .map(|p| format!("{}: int", to_snake_case(&p.name)))
+                .map(|p| {
+                    format!(
+                        "{}: {}",
+                        safe_param_name(&p.name),
+                        helper_param_type(op, &p.name)
+                    )
+                })
                 .collect(),
             body,
             gaps,
@@ -306,6 +323,39 @@ fn called_helpers(module: &TlaModule, spec: &ProjectedSpec) -> std::collections:
         }
     }
     called
+}
+
+/// A parameter name that cannot collide with the projected spec's own `s`,
+/// `s_` and `c`. A source spec is free to name a parameter `s`, and Paxos's
+/// `IsMajority(s)` does exactly that.
+fn safe_param_name(name: &str) -> String {
+    let snake = to_snake_case(name);
+    match snake.as_str() {
+        "s" | "s_" | "c" => format!("{snake}_arg"),
+        _ => snake,
+    }
+}
+
+/// A helper parameter's type: a set when the body counts it, otherwise an
+/// identifier.
+fn helper_param_type(op: &crate::tla::ast::TlaOperator, param: &str) -> &'static str {
+    fn counted(expr: &TlaExpr, param: &str) -> bool {
+        if let TlaExpr::OpApply { op, args } = expr {
+            if matches!(&**op, TlaExpr::Ident(n) if n == "Cardinality")
+                && args
+                    .iter()
+                    .any(|a| matches!(a, TlaExpr::Ident(n) if n == param))
+            {
+                return true;
+            }
+        }
+        children(expr).into_iter().any(|c| counted(c, param))
+    }
+    if counted(&op.body, param) {
+        "Set<int>"
+    } else {
+        "int"
+    }
 }
 
 /// Whether an expression reads any per-node state, i.e. whether the projected
@@ -402,7 +452,13 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
             }
             params
         } else {
-            Vec::new()
+            // A local action's own parameters survive, minus the node: the
+            // source's `Phase1a(a, b)` is this node starting ballot `b`.
+            op.params
+                .iter()
+                .filter(|p| p.name != node_param)
+                .map(|p| format!("{}: int", to_snake_case(&p.name)))
+                .collect()
         };
 
         actions.push(ProjectedAction {
@@ -563,6 +619,44 @@ impl ActionContext<'_> {
                         self.project_update(var, right)?
                     ));
                 }
+            }
+        }
+
+        // `IF c THEN /\ x' = a /\ y' = b  ELSE /\ x' = a2 /\ y' = b2`.
+        //
+        // A very common TLA+ shape, and one that cannot be read as a guard:
+        // the branches assign, so each assigned variable becomes a single
+        // conjunct whose value is the conditional. Both branches must assign
+        // the same variables, which is what makes that rewrite sound.
+        if let TlaExpr::IfThenElse {
+            cond,
+            then_expr,
+            else_expr,
+        } = expr
+        {
+            let then_updates = self.branch_updates(then_expr);
+            let else_updates = self.branch_updates(else_expr);
+            if !then_updates.is_empty() && then_updates.len() == else_updates.len() {
+                let mut rendered = Vec::new();
+                for (var, then_value) in &then_updates {
+                    let Some((_, else_value)) = else_updates.iter().find(|(v, _)| v == var) else {
+                        return Err(format!(
+                            "conditional assigns `{var}` in one branch only; both \
+                             branches must assign the same variables"
+                        ));
+                    };
+                    let Some(field) = self.state_field(var) else {
+                        return Err(format!("conditional update of unknown variable `{var}`"));
+                    };
+                    updated.push(field.to_string());
+                    rendered.push(format!(
+                        "s_.{field} == if {} {{ {} }} else {{ {} }}",
+                        self.project_expr(cond)?,
+                        self.project_branch_value(var, then_value)?,
+                        self.project_branch_value(var, else_value)?
+                    ));
+                }
+                return Ok(rendered.join("\n        &&& "));
             }
         }
 
@@ -892,6 +986,39 @@ impl ActionContext<'_> {
         }
     }
 
+    /// The `x' = e` assignments in one branch of a conditional.
+    fn branch_updates<'e>(&self, expr: &'e TlaExpr) -> Vec<(String, &'e TlaExpr)> {
+        let mut out = Vec::new();
+        for conjunct in flatten_conjunction(expr) {
+            if let TlaExpr::BinOp {
+                op: TlaBinOp::Eq,
+                left,
+                right,
+            } = conjunct
+            {
+                if let TlaExpr::Prime(inner) = &**left {
+                    if let TlaExpr::Ident(var) = &**inner {
+                        out.push((var.clone(), &**right));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The value a branch assigns, projected. A branch that re-assigns the
+    /// variable to itself (`promiseBal' = promiseBal`) means "leave it", which
+    /// after projection is this node's current value.
+    fn project_branch_value(&self, var: &str, value: &TlaExpr) -> Result<String, String> {
+        if matches!(value, TlaExpr::Ident(name) if name == var) {
+            let field = self
+                .state_field(var)
+                .ok_or_else(|| format!("unknown variable `{var}`"))?;
+            return Ok(format!("s.{field}"));
+        }
+        self.project_update(var, value)
+    }
+
     /// The right-hand side of `x' = ...`, projected to the new value of the
     /// node's field.
     fn project_update(&self, var: &str, rhs: &TlaExpr) -> Result<String, String> {
@@ -1003,6 +1130,18 @@ impl ActionContext<'_> {
                     .any(|(c, _)| *c == to_snake_case(name))
                 {
                     Ok(format!("c.{}", to_snake_case(name)))
+                } else if let Some((params, body)) = self
+                    .spec
+                    .operator_bodies
+                    .get(name.as_str())
+                    .filter(|(params, _)| params.is_empty())
+                {
+                    // A 0-ary value operator (`None == -1`) is inlined: the name
+                    // does not survive projection, and emitting it would collide
+                    // with Rust's own `None`.
+                    let _ = params;
+                    let body = body.clone();
+                    self.project_expr(&body)
                 } else if self.state_field(name).is_some() {
                     Err(format!(
                         "bare reference to per-node variable `{name}`; it must be \
@@ -1090,6 +1229,10 @@ impl ActionContext<'_> {
                 op: TlaUnaryOp::Not,
                 operand,
             } => Ok(format!("!({})", self.project_expr(operand)?)),
+            TlaExpr::UnaryOp {
+                op: TlaUnaryOp::Neg,
+                operand,
+            } => Ok(format!("-{}", self.parenthesised(operand, 7)?)),
             TlaExpr::IfThenElse {
                 cond,
                 then_expr,
@@ -1124,6 +1267,13 @@ impl ActionContext<'_> {
                     "{keyword}|{}: int| {domain} {joiner} {inner}",
                     bound.var
                 ))
+            }
+            // `Cardinality(S)` -- the counting half of P4. A quorum written as
+            // a cardinality comparison is what a node can actually evaluate.
+            TlaExpr::OpApply { op, args }
+                if matches!(&**op, TlaExpr::Ident(n) if n == "Cardinality") && args.len() == 1 =>
+            {
+                Ok(format!("{}.len()", self.project_expr(&args[0])?))
             }
             // A call to a user-defined operator: either a helper the projected
             // spec keeps, or one that must be inlined because it was handed the
@@ -1341,6 +1491,10 @@ fn is_literal(expr: &TlaExpr) -> bool {
 fn variant_name(tag: &str) -> String {
     let mut chars = tag.chars();
     match chars.next() {
+        // A tag need not be a Rust identifier: Paxos's phases are "1a", "1b",
+        // "2a" and "2b", and `LMessage::1a` does not parse. A leading `M` makes
+        // it one without losing the tag.
+        Some(first) if !first.is_alphabetic() => format!("M{tag}"),
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
         None => String::new(),
     }

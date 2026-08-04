@@ -260,6 +260,13 @@ impl ProjectionContext<'_> {
                         self.project_type(body)
                     } else if other == self.node_set {
                         ProjectedType::Int
+                    } else if self.module.constants.iter().any(|c| c.name == *other) {
+                        // An uninterpreted CONSTANT set: its elements are
+                        // opaque identifiers with no structure the spec relies
+                        // on, so they project to `int`. Paxos's `Value` is one,
+                        // and the hand-written tla-rs Paxos represents it the
+                        // same way.
+                        ProjectedType::Int
                     } else {
                         ProjectedType::Unresolved(format!("unknown set `{other}`"))
                     }
@@ -376,27 +383,46 @@ impl ProjectionContext<'_> {
         const TAG_FIELDS: &[&str] = &["type", "kind", "tag"];
         const ROUTING_FIELDS: &[&str] = &["src", "dst", "source", "dest", "sender", "receiver"];
 
-        let Some(record_set) = self.module.operators.iter().find_map(|op| match &op.body {
-            TlaExpr::RecordSet(fields)
-                if fields
-                    .iter()
-                    .any(|(name, _)| TAG_FIELDS.contains(&name.as_str())) =>
-            {
-                Some(fields)
+        // The message type may be a single record set, or a union of them --
+        // Paxos declares one per phase and unions them. Collecting the union's
+        // members keeps both the tag set and the payload complete.
+        let mut record_sets: Vec<&Vec<(String, TlaExpr)>> = Vec::new();
+        for op in &self.module.operators {
+            collect_record_sets(&op.body, &mut record_sets);
+            if !record_sets.is_empty() {
+                break;
             }
-            _ => None,
-        }) else {
+        }
+        record_sets.retain(|fields| {
+            fields
+                .iter()
+                .any(|(name, _)| TAG_FIELDS.contains(&name.as_str()))
+        });
+        if record_sets.is_empty() {
             return Vec::new();
-        };
+        }
 
-        let Some((_, tag_expr)) = record_set
-            .iter()
-            .find(|(name, _)| TAG_FIELDS.contains(&name.as_str()))
-        else {
-            return Vec::new();
-        };
+        let mut merged: Vec<(String, TlaExpr)> = Vec::new();
+        let mut tag_literals: Vec<TlaExpr> = Vec::new();
+        for fields in &record_sets {
+            for (name, value) in fields.iter() {
+                if TAG_FIELDS.contains(&name.as_str()) {
+                    if let TlaExpr::SetEnum(items) = value {
+                        for item in items {
+                            if !tag_literals.contains(item) {
+                                tag_literals.push(item.clone());
+                            }
+                        }
+                    }
+                } else if !merged.iter().any(|(n, _)| n == name) {
+                    merged.push((name.clone(), value.clone()));
+                }
+            }
+        }
+        let record_set = &merged;
+        let tag_expr = TlaExpr::SetEnum(tag_literals);
 
-        let TlaExpr::SetEnum(tags) = tag_expr else {
+        let TlaExpr::SetEnum(tags) = &tag_expr else {
             gaps.push("message tag field is not a set of literals".into());
             return Vec::new();
         };
@@ -468,6 +494,22 @@ impl ProjectionContext<'_> {
     }
 }
 
+/// Collect record sets out of an expression, following `\cup` unions.
+fn collect_record_sets<'e>(expr: &'e TlaExpr, out: &mut Vec<&'e Vec<(String, TlaExpr)>>) {
+    match expr {
+        TlaExpr::RecordSet(fields) => out.push(fields),
+        TlaExpr::BinOp {
+            op: TlaBinOp::Cup,
+            left,
+            right,
+        } => {
+            collect_record_sets(left, out);
+            collect_record_sets(right, out);
+        }
+        _ => {}
+    }
+}
+
 /// Render a set expression the way the linter does, so node-set comparisons
 /// agree between the two.
 fn render_set_expr(expr: &TlaExpr) -> String {
@@ -512,6 +554,10 @@ pub fn to_pascal_case(name: &str) -> String {
 fn to_variant_name(tag: &str) -> String {
     let mut chars = tag.chars();
     match chars.next() {
+        // A tag need not be a Rust identifier: Paxos's phases are "1a", "1b",
+        // "2a" and "2b", and `LMessage::1a` does not parse. A leading `M` makes
+        // it one without losing the tag.
+        Some(first) if !first.is_alphabetic() => format!("M{tag}"),
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
         None => String::new(),
     }

@@ -15958,7 +15958,21 @@ independent golden — its translation is validated only by TLC fidelity + verus
     **The goldens' code was regenerated from the emitter**, with each remaining difference reviewed first and found to be an incidental formatting choice (conjunct order following the source, `set![...]` on one line). Their hand-written module headers are kept and expanded to carry what the per-item comments used to say, so V3 can be an exact comparison while the review prose survives. Both regenerated goldens re-verified with `verus`: 0 errors.
 
 **52.M1 acceptance**: the milestone's criterion is "Tier-0 micro end-to-end, verus passes". Both tier-0 clean specs translate with zero gaps and the output verifies. What is *not* yet true: only 2 of the 5 tier-0 cases have a `clean.tla` at all (53.2.c), and P4 (quorum → counting) has not been exercised because neither case needs it — LamportMutex requires unanimity, not a majority. M2's tier-1 cases are where P3/P4 get their real test.
-- [ ] **52.M2** messages→framework send/recv (P3) + quorum→counting (P4). Acceptance: Tier-1 (Paxos/TwoPhase) vs tla-rs hand-written spec.
+- [~] **52.M2** messages→framework send/recv (P3) + quorum→counting (P4). Acceptance: Tier-1 (Paxos/TwoPhase).
+  - [x] **Paxos translates and verifies** (2026-08-04): `clean.tla` → projection → emission → `verus`, **0 errors**, and the golden is frozen and byte-compared by V3. The tier-0 goldens are unchanged, so nothing regressed.
+    Nine gaps closed, every one of them found by pointing the translator at a real spec rather than at an invented example:
+    - **P4 itself**: `Cardinality(S)` → `S.len()`, which is what makes a counted quorum expressible.
+    - an uninterpreted `CONSTANT` set (Paxos's `Value`) has no readable element type; its members are opaque identifiers, so they project to `int` — the same choice the hand-written tla-rs Paxos makes.
+    - **primed updates inside a conditional** (`IF c THEN promiseBal' = … ELSE promiseBal' = …`). Each assigned variable becomes one conjunct whose value is the conditional; both branches must assign the same variables, which is what makes the rewrite sound. A branch re-assigning a variable to itself means "leave it".
+    - a message type built as a **union of record sets** (Paxos declares one per phase and unions them) — the members are merged, so the tag set and payload are complete.
+    - message tags that are **not Rust identifiers**: Paxos's phases are `"1a"`, `"1b"`, `"2a"`, `"2b"`, and `LMessage::1a` does not parse. A leading `M` fixes it without losing the tag.
+    - 0-ary **value operators** (`None == -1`) are inlined; emitting the name would collide with Rust's own `None`.
+    - **local actions keep their own parameters** (`Phase1a(a, b)` → `LPhase1a(.., b, ..)`), and `LNext` existentially quantifies them exactly as the source does with `\E b \in Ballot`.
+    - helper emission is driven by **what the actions call**, not by which operators take a node: `IsMajority(s)` takes a *set*, so it was never node-parameterized, and the emitted spec did not compile without it.
+    - a helper parameter named `s`, `s_` or `c` **collides** with the projected spec's own parameters; Paxos's `IsMajority(s)` does exactly that. Renamed in both signature and body.
+    - the dispatch ends in `_ => false` when a message kind has no handler. Without it the `match` is non-exhaustive; with a silent `true` the node could take an arbitrary step on receipt.
+  - [ ] **TwoPhase**: rewrite (the TM-is-a-node question) + golden.
+  - [ ] Compare the Paxos output against the hand-written `src/protocol/Paxos/paxos.rs` — the acceptance criterion names this explicitly, and `reference.rs` is in the case directory for it.
 - [ ] **52.M3** Semantic fidelity V2 (STRONG: exact-state/observable parity, clean.tla vs original.tla) + golden regression V3. ⚠️ Phase 36 parity compares tla-rs source-first-checker vs TLC, NOT two TLA+ specs — verify reusability first; likely need a bespoke spec-vs-spec comparator (both specs → TLC + common observables + state-set diff).
 - [ ] **52.M4** Tier-2 (already message-passing): Raft → EPaxos. Acceptance: translate + verus pass + TLC fidelity vs original.
 - [ ] **52.M4b** Tier-3 (hardest, LAST): Jetpack — heavy rewrite (strip 3-D log / INSTANCE / cross-node reads). NO full golden (Phase 51 gives only a partial one; validated via TLC fidelity + verus pass).
