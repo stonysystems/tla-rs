@@ -55,12 +55,14 @@ verus! {
 
     /// Protocol constants, including this node's own identity.
     pub struct LConstants {
+        pub value: Set<int>,
         pub acceptor: Set<int>,
+        pub max_ballot: int,
         pub node_id: int,
     }
 
     pub open spec fn LIsMajority(c: LConstants, s_arg: Set<int>) -> bool {
-        s_arg.len() * 2 > c.acceptor.len()
+        (s_arg.len() as int) * 2 > (c.acceptor.len() as int)
     }
 
     pub open spec fn LInit(s: LState, c: LConstants) -> bool {
@@ -87,7 +89,7 @@ verus! {
         &&& s_.promise_bal == -1
         &&& s_.promise_val == -1
         &&& s_.proposed == false
-        &&& sent_packets == c.acceptor.map(|d: int| LPacket { dst: d, msg: LMessage::M1a { bal: b, mbal: -1, mval: -1 } })
+        &&& sent_packets == c.value.map(|d: int| LPacket { dst: d, msg: LMessage::M1a { bal: b, mbal: -1, mval: -1 } })
         &&& s_.max_bal == s.max_bal
         &&& s_.max_v_bal == s.max_v_bal
         &&& s_.max_val == s.max_val
@@ -149,7 +151,7 @@ verus! {
         &&& LIsMajority(c, s.promises)
         &&& if s.promise_bal == -1 { true } else { v == s.promise_val }
         &&& s_.proposed == true
-        &&& sent_packets == c.acceptor.map(|d: int| LPacket { dst: d, msg: LMessage::M2a { bal: s.leader_bal, mbal: -1, mval: v } })
+        &&& sent_packets == c.value.map(|d: int| LPacket { dst: d, msg: LMessage::M2a { bal: s.leader_bal, mbal: -1, mval: v } })
         &&& s_.max_bal == s.max_bal
         &&& s_.max_v_bal == s.max_v_bal
         &&& s_.max_val == s.max_val
@@ -209,9 +211,9 @@ verus! {
         sent_packets: Set<LPacket>,
     ) -> bool {
         ||| (exists|b: int|
-                LPhase1a(s, s_, c, b, sent_packets))
+                0 <= b && b <= c.max_ballot && LPhase1a(s, s_, c, b, sent_packets))
         ||| (exists|v: int|
-                LPhase2a(s, s_, c, v, sent_packets))
+                c.value.contains(v) && LPhase2a(s, s_, c, v, sent_packets))
         ||| (exists|src: int, msg: LMessage|
                 LHandleMessage(s, s_, c, src, msg, sent_packets))
     }

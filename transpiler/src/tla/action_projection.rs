@@ -22,7 +22,9 @@ use std::collections::BTreeMap;
 
 use crate::tla::ast::{TlaBinOp, TlaExceptPath, TlaExpr, TlaModule, TlaUnaryOp};
 use crate::tla::clean_subset::node_parameterized_operators;
-use crate::tla::projection::{to_snake_case, ProjectedSpec, ProjectionError};
+use crate::tla::projection::{
+    to_snake_case, ProjectedSpec, ProjectedType, ProjectionError, ROUTING_FIELDS, TAG_FIELDS,
+};
 
 /// How an action is reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +53,10 @@ pub struct ProjectedHelper {
     /// removed.
     pub params: Vec<String>,
     pub body: String,
+    /// The helper's result type, decided from the TLA+ body rather than from
+    /// the emitted text: `IF Len(l) = 0 THEN 0 ELSE l[Len(l)].term` reads like
+    /// a predicate if all you have is the string.
+    pub return_type: Option<String>,
     pub gaps: Vec<String>,
 }
 
@@ -71,6 +77,10 @@ pub struct ProjectedAction {
     pub kind: ActionKind,
     /// Parameters beyond `s`, `s_`, `c` and `sent_packets`.
     pub params: Vec<String>,
+    /// For each parameter, the membership its `Next` binder imposed
+    /// (`\E b \in Ballot`), projected. Dropping it would let `LNext` take
+    /// transitions the source spec forbids.
+    pub param_bounds: Vec<Option<String>>,
     /// Conjuncts in source order, already rendered as Verus.
     pub conjuncts: Vec<String>,
     /// P5 frame conditions for the fields this action leaves alone.
@@ -111,6 +121,8 @@ fn project_init(module: &TlaModule, spec: &ProjectedSpec) -> (Vec<String>, Vec<S
     // each function constructor plays that role for the conjunct it heads.
     let ctx = ActionContext {
         spec,
+        param_types: Default::default(),
+        msg_tag: None,
         node_param: String::new(),
         msg_param: None,
         network: spec.network_variable.clone(),
@@ -149,6 +161,8 @@ fn project_init(module: &TlaModule, spec: &ProjectedSpec) -> (Vec<String>, Vec<S
             } => {
                 node_ctx = ActionContext {
                     spec,
+                    param_types: Default::default(),
+                    msg_tag: None,
                     node_param: binder.clone(),
                     msg_param: None,
                     network: spec.network_variable.clone(),
@@ -158,6 +172,8 @@ fn project_init(module: &TlaModule, spec: &ProjectedSpec) -> (Vec<String>, Vec<S
             other => {
                 node_ctx = ActionContext {
                     spec,
+                    param_types: Default::default(),
+                    msg_tag: None,
                     node_param: String::new(),
                     msg_param: None,
                     network: spec.network_variable.clone(),
@@ -201,6 +217,7 @@ pub fn project(module: &TlaModule) -> Result<ProjectedModule, ProjectionError> {
         texts.push(&helper.body);
     }
     for action in &actions {
+        texts.extend(action.param_bounds.iter().flatten());
         texts.extend(action.conjuncts.iter());
         texts.extend(action.frame.iter());
     }
@@ -244,6 +261,7 @@ fn references_constant(text: &str, name: &str) -> bool {
 /// at all. So the set is taken from what action projection actually referenced.
 pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<ProjectedHelper> {
     let called = called_helpers(module, spec);
+    let param_types = infer_helper_param_types(module, spec);
     let node_params = node_parameterized_operators(module);
     let mut helpers = Vec::new();
 
@@ -262,6 +280,20 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         }
         let ctx = ActionContext {
             spec,
+            param_types: op
+                .params
+                .iter()
+                .map(|p| {
+                    (
+                        safe_param_name(&p.name),
+                        param_types
+                            .get(&(op.name.clone(), p.name.clone()))
+                            .cloned()
+                            .unwrap_or(ProjectedType::Int),
+                    )
+                })
+                .collect(),
+            msg_tag: None,
             node_param: node_param.clone(),
             msg_param: None,
             network: spec.network_variable.clone(),
@@ -291,10 +323,14 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
                     format!(
                         "{}: {}",
                         safe_param_name(&p.name),
-                        helper_param_type(op, &p.name)
+                        param_types
+                            .get(&(op.name.clone(), p.name.clone()))
+                            .map(|t| t.render())
+                            .unwrap_or_else(|| helper_param_type(op, &p.name).to_string())
                     )
                 })
                 .collect(),
+            return_type: ctx.value_type(&renamed).map(|t| t.render()),
             body,
             gaps,
         });
@@ -338,6 +374,62 @@ fn safe_param_name(name: &str) -> String {
 
 /// A helper parameter's type: a set when the body counts it, otherwise an
 /// identifier.
+/// The type of each helper parameter, read off the *call sites*.
+///
+/// `LastTerm(log[i])` says more about `LastTerm`'s parameter than its body
+/// does: the argument is a per-node state field, so the parameter has that
+/// field's projected type -- `Seq<LLogEntry>`, not the `Seq<int>` a
+/// body-shape heuristic would guess. Where no call site is informative the
+/// caller falls back to `helper_param_type`.
+fn infer_helper_param_types(
+    module: &TlaModule,
+    spec: &ProjectedSpec,
+) -> BTreeMap<(String, String), ProjectedType> {
+    fn argument_type(arg: &TlaExpr, spec: &ProjectedSpec) -> Option<ProjectedType> {
+        let name = match arg {
+            // `log[i]` -- one node's slice of a per-node variable.
+            TlaExpr::FnApply { func, .. } => match &**func {
+                TlaExpr::Ident(name) => name,
+                _ => return None,
+            },
+            TlaExpr::Ident(name) => name,
+            _ => return None,
+        };
+        spec.state_fields
+            .iter()
+            .find(|f| f.source_name == *name)
+            .map(|f| f.ty.clone())
+    }
+
+    fn walk(
+        expr: &TlaExpr,
+        module: &TlaModule,
+        spec: &ProjectedSpec,
+        out: &mut BTreeMap<(String, String), ProjectedType>,
+    ) {
+        if let TlaExpr::OpApply { op, args } = expr {
+            if let TlaExpr::Ident(callee) = &**op {
+                if let Some(target) = module.operators.iter().find(|o| o.name == *callee) {
+                    for (param, arg) in target.params.iter().zip(args.iter()) {
+                        if let Some(ty) = argument_type(arg, spec) {
+                            out.insert((callee.clone(), param.name.clone()), ty);
+                        }
+                    }
+                }
+            }
+        }
+        for child in children(expr) {
+            walk(child, module, spec, out);
+        }
+    }
+
+    let mut out = BTreeMap::new();
+    for op in &module.operators {
+        walk(&op.body, module, spec, &mut out);
+    }
+    out
+}
+
 fn helper_param_type(op: &crate::tla::ast::TlaOperator, param: &str) -> &'static str {
     fn counted(expr: &TlaExpr, param: &str) -> bool {
         if let TlaExpr::OpApply { op, args } = expr {
@@ -351,11 +443,81 @@ fn helper_param_type(op: &crate::tla::ast::TlaOperator, param: &str) -> &'static
         }
         children(expr).into_iter().any(|c| counted(c, param))
     }
+    fn measured(expr: &TlaExpr, param: &str) -> bool {
+        if let TlaExpr::OpApply { op, args } = expr {
+            if matches!(&**op, TlaExpr::Ident(n) if n == "Len")
+                && args
+                    .iter()
+                    .any(|a| matches!(a, TlaExpr::Ident(n) if n == param))
+            {
+                return true;
+            }
+        }
+        children(expr).into_iter().any(|c| measured(c, param))
+    }
     if counted(&op.body, param) {
         "Set<int>"
+    } else if measured(&op.body, param) {
+        "Seq<int>"
     } else {
         "int"
     }
+}
+
+/// The set each action parameter is drawn from in `Next`.
+///
+/// `Next == \E a \in Acceptor : \E b \in Ballot : Phase1a(a, b)` says `b`
+/// ranges over `Ballot`. The action body does not repeat that, so without this
+/// the projected `LNext` quantifies over every integer and admits ballots the
+/// source spec has no state for.
+fn action_param_bounds(module: &TlaModule) -> BTreeMap<(String, String), TlaExpr> {
+    fn walk(
+        expr: &TlaExpr,
+        scope: &BTreeMap<String, TlaExpr>,
+        module: &TlaModule,
+        out: &mut BTreeMap<(String, String), TlaExpr>,
+    ) {
+        match expr {
+            TlaExpr::Exists { vars, body } | TlaExpr::Forall { vars, body } => {
+                let mut inner = scope.clone();
+                for bound in vars {
+                    match &bound.set {
+                        Some(set) => {
+                            inner.insert(bound.var.clone(), set.clone());
+                        }
+                        None => {
+                            inner.remove(&bound.var);
+                        }
+                    }
+                }
+                walk(body, &inner, module, out);
+                return;
+            }
+            TlaExpr::OpApply { op, args } => {
+                if let TlaExpr::Ident(callee) = &**op {
+                    if let Some(target) = module.operators.iter().find(|o| o.name == *callee) {
+                        for (param, arg) in target.params.iter().zip(args.iter()) {
+                            if let TlaExpr::Ident(binder) = arg {
+                                if let Some(set) = scope.get(binder) {
+                                    out.insert((callee.clone(), param.name.clone()), set.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        for child in children(expr) {
+            walk(child, scope, module, out);
+        }
+    }
+
+    let mut out = BTreeMap::new();
+    if let Some(next) = module.operators.iter().find(|o| o.name == "Next") {
+        walk(&next.body, &BTreeMap::new(), module, &mut out);
+    }
+    out
 }
 
 /// Whether an expression reads any per-node state, i.e. whether the projected
@@ -370,6 +532,7 @@ fn reads_state(expr: &TlaExpr, spec: &ProjectedSpec) -> bool {
 /// Project every action of a module that the linter accepted.
 pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<ProjectedAction> {
     let receives = receive_handlers(module, spec.network_variable.as_deref());
+    let bounds = action_param_bounds(module);
     let mut actions = Vec::new();
 
     for (op_name, node_param) in node_parameterized_operators(module) {
@@ -383,12 +546,20 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         }
 
         let msg_param = receives.get(&op_name).cloned();
-        let ctx = ActionContext {
+        let mut ctx = ActionContext {
             spec,
+            param_types: Default::default(),
+            msg_tag: None,
             node_param: node_param.clone(),
             msg_param: msg_param.clone(),
             network: spec.network_variable.clone(),
         };
+        // Which variant the action handles is settled by its `m.type = ...`
+        // guard, and it has to be known *before* the body is projected: the
+        // variant is what gives `m.field` a type, and a field's type is what
+        // decides how indexing it projects.
+        ctx.msg_tag = ctx.message_tag(&op.body);
+        let ctx = ctx;
 
         let mut conjuncts = Vec::new();
         let mut gaps = Vec::new();
@@ -461,6 +632,26 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
                 .collect()
         };
 
+        // A receive's parameters are message fields, which the framework
+        // types; only a local action's own binders carry a set.
+        let param_bounds = if msg_param.is_some() {
+            vec![None; params.len()]
+        } else {
+            op.params
+                .iter()
+                .filter(|p| p.name != node_param)
+                .map(|p| {
+                    let set = bounds.get(&(op_name.clone(), p.name.clone()))?;
+                    ctx.project_expr(&TlaExpr::BinOp {
+                        op: TlaBinOp::In,
+                        left: Box::new(TlaExpr::Ident(p.name.clone())),
+                        right: Box::new(set.clone()),
+                    })
+                    .ok()
+                })
+                .collect()
+        };
+
         actions.push(ProjectedAction {
             name: format!("L{op_name}"),
             source_name: op_name.clone(),
@@ -470,6 +661,7 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
                 ActionKind::Local
             },
             params,
+            param_bounds,
             conjuncts,
             frame,
             handles_tag,
@@ -491,6 +683,13 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
 
 struct ActionContext<'a> {
     spec: &'a ProjectedSpec,
+    /// Types of the operator's own parameters, as far as they are known. A
+    /// parameter's type decides whether indexing it is 1-based (a sequence) or
+    /// a key lookup (a map), which is not recoverable from its spelling.
+    param_types: BTreeMap<String, ProjectedType>,
+    /// The message tag this action handles, which names the message variant
+    /// whose field types apply to `m.field`.
+    msg_tag: Option<String>,
     /// The name the acting node goes by inside this action (`self`, `p`).
     node_param: String,
     /// The name the received message goes by, when this is a receive.
@@ -519,15 +718,16 @@ impl ActionContext<'_> {
     /// A string literal assigned to an enum-typed field names a variant, and
     /// Verus spells that `x is Variant` rather than an equality.
     fn enum_variant(&self, field: &str, expr: &TlaExpr) -> Option<String> {
-        let crate::tla::projection::ProjectedType::Enum { variants, .. } =
-            self.field_type(field)?
-        else {
+        let ProjectedType::Enum { variants, .. } = self.field_type(field)? else {
             return None;
         };
-        let TlaExpr::String(literal) = expr else {
-            return None;
+        // The source may name the label rather than spelling it.
+        let literal = match expr {
+            TlaExpr::String(literal) => literal.clone(),
+            TlaExpr::Ident(_) => self.resolve_tag(expr)?,
+            _ => return None,
         };
-        let wanted = variant_name(literal);
+        let wanted = variant_name(&literal);
         variants.iter().find(|v| **v == wanted).cloned()
     }
 
@@ -551,6 +751,8 @@ impl ActionContext<'_> {
                 let set = self.project_node_set(domain).ok()?;
                 let inner = ActionContext {
                     spec: self.spec,
+                    param_types: Default::default(),
+                    msg_tag: None,
                     node_param: self.node_param.clone(),
                     msg_param: self.msg_param.clone(),
                     network: self.network.clone(),
@@ -720,16 +922,17 @@ impl ActionContext<'_> {
         if !matches!(&**record, TlaExpr::Ident(n) if n == msg) {
             return None;
         }
-        match field.as_str() {
-            "dst" if matches!(&**right, TlaExpr::Ident(n) if *n == self.node_param) => {
-                Some(String::new())
-            }
-            "type" | "kind" | "tag" => match &**right {
-                TlaExpr::String(tag) => Some(tag.clone()),
-                _ => None,
-            },
-            _ => None,
+        // Which spellings a spec uses for "who is this for" and "what kind is
+        // it" is style; the projection recognises the same set everywhere.
+        if ROUTING_FIELDS.contains(&field.as_str())
+            && matches!(&**right, TlaExpr::Ident(n) if *n == self.node_param)
+        {
+            return Some(String::new());
         }
+        if TAG_FIELDS.contains(&field.as_str()) {
+            return self.resolve_tag(right);
+        }
+        None
     }
 
     /// `net' = net \cup S` (possibly with a `\ {m}` for the consumed message).
@@ -819,10 +1022,11 @@ impl ActionContext<'_> {
                 // `src` is the sender: after projection that is this node, and
                 // the framework stamps it on the packet.
                 "src" | "source" | "sender" | "msource" => {}
-                // A field a constructor fills with a literal carries no
-                // information -- it is there because every message shares one
-                // record type. The enum declaration drops it too.
-                _ if is_literal(value) => {}
+                // The variant declaration decides which fields a message
+                // carries. Deciding it again here -- "this argument happens to
+                // be a literal, so drop it" -- would leave a construction that
+                // does not fill the variant it names.
+                other if !self.variant_carries(&tag, other) => {}
                 other => fields.push((to_snake_case(other), self.project_expr(value)?)),
             }
         }
@@ -869,6 +1073,8 @@ impl ActionContext<'_> {
         let peers = self.project_peer_set(&set)?;
         let packet = ActionContext {
             spec: self.spec,
+            param_types: Default::default(),
+            msg_tag: None,
             node_param: self.node_param.clone(),
             msg_param: self.msg_param.clone(),
             network: self.network.clone(),
@@ -904,7 +1110,7 @@ impl ActionContext<'_> {
                 .spec
                 .constants
                 .iter()
-                .find(|(_, ty)| matches!(ty, crate::tla::projection::ProjectedType::Set(_)))
+                .find(|(_, ty)| matches!(ty, ProjectedType::Set(_)))
                 .map(|(n, _)| n.clone())
                 .unwrap_or_else(|| "procs".to_string());
             Ok(format!("c.{name}"))
@@ -940,7 +1146,7 @@ impl ActionContext<'_> {
                     }
                 },
                 "src" | "source" | "sender" | "msource" => {}
-                _ if is_literal(value) => {}
+                other if !self.variant_carries(&tag, other) => {}
                 other => fields.push((to_snake_case(other), projected(value)?)),
             }
         }
@@ -1107,6 +1313,19 @@ impl ActionContext<'_> {
                     )),
                 }
             }
+            // `x' = IF c THEN x ELSE [x EXCEPT ...]`. Each branch is an assigned
+            // value in its own right, so a branch naming the variable means
+            // "leave it alone" rather than being a bare cross-node read.
+            TlaExpr::IfThenElse {
+                cond,
+                then_expr,
+                else_expr,
+            } => Ok(format!(
+                "if {} {{ {} }} else {{ {} }}",
+                self.project_expr(cond)?,
+                self.project_branch_value(var, then_expr)?,
+                self.project_branch_value(var, else_expr)?
+            )),
             other => self.project_expr(other),
         }
     }
@@ -1124,6 +1343,195 @@ impl ActionContext<'_> {
         }
     }
 
+    /// The bounds of an integer range, following a name to its definition:
+    /// a spec writes `\E b \in Ballot` and defines `Ballot == 0 .. MaxBallot`
+    /// rather than spelling the range at the binder.
+    fn as_range(&self, expr: &TlaExpr) -> Option<(TlaExpr, TlaExpr)> {
+        match expr {
+            TlaExpr::BinOp {
+                op: TlaBinOp::DotDot,
+                left,
+                right,
+            } => Some(((**left).clone(), (**right).clone())),
+            TlaExpr::Ident(name) => match self.spec.operator_bodies.get(name.as_str()) {
+                Some((params, body)) if params.is_empty() => self.as_range(&body.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The variants a set literal names, when the left-hand side is an
+    /// enum-typed field and every element resolves to one of its labels.
+    fn enum_variants_of(&self, left: &TlaExpr, right: &TlaExpr) -> Option<Vec<String>> {
+        let field = self
+            .project_expr(left)
+            .ok()?
+            .strip_prefix("s.")?
+            .to_string();
+        let TlaExpr::SetEnum(items) = right else {
+            return None;
+        };
+        if items.is_empty() {
+            return None;
+        }
+        items
+            .iter()
+            .map(|item| self.enum_variant(&field, item))
+            .collect()
+    }
+
+    /// The type of a value expression, as far as the projection can tell.
+    /// Unlike `type_of` this also recognises the expression *forms* that are
+    /// boolean or numeric regardless of what they mention.
+    fn value_type(&self, expr: &TlaExpr) -> Option<ProjectedType> {
+        match expr {
+            TlaExpr::Bool(_) | TlaExpr::Forall { .. } | TlaExpr::Exists { .. } => {
+                Some(ProjectedType::Bool)
+            }
+            TlaExpr::UnaryOp {
+                op: TlaUnaryOp::Not,
+                ..
+            } => Some(ProjectedType::Bool),
+            TlaExpr::BinOp { op, .. } => match op {
+                TlaBinOp::And
+                | TlaBinOp::Or
+                | TlaBinOp::Implies
+                | TlaBinOp::Iff
+                | TlaBinOp::In
+                | TlaBinOp::NotIn
+                | TlaBinOp::Subseteq
+                | TlaBinOp::Eq
+                | TlaBinOp::Neq
+                | TlaBinOp::Lt
+                | TlaBinOp::Gt
+                | TlaBinOp::Leq
+                | TlaBinOp::Geq => Some(ProjectedType::Bool),
+                TlaBinOp::Plus
+                | TlaBinOp::Minus
+                | TlaBinOp::Times
+                | TlaBinOp::Div
+                | TlaBinOp::Mod
+                | TlaBinOp::Caret => Some(ProjectedType::Int),
+                _ => None,
+            },
+            TlaExpr::Number(_) => Some(ProjectedType::Int),
+            // A conditional has the type of whichever branch says something.
+            // `IF Len(l) = 0 THEN 0 ELSE l[Len(l)].term` is an int by both.
+            TlaExpr::IfThenElse {
+                then_expr,
+                else_expr,
+                ..
+            } => self
+                .value_type(then_expr)
+                .or_else(|| self.value_type(else_expr)),
+            other => self.type_of(other),
+        }
+    }
+
+    /// Whether the variant for `tag` declares `field`. A record set lists the
+    /// union of every message's fields, so a given variant carries only some
+    /// of them.
+    fn variant_carries(&self, tag: &Option<String>, field: &str) -> bool {
+        let field = to_snake_case(field);
+        match tag
+            .as_deref()
+            .and_then(|t| self.spec.messages.iter().find(|m| m.tag == t))
+        {
+            Some(variant) => variant.fields.iter().any(|(f, _)| *f == field),
+            // The tag is read from the same record, and a well-formed spec puts
+            // it first; if it has not been seen yet, keep the field rather than
+            // silently dropping it.
+            None => true,
+        }
+    }
+
+    /// The message variant an action handles, read off its `m.type = "aeq"`
+    /// guard.
+    fn message_tag(&self, body: &TlaExpr) -> Option<String> {
+        let msg = self.msg_param.as_deref()?;
+        for conjunct in flatten_conjunction(body) {
+            if let TlaExpr::BinOp {
+                op: TlaBinOp::Eq,
+                left,
+                right,
+            } = conjunct
+            {
+                if let TlaExpr::RecordAccess { record, field } = &**left {
+                    if TAG_FIELDS.contains(&field.as_str())
+                        && matches!(&**record, TlaExpr::Ident(n) if n == msg)
+                    {
+                        if let Some(tag) = self.resolve_tag(right) {
+                            return Some(tag);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// The projected type of an expression, where the projection knows it.
+    /// Used to decide index arithmetic, which is not recoverable from the
+    /// expression's spelling.
+    fn type_of(&self, expr: &TlaExpr) -> Option<ProjectedType> {
+        match expr {
+            TlaExpr::Ident(name) => self.param_types.get(name.as_str()).cloned(),
+            TlaExpr::RecordAccess { record, field } => {
+                let field = to_snake_case(field);
+                if matches!(&**record, TlaExpr::Ident(n) if Some(n) == self.msg_param.as_ref()) {
+                    let tag = self.msg_tag.as_deref()?;
+                    let variant = self.spec.messages.iter().find(|m| m.tag == tag)?;
+                    return variant
+                        .fields
+                        .iter()
+                        .find(|(f, _)| *f == field)
+                        .map(|(_, t)| t.clone());
+                }
+                match self.type_of(record)? {
+                    ProjectedType::Record { fields, .. } => fields
+                        .iter()
+                        .find(|(f, _)| *f == field)
+                        .map(|(_, t)| t.clone()),
+                    _ => None,
+                }
+            }
+            TlaExpr::FnApply { func, arg } => {
+                // `x[self]` is the whole projected field.
+                if let TlaExpr::Ident(var) = &**func {
+                    if self.is_node_index(arg) {
+                        if let Some(f) = self
+                            .spec
+                            .state_fields
+                            .iter()
+                            .find(|f| f.source_name == *var)
+                        {
+                            return Some(f.ty.clone());
+                        }
+                    }
+                }
+                match self.type_of(func)? {
+                    ProjectedType::Seq(elem) => Some(*elem),
+                    ProjectedType::Map(_, value) => Some(*value),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// A TLA+ sequence index, projected. TLA+ counts from 1 and Verus's `Seq`
+    /// from 0, so the index loses one; a literal is folded so the common case
+    /// reads naturally.
+    fn seq_index(&self, index: &TlaExpr) -> Result<String, String> {
+        if let TlaExpr::Number(n) = index {
+            if let Some(v) = n.to_i64() {
+                return Ok((v - 1).to_string());
+            }
+        }
+        Ok(format!("{} - 1", self.parenthesised(index, 7)?))
+    }
+
     /// Project an index into a state field.
     ///
     /// **TLA+ sequences are 1-indexed and Verus's `Seq` is 0-indexed.** An
@@ -1134,7 +1542,7 @@ impl ActionContext<'_> {
     fn project_index(&self, field: &str, index: &TlaExpr) -> Result<String, String> {
         let text = self.project_expr(index)?;
         match self.field_type(field) {
-            Some(crate::tla::projection::ProjectedType::Seq(_)) => {
+            Some(ProjectedType::Seq(_)) => {
                 // A literal is folded so the common case reads naturally.
                 if let TlaExpr::Number(n) = index {
                     if let Some(v) = n.to_i64() {
@@ -1184,7 +1592,23 @@ impl ActionContext<'_> {
                         }
                     }
                 }
-                Err(format!("application {}", render_source(expr)))
+                // Anything else whose type the projection knows: a helper's
+                // own parameter, a sequence-valued message field. The type is
+                // what decides whether the index loses one, so an expression
+                // of unknown type is a gap rather than a guess.
+                match self.type_of(func) {
+                    Some(ProjectedType::Seq(_)) => Ok(format!(
+                        "{}[{}]",
+                        self.parenthesised(func, 9)?,
+                        self.seq_index(arg)?
+                    )),
+                    Some(ProjectedType::Map(..)) => Ok(format!(
+                        "{}[{}]",
+                        self.parenthesised(func, 9)?,
+                        self.project_expr(arg)?
+                    )),
+                    _ => Err(format!("application {}", render_source(expr))),
+                }
             }
             // The acting node's own identity.
             TlaExpr::Ident(name) if *name == self.node_param => Ok("c.node_id".to_string()),
@@ -1225,7 +1649,14 @@ impl ActionContext<'_> {
             // `m.field` -- a field of the received message, which is a parameter.
             TlaExpr::RecordAccess { record, field } => {
                 if matches!(&**record, TlaExpr::Ident(n) if Some(n) == self.msg_param.as_ref()) {
-                    Ok(to_snake_case(field))
+                    // Routing does not survive into the payload: the framework
+                    // delivers, so the sender is the dispatch's `src` and the
+                    // destination is this node by construction.
+                    return Ok(match field.as_str() {
+                        "src" | "source" | "sender" | "msource" => "src".to_string(),
+                        "dst" | "dest" | "receiver" | "mdest" => "c.node_id".to_string(),
+                        other => to_snake_case(other),
+                    });
                 } else {
                     // A field of something else -- a log entry, say. The base
                     // has to project first; if it does not, the error names it.
@@ -1271,6 +1702,40 @@ impl ActionContext<'_> {
                 let field = l.trim_start_matches("s.").to_string();
                 let variant = self.enum_variant(&field, right).unwrap();
                 Ok(format!("{l} is {variant}"))
+            }
+            // `b \in a .. z` is a range test, not a set membership: the
+            // projection has no value for the range itself.
+            TlaExpr::BinOp {
+                op: TlaBinOp::In,
+                left,
+                right,
+            } if self.as_range(right).is_some() => {
+                let range = self.as_range(right).expect("guarded above");
+                let (low, high) = range;
+                let x = self.parenthesised(left, precedence(&TlaBinOp::Leq))?;
+                Ok(format!(
+                    "{} <= {x} && {x} <= {}",
+                    self.parenthesised(&low, precedence(&TlaBinOp::Leq))?,
+                    self.parenthesised(&high, precedence(&TlaBinOp::Leq))?
+                ))
+            }
+            // `state[i] \in {Follower, Candidate}` on an enum-typed field is a
+            // choice between variant tests, not a set membership: the labels
+            // do not survive projection as values.
+            TlaExpr::BinOp {
+                op: TlaBinOp::In,
+                left,
+                right,
+            } if matches!(&**right, TlaExpr::SetEnum(_))
+                && self.enum_variants_of(left, right).is_some() =>
+            {
+                let l = self.project_expr(left)?;
+                let variants = self.enum_variants_of(left, right).unwrap();
+                Ok(variants
+                    .iter()
+                    .map(|v| format!("{l} is {v}"))
+                    .collect::<Vec<_>>()
+                    .join(" || "))
             }
             TlaExpr::BinOp { op, left, right } => {
                 // Parenthesise an operand that binds more loosely than this
@@ -1320,7 +1785,26 @@ impl ActionContext<'_> {
                 self.project_expr(then_expr)?,
                 self.project_expr(else_expr)?
             )),
+            // A record value. The struct it belongs to is found by matching the
+            // field names against the structs the projection introduced --
+            // TLA+ records are structural, so the names are what identify one.
+            TlaExpr::Record(fields) => {
+                let names: Vec<String> = fields.iter().map(|(n, _)| to_snake_case(n)).collect();
+                let Some((struct_name, _)) = self.spec.records.iter().find(|(_, fs)| {
+                    fs.len() == names.len() && fs.iter().all(|(f, _)| names.contains(f))
+                }) else {
+                    return Err(format!(
+                        "record value with fields {names:?} matches no declared record type"
+                    ));
+                };
+                let rendered: Result<Vec<String>, String> = fields
+                    .iter()
+                    .map(|(n, v)| Ok(format!("{}: {}", to_snake_case(n), self.project_expr(v)?)))
+                    .collect();
+                Ok(format!("{struct_name} {{ {} }}", rendered?.join(", ")))
+            }
             TlaExpr::SetEnum(items) if items.is_empty() => Ok("Set::empty()".to_string()),
+            TlaExpr::Tuple(items) if items.is_empty() => Ok("Seq::empty()".to_string()),
             TlaExpr::SetEnum(items) => {
                 let rendered: Result<Vec<String>, String> =
                     items.iter().map(|i| self.project_expr(i)).collect();
@@ -1352,7 +1836,11 @@ impl ActionContext<'_> {
             TlaExpr::OpApply { op, args }
                 if matches!(&**op, TlaExpr::Ident(n) if n == "Len") && args.len() == 1 =>
             {
-                Ok(format!("{}.len()", self.project_expr(&args[0])?))
+                // `len()` is a `nat` and TLA+ has one number type, which the
+                // projection spells `int`. Without the coercion an arithmetic
+                // comparison against any other projected number is a type
+                // error, and a message field holding a length does not typecheck.
+                Ok(format!("({}.len() as int)", self.project_expr(&args[0])?))
             }
             TlaExpr::OpApply { op, args }
                 if matches!(&**op, TlaExpr::Ident(n) if n == "Append") && args.len() == 2 =>
@@ -1378,7 +1866,7 @@ impl ActionContext<'_> {
             TlaExpr::OpApply { op, args }
                 if matches!(&**op, TlaExpr::Ident(n) if n == "Cardinality") && args.len() == 1 =>
             {
-                Ok(format!("{}.len()", self.project_expr(&args[0])?))
+                Ok(format!("({}.len() as int)", self.project_expr(&args[0])?))
             }
             // A call to a user-defined operator: either a helper the projected
             // spec keeps, or one that must be inlined because it was handed the
@@ -1583,14 +2071,6 @@ fn assigned_value(expr: &TlaExpr, is_node: impl Fn(&TlaExpr) -> bool) -> &TlaExp
     expr
 }
 
-/// Whether an expression is a literal, and so carries no information when a
-/// constructor uses it to fill a shared record field.
-fn is_literal(expr: &TlaExpr) -> bool {
-    matches!(
-        expr,
-        TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_)
-    )
-}
 
 /// `"req"` -> `Req`.
 fn variant_name(tag: &str) -> String {
@@ -1667,7 +2147,7 @@ fn render_source(expr: &TlaExpr) -> String {
 
 /// Direct sub-expressions. Kept local to this module so the walk can stay
 /// simple; the linter has its own for the same reason.
-fn children(expr: &TlaExpr) -> Vec<&TlaExpr> {
+pub(crate) fn children(expr: &TlaExpr) -> Vec<&TlaExpr> {
     match expr {
         TlaExpr::Prime(inner)
         | TlaExpr::UnaryOp { operand: inner, .. }
@@ -2094,7 +2574,9 @@ Next == \E p \in Proc : Step(p)
         let acts = project_actions(&module, &spec);
         let step = action(&acts, "Step");
         assert!(
-            step.conjuncts.iter().any(|c| c == "s.log.len() < 5"),
+            step.conjuncts
+                .iter()
+                .any(|c| c == "(s.log.len() as int) < 5"),
             "{:?}",
             step.conjuncts
         );

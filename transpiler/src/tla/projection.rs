@@ -30,6 +30,19 @@ use std::collections::BTreeMap;
 use crate::tla::ast::{TlaBinOp, TlaExpr, TlaModule, TlaUnaryOp};
 use crate::tla::clean_subset::{lint_module, CleanSubsetReport};
 
+/// Type names the emitter always writes. An enum named after a variable must
+/// not collide with one.
+const EMITTED_TYPE_NAMES: &[&str] = &["LState", "LConstants", "LMessage", "LPacket"];
+
+/// Field names a spec uses for a message's variant tag. Which one a spec uses
+/// is style, not meaning, so the projection recognises the common spellings.
+pub const TAG_FIELDS: &[&str] = &["type", "kind", "tag", "mtype"];
+/// Field names that address a message. After projection these belong to the
+/// packet -- the framework routes -- so they are not payload.
+pub const ROUTING_FIELDS: &[&str] = &[
+    "src", "dst", "source", "dest", "sender", "receiver", "msource", "mdest",
+];
+
 /// A Verus type in the projected spec.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectedType {
@@ -42,6 +55,12 @@ pub enum ProjectedType {
     Enum {
         name: String,
         variants: Vec<String>,
+    },
+    /// A record set, which becomes a struct. Named after the operator that
+    /// defines it -- `LogEntry` in the source becomes `LLogEntry`.
+    Record {
+        name: String,
+        fields: Vec<(String, ProjectedType)>,
     },
     /// A type the pass could not resolve; carries what it saw, so the failure
     /// is reportable rather than silently becoming `int`.
@@ -57,6 +76,7 @@ impl ProjectedType {
             ProjectedType::Map(k, v) => format!("Map<{}, {}>", k.render(), v.render()),
             ProjectedType::Seq(inner) => format!("Seq<{}>", inner.render()),
             ProjectedType::Enum { name, .. } => name.clone(),
+            ProjectedType::Record { name, .. } => name.clone(),
             ProjectedType::Unresolved(what) => format!("/* unresolved: {what} */"),
         }
     }
@@ -102,6 +122,9 @@ pub struct ProjectedSpec {
     /// Enums the projection had to introduce, in declaration order: a state
     /// field whose TLA+ type is a set of string literals becomes one.
     pub enums: Vec<(String, Vec<String>)>,
+    /// Structs the projection had to introduce: a record set used as a type
+    /// becomes one, named after the operator that defines it.
+    pub records: Vec<(String, Vec<(String, ProjectedType)>)>,
     /// Operator definitions, so later passes can inline message constructors
     /// and broadcast helpers without re-walking the module.
     pub operator_bodies: BTreeMap<String, (Vec<String>, TlaExpr)>,
@@ -140,6 +163,7 @@ pub fn project_module(module: &TlaModule) -> Result<ProjectedSpec, ProjectionErr
 
     let mut state_fields = Vec::new();
     let mut enums = Vec::new();
+    let mut records = Vec::new();
     for var in &report.per_node_variables {
         match ctx.projected_state_type(var) {
             Some(mut ty) => {
@@ -147,10 +171,18 @@ pub fn project_module(module: &TlaModule) -> Result<ProjectedSpec, ProjectionErr
                 // after the variable it types -- the source has no name for it.
                 if let ProjectedType::Enum { name, variants } = &mut ty {
                     if name.is_empty() {
-                        *name = format!("L{}", to_pascal_case(var));
+                        // Raft's variable really is called `state`, and
+                        // `LState` is already the projected state struct.
+                        let candidate = format!("L{}", to_pascal_case(var));
+                        *name = if EMITTED_TYPE_NAMES.contains(&candidate.as_str()) {
+                            format!("{candidate}Kind")
+                        } else {
+                            candidate
+                        };
                     }
                     enums.push((name.clone(), variants.clone()));
                 }
+                collect_records(&ty, &mut records);
                 if ty.is_unresolved() {
                     gaps.push(format!("variable `{var}`: {}", ty.render()));
                 }
@@ -177,6 +209,7 @@ pub fn project_module(module: &TlaModule) -> Result<ProjectedSpec, ProjectionErr
         constants,
         messages,
         enums,
+        records,
         operator_bodies: module
             .operators
             .iter()
@@ -257,7 +290,20 @@ impl ProjectionContext<'_> {
                     // A named set: follow the definition if there is one, and
                     // otherwise treat a node-set-like name as node ids.
                     if let Some(body) = self.resolve(other) {
-                        self.project_type(body)
+                        let projected = self.project_type(body);
+                        // A record set gets its name from the operator that
+                        // defines it: `LogEntry` becomes `LLogEntry`.
+                        if let ProjectedType::Record { name, fields } = projected {
+                            return ProjectedType::Record {
+                                name: if name.is_empty() {
+                                    format!("L{}", to_pascal_case(other))
+                                } else {
+                                    name
+                                },
+                                fields,
+                            };
+                        }
+                        projected
                     } else if other == self.node_set {
                         ProjectedType::Int
                     } else if self.module.constants.iter().any(|c| c.name == *other) {
@@ -300,12 +346,28 @@ impl ProjectionContext<'_> {
                 left,
                 ..
             } => self.project_type(left),
-            // A set of string literals is an enumeration.
+            // A record set is a struct; the caller names it.
+            TlaExpr::RecordSet(fields) => ProjectedType::Record {
+                name: String::new(),
+                fields: fields
+                    .iter()
+                    .map(|(name, ty)| (to_snake_case(name), self.project_type(ty)))
+                    .collect(),
+            },
+            // A set of string literals is an enumeration. A spec usually names
+            // its labels (`Follower == "follower"`) rather than repeating the
+            // literal, so a 0-ary operator is followed to the string behind it
+            // -- otherwise the set reads as opaque identifiers and the field
+            // silently becomes an `int` that string literals are assigned to.
             TlaExpr::SetEnum(items) => {
                 let labels: Vec<String> = items
                     .iter()
                     .filter_map(|item| match item {
                         TlaExpr::String(s) => Some(s.clone()),
+                        TlaExpr::Ident(name) => match self.resolve(name) {
+                            Some(TlaExpr::String(s)) => Some(s.clone()),
+                            _ => None,
+                        },
                         _ => None,
                     })
                     .collect();
@@ -339,7 +401,7 @@ impl ProjectionContext<'_> {
             .any(|c| c.name == self.node_set);
 
         for constant in &self.module.constants {
-            let ty = if constant.name == self.node_set {
+            let ty = if constant.name == self.node_set || self.used_as_a_set(&constant.name) {
                 ProjectedType::Set(Box::new(ProjectedType::Int))
             } else {
                 ProjectedType::Int
@@ -356,6 +418,36 @@ impl ProjectionContext<'_> {
         }
         out.push(("node_id".to_string(), ProjectedType::Int));
         out
+    }
+
+    /// Whether a `CONSTANT` is a set rather than a scalar.
+    ///
+    /// A `CONSTANT` declaration carries no type, so the spec's *use* is the only
+    /// evidence. `\E v \in Value` and `[Value -> T]` both say `Value` is a set;
+    /// `MaxBallot` appears in neither and stays an `int`.
+    fn used_as_a_set(&self, name: &str) -> bool {
+        fn used(expr: &TlaExpr, name: &str) -> bool {
+            let here = match expr {
+                TlaExpr::BinOp {
+                    op: TlaBinOp::In | TlaBinOp::NotIn | TlaBinOp::Subseteq,
+                    right,
+                    ..
+                } => matches!(&**right, TlaExpr::Ident(n) if n == name),
+                TlaExpr::FnSet { domain, .. } => {
+                    matches!(&**domain, TlaExpr::Ident(n) if n == name)
+                }
+                // A quantifier's bounding set is not a child expression, so it
+                // has to be looked at directly.
+                TlaExpr::Exists { vars, .. } | TlaExpr::Forall { vars, .. } => vars
+                    .iter()
+                    .any(|b| matches!(&b.set, Some(TlaExpr::Ident(n)) if n == name)),
+                _ => false,
+            };
+            here || crate::tla::action_projection::children(expr)
+                .into_iter()
+                .any(|c| used(c, name))
+        }
+        self.module.operators.iter().any(|op| used(&op.body, name))
     }
 
     /// A field name for the node set when it is an expression (`0 .. N - 1`)
@@ -380,21 +472,18 @@ impl ProjectionContext<'_> {
     /// (`src`, `dst`) are dropped from the payload — after projection they
     /// belong to the packet, not to the message.
     fn project_messages(&self, gaps: &mut Vec<String>) -> Vec<MessageVariant> {
-        const TAG_FIELDS: &[&str] = &["type", "kind", "tag", "mtype"];
-        const ROUTING_FIELDS: &[&str] = &[
-            "src", "dst", "source", "dest", "sender", "receiver", "msource", "mdest",
-        ];
-
         // The message type may be a single record set, or a union of them --
         // Paxos declares one per phase and unions them. Collecting the union's
         // members keeps both the tag set and the payload complete.
         let mut record_sets: Vec<&Vec<(String, TlaExpr)>> = Vec::new();
         for op in &self.module.operators {
             collect_record_sets(&op.body, &mut record_sets);
-            if !record_sets.is_empty() {
-                break;
-            }
         }
+        // Only tagged record sets are messages. A spec may declare untagged
+        // ones for its own data -- Raft's `LogEntry` is one, and it is declared
+        // *before* `Message`, so stopping at the first record set found would
+        // take the log entry and then discard it, leaving the spec with no
+        // messages at all.
         record_sets.retain(|fields| {
             fields
                 .iter()
@@ -486,8 +575,16 @@ impl ProjectionContext<'_> {
                 continue;
             };
             let tags_match = fields.iter().any(|(name, value)| {
-                matches!(name.as_str(), "type" | "kind" | "tag")
-                    && matches!(value, TlaExpr::String(t) if t == tag)
+                TAG_FIELDS.contains(&name.as_str())
+                    && match value {
+                        TlaExpr::String(t) => t == tag,
+                        // A constructor usually names its tag rather than
+                        // spelling the literal, exactly as the declaration does.
+                        TlaExpr::Ident(name) => {
+                            matches!(self.resolve(name), Some(TlaExpr::String(t)) if t == tag)
+                        }
+                        _ => false,
+                    }
             });
             if !tags_match {
                 continue;
@@ -506,6 +603,26 @@ impl ProjectionContext<'_> {
             );
         }
         None
+    }
+}
+
+/// Collect the struct types a projected type mentions, innermost first.
+fn collect_records(ty: &ProjectedType, out: &mut Vec<(String, Vec<(String, ProjectedType)>)>) {
+    match ty {
+        ProjectedType::Record { name, fields } => {
+            for (_, field_ty) in fields {
+                collect_records(field_ty, out);
+            }
+            if !name.is_empty() && !out.iter().any(|(n, _)| n == name) {
+                out.push((name.clone(), fields.clone()));
+            }
+        }
+        ProjectedType::Set(inner) | ProjectedType::Seq(inner) => collect_records(inner, out),
+        ProjectedType::Map(k, v) => {
+            collect_records(k, out);
+            collect_records(v, out);
+        }
+        _ => {}
     }
 }
 

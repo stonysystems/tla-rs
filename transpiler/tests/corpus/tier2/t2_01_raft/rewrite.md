@@ -4,11 +4,9 @@
 **Pinned commit**: `935da8ef24c668176e5f061757b9f25d533e58f0`
 **Clean-distance at intake**: 6
 
-> Fill this in while writing `clean.tla`. It is the record of what a human decided,
-> and it is what makes the rewrite reviewable. Do not leave TODOs in a case that is
-> marked `clean` in the manifest.
-**Status**: `clean.tla` written and the linter accepts it; **TLC does not yet
-complete** — see "State-space blow-up" below. Not yet translated, no golden.
+**Status**: `clean.tla` written, the linter accepts it, and the translator
+produces `golden.rs`, which passes `verus`. **TLC does not complete** — see
+"TLC status" below, which is why the case is `golden` and not `green`.
 
 ## What the linter found (clean-distance 6)
 
@@ -70,23 +68,40 @@ violation** of `TypeOK` or `OneLeaderPerTerm`, and does not close the space.
 That is evidence, and it is worth having, but it is **not** the completed check
 that `t1_02_twophase` has. It must not be written up as one.
 
-## Translator gaps: sequences, and a real hazard
+## Translator gaps this case closed
 
-`clean-tla` reports eight, all about sequences:
+Raft was the case that made the projection carry **types**. Every gap it opened
+was the same gap: the translator knowing what shape a value has. All are closed;
+the golden's header lists them against the output they produce.
 
-- `<<>>`, `Len`, `Append`, `SubSeq` are unsupported.
-- record access on a sequence element (`log[i][k].term`) is unsupported.
+- `<<>>`, `Len`, `Append`, `SubSeq`, and record access on a sequence element.
 - **TLA+ sequences are 1-indexed; Verus's `Seq` is 0-indexed.** Projecting an
-  index expression unchanged produces an off-by-one that **still verifies** —
-  the worst kind of bug, since nothing downstream would catch it. Whatever the
-  fix is (subtracting one at projection, or keeping a 1-based wrapper), it has
-  to be deliberate and documented.
+  index unchanged produces an off-by-one that **still verifies** — the worst
+  kind of bug. The fix is to subtract one *from the type*: a `Seq` index loses
+  one, a `Map` key does not. Guessing from the expression could not tell
+  `log[i]` from `nextIndex[j]`.
+- **Helper parameter types are read off the call sites**, not off the body.
+  `LastTerm(log[i])` says the parameter is `Seq<LLogEntry>`; the body's `Len`
+  would only have said "some sequence", and `Seq<int>` is the wrong element
+  type.
+- **Length is coerced to `int`.** `len()` is a `nat` and TLA+ has one number
+  type; without the coercion, comparing a log length to a term is a type error.
+- **`Next`'s binders now travel with the action.** `\E j \in Server` becomes
+  `c.server.contains(j) && LRequestVote(..)`. Dropping it let `LNext` take
+  transitions the source has no state for — this affected Paxos too, where
+  `\E b \in Ballot` had been quantifying over every integer.
 
-## Not yet done
+## Remaining limitation
 
-- Restructure messages per type, then TLC to completion.
-- Translate + freeze golden.
-- The projection currently requires a **declaration** to read an element type
-  from (`x \in [Node -> T]`, or an `Init` function constructor). ongardie's Raft
-  has no `TypeOK` at all, which is why this rewrite adds one; a spec without
-  either would not project today. Worth revisiting.
+The projection still requires a **declaration** to read an element type from
+(`x \in [Node -> T]`, or an `Init` function constructor). ongardie's Raft has no
+`TypeOK` at all, which is why this rewrite adds one; a spec with neither would
+not project today.
+
+## V1: the golden verifies
+
+`verus -V no-solver-version-check golden.rs --crate-type=lib` →
+`0 verified, 0 errors`. A spec-only file has no proof obligations, so this is
+the typecheck, and the typecheck is what catches the class of defect above: a
+missing variant field, an unbound `msource`, an `int`/`nat` mismatch and a
+predicate-typed helper were all found this way, not by review.

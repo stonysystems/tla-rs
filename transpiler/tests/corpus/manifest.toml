@@ -142,15 +142,16 @@ notes = "Real two-phase commit. NOTE `specifications/TwoPhase/TwoPhase.tla` upst
 [[case]]
 id = "t2_01_raft"
 tier = 2
-status = "planned"
+status = "golden"
 source_repo = "ongardie/raft.tla"
 source_path = "raft.tla"
-source_commit = ""
-golden_kind = "bootstrapped"
+source_commit = "935da8ef24c668176e5f061757b9f25d533e58f0"
+golden_kind = "bootstrapped_reviewed"
 reference = "src/protocol/Raft/raft.rs"
-clean_distance = "unmeasured"
+clean_distance = "6"
+expected_rules = ["C1", "C3", "C4", "C5"]
 milestone_gate = "52.M4"
-notes = "Rewrite removes history vars (allLogs, elections, voterLog). Reconfiguration is out of the clean subset (Q2) and is stripped."
+notes = "Rewrite removes history vars (allLogs, elections, voterLog). Reconfiguration is out of the clean subset (Q2) and is stripped. `golden` not `green`: the golden verifies (V1) and matches (V3), but TLC does not close the state space even at 2 servers, so V2 is bounded evidence only — see rewrite.md. This is the case that made the projection carry types (Seq vs Map indexing, record payloads, named enum labels)."
 
 [[case]]
 id = "t2_02_epaxos"

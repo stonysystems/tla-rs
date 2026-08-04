@@ -32,6 +32,7 @@ pub fn emit(projected: &ProjectedModule) -> Result<String, Vec<String>> {
     out.push_str("use vstd::prelude::*;\n\nverus! {\n");
 
     emit_enums(&mut out, projected);
+    emit_records(&mut out, projected);
     emit_messages(&mut out, projected);
     emit_state(&mut out, projected);
     emit_constants(&mut out, projected);
@@ -72,6 +73,16 @@ fn emit_enums(out: &mut String, projected: &ProjectedModule) {
         let _ = writeln!(out, "    pub enum {name} {{");
         for variant in variants {
             let _ = writeln!(out, "        {variant},");
+        }
+        out.push_str("    }\n\n");
+    }
+}
+
+fn emit_records(out: &mut String, projected: &ProjectedModule) {
+    for (name, fields) in &projected.spec.records {
+        let _ = writeln!(out, "    pub struct {name} {{");
+        for (field, ty) in fields {
+            let _ = writeln!(out, "        pub {field}: {},", ty.render());
         }
         out.push_str("    }\n\n");
     }
@@ -133,7 +144,10 @@ fn emit_helpers(out: &mut String, projected: &ProjectedModule) {
             "    pub open spec fn {}({}) -> {} {{",
             helper.name,
             params.join(", "),
-            helper_return_type(helper)
+            helper
+                .return_type
+                .as_deref()
+                .unwrap_or_else(|| helper_return_type(helper))
         );
         let _ = writeln!(out, "        {}", helper.body);
         out.push_str("    }\n\n");
@@ -289,9 +303,18 @@ fn emit_next(out: &mut String, projected: &ProjectedModule) {
                 .iter()
                 .map(|p| p.split(':').next().unwrap_or(p).trim().to_string())
                 .collect();
+            // The binder's set travels with the parameter: `\E b \in Ballot`
+            // is a condition on `b`, and without it `LNext` would admit
+            // parameters the source spec has no state for.
+            let bounds: Vec<String> = action.param_bounds.iter().flatten().cloned().collect();
+            let guard = if bounds.is_empty() {
+                String::new()
+            } else {
+                format!("{} && ", bounds.join(" && "))
+            };
             let _ = writeln!(
                 out,
-                "        ||| (exists|{}|\n                {}(s, s_, c, {}, sent_packets))",
+                "        ||| (exists|{}|\n                {guard}{}(s, s_, c, {}, sent_packets))",
                 action.params.join(", "),
                 action.name,
                 names.join(", ")
