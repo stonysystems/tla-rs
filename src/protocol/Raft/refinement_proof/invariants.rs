@@ -492,6 +492,39 @@ verus! {
         };
     }
 
+    /// Configuration Leader Completeness implies the first-missing-boundary
+    /// provenance obligation vacuously: the provenance predicate is guarded by
+    /// "some higher-term leader is missing a certified boundary", which is
+    /// exactly the situation Leader Completeness rules out.
+    ///
+    /// Together with
+    /// `lemma_configuration_leader_completeness_under_transfer_obligation`
+    /// this makes the two predicates equivalent relative to the transfer
+    /// obligation, so an inductive proof may target whichever is more
+    /// convenient — and Leader Completeness carries no existential witness.
+    pub proof fn lemma_configuration_leader_completeness_implies_provenance(
+        ds: RaftDistributedState,
+    )
+        requires
+            CertifiedConfigurationLeaderCompleteness(ds),
+        ensures
+            FirstMissingConfigurationBoundaryProvenance(ds),
+    {
+        assert forall |index: int, leader_id: int|
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term
+            && !(ds.server_states[leader_id].log.len() > index
+                && ds.server_states[leader_id].log[index]
+                    == ds.configuration_commit_certificates[index].entry)
+        implies false
+        by {
+            assert(CertifiedConfigurationLeaderCompleteness(ds));
+        };
+    }
+
     /// The transfer hypothesis is *discharged* by the inherited
     /// `lemma_overlap_voter_entry_transfer`, so stating it explicitly is a
     /// faithful reduction rather than a strengthening: the dynamic-membership
