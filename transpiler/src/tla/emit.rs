@@ -329,8 +329,9 @@ Next == \E p \in Proc : Send(p) \/ \E m \in network : Recv(p, m)
         let out = emitted();
         assert!(out.contains("LMessage::Ping { val } =>"), "{out}");
         assert!(
-            out.contains("LRecv(s, s_, c, src, val, sent_packets)"),
-            "{out}"
+            out.contains("LRecv(s, s_, c, val, sent_packets)"),
+            "a handler is given only what it uses -- this one never mentions the \
+             sender, so it does not take `src`: {out}"
         );
         assert!(
             out.contains("exists|src: int, msg: LMessage|"),

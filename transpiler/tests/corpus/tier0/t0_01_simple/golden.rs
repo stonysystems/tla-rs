@@ -39,10 +39,23 @@
 //!   is a statement about the composed system and belongs to the refinement
 //!   layer, not to this spec.
 
+//!
+//! Reading it beside `clean.tla`:
+//!
+//! - `LPc` is the projection of `pc`'s type, a set of string literals in the
+//!   source. Comparing an enum-typed field to a literal is a variant test, so
+//!   `pc[self] = "a"` becomes `s.pc is A`.
+//! - `LLeft` is the source's `Left(i) == (i - 1) % N` with the node parameter
+//!   projected away; the node's own identity survives as `c.node_id`.
+//! - `LReply` takes `src` because it answers the requester; `LRecv` does not,
+//!   because it never mentions the sender. A handler is given only what it
+//!   uses -- the framework always knows the rest.
+//! - `La` and `Lb` keep the source's names. Every projected definition is `L`
+//!   plus the name it had in the spec, so the two files can be read together.
+
 use vstd::prelude::*;
 
 verus! {
-    /// Control state of this process.
     pub enum LPc {
         A,
         B,
@@ -50,10 +63,7 @@ verus! {
         Done,
     }
 
-    /// Wire messages. Routing lives on the packet, not in the payload: `dst` is
-    /// the packet's, and `src` reaches a handler as a parameter the framework
-    /// supplies. Carrying either here would duplicate it, and would let a spec
-    /// state a sender inconsistent with the packet's.
+    /// Wire messages. Routing lives on the packet, not in the payload.
     pub enum LMessage {
         Read,
         Val { val: int },
@@ -78,7 +88,6 @@ verus! {
         pub node_id: int,
     }
 
-    /// The left neighbour in the ring: `(self - 1) % N` from the source spec.
     pub open spec fn LLeft(c: LConstants) -> int {
         (c.node_id - 1) % c.n
     }
@@ -89,7 +98,6 @@ verus! {
         &&& s.pc is A
     }
 
-    /// Step a: set my own value.
     pub open spec fn La(
         s: LState,
         s_: LState,
@@ -103,7 +111,6 @@ verus! {
         &&& sent_packets == Set::<LPacket>::empty()
     }
 
-    /// Step b, first half: ask the left neighbour for its value.
     pub open spec fn Lb(
         s: LState,
         s_: LState,
@@ -111,16 +118,12 @@ verus! {
         sent_packets: Set<LPacket>,
     ) -> bool {
         &&& s.pc is B
+        &&& sent_packets == set![LPacket { dst: LLeft(c), msg: LMessage::Read }]
         &&& s_.pc is W
         &&& s_.x == s.x
         &&& s_.y == s.y
-        &&& sent_packets == set![
-            LPacket { dst: LLeft(c), msg: LMessage::Read },
-        ]
     }
 
-    /// Answer a read request. Enabled in any control state: the source spec's
-    /// read observes this node's value wherever this node happens to be.
     pub open spec fn LReply(
         s: LState,
         s_: LState,
@@ -128,15 +131,12 @@ verus! {
         src: int,
         sent_packets: Set<LPacket>,
     ) -> bool {
+        &&& sent_packets == set![LPacket { dst: src, msg: LMessage::Val { val: s.x } }]
         &&& s_.x == s.x
         &&& s_.y == s.y
         &&& s_.pc == s.pc
-        &&& sent_packets == set![
-            LPacket { dst: src, msg: LMessage::Val { val: s.x } },
-        ]
     }
 
-    /// Step b, second half: record the answer.
     pub open spec fn LRecv(
         s: LState,
         s_: LState,
@@ -147,11 +147,12 @@ verus! {
         &&& s.pc is W
         &&& s_.y == val
         &&& s_.pc is Done
-        &&& s_.x == s.x
         &&& sent_packets == Set::<LPacket>::empty()
+        &&& s_.x == s.x
     }
 
-    /// Dispatch on the received message, as the hand-written specs do.
+    /// Dispatch on the received message. Delivery and the tag are the
+    /// framework's; each handler states only its own conditions.
     pub open spec fn LHandleMessage(
         s: LState,
         s_: LState,
@@ -161,8 +162,10 @@ verus! {
         sent_packets: Set<LPacket>,
     ) -> bool {
         match msg {
-            LMessage::Read => LReply(s, s_, c, src, sent_packets),
-            LMessage::Val { val } => LRecv(s, s_, c, val, sent_packets),
+            LMessage::Read =>
+                LReply(s, s_, c, src, sent_packets),
+            LMessage::Val { val } =>
+                LRecv(s, s_, c, val, sent_packets),
         }
     }
 
@@ -174,6 +177,7 @@ verus! {
     ) -> bool {
         ||| La(s, s_, c, sent_packets)
         ||| Lb(s, s_, c, sent_packets)
-        ||| (exists|src: int, msg: LMessage| LHandleMessage(s, s_, c, src, msg, sent_packets))
+        ||| (exists|src: int, msg: LMessage|
+                LHandleMessage(s, s_, c, src, msg, sent_packets))
     }
 }

@@ -403,6 +403,20 @@ enum Commands {
         config: Option<PathBuf>,
     },
 
+    /// Translate a clean-subset TLA+ spec to a single-process Verus spec (Phase 52)
+    ///
+    /// Exits 0 on success, 1 when the projection is incomplete (the gaps are
+    /// listed and no source is written), 2 when the input does not parse or is
+    /// not in the clean subset.
+    CleanTla {
+        /// Input TLA+ file (.tla), already in the clean subset
+        input: PathBuf,
+
+        /// Output Verus file (.rs); defaults to stdout
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
     /// Check a TLA+ spec against the clean subset (Phase 52.M0)
     ///
     /// Exits 0 when the module is in the subset, 1 when it is not, and 2 when
@@ -5964,6 +5978,61 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                     println!("Converted {} -> {}", input.display(), output_path.display());
                 } else {
                     println!("{}", tla_code);
+                }
+            }
+
+            Ok(())
+        }
+
+        Commands::CleanTla { input, output } => {
+            use verus_transpiler::tla::{emit, parse_module, project, ProjectionError};
+
+            let source = std::fs::read_to_string(input)
+                .map_err(|e| miette::miette!("Failed to read TLA+ file: {}", e))?;
+
+            let module = match parse_module(&source) {
+                Ok(module) => module,
+                Err(e) => {
+                    eprintln!("{}: {}", input.display(), e);
+                    std::process::exit(2);
+                }
+            };
+
+            let projected = match project(&module) {
+                Ok(projected) => projected,
+                Err(ProjectionError::NotClean(report)) => {
+                    eprintln!(
+                        "{}: not in the clean subset ({} violation(s)); run `tla-lint` for detail",
+                        input.display(),
+                        report.violations()
+                    );
+                    std::process::exit(2);
+                }
+            };
+
+            match emit(&projected) {
+                Ok(text) => match output {
+                    Some(path) => {
+                        std::fs::write(path, &text)
+                            .map_err(|e| miette::miette!("Failed to write output: {}", e))?;
+                        if cli.verbose {
+                            eprintln!("{} -> {}", input.display(), path.display());
+                        }
+                    }
+                    None => print!("{text}"),
+                },
+                Err(gaps) => {
+                    // No source is written: a spec missing a conjunct still
+                    // looks like a spec, and would be trusted as one.
+                    eprintln!(
+                        "{}: cannot translate, {} part(s) of the spec did not project:",
+                        input.display(),
+                        gaps.len()
+                    );
+                    for gap in &gaps {
+                        eprintln!("  {gap}");
+                    }
+                    std::process::exit(1);
                 }
             }
 

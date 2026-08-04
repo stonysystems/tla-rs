@@ -283,7 +283,13 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         });
     }
 
-    helpers.sort_by(|a, b| a.source_name.cmp(&b.source_name));
+    helpers.sort_by_key(|h| {
+        module
+            .operators
+            .iter()
+            .position(|o| o.name == h.source_name)
+            .unwrap_or(usize::MAX)
+    });
     helpers
 }
 
@@ -372,7 +378,18 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         // it handles: the message itself does not survive projection, so every
         // field the action reads has to arrive as a parameter.
         let params = if msg_param.is_some() {
-            let mut params = vec!["src: int".to_string()];
+            // The sender is passed only when the handler uses it. The framework
+            // always knows it; declaring it unused would put a parameter in the
+            // spec that the spec does not talk about.
+            let uses_src = conjuncts.iter().any(|c| {
+                c.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
+                    .any(|w| w == "src")
+            });
+            let mut params = if uses_src {
+                vec!["src: int".to_string()]
+            } else {
+                Vec::new()
+            };
             if let Some(tag) = &handles_tag {
                 if let Some(variant) = spec.messages.iter().find(|m| m.tag == *tag) {
                     params.extend(
@@ -404,7 +421,15 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         });
     }
 
-    actions.sort_by(|a, b| a.source_name.cmp(&b.source_name));
+    // Source order, not alphabetical: the output is meant to be read beside the
+    // spec it came from.
+    actions.sort_by_key(|a| {
+        module
+            .operators
+            .iter()
+            .position(|o| o.name == a.source_name)
+            .unwrap_or(usize::MAX)
+    });
     actions
 }
 
