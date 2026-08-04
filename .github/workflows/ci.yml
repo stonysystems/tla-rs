@@ -35,6 +35,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Regenerate DPOR test corpus
+        run: DPOR_based_model_tla_rs_checker/scripts/regenerate_corpus.sh
+
       - name: Run tests
         run: cargo test --all-features
 
