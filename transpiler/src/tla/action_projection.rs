@@ -289,7 +289,11 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
                         param_types
                             .get(&(op.name.clone(), p.name.clone()))
                             .cloned()
-                            .unwrap_or(ProjectedType::Int),
+                            .unwrap_or_else(|| match helper_param_type(op, &p.name) {
+                                "Set<int>" => ProjectedType::Set(Box::new(ProjectedType::Int)),
+                                "Seq<int>" => ProjectedType::Seq(Box::new(ProjectedType::Int)),
+                                _ => ProjectedType::Int,
+                            }),
                     )
                 })
                 .collect(),
@@ -302,6 +306,13 @@ pub fn project_helpers(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         // projected spec's own `s`, `s_` and `c`; the body has to agree.
         let mut renamed = op.body.clone();
         for param in &op.params {
+            // The node parameter is deliberately left alone: it does not appear
+            // in the signature -- it projects to `c.node_id` -- and renaming it
+            // would only break `is_node_index`, which matches against the name
+            // the source used. `AdvanceOne(s, d)`'s node parameter is `s`.
+            if param.name == *node_param {
+                continue;
+            }
             let safe = safe_param_name(&param.name);
             if safe != param.name {
                 renamed = substitute(&renamed, &param.name, &TlaExpr::Ident(safe));
@@ -358,7 +369,40 @@ fn called_helpers(module: &TlaModule, spec: &ProjectedSpec) -> std::collections:
             }
         }
     }
+    // Transitively: a helper may call another helper. EPaxos's `NextSeq` calls
+    // `Max`, and emitting only the directly-called set produced a spec that
+    // referenced `LMax` without defining it.
+    loop {
+        let mut added = false;
+        for name in called.clone() {
+            let Some(op) = module.operators.iter().find(|o| o.name == name) else {
+                continue;
+            };
+            let mut names = Vec::new();
+            collect_operator_calls(&op.body, &mut names);
+            for callee in names {
+                if module.operators.iter().any(|o| o.name == callee) && called.insert(callee) {
+                    added = true;
+                }
+            }
+        }
+        if !added {
+            break;
+        }
+    }
     called
+}
+
+/// Operator names applied in an expression.
+fn collect_operator_calls(expr: &TlaExpr, out: &mut Vec<String>) {
+    if let TlaExpr::OpApply { op, .. } = expr {
+        if let TlaExpr::Ident(name) = &**op {
+            out.push(name.clone());
+        }
+    }
+    for child in children(expr) {
+        collect_operator_calls(child, out);
+    }
 }
 
 /// A parameter name that cannot collide with the projected spec's own `s`,
@@ -415,6 +459,25 @@ fn infer_helper_param_types(
                             out.insert((callee.clone(), param.name.clone()), ty);
                         }
                     }
+                    // A record constructor's parameters are typed by the fields
+                    // they fill: `Rec(i, st, c, d, s)`'s `i` is whatever
+                    // `LRecord.inst` is. The call sites cannot say, because the
+                    // arguments are usually themselves parameters.
+                    if let TlaExpr::Record(fields) = &target.body {
+                        for (field, value) in fields {
+                            let TlaExpr::Ident(param) = value else { continue };
+                            if !target.params.iter().any(|p| p.name == *param) {
+                                continue;
+                            }
+                            let field = to_snake_case(field);
+                            let found = spec.records.iter().find_map(|(_, fs)| {
+                                fs.iter().find(|(f, _)| *f == field).map(|(_, t)| t.clone())
+                            });
+                            if let Some(ty) = found {
+                                out.insert((target.name.clone(), param.clone()), ty);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -455,7 +518,19 @@ fn helper_param_type(op: &crate::tla::ast::TlaOperator, param: &str) -> &'static
         }
         children(expr).into_iter().any(|c| measured(c, param))
     }
-    if counted(&op.body, param) {
+    fn quantified(expr: &TlaExpr, param: &str) -> bool {
+        let here = match expr {
+            TlaExpr::Forall { vars, .. } | TlaExpr::Exists { vars, .. } => vars
+                .iter()
+                .any(|b| matches!(&b.set, Some(TlaExpr::Ident(n)) if n == param)),
+            TlaExpr::Choose { set, .. } => {
+                matches!(set, Some(s) if matches!(&**s, TlaExpr::Ident(n) if n == param))
+            }
+            _ => false,
+        };
+        here || children(expr).into_iter().any(|c| quantified(c, param))
+    }
+    if counted(&op.body, param) || quantified(&op.body, param) {
         "Set<int>"
     } else if measured(&op.body, param) {
         "Seq<int>"
@@ -561,6 +636,27 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
         ctx.msg_tag = ctx.message_tag(&op.body);
         let ctx = ctx;
 
+        // An action's parameters go into its signature through
+        // `safe_param_name`, so its body has to agree -- EPaxos's
+        // `Propose(i, c)` has a parameter literally called `c`, which is the
+        // constants record in the projected spec.
+        let mut body = op.body.clone();
+        for param in &op.params {
+            if param.name == *node_param {
+                continue;
+            }
+            let safe = safe_param_name(&param.name);
+            if safe != param.name {
+                body = substitute(&body, &param.name, &TlaExpr::Ident(safe));
+            }
+        }
+        let op = &crate::tla::ast::TlaOperator {
+            name: op.name.clone(),
+            params: op.params.clone(),
+            body,
+            ..op.clone()
+        };
+
         let mut conjuncts = Vec::new();
         let mut gaps = Vec::new();
         let mut updated: Vec<String> = Vec::new();
@@ -628,7 +724,7 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
             op.params
                 .iter()
                 .filter(|p| p.name != node_param)
-                .map(|p| format!("{}: int", to_snake_case(&p.name)))
+                .map(|p| format!("{}: int", safe_param_name(&p.name)))
                 .collect()
         };
 
@@ -642,9 +738,11 @@ pub fn project_actions(module: &TlaModule, spec: &ProjectedSpec) -> Vec<Projecte
                 .filter(|p| p.name != node_param)
                 .map(|p| {
                     let set = bounds.get(&(op_name.clone(), p.name.clone()))?;
+                    // The bound names the parameter as the *signature* spells
+                    // it, which is the renamed form.
                     ctx.project_expr(&TlaExpr::BinOp {
                         op: TlaBinOp::In,
-                        left: Box::new(TlaExpr::Ident(p.name.clone())),
+                        left: Box::new(TlaExpr::Ident(safe_param_name(&p.name))),
                         right: Box::new(set.clone()),
                     })
                     .ok()
@@ -697,7 +795,7 @@ struct ActionContext<'a> {
     network: Option<String>,
 }
 
-impl ActionContext<'_> {
+impl<'a> ActionContext<'a> {
     fn state_field(&self, var: &str) -> Option<&str> {
         self.spec
             .state_fields
@@ -889,6 +987,45 @@ impl ActionContext<'_> {
         // again would restate in the action what the caller has established.
         if let Some(tag) = self.dispatch_guard(expr) {
             return Ok(DISPATCH_PREFIX.to_string() + &tag);
+        }
+
+        // `\E rec \in cmdLog[i] : /\ ... /\ x' = ...` -- an action that picks
+        // a record out of its own state and updates from it. The binder is
+        // quantified in the projected conjunct, and the body's updates are the
+        // action's updates, so `updated` has to be threaded through: otherwise
+        // P5 would frame a field the action assigns.
+        if let TlaExpr::Exists { vars, body } = expr {
+            if vars.len() == 1 && mentions_prime(body) {
+                let bound = &vars[0];
+                if let Some(set) = &bound.set {
+                    let elem = match self.type_of(set) {
+                        Some(ProjectedType::Set(elem)) => elem.render(),
+                        _ => "int".to_string(),
+                    };
+                    let domain = self.project_quantifier_domain(&bound.var, set)?;
+                    // The binder has to be *typed* inside the body, or a test
+                    // like `rec.status = "pre-accepted"` cannot be seen as a
+                    // variant test and emits a string comparison against an enum.
+                    let inner = match self.type_of(set) {
+                        Some(ProjectedType::Set(elem)) => {
+                            self.clone_with_param(&bound.var, *elem)
+                        }
+                        _ => self.clone_with_param(&bound.var, ProjectedType::Int),
+                    };
+                    let mut parts = Vec::new();
+                    for conjunct in flatten_conjunction(body) {
+                        let text = inner.project_conjunct(conjunct, updated, sends_seen)?;
+                        if !text.is_empty() && !text.starts_with(DISPATCH_PREFIX) {
+                            parts.push(text);
+                        }
+                    }
+                    return Ok(format!(
+                        "exists|{}: {elem}| {domain} && {}",
+                        bound.var,
+                        parts.join(" && ")
+                    ));
+                }
+            }
         }
 
         // `UNCHANGED <<a, b>>` -- the source's own frame conjuncts. They are
@@ -1361,6 +1498,74 @@ impl ActionContext<'_> {
         }
     }
 
+    /// `x = "label"` where `x` is enum-typed, as the projected test and the
+    /// variant it names.
+    ///
+    /// The left-hand side need not be a state field: EPaxos compares
+    /// `rec.status`, a field of a record it pulled out of its own log.
+    fn enum_test(&self, left: &TlaExpr, right: &TlaExpr) -> Option<(String, String)> {
+        let literal = match right {
+            TlaExpr::String(t) => t.clone(),
+            TlaExpr::Ident(_) => self.resolve_tag(right)?,
+            _ => return None,
+        };
+        let wanted = variant_name(&literal);
+        let ProjectedType::Enum { variants, .. } = self.type_of(left)? else {
+            return None;
+        };
+        if !variants.contains(&wanted) {
+            return None;
+        }
+        Some((self.project_expr(left).ok()?, wanted))
+    }
+
+    /// A string literal passed where the callee declares an enum-typed
+    /// parameter, rendered as that variant.
+    fn enum_argument(&self, callee: &str, index: usize, arg: &TlaExpr) -> Option<String> {
+        let literal = match arg {
+            TlaExpr::String(t) => t.clone(),
+            TlaExpr::Ident(_) => self.resolve_tag(arg)?,
+            _ => return None,
+        };
+        let (params, body) = self.spec.operator_bodies.get(callee)?;
+        let param = params.get(index)?;
+        // The parameter's type comes from the record field it fills, which is
+        // the same rule `infer_helper_param_types` uses for constructors.
+        let TlaExpr::Record(fields) = body else {
+            return None;
+        };
+        let field = fields
+            .iter()
+            .find(|(_, v)| matches!(v, TlaExpr::Ident(n) if n == param))
+            .map(|(f, _)| to_snake_case(f))?;
+        let wanted = variant_name(&literal);
+        self.spec.records.iter().find_map(|(_, fs)| {
+            fs.iter().find_map(|(f, ty)| match ty {
+                ProjectedType::Enum { name, variants }
+                    if *f == field && variants.contains(&wanted) =>
+                {
+                    Some(format!("{name}::{wanted}"))
+                }
+                _ => None,
+            })
+        })
+    }
+
+    /// A copy of this context with one more parameter in scope, so a
+    /// comprehension binder can be typed inside its own body.
+    fn clone_with_param(&self, var: &str, ty: ProjectedType) -> ActionContext<'a> {
+        let mut param_types = self.param_types.clone();
+        param_types.insert(var.to_string(), ty);
+        ActionContext {
+            spec: self.spec,
+            param_types,
+            msg_tag: self.msg_tag.clone(),
+            node_param: self.node_param.clone(),
+            msg_param: self.msg_param.clone(),
+            network: self.network.clone(),
+        }
+    }
+
     /// The variants a set literal names, when the left-hand side is an
     /// enum-typed field and every element resolves to one of its labels.
     fn enum_variants_of(&self, left: &TlaExpr, right: &TlaExpr) -> Option<Vec<String>> {
@@ -1416,6 +1621,46 @@ impl ActionContext<'_> {
                 _ => None,
             },
             TlaExpr::Number(_) => Some(ProjectedType::Int),
+            // A record literal has the type of the struct its field names
+            // match, the same way its *value* is projected. Without this a
+            // constructor like `Inst(o, n) == [owner |-> o, num |-> n]` gets a
+            // return type from the emitted text, which says `int`.
+            TlaExpr::Record(fields) => {
+                let names: Vec<String> =
+                    fields.iter().map(|(n, _)| to_snake_case(n)).collect();
+                self.spec
+                    .records
+                    .iter()
+                    .find(|(_, fs)| {
+                        fs.len() == names.len() && fs.iter().all(|(f, _)| names.contains(f))
+                    })
+                    .map(|(name, fs)| ProjectedType::Record {
+                        name: name.clone(),
+                        fields: fs.clone(),
+                    })
+            }
+            // `CHOOSE x \in S : P` has the element type of `S`; a set
+            // comprehension is a set of whatever the body produces. Both are
+            // helper *bodies* in EPaxos (`Max`, `KnownInstances`), so getting
+            // them wrong types the whole function wrong.
+            TlaExpr::Choose { set, .. } => match self.type_of(set.as_deref()?)? {
+                ProjectedType::Set(elem) => Some(*elem),
+                _ => None,
+            },
+            TlaExpr::SetMap { expr: body, var, set } => {
+                let elem = match self.type_of(set)? {
+                    ProjectedType::Set(elem) => *elem,
+                    _ => return None,
+                };
+                let mut inner = self.clone_with_param(var, elem);
+                inner
+                    .value_type(body)
+                    .map(|t| ProjectedType::Set(Box::new(t)))
+            }
+            TlaExpr::SetEnum(items) => {
+                let first = items.first()?;
+                self.value_type(first).map(|t| ProjectedType::Set(Box::new(t)))
+            }
             // A conditional has the type of whichever branch says something.
             // `IF Len(l) = 0 THEN 0 ELSE l[Len(l)].term` is an int by both.
             TlaExpr::IfThenElse {
@@ -1691,16 +1936,8 @@ impl ActionContext<'_> {
                 op: TlaBinOp::Eq,
                 left,
                 right,
-            } if self
-                .project_expr(left)
-                .ok()
-                .and_then(|l| l.strip_prefix("s.").map(str::to_string))
-                .and_then(|f| self.enum_variant(&f, right))
-                .is_some() =>
-            {
-                let l = self.project_expr(left)?;
-                let field = l.trim_start_matches("s.").to_string();
-                let variant = self.enum_variant(&field, right).unwrap();
+            } if self.enum_test(left, right).is_some() => {
+                let (l, variant) = self.enum_test(left, right).expect("guarded above");
                 Ok(format!("{l} is {variant}"))
             }
             // `b \in a .. z` is a range test, not a set membership: the
@@ -1810,6 +2047,25 @@ impl ActionContext<'_> {
                     items.iter().map(|i| self.project_expr(i)).collect();
                 Ok(format!("set![{}]", rendered?.join(", ")))
             }
+            // `CHOOSE x \in S : P(x)`. Verus's `choose` is Hilbert's epsilon and
+            // so is TLA+'s CHOOSE: both pick *some* witness and both are
+            // deterministic in the predicate, so this is a direct translation
+            // rather than an interpretation. `Max(s) == CHOOSE x \in s :
+            // \A y \in s : x >= y` is the idiom that needs it.
+            TlaExpr::Choose { var, set, body } => {
+                let Some(set) = set else {
+                    return Err("unbounded CHOOSE".to_string());
+                };
+                let ty = match self.type_of(set) {
+                    Some(ProjectedType::Set(elem)) => elem.render(),
+                    _ => "int".to_string(),
+                };
+                let domain = self.project_quantifier_domain(var, set)?;
+                Ok(format!(
+                    "choose|{var}: {ty}| {domain} && {}",
+                    self.project_expr(body)?
+                ))
+            }
             // `\A q \in Node \ {self} : P` -- a statement about every peer.
             TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } if vars.len() == 1 => {
                 let bound = &vars[0];
@@ -1893,12 +2149,19 @@ impl ActionContext<'_> {
                     rendered.push("s".to_string());
                 }
                 rendered.push("c".to_string());
-                for arg in args.iter() {
+                for (i, arg) in args.iter().enumerate() {
                     // The acting node disappears from the argument list: the
                     // projected helper is already about this node. It is the
                     // *argument* that identifies it, not the parameter name --
                     // the helper may call its own parameter something else.
                     if self.is_node_index(arg) {
+                        continue;
+                    }
+                    // A literal in a position the callee types as an enum names
+                    // a variant. `Rec(i, "pre-accepted", ..)` must become
+                    // `LRec(.., LRecordStatus::PreAccepted, ..)`, not a `&str`.
+                    if let Some(text) = self.enum_argument(name, i, arg) {
+                        rendered.push(text);
                         continue;
                     }
                     rendered.push(self.project_expr(arg)?);
@@ -1914,6 +2177,17 @@ impl ActionContext<'_> {
                 };
                 self.project_update(var, expr)
             }
+            // `{rec.inst : rec \in log}` -- a set comprehension over a value
+            // the node holds, which is a `map` rather than a quantifier.
+            TlaExpr::SetMap { expr: body, var, set } => Ok(format!(
+                "{}.map(|{var}: {}| {})",
+                self.project_expr(set)?,
+                match self.type_of(set) {
+                    Some(ProjectedType::Set(elem)) => elem.render(),
+                    _ => "int".to_string(),
+                },
+                self.project_expr_with_binder(body, var)?
+            )),
             // `[d \in Node |-> e]` -- a table built over the peers.
             TlaExpr::FnConstruct { var, domain, body } => {
                 let set = self.project_node_set(domain)?;
@@ -1952,7 +2226,24 @@ impl ActionContext<'_> {
                 }
                 Err(format!("quantifier domain {}", render_source(set)))
             }
-            other => Ok(format!("{}.contains({var})", self.project_node_set(other)?)),
+            // The node set, or -- as EPaxos's `\E rec \in cmdLog[i]` needs --
+            // any set-valued expression the node itself holds.
+            // The node set, or -- as EPaxos's `\E rec \in cmdLog[i]` needs --
+            // any expression the projection knows to be set-valued.
+            //
+            // Knowing it is set-valued is the whole condition. Falling back to
+            // `project_expr` alone would accept `\E v \in Nat`, because an
+            // unresolved identifier projects to itself, and emit `Nat.contains(v)`
+            // against a `Nat` that does not exist.
+            other => match self.project_node_set(other) {
+                Ok(set) => Ok(format!("{set}.contains({var})")),
+                Err(node_set_error) => match self.type_of(other) {
+                    Some(ProjectedType::Set(_)) => {
+                        Ok(format!("{}.contains({var})", self.project_expr(other)?))
+                    }
+                    _ => Err(node_set_error),
+                },
+            },
         }
     }
 }
@@ -2073,16 +2364,11 @@ fn assigned_value(expr: &TlaExpr, is_node: impl Fn(&TlaExpr) -> bool) -> &TlaExp
 
 
 /// `"req"` -> `Req`.
+/// The projection has one rule for turning a tag into a variant name, and it
+/// lives in `projection`. Duplicating it here is how `LRecordStatus::PreAccepted`
+/// and a call site's `Pre-accepted` came to disagree.
 fn variant_name(tag: &str) -> String {
-    let mut chars = tag.chars();
-    match chars.next() {
-        // A tag need not be a Rust identifier: Paxos's phases are "1a", "1b",
-        // "2a" and "2b", and `LMessage::1a` does not parse. A leading `M` makes
-        // it one without losing the tag.
-        Some(first) if !first.is_alphabetic() => format!("M{tag}"),
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    }
+    crate::tla::projection::variant_name_for(tag)
 }
 
 /// Replace every free occurrence of `param` with `value`.
@@ -2132,6 +2418,42 @@ fn substitute(expr: &TlaExpr, param: &str, value: &TlaExpr) -> TlaExpr {
             cond: Box::new(substitute(cond, param, value)),
             then_expr: Box::new(substitute(then_expr, param, value)),
             else_expr: Box::new(substitute(else_expr, param, value)),
+        },
+        // Quantifiers and CHOOSE bind their own variable, so substitution
+        // stops at a binder that shadows the parameter -- but it must go
+        // *into* the body otherwise. Skipping them left `Max(s)`'s body
+        // referring to `s` while its signature said `s_arg`.
+        TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body }
+            if !vars.iter().any(|b| b.var == param) =>
+        {
+            let vars = vars
+                .iter()
+                .map(|b| crate::tla::ast::TlaQuantBound {
+                    var: b.var.clone(),
+                    set: b.set.as_ref().map(|s| substitute(s, param, value)),
+                })
+                .collect();
+            let body = Box::new(substitute(body, param, value));
+            if matches!(expr, TlaExpr::Forall { .. }) {
+                TlaExpr::Forall { vars, body }
+            } else {
+                TlaExpr::Exists { vars, body }
+            }
+        }
+        TlaExpr::Choose { var, set, body } if var != param => TlaExpr::Choose {
+            var: var.clone(),
+            set: set.as_ref().map(|s| Box::new(substitute(s, param, value))),
+            body: Box::new(substitute(body, param, value)),
+        },
+        TlaExpr::FnExcept { func, updates } => TlaExpr::FnExcept {
+            func: Box::new(substitute(func, param, value)),
+            updates: updates
+                .iter()
+                .map(|u| crate::tla::ast::TlaExceptUpdate {
+                    path: u.path.clone(),
+                    value: substitute(&u.value, param, value),
+                })
+                .collect(),
         },
         other => other.clone(),
     }
@@ -2357,6 +2679,12 @@ Next == \E self \in Proc : Step(self)
 
     #[test]
     fn reports_an_unprojectable_conjunct_instead_of_dropping_it() {
+        // `Nat` is not a set the projection knows anything about, so the
+        // quantifier domain cannot be projected. It used to be `CHOOSE` that
+        // made this test's spec unprojectable; `CHOOSE` now translates, and an
+        // unknown domain is the thing still worth refusing -- an unresolved
+        // identifier would otherwise project to itself and emit
+        // `Nat.contains(v)` against a `Nat` that does not exist.
         let source = r#"---- MODULE Test ----
 VARIABLES x
 TypeOK == x \in [Proc -> Nat]

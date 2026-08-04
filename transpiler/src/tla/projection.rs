@@ -169,6 +169,11 @@ pub fn project_module(module: &TlaModule) -> Result<ProjectedSpec, ProjectionErr
             Some(mut ty) => {
                 // A set of string literals becomes an enum, and it is named
                 // after the variable it types -- the source has no name for it.
+                // An enum nested inside a record has no variable to be named
+                // after, so it takes the record's name and the field's:
+                // `Record`'s `status` field becomes `LRecordStatus`. Leaving it
+                // unnamed emitted `pub status: ,` -- a field with no type.
+                name_nested_enums(&mut ty, &mut enums);
                 if let ProjectedType::Enum { name, variants } = &mut ty {
                     if name.is_empty() {
                         // Raft's variable really is called `state`, and
@@ -374,7 +379,7 @@ impl ProjectionContext<'_> {
                 if labels.len() == items.len() && !labels.is_empty() {
                     ProjectedType::Enum {
                         name: String::new(), // named by the caller, which knows the field
-                        variants: labels.iter().map(|l| to_variant_name(l)).collect(),
+                        variants: labels.iter().map(|l| variant_name_for(l)).collect(),
                     }
                 } else if items
                     .iter()
@@ -559,7 +564,7 @@ impl ProjectionContext<'_> {
                 None => payload.clone(),
             };
             variants.push(MessageVariant {
-                name: to_variant_name(tag),
+                name: variant_name_for(tag),
                 tag: tag.clone(),
                 fields,
             });
@@ -607,6 +612,38 @@ impl ProjectionContext<'_> {
 }
 
 /// Collect the struct types a projected type mentions, innermost first.
+/// Give every enum nested inside a record a name, and register it.
+///
+/// A top-level enum is named after the variable it types. One inside a record
+/// has no variable, so it is named after the record and the field.
+fn name_nested_enums(ty: &mut ProjectedType, enums: &mut Vec<(String, Vec<String>)>) {
+    match ty {
+        ProjectedType::Record { name, fields } => {
+            let record = name.clone();
+            for (field, field_ty) in fields.iter_mut() {
+                if let ProjectedType::Enum { name, variants } = field_ty {
+                    if name.is_empty() {
+                        *name = format!("{record}{}", to_pascal_case(field));
+                        if !enums.iter().any(|(n, _)| *n == *name) {
+                            enums.push((name.clone(), variants.clone()));
+                        }
+                    }
+                } else {
+                    name_nested_enums(field_ty, enums);
+                }
+            }
+        }
+        ProjectedType::Set(inner) | ProjectedType::Seq(inner) => {
+            name_nested_enums(inner, enums)
+        }
+        ProjectedType::Map(k, v) => {
+            name_nested_enums(k, enums);
+            name_nested_enums(v, enums);
+        }
+        _ => {}
+    }
+}
+
 fn collect_records(ty: &ProjectedType, out: &mut Vec<(String, Vec<(String, ProjectedType)>)>) {
     match ty {
         ProjectedType::Record { name, fields } => {
@@ -683,14 +720,23 @@ pub fn to_pascal_case(name: &str) -> String {
 }
 
 /// `"req"` -> `Req`.
-fn to_variant_name(tag: &str) -> String {
-    let mut chars = tag.chars();
-    match chars.next() {
-        // A tag need not be a Rust identifier: Paxos's phases are "1a", "1b",
-        // "2a" and "2b", and `LMessage::1a` does not parse. A leading `M` makes
-        // it one without losing the tag.
-        Some(first) if !first.is_alphabetic() => format!("M{tag}"),
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+pub fn variant_name_for(tag: &str) -> String {
+    // A tag need not be a Rust identifier. Paxos's phases are "1a", "1b", "2a"
+    // and "2b", and EPaxos's statuses are "pre-accepted" and "committed" --
+    // `LMessage::1a` and `LRecordStatus::Pre-accepted` both fail to parse.
+    // Word-split on anything that is not alphanumeric, PascalCase the parts,
+    // and prefix `M` when the result would start with a digit.
+    let mut out = String::new();
+    for word in tag.split(|c: char| !c.is_alphanumeric()) {
+        let mut chars = word.chars();
+        if let Some(first) = chars.next() {
+            out.extend(first.to_uppercase());
+            out.push_str(chars.as_str());
+        }
+    }
+    match out.chars().next() {
+        Some(first) if !first.is_alphabetic() => format!("M{out}"),
+        Some(_) => out,
         None => String::new(),
     }
 }

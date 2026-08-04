@@ -688,7 +688,7 @@ impl TlaParser {
 
     /// Parse set operation expressions
     fn parse_set_expr(&mut self) -> ParseResult<TlaExpr> {
-        let mut left = self.parse_additive_expr()?;
+        let mut left = self.parse_range_expr()?;
 
         loop {
             // A token at or left of the enclosing bullet column belongs to the
@@ -704,14 +704,31 @@ impl TlaParser {
                 _ => break,
             };
             self.advance();
-            let right = self.parse_additive_expr()?;
+            let right = self.parse_range_expr()?;
             left = TlaExpr::binop(op, left, right);
         }
 
         Ok(left)
     }
 
-    /// Parse additive expressions (including `..` range operator)
+    /// Parse a range, `a .. b`.
+    ///
+    /// **`..` binds more loosely than `+`.** In TLA+ `..` is priority 9 and the
+    /// arithmetic operators are 10 and above, so `1 .. MaxInstance + 1` is
+    /// `1 .. (MaxInstance + 1)`. Parsing it at the additive level made it
+    /// `(1 .. MaxInstance) + 1` — a set plus a number, which is nonsense, and
+    /// which for `0 .. N - 1` would have quietly produced the wrong node set.
+    fn parse_range_expr(&mut self) -> ParseResult<TlaExpr> {
+        let left = self.parse_additive_expr()?;
+        if self.at_junction_boundary() || !self.check(TlaTokenKind::DotDot) {
+            return Ok(left);
+        }
+        self.advance();
+        let right = self.parse_additive_expr()?;
+        Ok(TlaExpr::binop(TlaBinOp::DotDot, left, right))
+    }
+
+    /// Parse additive expressions
     fn parse_additive_expr(&mut self) -> ParseResult<TlaExpr> {
         let mut left = self.parse_multiplicative_expr()?;
 
@@ -724,7 +741,6 @@ impl TlaParser {
             let op = match self.peek_kind() {
                 Some(TlaTokenKind::Plus) => TlaBinOp::Plus,
                 Some(TlaTokenKind::Minus) => TlaBinOp::Minus,
-                Some(TlaTokenKind::DotDot) => TlaBinOp::DotDot,
                 _ => break,
             };
             self.advance();
