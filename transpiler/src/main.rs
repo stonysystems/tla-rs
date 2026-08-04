@@ -430,6 +430,34 @@ enum Commands {
         state_name: String,
     },
 
+    /// Lint a TLA+ file against the clean subset (Phase 52.M0)
+    ///
+    /// The clean subset is the input contract of the clean-TLA+ → single-process
+    /// Verus translator: per-node variables, no cross-node reads, no history
+    /// variables, one designated network variable, node-parameterised actions.
+    /// See `docs/clean_tla_subset_spec.md`.
+    CleanLint {
+        /// Input TLA+ file (.tla)
+        #[arg(short, long)]
+        input: PathBuf,
+
+        /// Designate the node set constant instead of inferring it
+        #[arg(long)]
+        node_set: Option<String>,
+
+        /// Designate the network variable instead of inferring it
+        #[arg(long)]
+        network_var: Option<String>,
+
+        /// Emit the report as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Exit 0 even when the spec is not clean (for corpus intake surveys)
+        #[arg(long)]
+        no_fail: bool,
+    },
+
     /// Convert Verus spec to TLA+ (verus2tla)
     Verus2Tla {
         /// Input Verus spec file (.rs) or directory for batch mode
@@ -5953,6 +5981,68 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 }
             }
 
+            Ok(())
+        }
+
+        Commands::CleanLint {
+            input,
+            node_set,
+            network_var,
+            json,
+            no_fail,
+        } => {
+            use verus_transpiler::tla::{lint_module_with_config, parse_module, CleanSubsetConfig};
+
+            let source = std::fs::read_to_string(input)
+                .map_err(|e| miette::miette!("Failed to read TLA+ file: {}", e))?;
+            let module = parse_module(&source)
+                .map_err(|e| miette::miette!("Failed to parse TLA+ file: {}", e))?;
+
+            let config = CleanSubsetConfig {
+                node_set: node_set.clone(),
+                network_var: network_var.clone(),
+                ..CleanSubsetConfig::default()
+            };
+            let report = lint_module_with_config(&module, &config);
+
+            if *json {
+                let violations: Vec<serde_json::Value> = report
+                    .violations
+                    .iter()
+                    .map(|v| {
+                        serde_json::json!({
+                            "code": v.code,
+                            "rule": v.rule,
+                            "severity": v.severity.as_str(),
+                            "operator": v.operator,
+                            "line": v.line,
+                            "message": v.message,
+                            "hint": v.hint,
+                        })
+                    })
+                    .collect();
+                let out = serde_json::json!({
+                    "module": report.module,
+                    "node_set": report.node_set,
+                    "network_var": report.network_var,
+                    "clean": report.is_clean(),
+                    "clean_distance": report.clean_distance(),
+                    "variables": report
+                        .var_kinds
+                        .iter()
+                        .map(|(n, k)| (n.clone(), format!("{k:?}")))
+                        .collect::<std::collections::BTreeMap<_, _>>(),
+                    "actions": report.actions.iter().cloned().collect::<Vec<_>>(),
+                    "violations": violations,
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap());
+            } else {
+                print!("{}", report.render());
+            }
+
+            if !report.is_clean() && !*no_fail {
+                std::process::exit(1);
+            }
             Ok(())
         }
 
