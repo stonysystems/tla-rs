@@ -14,7 +14,7 @@ verus! {
     // =========================================================================
 
     pub open spec fn ElectionSafety(ds: RaftDistributedState) -> bool {
-        forall |i: int, j: int|
+        forall |i: int, j: int| #![trigger ds.server_states[i], ds.server_states[j]]
             0 <= i < ds.num_servers && 0 <= j < ds.num_servers
             && ds.server_states[i].role is Leader
             && ds.server_states[j].role is Leader
@@ -29,7 +29,7 @@ verus! {
     // =========================================================================
 
     pub open spec fn LogMatching(ds: RaftDistributedState) -> bool {
-        forall |i: int, j: int, k: int|
+        forall |i: int, j: int, k: int| #![trigger ds.server_states[i], ds.server_states[j].log[k]] #![trigger ds.server_states[i].log[k], ds.server_states[j]]
             0 <= i < ds.num_servers && 0 <= j < ds.num_servers
             && 0 <= k < ds.server_states[i].log.len()
             && 0 <= k < ds.server_states[j].log.len()
@@ -52,7 +52,7 @@ verus! {
         let quorum_size = ds.num_servers / 2 + 1;
         exists |quorum: Set<int>| {
             &&& quorum.len() >= quorum_size
-            &&& (forall |id: int| quorum.contains(id) ==> {
+            &&& (forall |id: int| #![trigger quorum.contains(id)] quorum.contains(id) ==> {
                 &&& 0 <= id < ds.num_servers
                 &&& ds.server_states[id].log.len() > k
                 &&& ds.server_states[id].log[k] == entry
@@ -61,7 +61,7 @@ verus! {
     }
 
     pub open spec fn LeaderCompleteness(ds: RaftDistributedState) -> bool {
-        forall |k: int, entry: LLogEntry, leader_id: int|
+        forall |k: int, entry: LLogEntry, leader_id: int| #![trigger EntryCommittedAt(ds, k, entry), ds.server_states[leader_id]]
             0 <= k
             && EntryCommittedAt(ds, k, entry)
             && 0 <= leader_id < ds.num_servers
@@ -83,7 +83,7 @@ verus! {
     // =========================================================================
 
     pub open spec fn StateMachineSafety(ds: RaftDistributedState) -> bool {
-        forall |i: int, j: int, k: int|
+        forall |i: int, j: int, k: int| #![trigger ds.server_states[i], ds.server_states[j].log[k]] #![trigger ds.server_states[j], ds.server_states[i].log[k]]
             0 <= i < ds.num_servers && 0 <= j < ds.num_servers
             && 0 <= k < ds.server_states[i].commit_index
             && 0 <= k < ds.server_states[j].commit_index
@@ -107,7 +107,7 @@ verus! {
     /// A leader/candidate has itself in its votes_granted set
     /// (Leaders and Candidates always start by voting for themselves)
     pub open spec fn CandidateOrLeaderVotedForSelf(ds: RaftDistributedState) -> bool {
-        forall |i: int|
+        forall |i: int| #![trigger ds.server_states[i]] #![trigger ds.server_constants[i]]
             0 <= i < ds.num_servers
             && (ds.server_states[i].role is Candidate || ds.server_states[i].role is Leader)
             ==> ds.server_states[i].votes_granted.contains(ds.server_constants[i].my_id)
@@ -117,7 +117,7 @@ verus! {
     /// LTimeout sets voted_for = my_id when becoming Candidate. All transitions
     /// that preserve Candidate/Leader role also preserve voted_for.
     pub open spec fn CandidateOrLeaderVotedForSelfId(ds: RaftDistributedState) -> bool {
-        forall |i: int|
+        forall |i: int| #![trigger ds.server_states[i]]
             0 <= i < ds.num_servers
             && (ds.server_states[i].role is Candidate || ds.server_states[i].role is Leader)
             ==> ds.server_states[i].has_voted && ds.server_states[i].voted_for == i
@@ -149,7 +149,7 @@ verus! {
             && v != i
             && (ds.server_states[i].role is Candidate || ds.server_states[i].role is Leader)
             && ds.server_states[i].votes_granted.contains(v)
-            ==> exists |p: LRaftPacket| {
+            ==> exists |p: LRaftPacket| #![trigger ds.network.contains(p)] {
                 &&& ds.network.contains(p)
                 &&& p.dst == i
                 &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter, .. }
@@ -162,7 +162,7 @@ verus! {
     /// Quorum of voters: if server i is Leader, then votes_granted has
     /// quorum_size members who all voted for i in i's current_term.
     pub open spec fn LeaderHasQuorum(ds: RaftDistributedState) -> bool {
-        forall |i: int|
+        forall |i: int| #![trigger ds.server_states[i]] #![trigger ds.server_constants[i]]
             0 <= i < ds.num_servers
             && ds.server_states[i].role is Leader
             ==> ds.server_states[i].votes_granted.len() >= ds.server_constants[i].quorum_size
@@ -170,7 +170,7 @@ verus! {
 
     /// Commit index is bounded by log length
     pub open spec fn CommitIndexBounded(ds: RaftDistributedState) -> bool {
-        forall |i: int|
+        forall |i: int| #![trigger ds.server_states[i]]
             0 <= i < ds.num_servers
             ==> ds.server_states[i].commit_index <= ds.server_states[i].log.len()
     }
@@ -225,7 +225,7 @@ verus! {
     /// via AppendEntries from the leader at term T (LFollowerAppendEntries).
     /// In either case, the leader's log must have been long enough.
     pub open spec fn LeaderLogLongEnough(ds: RaftDistributedState) -> bool {
-        forall |i: int, k: int, l: int|
+        forall |i: int, k: int, l: int| #![trigger ds.server_states[l], ds.server_states[i].log[k]]
             0 <= i < ds.num_servers
             && 0 <= k < ds.server_states[i].log.len()
             && 0 <= l < ds.num_servers
@@ -347,7 +347,7 @@ verus! {
     // After creation: term monotonicity + voted_for only changes when term changes.
 
     pub open spec fn RequestVoteSenderState(ds: RaftDistributedState) -> bool {
-        forall |p: LRaftPacket| ds.network.contains(p) ==>
+        forall |p: LRaftPacket| #![trigger ds.network.contains(p)] ds.network.contains(p) ==>
             match p.msg {
                 LRaftMessage::RequestVote { term: t, candidate: d, .. } => {
                     &&& 0 <= d < ds.num_servers
@@ -380,7 +380,7 @@ verus! {
     //   This case is handled inductively (not from single-state reasoning alone).
 
     pub open spec fn CandidateVoteDestinationUnique(ds: RaftDistributedState) -> bool {
-        forall |p_req: LRaftPacket, p_vote: LRaftPacket|
+        forall |p_req: LRaftPacket, p_vote: LRaftPacket| #![trigger ds.network.contains(p_req), ds.network.contains(p_vote)]
             ds.network.contains(p_req) && ds.network.contains(p_vote) ==>
             match p_req.msg {
                 LRaftMessage::RequestVote { term: t_req, candidate: d, .. } =>
@@ -520,7 +520,7 @@ verus! {
                 || ds.server_states[candidate].role is Leader),
             ds.server_states[candidate].votes_granted.contains(voter),
         ensures
-            exists |p: LRaftPacket| {
+            exists |p: LRaftPacket| #![trigger ds.network.contains(p)] {
                 &&& ds.network.contains(p)
                 &&& p.src == voter
                 &&& p.dst == candidate
@@ -536,7 +536,7 @@ verus! {
                     && ds.server_states[voter].has_voted
                     && ds.server_states[voter].voted_for == candidate),
     {
-        let p = choose |p: LRaftPacket| {
+        let p = choose |p: LRaftPacket| #![trigger ds.network.contains(p)] {
             &&& ds.network.contains(p)
             &&& p.dst == candidate
             &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter: msg_voter, .. }
@@ -578,7 +578,7 @@ verus! {
                     && ds.server_states[voter].has_voted
                     && ds.server_states[voter].voted_for == candidate)
         );
-        assert(exists |pkt: LRaftPacket| {
+        assert(exists |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
             &&& ds.network.contains(pkt)
             &&& pkt.src == voter
             &&& pkt.dst == candidate
@@ -645,7 +645,7 @@ verus! {
             ds.server_states[overlap_voter].log.len() > k,
             ds.server_states[overlap_voter].log[k] == entry,
             // There's a granted VoteResponse from overlap_voter at leader's term
-            exists |vote_pkt: LRaftPacket| {
+            exists |vote_pkt: LRaftPacket| #![trigger ds.network.contains(vote_pkt)] {
                 &&& ds.network.contains(vote_pkt)
                 &&& vote_pkt.src == overlap_voter
                 &&& vote_pkt.dst == leader_id
@@ -656,7 +656,7 @@ verus! {
                 &&& vt == ds.server_states[leader_id].current_term
             },
             // There's a matching RequestVote with summary valid against leader log
-            exists |req_pkt: LRaftPacket| {
+            exists |req_pkt: LRaftPacket| #![trigger ds.network.contains(req_pkt)] {
                 &&& ds.network.contains(req_pkt)
                 &&& req_pkt.src == leader_id
                 &&& req_pkt.dst == overlap_voter
@@ -688,7 +688,7 @@ verus! {
     {
         let vote_term = ds.server_states[leader_id].current_term;
         // Extract vote packet witness
-        let vote_pkt = choose |pkt: LRaftPacket| {
+        let vote_pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
             &&& ds.network.contains(pkt)
             &&& pkt.src == overlap_voter
             &&& pkt.dst == leader_id
@@ -758,7 +758,7 @@ verus! {
             ds.server_states[overlap_voter].log.len() > k,
             ds.server_states[overlap_voter].log[k] == entry,
             // Granted VoteResponse from overlap_voter to leader at leader's term
-            exists |vote_pkt: LRaftPacket| {
+            exists |vote_pkt: LRaftPacket| #![trigger ds.network.contains(vote_pkt)] {
                 &&& ds.network.contains(vote_pkt)
                 &&& vote_pkt.src == overlap_voter
                 &&& vote_pkt.dst == leader_id
@@ -769,7 +769,7 @@ verus! {
                 &&& vt == ds.server_states[leader_id].current_term
             },
             // Matching RequestVote from leader to overlap_voter at leader's term
-            exists |req_pkt: LRaftPacket| {
+            exists |req_pkt: LRaftPacket| #![trigger ds.network.contains(req_pkt)] {
                 &&& ds.network.contains(req_pkt)
                 &&& req_pkt.src == leader_id
                 &&& req_pkt.dst == overlap_voter
@@ -808,7 +808,7 @@ verus! {
                 };
                 // There exists a RequestVote packet whose params satisfy
                 // the vote-time log_up_to_date disjunction.
-                exists |req_pkt: LRaftPacket| {
+                exists |req_pkt: LRaftPacket| #![trigger ds.network.contains(req_pkt)] {
                     &&& ds.network.contains(req_pkt)
                     &&& req_pkt.src == leader_id
                     &&& req_pkt.dst == overlap_voter
@@ -831,7 +831,7 @@ verus! {
         assert(L <= ds.server_states[overlap_voter].log.len());
 
         // Step 2: extract the VoteResponse and RequestVote packet witnesses
-        let vote_pkt = choose |pkt: LRaftPacket| {
+        let vote_pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
             &&& ds.network.contains(pkt)
             &&& pkt.src == overlap_voter
             &&& pkt.dst == leader_id
@@ -841,7 +841,7 @@ verus! {
             &&& vv == overlap_voter
             &&& vt == vote_term
         };
-        let req_pkt = choose |pkt: LRaftPacket| {
+        let req_pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
             &&& ds.network.contains(pkt)
             &&& pkt.src == leader_id
             &&& pkt.dst == overlap_voter
@@ -1307,7 +1307,7 @@ verus! {
         // Commit quorum
         let commit_quorum = choose |q: Set<int>| {
             &&& q.len() >= quorum_size
-            &&& (forall |id: int| q.contains(id) ==> {
+            &&& (forall |id: int| #![trigger q.contains(id)] q.contains(id) ==> {
                 &&& 0 <= id < n
                 &&& ds.server_states[id].log.len() > k
                 &&& ds.server_states[id].log[k] == entry
@@ -1443,7 +1443,7 @@ verus! {
 
         // VoteResponseHasRequestVote → matching RequestVote
         assert(VoteResponseHasRequestVote(ds));
-        let req_pkt = choose |req: LRaftPacket| {
+        let req_pkt = choose |req: LRaftPacket| #![trigger ds.network.contains(req)] {
             &&& ds.network.contains(req)
             &&& req.src == d
             &&& req.dst == ov
@@ -2098,7 +2098,7 @@ verus! {
             assert(ds.network.contains(sv_pkt));
             assert(sv_pkt.msg is VoteResponse);
             assert(sv_pkt.msg->VoteResponse_granted);
-            let req_pkt = choose |req: LRaftPacket| {
+            let req_pkt = choose |req: LRaftPacket| #![trigger ds.network.contains(req)] {
                 &&& ds.network.contains(req)
                 &&& req.src == d1
                 &&& req.dst == sv
@@ -2167,7 +2167,7 @@ verus! {
             assert(ds.network.contains(sv2_pkt));
             assert(sv2_pkt.msg is VoteResponse);
             assert(sv2_pkt.msg->VoteResponse_granted);
-            let req_pkt2 = choose |req: LRaftPacket| {
+            let req_pkt2 = choose |req: LRaftPacket| #![trigger ds.network.contains(req)] {
                 &&& ds.network.contains(req)
                 &&& req.src == d2
                 &&& req.dst == sv2
@@ -2484,7 +2484,7 @@ verus! {
             ds.server_states[overlap_voter].log.len() > k,
             ds.server_states[overlap_voter].log[k] == entry,
             // VoteResponse packet from overlap_voter to leader_id exists in network
-            exists |vote: LRaftPacket| {
+            exists |vote: LRaftPacket| #![trigger ds.network.contains(vote)] {
                 &&& ds.network.contains(vote)
                 &&& vote.src == overlap_voter
                 &&& vote.dst == leader_id
@@ -2507,7 +2507,7 @@ verus! {
                 && ds.server_states[leader_id].log[k] == entry,
     {
         // Step 1: Extract VoteResponse packet from precondition
-        let vote_pkt = choose |vote: LRaftPacket| {
+        let vote_pkt = choose |vote: LRaftPacket| #![trigger ds.network.contains(vote)] {
             &&& ds.network.contains(vote)
             &&& vote.src == overlap_voter
             &&& vote.dst == leader_id
@@ -2534,7 +2534,7 @@ verus! {
         assert(vote_pkt.msg is VoteResponse);
         assert(vote_pkt.msg->VoteResponse_granted);
 
-        let req_pkt = choose |req: LRaftPacket| {
+        let req_pkt = choose |req: LRaftPacket| #![trigger ds.network.contains(req)] {
             &&& ds.network.contains(req)
             &&& req.src == leader_id
             &&& req.dst == overlap_voter
@@ -3201,7 +3201,7 @@ verus! {
         lemma_vote_witness_from_votes_granted(ds, other, x);
         lemma_vote_witness_from_votes_granted(ds_, stepping, x);
 
-        let p1 = choose |p: LRaftPacket| {
+        let p1 = choose |p: LRaftPacket| #![trigger ds.network.contains(p)] {
             &&& ds.network.contains(p)
             &&& p.src == x
             &&& p.dst == other
@@ -3210,7 +3210,7 @@ verus! {
             &&& pg
             &&& pv == x
         };
-        let p2 = choose |p: LRaftPacket| {
+        let p2 = choose |p: LRaftPacket| #![trigger ds_.network.contains(p)] {
             &&& ds_.network.contains(p)
             &&& p.src == x
             &&& p.dst == stepping
@@ -3398,7 +3398,7 @@ verus! {
 
         // Disjoint subsets: |A ∪ B| = |A| + |B|
         assert((other_votes + stepping_votes).subset_of(universe)) by {
-            assert forall |v: int| (other_votes + stepping_votes).contains(v)
+            assert forall |v: int| #![trigger universe.contains(v)] (other_votes + stepping_votes).contains(v)
             implies universe.contains(v) by {}
         };
         lemma_len_subset(other_votes + stepping_votes, universe);
@@ -3426,7 +3426,7 @@ verus! {
         // Bridge to legacy to get exists |server_id| LNext(...) && frame
         lemma_distributed_next_implies_legacy(ds, ds_);
         // Unpack RaftDistributedNext to get the stepping server
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
@@ -3454,7 +3454,7 @@ verus! {
         //   Sub-cases on LNext branch for server_id:
 
         // We prove by examining each pair (i, j):
-        assert forall |i: int, j: int|
+        assert forall |i: int, j: int| #![trigger ds_.server_states[i], ds_.server_states[j]]
             0 <= i < ds_.num_servers && 0 <= j < ds_.num_servers
             && ds_.server_states[i].role is Leader
             && ds_.server_states[j].role is Leader
@@ -3580,7 +3580,7 @@ verus! {
             VotesGrantedAreServers(ds_)
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
@@ -3657,7 +3657,7 @@ verus! {
             CandidateOrLeaderVotedForSelf(ds_)
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
@@ -3673,7 +3673,7 @@ verus! {
         assert(CandidateOrLeaderVotedForSelf(ds));
         lemma_lnext_self_vote_preserved(s, s_, c);
 
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds_.server_states[i]] #![trigger ds_.server_constants[i]]
             0 <= i < ds_.num_servers
             && (ds_.server_states[i].role is Candidate || ds_.server_states[i].role is Leader)
         implies ds_.server_states[i].votes_granted.contains(ds_.server_constants[i].my_id) by {
@@ -3720,7 +3720,7 @@ verus! {
             CandidateOrLeaderVotedForSelfId(ds_)
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
@@ -3736,7 +3736,7 @@ verus! {
         assert(CandidateOrLeaderVotedForSelfId(ds));
         lemma_lnext_voted_for_id_preserved(s, s_, c);
 
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds_.server_states[i]]
             0 <= i < ds_.num_servers
             && (ds_.server_states[i].role is Candidate || ds_.server_states[i].role is Leader)
         implies ds_.server_states[i].has_voted && ds_.server_states[i].voted_for == i by {
@@ -3786,7 +3786,7 @@ verus! {
             && v != i
             && (ds_.server_states[i].role is Candidate || ds_.server_states[i].role is Leader)
             && ds_.server_states[i].votes_granted.contains(v)
-        implies exists |p: LRaftPacket| {
+        implies exists |p: LRaftPacket| #![trigger ds_.network.contains(p)] {
             &&& ds_.network.contains(p)
             &&& p.dst == i
             &&& p.msg matches LRaftMessage::VoteResponse { term, granted, voter, .. }
@@ -3842,7 +3842,7 @@ verus! {
             LeaderHasQuorum(ds_)
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
@@ -3858,7 +3858,7 @@ verus! {
         assert(LeaderHasQuorum(ds));
         lemma_lnext_leader_quorum_preserved(s, s_, c);
 
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds_.server_states[i]] #![trigger ds_.server_constants[i]]
             0 <= i < ds_.num_servers
             && ds_.server_states[i].role is Leader
         implies ds_.server_states[i].votes_granted.len() >= ds_.server_constants[i].quorum_size by {
@@ -3917,7 +3917,7 @@ verus! {
             CommitIndexBounded(ds_)
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |server_id: int| {
+        let server_id = choose |server_id: int| #![trigger ds.server_states[server_id]] #![trigger ds_.server_states[server_id]] #![trigger ds.server_constants[server_id]] {
             &&& 0 <= server_id < ds.num_servers
             &&& LNext(ds.server_states[server_id], ds_.server_states[server_id], ds.server_constants[server_id])
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
@@ -3932,7 +3932,7 @@ verus! {
         assert(CommitIndexBounded(ds));
         lemma_lnext_commit_bounded(s, s_, c);
 
-        assert forall |i: int|
+        assert forall |i: int| #![trigger ds_.server_states[i]]
             0 <= i < ds_.num_servers
         implies
             ds_.server_states[i].commit_index <= ds_.server_states[i].log.len()
@@ -4123,7 +4123,7 @@ verus! {
                 assert(ds.network.contains(v0_pkt));
                 // VoteResponseHasRequestVote → ∃ req
                 assert(VoteResponseHasRequestVote(ds));
-                let req = choose |req: LRaftPacket| {
+                let req = choose |req: LRaftPacket| #![trigger ds.network.contains(req)] {
                     &&& ds.network.contains(req)
                     &&& req.src == d
                     &&& req.dst == voters[0]
@@ -4136,7 +4136,7 @@ verus! {
                 };
                 assert(ds_.network.contains(req));
                 // VotersVotedForCandidate: d ∈ sid_votes → VR to server_id
-                let vr_d = choose |p: LRaftPacket| {
+                let vr_d = choose |p: LRaftPacket| #![trigger ds_.network.contains(p)] {
                     &&& ds_.network.contains(p)
                     &&& p.dst == server_id
                     &&& p.msg matches LRaftMessage::VoteResponse {
@@ -4531,7 +4531,7 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j],
             s_.log.len() >= s.log.len(),
         ensures
-            forall |i: int, k: int, l: int|
+            forall |i: int, k: int, l: int| #![trigger ds_.server_states[l], ds_.server_states[i].log[k]]
                 0 <= i < ds_.num_servers
                 && 0 <= k < ds_.server_states[i].log.len()
                 && 0 <= l < ds_.num_servers
@@ -4541,7 +4541,7 @@ verus! {
             ==> (ds_.server_states[l].log.len() > k
                 || (l == server_id && !(s.role is Leader))),
     {
-        assert forall |i: int, k: int, l: int|
+        assert forall |i: int, k: int, l: int| #![trigger ds_.server_states[l], ds_.server_states[i].log[k]]
             0 <= i < ds_.num_servers
             && 0 <= k < ds_.server_states[i].log.len()
             && 0 <= l < ds_.num_servers
@@ -4589,7 +4589,7 @@ verus! {
             forall |pkt: LRaftPacket| ds.network.contains(pkt)
                 ==> ds_.network.contains(pkt),
             // Phase 1 result
-            forall |i: int, k: int, l: int|
+            forall |i: int, k: int, l: int| #![trigger ds_.server_states[l], ds_.server_states[i].log[k]]
                 0 <= i < ds_.num_servers
                 && 0 <= k < ds_.server_states[i].log.len()
                 && 0 <= l < ds_.num_servers
@@ -4599,7 +4599,7 @@ verus! {
             ==> (ds_.server_states[l].log.len() > k
                 || (l == server_id && !(s.role is Leader))),
         ensures
-            forall |i: int, k: int, l: int|
+            forall |i: int, k: int, l: int| #![trigger ds_.server_states[l], ds_.server_states[i].log[k]]
                 0 <= i < ds_.num_servers
                 && 0 <= k < ds_.server_states[i].log.len()
                 && 0 <= l < ds_.num_servers
@@ -4608,7 +4608,7 @@ verus! {
                 && i != server_id
             ==> ds_.server_states[l].log.len() > k,
     {
-        assert forall |i: int, k: int, l: int|
+        assert forall |i: int, k: int, l: int| #![trigger ds_.server_states[l], ds_.server_states[i].log[k]]
             0 <= i < ds_.num_servers
             && 0 <= k < ds_.server_states[i].log.len()
             && 0 <= l < ds_.num_servers
@@ -4651,7 +4651,7 @@ verus! {
             forall |idx: int| 0 <= idx < s.log.len()
                 ==> #[trigger] s_.log[idx] == s.log[idx],
         ensures
-            forall |k: int, l: int|
+            forall |k: int, l: int| #![trigger ds_.server_states[l], ds_.server_states[server_id].log[k]]
                 0 <= k < ds_.server_states[server_id].log.len()
                 && 0 <= l < ds_.num_servers
                 && ds_.server_states[l].role is Leader
@@ -4659,7 +4659,7 @@ verus! {
                 && l != server_id
             ==> ds_.server_states[l].log.len() > k,
     {
-        assert forall |k: int, l: int|
+        assert forall |k: int, l: int| #![trigger ds_.server_states[l], ds_.server_states[server_id].log[k]]
             0 <= k < ds_.server_states[server_id].log.len()
             && 0 <= l < ds_.num_servers
             && ds_.server_states[l].role is Leader
@@ -4692,7 +4692,7 @@ verus! {
         // Phase 3: i == server_id case (RaftServerStepWithNetwork, no ETHVQ)
         lemma_lllong_body_i_eq_sid(ds, ds_, server_id, s, s_, c);
         // Case i == server_id && l == server_id: trivially k < s_.log.len() (given)
-        assert forall |i: int, k: int, l: int|
+        assert forall |i: int, k: int, l: int| #![trigger ds_.server_states[l], ds_.server_states[i].log[k]]
             0 <= i < ds_.num_servers
             && 0 <= k < ds_.server_states[i].log.len()
             && 0 <= l < ds_.num_servers
@@ -5083,7 +5083,7 @@ verus! {
 
             // VotersVotedForCandidate: d is Candidate/Leader, v != d, vg.contains(v)
             // => exists VoteResponse packet to d with voter v at term
-            let p = choose |p: LRaftPacket| {
+            let p = choose |p: LRaftPacket| #![trigger ds.network.contains(p)] {
                 &&& ds.network.contains(p)
                 &&& p.dst == d
                 &&& p.msg matches LRaftMessage::VoteResponse {
@@ -5546,7 +5546,7 @@ verus! {
         ensures
             LogMatching(ds_)
     {
-        assert forall |i: int, j: int, k: int|
+        assert forall |i: int, j: int, k: int| #![trigger ds_.server_states[i], ds_.server_states[j].log[k]] #![trigger ds_.server_states[i].log[k], ds_.server_states[j]]
             0 <= i < ds_.num_servers && 0 <= j < ds_.num_servers
             && 0 <= k < ds_.server_states[i].log.len()
             && 0 <= k < ds_.server_states[j].log.len()
@@ -5786,7 +5786,7 @@ verus! {
             EntryCommittedAt(ds_, k, entry),
         ensures
             EntryCommittedAt(ds, k, entry)
-                || exists |stepping: int| {
+                || exists |stepping: int| #![trigger ds.server_states[stepping]] #![trigger ds_.server_states[stepping]] {
                     &&& 0 <= stepping < ds.num_servers
                     &&& (forall |j: int| #![trigger ds_.server_states[j]]
                         0 <= j < ds.num_servers && j != stepping ==>
@@ -5799,7 +5799,7 @@ verus! {
                 }
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid], ds.server_constants[sid])
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
@@ -5814,7 +5814,7 @@ verus! {
 
         let commit_quorum = choose |q: Set<int>| {
             &&& q.len() >= ds.num_servers / 2 + 1
-            &&& (forall |id: int| q.contains(id) ==> {
+            &&& (forall |id: int| #![trigger q.contains(id)] q.contains(id) ==> {
                 &&& 0 <= id < ds.num_servers
                 &&& ds_.server_states[id].log.len() > k
                 &&& ds_.server_states[id].log[k] == entry
@@ -5836,7 +5836,7 @@ verus! {
             assert(s_.log.len() == s.log.len() + 1);
             assert(ds_.server_states[server_id].log[k] == entry);
 
-            assert(exists |stepping: int| {
+            assert(exists |stepping: int| #![trigger ds.server_states[stepping]] #![trigger ds_.server_states[stepping]] {
                 &&& 0 <= stepping < ds.num_servers
                 &&& (forall |j: int| #![trigger ds_.server_states[j]]
                     0 <= j < ds.num_servers && j != stepping ==>
@@ -5865,7 +5865,7 @@ verus! {
             assert(EntryCommittedAt(ds, k, entry)) by {
                 assert(exists |q: Set<int>| {
                     &&& q.len() >= ds.num_servers / 2 + 1
-                    &&& (forall |id: int| q.contains(id) ==> {
+                    &&& (forall |id: int| #![trigger q.contains(id)] q.contains(id) ==> {
                         &&& 0 <= id < ds.num_servers
                         &&& ds.server_states[id].log.len() > k
                         &&& ds.server_states[id].log[k] == entry
@@ -5873,7 +5873,7 @@ verus! {
                 }) by {
                     let q = commit_quorum;
                     assert(q.len() >= ds.num_servers / 2 + 1);
-                    assert forall |id: int| q.contains(id) implies {
+                    assert forall |id: int| #![trigger q.contains(id)] q.contains(id) implies {
                         &&& 0 <= id < ds.num_servers
                         &&& ds.server_states[id].log.len() > k
                         &&& ds.server_states[id].log[k] == entry
@@ -5933,7 +5933,7 @@ verus! {
         if s.votes_granted.contains(overlap_voter) {
             lemma_vote_witness_from_votes_granted(
                 ds, leader_id, overlap_voter);
-            let p = choose |p: LRaftPacket| {
+            let p = choose |p: LRaftPacket| #![trigger ds.network.contains(p)] {
                 &&& ds.network.contains(p)
                 &&& p.src == overlap_voter
                 &&& p.dst == leader_id
@@ -5967,7 +5967,7 @@ verus! {
                     &&& (forall |pkt: LRaftPacket|
                         ds.network.contains(pkt) ==>
                             ds_.network.contains(pkt))
-                    &&& (forall |pkt: LRaftPacket|
+                    &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                         ds_.network.contains(pkt)
                             && !ds.network.contains(pkt) ==> {
                             &&& pkt.src == leader_id
@@ -5976,7 +5976,7 @@ verus! {
                                 0 <= i < sp.len() && pkt.msg == sp[i])
                         })
                 };
-            assert(exists |pkt: LRaftPacket| {
+            assert(exists |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
                 &&& received_from == Some(pkt.src)
                 &&& ds.network.contains(pkt)
                 &&& pkt.dst == leader_id
@@ -5985,7 +5985,7 @@ verus! {
             }) by {
                 // Candidate -> Leader is possible only in the message branch.
             };
-            let step_pkt = choose |pkt: LRaftPacket| {
+            let step_pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
                 &&& received_from == Some(pkt.src)
                 &&& ds.network.contains(pkt)
                 &&& pkt.dst == leader_id
@@ -6077,7 +6077,7 @@ verus! {
 
         let commit_quorum = choose |q: Set<int>| {
             &&& q.len() >= ds.num_servers / 2 + 1
-            &&& (forall |id: int| q.contains(id) ==> {
+            &&& (forall |id: int| #![trigger q.contains(id)] q.contains(id) ==> {
                 &&& 0 <= id < ds.num_servers
                 &&& ds_.server_states[id].log.len() > k
                 &&& ds_.server_states[id].log[k] == entry
@@ -6256,7 +6256,7 @@ verus! {
             // Commit quorum from pre-state
             let commit_quorum = choose |q: Set<int>| {
                 &&& q.len() >= ds.num_servers / 2 + 1
-                &&& (forall |id: int| q.contains(id) ==> {
+                &&& (forall |id: int| #![trigger q.contains(id)] q.contains(id) ==> {
                     &&& 0 <= id < ds.num_servers
                     &&& ds.server_states[id].log.len() > k
                     &&& ds.server_states[id].log[k] == entry
@@ -6366,7 +6366,7 @@ verus! {
             ds_.server_states[leader_id].role is Leader,
             ds_.server_states[leader_id].current_term > entry.term,
             // Fresh-step-append witness exists
-            exists |stepping: int| {
+            exists |stepping: int| #![trigger ds.server_states[stepping]] #![trigger ds_.server_states[stepping]] {
                 &&& 0 <= stepping < ds.num_servers
                 &&& (forall |j: int| #![trigger ds_.server_states[j]]
                     0 <= j < ds.num_servers && j != stepping ==>
@@ -6381,7 +6381,7 @@ verus! {
             ds_.server_states[leader_id].log.len() > k
                 && ds_.server_states[leader_id].log[k] == entry,
     {
-        let stepping = choose |stepping: int| {
+        let stepping = choose |stepping: int| #![trigger ds.server_states[stepping]] #![trigger ds_.server_states[stepping]] {
             &&& 0 <= stepping < ds.num_servers
             &&& (forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != stepping ==>
@@ -6485,7 +6485,7 @@ verus! {
         assert(ds_.num_servers == ds.num_servers);
         assert(LeaderCompleteness(ds));
 
-        assert forall |k: int, entry: LLogEntry, leader_id: int|
+        assert forall |k: int, entry: LLogEntry, leader_id: int| #![trigger EntryCommittedAt(ds_, k, entry), ds_.server_states[leader_id]]
             0 <= k
             && EntryCommittedAt(ds_, k, entry)
             && 0 <= leader_id < ds_.num_servers
@@ -6546,7 +6546,7 @@ verus! {
         lemma_distributed_next_implies_legacy(ds, ds_);
         lemma_log_append_only(ds, ds_);
 
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
                        ds.server_constants[sid])
@@ -6555,7 +6555,7 @@ verus! {
                 ds_.server_states[j] == ds.server_states[j])
         };
 
-        assert forall |i: int, j: int, k: int|
+        assert forall |i: int, j: int, k: int| #![trigger ds_.server_states[i], ds_.server_states[j].log[k]] #![trigger ds_.server_states[j], ds_.server_states[i].log[k]]
             0 <= i < ds_.num_servers && 0 <= j < ds_.num_servers
             && 0 <= k < ds_.server_states[i].commit_index
             && 0 <= k < ds_.server_states[j].commit_index
@@ -6633,7 +6633,7 @@ verus! {
                     ds.server_constants[server_id], sent_pkts, recv_from)
             &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
                 ==> ds_.network.contains(pkt))
-            &&& (forall |pkt: LRaftPacket|
+            &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                 ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                     &&& pkt.src == server_id
                     &&& 0 <= pkt.dst < ds.num_servers
@@ -6666,7 +6666,7 @@ verus! {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
                     ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -6711,7 +6711,7 @@ verus! {
             VoteResponseIntegrity(ds),
             RaftDistributedNext(ds, ds_),
         ensures
-            forall |p: LRaftPacket|
+            forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] #![trigger ds.network.contains(p)]
                 ds_.network.contains(p) && ds.network.contains(p)
             ==> match p.msg {
                 LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
@@ -6728,7 +6728,7 @@ verus! {
             }
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
                        ds.server_constants[sid])
@@ -6741,7 +6741,7 @@ verus! {
         let c = ds.server_constants[server_id];
         lemma_lnext_term_monotone(s, s_, c);
 
-        assert forall |p: LRaftPacket|
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] #![trigger ds.network.contains(p)]
             ds_.network.contains(p) && ds.network.contains(p)
         implies match p.msg {
             LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
@@ -6817,7 +6817,7 @@ verus! {
             sent_pkts[i] is VoteResponse,
             sent_pkts[i]->VoteResponse_granted,
         ensures
-            exists |pkt: LRaftPacket| {
+            exists |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
                 &&& ds.network.contains(pkt)
                 &&& pkt.dst == server_id
                 &&& recv_from == Some(pkt.src)
@@ -6911,7 +6911,7 @@ verus! {
             forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != server_id ==>
                 ds_.server_states[j] == ds.server_states[j],
-            forall |pkt: LRaftPacket|
+            forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                 ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                     &&& pkt.src == server_id
                     &&& 0 <= pkt.dst < ds.num_servers
@@ -6922,7 +6922,7 @@ verus! {
                     })
                 },
         ensures
-            forall |p: LRaftPacket|
+            forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] #![trigger ds.network.contains(p)]
                 ds_.network.contains(p) && !ds.network.contains(p)
             ==> match p.msg {
                 LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
@@ -6947,7 +6947,7 @@ verus! {
             assert(WellFormedRaftDistributed(ds));
         };
 
-        assert forall |p: LRaftPacket|
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] #![trigger ds.network.contains(p)]
             ds_.network.contains(p) && !ds.network.contains(p)
         implies match p.msg {
             LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
@@ -6970,7 +6970,7 @@ verus! {
                 // The action must be LHandleMessage with a RequestVote
                 lemma_action_granted_vr_implies_handle_request_vote(
                     ds, server_id, s, s_, c, sent_pkts, recv_from, idx);
-                let req_pkt = choose |pkt: LRaftPacket| {
+                let req_pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
                     &&& ds.network.contains(pkt)
                     &&& pkt.dst == server_id
                     &&& recv_from == Some(pkt.src)
@@ -7112,7 +7112,7 @@ verus! {
             choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -7126,7 +7126,7 @@ verus! {
 
         assert(RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from));
         assert(forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt));
-        assert(forall |pkt: LRaftPacket|
+        assert(forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
             ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                 &&& pkt.src == server_id
                 &&& 0 <= pkt.dst < ds.num_servers
@@ -7143,7 +7143,7 @@ verus! {
         assert(sent_packets[i] == p.msg);
 
         // VoteResponse packets are produced while handling RequestVote.
-        let req_pkt = choose |pkt: LRaftPacket| {
+        let req_pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
             &&& received_from == Some(pkt.src)
             &&& ds.network.contains(pkt)
             &&& pkt.dst == server_id
@@ -7217,7 +7217,7 @@ verus! {
         ensures
             VoteResponseSummaryStillValidAtOrAboveTerm(ds_)
     {
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::VoteResponse {
                     term: t,
@@ -7286,7 +7286,7 @@ verus! {
             choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -7300,7 +7300,7 @@ verus! {
 
         assert(RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from));
         assert(forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt));
-        assert(forall |pkt: LRaftPacket|
+        assert(forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
             ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                 &&& pkt.src == server_id
                 &&& 0 <= pkt.dst < ds.num_servers
@@ -7311,10 +7311,10 @@ verus! {
                 })
             });
 
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
-                    granted ==> exists |req: LRaftPacket| {
+                    granted ==> exists |req: LRaftPacket| #![trigger ds_.network.contains(req)] {
                         &&& ds_.network.contains(req)
                         &&& req.src == p.dst
                         &&& req.dst == v
@@ -7336,7 +7336,7 @@ verus! {
                     if ds.network.contains(p) {
                         // Old packet: reuse IH witness and network monotonicity.
                         assert(VoteResponseHasRequestVote(ds));
-                        let req = choose |req: LRaftPacket| {
+                        let req = choose |req: LRaftPacket| #![trigger ds.network.contains(req)] {
                             &&& ds.network.contains(req)
                             &&& req.src == p.dst
                             &&& req.dst == p.msg->VoteResponse_voter
@@ -7359,7 +7359,7 @@ verus! {
 
                         // If a VoteResponse packet is sent in this model, it comes from
                         // handling RequestVote.
-                        let req_pkt = choose |pkt: LRaftPacket| {
+                        let req_pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
                             &&& received_from == Some(pkt.src)
                             &&& ds.network.contains(pkt)
                             &&& pkt.dst == server_id
@@ -7415,7 +7415,7 @@ verus! {
                         // The received RequestVote packet is still in ds_ (network monotonicity),
                         // and is the required provenance witness.
                         assert(ds_.network.contains(req_pkt));
-                        assert(exists |req: LRaftPacket| {
+                        assert(exists |req: LRaftPacket| #![trigger ds_.network.contains(req)] {
                             &&& ds_.network.contains(req)
                             &&& req.src == p.dst
                             &&& req.dst == p.msg->VoteResponse_voter
@@ -7456,7 +7456,7 @@ verus! {
             AppendEntriesIntegrity(ds_)
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
                        ds.server_constants[sid])
@@ -7477,7 +7477,7 @@ verus! {
         assert forall |k: int| 0 <= k < s.log.len()
             implies #[trigger] s_.log[k] == s.log[k] by {};
 
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::AppendEntries { term: t, leader: l, prev_index,
                                                prev_term, value, has_entry, .. } => {
@@ -7561,7 +7561,7 @@ verus! {
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
 
-        assert forall |p1: LRaftPacket, p2: LRaftPacket|
+        assert forall |p1: LRaftPacket, p2: LRaftPacket| #![trigger ds_.network.contains(p1), ds_.network.contains(p2)]
             ds_.network.contains(p1) && ds_.network.contains(p2)
         implies match p1.msg {
             LRaftMessage::VoteResponse { term: t1, granted: g1, voter: v1, .. } =>
@@ -7645,7 +7645,7 @@ verus! {
             forall |j: int| #![trigger ds_.server_states[j]]
                 0 <= j < ds.num_servers && j != server_id ==>
                 ds_.server_states[j] == ds.server_states[j],
-            forall |pkt: LRaftPacket|
+            forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                 ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                     &&& pkt.src == server_id
                     &&& 0 <= pkt.dst < ds.num_servers
@@ -7680,7 +7680,7 @@ verus! {
         // Use action-level helper: action must be LHandleMessage with RequestVote
         lemma_action_granted_vr_implies_handle_request_vote(
             ds, server_id, s, s_, c, sent_pkts, recv_from, idx);
-        let req_pkt = choose |pkt: LRaftPacket| {
+        let req_pkt = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
             &&& ds.network.contains(pkt)
             &&& pkt.dst == server_id
             &&& recv_from == Some(pkt.src)
@@ -7906,7 +7906,7 @@ verus! {
             choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -7920,7 +7920,7 @@ verus! {
 
         assert(RaftActionProduces(ds, server_id, s, s_, c, sent_packets, received_from));
         assert(forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt));
-        assert(forall |pkt: LRaftPacket|
+        assert(forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
             ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                 &&& pkt.src == server_id
                 &&& 0 <= pkt.dst < ds.num_servers
@@ -7987,7 +7987,7 @@ verus! {
         ensures
             RequestVoteSummaryStillValidAtSameTerm(ds_)
     {
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::RequestVote {
                     term: t,
@@ -8071,7 +8071,7 @@ verus! {
             {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -8124,7 +8124,7 @@ verus! {
         let c = ds.server_constants[server_id];
         lemma_lnext_log_preserved_or_extended(s, s_, c);
 
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::RequestVote {
                     term: t,
@@ -8189,7 +8189,7 @@ verus! {
         ensures
             RequestVoteLastLogTermBound(ds_)
     {
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::RequestVote {
                     term: t,
@@ -8282,7 +8282,7 @@ verus! {
         lemma_distributed_next_implies_legacy(ds, ds_);
         lemma_lnext_term_monotone(s, s_, c);
 
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::RequestVote { term: t, candidate: d, .. } => {
                     &&& 0 <= d < ds_.num_servers
@@ -8461,7 +8461,7 @@ verus! {
         let s_ = ds_.server_states[server_id];
         let c = ds.server_constants[server_id];
 
-        assert forall |p1: LRaftPacket, p2: LRaftPacket|
+        assert forall |p1: LRaftPacket, p2: LRaftPacket| #![trigger ds_.network.contains(p1), ds_.network.contains(p2)]
             ds_.network.contains(p1) && ds_.network.contains(p2)
             && (p1.msg is RequestVote) && (p2.msg is RequestVote)
             && p1.msg->RequestVote_term == p2.msg->RequestVote_term
@@ -8525,7 +8525,7 @@ verus! {
             choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -8537,7 +8537,7 @@ verus! {
                     })
             };
 
-        assert forall |p_req: LRaftPacket, p_vote: LRaftPacket|
+        assert forall |p_req: LRaftPacket, p_vote: LRaftPacket| #![trigger ds_.network.contains(p_req), ds_.network.contains(p_vote)]
             ds_.network.contains(p_req) && ds_.network.contains(p_vote) implies
             match p_req.msg {
                 LRaftMessage::RequestVote { term: t_req, candidate: d, .. } =>
@@ -8707,7 +8707,7 @@ verus! {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
                     ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -8739,7 +8739,7 @@ verus! {
                 })
             };
 
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::VoteResponse { term: t, granted, voter: v, .. } => {
                     granted ==> ds_.vote_log_len.dom().contains((v, t))
@@ -8801,7 +8801,7 @@ verus! {
             choose |sp: Seq<LRaftMessage>, rf: Option<int>| {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt) ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -8811,7 +8811,7 @@ verus! {
                             None => true,
                         })
                     })
-                &&& (forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+                &&& (forall |v: int, t: int| #![trigger ds_.vote_log_len[(v, t)]] #![trigger ds.vote_log_len[(v, t)]] ds.vote_log_len.dom().contains((v, t))
                     ==> ds_.vote_log_len.dom().contains((v, t))
                         && ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)])
                 &&& ({
@@ -8836,7 +8836,7 @@ verus! {
                 })
             };
 
-        assert forall |v: int, t: int| ds_.vote_log_len.dom().contains((v, t)) implies {
+        assert forall |v: int, t: int| #![trigger ds_.vote_log_len.dom().contains((v, t))] ds_.vote_log_len.dom().contains((v, t)) implies {
             &&& 0 <= v < ds_.num_servers
             &&& 0 <= ds_.vote_log_len[(v, t)]
             &&& ds_.vote_log_len[(v, t)] <= ds_.server_states[v].log.len()
@@ -9148,7 +9148,7 @@ verus! {
     {
         lemma_distributed_next_implies_legacy(ds, ds_);
 
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
                        ds.server_constants[sid])
@@ -9264,7 +9264,7 @@ verus! {
 
         lemma_action_granted_vr_implies_handle_request_vote(
             ds, server_id, s, s_, c, sent_pkts, recv_from, vr_idx);
-        let processed_pkt: LRaftPacket = choose |pkt: LRaftPacket| {
+        let processed_pkt: LRaftPacket = choose |pkt: LRaftPacket| #![trigger ds.network.contains(pkt)] {
             &&& ds.network.contains(pkt)
             &&& pkt.dst == server_id
             &&& recv_from == Some(pkt.src)
@@ -9374,7 +9374,7 @@ verus! {
             RaftSafetyInvariant(ds),
             RaftDistributedNext(ds, ds_),
         ensures
-            forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+            forall |v: int, t: int| #![trigger ds_.vote_log_len[(v, t)]] #![trigger ds.vote_log_len[(v, t)]] ds.vote_log_len.dom().contains((v, t))
                 ==> ds_.vote_log_len.dom().contains((v, t))
                     && ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)]
     {
@@ -9395,7 +9395,7 @@ verus! {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
                     ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -9405,7 +9405,7 @@ verus! {
                             None => true,
                         })
                     })
-                &&& (forall |v: int, t: int| ds.vote_log_len.dom().contains((v, t))
+                &&& (forall |v: int, t: int| #![trigger ds_.vote_log_len[(v, t)]] #![trigger ds.vote_log_len[(v, t)]] ds.vote_log_len.dom().contains((v, t))
                     ==> ds_.vote_log_len.dom().contains((v, t))
                         && ds_.vote_log_len[(v, t)] == ds.vote_log_len[(v, t)])
                 &&& ({
@@ -9545,13 +9545,13 @@ verus! {
                 &&& RaftActionProduces(ds, v, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
                     ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == v
                         &&& 0 <= pkt.dst < ds.num_servers
                         &&& (exists |i: int| 0 <= i < sp.len() && pkt.msg == sp[i])
                     })
-                &&& (forall |v2: int, t2: int| ds.vote_log_len.dom().contains((v2, t2))
+                &&& (forall |v2: int, t2: int| #![trigger ds_.vote_log_len[(v2, t2)]] #![trigger ds.vote_log_len[(v2, t2)]] ds.vote_log_len.dom().contains((v2, t2))
                     ==> ds_.vote_log_len.dom().contains((v2, t2))
                         && ds_.vote_log_len[(v2, t2)] == ds.vote_log_len[(v2, t2)])
                 &&& ({
@@ -9687,7 +9687,7 @@ verus! {
                 == ds.server_states[server_id].current_term + 1,
             // No granted VoteResponse was sent in this step
             // (LTimeout sends only RequestVote messages)
-            forall |pkt: LRaftPacket|
+            forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                 ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                     &&& pkt.src == server_id
                     &&& pkt.msg is RequestVote
@@ -9848,7 +9848,7 @@ verus! {
         lemma_log_append_only(ds, ds_);
         lemma_vote_log_len_monotonic(ds, ds_);
 
-        assert forall |vote_pkt: LRaftPacket, req: LRaftPacket|
+        assert forall |vote_pkt: LRaftPacket, req: LRaftPacket| #![trigger ds_.network.contains(vote_pkt), ds_.network.contains(req)]
             ds_.network.contains(vote_pkt) && ds_.network.contains(req)
             && (vote_pkt.msg is VoteResponse)
             && vote_pkt.msg->VoteResponse_granted
@@ -10084,7 +10084,7 @@ verus! {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
                     ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -10096,7 +10096,7 @@ verus! {
                         })
                     })
             };
-        assert(exists |p: LRaftPacket| {
+        assert(exists |p: LRaftPacket| #![trigger ds.network.contains(p)] {
             &&& received_from == Some(p.src)
             &&& ds.network.contains(p)
             &&& p.dst == server_id
@@ -10106,7 +10106,7 @@ verus! {
             // changing role, so a changed nonempty leader map comes from the
             // message-handling branch of RaftActionProduces.
         };
-        let p = choose |p: LRaftPacket| {
+        let p = choose |p: LRaftPacket| #![trigger ds.network.contains(p)] {
             &&& received_from == Some(p.src)
             &&& ds.network.contains(p)
             &&& p.dst == server_id
@@ -10394,7 +10394,7 @@ verus! {
                 &&& RaftActionProduces(ds, server_id, s, s_, c, sp, rf)
                 &&& (forall |pkt: LRaftPacket| ds.network.contains(pkt)
                     ==> ds_.network.contains(pkt))
-                &&& (forall |pkt: LRaftPacket|
+                &&& (forall |pkt: LRaftPacket| #![trigger ds_.network.contains(pkt)] #![trigger ds.network.contains(pkt)]
                     ds_.network.contains(pkt) && !ds.network.contains(pkt) ==> {
                         &&& pkt.src == server_id
                         &&& 0 <= pkt.dst < ds.num_servers
@@ -10407,7 +10407,7 @@ verus! {
                     })
             };
 
-        assert forall |p: LRaftPacket| ds_.network.contains(p) implies
+        assert forall |p: LRaftPacket| #![trigger ds_.network.contains(p)] ds_.network.contains(p) implies
             match p.msg {
                 LRaftMessage::AppendEntries { leader_commit, leader, .. } => {
                     &&& 0 <= leader < ds_.num_servers

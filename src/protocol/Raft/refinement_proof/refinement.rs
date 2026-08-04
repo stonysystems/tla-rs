@@ -32,7 +32,7 @@ verus! {
             ds.server_states.len() == ds.num_servers,
             ds.server_constants.len() == ds.num_servers,
             ds.num_servers >= 0,
-            forall |i: int| 0 <= i < ds.num_servers ==>
+            forall |i: int| #![trigger ds.server_states[i]] 0 <= i < ds.num_servers ==>
                 ds.server_states[i].commit_index == 0,
         ensures
             MaxCommitIndex(ds) == 0
@@ -47,7 +47,7 @@ verus! {
                 vote_log_len: ds.vote_log_len,
             };
 
-            assert forall |i: int| 0 <= i < sub_ds.num_servers
+            assert forall |i: int| #![trigger sub_ds.server_states[i]] 0 <= i < sub_ds.num_servers
             implies sub_ds.server_states[i].commit_index == 0
             by {
                 // sub_ds.server_states[i] == ds.server_states[i] for i < n-1
@@ -70,7 +70,7 @@ verus! {
         ensures GetCommittedLog(ds) == Seq::<int>::empty()
     {
         // All servers at init satisfy LInit, which sets commit_index == 0
-        assert forall |i: int| 0 <= i < ds.num_servers
+        assert forall |i: int| #![trigger ds.server_states[i]] 0 <= i < ds.num_servers
         implies ds.server_states[i].commit_index == 0
         by {
             // RaftDistributedInit ensures LInit for each server

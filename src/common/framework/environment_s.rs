@@ -103,7 +103,7 @@ verus! {
                                         ios.filter(|io: LIoOp<IdType, MessageType>| io is Send)
                                             .map_values(|io: LIoOp<IdType, MessageType>| io->s)
                                             .to_set())
-        &&& (forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets) )
+        &&& (forall |io| #![trigger ios.contains(io)] ios.contains(io) ==> match_ios_recv(io, e.sentPackets) )
         &&& e_.time == e.time
       }
 

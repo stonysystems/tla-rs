@@ -16336,9 +16336,36 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       hand-written and annotate them in place, or (ii) move them out of `src/generated/`
       into a companion module like `gen_helpers.rs`, which is where the equivalent RSL
       helpers already live.
-- [ ] **54.8** `src/protocol/Raft/` (177, of which 141 in `refinement_proof/invariants.rs`).
-      Deliberately last: this file also holds the 12 Phase 34 `assume`s and is the most
-      fragile proof in the tree.
+- [x] **54.8** `src/protocol/Raft/` (177 notes, 141 in `refinement_proof/invariants.rs`).
+      **DONE (2026-08-04). Both gates clean.** Applied in two steps so a failure would be
+      attributable — the 36 notes in the four smaller files first (verified), then the 141 in
+      `invariants.rs`, the file that also holds the 12 deprecated Phase 34 `assume`s. 166 of
+      177 annotated, 11 skipped as nested-quantifier cases. `1044 verified, 0 errors` on
+      three runs. Timing **-4.4%** — the annotations made the crate *faster*, which is the
+      expected direction when the solver stops searching for triggers.
+      A convergence pass then followed: re-running the applier against the *current*
+      inventory attributed 109 further notes that only became attributable once inner
+      quantifiers were annotated (the effect first seen in 54.3). Final crate total:
+      **534 → 122**, with **412 removed, 0 added, 0 changed** against the 54.2 baseline.
+      Evidence: `reports/triggers/54.8-raft.{json,md}`, `54.8-trigger-diff.md`,
+      `54.8-timing-diff.md`.
+      **Note on the convergence pass**: run with `--filter src/`, it also edited
+      `src/generated/RSL/*.rs`, which `CLAUDE.md` forbids. Reverted — those 109 notes are
+      54.7's scope and their disposition (54.7.c) is an open decision, not something a broad
+      filter should settle. Scope future passes to the directory you mean.
+
+### Residual after 54.3–54.8: 122 notes
+
+| where | count | why it remains |
+|---|---:|---|
+| `src/generated/RSL/` | 109 | 54.7: 60 need a regeneration that is blocked on Phase 42 (lossy RSL regen); 49 sit in preserved hand-written bodies pending the 54.7.c decision |
+| `src/protocol/Raft/refinement_proof/invariants.rs` | 11 | trigger belongs to a nested quantifier; the note points at the outer binder |
+| `src/protocol/RSL/refinement_proof/state_machine.rs` | 1 | same nested-quantifier shape |
+| `src/implementation/RSL/cconfiguration.rs` | 1 | same |
+
+The 13 nested-quantifier cases need the enclosing expression restructured (hoist the inner
+quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
+they are the honest remainder of the "not mechanical" warning in this phase's premise.
 - [x] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
       ceiling, so this does not silently regrow. **Mechanism DONE (2026-08-04); the number
       it enforces arrives with 54.2.b.** `trigger_inventory.py guard` + a new
