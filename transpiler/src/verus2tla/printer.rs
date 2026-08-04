@@ -334,6 +334,16 @@ impl TlaPrinter {
                 format!("{}[{} -> {}]", indent, domain_str, range_str)
             }
 
+            TlaExpr::RecordSet(fields) => {
+                // [f: S, g: T] -- the set of records, printed with `:` rather
+                // than `|->` so it does not round-trip into a record value.
+                let fields_str: Vec<String> = fields
+                    .iter()
+                    .map(|(name, expr)| format!("{}: {}", name, self.print_expr_no_indent(expr)))
+                    .collect();
+                format!("{}[{}]", indent, fields_str.join(", "))
+            }
+
             TlaExpr::Record(fields) => {
                 if fields.is_empty() {
                     // Empty record - use a named constant or special syntax

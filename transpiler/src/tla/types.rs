@@ -754,6 +754,16 @@ impl ConstraintCollector {
             // Function EXCEPT: [f EXCEPT ![i] = v]
             TlaExpr::FnExcept { func, updates: _ } => self.collect_from_expr(func),
 
+            // Record set type: [f: S, g: T] -- a set of records.
+            TlaExpr::RecordSet(fields) => {
+                let mut record = RecordType::new();
+                for (name, value) in fields {
+                    let field_type = self.collect_from_expr(value);
+                    record.fields.insert(name.clone(), field_type);
+                }
+                TlaType::set(TlaType::Record(record))
+            }
+
             // Function set type: [Domain -> Range]
             TlaExpr::FnSet { domain, range } => {
                 let domain_type = self.collect_from_expr(domain);

@@ -403,6 +403,20 @@ enum Commands {
         config: Option<PathBuf>,
     },
 
+    /// Check a TLA+ spec against the clean subset (Phase 52.M0)
+    ///
+    /// Exits 0 when the module is in the subset, 1 when it is not, and 2 when
+    /// it could not be parsed -- an unparseable spec is *unmeasured*, not
+    /// dirty, so a frontend gap never masquerades as a subset violation.
+    TlaLint {
+        /// Input TLA+ file (.tla)
+        input: PathBuf,
+
+        /// Emit a JSON report instead of human-readable findings
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Translate TLA+ specification to Verus code (T7.1)
     TranslateTla {
         /// Input TLA+ file (.tla)
@@ -5951,6 +5965,89 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 } else {
                     println!("{}", tla_code);
                 }
+            }
+
+            Ok(())
+        }
+
+        Commands::TlaLint { input, json } => {
+            use verus_transpiler::tla::{lint_module, parse_module, report_to_json};
+
+            let source = std::fs::read_to_string(input)
+                .map_err(|e| miette::miette!("Failed to read TLA+ file: {}", e))?;
+
+            let module = match parse_module(&source) {
+                Ok(module) => module,
+                Err(e) => {
+                    // Not a subset verdict: we could not read the spec at all.
+                    if *json {
+                        println!(
+                            r#"{{"clean":null,"parse_error":"{}"}}"#,
+                            e.to_string().replace('\\', "\\\\").replace('"', "\\\"")
+                        );
+                    } else {
+                        eprintln!("{}: {}", input.display(), e);
+                        eprintln!(
+                            "not measurable against the clean subset: the spec did not parse"
+                        );
+                    }
+                    std::process::exit(2);
+                }
+            };
+
+            let report = lint_module(&module);
+
+            if *json {
+                println!("{}", report_to_json(&report));
+            } else if report.is_clean() {
+                let unchecked = report
+                    .unchecked_rules()
+                    .iter()
+                    .map(|r| r.as_str())
+                    .collect::<Vec<_>>();
+                if unchecked.is_empty() {
+                    println!("{}: clean", input.display());
+                } else {
+                    println!(
+                        "{}: clean with respect to {} ({} not yet implemented)",
+                        input.display(),
+                        verus_transpiler::tla::clean_subset::RULES_CHECKED
+                            .iter()
+                            .map(|r| r.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        unchecked.join(", ")
+                    );
+                }
+                if let Some(node_set) = &report.node_set {
+                    println!("  node set: {node_set}");
+                }
+                if !report.per_node_variables.is_empty() {
+                    println!("  per-node state: {}", report.per_node_variables.join(", "));
+                }
+            } else {
+                for finding in &report.findings {
+                    let where_ = if finding.definition.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" in `{}`", finding.definition)
+                    };
+                    println!(
+                        "{}:{}:{}: {}{}: {}",
+                        input.display(),
+                        finding.line,
+                        finding.column,
+                        finding.rule.as_str(),
+                        where_,
+                        finding.message
+                    );
+                }
+                println!(
+                    "{}: {} clean-subset violation(s)",
+                    input.display(),
+                    report.violations()
+                );
+                std::process::exit(1);
             }
 
             Ok(())

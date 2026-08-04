@@ -121,8 +121,13 @@ impl TlaParser {
 
         let mut module = TlaModule::new(name);
 
-        // Parse module body until we hit the closing dashes or EOF
-        while !self.is_at_end() && !self.check(TlaTokenKind::ModuleDashes) {
+        // Parse the body until the module terminator (`====`) or EOF. A `----`
+        // inside the body is a section divider, not the end of the module.
+        while !self.is_at_end() && !self.check(TlaTokenKind::ModuleEnd) {
+            if self.check(TlaTokenKind::ModuleDashes) {
+                self.advance();
+                continue;
+            }
             self.parse_module_unit(&mut module)?;
         }
 
@@ -156,6 +161,10 @@ impl TlaParser {
             Some(TlaTokenKind::Theorem) => {
                 let theorem = self.parse_theorem()?;
                 module.theorems.push(theorem);
+                // A theorem may be followed by a TLAPS proof. Proofs are not
+                // part of the spec we translate, and the proof language is a
+                // different grammar, so skip it rather than fail on it.
+                self.skip_proof();
             }
             Some(TlaTokenKind::Instance) => {
                 let instance = self.parse_instance()?;
@@ -189,9 +198,21 @@ impl TlaParser {
                 }
             }
             Some(TlaTokenKind::Ident(_)) => {
-                // Operator definition: Name == expr or Name(params) == expr
-                let op = self.parse_operator_def()?;
-                module.operators.push(op);
+                // `V == INSTANCE Voting` binds a module instance to a name; it
+                // is a definition whose right-hand side is not an expression.
+                if matches!(self.peek_ahead_kind(1), Some(TlaTokenKind::DefEq))
+                    && matches!(self.peek_ahead_kind(2), Some(TlaTokenKind::Instance))
+                {
+                    let name = self.expect_ident()?;
+                    self.advance(); // ==
+                    let mut instance = self.parse_instance()?;
+                    instance.local_name = Some(name);
+                    module.instances.push(instance);
+                } else {
+                    // Operator definition: Name == expr or Name(params) == expr
+                    let op = self.parse_operator_def()?;
+                    module.operators.push(op);
+                }
             }
             Some(TlaTokenKind::ModuleDashes) => {
                 // End of module
@@ -211,6 +232,64 @@ impl TlaParser {
             }
         }
         Ok(())
+    }
+
+    /// Skip a TLAPS proof body following a THEOREM.
+    ///
+    /// Proof steps are either indented or start with a level marker (`<1>2.`),
+    /// and the proof ends at the next module-level unit, which by TLA+
+    /// convention starts at column 1. Anything at column 1 that is a step
+    /// marker or a proof keyword still belongs to the proof.
+    fn skip_proof(&mut self) {
+        const PROOF_KEYWORDS: &[&str] = &[
+            "BY", "OBVIOUS", "QED", "PROOF", "DEF", "DEFS", "USE", "HIDE", "SUFFICES", "PROVE",
+            "NEW", "WITNESS", "PICK", "TAKE", "HAVE", "OMITTED", "ONLY",
+        ];
+
+        while !self.is_at_end() {
+            let at_column_one = self.current_column() == Some(1);
+            if !at_column_one {
+                self.advance();
+                continue;
+            }
+            match self.peek_kind() {
+                // `<1>2.` -- a structured proof step marker.
+                Some(TlaTokenKind::ProofStep(_)) => {
+                    self.advance();
+                }
+                Some(TlaTokenKind::Ident(name)) if PROOF_KEYWORDS.contains(&name.as_str()) => {
+                    self.advance();
+                }
+                // Anything else at column 1 starts the next module unit.
+                _ => break,
+            }
+        }
+    }
+
+    /// Whether the current token(s) spell the CASE arm separator `[]`.
+    fn at_case_separator(&self) -> bool {
+        self.check(TlaTokenKind::Always)
+            || (self.check(TlaTokenKind::LBracket)
+                && self.peek_ahead_kind(1) == Some(TlaTokenKind::RBracket))
+    }
+
+    /// Whether the separator ahead introduces the `OTHER` arm.
+    fn case_separator_precedes_other(&self) -> bool {
+        let after = if self.check(TlaTokenKind::Always) {
+            1
+        } else {
+            2
+        };
+        self.peek_ahead_kind(after) == Some(TlaTokenKind::Other)
+    }
+
+    fn consume_case_separator(&mut self) {
+        if self.check(TlaTokenKind::Always) {
+            self.advance();
+        } else {
+            self.advance(); // [
+            self.advance(); // ]
+        }
     }
 
     /// Parse EXTENDS declaration
@@ -234,14 +313,33 @@ impl TlaParser {
         self.advance();
 
         let mut constants = Vec::new();
-        constants.push(TlaConstantDecl::new(self.expect_ident()?));
+        constants.push(self.parse_constant_decl()?);
 
         while self.check(TlaTokenKind::Comma) {
             self.advance();
-            constants.push(TlaConstantDecl::new(self.expect_ident()?));
+            constants.push(self.parse_constant_decl()?);
         }
 
         Ok(constants)
+    }
+
+    /// One constant declaration, possibly an operator constant with an arity:
+    /// `CONSTANTS Commands, FastQuorums(_)`.
+    fn parse_constant_decl(&mut self) -> ParseResult<TlaConstantDecl> {
+        let name = self.expect_ident()?;
+
+        // `F(_, _)` declares a constant *operator*. The arity is not part of
+        // TlaConstantDecl, and nothing downstream consumes it today, so the
+        // shape is accepted and the placeholders skipped.
+        if self.check(TlaTokenKind::LParen) {
+            self.advance();
+            while !self.check(TlaTokenKind::RParen) && !self.is_at_end() {
+                self.advance();
+            }
+            self.expect(TlaTokenKind::RParen)?;
+        }
+
+        Ok(TlaConstantDecl::new(name))
     }
 
     /// Parse VARIABLE or VARIABLES declaration
@@ -345,7 +443,7 @@ impl TlaParser {
             self.expect(TlaTokenKind::DefEq)?;
             let body = self.parse_expr()?;
             return Ok(TlaOperator {
-                name: format!("\\{}", op),
+                name: op,
                 params: vec![TlaParam::new(name), TlaParam::new(rhs)],
                 body,
                 is_recursive: false,
@@ -508,7 +606,7 @@ impl TlaParser {
         {
             if self.check(TlaTokenKind::LeadsTo) {
                 self.advance();
-                let right = self.parse_comparison_expr()?;
+                let right = self.parse_implication_operand()?;
                 left = TlaExpr::LeadsTo {
                     left: Box::new(left),
                     right: Box::new(right),
@@ -520,12 +618,28 @@ impl TlaParser {
                     TlaBinOp::Iff
                 };
                 self.advance();
-                let right = self.parse_comparison_expr()?;
+                let right = self.parse_implication_operand()?;
                 left = TlaExpr::binop(op, left, right);
             }
         }
 
         Ok(left)
+    }
+
+    /// The right operand of `=>`, `<=>` or `~>`.
+    ///
+    /// Normally this binds at comparison precedence, but a bulleted junction
+    /// list written after the arrow is the operand:
+    ///     (m.type = "1b") => /\ maxBal[m.acc] >= m.bal
+    ///                        /\ ...
+    /// The list's own column scoping is what ends it, so nothing outside the
+    /// implication is absorbed.
+    fn parse_implication_operand(&mut self) -> ParseResult<TlaExpr> {
+        if self.check(TlaTokenKind::And) || self.check(TlaTokenKind::Or) {
+            self.parse_or_expr()
+        } else {
+            self.parse_comparison_expr()
+        }
     }
 
     /// Parse comparison expressions
@@ -546,7 +660,7 @@ impl TlaParser {
                 self.advance();
                 let right = self.parse_set_expr()?;
                 left = TlaExpr::OpApply {
-                    op: Box::new(TlaExpr::Ident(format!("\\{}", op))),
+                    op: Box::new(TlaExpr::Ident(op)),
                     args: vec![left, right],
                 };
                 continue;
@@ -697,6 +811,21 @@ impl TlaParser {
     /// Handles `.field`, `[index]`, `(args)`, and `'` (prime).
     fn parse_postfix_chain(&mut self, mut expr: TlaExpr) -> ParseResult<TlaExpr> {
         loop {
+            // `V!Op` -- an operator of the module instance bound to `V`. The
+            // qualified name is kept whole so the reference stays resolvable
+            // against the instance recorded on the module.
+            if self.check(TlaTokenKind::Bang) {
+                if let (TlaExpr::Ident(base), Some(TlaTokenKind::Ident(_))) =
+                    (&expr, self.peek_ahead_kind(1))
+                {
+                    let base = base.clone();
+                    self.advance();
+                    let member = self.expect_ident()?;
+                    expr = TlaExpr::Ident(format!("{base}!{member}"));
+                    continue;
+                }
+            }
+
             // A token at or left of the enclosing bullet column belongs to the
             // junction list, not to this expression.
             if self.at_junction_boundary() {
@@ -1005,6 +1134,23 @@ impl TlaParser {
                     domain: Box::new(domain),
                     body: Box::new(body),
                 });
+            } else if self.check(TlaTokenKind::Colon) {
+                // Record set: [holder: 1..NP, clean: BOOLEAN] -- the set of all
+                // records with those field types, as used in type invariants.
+                self.advance();
+                let value = self.parse_expr()?;
+                let mut fields = vec![(name, value)];
+
+                while self.check(TlaTokenKind::Comma) {
+                    self.advance();
+                    let field_name = self.expect_ident()?;
+                    self.expect(TlaTokenKind::Colon)?;
+                    let field_value = self.parse_expr()?;
+                    fields.push((field_name, field_value));
+                }
+
+                self.expect(TlaTokenKind::RBracket)?;
+                return Ok(TlaExpr::RecordSet(fields));
             } else if self.check(TlaTokenKind::MapsTo) {
                 // Record: [a |-> 1, ...]
                 self.advance();
@@ -1198,12 +1344,11 @@ impl TlaParser {
         let result = self.parse_expr()?;
         arms.push((cond, result));
 
-        // Parse additional arms
-        while self.check(TlaTokenKind::LBracket)
-            && self.peek_ahead_kind(1) == Some(TlaTokenKind::RBracket)
-        {
-            self.advance(); // [
-            self.advance(); // ]
+        // Parse additional arms. The arm separator is `[]`, which the tokenizer
+        // folds into the temporal `Always` token when the brackets are adjacent
+        // -- both spellings have to be accepted here.
+        while self.at_case_separator() && !self.case_separator_precedes_other() {
+            self.consume_case_separator();
             let cond = self.parse_expr()?;
             self.expect(TlaTokenKind::RightArrow)?;
             let result = self.parse_expr()?;
@@ -1211,11 +1356,8 @@ impl TlaParser {
         }
 
         // Parse optional OTHER
-        let other = if self.check(TlaTokenKind::LBracket)
-            && self.peek_ahead_kind(1) == Some(TlaTokenKind::RBracket)
-        {
-            self.advance(); // [
-            self.advance(); // ]
+        let other = if self.at_case_separator() {
+            self.consume_case_separator();
             self.expect(TlaTokenKind::Other)?;
             self.expect(TlaTokenKind::RightArrow)?;
             Some(Box::new(self.parse_expr()?))

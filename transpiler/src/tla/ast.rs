@@ -235,6 +235,10 @@ pub enum TlaExpr {
     // Records
     /// Record construction: `[a |-> 1, b |-> 2]`
     Record(Vec<(String, TlaExpr)>),
+    /// Record set: `[holder: 1..NP, clean: BOOLEAN]` — the set of all records
+    /// with those fields drawn from those sets. Distinct from `Record`, which
+    /// is a single record value.
+    RecordSet(Vec<(String, TlaExpr)>),
     /// Record field access: `r.field`
     RecordAccess { record: Box<TlaExpr>, field: String },
 

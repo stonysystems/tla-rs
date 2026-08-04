@@ -315,6 +315,13 @@ impl<'a> ExprTranslator<'a> {
 
             // Records
             TlaExpr::Record(fields) => self.translate_record(fields),
+            TlaExpr::RecordSet(fields) => {
+                // [f: S, g: T] is the SET of records, not a record. It appears
+                // in type invariants, which the projection does not translate,
+                // so render it as the set of the corresponding record type.
+                let record_ty = self.translate_record(fields);
+                format!("Set::<{}>", record_ty)
+            }
             TlaExpr::RecordAccess { record, field } => self.translate_record_access(record, field),
 
             // Tuples
@@ -3256,7 +3263,7 @@ impl ModuleTranslator {
                     );
                 }
             }
-            TlaExpr::Record(fields) => {
+            TlaExpr::Record(fields) | TlaExpr::RecordSet(fields) => {
                 for (_, value) in fields {
                     Self::collect_symbolic_atoms_from_expr(value, blocked_names, seen, atoms);
                 }
@@ -3960,7 +3967,7 @@ impl ModuleTranslator {
                     range, root_names, hints, peer_hints,
                 );
             }
-            TlaExpr::Record(fields) => {
+            TlaExpr::Record(fields) | TlaExpr::RecordSet(fields) => {
                 for (_, value) in fields {
                     changed |= Self::collect_record_root_field_hints_from_expr(
                         value, root_names, hints, peer_hints,
@@ -4141,7 +4148,7 @@ impl ModuleTranslator {
                     );
                 }
             }
-            TlaExpr::Record(entries) => {
+            TlaExpr::Record(entries) | TlaExpr::RecordSet(entries) => {
                 for (_, value) in entries {
                     Self::collect_record_root_field_names_from_expr(value, root_names, fields);
                 }
@@ -4305,7 +4312,7 @@ impl ModuleTranslator {
                 Self::collect_state_fields_from_expr(domain, state_var_names, state_fields);
                 Self::collect_state_fields_from_expr(range, state_var_names, state_fields);
             }
-            TlaExpr::Record(fields) => {
+            TlaExpr::Record(fields) | TlaExpr::RecordSet(fields) => {
                 for (_, value) in fields {
                     Self::collect_state_fields_from_expr(value, state_var_names, state_fields);
                 }
@@ -5452,7 +5459,7 @@ impl ModuleTranslator {
                     Self::collect_recursive_self_calls(&update.value, op_name, out);
                 }
             }
-            TlaExpr::Record(fields) => {
+            TlaExpr::Record(fields) | TlaExpr::RecordSet(fields) => {
                 for (_, value) in fields {
                     Self::collect_recursive_self_calls(value, op_name, out);
                 }
@@ -5789,7 +5796,7 @@ impl ModuleTranslator {
                 Self::expr_has_record_access_root_ident(domain, ident)
                     || Self::expr_has_record_access_root_ident(range, ident)
             }
-            TlaExpr::Record(fields) => fields
+            TlaExpr::Record(fields) | TlaExpr::RecordSet(fields) => fields
                 .iter()
                 .any(|(_, value)| Self::expr_has_record_access_root_ident(value, ident)),
             TlaExpr::IfThenElse {

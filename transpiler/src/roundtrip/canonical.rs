@@ -188,6 +188,17 @@ impl Canonicalizer {
             },
 
             // Records: optionally sort fields
+            TlaExpr::RecordSet(fields) => {
+                let mut canonical_fields: Vec<(String, TlaExpr)> = fields
+                    .iter()
+                    .map(|(name, value)| (name.clone(), self.canonicalize_expr(value)))
+                    .collect();
+                if self.config.sort_record_fields {
+                    canonical_fields.sort_by(|a, b| a.0.cmp(&b.0));
+                }
+                TlaExpr::RecordSet(canonical_fields)
+            }
+
             TlaExpr::Record(fields) => {
                 let mut canonical_fields: Vec<(String, TlaExpr)> = fields
                     .iter()

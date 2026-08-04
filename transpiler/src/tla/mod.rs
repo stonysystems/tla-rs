@@ -4,6 +4,7 @@
 //! them to Verus/TLA-rs code.
 
 pub mod ast;
+pub mod clean_subset;
 pub mod mc_wrapper;
 pub mod parser;
 pub mod tokenizer;
@@ -14,6 +15,7 @@ pub use ast::{
     TlaBinOp, TlaConstantDecl, TlaExceptPath, TlaExceptUpdate, TlaExpr, TlaInstance, TlaModule,
     TlaNumber, TlaOperator, TlaParam, TlaQuantBound, TlaTheorem, TlaUnaryOp,
 };
+pub use clean_subset::{lint_module, report_to_json, CleanRule, CleanSubsetReport, Finding};
 pub use mc_wrapper::{
     generate_relational_mc_wrapper, McWrapperArtifacts, McWrapperOptions, PacketProjectionMode,
 };

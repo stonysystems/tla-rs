@@ -157,7 +157,18 @@ pub enum TlaTokenKind {
     Bang,       // ! (used in EXCEPT syntax: ![i])
 
     // Module Structure
-    ModuleDashes, // ---- or ====
+    /// `----` — a horizontal rule. It opens and closes the module header and
+    /// is also the conventional section divider *inside* a module body.
+    ModuleDashes,
+    /// A TLAPS structured-proof step marker (`<1>`, `<2>`), recognised only as
+    /// the first token on a line. Without a token of its own it lexes as
+    /// `less-than, 1, greater-than` and the expression parser silently absorbs
+    /// it into the theorem statement.
+    ProofStep(String),
+    /// `====` — the module terminator. Distinct from `----`: treating the two
+    /// alike makes a section divider look like the end of the module, which
+    /// silently discards every definition after it.
+    ModuleEnd,
 
     // Maps and Functions
     MapsTo,     // |->
@@ -169,8 +180,8 @@ pub enum TlaTokenKind {
     Number(String),
     String(String),
 
-    /// A backslash operator with no dedicated token kind: `\prec`, `\o`,
-    /// `\subset`, `\sqsubseteq`, ... Stores the name without the backslash.
+    /// An infix operator with no dedicated token kind: `\prec`, `\o`,
+    /// `\subset`, `@@`, `:>`. Stores the operator's full spelling.
     ///
     /// TLA+ lets a spec define its own infix operators over these symbols
     /// (`a \prec b == ...`), and standard modules use several of them, so an
@@ -267,11 +278,13 @@ impl fmt::Display for TlaTokenKind {
             TlaTokenKind::Underscore => write!(f, "_"),
             TlaTokenKind::Bang => write!(f, "!"),
             TlaTokenKind::ModuleDashes => write!(f, "----"),
+            TlaTokenKind::ModuleEnd => write!(f, "===="),
+            TlaTokenKind::ProofStep(level) => write!(f, "<{}>", level),
             TlaTokenKind::MapsTo => write!(f, "|->"),
             TlaTokenKind::RightArrow => write!(f, "->"),
             TlaTokenKind::LeftArrow => write!(f, "<-"),
             TlaTokenKind::Ident(s) => write!(f, "{}", s),
-            TlaTokenKind::InfixOp(s) => write!(f, "\\{}", s),
+            TlaTokenKind::InfixOp(s) => write!(f, "{}", s),
             TlaTokenKind::Number(s) => write!(f, "{}", s),
             TlaTokenKind::String(s) => write!(f, "\"{}\"", s),
             TlaTokenKind::Eof => write!(f, "EOF"),
@@ -324,6 +337,10 @@ pub struct TlaTokenizer<'a> {
     position: Position,
     /// Accumulated tokens
     tokens: Vec<TlaToken>,
+    /// Whether the token about to be scanned is the first one on its line.
+    /// Only used to recognise TLAPS proof-step markers, which are lexically
+    /// ambiguous with comparisons anywhere else.
+    at_line_start: bool,
 }
 
 impl<'a> TlaTokenizer<'a> {
@@ -332,6 +349,7 @@ impl<'a> TlaTokenizer<'a> {
         Self {
             source,
             chars: source.chars().peekable(),
+            at_line_start: true,
             position: Position::new(1, 1, 0),
             tokens: Vec::new(),
         }
@@ -344,6 +362,11 @@ impl<'a> TlaTokenizer<'a> {
             if self.is_at_end() {
                 break;
             }
+            self.at_line_start = self
+                .tokens
+                .last()
+                .map(|t| t.span.end.line < self.position.line)
+                .unwrap_or(true);
             let token = self.next_token()?;
             self.tokens.push(token);
         }
@@ -365,6 +388,28 @@ impl<'a> TlaTokenizer<'a> {
     /// Peek at the current character without consuming it
     fn peek(&mut self) -> Option<char> {
         self.chars.peek().copied()
+    }
+
+    /// Try to scan a proof step marker `<digits>` at the current position,
+    /// consuming it only on a match so `x < 1` is unaffected.
+    fn try_scan_proof_step(&mut self) -> Option<String> {
+        let mut digits = String::new();
+        let mut i = 0;
+        while let Some(c) = self.peek_at(i) {
+            if c.is_ascii_digit() {
+                digits.push(c);
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        if digits.is_empty() || self.peek_at(i) != Some('>') {
+            return None;
+        }
+        for _ in 0..=i {
+            self.advance();
+        }
+        Some(digits)
     }
 
     /// Peek `n` characters past the current one without consuming anything.
@@ -493,7 +538,14 @@ impl<'a> TlaTokenizer<'a> {
             '}' => TlaTokenKind::RBrace,
             ',' => TlaTokenKind::Comma,
             ';' => TlaTokenKind::Semicolon,
-            '@' => TlaTokenKind::At,
+            '@' => {
+                if self.match_char('@') {
+                    // `@@` -- function merge (TLC standard module)
+                    TlaTokenKind::InfixOp("@@".to_string())
+                } else {
+                    TlaTokenKind::At
+                }
+            }
             '\'' => TlaTokenKind::Prime,
             '^' => TlaTokenKind::Caret,
             '%' => TlaTokenKind::Percent,
@@ -506,6 +558,9 @@ impl<'a> TlaTokenizer<'a> {
             ':' => {
                 if self.match_char('=') {
                     TlaTokenKind::ColonEq
+                } else if self.match_char('>') {
+                    // `:>` -- singleton function (TLC standard module)
+                    TlaTokenKind::InfixOp(":>".to_string())
                 } else {
                     TlaTokenKind::Colon
                 }
@@ -553,7 +608,7 @@ impl<'a> TlaTokenizer<'a> {
                         eq_count += 1;
                     }
                     if eq_count >= 4 {
-                        TlaTokenKind::ModuleDashes
+                        TlaTokenKind::ModuleEnd
                     } else {
                         TlaTokenKind::DefEq
                     }
@@ -575,6 +630,14 @@ impl<'a> TlaTokenizer<'a> {
                 }
             }
             '<' => {
+                if self.at_line_start {
+                    if let Some(level) = self.try_scan_proof_step() {
+                        return Ok(TlaToken::new(
+                            TlaTokenKind::ProofStep(level),
+                            Span::new(start, self.position),
+                        ));
+                    }
+                }
                 if self.match_char('<') {
                     TlaTokenKind::LAngle // <<
                 } else if self.match_char('=') {
@@ -717,7 +780,7 @@ impl<'a> TlaTokenizer<'a> {
             // operator we have no dedicated token for (`\o`, `\subset`, ...).
             // Rejecting it here would make the tokenizer the reason real-world
             // specs cannot be read, which is the wrong layer for that decision.
-            _ => Ok(TlaTokenKind::InfixOp(name)),
+            _ => Ok(TlaTokenKind::InfixOp(format!("\\{}", name))),
         }
     }
 

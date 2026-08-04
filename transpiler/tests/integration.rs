@@ -4805,24 +4805,22 @@ fn test_d1_on_community_tla_specs() {
         failures.len()
     );
 
-    // 3 pass (EPaxos, Paxos, Raft), 1 fail (TwoPhase — record set constructor)
     assert!(
         total >= 4,
         "Should process at least 4 .tla files, got {total}"
     );
-    assert!(
-        passed >= 3,
-        "At least 3 community specs should parse, got {passed}"
+    // Was 3/4 with TwoPhase failing on the record-set constructor
+    // `[type : {"Prepared"}, rm : RM]`. Phase 52.M0.0.e added record sets,
+    // named INSTANCE, `@@`/`:>`, higher-order CONSTANTS, instance-qualified
+    // references and junction lists after `=>`, taking it to 4/4. Note the
+    // earlier "pass" was also shallower than it looked: the parser stopped at
+    // the first `----` section divider, so it only ever saw a prefix.
+    assert_eq!(
+        passed,
+        total,
+        "community specs must all parse: {}",
+        failures.join(", ")
     );
-    // TwoPhase_community.tla fails on record set constructor [type : {"Prepared"}, rm : RM]
-    assert!(
-        !failures.is_empty(),
-        "Expected at least 1 failure (TwoPhase record set), got {}",
-        failures.len()
-    );
-    if !failures.is_empty() {
-        eprintln!("Expected failures: {}", failures.join(", "));
-    }
 }
 
 // ============================================================
