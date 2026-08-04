@@ -1759,10 +1759,8 @@ fn referenced_operators(e: &TlaExpr, known: &BTreeSet<String>) -> BTreeSet<Strin
                 }
             }
         }
-        TlaExpr::Ident(name) => {
-            if known.contains(name) {
-                out.insert(name.clone());
-            }
+        TlaExpr::Ident(name) if known.contains(name) => {
+            out.insert(name.clone());
         }
         _ => {}
     });
