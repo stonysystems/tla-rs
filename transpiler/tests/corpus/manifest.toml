@@ -20,6 +20,8 @@
 #   golden_kind    handwritten | bootstrapped | bootstrapped_reviewed | bootstrapped_partial_ref
 #   reference      repo-relative path to an existing hand-written tla-rs spec, or ""
 #   clean_distance linter-measured C1-C5 violations on original.tla, or "unmeasured"
+#   expected_rules which rules the linter reports for original.tla; pinned by
+#                  tests/corpus_lint_guard.rs together with clean_distance
 #   milestone_gate the Phase 52 milestone this case gates
 #   notes          free text; REQUIRED when status = "blocked"
 
@@ -38,7 +40,8 @@ source_path = "specifications/TeachingConcurrency/Simple.tla"
 source_commit = "ab9a2c33566c2e8c9202f292540852282e1fbb32"
 golden_kind = "handwritten"
 reference = ""
-clean_distance = "unmeasured"
+clean_distance = "1"
+expected_rules = ["C2"]
 milestone_gate = "52.M1"
 notes = "Lamport's TeachingConcurrency 'Simple'. Smallest per-node-array case: x, y, pc are all [0..N-1 -> T] and Next is `\\E self \\in 0..N-1: proc(self)`. proc(self) reads y[j] for j /= self, so it violates C2 and the rewrite must message-ify that read. Ships with a TLAPS proof upstream."
 
@@ -51,7 +54,8 @@ source_path = "specifications/Bakery-Boulangerie/Bakery.tla"
 source_commit = "dc6470ac55fe7f4f395ac62dba60ec6fd5d87c24"
 golden_kind = "handwritten"
 reference = ""
-clean_distance = "unmeasured"
+clean_distance = "3"
+expected_rules = ["C2"]
 milestone_gate = "52.M1"
 notes = "Lamport's bakery. Heavy C2 case: the doorway/ticket protocol reads num[j] and flag[j] for other processes. Deliberately kept as the corpus's 'dirty' end of tier 0 so the linter has a spec it must reject."
 
@@ -64,7 +68,8 @@ source_path = "specifications/DiningPhilosophers/DiningPhilosophers.tla"
 source_commit = "41faafbabe549530ad54bd4301b07ca4fd93e65b"
 golden_kind = "handwritten"
 reference = ""
-clean_distance = "unmeasured"
+clean_distance = "6"
+expected_rules = ["C2"]
 milestone_gate = "52.M1"
 notes = "Deadlock-capable; gives the corpus a negative (deadlock) case for TLC fidelity. Forks are shared between neighbours -> C2 violations at the fork pickup."
 
@@ -77,7 +82,8 @@ source_path = "specifications/ReadersWriters/ReadersWriters.tla"
 source_commit = "ee05f259276db2b878a55a442ea6daa8429db7e9"
 golden_kind = "handwritten"
 reference = ""
-clean_distance = "unmeasured"
+clean_distance = "1"
+expected_rules = ["C5"]
 milestone_gate = "52.M1"
 notes = "Queue-based reader/writer lock. State is global (readers/writers/waiting sets), not per-node -> exercises the C1 boundary: what does projection do when there is no [Node -> T] array at all?"
 
@@ -90,7 +96,8 @@ source_path = "specifications/lamport_mutex/LamportMutex.tla"
 source_commit = "b17be0a959108701a89b5cadec1a1ee1b216f7a4"
 golden_kind = "handwritten"
 reference = ""
-clean_distance = "unmeasured"
+clean_distance = "2"
+expected_rules = ["C1", "C4"]
 milestone_gate = "52.M1"
 notes = "Lamport 1978 distributed mutual exclusion. The CLEANEST tier-0 case and the most valuable one: already message-passing (`network` is [Proc -> [Proc -> Seq(Message)]], pairwise FIFO), all of clock/req/ack are per-node, Next is `\\E p \\in Proc`. Rewrite work is mostly (a) network 2-D queue array -> one message set with src/dst, (b) `crit` global set -> per-node boolean. Swapped in for BlockingQueue, which is an upstream submodule (lemmy/BlockingQueue) and has no per-node arrays."
 

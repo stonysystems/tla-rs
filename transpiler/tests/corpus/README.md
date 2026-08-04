@@ -104,7 +104,23 @@ measured by the Phase 52 linter (`52.M0`) as the number of C1–C5 violations:
 - `unmeasured` — the linter did not exist yet when the case was taken in.
 - an integer — violation count on `original.tla`. Higher = more human rewrite work.
 
-`intake_case.sh` fills this in automatically once the linter lands.
+`intake_case.sh` fills this in automatically (the linter landed in Phase 52.M0).
+
+`expected_rules` records which rules the linter reports for the case. Together
+with `clean_distance` it is pinned by `tests/corpus_lint_guard.rs`, which asserts
+the **exact** count rather than "at least one": a linter that reports more than a
+spec actually violates is as broken as one that reports fewer, and the count is
+what publishes rewrite effort.
+
+Measured tier-0 distances (2026-08-04):
+
+| Case | Distance | Rules | What the human has to decide |
+|---|---:|---|---|
+| `t0_01_simple` | 1 | C2 | which message carries the neighbour's `x` |
+| `t0_02_bakery` | 3 | C2 | how the doorway reads of `num`/`flag` become messages |
+| `t0_03_dining_philosophers` | 6 | C2 | how fork state is exchanged between neighbours |
+| `t0_04_readers_writers` | 1 | C5 | it has no per-node state at all — re-model per node first |
+| `t0_05_lamport_mutex` | 2 | C1, C4 | `crit` → per-node boolean; flatten the 2-D queue network |
 
 ## Adding a case
 
