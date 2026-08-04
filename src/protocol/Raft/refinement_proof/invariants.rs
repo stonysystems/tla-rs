@@ -351,6 +351,147 @@ verus! {
             }
     }
 
+    /// The single inherited obligation that dynamic-membership Configuration
+    /// Leader Completeness reduces to: a server that granted its vote to a
+    /// strictly higher-term leader cannot still be holding a certified
+    /// Configuration boundary that the leader lacks.
+    ///
+    /// This is the classic static-Raft log-transfer step. It is stated as an
+    /// explicit hypothesis rather than discharged through
+    /// `lemma_overlap_voter_entry_transfer`, whose hard cases the inherited
+    /// proof base closes with `assume(false)`. Keeping it explicit separates
+    /// the membership-specific reasoning — quorum overlap across joint
+    /// consensus phases — from the inherited gap, so the dynamic-membership
+    /// result is exactly as strong as static Raft's own transfer lemma.
+    pub open spec fn CertifiedBoundaryTransfersToVotedLeader(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |index: int, leader_id: int, overlap_voter: int|
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && 0 <= overlap_voter < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term
+            && ds.configuration_commit_certificates[index].quorum
+                .contains(overlap_voter)
+            && ds.server_states[leader_id].votes_granted
+                .contains(overlap_voter)
+            ==> {
+                &&& ds.server_states[leader_id].log.len() > index
+                &&& ds.server_states[leader_id].log[index]
+                    == ds.configuration_commit_certificates[index].entry
+            }
+    }
+
+    /// Membership-specific half of Configuration Leader Completeness. Given the
+    /// first-missing-boundary provenance and the inherited transfer obligation
+    /// above, quorum overlap across the governing membership phase forces every
+    /// strictly higher-term leader to hold every certified boundary.
+    ///
+    /// Unlike the existing
+    /// `lemma_first_missing_boundary_provenance_implies_configuration_leader_completeness`,
+    /// this route never calls `lemma_overlap_voter_entry_transfer`, so the
+    /// dependence on the inherited gap is visible in the signature.
+    pub proof fn lemma_configuration_leader_completeness_under_transfer_obligation(
+        ds: RaftDistributedState,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            FirstMissingConfigurationBoundaryProvenance(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+        ensures
+            CertifiedConfigurationLeaderCompleteness(ds),
+    {
+        assert forall |index: int, leader_id: int|
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= leader_id < ds.num_servers
+            && ds.server_states[leader_id].role is Leader
+            && ds.server_states[leader_id].current_term
+                > ds.configuration_commit_certificates[index].entry.term
+        implies {
+            &&& ds.server_states[leader_id].log.len() > index
+            &&& ds.server_states[leader_id].log[index]
+                == ds.configuration_commit_certificates[index].entry
+        }
+        by {
+            if !(ds.server_states[leader_id].log.len() > index
+                && ds.server_states[leader_id].log[index]
+                    == ds.configuration_commit_certificates[index].entry)
+            {
+                // The leader is missing this boundary, so provenance hands us a
+                // certificate-quorum witness together with the election prefix
+                // the leader and that witness share.
+                assert(FirstMissingConfigurationBoundaryProvenance(ds));
+                let (certificate_witness, election_commit_len):
+                    (int, int) = choose
+                    |certificate_witness: int, election_commit_len: int| {
+                        &&& ds.configuration_commit_certificates[index].quorum
+                            .contains(certificate_witness)
+                        &&& 0 <= election_commit_len
+                            <= ds.server_states[leader_id].log.len()
+                        &&& election_commit_len <= index
+                        &&& ds.server_states[leader_id].election_membership_phase
+                            == Some(active_membership_phase_from_raft_log(
+                                ds.server_states[leader_id].log,
+                                election_commit_len,
+                                MembershipPhase::Stable {
+                                    config: ds.server_constants[leader_id]
+                                        .servers,
+                                },
+                            ))
+                        &&& forall |prefix_index: int|
+                            0 <= prefix_index < election_commit_len
+                            ==> ds.server_states[leader_id].log[prefix_index]
+                                == ds.server_states[certificate_witness]
+                                    .log[prefix_index]
+                        &&& forall |prefix_index: int|
+                            election_commit_len <= prefix_index < index
+                            ==> !(ds.server_states[certificate_witness]
+                                .log[prefix_index].payload is Configuration)
+                    };
+
+                // The phase the leader recorded at election time is exactly the
+                // phase that governed this certificate.
+                lemma_first_missing_certificate_matches_recorded_election_phase(
+                    ds,
+                    index,
+                    leader_id,
+                    certificate_witness,
+                    election_commit_len,
+                );
+
+                // So the leader's vote set is a quorum for the governing phase,
+                // and overlaps the quorum that committed the boundary.
+                assert(has_recorded_election_quorum(
+                    ds.server_states[leader_id],
+                ));
+                lemma_configuration_certificate_quorum_intersects_election_phase(
+                    ds,
+                    index,
+                    ds.server_states[leader_id].votes_granted,
+                );
+
+                let overlap_voter = choose |server: int|
+                    ds.configuration_commit_certificates[index].quorum
+                        .contains(server)
+                    && ds.server_states[leader_id].votes_granted
+                        .contains(server);
+
+                assert(ds.server_states[leader_id].votes_granted
+                    .contains(overlap_voter));
+                assert(VotesGrantedAreServers(ds));
+                assert(0 <= overlap_voter < ds.num_servers);
+
+                // The inherited transfer obligation closes the case.
+                assert(CertifiedBoundaryTransfersToVotedLeader(ds));
+            }
+        };
+    }
+
     /// Milestone B, mechanical half: an existing first-missing-boundary
     /// witness survives any step that carries the certificate over unchanged,
     /// leaves the leader's recorded election phase alone, and rewrites no
