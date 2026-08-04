@@ -99,3 +99,53 @@ fn translator_output_matches_the_goldens() {
         failures.join("\n  ")
     );
 }
+
+/// The `pipeline --clean-subset` mode must produce exactly what `clean-tla`
+/// produces.
+///
+/// They are two entry points onto one projection, and the whole value of the
+/// pipeline mode is that it is not a second implementation. Without this, the
+/// two could drift and the goldens would only pin one of them.
+#[test]
+fn the_pipeline_mode_agrees_with_clean_tla() {
+    use std::process::Command;
+
+    let corpus = corpus_dir();
+    // One green case is enough: this pins the *wiring*, not the projection --
+    // the projection itself is pinned by every golden.
+    let clean = corpus.join("tier0/t0_01_simple/clean.tla");
+    let golden = corpus.join("tier0/t0_01_simple/golden.rs");
+    assert!(
+        clean.exists(),
+        "the case this guard is anchored to must exist"
+    );
+
+    let out_dir = std::env::temp_dir().join("tla_rs_pipeline_guard");
+    let _ = fs::remove_dir_all(&out_dir);
+    fs::create_dir_all(&out_dir).expect("temp dir must be creatable");
+    let exec_out = out_dir.join("out.rs");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_verus-transpile"))
+        .args(["pipeline", "--clean-subset", "--tla-input"])
+        .arg(&clean)
+        .arg("--exec-output")
+        .arg(&exec_out)
+        .output()
+        .expect("the binary must be runnable");
+    assert!(
+        status.status.success(),
+        "pipeline --clean-subset failed:\n{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+
+    let produced = fs::read_to_string(exec_out.with_extension("spec.rs"))
+        .expect("the pipeline must have written a spec");
+    let golden = fs::read_to_string(&golden).expect("golden must be readable");
+
+    let want = verus_block(&golden).expect("golden has a verus! block");
+    let got = verus_block(&produced).expect("pipeline output has a verus! block");
+    assert_eq!(
+        want, got,
+        "`pipeline --clean-subset` and `clean-tla` have drifted apart"
+    );
+}

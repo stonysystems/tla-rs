@@ -491,6 +491,14 @@ enum Commands {
         #[arg(long)]
         tla_input: PathBuf,
 
+        /// Produce the spec stage with the Phase 52 clean-subset projection
+        /// instead of the global-model translator.
+        ///
+        /// The input must be in the clean subset (`tla-lint`); it is checked,
+        /// and the run stops with the linter's own findings if it is not.
+        #[arg(long)]
+        clean_subset: bool,
+
         /// Output Verus exec file (.rs)
         #[arg(long)]
         exec_output: PathBuf,
@@ -6256,6 +6264,7 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
 
         Commands::Pipeline {
             tla_input,
+            clean_subset,
             exec_output,
             types,
             keep_intermediate,
@@ -6338,12 +6347,58 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 state_name: state_name.clone(),
                 ..ModuleConfig::default()
             };
-            let mut tla_translator =
-                ModuleTranslator::with_config(module_config.clone()).with_types(type_env);
-            let verus_spec_code = tla_translator.translate(&tla_module);
+            // Two ways to produce the spec stage, and they are aimed at
+            // different inputs. The global-model translator (`translate-tla`)
+            // is the original path. The clean-subset projection is the Phase 52
+            // path: it takes a spec that is *already* in the subset and
+            // projects it onto one node, which is what makes it work on specs
+            // from the wild -- see docs/clean_tla_translator_evidence.md.
+            let verus_spec_code = if *clean_subset {
+                use verus_transpiler::tla::{emit, project};
+                if cli.verbose {
+                    eprintln!("  (clean-subset projection)");
+                }
+                let projected = project(&tla_module).map_err(|e| {
+                    let verus_transpiler::tla::ProjectionError::NotClean(report) = e;
+                    // The linter's own findings, not a debug dump of its report:
+                    // the message tells the reader to run `tla-lint`, so it had
+                    // better show what `tla-lint` would have said.
+                    let findings = report
+                        .findings
+                        .iter()
+                        .map(|f| format!("  {}: {}", f.rule.as_str(), f.message))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    miette::miette!(
+                        "`--clean-subset` needs a spec in the clean subset, and this \
+                         one has {} violation(s):\n{findings}",
+                        report.findings.len()
+                    )
+                })?;
+                emit(&projected).map_err(|gaps| {
+                    miette::miette!(
+                        "the spec is in the subset but {} part(s) did not project:\n  {}",
+                        gaps.len(),
+                        gaps.join("\n  ")
+                    )
+                })?
+            } else {
+                let mut tla_translator =
+                    ModuleTranslator::with_config(module_config.clone()).with_types(type_env);
+                tla_translator.translate(&tla_module)
+            };
 
             // Generate mode annotations
             let mode_annotations = generate_mode_annotations(&tla_module);
+            // The annotations describe the *source* module's operators, so they
+            // do not fit a projected spec: projection removes the node
+            // parameter, and `Left(p)` becomes `LLeft(c)` with one parameter
+            // fewer. Producing them for the projection is a separate piece of
+            // work, and the exec stage is outside Phase 52 in any case -- the
+            // plan's R3 is "only generate a spec, never a proof". So the
+            // clean-subset path stops with the spec, which is the artifact it
+            // exists to produce.
+            let stop_after_spec = *clean_subset;
 
             // Determine intermediate file paths
             let spec_path = spec_output.clone().unwrap_or_else(|| {
@@ -6362,6 +6417,21 @@ fn handle_command(command: &Commands, cli: &Cli) -> Result<()> {
                 .map_err(|e| miette::miette!("Failed to write spec file: {}", e))?;
             std::fs::write(&automan_path, &mode_annotations)
                 .map_err(|e| miette::miette!("Failed to write annotation file: {}", e))?;
+
+            if stop_after_spec {
+                println!(
+                    "{}: projected to {} ({} lines)",
+                    tla_input.display(),
+                    spec_path.display(),
+                    verus_spec_code.lines().count()
+                );
+                println!(
+                    "stopping after the spec stage: `--clean-subset` produces a \
+                     protocol-layer spec, and the exec stage needs mode annotations \
+                     for the projected module rather than the source one."
+                );
+                return Ok(());
+            }
 
             // Step 4: Transpile Verus spec to exec
             if cli.verbose {
@@ -6973,6 +7043,7 @@ Next == count' = count + N
         match cli.command {
             Some(Commands::Pipeline {
                 tla_input,
+                clean_subset: _,
                 exec_output,
                 types,
                 keep_intermediate,
@@ -7024,6 +7095,7 @@ Next == count' = count + N
         match cli.command {
             Some(Commands::Pipeline {
                 tla_input,
+                clean_subset: _,
                 exec_output,
                 types,
                 keep_intermediate,

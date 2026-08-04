@@ -633,9 +633,7 @@ fn name_nested_enums(ty: &mut ProjectedType, enums: &mut Vec<(String, Vec<String
                 }
             }
         }
-        ProjectedType::Set(inner) | ProjectedType::Seq(inner) => {
-            name_nested_enums(inner, enums)
-        }
+        ProjectedType::Set(inner) | ProjectedType::Seq(inner) => name_nested_enums(inner, enums),
         ProjectedType::Map(k, v) => {
             name_nested_enums(k, enums);
             name_nested_enums(v, enums);

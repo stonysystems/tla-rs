@@ -5837,9 +5837,7 @@ impl ModuleTranslator {
                 Self::expr_has_record_access_root_ident(expr, ident)
                     || Self::expr_has_record_access_root_ident(set, ident)
             }
-            TlaExpr::Lambda { body, .. } => {
-                Self::expr_has_record_access_root_ident(body, ident)
-            }
+            TlaExpr::Lambda { body, .. } => Self::expr_has_record_access_root_ident(body, ident),
             TlaExpr::SetMapMulti { expr, bindings } => {
                 Self::expr_has_record_access_root_ident(expr, ident)
                     || bindings

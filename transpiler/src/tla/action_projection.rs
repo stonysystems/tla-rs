@@ -472,7 +472,9 @@ fn infer_helper_param_types(
                     // arguments are usually themselves parameters.
                     if let TlaExpr::Record(fields) = &target.body {
                         for (field, value) in fields {
-                            let TlaExpr::Ident(param) = value else { continue };
+                            let TlaExpr::Ident(param) = value else {
+                                continue;
+                            };
                             if !target.params.iter().any(|p| p.name == *param) {
                                 continue;
                             }
@@ -1014,9 +1016,7 @@ impl<'a> ActionContext<'a> {
                     // like `rec.status = "pre-accepted"` cannot be seen as a
                     // variant test and emits a string comparison against an enum.
                     let inner = match self.type_of(set) {
-                        Some(ProjectedType::Set(elem)) => {
-                            self.clone_with_param(&bound.var, *elem)
-                        }
+                        Some(ProjectedType::Set(elem)) => self.clone_with_param(&bound.var, *elem),
                         _ => self.clone_with_param(&bound.var, ProjectedType::Int),
                     };
                     let mut parts = Vec::new();
@@ -1661,8 +1661,7 @@ impl<'a> ActionContext<'a> {
             // constructor like `Inst(o, n) == [owner |-> o, num |-> n]` gets a
             // return type from the emitted text, which says `int`.
             TlaExpr::Record(fields) => {
-                let names: Vec<String> =
-                    fields.iter().map(|(n, _)| to_snake_case(n)).collect();
+                let names: Vec<String> = fields.iter().map(|(n, _)| to_snake_case(n)).collect();
                 self.spec
                     .records
                     .iter()
@@ -1682,7 +1681,11 @@ impl<'a> ActionContext<'a> {
                 ProjectedType::Set(elem) => Some(*elem),
                 _ => None,
             },
-            TlaExpr::SetMap { expr: body, var, set } => {
+            TlaExpr::SetMap {
+                expr: body,
+                var,
+                set,
+            } => {
                 let elem = match self.type_of(set)? {
                     ProjectedType::Set(elem) => *elem,
                     _ => return None,
@@ -1694,7 +1697,8 @@ impl<'a> ActionContext<'a> {
             }
             TlaExpr::SetEnum(items) => {
                 let first = items.first()?;
-                self.value_type(first).map(|t| ProjectedType::Set(Box::new(t)))
+                self.value_type(first)
+                    .map(|t| ProjectedType::Set(Box::new(t)))
             }
             // A conditional has the type of whichever branch says something.
             // `IF Len(l) = 0 THEN 0 ELSE l[Len(l)].term` is an int by both.
@@ -2214,7 +2218,11 @@ impl<'a> ActionContext<'a> {
             }
             // `{rec.inst : rec \in log}` -- a set comprehension over a value
             // the node holds, which is a `map` rather than a quantifier.
-            TlaExpr::SetMap { expr: body, var, set } => Ok(format!(
+            TlaExpr::SetMap {
+                expr: body,
+                var,
+                set,
+            } => Ok(format!(
                 "{}.map(|{var}: {}| {})",
                 self.project_expr(set)?,
                 match self.type_of(set) {
@@ -2396,7 +2404,6 @@ fn assigned_value(expr: &TlaExpr, is_node: impl Fn(&TlaExpr) -> bool) -> &TlaExp
     }
     expr
 }
-
 
 /// `"req"` -> `Req`.
 /// The projection has one rule for turning a tag into a variant name, and it
