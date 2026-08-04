@@ -580,6 +580,62 @@ verus! {
         assert(ds.configuration_commit_certificates.dom().contains(j));
     }
 
+    /// Half of the remaining hypothesis, discharged: any Configuration the
+    /// leader holds *below its own commit index* is one the committer holds
+    /// too. Committed Configurations carry certificates, and the committer has
+    /// the whole prefix below the boundary committed, so it agrees there.
+    ///
+    /// What this leaves is only the leader's uncommitted suffix, which
+    /// `UncommittedSuffixesHaveAtMostOneConfiguration` already bounds to a
+    /// single entry.
+    pub proof fn lemma_leader_committed_configuration_is_shared_with_committer(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        j: int,
+    )
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            0 <= j < index,
+            j < ds.server_states[leader_id].commit_index,
+            j < ds.server_states[leader_id].log.len(),
+            ds.server_states[leader_id].log[j].payload is Configuration,
+        ensures
+            ds.configuration_commit_certificates.dom().contains(j),
+            ds.server_states[
+                ds.configuration_commit_certificates[index].committer
+            ].log[j].payload is Configuration,
+    {
+        let committer = ds.configuration_commit_certificates[index].committer;
+
+        // The leader's committed Configuration at `j` is certified.
+        assert(CommittedConfigurationsHaveCertificates(ds));
+        assert(ds.configuration_commit_certificates.dom().contains(j));
+
+        // The committer has `j` below its own commit index, since j < index.
+        assert(ConfigurationCommittersRetainCertifiedPrefixes(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(j < ds.server_states[committer].commit_index);
+        assert(j < ds.server_states[committer].log.len());
+
+        // So the committer's entry there is the certified one, which is a
+        // Configuration by certificate validity.
+        lemma_certified_boundary_agrees_with_committed_server(
+            ds,
+            j,
+            committer,
+        );
+        lemma_configuration_commit_certificate_basic_validity(ds, j);
+    }
+
     /// The crux of the minimal-missing-boundary argument: at the smallest
     /// certified boundary a leader is missing, the membership phase derived
     /// from the leader's own prefix is exactly the phase that governed the
