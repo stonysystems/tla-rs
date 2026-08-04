@@ -707,6 +707,108 @@ verus! {
         );
     }
 
+    /// The single remaining obligation of Milestone B, isolated as a state
+    /// predicate: no server carries a Configuration entry at a position where
+    /// a certificate's committer carries a Data entry.
+    ///
+    /// Every other case of Configuration Leader Completeness is discharged.
+    /// Establishing this predicate needs the term-induction machinery that the
+    /// inherited proof base never built, so it is stated rather than proved.
+    pub open spec fn NoDivergentUncommittedConfiguration(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |index: int, server_id: int, j: int|
+            #![trigger ds.server_states[server_id].log[j],
+                       ds.configuration_commit_certificates[index]]
+            ds.configuration_commit_certificates.dom().contains(index)
+            && 0 <= server_id < ds.num_servers
+            && 0 <= j < index
+            && j < ds.server_states[server_id].log.len()
+            && ds.server_states[server_id].log[j].payload is Configuration
+            ==> ds.server_states[
+                    ds.configuration_commit_certificates[index].committer
+                ].log[j].payload is Configuration
+    }
+
+    /// Strong induction over the log index: a leader holds every certified
+    /// membership boundary below any bound within its own log length.
+    ///
+    /// Each step splits on whether the boundary is already below the leader's
+    /// commit index — in which case committed agreement settles it — or above,
+    /// where the minimal-missing-boundary argument applies with the induction
+    /// hypothesis supplying minimality.
+    pub proof fn lemma_certified_boundaries_present_below(
+        ds: RaftDistributedState,
+        leader_id: int,
+        bound: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            AllRaftMembershipLogsWellFormed(ds),
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            CertifiedBoundaryTransfersToVotedLeader(ds),
+            NoDivergentUncommittedConfiguration(ds),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            0 <= bound <= ds.server_states[leader_id].log.len(),
+            // All servers share one universe of server identities.
+            forall |a: int, b: int|
+                #![trigger ds.server_constants[a], ds.server_constants[b]]
+                0 <= a < ds.num_servers && 0 <= b < ds.num_servers
+                ==> ds.server_constants[a].servers
+                    == ds.server_constants[b].servers,
+            // The leader's term exceeds every certified boundary below `bound`.
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < bound
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].current_term
+                    > ds.configuration_commit_certificates[m].entry.term,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(election_membership_phase_for_state(
+                    ds.server_states[leader_id],
+                    ds.server_constants[leader_id],
+                )),
+        ensures
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < bound
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+        decreases bound,
+    {
+        if bound > 0 {
+            let m = bound - 1;
+
+            lemma_certified_boundaries_present_below(ds, leader_id, m);
+
+            if ds.configuration_commit_certificates.dom().contains(m) {
+                assert(CommitIndexBounded(ds));
+                assert(m < ds.server_states[leader_id].log.len());
+
+                if m < ds.server_states[leader_id].commit_index {
+                    lemma_certified_boundary_agrees_with_committed_server(
+                        ds, m, leader_id);
+                } else {
+                    assert(AllRaftMembershipLogsWellFormed(ds));
+                    assert(UncommittedSuffixesHaveAtMostOneConfiguration(ds));
+                    lemma_certified_boundary_present_without_divergent_configuration(
+                        ds, m, leader_id);
+                }
+            }
+        }
+    }
+
     /// Strengthened assembly. The earlier version required the leader to hold
     /// *no* Configuration between its commit index and the boundary; this one
     /// only requires that the leader holds no Configuration the committer
