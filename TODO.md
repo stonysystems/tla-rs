@@ -16285,6 +16285,20 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 - No module's verification wall-clock regresses more than 20% against the 54.2 baseline
 - CI guard from 54.9 in place
 
+- [ ] **54.9.a** The timing gate needs an absolute floor. `Guard trigger inventory` is red on
+      `e0241425` — not on the note count (that guard passes: 519 measured against a ceiling of
+      519, 15 removed / 0 added / 0 changed) but on the second gate in the same step,
+      `verus_timing.py diff --max-regression-pct 20 --fail-on-regression`.
+      The baseline holds 142 modules spanning 41 ms (`protocol::RSL::parameters`) to 19131 ms
+      (`implementation::RSL::cmessage`), and **36 of them are under 100 ms**. A 20% budget on a
+      41 ms module is 8 ms, which CI scheduling jitter clears on its own — and the baseline was
+      merged from 3 local runs on different hardware than the GitHub runner.
+      Fix: pair the percentage with an absolute floor (regression counts only if it exceeds
+      both 20% and, say, 250 ms), or exempt modules under ~500 ms outright. A percentage alone
+      cannot separate signal from noise at the bottom of this distribution.
+      The gate is worth keeping — a proof that stays green but gets 2x slower is a real
+      regression — it just needs to stop firing on ones that are not.
+
 ### Non-goals
 
 - Not fixing the 12 Raft `assume`s (Phase 34, deprecated) — but 54.8 touches the same file,
