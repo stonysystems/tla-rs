@@ -1,7 +1,8 @@
 # Phase 54 — measuring and diffing Verus trigger choices
 
-Status: 54.1 (tooling) and 54.2.a (CI capture) complete. The baseline itself
-(54.2.b) lands once a `verify` run has published the artifact; see §5 and §6.
+Status: 54.1 (tooling), 54.2.a (CI trigger capture) and 54.2.c (per-module
+timing) complete. The baseline itself (54.2.b) lands once a `verify` run has
+published the artifact; see §5 and §7.
 
 ## 1. Why the tool exists before the edits
 
@@ -129,7 +130,7 @@ quietly going empty.
 
 ## 5. How the baseline is actually captured (CI)
 
-The pinned verifier does not run on every development box (§6), but it already
+The pinned verifier does not run on every development box (§7), but it already
 runs in CI on `ubuntu-24.04`. So the `verify` job captures the inventory as a
 side effect of the verification it was already doing:
 
@@ -137,7 +138,8 @@ side effect of the verification it was already doing:
 - name: Verify with Verus
   run: |
     set -o pipefail
-    scons --verus-path=$HOME/verus/verus --skip-dotnet 2>&1 | tee verus-verify.log
+    scons --verus-path=$HOME/verus/verus --skip-dotnet \
+      --verus-extra-args="--time-expanded" 2>&1 | tee verus-verify.log
 
 - name: Capture trigger inventory
   if: always()
@@ -157,16 +159,66 @@ Three properties this is designed to have:
   that quietly disappeared would produce exactly the same signal as "we removed
   all the triggers".
 
-The artifact is `trigger-inventory-<version>`, containing the JSON inventory
-and the Markdown summary; the summary is also written to the GitHub step
-summary so it is readable without downloading anything.
+The artifact is `trigger-inventory-<version>`, containing the trigger
+inventory, the timing inventory (§6) and both Markdown summaries; the summaries
+are also written to the GitHub step summary so they are readable without
+downloading anything.
 
 The capture parses the whole `scons` log, not a bare verus invocation, so the
 parser has to find the notes among the build chatter — `scons_wrapped_notes.log`
 in the fixtures pins that case, including rewriting the runner's absolute paths
 back to repo-relative ones via `--root`.
 
-## 6. Known constraint: the pinned verifier does not run everywhere
+## 6. The other half of the baseline: per-module wall-clock
+
+A batch of `#[trigger]` edits can verify and still be a regression. An
+over-permissive trigger makes the solver instantiate more terms, so the module
+that verified in 8 s now takes 20 s — green, and twice as expensive, and one
+more edit away from `rlimit exceeded`. The phase's acceptance criterion is
+therefore stated in wall-clock terms:
+
+> no module's verification wall-clock regresses more than 20% against the
+> 54.2 baseline
+
+`scripts/verus_timing.py` makes that checkable. Verus prints the breakdown with
+`--time-expanded`:
+
+```
+verify-crate-time-breakdown
+    total verify-time:            157 ms   (3 threads)
+      1. alpha                                            54 ms
+      2.                                                  53 ms
+      3. beta                                             48 ms
+```
+
+The unnamed row is the crate root, recorded as `<root>` so it cannot be
+confused with a missing module. Per module the tool keeps verify, air, smt-init
+and smt-run times plus the rlimit count.
+
+```bash
+scripts/verus_timing.py parse verus-verify.log --label "0.2026.08.02 baseline" \
+    -o reports/triggers/timing-baseline.json
+scripts/verus_timing.py report reports/triggers/timing-baseline.json
+scripts/verus_timing.py diff timing-baseline.json new.json \
+    --max-regression-pct 20 --fail-on-regression
+```
+
+Two things the diff does deliberately:
+
+* **Noise floor.** `--min-ms` (default 500) keeps a 40 ms → 80 ms module from
+  being called a 100% regression. Those rows are still printed, under
+  *"below the noise floor"*, so the judgement is visible rather than silent.
+* **Improvements are separate.** A module that got 50% faster is reported, never
+  failed on — but it is worth reading, since a large speedup can mean a trigger
+  became too restrictive and the proof now succeeds for a different reason.
+
+Getting the flag to Verus needed one build-system change: `SConstruct` hard-coded
+the verifier command line, so it now accepts
+`--verus-extra-args`, which CI uses as
+`scons ... --verus-extra-args="--time-expanded"`. The flag changes no verifier
+behaviour, only what is printed.
+
+## 7. Known constraint: the pinned verifier does not run everywhere
 
 The baseline must come from the pinned verifier,
 `release/0.2026.08.02.b677dd5`. That binary requires **glibc ≥ 2.39**; the
@@ -195,11 +247,11 @@ two different Verus versions is precisely the measurement Phase 54 wants to
 make *deliberately*, and mislabelling one as "the baseline" would poison every
 later comparison.
 
-## 7. Where this fits
+## 8. Where this fits
 
-* Plan: `TODO.md` Phase 54; this covers **54.1** and **54.2.a**, and leaves
-  **54.2.b** (commit the artifact as the baseline), **54.2.c** (per-module
-  wall-clock, which needs a `SConstruct` option to pass verus `--time`) and
-  **54.9** (turn the capture into a guard with `diff --fail-on-regression` or
-  `--max-notes`).
+* Plan: `TODO.md` Phase 54; this covers **54.1**, **54.2.a** and **54.2.c**,
+  and leaves **54.2.b** (commit the published artifacts as the baseline) and
+  **54.9** (turn both captures into guards: `trigger_inventory.py diff
+  --fail-on-regression` / `--max-notes`, and `verus_timing.py diff
+  --fail-on-regression`).
 * Artifacts: `reports/triggers/` (see the README there).

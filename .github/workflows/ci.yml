@@ -132,9 +132,13 @@ jobs:
 
       - name: Verify with Verus
         run: |
-          # pipefail so tee cannot mask a verification failure
+          # pipefail so tee cannot mask a verification failure.
+          # --verus-extra-args="--time-expanded" adds the per-module timing
+          # breakdown to the same log (Phase 54.2.c); it changes no verifier
+          # behaviour, only what is printed.
           set -o pipefail
-          scons --verus-path=$HOME/verus/verus --skip-dotnet 2>&1 | tee verus-verify.log
+          scons --verus-path=$HOME/verus/verus --skip-dotnet \
+            --verus-extra-args="--time-expanded" 2>&1 | tee verus-verify.log
 
       # Phase 54.2.a: record which quantifier triggers Verus chose for us.
       # Runs even when verification failed (the notes are still emitted, and a
@@ -157,7 +161,27 @@ jobs:
             -o trigger-inventory.md
           cat trigger-inventory.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload trigger inventory
+      # Phase 54.2.c: the other half of the baseline. A trigger batch can
+      # verify and still be a regression if it doubled a module's solve time,
+      # which no pass/fail check sees. Report only -- the 20% gate belongs to
+      # a diff against a committed baseline, not to this capture.
+      - name: Capture verification timing
+        if: always()
+        run: |
+          if [ ! -f verus-verify.log ]; then
+            echo "no verification log (an earlier step failed); nothing to capture"
+            exit 0
+          fi
+          python3 scripts/verus_timing.py parse verus-verify.log \
+            --label "${VERUS_VERSION} scons --skip-dotnet" \
+            --verus-version "${VERUS_VERSION}" \
+            --allow-empty \
+            -o verus-timing.json
+          python3 scripts/verus_timing.py report verus-timing.json \
+            -o verus-timing.md
+          cat verus-timing.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload trigger inventory and timing
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -165,6 +189,8 @@ jobs:
           path: |
             trigger-inventory.json
             trigger-inventory.md
+            verus-timing.json
+            verus-timing.md
           if-no-files-found: warn
 
       - name: Verify and run README quickstart

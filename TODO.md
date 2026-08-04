@@ -16049,13 +16049,25 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
         and asserts nothing, so it cannot change the job verdict. Guarded by
         `TestCiWiring` in `scripts/test_trigger_inventory.py` — a silently dropped step
         would otherwise look exactly like "no triggers left".
-  - [ ] **54.2.b** Commit the baseline: download the artifact from a green (or at least
-        note-emitting) `verify` run, check it in under `reports/triggers/`, and update
-        `reports/triggers/README.md`. This is the number every later batch diffs against.
-  - [ ] **54.2.c** Per-module wall-clock. Verus `--time` / `--time-expanded` gives it, but
-        `SConstruct:110` hard-codes the verus command line, so it needs a scons option
-        (e.g. `--verus-extra-args`) before CI can capture timings. Without this half, a
-        batch that verifies but doubled a module's solve time reads as green.
+  - [ ] **54.2.b** Commit the baseline: download the `trigger-inventory-<version>`
+        artifact from a `verify` run (it now carries both the trigger inventory and the
+        timing inventory), check both in under `reports/triggers/`, and update
+        `reports/triggers/README.md`. These are the numbers every later batch diffs
+        against. Blocked only on a CI run of the `verify` job publishing the artifact.
+  - [x] **54.2.c** Per-module wall-clock. **DONE (2026-08-04).** `SConstruct` gained
+        `--verus-extra-args` (shlex-split, appended to the verus command line; verified by
+        `scons -n` dry run), CI passes `--verus-extra-args="--time-expanded"`, and
+        `scripts/verus_timing.py` (parse/report/diff) turns the breakdown into per-module
+        `verify/air/smt-init/smt-run` times plus rlimit counts. `diff
+        --max-regression-pct 20 --fail-on-regression` is the phase's acceptance criterion
+        made checkable. Two deliberate choices: a `--min-ms` noise floor (default 500) so a
+        40ms→80ms module is not called a 100% regression — those rows are still printed
+        under "below the noise floor" rather than silently dropped — and improvements
+        reported separately, since a large speedup can mean a trigger became too
+        restrictive. Verus prints the crate root with an empty module name; it is recorded
+        as `<root>` so it cannot be confused with a missing module. 30 tests
+        (`scripts/test_verus_timing.py`), including guards that CI really passes the flag
+        and that `SConstruct` really forwards it.
       Note the 534 figure was measured in Verus's default `selective` mode, which is what CI
       captures; `--triggers-mode all-modules` reports more, and counts across modes are not
       comparable (the mode is recorded in the label and file name so a diff cannot silently

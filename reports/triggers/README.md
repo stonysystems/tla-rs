@@ -10,8 +10,9 @@ triggers for an expression we never touched.
 
 | file | what it is |
 |---|---|
-| `<version>-<mode>.json` | machine-readable inventory; the artifact of record |
+| `<version>-<mode>.json` | machine-readable trigger inventory; the artifact of record |
 | `<version>-<mode>.md` | human-readable summary of the same run |
+| `timing-*.json` / `.md` | per-module verification wall-clock (`scripts/verus_timing.py`), the other half of the baseline |
 | `FORMAT_SAMPLE.md` | **not a baseline** — generated from the three-note test fixture in `scripts/fixtures/trigger_inventory/` purely to show the report format |
 
 `<mode>` is the Verus `--triggers-mode`. `selective` (the Verus default)
@@ -25,6 +26,9 @@ The raw verification log is deleted after parsing unless
 ## The Phase 54.2 baseline is not here yet
 
 Recording it requires running the pinned verifier
-(`release/0.2026.08.02.b677dd5`) over the whole crate. See
-`docs/phase54-trigger-workflow.md` for the one command that does it and for the
-toolchain constraint that currently blocks it on this development box.
+(`release/0.2026.08.02.b677dd5`) over the whole crate, which the CI `verify`
+job now does on every push: it publishes a `trigger-inventory-<version>`
+artifact containing both inventories. Committing that artifact here is task
+54.2.b. See `docs/phase54-trigger-workflow.md` for the capture design, the
+20%-regression gate the timing half exists to support, and the toolchain
+constraint that keeps this off a 2.35-glibc development box.
