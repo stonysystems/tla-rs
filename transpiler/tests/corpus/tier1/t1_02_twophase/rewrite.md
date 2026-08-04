@@ -81,6 +81,39 @@ This is what a V2 check should look like when the rewrite is structure-
 preserving — and it is worth contrasting with LamportMutex, where the state
 counts legitimately differ because the rewrite changed the state's shape.
 
+## V2 strong fidelity: the state-set comparison (53.6)
+
+This is the first case run through
+[`scripts/tlc_fidelity.sh`](../../scripts/tlc_fidelity.sh), which dumps both
+specs' full state spaces and compares them projected onto the observables the
+case declares in `observables.toml`.
+
+The observable is **`rmState`**, and it is the whole of 2PC's observable
+behaviour: it is what `TCommit`'s `TCConsistent` is stated over, and what a
+client of the protocol sees. Everything else is bookkeeping the rewrite
+deliberately reshaped — `tmState`/`tmPrepared` became per-node fields of the
+designated TM, and `msgs` gained `src`/`dst` — so none of it compares across
+the two specs.
+
+At `RM = {r1, r2, r3}`, `TM = r1`:
+
+| | |
+|---|---|
+| states dumped, clean | 288 |
+| states dumped, original | 288 |
+| distinct `rmState` values, clean | 34 |
+| distinct `rmState` values, original | 34 |
+| result | **EQUAL** |
+
+**Read that precisely.** It says the rewrite reaches exactly the same `rmState`
+values as the original. It does **not** say the two are behaviourally
+equivalent, and this case proves the difference: deleting `RMChooseToAbort` from
+`clean.tla` entirely leaves the comparison reporting EQUAL, because an RM still
+reaches `"aborted"` by receiving the TM's abort. A path disappears and the tool
+is silent. Deleting `RMPrepare`, which does remove states, is caught (8 vs 34,
+26 states only in the original) — that is how the check was confirmed
+non-vacuous.
+
 ## Translator gap this case exposed
 
 One: a receive handler that takes **nothing** beyond the state. A `Commit`
