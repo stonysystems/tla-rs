@@ -85,6 +85,17 @@ partial spec. Do not present it as a golden-verified case.
 
 A case only counts toward a Phase 52 milestone when it is `green`.
 
+## Parse status
+
+`parse_status` in the manifest records whether the tla-rs TLA+ frontend can read
+the case's specs. Omitted means "parses" — the normal state. A case that cannot
+be parsed is marked `parse_status = "unparseable"` with the reason in `notes`.
+
+`tests/corpus_parse_guard.rs` asserts the manifest and reality agree **in both
+directions**: a spec that stops parsing fails the test, and so does a spec that
+is still marked unparseable after the frontend learned to read it. Without the
+second direction the corpus would quietly accumulate stale "broken" marks.
+
 ## Clean-distance
 
 `clean_distance` in the manifest records how far `original.tla` is from the clean subset,
