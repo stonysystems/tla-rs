@@ -35,7 +35,7 @@
 [[case]]
 id = "t0_01_simple"
 tier = 0
-status = "golden"
+status = "green"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/TeachingConcurrency/Simple.tla"
 source_commit = "ab9a2c33566c2e8c9202f292540852282e1fbb32"
@@ -93,7 +93,7 @@ notes = "Queue-based reader/writer lock. State is global (readers/writers/waitin
 [[case]]
 id = "t0_05_lamport_mutex"
 tier = 0
-status = "golden"
+status = "green"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/lamport_mutex/LamportMutex.tla"
 source_commit = "b17be0a959108701a89b5cadec1a1ee1b216f7a4"
@@ -112,7 +112,7 @@ notes = "Lamport 1978 distributed mutual exclusion. The CLEANEST tier-0 case and
 [[case]]
 id = "t1_01_paxos"
 tier = 1
-status = "golden"
+status = "green"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/Paxos/Paxos.tla"
 source_commit = ""
@@ -126,7 +126,7 @@ notes = "MVP. MUST use the message-passing Paxos (a 'msgs' variable, per-node ar
 [[case]]
 id = "t1_02_twophase"
 tier = 1
-status = "golden"
+status = "green"
 source_repo = "tlaplus/Examples"
 source_path = "specifications/transaction_commit/TwoPhase.tla"
 source_commit = ""

@@ -256,6 +256,18 @@ fn roles_match_what_the_cases_actually_contain() {
                 }
             }
             "translate" => {
+                // `green` is the status that a milestone counts, so what it
+                // asserts has to be on disk. V1 and V3 are guarded elsewhere
+                // (the verus run and corpus_v3_guard); V2's evidence is the
+                // case's declared observables, and without them the status is
+                // claiming a comparison nobody ran.
+                if case.status == "green" && !dir.join("observables.toml").exists() {
+                    problems.push(format!(
+                        "{}: status is green, but there is no observables.toml \
+                         -- V2 cannot have been run",
+                        case.id
+                    ));
+                }
                 if dir.join("golden.rs").exists() && !dir.join("clean.tla").exists() {
                     problems.push(format!(
                         "{}: has a golden.rs but no clean.tla to generate it from",

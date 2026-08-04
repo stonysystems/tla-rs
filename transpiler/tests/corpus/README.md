@@ -80,10 +80,31 @@ partial spec. Do not present it as a golden-verified case.
 | `intake` | `original.tla` downloaded and pinned; not yet rewritten. |
 | `clean` | `clean.tla` + `rewrite.md` exist and the Phase 52 linter accepts `clean.tla`. |
 | `golden` | `golden.rs` exists and has been human-reviewed/frozen. |
-| `green` | Translator output byte-matches `golden.rs` (V3) **and** the output passes `verus` (V1) **and** TLC fidelity `clean.tla` ≡ `original.tla` holds (V2). |
+| `green` | Translator output byte-matches `golden.rs` (V3) **and** the output passes `verus` (V1) **and** the V2 fidelity comparison holds (below). |
 
 A `golden.rs` must itself pass `verus` before it is frozen. A golden that does
 not verify would make V1 unreachable no matter what the translator emits.
+
+### What V2 means, precisely
+
+This entry used to read "TLC fidelity `clean.tla` ≡ `original.tla` holds", and
+that claimed more than the check delivers. What
+[`scripts/tlc_fidelity.sh`](scripts/tlc_fidelity.sh) establishes is:
+
+> Under a stated finite model, `clean.tla` and `original.tla` reach **exactly
+> the same set of states** when both are projected onto the observables the
+> case declares in `observables.toml`.
+
+It is **not** behavioural equivalence. Deleting an action whose effect another
+action also produces leaves the state set unchanged and the check silent —
+demonstrated on `t1_02_twophase`, where removing `RMChooseToAbort` outright
+still reports EQUAL. A case's `rewrite.md` must state the result in these terms
+and not upgrade it.
+
+A case whose specs share **no** observable cannot get a V2 result at all. That
+is not a failure of the case; `t3_01_jetpack` is a deliberate slice of a larger
+composition and shares nothing with it. Such a case stays at `golden`, with its
+`observables.toml` absent and the reason in its `rewrite.md`.
 | `blocked` | Case cannot progress; `notes` must say why. Never delete a case — mark it blocked. |
 
 A case only counts toward a Phase 52 milestone when it is `green`.
