@@ -72,295 +72,118 @@ All source, annotation, configuration, generated code, and runner files are in
 [`examples/quickstart/`](examples/quickstart/). CI regenerates the code, rejects proof shortcuts,
 and verifies, compiles, and runs this example.
 
-## Features
+## What is included
 
-- **10 Formally Verified Protocols**: RSL (Multi-Paxos RSM), Single-Decree Paxos, Raft,
-  EPaxos, PBFT, Chain Replication, Primary-Backup, Vertical Paxos, Two-Phase Commit, and
-  Bully Leader Election
-- **Spec-to-Exec Transpiler**: Automatic transformation of TLA-style specifications to verified implementations
-- **C# FFI Integration**: Production-ready networking layer via .NET runtime
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│  C# .NET Layer (I/O & Networking)           │
-│  Trusted runtime for network operations     │
-└──────────────────┬──────────────────────────┘
-                   │ FFI
-┌──────────────────▼──────────────────────────┐
-│  Rust/Verus Layer (Verified Protocol)       │
-├─────────────────────────────────────────────┤
-│ src/services/       - Entry points          │
-│ src/implementation/ - Concrete impls        │
-│ src/generated/      - Transpiler output     │
-│ src/protocol/       - Specs & proofs        │
-│ src/common/         - Utilities & I/O       │
-└─────────────────────────────────────────────┘
-```
+- Ten distributed protocols: RSL (Multi-Paxos), Single-Decree Paxos, Raft, EPaxos,
+  PBFT, Chain Replication, Primary-Backup, Vertical Paxos, Two-Phase Commit, and
+  Bully leader election.
+- A spec-to-executable transpiler that generates Rust implementations and Verus
+  refinement contracts.
+- TLA+/Verus translation, bounded model checking with DPOR, and a deployable C#/.NET
+  networking runtime.
 
 ## Requirements
 
-- **Verus**: 0.2026.08.02.b677dd5 (latest stable tested; rolling is the same commit).
-  The release binaries link against glibc 2.39, so verification needs Ubuntu 24.04 or newer.
-- **Rust**: 1.97.1 for Verus; a recent stable toolchain for the transpiler
-- **.NET 6.0 SDK**: https://dotnet.microsoft.com/download
-- **scons**: `pip install scons`
-- **Python 3**: For running scons
+- Verus `release/0.2026.08.02.b677dd5` (rolling currently points to the same commit)
+- Rust 1.97.1 for Verus and a recent stable Rust toolchain for the transpiler
+- .NET 6.0 SDK
+- SCons and Python 3
 
-## Verification
+Verus release binaries require glibc 2.39, normally Ubuntu 24.04 or newer. See
+[*The tla-rs Book*](docs/tla-rs-book.md), Chapters 2 and 16, for installation details.
 
-To check the correctness claims yourself, run Verus over the whole crate.
+## Verify and build
 
 ```bash
+# Verify the Rust/Verus crate
 scons --verus-path="$VERUS_PATH" --skip-dotnet
-```
 
-All 10 protocols live in one crate rooted at `src/lib.rs`, so a single pass covers every
-protocol's spec, refinement proof, transpiler-generated implementation, and service entry
-point. Expect:
-
-```
-verification results:: 1044 verified, 0 errors
-```
-
-This takes about 2 minutes on CI hardware.
-The same pass runs on every push (`CI / Verus Verification`).
-
-## Building
-
-```bash
-# Verify with Verus and build the C# services
+# Verify Rust and build the C# services
 scons --verus-path="$VERUS_PATH"
 
-# Build only C# projects (skip Verus verification)
+# Build C# only, reusing an existing native library
 scons --skip-verus
-
-# Build specific target
-scons bin/IronRSLServerUDP.dll
 ```
 
-> The complete spec → generate → verify → compile → run walkthrough, including
-> toolchain pins and exact commands, is in
-> [*The tla-rs Book*](docs/tla-rs-book.md) (Chapters 2, 7, 10, and 16).
+The Verus invocation covers all ten protocol modules in the crate. Verification is
+relative to the declared trusted and externally implemented boundaries; Appendix F of
+the book records those boundaries and the remaining proof escapes.
 
-## Running
+## Running a service
 
-### IronRSL (Multi-Paxos Replicated State Machine)
-
-#### Generate Certificates
-
-Each IronRSL host has a unique public key as an identifier:
+After building, generate a three-node RSL configuration:
 
 ```bash
 dotnet bin/CreateIronServiceCerts.dll \
-    outputdir=certs name=MyCounter type=IronRSL \
-    addr1=127.0.0.1 port1=4001 \
-    addr2=127.0.0.1 port2=4002 \
-    addr3=127.0.0.1 port3=4003
+  outputdir=certs name=MyCounter type=IronRSL \
+  addr1=127.0.0.1 port1=4001 \
+  addr2=127.0.0.1 port2=4002 \
+  addr3=127.0.0.1 port3=4003
 ```
 
-#### Run Servers (UDP — recommended)
-
-Run each in a separate terminal:
+Set `LD_LIBRARY_PATH="$PWD"`, then start one UDP server per node using the generated
+service file and corresponding private-key file:
 
 ```bash
-export LD_LIBRARY_PATH="$PWD"
-dotnet bin/IronRSLServerUDP.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server1.private.txt
-dotnet bin/IronRSLServerUDP.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server2.private.txt
-dotnet bin/IronRSLServerUDP.dll certs/MyCounter.IronRSL.service.txt certs/MyCounter.IronRSL.server3.private.txt
+dotnet bin/IronRSLServerUDP.dll \
+  certs/MyCounter.IronRSL.service.txt \
+  certs/MyCounter.IronRSL.server1.private.txt
 ```
 
-#### Run Client (UDP)
+Run a client from another terminal:
 
 ```bash
-dotnet bin/IronRSLClientUDP.dll ip1=127.0.0.1 port1=4001 ip2=127.0.0.1 port2=4002 ip3=127.0.0.1 port3=4003 nthreads=4 duration=10
+dotnet bin/IronRSLClientUDP.dll \
+  ip1=127.0.0.1 port1=4001 \
+  ip2=127.0.0.1 port2=4002 \
+  ip3=127.0.0.1 port3=4003 \
+  nthreads=4 duration=10
 ```
 
-> **Note:** A legacy TCP+SSL variant (`IronRSLServer.dll` / `IronRSLClient.dll`) is
-> still available for backward compatibility but delivers ~17x lower throughput.
+The other protocols use the shared `IronProtocolServer.dll`; Raft, Primary-Backup,
+PBFT, and EPaxos also have workload support through `scripts/bench_generic.sh`.
+Chapter 10 of the book contains the complete service recipes.
 
-### Other Protocols (Raft, EPaxos, PBFT, …)
+## Performance
 
-The 9 non-RSL protocols share a unified C# runtime: one server binary
-(`IronProtocolServer.dll`) dispatched by a `protocol=<name>` argument, and one client
-(`IronGenericClient.dll`). Supported `protocol=` values include `raft`, `epaxos`, `pbft`,
-and `primarybackup`.
+Generated transitions support functional state updates with selective `Arc` sharing
+and opt-in mutable-receiver lowering for eligible hot paths. RSL uses mutable lowering
+for selected actions, avoiding unnecessary whole-state reconstruction while preserving
+the same Verus postconditions.
 
-```bash
-# Certificates (name=MyRaft / type=IronProtocol for all generic protocols).
-# 3-node cluster (raft, epaxos):
-dotnet bin/CreateIronServiceCerts.dll outputdir=bench/certs name=MyRaft type=IronProtocol \
-  addr1=127.0.0.1 port1=4001 addr2=127.0.0.1 port2=4002 addr3=127.0.0.1 port3=4003
-```
+This repository does not currently publish an RSL-versus-IronFleet or
+generated-versus-hand-tuned speedup: the available historical measurements are not a
+controlled, reproducible comparison. The benchmark requirements and runtime profiling
+workflow are documented in [Chapter 25 of the book](docs/tla-rs-book.md) and the
+[generated-code performance record](transpiler/docs/EFFICIENT_EMIT.md).
 
-The easiest way to start a cluster, run the client, and print throughput is the helper
-script:
+## Documentation
 
-```bash
-# usage: scripts/bench_generic.sh <protocol> [duration_s] [trials] [nthreads]
-scripts/bench_generic.sh raft   8 1 4
-scripts/bench_generic.sh epaxos 8 1 4
-scripts/bench_generic.sh pbft   8 1 4   # 4-node; see the script for cert setup
-```
+[*The tla-rs Book*](docs/tla-rs-book.md) is the primary documentation:
 
-See [*The tla-rs Book*](docs/tla-rs-book.md), Chapter 10, for the full run recipe,
-including PBFT's four-node certificate generation.
+- Part I is the user guide: specifications, generation, verification, model checking,
+  TLA+ interchange, and running services.
+- Part II is the developer guide: architecture, trust boundaries, transpiler internals,
+  generated-code maintenance, testing, and releases.
+- The appendices contain the CLI, annotation, configuration, support, evidence, and
+  proof-pattern references.
 
-## Transpiler
+Capability claims tied directly to tests remain in
+[`docs/model_checker_status.md`](docs/model_checker_status.md), while
+[`docs/clean_tla_subset.md`](docs/clean_tla_subset.md) defines the normative clean-TLA
+projection contract.
 
-The project includes a spec-to-implementation transpiler that converts Verus `spec fn` predicates (TLA-style specifications) into verified `exec fn` implementations.
+## Contributing
 
-### Usage
+Do not hand-edit files under `src/generated/`. Change the protocol source,
+annotations, configuration, or transpiler and regenerate the output. See
+[`AGENTS.md`](AGENTS.md) for project rules, the book's developer guide for the normal
+workflow, and [`TODO.md`](TODO.md) for current work and known gaps.
 
-```bash
-cd transpiler
+## Attribution and license
 
-# Run transpiler tests
-cargo test
+Parts of the native I/O, Verus utilities, marshalling, FFI, and C# runtime were adapted
+from [IronKV](https://github.com/verus-lang/verified-ironkv). The transpiler reimplements
+the [AutoMan](https://github.com/stonysystems/automan) workflow for Rust and Verus.
 
-# Transpile a spec file
-cargo run -- --input spec.rs --annotations spec.automan --output impl.rs
-
-# Verify generated code
-verus impl.rs
-```
-
-### Transformation Example
-
-By default the transpiler emits an **in-place `&mut self`** calling convention (enabled per
-protocol via `mut_self_types` in the `_transpile.toml`): the post-state is `self` and the
-function returns only the sent messages.
-
-**Input (spec):**
-```rust
-spec fn LAcceptorProcess1a(s: LAcceptor, s_: LAcceptor, inp: RslPacket, sent: Seq<RslPacket>) -> bool {
-    if BalLt(s.max_bal, inp.msg->bal_1a) {
-        &&& s_.max_bal == inp.msg->bal_1a
-        &&& s_.votes == s.votes
-        &&& sent == seq![make_1b_reply(s, inp)]
-    } else {
-        &&& s_ == s
-        &&& sent == Seq::empty()
-    }
-}
-```
-
-**Output (exec, `&mut self`):**
-```rust
-impl CAcceptor {
-    exec fn CAcceptorProcess1a(&mut self, inp: &CPacket) -> (sent: Vec<CPacket>)
-        requires old(self).well_formed(), inp.well_formed()
-        ensures LAcceptorProcess1a(old(self)@, self@, inp@, sent@)
-    {
-        if ballot_lt(&self.max_bal, &inp.msg.get_bal_1a()) {
-            self.max_bal = inp.msg.get_bal_1a().clone();   // in-place mutation, no rebuild
-            vec![make_1b_reply_impl(self, inp)]
-        } else {
-            vec![]
-        }
-    }
-}
-```
-
-Protocols whose specs are not amenable to `&mut self` (e.g. **Raft**, whose handlers compute
-an intermediate whole-state via a helper) instead use the **functional** convention —
-`fn CFoo(s: &CState, ...) -> (CState, Vec<CMsg>)` — selected simply by leaving
-`mut_self_types` unset. The choice is pure configuration; there is no protocol-specific logic
-in the transpiler.
-
-### Performance
-
-The transpiler's default `&mut self` calling convention mutates state in place — eliminating
-the per-request "rebuild the whole struct + clone every field" cost of the earlier functional
-style. On RSL this closes most of the gap to a fully hand-tuned implementation.
-
-RSL over UDP (localhost, 3 nodes, 32 client threads, `max_batch_size=32`):
-
-| Configuration | Throughput | Notes |
-|--------------|-----------|-------|
-| Pre-optimization (functional rebuild) | ~16K ops/s | Phase 46 baseline |
-| **Transpiler + `&mut self`** | **~46–54K ops/s** | current codegen (~0.85 ms latency) |
-| Hand-tuned reference (Sushant) | ~60K ops/s | `&mut self` end-to-end, hand-written |
-
-So the auto-generated code reaches roughly **80–90% of a full hand-tune** — a ~3× improvement
-over the pre-optimization baseline. (Earlier READMEs credited "field-level `Arc<T>` wrapping";
-that approach was superseded by `&mut self` in Phases 47–49 and the Arc wrapping was removed
-from the RSL hot fields. `arc_wrap_fields` still exists for functional-convention protocols
-but conflicts with — and is auto-cleared under — `mut_self_types`.)
-
-Other protocols run end-to-end but are not perf-tuned; sample localhost smoke numbers
-(hardware- and duration-dependent — yours will differ):
-
-| Protocol | Nodes | Throughput (localhost smoke) |
-|----------|-------|------------------------------|
-| RSL | 3 | ~46K ops/s (32 clients) |
-| EPaxos | 3 | ~15K ops/s (4 clients, 8 s) |
-| Raft | 3 | ~11K ops/s (4 clients, 8 s) |
-| PBFT | 4 | ~2.5K ops/s (4 clients, 8 s; BFT 3-phase) |
-
-To select the calling convention, set `mut_self_types` in the protocol's `_transpile.toml`:
-
-```toml
-mut_self_types = ["CProposer"]   # emit &mut self methods on CProposer
-```
-
-See `transpiler/docs/EFFICIENT_EMIT.md` for the dated `&mut self`-versus-functional
-performance record and [*The tla-rs Book*](docs/tla-rs-book.md), Chapter 25, for the
-current measurement workflow.
-
-### Documentation
-
-- [`docs/tla-rs-book.md`](docs/tla-rs-book.md) - Current user guide, developer guide,
-  CLI/configuration references, support matrix, and proof-pattern catalog
-- [`docs/model_checker_status.md`](docs/model_checker_status.md) - Test-coupled model-checker
-  capability and evidence status
-- [`docs/clean_tla_subset.md`](docs/clean_tla_subset.md) - Normative C1–C5 clean-subset
-  contract used by the TLA+ projection path
-- `transpiler/docs/EFFICIENT_EMIT.md` - Dated calling-convention performance and design record
-
-Documents named by development phases and files under `docs/dev/` are historical
-investigation records, not current user instructions. Start with the book.
-
-## Code Organization
-
-Types are prefixed by layer: `L*` for logical/protocol types (`LReplica`, `LProposer`) and
-`C*` for their concrete counterparts (`CConstants`, `CMessage`).
-
-| Directory | Purpose |
-|-----------|---------|
-| `src/protocol/<P>/` | Abstract protocol specs and proofs (RSL, Raft, EPaxos, PBFT, …) |
-| `src/implementation/<P>/` | Verified concrete implementation + hand-written I/O host |
-| `src/generated/<P>/` | Transpiler-generated types and functions (do not hand-edit) |
-| `src/services/<P>/` | Service entry points |
-| `src/common/native/io_s.rs` | Network client with marshalling |
-| `csharp/` | C# runtime and deployable services (~6.6K LOC) |
-| `transpiler/` | Spec-to-exec transpiler (~135K LOC) |
-| `scripts/` | Utility scripts (regeneration, benchmarks) |
-
-## Known Limitations
-
-- Raft's refinement proof still carries a few `assume`s, mostly around leader completeness;
-  every other protocol's proof is assumption-free
-- RSL still has skipped or externally implemented generated paths; see the generated-artifact
-  lifecycle and trust-boundary coverage in *The tla-rs Book*
-- `&mut self` codegen cannot handle intermediate whole-state assignments; protocols using
-  that pattern (Raft) stay on the slower functional convention
-- Marshalling lacks a spec function for the non-deserializable check
-
-## Code Attribution
-
-Some code borrowed from [IronKV](https://github.com/verus-lang/verified-ironkv):
-- NetClient code (`src/common/native/io_s.rs`)
-- Verus extra utilities (`src/verus_extra/...`)
-- C# I/O framework (modified)
-- Binding to C# (`src/lib.rs`)
-- Common marshalling library (`src/implementation/common/marshalling.rs`)
-
-The transpiler reimplements the [AutoMan](https://github.com/stonysystems/automan) workflow
-for Rust and Verus. The additional protocols, translation/model-checking tools, and Rust-specific
-code-generation optimizations are extensions developed in this repository.
-
-## License
-
-MIT License - see [LICENSE](LICENSE)
+Licensed under the [MIT License](LICENSE).

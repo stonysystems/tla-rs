@@ -6380,7 +6380,7 @@ proof assumptions just listed.
 
 ### Further reading
 
-- Project landing page, commands, attribution, and current limitations:
+- Project landing page, quickstart, essential commands, and attribution:
   [`README.md`](../README.md).
 - IronFleet methodology and RSL lineage: [IronFleet paper](https://doi.org/10.1145/2815400.2815428)
   and [original source](https://github.com/microsoft/Ironclad/tree/main/ironfleet).
