@@ -94,7 +94,6 @@ verus! {
     /// have equal cardinality.
     pub proof fn lemma_set_map_injective_len<T, U>(s: Set<T>, f: spec_fn(T) -> U)
     requires
-        s.finite(),
         forall |x1: T, x2: T| #![trigger f(x1), f(x2)] f(x1) == f(x2) ==> x1 == x2,
     ensures
         s.map(f).len() == s.len(),

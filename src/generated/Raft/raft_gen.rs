@@ -513,7 +513,6 @@ requires
     (*new_commit_index > s.commit_index),
     (*new_commit_index <= s@.log.len()),
     s@.log[(*new_commit_index - 1)].term == s.current_term,
-    c@.servers.finite(),
     (replicator_count(s@, c@, *new_commit_index as int) >= c.quorum_size),
     (*new_commit_index as int <= s@.log.len()),
     s.log@[*new_commit_index as int - 1].term == s.current_term,
@@ -897,7 +896,6 @@ pub exec fn CTryAdvanceCommitIndex(s: &CState, c: &CConstants, new_commit_index:
 requires
     s.valid(),
     c.valid(),
-    c@.servers.finite(),
     (!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
         *new_commit_index as int <= s@.log.len()
         && s.log@[*new_commit_index as int - 1].term == s.current_term

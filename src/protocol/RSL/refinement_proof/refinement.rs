@@ -333,12 +333,10 @@ verus! {
             let n = b[0].constants.config.replica_ids.len() as int;
             let range_set = vstd::set_lib::set_int_range(0, n);
             vstd::set_lib::lemma_int_range(0, n);
-            assert(range_set.finite());
             assert forall |idx: int| #![trigger range_set.contains(idx)] q.indices.contains(idx) implies range_set.contains(idx) by {};
             assert(q.indices.subset_of(range_set));
             vstd::set_lib::lemma_len_subset(q.indices, range_set);
             // Now Verus knows q.indices is finite with len > 0
-            assert(q.indices.finite());
             assert(q.indices.len() != 0);
             vstd::set::lemma_set_choose_len(q.indices);
             let idx = q.indices.choose();

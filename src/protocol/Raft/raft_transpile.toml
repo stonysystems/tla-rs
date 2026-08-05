@@ -60,7 +60,6 @@ CState = ["log", "votes_granted", "match_index", "next_index"]
     "*new_match_index < u64::MAX",
 ]
 "CTryAdvanceCommitIndex" = [
-    "c@.servers.finite()",
     """(!(s.role is Leader) || *new_commit_index <= s.commit_index) || (
         *new_commit_index as int <= s@.log.len()
         && s.log@[*new_commit_index as int - 1].term == s.current_term

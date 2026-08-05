@@ -81,7 +81,6 @@ verus! {
         ) -> bool
       {
         &&& e.sentPackets.len() == 0
-        &&& e.sentPackets.finite()
         &&& e.time >= 0
       }
 
@@ -146,7 +145,6 @@ verus! {
           e_: LEnvironment<IdType, MessageType>,
       )
           requires
-              e.sentPackets.finite(),
               LEnvironment_Next(e, e_),
           ensures
               e_.sentPackets.finite()
@@ -156,8 +154,6 @@ verus! {
                   broadcast use vstd::set::group_set_lemmas;
                   let new_set = ios.filter(|io: LIoOp<IdType, MessageType>| io is Send)
                       .map_values(|io: LIoOp<IdType, MessageType>| io->s).to_set();
-                  assert(new_set.finite());
-                  assert(e.sentPackets.union(new_set).finite());
               },
               LEnvStep::LEnvStepDeliverPacket{p} => {},
               LEnvStep::LEnvStepAdvanceTime => {},

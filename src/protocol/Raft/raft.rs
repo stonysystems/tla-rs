@@ -269,7 +269,6 @@ verus! {
         &&& new_commit_index <= s.log.len()
         &&& s.log[new_commit_index - 1].term == s.current_term
         // Quorum replication guard: at least quorum_size servers have the entry
-        &&& c.servers.finite()
         &&& replicator_count(s, c, new_commit_index) >= c.quorum_size
         &&& s_.current_term == s.current_term
         &&& s_.role == s.role

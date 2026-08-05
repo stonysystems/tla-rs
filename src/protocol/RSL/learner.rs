@@ -15,7 +15,6 @@ use vstd::{set::*, set_lib::*};
 verus! {
     proof fn lemma_set_contains_implies_len_positive<A>(s: Set<A>, x: A)
         requires
-            s.finite(),
             s.contains(x),
         ensures
             s.len() > 0,
@@ -89,7 +88,6 @@ verus! {
             packet.msg is RslMessage2b,
             LLearnerProcess2b(s, s_, packet),
             forall |k: OperationNumber| #![trigger s.unexecuted_learner_state.contains_key(k)]
-                s.unexecuted_learner_state.contains_key(k) ==> s.unexecuted_learner_state[k].received_2b_message_senders.finite(),
             forall |k: OperationNumber| #![trigger s.unexecuted_learner_state.contains_key(k)]
                 s.unexecuted_learner_state.contains_key(k) ==> s.unexecuted_learner_state[k].received_2b_message_senders.len() > 0,
         ensures
@@ -120,7 +118,6 @@ verus! {
                     assert(!s_.unexecuted_learner_state.contains_key(k));
                 } else {
                     assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
-                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.finite());
                     lemma_set_contains_implies_len_positive(
                         s_.unexecuted_learner_state[k].received_2b_message_senders,
                         packet.src,
@@ -142,7 +139,6 @@ verus! {
                 s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
                 if k == opn {
                     assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
-                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.finite());
                     lemma_set_contains_implies_len_positive(
                         s_.unexecuted_learner_state[k].received_2b_message_senders,
                         packet.src,
@@ -175,8 +171,6 @@ verus! {
                 s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
                 if k == opn {
                     assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
-                    assert(s.unexecuted_learner_state[opn].received_2b_message_senders.finite());
-                    assert(s_.unexecuted_learner_state[k].received_2b_message_senders.finite());
                     lemma_set_contains_implies_len_positive(
                         s_.unexecuted_learner_state[k].received_2b_message_senders,
                         packet.src,

@@ -32,7 +32,6 @@ pub proof fn lemma_GetIndicesFromNodes(
         requires
             WellFormedLConfiguration(config),
             forall |node: AbstractEndPoint| nodes.contains(node) ==> config.replica_ids.contains(node),
-            nodes.finite(),
         ensures
             forall |idx: int| #![trigger indices.contains(idx)] indices.contains(idx) ==>
                 0 <= idx < config.replica_ids.len() && nodes.contains(config.replica_ids[idx]),
@@ -100,7 +99,6 @@ pub proof fn lemma_GetIndicesFromPackets(
             WellFormedLConfiguration(config),
             forall |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) ==> config.replica_ids.contains(p.src),
             forall |p1: RslPacket, p2: RslPacket| #![trigger packets.contains(p1), packets.contains(p2)] packets.contains(p1) && packets.contains(p2) && p1 != p2 ==> p1.src != p2.src,
-            packets.finite(),
         ensures
             forall |idx: int| indices.contains(idx)
                 ==> 0 <= idx < config.replica_ids.len() &&
@@ -140,7 +138,6 @@ pub proof fn lemma_SetOfElementsOfRangeNoBiggerThanRange(
             0 <= n,
         ensures
             Q.len() <= n,
-            Q.finite(),
         decreases n,
     {
         broadcast use vstd::set::group_set_lemmas;

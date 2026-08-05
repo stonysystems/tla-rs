@@ -46,7 +46,7 @@ verus! {
 
     /// Helper: any finite non-empty set of ints has a maximum element.
     proof fn lemma_finite_int_set_has_max(s: Set<int>)
-        requires s.finite(), s.len() > 0
+        requires s.len() > 0
         ensures
             s.contains(intsetmax(s)),
             forall |i: int| s.contains(i) ==> intsetmax(s) >= i,
@@ -95,7 +95,7 @@ verus! {
     }
 
     pub proof fn lemma_intsetmax_ensures(s: Set<int>)
-        requires s.len() > 0, s.finite()
+        requires s.len() > 0
         ensures ({
             let m = intsetmax(s);
             &&& s.contains(m)
@@ -107,7 +107,6 @@ verus! {
 
     pub proof fn SetNotEmpty<T>(s:Set<T>)
         requires exists |x:T| s.contains(x),
-                 s.finite(),
         ensures s.len()>0
     {
         vstd::set_lib::lemma_set_empty_equivalency_len(s);
@@ -125,12 +124,10 @@ verus! {
         s: Set<S>, f: spec_fn(S) -> T, t: Set<T>,
     )
         requires
-            t.finite(),
             forall |x: S| s.contains(x) ==> t.contains(#[trigger] f(x)),
             forall |x1: S, x2: S| #![trigger f(x1), f(x2)]
                 s.contains(x1) && s.contains(x2) && f(x1) == f(x2) ==> x1 == x2,
         ensures
-            s.finite(),
             s.len() <= t.len(),
         decreases t.len(),
     {
@@ -179,7 +176,6 @@ verus! {
             InjectiveOver(xs, ys, f),
             forall |x: X| xs.contains(x) ==> ys.contains(f(x)),
             forall |y: Y| ys.contains(y) ==> exists |x: X| xs.contains(x) && y == f(x),
-            xs.finite(),
         ensures
             xs.len() == ys.len(),
         decreases xs.len(),
@@ -251,7 +247,6 @@ verus! {
     pub proof fn subset_cardinality<T>(x:Set<T>, y:Set<T>)
         requires
             x.subset_of(y),
-            y.finite(),
         ensures x.len() <= y.len()
     {
         vstd::set_lib::lemma_len_subset(x, y);
@@ -259,7 +254,6 @@ verus! {
 
     pub proof fn InsertCardinality<T>(s:Set<T>, x:T)
         requires
-            s.finite(),
             forall |y:T| s.contains(y) ==> y != x,
         ensures s.insert(x).len() == s.len() + 1
     {
@@ -274,7 +268,6 @@ verus! {
     requires
         s1.subset_of(s2),
         s1.len() == s2.len(),
-        s2.finite(),
     ensures
         s1 == s2
     {
@@ -315,7 +308,6 @@ verus! {
             a.subset_of(u),
             b.subset_of(u),
             a.len() + b.len() > u.len(),
-            u.finite(),
         ensures
             exists |w: T| a.contains(w) && b.contains(w),
     {

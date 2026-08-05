@@ -16908,10 +16908,38 @@ value per hour, not by phase number:
       `environment_s.rs` 5, `quorum.rs` 3, `chosen.rs` 3, `hashsets.rs` 3,
       `refinement.rs` 2, `Raft/invariants.rs` 2, `learner_state.rs` 1, `environment.rs` 1,
       `Raft/raft.rs` 1 — and **2 in `src/generated/Raft/raft_gen.rs`**.
-      - [ ] **54.11.a** The 66 hand-written ones. Delete per file, re-verify after each group.
-      - [ ] **54.11.b** The 2 in `src/generated/Raft/raft_gen.rs`. Per CLAUDE.md these must
-            not be hand-edited: find where the transpiler emits `.finite()`, stop emitting it,
-            regenerate. They will regrow on every regeneration until that is fixed.
+      **"Mechanical, zero risk" was wrong** — that judgement was made from the warning
+      counts without reading the sites. They fall into two genuinely different jobs:
+
+      - [x] **54.11.a.1** The 49 sites where the enclosing obligation *survives* the
+            deletion — a conjunct in a list, one clause of a multi-clause `requires`, a
+            standalone `assert(x.finite());`. **DONE (2026-08-05)**, 46 lines across 10
+            files, `1045 verified, 0 errors`.
+      - [x] **54.11.b** The 2 in `src/generated/Raft/raft_gen.rs`. **DONE (2026-08-05)**,
+            and neither was a transpiler bug: one was transcribed from
+            `src/protocol/Raft/raft.rs:272`, so removing it there and regenerating cleared
+            it; the other was a hand-injected precondition in
+            `raft_transpile.toml` under `CTryAdvanceCommitIndex`. Config is not generated
+            code, so it was removed at source and the file regenerated per CLAUDE.md.
+      - [ ] **54.11.a.2** The 17 sites where the deletion makes an *enclosing obligation
+            vacuous*, so the edit is "delete the lemma and update its callers", not "delete
+            a line". Deferring these is why a.1 could be done safely at all.
+            - 3 block-form clause lists whose every clause was a finiteness claim:
+              `hashsets.rs:138` (`requires`), `hashsets.rs:274` (`ensures`),
+              `environment_s.rs:151` (`ensures`) — deleting the clause leaves a bare
+              keyword, i.e. a syntax error, and the surrounding lemma now proves nothing.
+            - `common_proof/environment.rs:42` `lemma_sentPackets_finite` — sole `ensures`,
+              `pub`, self-recursive. Entirely vacuous; delete with its callers.
+            - `common_proof/learner_state.rs:113` — an `assert forall … implies
+              ….finite() by { … }` block whose conclusion is now `true`. Delete the block.
+            - 12 in `verus_extra/set_lib_ext_v.rs`: `map_fold_finite`, `map_finite`,
+              `map_set_finite_auto` are lemmas whose entire statement is a finiteness
+              claim, and `set_fold`/`map_fold` guard their recursion on `if s.finite()`.
+              **None of the five has a single caller outside the file** — checked — so this
+              is a deletion, not a refactor. But they are `pub` utility API in a ported
+              set library, so deleting is a judgement call worth making deliberately: the
+              alternative is keeping them with `#[allow(deprecated)]` and a note that they
+              are trivially true under vstd 0.2026.08.
 
 - [ ] **54.12** The 20 `Set::new_assuming_finite` uses. vstd marks it `#[deprecated]` and
       says outright it "is dangerous since it assumes the given function describes a finite

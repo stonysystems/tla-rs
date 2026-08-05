@@ -267,7 +267,6 @@ verus! {
             q.bal == b[i].replicas[idx].replica.executor.next_op_to_execute->bal,
             q.opn == b[i].replicas[idx].replica.executor.ops_complete,
             q.v == b[i].replicas[idx].replica.executor.next_op_to_execute->v,
-            q.indices.finite(),
             q.packets.len() == c.config.replica_ids.len(),
             forall |sidx: int| q.indices.contains(sidx) ==> ({
                 let p = q.packets[sidx];
@@ -294,7 +293,6 @@ verus! {
         let (indices, packets) = collect_2b_messages(c, senders, opn, idx, b, i, 0);
 
         let q_out = QuorumOf2bs{c:c, indices:indices, packets:packets, bal:bal, opn:opn, v:v};
-        assert(q_out.indices.finite());
         assert(q_out.packets.len() == c.config.replica_ids.len()) by {
             assert(q_out.packets.len() == c.config.replica_ids.len() - 0);
         };
@@ -437,7 +435,6 @@ verus! {
             0 <= sender_idx <= c.config.replica_ids.len(),
             c.config.replica_ids.len() > 0,
         ensures
-            rc.0.finite(),
             rc.1.len() == c.config.replica_ids.len() - sender_idx,
             forall |sidx: int| rc.0.contains(sidx)
                 ==> sender_idx <= sidx < c.config.replica_ids.len(),

@@ -4967,7 +4967,6 @@ verus! {
     /// Helper: convert a finite Set<int> to a Seq<int> preserving
     /// elements and distinctness.
     proof fn finite_set_to_seq(s: Set<int>) -> (result: Seq<int>)
-        requires s.finite()
         ensures
             result.len() == s.len(),
             forall |a: int| #![trigger result[a]]
@@ -8658,7 +8657,6 @@ verus! {
     proof fn lemma_range_set_finite(n: int)
         requires n >= 0
         ensures
-            Set::<int>::range(0, n).finite(),
             Set::<int>::range(0, n).len() == n,
     {
         vstd::set_lib::range_set_properties::<int>(0, n);
