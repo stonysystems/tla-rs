@@ -14941,10 +14941,20 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
            emission has to change in both places. `tests::test_generate_map_proof_lemmas`
            (`lib.rs:3394`) pins the current by-value form and must move with it.
 
-        So the remaining work is a **two-part transpiler change** — lemma signature *and*
-        call-site emission — plus the `learner_manual.rs` extraction, which is mechanical
-        once (1) and (2) are respected. All of it was attempted and reverted this session;
-        nothing is left half-applied.
+        **The two-part transpiler change is DONE (2026-08-05). Learner now merges and
+        verifies: `1046 verified, 0 errors`, merge diff 119 → 105, notes still 103.**
+        `param_type` in `generate_map_proof_lemmas` and both `ref_prefix` sites in
+        `translator/mod.rs` now emit `&` unconditionally — all three were keyed on the same
+        wrong `is_arc` condition. The regenerated `learner_gen.rs` is checked in, so learner
+        is off the stale-since-49.2 footing.
+        Blast radius checked by regenerating every protocol: **0 diff lines** across all
+        eight non-RSL `types_gen.rs`. Three tests pinned the old by-value form and moved with
+        it; a fourth, `test_mut_self_method_drops_functional_output`, fired for a good reason
+        and was *not* simply relaxed — its point is that the two proof arguments are
+        different states, and the emission still satisfies that
+        (`(&old_self.…, &self.…)`), so it now tolerates the `&` while keeping the check.
+        Still open for learner: the `learner_manual.rs` extraction (items 1 and 2 above),
+        which is what removes learner from the copy-from-backup path.
 
         Not yet attributed: `CLearnerForgetDecision` (18 lines) and `CLearnerInit` (3) differ
         for a separate reason — check before assuming they are the same cause.

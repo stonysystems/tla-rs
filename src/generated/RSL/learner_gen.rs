@@ -17,37 +17,6 @@ use vstd::set_lib::*;
 
 verus! {
 
-// --- Direct mutation helpers (Phase 49.2: Arc removed) ---
-
-#[verifier::external_body]
-fn learnerstate_clear_and_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
-    ensures state@ == Map::<COperationNumber, CLearnerTuple>::empty().insert(opn, tup)
-{
-    state.clear();
-    state.insert(opn, tup);
-}
-
-#[verifier::external_body]
-fn learnerstate_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
-    ensures state@ == old(state)@.insert(opn, tup)
-{
-    state.insert(opn, tup);
-}
-
-#[verifier::external_body]
-fn learnerstate_remove(state: &mut CLearnerState, opn: &COperationNumber)
-    ensures state@ == old(state)@.remove(*opn)
-{
-    state.remove(opn);
-}
-
-#[verifier::external_body]
-fn learnerstate_set(state: &mut CLearnerState, new_val: CLearnerState)
-    ensures state@ == new_val@
-{
-    *state = new_val;
-}
-
 /// Helper proof: mapping an injective function over an empty set yields an empty set.
 proof fn lemma_empty_set_map()
 ensures
@@ -340,8 +309,59 @@ ensures
 
 }
 
-// Phase 47.3.a.2: All learner functions converted to &mut self
+#[verifier::external_body]
+fn learnerstate_clear_and_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
+    ensures state@ == Map::<COperationNumber, CLearnerTuple>::empty().insert(opn, tup)
+{
+    state.clear();
+    state.insert(opn, tup);
+}
+
+#[verifier::external_body]
+fn learnerstate_insert(state: &mut CLearnerState, opn: COperationNumber, tup: CLearnerTuple)
+    ensures state@ == old(state)@.insert(opn, tup)
+{
+    state.insert(opn, tup);
+}
+
+#[verifier::external_body]
+fn learnerstate_remove(state: &mut CLearnerState, opn: &COperationNumber)
+    ensures state@ == old(state)@.remove(*opn)
+{
+    state.remove(opn);
+}
+
+#[verifier::external_body]
+fn learnerstate_set(state: &mut CLearnerState, new_val: CLearnerState)
+    ensures state@ == new_val@
+{
+    *state = new_val;
+}
+
 impl CLearner {
+    pub exec fn CLearnerForgetDecision(&mut self, opn: &u64)
+    requires
+        old(self).valid(),
+    ensures
+        self.valid(),
+        LLearnerForgetDecision(old(self)@, self@, *opn as int),
+    {
+        let ghost old_self = *old(self);
+        if self.unexecuted_learner_state.contains_key(&opn) {
+                        let mut __unexecuted_learner_state = clone_clearnerstate(&self.unexecuted_learner_state);
+            __unexecuted_learner_state.remove(&opn);
+            { self.constants = self.constants.clone_up_to_view(); self.max_ballot_seen = self.max_ballot_seen.clone(); self.unexecuted_learner_state = __unexecuted_learner_state }
+
+        } else {
+
+        };
+        proof {
+            if old_self.unexecuted_learner_state@.contains_key(*opn) {
+                lemma_abstractify_clearnerstate_remove(&old_self.unexecuted_learner_state, &self.unexecuted_learner_state, (*opn))
+            };
+        }
+
+    }
 
 /// 5-branch conditional: ballot comparison + HashMap insert/update with HashSet union.
 pub exec fn CLearnerProcess2b(&mut self, packet: &CPacket)
@@ -541,24 +561,6 @@ ensures
     }
 }
 
-pub exec fn CLearnerForgetDecision(&mut self, opn: &u64)
-requires
-    old(self).valid(),
-ensures
-    self.valid(),
-    LLearnerForgetDecision(old(self)@, self@, *opn as int),
-{
-    let ghost old_self = old(self)@;
-    if self.unexecuted_learner_state.contains_key(&opn) {
-        learnerstate_remove(&mut self.unexecuted_learner_state, &opn);
-    }
-    proof {
-        if old(self).unexecuted_learner_state@.contains_key(*opn) {
-            lemma_abstractify_clearnerstate_remove(&old(self).unexecuted_learner_state, &self.unexecuted_learner_state, *opn)
-        };
-    }
-}
-
 /// Quantified filter on HashMap: keep entries where key >= ops_complete.
 pub exec fn CLearnerForgetOperationsBefore(&mut self, ops_complete: &u64)
 requires
@@ -607,7 +609,6 @@ ensures
         assert(LLearnerForgetOperationsBefore(old_self, self@, *ops_complete as int));
     }
 }
-
-} // impl CLearner (Phase 47.3.a.2)
+}
 
 } // verus!

@@ -799,11 +799,10 @@ impl ProofNeeds {
                 // Guard with contains_key: the lemma requires m2@ =~= old@.remove(k),
                 // which only holds when the remove actually happened (key was present).
                 // When the field is Arc-wrapped, prefix with & for auto-deref.
-                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) {
-                    "&"
-                } else {
-                    ""
-                };
+                // Always by reference: the lemma takes `&ExecType` whether or not the
+                // field is Arc-wrapped (Phase 42.8.c.2.iv.B). `&Arc<T>` auto-derefs.
+                let _ = &arc_wrapped_field_names;
+                let ref_prefix = "&";
                 let lemma_call = ExecExpr::Call {
                     func: format!("lemma_abstractify_{}_remove", prefix),
                     args: vec![
@@ -876,11 +875,10 @@ impl ProofNeeds {
         // Emit lemma_abstractify_empty_{prefix}(result.field) for map_fields with HashMap::new()
         for field_name in &self.map_field_empty_sites {
             if let Some((_exec_type, prefix, _val_type)) = map_fields.get(field_name) {
-                let ref_prefix = if arc_wrapped_field_names.contains(field_name.as_str()) {
-                    "&"
-                } else {
-                    ""
-                };
+                // Always by reference: the lemma takes `&ExecType` whether or not the
+                // field is Arc-wrapped (Phase 42.8.c.2.iv.B). `&Arc<T>` auto-derefs.
+                let _ = &arc_wrapped_field_names;
+                let ref_prefix = "&";
                 stmts.push(ExecExpr::Call {
                     func: format!("lemma_abstractify_empty_{}", prefix),
                     args: vec![ExecExpr::Var(format!(
@@ -26783,9 +26781,11 @@ mod tests {
                         assert_eq!(args.len(), 1);
                         match &args[0] {
                             ExecExpr::Var(path) => {
-                                assert_eq!(path, "result.cache");
+                                // By reference even with no Arc-wrapped fields: the lemma
+                                // takes `&ExecType` (Phase 42.8.c.2.iv.B).
+                                assert_eq!(path, "&result.cache");
                             }
-                            other => panic!("Expected Var(\"result.cache\"), got {:?}", other),
+                            other => panic!("Expected Var(\"&result.cache\"), got {:?}", other),
                         }
                     }
                     other => panic!("Expected Call, got {:?}", other),

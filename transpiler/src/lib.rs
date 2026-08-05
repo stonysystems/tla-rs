@@ -1720,13 +1720,13 @@ impl Transpiler {
 
         for (_field, (exec_type, prefix, value_type)) in &sorted_fields {
             let is_arc = arc_wrapped_field_names.contains(_field.as_str());
-            // When the field is Arc-wrapped, proof lemmas take &ExecType instead of ExecType
-            // so that auto-deref from &Arc<ExecType> works at call sites.
-            let param_type = if is_arc {
-                format!("&{}", exec_type)
-            } else {
-                exec_type.to_string()
-            };
+            // `&ExecType` unconditionally. The lemma's own body calls
+            // `abstractify_{prefix}`, which is hand-written in `types_i.rs` and takes
+            // a reference, so a by-value parameter does not type-check against it:
+            // "expected &HashMap<..>, found HashMap<..>". Being Arc-wrapped also needs
+            // the reference (auto-deref from `&Arc<ExecType>`), which is why this was
+            // conditional -- but that was never the only case. Phase 42.8.c.2.iv.B.
+            let param_type = format!("&{}", exec_type);
             // =========================================================
             // lemma_abstractify_empty_{prefix}
             // =========================================================
@@ -3391,8 +3391,10 @@ mod tests {
 
         // Check all 4 proof lemmas are generated
         assert!(
-            output.contains("proof fn lemma_abstractify_empty_clearnerstate(m: CLearnerState)"),
-            "Should contain empty lemma"
+            // `&CLearnerState` even with no Arc-wrapped fields: the lemma body calls
+            // `abstractify_clearnerstate`, which takes a reference (Phase 42.8.c.2.iv.B).
+            output.contains("proof fn lemma_abstractify_empty_clearnerstate(m: &CLearnerState)"),
+            "Should contain empty lemma taking &CLearnerState"
         );
         assert!(
             output.contains("proof fn lemma_abstractify_clearnerstate_insert("),
@@ -3403,8 +3405,8 @@ mod tests {
             "Should contain remove lemma"
         );
         assert!(
-            output.contains("proof fn lemma_abstractify_singleton_clearnerstate(m: CLearnerState"),
-            "Should contain singleton lemma"
+            output.contains("proof fn lemma_abstractify_singleton_clearnerstate(m: &CLearnerState"),
+            "Should contain singleton lemma taking &CLearnerState"
         );
 
         // Check helpers are generated

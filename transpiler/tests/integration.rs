@@ -24260,8 +24260,14 @@ fn test_mut_self_method_drops_functional_output() {
         body
     );
     // The pre state moves to the ghost binding, the post state stays `self`.
+    // The `&` is tolerated: since Phase 42.8.c.2.iv.B these lemmas take
+    // `&ExecType` unconditionally. What this guards is that the two arguments are
+    // *different* states, which is what the &mut self lift gets wrong when broken.
     assert!(
         body.contains(
+            "lemma_abstractify_clearnerstate_remove(&old_self.unexecuted_learner_state, \
+             &self.unexecuted_learner_state"
+        ) || body.contains(
             "lemma_abstractify_clearnerstate_remove(old_self.unexecuted_learner_state, \
              self.unexecuted_learner_state"
         ),
