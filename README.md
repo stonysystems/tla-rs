@@ -101,45 +101,24 @@ and verifies, compiles, and runs this example.
 
 ## Requirements
 
-These are what `CI / Verus Verification` installs on a clean `ubuntu-24.04`, so the sequence
-below is known to work from nothing:
+Ubuntu 24.04 or newer — the Verus release binaries link against glibc 2.39. On an older
+distribution, build Verus from source instead.
 
-- **rustup**, with toolchain **1.97.1**. It must be rustup — the `verus` launcher shells out to
-  it and exits with *"verus needs a rustup installation"* if it is absent, even when a matching
-  `rustc` is on `PATH`.
+```bash
+# rustup — must be rustup, not just a matching rustc: the verus launcher shells out to it
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+rustup toolchain install 1.97.1
 
-  ```bash
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  rustup toolchain install 1.97.1
-  ```
+# Verus 0.2026.08.02.b677dd5 — the zip drops the executable bit, hence chmod
+V=0.2026.08.02.b677dd5
+wget https://github.com/verus-lang/verus/releases/download/release/$V/verus-$V-x86-linux.zip
+unzip -q verus-$V-x86-linux.zip -d ~/ && mv ~/verus-x86-linux ~/verus
+chmod +x ~/verus/verus && export VERUS_PATH=~/verus/verus
 
-- **Verus 0.2026.08.02.b677dd5** (latest stable tested; rolling points at the same commit).
-  The zip does not preserve the executable bit, so `chmod +x` is required:
+sudo apt install scons          # `pip install scons` is blocked by PEP 668 on 24.04
+```
 
-  ```bash
-  V=0.2026.08.02.b677dd5
-  wget https://github.com/verus-lang/verus/releases/download/release/$V/verus-$V-x86-linux.zip
-  unzip -q verus-$V-x86-linux.zip -d ~/ && mv ~/verus-x86-linux ~/verus
-  chmod +x ~/verus/verus
-  export VERUS_PATH=~/verus/verus
-  ```
-
-  The release binaries link against **glibc 2.39**, so verification needs Ubuntu 24.04 or
-  newer. On an older distribution, build Verus from source instead — it will link against
-  whatever glibc you have.
-
-- **scons**. `pip install scons` fails on Ubuntu 24.04 and Debian 12 with
-  `error: externally-managed-environment` (PEP 668). Use one of:
-
-  ```bash
-  sudo apt install scons                  # simplest
-  pipx install scons
-  python3 -m venv ~/.venvs/scons && ~/.venvs/scons/bin/pip install scons
-  ```
-
-- **Python 3** — for scons, and for the trigger-inventory scripts under `scripts/`.
-- **.NET 6.0 SDK** — only to build and run the services. Verification does not need it; pass
-  `--skip-dotnet`.
+.NET 6.0 SDK is needed only to build and run the services, not to verify.
 
 ## Verification
 
