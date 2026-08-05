@@ -165,14 +165,33 @@ verus! {
                 == b[behavior_index].configuration_commit_certificates[index]
                     .entry,
     {
+        // Subsumed: Configuration Leader Completeness is now a conjunct of the
+        // global invariant, so it holds of any reachable state outright. The
+        // Stable-membership route via legacy fixed-majority Leader
+        // Completeness is no longer needed.
         lemma_invariant_holds_throughout_behavior(b, behavior_index);
-        lemma_leader_completeness_holds_throughout_behavior(b, behavior_index);
-        lemma_legacy_leader_completeness_covers_stable_certificate(
-            b[behavior_index],
-            index,
-            config,
-            leader_id,
-        );
+        assert(CertifiedConfigurationLeaderCompleteness(b[behavior_index]));
+    }
+
+    /// Milestone B, behaviour level and unconditional: in every reachable
+    /// state, a leader whose term exceeds a certified Configuration entry's
+    /// term contains that exact entry at its certified log index.
+    ///
+    /// No hypothesis about membership phases, election snapshots, log lengths
+    /// or divergence — Configuration Leader Completeness is now a conjunct of
+    /// `RaftSafetyInvariant`, established at initialization and preserved by
+    /// every transition.
+    pub proof fn lemma_certified_configuration_leader_completeness_throughout_behavior(
+        b: RaftBehavior,
+        behavior_index: int,
+    )
+        requires
+            IsValidRaftBehavior(b),
+            0 <= behavior_index < b.len(),
+        ensures
+            CertifiedConfigurationLeaderCompleteness(b[behavior_index]),
+    {
+        lemma_invariant_holds_throughout_behavior(b, behavior_index);
     }
 
     /// Behaviour-level agreement at certified membership boundaries, with no
@@ -249,16 +268,11 @@ verus! {
                 == b[behavior_index].configuration_commit_certificates[index]
                     .entry,
     {
+        // Subsumed: the phase-relatedness hypothesis is no longer needed, since
+        // Configuration Leader Completeness now holds of every reachable state
+        // unconditionally.
         lemma_invariant_holds_throughout_behavior(b, behavior_index);
-        lemma_transfer_obligation_discharged_by_inherited_lemma(
-            b[behavior_index],
-        );
-        lemma_certified_boundary_present_when_phases_are_related(
-            b[behavior_index],
-            index,
-            leader_id,
-            election_phase,
-        );
+        assert(CertifiedConfigurationLeaderCompleteness(b[behavior_index]));
     }
 
     /// Milestone C's membership-stable fragment: for every dynamically
