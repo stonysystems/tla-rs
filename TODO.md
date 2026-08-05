@@ -17138,6 +17138,24 @@ value per hour, not by phase number:
       before rewriting, and re-run the trigger diff, since changing a broadcast trigger can
       move proofs anywhere.
 
+- [ ] **54.17** `test_phase_38_10_4_b_shadow_subset_report_script_contract` is **flaky**.
+      Seen failing twice on 2026-08-05, passing on immediate re-run both times, and **not
+      reproduced in 6 consecutive full-suite runs** afterwards. The panic message was never
+      captured, so the cause is genuinely unknown — recorded rather than guessed at.
+      What has been ruled out: the two `fs::write` calls near it in `integration.rs` both
+      target `tempfile::tempdir()`, not the repo, so it is not an in-suite write race on the
+      files it reads.
+      What is suspicious: it is a **doc-contract test** — it reads `TODO.md` and
+      `transpiler/DPOR_based_model_tla_rs_checker/design.md` from the working tree and
+      asserts they contain specific fragments. A test that reads `TODO.md` is structurally
+      fragile in a workflow that rewrites `TODO.md` on every iteration; a non-atomic
+      `open(p,'w')` truncates before writing, so a concurrent reader can see a partial file.
+      Two fixes worth considering, in order: make the doc-contract tests read a committed
+      blob (`git show HEAD:TODO.md`) rather than the working tree, and make any tooling that
+      rewrites `TODO.md` write-then-rename. **This matters beyond itself**: every iteration
+      of this workflow runs the suite to check for regressions, and a test that fails at
+      random undermines that check.
+
 - [ ] **54.7.d** Annotate the **76 transpiler-emitted notes** on the checked-in artifacts
       with a post-processing pass, instead of waiting for the merge in 42.8.c.
       **Rationale.** 54.7.a already taught codegen to emit these triggers; what is blocked is
