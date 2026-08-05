@@ -24,45 +24,31 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 
 ## Current Status (last updated 2026-08-05)
 
-**🔝 CURRENT PRIORITY: Phase 42.8.c — reconcile the RSL merge.** Phase 54 is done to the
-limit of what is reachable without it.
+**🔝 CURRENT PRIORITY: Phase 54.7.c — decide where the hand-written code in
+`src/generated/RSL/` belongs.** 42.8.c is done as far as merging can take it.
 
-**Phase 54 final (2026-08-05): `1046 verified, 0 errors`.**
-Warnings **1016 → 3**; trigger notes **534 → 103**. Both remaining warnings are **one site** — the `Set::new_assuming_finite` at
-`proposer_gen.rs:223`, which Verus reports once per verification chunk; its template is
-already fixed, so it clears with the merge. And
-**every remaining note is in `src/generated/`** — no hand-written file has an
-unpinned trigger left. `reports/triggers/exceptions.md` splits them 80 transpiler-emitted
-+ 23 preserved-hand-written, and CI `--check`s it.
+**42.8.c final (2026-08-05).** Six of seven RSL modules are reconciled and the crate is at
+`1046 verified, 0 errors`, notes 103, warnings 3.
 
-Two counting errors were corrected along the way, both from labels applied without
-measuring: 27 notes filed as "transpiler output, blocked on regeneration" are in preserved
-hand-written bodies that regeneration copies verbatim, and all 13 filed as
-"nested-quantifier" were in fact pinnable. The catch-all is now called `unclassified` and
-says to measure before writing a note off.
+| module | state |
+|---|---|
+| broadcast, acceptor | already byte-identical / lossless |
+| learner | reconciled (transpiler `&T` fix + `--preserve`) |
+| executor, election, proposer | **merged this session**; `assume(false)` 6→0, 5→0, 9→0 |
+| replica | **blocked**: 18 actions are free functions in the checked-in file and impl methods in fresh output, so a merge keeps both and `assume(false)` goes 0→18. `--preserve` cannot express a change of *kind*; this is Phase 48/49 work. |
 
-**Why 42.8.c is next.** It is the only thing gating the rest: 54.7.b (80 emitted notes),
-54.7.c/54.12.b, and the `&mut self`/Arc work all wait on it. It is also better understood
-than "no predictable finish" suggested — the merge is **per-module**:
+**What the merges did not do is deliver trigger notes: three merges, 103 → 103.** That is
+the measured fact, and it outranks four successive estimates of the deliverable count (80,
+50, 3, 40) — see 54.7.b, where the "3" is retracted as the product of an unsound
+attribution. Notes are not going to fall out of regeneration.
 
-| module | merge diff | notes it would deliver |
-|---|---:|---:|
-| broadcast | **0** (byte-identical) | 0 |
-| acceptor | **0** (delivered 2026-08-05 via `acceptor_manual.rs`) | 4 ✔ |
-| learner | 183 | 3 |
-| executor | 623 | 8 |
-| replica | 702 | 37 |
-| election | 708 | 15 |
-| proposer | 749 | 17 |
+**So 54.7.c is the live question**: ~70 of the 103 notes sit in hand-written bodies that
+merely *live* inside `src/generated/`. Either that code moves out (and becomes editable
+under the normal rules), or the notes stay and the exceptions list says so permanently.
+That is a project-policy call, and it is the same call 54.7.d needs.
 
-Start with **learner**: its 183 lines attribute to 13 functions, concentrated in
-`filter_clearnerstate` (54), `CLearnerForgetDecision` (18) and four `learnerstate_*`
-helpers. That is per-function signature reconciliation, as 42.8.c.2.iv records, but bounded
-and countable rather than open-ended.
-
-**Blocked on a decision, not on work:** 54.7.d proposes post-processing `src/generated/`,
-which conflicts with `CLAUDE.md`'s "produced by running the transpiler". Options are
-recorded in that item; it needs a project-policy call.
+Also still open and needing a decision rather than work: **54.7.d** (post-processing
+`src/generated/` conflicts with `CLAUDE.md`).
 
 Phases 52/53 stay on hold.
 
@@ -14920,13 +14906,26 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         | in bodies the preserve list protects | **28** |
         | **actually deliverable by regenerating** | **3** |
 
-        So "regenerate `src/generated/RSL/` and the notes are gone" can clear **3 of 103**.
-        The rest are hand-written code that happens to live inside a generated file, which
-        regeneration copies through untouched. My earlier figures — 80, then 50 — were each
-        derived from a proxy (`skip_functions`, then the preserve list); this one is derived
-        from what the transpiler actually emits, which is the question being asked.
-        **This makes 54.7.c the real item**, not 54.7.b: the decision about whether that
-        hand-written code should live under `src/generated/` at all.
+        **⚠ Retracted 2026-08-05 — the "3" was produced by an unsound method.** That
+        attribution matched a note to its enclosing function by searching for the note's
+        source line *as a substring* of each body. Common lines like
+        `forall |i: int| 0 <= i < …` occur in many bodies, so notes were assigned to whichever
+        body happened to contain the text first — at one point 40 notes were attributed to a
+        single function, which is what exposed it. Re-done by mapping each body to its
+        **line range** and locating the note within it, the same classification gives
+        **40 deliverable / 33 not-emitted / 30 preserved**.
+
+        **But the number to trust is neither, because it was measured directly: merging
+        executor, election and proposer moved the note count by exactly 0** (103 → 103 → 103
+        → 103). Whatever the classification says, regeneration is not clearing these notes.
+        The likely reason is that "the owner function is emitted by fresh" was never the
+        right test — fresh emits the *same quantifier with the same missing trigger*, because
+        54.7.a only taught codegen the `vec_element_ensures` shape, and these are other
+        shapes.
+        Four successive estimates (80, 50, 3, 40) all disagreed with a fact that three merges
+        had already established. **The observation stands; the classification does not.**
+        54.7.b should be judged by re-running the note count after a merge, not by counting
+        which bodies fresh emits.
 
   - [x] **42.8.c.2.iv.H** **Election merged. `1046 verified, 0 errors`.** (2026-08-05)
         `assume(false)` in the merged file 5 → 0; 332 lines changed. Two more merge defects,
