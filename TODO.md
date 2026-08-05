@@ -17035,26 +17035,31 @@ value per hour, not by phase number:
                   unfolded with an explicit witness in each direction. Trigger is
                   `batches[batch_num][req_num]` — anything on `.len()` fails
                   "trigger does not cover variable req_num".
-            - [ ] **54.12.c.2b** The rest. **Cost now measured rather than guessed** — this is
-                  what the earlier "budget this as its own task" note asked for. Converting
-                  both `let`s in `ProduceAbstractState` to `flatten().to_set()` breaks
-                  **exactly 3 proof functions at 6 assertion sites**: `refinement.rs` 126, 138
-                  (a precondition of `lemma_DecidedRequestWasSentByClient`), 196, 211, 261,
-                  263. That is much smaller than "~500 lines of proof unfold these" suggested,
-                  so the conversion is tractable — it was the *bridge lemmas*, not the call
-                  sites, that took the work.
-                  Remaining: (i) `lemma_replies_contains` over a
-                  `ReplySeqFromRequestBatches(batches) = Seq::new(len, |b| Seq::new(..))`
-                  helper — harder than the request one because the inner `Seq::new` has to be
-                  unfolded to relate `rs[i][j]` to `GetReplyFromRequestBatches(batches,i,j)`;
-                  (ii) insert the two lemmas at the 6 sites; (iii) the same for
-                  `ProduceAbstractStateFromBatches`, which is plausibly just
-                  `ProduceAbstractState` over
-                  `batches.drop_last().push(batches.last().take(reqs_in_last_batch))` —
-                  check before assuming.
-                  The conversion was written, measured, and then **reverted** rather than
-                  left half-migrated; only the proved bridge is committed.
-
+            - [x] **54.12.c.2b** `lemma_replies_contains` + convert `ProduceAbstractState`.
+                  **DONE (2026-08-05)**, `1044 verified, 0 errors`, notes 120,
+                  `Set::new_assuming_finite` warnings **10 → 6**.
+                  `lemma_replies_contains` went through first try, reusing the witness
+                  structure the request bridge established — the only extra work was
+                  unfolding the inner `Seq::new` to relate `rs[i][j]` to
+                  `GetReplyFromRequestBatches(batches, i, j)`. `ReplySeqFromRequestBatches`
+                  names that sequence so the definition and the lemma refer to one thing.
+                  Both `let`s in `ProduceAbstractState` are now
+                  `<seq>.flatten().to_set()`: **finiteness is established, not assumed.**
+                  The 6 predicted call sites needed the bridge inserted, and two set
+                  equalities had to become explicit `assert forall … <==> …` plus `=~=`
+                  rather than `==` — with membership no longer definitional, extensionality
+                  is not automatic. `rs_prime` is over `batches.drop_last()`, so those blocks
+                  need the bridge at *both* sequences.
+                  Done additively: the bridge lemma was committed green before the definition
+                  swap was attempted, so the tree was never left half-migrated.
+            - [ ] **54.12.c.2c** `ProduceIntermediateAbstractState` — the last 4 warnings
+                  (`refinement.rs:64`, `:69`; the other 2 are 54.12.b's generated site,
+                  blocked on 42.8.c). Its bound is
+                  `if bn == batches.len()-1 { reqs_in_last_batch } else { batches[bn].len() }`,
+                  so it needs a truncated-bound variant of `ReplySeqFromRequestBatches` and a
+                  matching bridge. For requests, `batches.drop_last().push(batches.last().take(n))`
+                  should let `lemma_requests_contains` apply unchanged — worth trying before
+                  writing a third lemma.
       - [ ] ~~superseded~~ original 54.12.c note (64/69 in
             `ProduceAbstractStateFromBatches`, 82/87 in `ProduceAbstractState` — 4 warnings,
             3 distinct shapes). These build `{req | ∃ batch_num, req_num. bounds ∧ …}` over a

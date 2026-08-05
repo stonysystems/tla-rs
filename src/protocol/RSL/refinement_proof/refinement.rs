@@ -171,15 +171,12 @@ verus! {
 
     pub open spec fn ProduceAbstractState(server_addresses:Set<AbstractEndPoint>, batches:Seq<RequestBatch>) -> RSLSystemState
     {
-        let requests = Set::new_assuming_finite(|req:Request| exists |batch_num:int, req_num:int|
-                                                  0 <= batch_num < batches.len()
-                                              && 0 <= req_num < batches[batch_num].len()
-                                              && batches[batch_num][req_num] == req);
-
-        let replies = Set::new_assuming_finite(|rep:Reply| exists |batch_num:int, req_num:int|
-                                                0 <= batch_num < batches.len()
-                                            && 0 <= req_num < batches[batch_num].len()
-                                            && GetReplyFromRequestBatches(batches, batch_num, req_num) == rep);
+        // Phase 54.12.c: the image of a finite sequence, so finiteness is
+        // established rather than assumed. `lemma_requests_contains` and
+        // `lemma_replies_contains` recover the indexed membership form that
+        // `Set::new_assuming_finite` used to give definitionally.
+        let requests = batches.flatten().to_set();
+        let replies = ReplySeqFromRequestBatches(batches).flatten().to_set();
         RSLSystemState{server_addresses:server_addresses, app:GetAppStateFromRequestBatches(batches), requests:requests, replies:replies}
     }
 
@@ -211,6 +208,7 @@ verus! {
 
         assert forall |p: RslPacket| #![trigger ps.environment.sentPackets.contains(p)] ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.src) && p.msg is RslMessageReply
             implies rs.replies.contains(Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply}) by {
+            lemma_replies_contains(batches, Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply});
             assert(GetServerAddresses(ps).contains(p.src));
             let (qs_prime, batches_prime, batch_num, req_num) = lemma_ReplySentIsAllowed(b, c, i, p);
             lemma_RegularQuorumOf2bSequenceIsPrefixOfMaximalQuorumOf2bSequence(b, c, i, qs_prime, qs);
@@ -220,6 +218,7 @@ verus! {
         assert forall |req: Request| rs.requests.contains(req)
             implies exists |p: RslPacket| #![trigger ps.environment.sentPackets.contains(p)] ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.dst)
                 && p.msg is RslMessageRequest && req == Request{client:p.src, seqno:p.msg->seqno_req, request:p.msg->val} by {
+            lemma_requests_contains(batches, req);
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.len() && 0 <= req_num < batches[batch_num].len() && req == batches[batch_num][req_num];
             let p = lemma_DecidedRequestWasSentByClient(b, c, i, qs, batches, batch_num, req_num);
@@ -281,6 +280,8 @@ verus! {
 
         // requests: rs_prime → rs
         assert forall |req: Request| rs_prime.requests.contains(req) implies rs.requests.contains(req) by {
+            lemma_requests_contains(batches.drop_last(), req);
+            lemma_requests_contains(batches, req);
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.len() &&
                 0 <= req_num < (if batch_num == batches.len() - 1 { 0 } else { batches[batch_num].len() })
@@ -291,6 +292,8 @@ verus! {
 
         // requests: rs → rs_prime
         assert forall |req: Request| rs.requests.contains(req) implies rs_prime.requests.contains(req) by {
+            lemma_requests_contains(batches, req);
+            lemma_requests_contains(batches.drop_last(), req);
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.drop_last().len() &&
                 0 <= req_num < batches.drop_last()[batch_num].len() &&
@@ -302,6 +305,8 @@ verus! {
 
         // replies: rs_prime → rs (batch_num < batches.len()-1, so bridge via subsequence lemma)
         assert forall |reply: Reply| rs_prime.replies.contains(reply) implies rs.replies.contains(reply) by {
+            lemma_replies_contains(batches.drop_last(), reply);
+            lemma_replies_contains(batches, reply);
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.len() &&
                 0 <= req_num < (if batch_num == batches.len() - 1 { 0 } else { batches[batch_num].len() })
@@ -317,6 +322,8 @@ verus! {
 
         // replies: rs → rs_prime (bridge via subsequence lemma in reverse)
         assert forall |reply: Reply| rs.replies.contains(reply) implies rs_prime.replies.contains(reply) by {
+            lemma_replies_contains(batches, reply);
+            lemma_replies_contains(batches.drop_last(), reply);
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.drop_last().len() &&
                 0 <= req_num < batches.drop_last()[batch_num].len() &&
@@ -345,9 +352,17 @@ verus! {
         let rs = ProduceAbstractState(server_addresses, batches);
         let rs_prime = ProduceIntermediateAbstractState(server_addresses, batches, batches.last().len() as int);
 
-        assert(rs_prime.requests == rs.requests);
+        // With reqs_in_last_batch == batches.last().len() the intermediate bound
+        // is just batches[bn].len(), so the two membership predicates coincide;
+        // the bridge turns that into set equality.
+        assert forall |req: Request|
+            rs_prime.requests.contains(req) <==> rs.requests.contains(req) by {
+            lemma_requests_contains(batches, req);
+        }
+        assert(rs_prime.requests =~= rs.requests);
 
         assert forall |reply: Reply| rs_prime.replies.contains(reply) implies rs.replies.contains(reply) by {
+            lemma_replies_contains(batches, reply);
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.len() &&
                 0 <= req_num < (if batch_num == batches.len() - 1 { batches.last().len() } else { batches[batch_num].len() })
@@ -355,7 +370,11 @@ verus! {
             assert(0 <= req_num < batches[batch_num].len());
         };
 
-        assert(rs_prime.replies == rs.replies);
+        assert forall |reply: Reply|
+            rs.replies.contains(reply) implies rs_prime.replies.contains(reply) by {
+            lemma_replies_contains(batches, reply);
+        }
+        assert(rs_prime.replies =~= rs.replies);
         assert(rs_prime.server_addresses == rs.server_addresses);
         // rs.app = GetAppStateFromRequestBatches(batches) = HandleRequestBatch(prev_state, batches.last()).0.last()
         // rs_prime.app = HandleRequestBatch(prev_state', batches.last()).0[batches.last().len()]
