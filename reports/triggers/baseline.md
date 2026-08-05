@@ -2,9 +2,9 @@
 
 | field | value |
 |---|---|
-| label | 0.2026.08.02.b677dd5 full crate (triggers-mode selective), 54.7.e |
+| label | 0.2026.08.02.b677dd5 full crate (triggers-mode selective), 54.10.a |
 | verus version | 0.2026.08.02.b677dd5 |
-| source log | /tmp/j9/v3.log |
+| source log | /tmp/ja/v.log |
 | notes | 74 |
 | trigger choices | 76 |
 | multi-line expressions | 4 |

@@ -17338,16 +17338,22 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 The other 11 are pinned.** The remaining 2 need the enclosing expression restructured (hoist the inner
 quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
 they are the honest remainder of the "not mechanical" warning in this phase's premise.
-- [ ] **54.10.a — the `changed triggers` signal has a false-positive mode, seen twice.**
-      The diff keys entries by `file:line`, so when annotating a site removes its note the
-      *following* notes shift up and get paired against whatever used to be at their line.
-      Both occurrences were pure line drift with an identical trigger multiset: 3 in
-      `proposer_gen.rs` after the replica merge, and 4 in `learner_gen.rs` after 54.7.e.
-      This matters more than a cosmetic annoyance — "same expression, different chosen
-      trigger" is *the* signal this phase exists to watch, and a diff that cries wolf on
-      every regeneration is one people learn to ignore. Fix: pair entries by
-      (file, normalised expression text) and fall back to line only to disambiguate
-      duplicates within a file, rather than keying on line first.
+- [x] **54.10.a — the `changed triggers` false positive, FIXED 2026-08-05. My recorded
+      diagnosis was wrong and the real cause is narrower.** I wrote that the diff keys on
+      `file:line`. It does not — `entry_key` was already
+      `(file, expression text, ordinal)`. The actual cause: the "expression text" is the
+      **underlined span**, and Verus underlines only the `assert` keyword on an
+      `assert forall`. So all 13 assert sites shared the identity `"assert"` and were told
+      apart by ordinal alone; annotating one shifted every later ordinal, and each entry got
+      paired against its neighbour.
+      Fixed by keying on the whole quoted source region (`source_text`) instead of the span.
+      **Measured on the real 74-note inventory**, simulating the same edit: old identity
+      reports `removed=1 changed=3`, new identity `removed=1 changed=0`. Three tests,
+      including one that a *genuine* re-choice is still reported — a fix that suppressed
+      real signal along with the noise would be worse than the noise.
+      An inventory captured before this carries no `source_text`, so `diff` falls back to the
+      coarse key **for both sides** rather than reporting every entry as removed-and-added;
+      that path is tested too.
 - [x] **54.7.e — the 3 learner map-lemma notes (2026-08-05).** `generate_map_proof_lemmas`
       now emits `#![trigger abs2[ak]] #![trigger expected[ak]]` on the value-equivalence
       `assert forall`. The triggers pinned are **exactly what Verus was already choosing**

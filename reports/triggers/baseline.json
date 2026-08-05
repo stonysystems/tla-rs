@@ -1,8 +1,8 @@
 {
   "schema": "trigger-inventory/v1",
-  "label": "0.2026.08.02.b677dd5 full crate (triggers-mode selective), 54.7.e",
+  "label": "0.2026.08.02.b677dd5 full crate (triggers-mode selective), 54.10.a",
   "verus_version": "0.2026.08.02.b677dd5",
-  "source_log": "/tmp/j9/v3.log",
+  "source_log": "/tmp/ja/v.log",
   "total_notes": 74,
   "total_triggers": 76,
   "orphan_trigger_notes": 0,
@@ -23,735 +23,11 @@
   },
   "entries": [
     {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 168,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 168,
-          "col": 43,
-          "terms": [
-            "s@[i]"
-          ],
-          "snippet": "s@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 172,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 172,
-          "col": 48,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 180,
-      "col": 9,
-      "expr": "forall |j: int| 0 <= j < result@.len() ==> result@[j].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 180,
-          "col": 52,
-          "terms": [
-            "result@[j]"
-          ],
-          "snippet": "result@[j]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |j: int| 0 <= j < result@.len() ==> result@[j].valid()"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 182,
-      "col": 9,
-      "expr": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 182,
-          "col": 47,
-          "terms": [
-            "s@[i]"
-          ],
-          "snippet": "s@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()#2"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 277,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 277,
-          "col": 43,
-          "terms": [
-            "s@[i]"
-          ],
-          "snippet": "s@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()#3"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 279,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 279,
-          "col": 48,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()#2"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 425,
-      "col": 17,
-      "expr": "assert",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 425,
-          "col": 77,
-          "terms": [
-            "concat_result@[i]"
-          ],
-          "snippet": "concat_result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::assert"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 540,
-      "col": 13,
-      "expr": "assert",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 540,
-          "col": 73,
-          "terms": [
-            "concat_result@[i]"
-          ],
-          "snippet": "concat_result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::assert#2"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 599,
-      "col": 13,
-      "expr": "assert",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 599,
-          "col": 73,
-          "terms": [
-            "concat_result@[i]"
-          ],
-          "snippet": "concat_result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::assert#3"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 633,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 633,
-          "col": 46,
-          "terms": [
-            "reqs@[i]"
-          ],
-          "snippet": "reqs@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid()"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 634,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 634,
-          "col": 47,
-          "terms": [
-            "batch@[i]"
-          ],
-          "snippet": "batch@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 637,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 637,
-          "col": 48,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()#3"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 638,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 638,
-          "col": 48,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable()"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 650,
-      "col": 9,
-      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 650,
-          "col": 52,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()#4"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 656,
-      "col": 9,
-      "expr": "forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 656,
-          "col": 50,
-          "terms": [
-            "reqs@[i]"
-          ],
-          "snippet": "reqs@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid()#2"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 657,
-      "col": 9,
-      "expr": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 657,
-          "col": 51,
-          "terms": [
-            "batch@[i]"
-          ],
-          "snippet": "batch@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()#2"
-    },
-    {
-      "file": "src/generated/RSL/election_gen.rs",
-      "line": 681,
-      "col": 5,
-      "expr": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/election_gen.rs",
-          "line": 681,
-          "col": 47,
-          "terms": [
-            "batch@[i]"
-          ],
-          "snippet": "batch@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()#3"
-    },
-    {
-      "file": "src/generated/RSL/learner_gen.rs",
-      "line": 411,
-      "col": 13,
-      "expr": "assert",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/learner_gen.rs",
-          "line": 411,
-          "col": 41,
-          "terms": [
-            "tup.received_2b_message_senders@.contains(p)"
-          ],
-          "snippet": "tup.received_2b_message_senders@.contains(p)",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/learner_gen.rs::assert"
-    },
-    {
-      "file": "src/generated/RSL/learner_gen.rs",
-      "line": 441,
-      "col": 13,
-      "expr": "assert",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/learner_gen.rs",
-          "line": 441,
-          "col": 41,
-          "terms": [
-            "tup.received_2b_message_senders@.contains(p)"
-          ],
-          "snippet": "tup.received_2b_message_senders@.contains(p)",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/learner_gen.rs::assert#2"
-    },
-    {
-      "file": "src/generated/RSL/learner_gen.rs",
-      "line": 472,
-      "col": 17,
-      "expr": "assert",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/learner_gen.rs",
-          "line": 472,
-          "col": 45,
-          "terms": [
-            "tup.received_2b_message_senders@.contains(p)"
-          ],
-          "snippet": "tup.received_2b_message_senders@.contains(p)",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/learner_gen.rs::assert#3"
-    },
-    {
-      "file": "src/generated/RSL/learner_gen.rs",
-      "line": 597,
-      "col": 9,
-      "expr": "assert",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 2,
-          "file": "src/generated/RSL/learner_gen.rs",
-          "line": 598,
-          "col": 13,
-          "terms": [
-            "abs_filtered[ak]"
-          ],
-          "snippet": "abs_filtered[ak]",
-          "multiline": false
-        },
-        {
-          "index": 2,
-          "total": 2,
-          "file": "src/generated/RSL/learner_gen.rs",
-          "line": 598,
-          "col": 33,
-          "terms": [
-            "abs_orig[ak]"
-          ],
-          "snippet": "abs_orig[ak]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 2,
-      "key": "src/generated/RSL/learner_gen.rs::assert#4"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 159,
-      "col": 13,
-      "expr": "choose |k: EndPoint| cache@.contains_key(k) && k@ == key@",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 159,
-          "col": 60,
-          "terms": [
-            "k@"
-          ],
-          "snippet": "k@",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::choose |k: EndPoint| cache@.contains_key(k) && k@ == key@"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 301,
-      "col": 9,
-      "expr": "assert",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 301,
-          "col": 38,
-          "terms": [
-            "packets.contains(p)"
-          ],
-          "snippet": "packets.contains(p)",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::assert"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 175,
-      "col": 5,
-      "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 175,
-          "col": 53,
-          "terms": [
-            "sent_packets@[i]"
-          ],
-          "snippet": "sent_packets@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 176,
-      "col": 5,
-      "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 176,
-          "col": 53,
-          "terms": [
-            "sent_packets@[i]"
-          ],
-          "snippet": "sent_packets@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 368,
-      "col": 5,
-      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 368,
-          "col": 47,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 369,
-      "col": 5,
-      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 369,
-          "col": 47,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 423,
-      "col": 5,
-      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 423,
-          "col": 47,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()#2"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 424,
-      "col": 5,
-      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 424,
-          "col": 47,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()#2"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 460,
-      "col": 5,
-      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 460,
-          "col": 47,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()#3"
-    },
-    {
-      "file": "src/generated/RSL/executor_gen.rs",
-      "line": 461,
-      "col": 5,
-      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()",
-      "multiline": false,
-      "triggers": [
-        {
-          "index": 1,
-          "total": 1,
-          "file": "src/generated/RSL/executor_gen.rs",
-          "line": 461,
-          "col": 47,
-          "terms": [
-            "result@[i]"
-          ],
-          "snippet": "result@[i]",
-          "multiline": false
-        }
-      ],
-      "trigger_count": 1,
-      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()#3"
-    },
-    {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 562,
       "col": 5,
       "expr": "exists |cp: CPacket| s.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn)",
+      "source_text": "exists |cp: CPacket| s.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn),",
       "multiline": false,
       "triggers": [
         {
@@ -768,13 +44,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::exists |cp: CPacket| s.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn)"
+      "key": "src/generated/RSL/proposer_gen.rs::exists |cp: CPacket| s.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn),"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 581,
       "col": 5,
       "expr": "forall |cp: CPacket| s_set.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn) ==> BalLeq(cp.msg->votes@[opn].max_value_bal@, best_cp.msg->votes@[opn].max_value_bal@),",
+      "source_text": "forall |cp: CPacket| s_set.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn) ==> BalLeq(cp.msg->votes@[opn].max_value_bal@, best_cp.msg->votes@[opn].max_value_bal@),",
       "multiline": true,
       "triggers": [
         {
@@ -798,6 +75,7 @@
       "line": 584,
       "col": 5,
       "expr": "forall |cp: CPacket| s_set.contains(cp) ==> cp.valid()",
+      "source_text": "forall |cp: CPacket| s_set.contains(cp) ==> cp.valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -814,13 +92,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |cp: CPacket| s_set.contains(cp) ==> cp.valid()"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |cp: CPacket| s_set.contains(cp) ==> cp.valid(),"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 216,
       "col": 57,
       "expr": "exists |k: EndPoint| m.contains_key(k) && k@ == ak",
+      "source_text": "Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k: EndPoint| m.contains_key(k) && k@ == ak),",
       "multiline": false,
       "triggers": [
         {
@@ -837,13 +116,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::exists |k: EndPoint| m.contains_key(k) && k@ == ak"
+      "key": "src/generated/RSL/proposer_gen.rs::Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k: EndPoint| m.contains_key(k) && k@ == ak),"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 218,
       "col": 21,
       "expr": "choose |k: EndPoint| m.contains_key(k) && k@ == ak",
+      "source_text": "let k = choose |k: EndPoint| m.contains_key(k) && k@ == ak;",
       "multiline": false,
       "triggers": [
         {
@@ -860,13 +140,38 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::choose |k: EndPoint| m.contains_key(k) && k@ == ak"
+      "key": "src/generated/RSL/proposer_gen.rs::let k = choose |k: EndPoint| m.contains_key(k) && k@ == ak;"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 681,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 681,
+          "col": 47,
+          "terms": [
+            "batch@[i]"
+          ],
+          "snippet": "batch@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 246,
       "col": 18,
       "expr": "choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak",
+      "source_text": "let ep = choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak;",
       "multiline": false,
       "triggers": [
         {
@@ -883,13 +188,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak"
+      "key": "src/generated/RSL/proposer_gen.rs::let ep = choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak;"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 270,
       "col": 22,
       "expr": "choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak",
+      "source_text": "let ep_new = choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak;",
       "multiline": false,
       "triggers": [
         {
@@ -906,13 +212,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak#2"
+      "key": "src/generated/RSL/proposer_gen.rs::let ep_new = choose |ep: EndPoint| new_m.contains_key(ep) && ep@ == ak;"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 267,
       "col": 5,
       "expr": "assert",
+      "source_text": "assert forall |ak: AbstractEndPoint|",
       "multiline": false,
       "triggers": [
         {
@@ -941,13 +248,14 @@
         }
       ],
       "trigger_count": 2,
-      "key": "src/generated/RSL/proposer_gen.rs::assert"
+      "key": "src/generated/RSL/proposer_gen.rs::assert forall |ak: AbstractEndPoint|"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 369,
       "col": 20,
       "expr": "forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid()",
+      "source_text": "assert(forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid());",
       "multiline": false,
       "triggers": [
         {
@@ -964,13 +272,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid()"
+      "key": "src/generated/RSL/proposer_gen.rs::assert(forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid());"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 432,
       "col": 20,
       "expr": "forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid()",
+      "source_text": "assert(forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid());",
       "multiline": false,
       "triggers": [
         {
@@ -987,13 +296,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid()#2"
+      "key": "src/generated/RSL/proposer_gen.rs::assert(forall |p: CPacket| self.received_1b_packets@.contains(p) ==> p.valid());#2"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 475,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1010,13 +320,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 476,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1033,13 +344,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 648,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1056,13 +368,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#2"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#2"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 649,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1079,13 +392,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#2"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#2"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 725,
       "col": 27,
       "expr": "let cp: CPacket = choose |cp: CPacket| self.received_1b_packets@.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn);",
+      "source_text": "let cp: CPacket = choose |cp: CPacket| self.received_1b_packets@.contains(cp) && cp.msg is CMessage1b && (#[trigger] cp.msg->votes)@.contains_key(opn);",
       "multiline": true,
       "triggers": [
         {
@@ -1109,6 +423,7 @@
       "line": 768,
       "col": 9,
       "expr": "assert",
+      "source_text": "assert forall |cp: CPacket| old(self).received_1b_packets@.contains(cp) && cp.msg is CMessage1b",
       "multiline": false,
       "triggers": [
         {
@@ -1125,13 +440,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::assert#2"
+      "key": "src/generated/RSL/proposer_gen.rs::assert forall |cp: CPacket| old(self).received_1b_packets@.contains(cp) && cp.msg is CMessage1b"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 802,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1148,13 +464,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#3"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#3"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 803,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1171,13 +488,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#3"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#3"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 884,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1194,13 +512,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#4"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#4"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 885,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1217,13 +536,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#4"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#4"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 946,
       "col": 9,
       "expr": "assert",
+      "source_text": "assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.valid() by {",
       "multiline": false,
       "triggers": [
         {
@@ -1240,13 +560,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::assert#3"
+      "key": "src/generated/RSL/proposer_gen.rs::assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.valid() by {"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 951,
       "col": 9,
       "expr": "assert",
+      "source_text": "assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.abstractable() by {",
       "multiline": false,
       "triggers": [
         {
@@ -1263,13 +584,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::assert#4"
+      "key": "src/generated/RSL/proposer_gen.rs::assert forall |q:CPacket| self.received_1b_packets@.contains(q) implies q.abstractable() by {"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 970,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1286,13 +608,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#5"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#5"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 971,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1309,13 +632,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#5"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#5"
     },
     {
       "file": "src/generated/RSL/proposer_gen.rs",
       "line": 1063,
       "col": 5,
       "expr": "forall |i: int| 0 <= i < val@.len() ==> val@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < val@.len() ==> val@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1332,13 +656,638 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/proposer_gen.rs::forall |i: int| 0 <= i < val@.len() ==> val@[i].valid()"
+      "key": "src/generated/RSL/proposer_gen.rs::forall |i: int| 0 <= i < val@.len() ==> val@[i].valid(),"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 168,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 168,
+          "col": 43,
+          "terms": [
+            "s@[i]"
+          ],
+          "snippet": "s@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 172,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 172,
+          "col": 48,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 180,
+      "col": 9,
+      "expr": "forall |j: int| 0 <= j < result@.len() ==> result@[j].valid()",
+      "source_text": "forall |j: int| 0 <= j < result@.len() ==> result@[j].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 180,
+          "col": 52,
+          "terms": [
+            "result@[j]"
+          ],
+          "snippet": "result@[j]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |j: int| 0 <= j < result@.len() ==> result@[j].valid(),"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 182,
+      "col": 9,
+      "expr": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 182,
+          "col": 47,
+          "terms": [
+            "s@[i]"
+          ],
+          "snippet": "s@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),#2"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 277,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 277,
+          "col": 43,
+          "terms": [
+            "s@[i]"
+          ],
+          "snippet": "s@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < s@.len() ==> s@[i].valid(),#3"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 279,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 279,
+          "col": 48,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),#2"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 425,
+      "col": 17,
+      "expr": "assert",
+      "source_text": "assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 425,
+          "col": 77,
+          "terms": [
+            "concat_result@[i]"
+          ],
+          "snippet": "concat_result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 540,
+      "col": 13,
+      "expr": "assert",
+      "source_text": "assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 540,
+          "col": 73,
+          "terms": [
+            "concat_result@[i]"
+          ],
+          "snippet": "concat_result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {#2"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 599,
+      "col": 13,
+      "expr": "assert",
+      "source_text": "assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 599,
+          "col": 73,
+          "terms": [
+            "concat_result@[i]"
+          ],
+          "snippet": "concat_result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::assert forall |i:int| 0 <= i < concat_result@.len() implies concat_result@[i].valid() by {#3"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 633,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 633,
+          "col": 46,
+          "terms": [
+            "reqs@[i]"
+          ],
+          "snippet": "reqs@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 634,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 634,
+          "col": 47,
+          "terms": [
+            "batch@[i]"
+          ],
+          "snippet": "batch@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),#2"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 637,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 637,
+          "col": 48,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),#3"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 638,
+      "col": 5,
+      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable()",
+      "source_text": "forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 638,
+          "col": 48,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].abstractable(),"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 650,
+      "col": 9,
+      "expr": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 650,
+          "col": 52,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < result@.len() ==> result@[i].valid(),#4"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 656,
+      "col": 9,
+      "expr": "forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 656,
+          "col": 50,
+          "terms": [
+            "reqs@[i]"
+          ],
+          "snippet": "reqs@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < reqs@.len() ==> reqs@[i].valid(),#2"
+    },
+    {
+      "file": "src/generated/RSL/election_gen.rs",
+      "line": 657,
+      "col": 9,
+      "expr": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid()",
+      "source_text": "forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/election_gen.rs",
+          "line": 657,
+          "col": 51,
+          "terms": [
+            "batch@[i]"
+          ],
+          "snippet": "batch@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/election_gen.rs::forall |i: int| 0 <= i < batch@.len() ==> batch@[i].valid(),#3"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 159,
+      "col": 13,
+      "expr": "choose |k: EndPoint| cache@.contains_key(k) && k@ == key@",
+      "source_text": "let k = choose |k: EndPoint| cache@.contains_key(k) && k@ == key@;",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 159,
+          "col": 60,
+          "terms": [
+            "k@"
+          ],
+          "snippet": "k@",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::let k = choose |k: EndPoint| cache@.contains_key(k) && k@ == key@;"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 301,
+      "col": 9,
+      "expr": "assert",
+      "source_text": "assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 301,
+          "col": 38,
+          "terms": [
+            "packets.contains(p)"
+          ],
+          "snippet": "packets.contains(p)",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::assert forall |p: RslPacket| packets.contains(p) implies p.msg is RslMessageReply by {"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 175,
+      "col": 5,
+      "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 175,
+          "col": 53,
+          "terms": [
+            "sent_packets@[i]"
+          ],
+          "snippet": "sent_packets@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 176,
+      "col": 5,
+      "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 176,
+          "col": 53,
+          "terms": [
+            "sent_packets@[i]"
+          ],
+          "snippet": "sent_packets@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 368,
+      "col": 5,
+      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 368,
+          "col": 47,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 369,
+      "col": 5,
+      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 369,
+          "col": 47,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 423,
+      "col": 5,
+      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 423,
+          "col": 47,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),#2"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 424,
+      "col": 5,
+      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 424,
+          "col": 47,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),#2"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 460,
+      "col": 5,
+      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 460,
+          "col": 47,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),#3"
+    },
+    {
+      "file": "src/generated/RSL/executor_gen.rs",
+      "line": 461,
+      "col": 5,
+      "expr": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/executor_gen.rs",
+          "line": 461,
+          "col": 47,
+          "terms": [
+            "result@[i]"
+          ],
+          "snippet": "result@[i]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/executor_gen.rs::forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),#3"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 160,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1355,13 +1304,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 161,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1378,13 +1328,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 207,
       "col": 33,
       "expr": "choose |k: EndPoint| m@.contains_key(k) && k@ == received_packet@.src",
+      "source_text": "let k = choose |k: EndPoint| m@.contains_key(k) && k@ == received_packet@.src;",
       "multiline": false,
       "triggers": [
         {
@@ -1401,13 +1352,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::choose |k: EndPoint| m@.contains_key(k) && k@ == received_packet@.src"
+      "key": "src/generated/RSL/replica_gen.rs::let k = choose |k: EndPoint| m@.contains_key(k) && k@ == received_packet@.src;"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 237,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1424,13 +1376,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#2"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#2"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 238,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1447,13 +1400,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#2"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#2"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 303,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1470,13 +1424,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#3"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#3"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 304,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1493,13 +1448,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#3"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#3"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 350,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1516,13 +1472,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#4"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#4"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 351,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1539,13 +1496,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#4"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#4"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 366,
       "col": 24,
       "expr": "!found ==> (forall |j: int| 0 <= j < idx as int ==> !crate::protocol::RSL::acceptor::IsLogTruncationPointValid( old_self.acceptor.last_checkpointed_operation[j], old_self.acceptor.last_checkpointed_operation, old_self.constants.all.config)),",
+      "source_text": "!found ==> (forall |j: int| 0 <= j < idx as int ==> !crate::protocol::RSL::acceptor::IsLogTruncationPointValid( old_self.acceptor.last_checkpointed_operation[j], old_self.acceptor.last_checkpointed_operation, old_self.constants.all.config)),",
       "multiline": true,
       "triggers": [
         {
@@ -1569,6 +1527,7 @@
       "line": 412,
       "col": 20,
       "expr": "assert(exists |opn: OperationNumber| old_self.acceptor.last_checkpointed_operation.contains(opn) && crate::protocol::RSL::acceptor::IsLogTruncationPointValid( opn, old_self.acceptor.last_checkpointed_operation, old_self.constants.all.config) && opn > old_self.acceptor.log_truncation_point",
+      "source_text": "assert(exists |opn: OperationNumber| old_self.acceptor.last_checkpointed_operation.contains(opn) && crate::protocol::RSL::acceptor::IsLogTruncationPointValid( opn, old_self.acceptor.last_checkpointed_operation, old_self.constants.all.config) && opn > old_self.acceptor.log_truncation_point",
       "multiline": true,
       "triggers": [
         {
@@ -1592,6 +1551,7 @@
       "line": 437,
       "col": 17,
       "expr": "assert",
+      "source_text": "assert forall |j: int| 0 <= j < lco.len() implies",
       "multiline": false,
       "triggers": [
         {
@@ -1608,13 +1568,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::assert"
+      "key": "src/generated/RSL/replica_gen.rs::assert forall |j: int| 0 <= j < lco.len() implies"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 465,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1631,13 +1592,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#5"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#5"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 466,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1654,13 +1616,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#5"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#5"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 508,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1677,13 +1640,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#6"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#6"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 509,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1700,13 +1664,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#6"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#6"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 554,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),",
       "multiline": false,
       "triggers": [
         {
@@ -1723,13 +1688,14 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid()#7"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].valid(),#7"
     },
     {
       "file": "src/generated/RSL/replica_gen.rs",
       "line": 555,
       "col": 5,
       "expr": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()",
+      "source_text": "forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),",
       "multiline": false,
       "triggers": [
         {
@@ -1746,7 +1712,115 @@
         }
       ],
       "trigger_count": 1,
-      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable()#7"
+      "key": "src/generated/RSL/replica_gen.rs::forall |i:int| 0 <= i < sent_packets@.len() ==> sent_packets@[i].abstractable(),#7"
+    },
+    {
+      "file": "src/generated/RSL/learner_gen.rs",
+      "line": 411,
+      "col": 13,
+      "expr": "assert",
+      "source_text": "assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/learner_gen.rs",
+          "line": 411,
+          "col": 41,
+          "terms": [
+            "tup.received_2b_message_senders@.contains(p)"
+          ],
+          "snippet": "tup.received_2b_message_senders@.contains(p)",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/learner_gen.rs::assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)"
+    },
+    {
+      "file": "src/generated/RSL/learner_gen.rs",
+      "line": 441,
+      "col": 13,
+      "expr": "assert",
+      "source_text": "assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/learner_gen.rs",
+          "line": 441,
+          "col": 41,
+          "terms": [
+            "tup.received_2b_message_senders@.contains(p)"
+          ],
+          "snippet": "tup.received_2b_message_senders@.contains(p)",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/learner_gen.rs::assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)#2"
+    },
+    {
+      "file": "src/generated/RSL/learner_gen.rs",
+      "line": 472,
+      "col": 17,
+      "expr": "assert",
+      "source_text": "assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 1,
+          "file": "src/generated/RSL/learner_gen.rs",
+          "line": 472,
+          "col": 45,
+          "terms": [
+            "tup.received_2b_message_senders@.contains(p)"
+          ],
+          "snippet": "tup.received_2b_message_senders@.contains(p)",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 1,
+      "key": "src/generated/RSL/learner_gen.rs::assert forall |p: EndPoint| tup.received_2b_message_senders@.contains(p)#3"
+    },
+    {
+      "file": "src/generated/RSL/learner_gen.rs",
+      "line": 597,
+      "col": 9,
+      "expr": "assert",
+      "source_text": "assert forall |ak: int| abs_filtered.contains_key(ak) implies",
+      "multiline": false,
+      "triggers": [
+        {
+          "index": 1,
+          "total": 2,
+          "file": "src/generated/RSL/learner_gen.rs",
+          "line": 598,
+          "col": 13,
+          "terms": [
+            "abs_filtered[ak]"
+          ],
+          "snippet": "abs_filtered[ak]",
+          "multiline": false
+        },
+        {
+          "index": 2,
+          "total": 2,
+          "file": "src/generated/RSL/learner_gen.rs",
+          "line": 598,
+          "col": 33,
+          "terms": [
+            "abs_orig[ak]"
+          ],
+          "snippet": "abs_orig[ak]",
+          "multiline": false
+        }
+      ],
+      "trigger_count": 2,
+      "key": "src/generated/RSL/learner_gen.rs::assert forall |ak: int| abs_filtered.contains_key(ak) implies"
     }
   ]
 }
