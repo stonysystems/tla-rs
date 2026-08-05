@@ -1014,6 +1014,238 @@ verus! {
     /// Every other case of Configuration Leader Completeness is discharged.
     /// Establishing this predicate needs the term-induction machinery that the
     /// inherited proof base never built, so it is stated rather than proved.
+    /// Well-formedness of the election-snapshot ghost map, mirroring
+    /// `VoteLogLenBounded`.
+    pub open spec fn ElectionLogLenBounded(ds: RaftDistributedState) -> bool {
+        forall |v: int, t: int| ds.election_log_len.dom().contains((v, t)) ==> {
+            &&& 0 <= v < ds.num_servers
+            &&& 0 <= ds.election_log_len[(v, t)]
+            &&& ds.election_log_len[(v, t)]
+                <= ds.server_states[v].log.len()
+            &&& ds.server_states[v].current_term >= t
+        }
+    }
+
+    /// Entries at or beyond a recorded election snapshot carry a term at least
+    /// that of the election. Contrapositive, which is the form proofs want: an
+    /// entry whose term is strictly below the election term was already in the
+    /// log when that election happened.
+    pub open spec fn ElectionLogLenEntryTermBound(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |p: (int, int), i: int|
+            #![trigger ds.server_states[p.0].log[i],
+                       ds.election_log_len.dom().contains(p)]
+            ds.election_log_len.dom().contains(p)
+            && 0 <= p.0 < ds.num_servers
+            && ds.election_log_len[p] <= i
+            && i < ds.server_states[p.0].log.len()
+        ==> ds.server_states[p.0].log[i].term >= p.1
+    }
+
+    /// Every leader has a snapshot recorded for its current term, and its saved
+    /// membership phase is derived from exactly that prefix.
+    ///
+    /// This is the strengthening `has_recorded_election_log_provenance` lacks:
+    /// that predicate only says the phase comes from *some* prefix, which is
+    /// too weak to connect a leader's election snapshot to certified
+    /// membership boundaries.
+    pub open spec fn LeaderElectionSnapshotRecorded(
+        ds: RaftDistributedState,
+    ) -> bool {
+        forall |i: int|
+            #![trigger ds.server_states[i].role]
+            0 <= i < ds.num_servers
+            && ds.server_states[i].role is Leader
+            ==> {
+                &&& ds.election_log_len.dom().contains(
+                    (i, ds.server_states[i].current_term))
+                &&& ds.server_states[i].election_membership_phase
+                    == Some(active_membership_phase_from_raft_log(
+                        ds.server_states[i].log,
+                        ds.election_log_len[
+                            (i, ds.server_states[i].current_term)],
+                        MembershipPhase::Stable {
+                            config: ds.server_constants[i].servers,
+                        },
+                    ))
+            }
+    }
+
+    pub proof fn lemma_election_log_len_bounded_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            ElectionLogLenBounded(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            ElectionLogLenBounded(ds_),
+    {
+        lemma_log_append_only(ds, ds_);
+
+        let server_id = choose |sid: int|
+            #![trigger ds.server_states[sid]]
+        {
+            &&& 0 <= sid < ds.num_servers
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+            &&& RaftServerStepWithNetwork(ds, ds_, sid)
+        };
+
+        assert forall |v: int, t: int|
+            ds_.election_log_len.dom().contains((v, t))
+        implies {
+            &&& 0 <= v < ds_.num_servers
+            &&& 0 <= ds_.election_log_len[(v, t)]
+            &&& ds_.election_log_len[(v, t)]
+                <= ds_.server_states[v].log.len()
+            &&& ds_.server_states[v].current_term >= t
+        } by {
+            assert(LogAppendOnly(ds, ds_));
+            if ds.election_log_len.dom().contains((v, t)) {
+                assert(ElectionLogLenBounded(ds));
+            }
+        };
+    }
+
+    pub proof fn lemma_election_log_len_entry_term_bound_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            ElectionLogLenEntryTermBound(ds),
+            ElectionLogLenBounded(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            ElectionLogLenEntryTermBound(ds_),
+    {
+        lemma_log_append_only(ds, ds_);
+        lemma_distributed_next_implies_legacy(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |p: (int, int), i: int|
+            #![trigger ds_.server_states[p.0].log[i],
+                       ds_.election_log_len.dom().contains(p)]
+            ds_.election_log_len.dom().contains(p)
+            && 0 <= p.0 < ds_.num_servers
+            && ds_.election_log_len[p] <= i
+            && i < ds_.server_states[p.0].log.len()
+        implies ds_.server_states[p.0].log[i].term >= p.1 by {
+            let v = p.0;
+            let t = p.1;
+            if v != server_id {
+                assert(ds_.server_states[v] == ds.server_states[v]);
+                assert(ds.election_log_len.dom().contains((v, t)));
+                assert(ElectionLogLenEntryTermBound(ds));
+            } else {
+                if ds.election_log_len.dom().contains((v, t)) {
+                    if i < ds.server_states[v].log.len() {
+                        assert(LogAppendOnly(ds, ds_));
+                        assert(ds_.server_states[v].log[i]
+                            == ds.server_states[v].log[i]);
+                        assert(ElectionLogLenEntryTermBound(ds));
+                    } else {
+                        // Freshly appended entry: its term is the appending
+                        // server's current term, which is at least `t`.
+                        assert(ElectionLogLenBounded(ds));
+                        assert(ds.server_states[v].current_term >= t);
+                    }
+                } else {
+                    // Newly recorded snapshot: the log has exactly that length,
+                    // so no index at or beyond it exists yet.
+                    assert(ds_.election_log_len[p]
+                        == ds.server_states[server_id].log.len());
+                }
+            }
+        };
+    }
+
+    pub proof fn lemma_leader_election_snapshot_recorded_inductive(
+        ds: RaftDistributedState,
+        ds_: RaftDistributedState,
+    )
+        requires
+            LeaderElectionSnapshotRecorded(ds),
+            ElectionLogLenBounded(ds),
+            RaftDistributedNext(ds, ds_),
+        ensures
+            LeaderElectionSnapshotRecorded(ds_),
+    {
+        lemma_log_append_only(ds, ds_);
+        lemma_distributed_next_implies_legacy(ds, ds_);
+
+        let server_id = choose |sid: int| {
+            &&& 0 <= sid < ds.num_servers
+            &&& LNext(ds.server_states[sid], ds_.server_states[sid],
+                       ds.server_constants[sid])
+            &&& (forall |j: int| #![trigger ds_.server_states[j]]
+                0 <= j < ds.num_servers && j != sid ==>
+                ds_.server_states[j] == ds.server_states[j])
+        };
+
+        assert forall |i: int|
+            0 <= i < ds_.num_servers
+            && ds_.server_states[i].role is Leader
+        implies {
+            &&& ds_.election_log_len.dom().contains(
+                (i, ds_.server_states[i].current_term))
+            &&& ds_.server_states[i].election_membership_phase
+                == Some(active_membership_phase_from_raft_log(
+                    ds_.server_states[i].log,
+                    ds_.election_log_len[
+                        (i, ds_.server_states[i].current_term)],
+                    MembershipPhase::Stable {
+                        config: ds_.server_constants[i].servers,
+                    },
+                ))
+        } by {
+            assert(LogAppendOnly(ds, ds_));
+            if i != server_id {
+                assert(ds_.server_states[i] == ds.server_states[i]);
+                assert(LeaderElectionSnapshotRecorded(ds));
+            } else {
+                let s = ds.server_states[server_id];
+                let s_ = ds_.server_states[server_id];
+                let constants = ds.server_constants[server_id];
+
+                if s.role is Leader {
+                    // A leader that is still a leader kept its term, its saved
+                    // phase, and its snapshot, and only appended entries — so
+                    // the prefix the phase reads is untouched.
+                    assert(LeaderElectionSnapshotRecorded(ds));
+                    assert(ElectionLogLenBounded(ds));
+                    let snapshot = ds.election_log_len[
+                        (server_id, s.current_term)];
+                    assert(snapshot <= s.log.len());
+                    lemma_equal_committed_raft_prefixes_have_same_active_phase(
+                        s.log,
+                        s_.log,
+                        snapshot,
+                        MembershipPhase::Stable {
+                            config: constants.servers,
+                        },
+                    );
+                } else {
+                    // A promotion records the snapshot and saves exactly the
+                    // phase derived from the whole log it was elected on.
+                    assert(ds_.election_log_len[
+                        (server_id, s_.current_term)] == s.log.len());
+                    assert(s_.log == s.log);
+                }
+            }
+        };
+    }
+
     pub open spec fn NoDivergentUncommittedConfiguration(
         ds: RaftDistributedState,
     ) -> bool {
@@ -3617,6 +3849,10 @@ verus! {
         &&& AppendEntriesLeaderCommitBound(ds)
         &&& UncommittedSuffixesHaveAtMostOneConfiguration(ds)
         &&& AppendEntriesConfigurationBoundaryIntegrity(ds)
+        // Election-snapshot ghost state
+        &&& ElectionLogLenBounded(ds)
+        &&& ElectionLogLenEntryTermBound(ds)
+        &&& LeaderElectionSnapshotRecorded(ds)
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         &&& CurrentTermGeLogTerms(ds)
         &&& LogTermsMonotonic(ds)
@@ -3631,6 +3867,10 @@ verus! {
         requires RaftDistributedInit(ds)
         ensures RaftSafetyInvariant(ds)
     {
+        // Election-snapshot ghost state starts empty and no server is a leader,
+        // so all three of its invariants hold vacuously.
+        assert(ds.election_log_len == Map::<(int, int), int>::empty());
+
         lemma_init_establishes_all_raft_membership_logs_well_formed(ds);
         lemma_init_establishes_configuration_certificate_invariants(ds);
         lemma_init_establishes_log_certificate_coverage(ds);
@@ -15625,6 +15865,11 @@ verus! {
             ds, ds_);
         lemma_uncommitted_suffixes_have_at_most_one_configuration_inductive(
             ds, ds_);
+
+        // Election-snapshot ghost state
+        lemma_election_log_len_bounded_inductive(ds, ds_);
+        lemma_election_log_len_entry_term_bound_inductive(ds, ds_);
+        lemma_leader_election_snapshot_recorded_inductive(ds, ds_);
 
         // Log structure invariants (Phase 34.7 — strict-term transfer)
         lemma_current_term_ge_log_terms_inductive(ds, ds_);
