@@ -77,6 +77,60 @@ verus! {
         RSLSystemState{server_addresses:server_addresses, app:app_states_during_batch[reqs_in_last_batch], requests:requests, replies:replies}
     }
 
+    /// The replies of each batch as a sequence of sequences, so the reply set
+    /// can be built by `.flatten().to_set()` -- finite by construction --
+    /// instead of `Set::new_assuming_finite` (Phase 54.12.c).
+    pub open spec fn ReplySeqFromRequestBatches(batches: Seq<RequestBatch>) -> Seq<Seq<Reply>> {
+        Seq::new(
+            batches.len(),
+            |batch_num: int| Seq::new(
+                batches[batch_num].len(),
+                |req_num: int| GetReplyFromRequestBatches(batches, batch_num, req_num),
+            ),
+        )
+    }
+
+    /// Membership in the reply set, in the indexed form the refinement proof
+    /// reasons with. Harder than the request case: the inner `Seq::new` has to
+    /// be unfolded to relate `rs[i][j]` back to
+    /// `GetReplyFromRequestBatches(batches, i, j)`.
+    pub proof fn lemma_replies_contains(batches: Seq<RequestBatch>, rep: Reply)
+        ensures
+            ReplySeqFromRequestBatches(batches).flatten().to_set().contains(rep)
+                <==> exists |batch_num: int, req_num: int|
+                    0 <= batch_num < batches.len()
+                    && 0 <= req_num < batches[batch_num].len()
+                    && #[trigger] GetReplyFromRequestBatches(batches, batch_num, req_num) == rep,
+    {
+        broadcast use Seq::to_set_ensures;
+        let rs = ReplySeqFromRequestBatches(batches);
+        crate::verus_extra::seq_lib_v::lemma_flatten_contains(rs, rep);
+        assert(rs.len() == batches.len());
+        assert forall |i: int| 0 <= i < rs.len() implies
+            (#[trigger] rs[i]).len() == batches[i].len() by { }
+
+        if rs.flatten().to_set().contains(rep) {
+            let i = choose |i: int| #![trigger rs[i]]
+                0 <= i < rs.len() && rs[i].contains(rep);
+            let j = choose |j: int| #![trigger rs[i][j]]
+                0 <= j < rs[i].len() && rs[i][j] == rep;
+            assert(rs[i][j] == GetReplyFromRequestBatches(batches, i, j));
+            assert(0 <= i < batches.len() && 0 <= j < batches[i].len()
+                && GetReplyFromRequestBatches(batches, i, j) == rep);
+        }
+        if exists |bn: int, rn: int|
+            0 <= bn < batches.len() && 0 <= rn < batches[bn].len()
+            && #[trigger] GetReplyFromRequestBatches(batches, bn, rn) == rep
+        {
+            let (i, j): (int, int) = choose |bn: int, rn: int|
+                0 <= bn < batches.len() && 0 <= rn < batches[bn].len()
+                && #[trigger] GetReplyFromRequestBatches(batches, bn, rn) == rep;
+            assert(rs[i][j] == rep);
+            assert(rs[i].contains(rep));
+            assert(exists |k: int| #![trigger rs[k]] 0 <= k < rs.len() && rs[k].contains(rep));
+        }
+    }
+
     /// Membership in the request set, in the two-level indexed form the
     /// refinement proof reasons with. `Set::new_assuming_finite` gave this
     /// definitionally; with the set built by `flatten().to_set()` it has to be
