@@ -213,10 +213,34 @@ for MODULE in types broadcast acceptor learner executor election proposer replic
 done
 echo ""
 echo "The --preserve flags come from scripts/rsl_merge_preserve.txt. Without them the"
-echo "merge silently replaces hand-verified helper bodies with naive transpiler output,"
-echo "and the parity check above will not notice: it compares \`pub exec fn\` *names*,"
-echo "so a body swap on a private \`fn\` is invisible to it."
+echo "merge silently replaces hand-verified helper bodies with naive transpiler output."
 echo ""
+
+# --- Step 2b: body drift ---
+# The parity check above compares `pub exec fn` *names*, so it cannot see a body
+# being swapped, and misses private `fn`s entirely -- which is exactly how
+# filter_clearnerstate was nearly lost. This compares bodies.
+echo "2b. Checking which bodies a merge would rewrite..."
+echo ""
+DRIFT_OK=true
+for MODULE in broadcast acceptor learner executor election proposer replica; do
+    [ -f "$FRESH_DIR/${MODULE}_gen.rs" ] || continue
+    [ -f "$OUT_DIR/${MODULE}_gen.rs" ] || continue
+    echo "   $MODULE:"
+    if ! python3 "$REPO_ROOT/scripts/check_merge_body_drift.py" \
+        "$FRESH_DIR/${MODULE}_gen.rs" "$OUT_DIR/${MODULE}_gen.rs" \
+        --preserve-list "$REPO_ROOT/scripts/rsl_merge_preserve.txt" \
+        --module "$MODULE" | sed 's/^/  /'; then
+        DRIFT_OK=false
+    fi
+done
+echo ""
+if [ "$DRIFT_OK" = false ]; then
+    echo "   Some bodies would be rewritten by a merge. Decide per function whether it is"
+    echo "   hand-written (add it to scripts/rsl_merge_preserve.txt) or should take the"
+    echo "   fresh output, before merging that module."
+    echo ""
+fi
 echo "After any changes, apply manual patches from transpiler/docs/REGEN_WORKFLOW.md:"
 echo "  - Arc-wrap for proposer_gen.rs (cb42869)"
 echo ""

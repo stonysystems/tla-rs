@@ -14886,6 +14886,30 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [ ] **42.8.c.2.iv.C** The 13 bodies a merge would silently rewrite, now enumerated.
+        `scripts/check_merge_body_drift.py` (new, 2026-08-05) compares function *bodies*
+        rather than `pub exec fn` names, which is what the regen parity check does and why
+        the `filter_clearnerstate` swap was invisible to it. `regenerate_rsl.sh` runs it as
+        step 2b and reports per module. Whitespace-only differences are ignored so `rustfmt`
+        reflow does not cry wolf.
+        Result — this is the real remaining content of 42.8.c, per function instead of per
+        thousand diff lines:
+
+        | module | clean? | bodies a merge would rewrite |
+        |---|---|---|
+        | broadcast | ✅ | — |
+        | acceptor | ✅ | — |
+        | learner | ✅ | `filter_clearnerstate` (protected) |
+        | executor | ❌ | `CExecutorInit`, `clone_next_op_to_execute` |
+        | election | ❌ | `CElectionStateInit`, `CRemoveAllSatisfiedRequestsInSequence`, `CRemoveExecutedRequestBatch`, `clone_requests_received_prev_epochs`, `clone_requests_received_this_epoch` |
+        | proposer | ❌ | `CProposerInit`, `clone_incomplete_batch_timer`, `clone_request_queue` |
+        | replica | ❌ | `CReplicaInit`, `CReplicaNumActions`, `CSchedulerInit` |
+
+        Each is one decision: hand-written (add to `scripts/rsl_merge_preserve.txt`) or take
+        the fresh output. The `clone_*` ones look like the same shape as
+        `filter_clearnerstate` — hand-verified loops the transpiler synthesises naively —
+        so check those first.
+
   - [ ] **42.8.c.2.iv.A** Learner: `filter_clearnerstate` collision. **FIXED 2026-08-05,
         learner merge diff 183 → 119.** The largest single divergence was not a signature
         mismatch at all. The transpiler *synthesises* a `filter_clearnerstate` helper — a
