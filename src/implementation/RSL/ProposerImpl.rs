@@ -105,7 +105,7 @@ impl CProposer{
             next_operation_number_to_propose: self.next_operation_number_to_propose as int,
             received_1b_packets: self.received_1b_packets@.map(|p:CPacket| p.view()),
             highest_seqno_requested_by_client_this_view: Map::new(
-                Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak),
+                self.highest_seqno_requested_by_client_this_view@.dom().map(|k: EndPoint| k@),
                 |ak: AbstractEndPoint| {
                     let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak;
                     self.highest_seqno_requested_by_client_this_view@[k] as int
@@ -129,7 +129,7 @@ impl View for CProposer {
             next_operation_number_to_propose: self.next_operation_number_to_propose as int,
             received_1b_packets: self.received_1b_packets@.map(|p:CPacket| p.view()),
             highest_seqno_requested_by_client_this_view: Map::new(
-                Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k:EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak),
+                self.highest_seqno_requested_by_client_this_view@.dom().map(|k: EndPoint| k@),
                 |ak: AbstractEndPoint| {
                     let k = choose |k: EndPoint| self.highest_seqno_requested_by_client_this_view@.contains_key(k) && k@ == ak;
                     self.highest_seqno_requested_by_client_this_view@[k] as int

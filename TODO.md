@@ -16971,13 +16971,52 @@ value per hour, not by phase number:
             **This generalises past 54.11**: every warning count in Phase 54 is a count over
             *compiled* modules only, and the same is true of the 120 trigger notes.
 
-- [ ] **54.12** The 20 `Set::new_assuming_finite` uses. vstd marks it `#[deprecated]` and
-      says outright it "is dangerous since it assumes the given function describes a finite
-      set" — so unlike the rest of this list these are a real proof gap, not noise. All 20 are
-      the same shape: `Set::new(|x| exists |k| map.contains_key(k) && k@ == x)`, i.e. the image
-      of a finite `HashMap` domain. Discharge finiteness from `map@.dom().finite()` rather than
-      assuming it. One of them comes from `types_transpile.toml:201`, so it is baked into
-      codegen and will regrow on every regeneration until that template changes.
+- [ ] **54.12** The `Set::new_assuming_finite` uses. vstd marks it `#[deprecated]` and says
+      outright it "is dangerous since it assumes the given function describes a finite set" —
+      so unlike the rest of this list these are a real proof gap, not noise.
+
+      Two corrections to the original item. **It is 10 sites, not 20**: Verus reports each
+      once per verification chunk, so the warning count double-counts. And **they are not all
+      the same shape** — only 7 are the "image of a finite `HashMap` domain" idiom; the other
+      3 are set comprehensions over index pairs into a `Seq<RequestBatch>`, which is a
+      different and much harder problem.
+
+      The right replacement for the map-domain idiom is not "discharge finiteness" but
+      "don't create the obligation": `m@.dom().map(|k| k@)` *is* the image of the domain, and
+      `Set::map` is total with a finite result by construction. `Set::new` in this vstd
+      returns `Option<Set<A>>` (`None` when infinite), so going that way would mean an
+      `unwrap` plus a finiteness proof at every site — strictly worse. `Set::lemma_map_contains`
+      is in `group_set_lib_default`, so the membership characterisation the old predicate gave
+      definitionally is still available to proofs.
+
+      - [x] **54.12.a** The 6 hand-written map-domain sites: `types_i.rs` 324/461/570
+            (`abstractify_creplycache`, `abstractify_cvotes`, `abstractify_clearnerstate`) and
+            `ProposerImpl.rs` 108/132. **DONE (2026-08-05)**, `1040 verified, 0 errors` with
+            **no proof breakage at any call site**. One wrinkle worth keeping: for `u64` keys
+            the map function is `|k: u64| k as int`, not `|k: u64| k@` — `u64`'s view is the
+            identity, and the old code only type-checked because `k@ == ak` coerced.
+      - [ ] **54.12.b** `src/generated/RSL/proposer_gen.rs:223`. The template it comes from
+            (`types_transpile.toml`, `LProposer.highest_seqno_requested_by_client_this_view`)
+            **is fixed**, so this clears itself whenever the file is next regenerated.
+            It cannot be regenerated now: fresh transpiler output differs from the checked-in
+            file by ~1200 diff lines (hand-written `skip_functions` bodies and the manual
+            Arc patch), which is exactly the merge stuck at **42.8.c.2.iv**. Blocked there,
+            not here — and per CLAUDE.md the generated file must not be hand-edited.
+      - [ ] **54.12.c** The 3 comprehensions in `refinement_proof/refinement.rs` (64/69 in
+            `ProduceAbstractStateFromBatches`, 82/87 in `ProduceAbstractState` — 4 warnings,
+            3 distinct shapes). These build `{req | ∃ batch_num, req_num. bounds ∧ …}` over a
+            `Seq<RequestBatch>`, i.e. the image of a finite *index* set, and they sit in
+            `pub open spec fn`s that the entire refinement proof unfolds. Needs design, not a
+            substitution — sketch of the two candidates:
+            - `requests` is a flatten: the union of every batch's elements. `flatten_set_seq`
+              and `lemma_flatten_set_seq_spec` already exist in `verus_extra/set_lib_ext_v.rs`
+              and fit directly (`flatten_set_seq(batches.map_values(|b| b.to_set()))`).
+            - `replies` is not a flatten — it is the image of index *pairs* under
+              `GetReplyFromRequestBatches(batches, b, r)`. That needs a finite set of pairs
+              built from `Set::<int>::range`, then `.map`. No `flat_map` in vstd's `Set`, so
+              this likely goes through `flatten_sets` from the same module.
+            Budget this as its own task: changing these definitions ripples through every
+            proof that unfolds them, so it is not a <500-line edit until measured.
 
 - [ ] **54.13** The 30 autoderive-`Clone` warnings (18 "not a copy" + 12 "does not take the
       form Verus expects"). Verus cannot spec the derived impl, so these types silently have

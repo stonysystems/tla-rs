@@ -321,7 +321,7 @@ verus! {
         recommends creplycache_is_abstractable(m)
     {
         Map::new(
-            Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k:EndPoint| #![trigger k@] m@.contains_key(k) && k@ == ak),
+            m@.dom().map(|k: EndPoint| k@),
             |ak: AbstractEndPoint| {
                 let k = choose |k: EndPoint| #![trigger k@] m@.contains_key(k) && k@ == ak;
                 m@[k]@
@@ -458,7 +458,7 @@ verus! {
         recommends cvotes_is_abstractable(m)
     {
         Map::new(
-            Set::new_assuming_finite(|ak: int| exists |k: u64| m@.contains_key(k) && k@ == ak),
+            m@.dom().map(|k: u64| k as int),
             |ak: int| {
                 let k = choose |k: u64| m@.contains_key(k) && k@ == ak;
                 m@[k]@
@@ -567,7 +567,7 @@ verus! {
         recommends clearnerstate_is_abstractable(m)
     {
         Map::new(
-            Set::new_assuming_finite(|ak: int| exists |k: u64| m@.contains_key(k) && k@ == ak),
+            m@.dom().map(|k: u64| k as int),
             |ak: int| {
                 let k = choose |k: u64| m@.contains_key(k) && k@ == ak;
                 m@[k]@
