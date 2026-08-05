@@ -17002,7 +17002,8 @@ value per hour, not by phase number:
             file by ~1200 diff lines (hand-written `skip_functions` bodies and the manual
             Arc patch), which is exactly the merge stuck at **42.8.c.2.iv**. Blocked there,
             not here — and per CLAUDE.md the generated file must not be hand-edited.
-      - [ ] **54.12.c** The 3 comprehensions in `refinement_proof/refinement.rs`.
+      - [x] **54.12.c** The 3 comprehensions in `refinement_proof/refinement.rs` —
+            **DONE (2026-08-05)**, c.1/c.2a/c.2b/c.2c all complete.
             **Measured (2026-08-05), and the earlier sketch was wrong on one point.** It
             proposed `flatten_set_seq` from `verus_extra/set_lib_ext_v.rs` for `requests` and
             a `Set::<int>::range`-based pair set for `replies`. vstd in fact has
@@ -17087,7 +17088,8 @@ value per hour, not by phase number:
             Budget this as its own task: changing these definitions ripples through every
             proof that unfolds them, so it is not a <500-line edit until measured.
 
-- [ ] **54.13** The 30 autoderive-`Clone` warnings (18 "not a copy" + 12 "does not take the
+- [x] **54.13** The 30 autoderive-`Clone` warnings — **DONE (2026-08-05)**, all four
+      sub-items complete; the warning is at 0. (18 "not a copy" + 12 "does not take the
       form Verus expects"). Verus cannot spec the derived impl, so these types silently have
       no `Clone` specification.
 
@@ -17163,7 +17165,8 @@ value per hour, not by phase number:
             All 8 non-RSL protocols regenerated; every `*_types_regen_matches_checked_in`
             test passes.
 
-- [ ] **54.14** The 5 `comparison is useless due to type limits`. The guess was right —
+- [x] **54.14** The 5 `comparison is useless due to type limits` — **DONE (2026-08-05)**,
+      both sub-items complete; the warning is at 0. The guess was right —
       all five are `x >= 0` (or `x <= u64::MAX`) on a `u64` — but checking intent was worth
       it, because the two classes have different causes and only one is a code smell.
 
@@ -17290,6 +17293,22 @@ value per hour, not by phase number:
 
 - [ ] **54.7.d** Annotate the **76 transpiler-emitted notes** on the checked-in artifacts
       with a post-processing pass, instead of waiting for the merge in 42.8.c.
+      **⚠ BLOCKED ON A POLICY DECISION, not on capability (raised 2026-08-05).** As written
+      this item edits files under `src/generated/` with a script. `CLAUDE.md` says: *"Do NOT
+      hand-edit files under `src/generated/`. All code there must be produced by running the
+      transpiler."* The item argues a deterministic, idempotent, CI-diffable pass is not a
+      hand edit, and that argument has force — but the rule says *produced by running the
+      transpiler*, which a post-processing pass is not, and this same action was reverted
+      once already in this phase as a CLAUDE.md violation. Doing it now would be reversing
+      that on my own authority.
+      Also checked, and it removes the obvious escape hatch: **all 7 RSL modules have
+      `skip_functions`** (1/7/2/5/2/3/10), so there is no subset that can be regenerated
+      cleanly to deliver even part of the 76 while 42.8.c is stuck.
+      Options for whoever decides: (a) amend `CLAUDE.md` to permit registered, idempotent
+      post-processing passes run as part of `regenerate_all.sh`, and then do this; (b) leave
+      the 76 notes until 42.8.c lands; (c) narrow 42.8.c to just the modules carrying these
+      notes. Recommend (a) — the pass is verifiable in a way a hand edit is not — but it is a
+      project-policy call, not mine to make silently.
       **Rationale.** 54.7.a already taught codegen to emit these triggers; what is blocked is
       *delivery* — regeneration cannot run until the five `skip_functions` modules can be
       merged, and that is stuck on a codegen bug at 42.8.c.2.iv with no predictable finish.
@@ -17307,16 +17326,24 @@ value per hour, not by phase number:
       so the count would go to zero without the version-stability problem being solved at all.
       That is gaming the metric this phase exists to move.
 
-- [ ] **54.15** Classify the 30 RSL `skip_functions` into **trust boundary** (never generated
-      — `LSchedulerNext`, `ExtractSentPacketsFromIos`, `SpontaneousClock`, `SpontaneousIos`,
-      `LReplicaNextProcessPacket`, roughly 8–10 of them describe the host event loop and IO,
-      which IronFleet also leaves trusted) versus **capability gap** (should be generated but
-      the transpiler cannot yet — the quantifier-defined map constructions like
-      `LAddVoteAndRemoveOldOnes`, the recursive walks, the composite actions that Raft already
-      generates). Right now the two are mixed in one list, which is why "RSL is not fully
-      auto-generated" reads as debt when part of it is design. This classification is also the
-      honest form of that README limitation, and it bounds Phase 42: full regeneration of RSL
-      is not the goal and never was.
+- [x] **54.15** Classify the 30 RSL `skip_functions`. **DONE (2026-08-05)**, written up in
+      `docs/rsl-skip-functions.md`.
+      **The primary split was already recorded in the configs, and it is not the one the item
+      predicted.** Each `*_transpile.toml` has two overlapping lists: `skip_functions` (body
+      not translated) and `no_stub_functions` (not even stubbed, because something else
+      supplies it). **15 of the 30 are in both** — they have proven hand-written
+      implementations in `acceptor_manual.rs` / `executor_manual.rs`. They are not missing
+      code. The other 15 are `skip_functions` only, get a `--proof-fallback` stub, and are the
+      real "not generated" set.
+      After separating those: **trust boundary = 10** (replica's 7 event-loop/dispatch entries
+      plus `ExtractSentPacketsFromIos`, `SpontaneousClock`, `SpontaneousIos`), matching the
+      item's "roughly 8–10" estimate; **capability gap = 8** (proposer ×3, learner ×2,
+      election ×2, broadcast ×1) — not the 20-something a flat reading of the list implies.
+      A third bucket was hypothesised — *stale skips the transpiler could handle today* — and
+      **the evidence killed it**: trial-generating `BoundRequestSequence` from a copy of the
+      config in `/tmp` produces a body that is `assume(false)`. A real gap, not a stale skip.
+      That trial also produced a false negative on two acceptor functions, and chasing *that*
+      is what surfaced the two-list structure the whole classification rests on.
 
 ### Non-goals
 - Reverting Phase 40 — there's no evidence it broke regen. Whether to keep its Arc-wrap codegen is a **separate** decision (see "Phase 40 disposition" below), not gated on Phase 42.
