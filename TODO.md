@@ -39,6 +39,8 @@ Recorded in `docs/rsl-skip-functions.md`.
 **✅ Phase 54 is at ZERO auto-chosen trigger notes (2026-08-05).** 534 → 0, `1048 verified,
 0 errors`, ceiling set to 0 so any new unannotated quantifier fails the build. The last 74
 landed under the policy change below.
+**And zero warnings**: 54.12.b's `Set::new_assuming_finite`, the last one, is gone too — it
+was never going to clear by regeneration, because the function holding it is hand-written.
 
 **🔝 POLICY CHANGE (2026-08-05, by the user): the block on those 74 is lifted.**
 `CLAUDE.md` now scopes the generated-code rule by **provenance rather than path**.
@@ -17677,7 +17679,27 @@ value per hour, not by phase number:
             **no proof breakage at any call site**. One wrinkle worth keeping: for `u64` keys
             the map function is `|k: u64| k as int`, not `|k: u64| k@` — `u64`'s view is the
             identity, and the old code only type-checked because `k@ == ak` coerced.
-      - [ ] **54.12.b** `src/generated/RSL/proposer_gen.rs:223`. The template it comes from
+      - [x] **54.12.b** `src/generated/RSL/proposer_gen.rs`. — **DONE 2026-08-05, and the
+            recorded reason it was blocked was wrong.**
+            This said the template is fixed so "this clears itself whenever the file is next
+            regenerated". Measured: `abstractify_endpoint_seqno_map` is **not in fresh
+            transpiler output at all** (which contains 0 `new_assuming_finite`), so it is a
+            hand-written body and regeneration would never have cleared it. Same error as
+            54.10.b — provenance inferred rather than measured.
+            Fixed directly, which the amended `CLAUDE.md` permits: the domain is the image of
+            the map's keys under `@`, so `m.dom().map(|k: EndPoint| k@)` states it exactly and
+            is finite by construction — no assumption, where `Set::new_assuming_finite` is
+            deprecated as "dangerous since it assumes the given function describes a finite
+            set".
+            **It cost three proof steps, and that is the honest price**: `Set::map` is
+            `closed`, so `lemma_abstractify_endpoint_seqno_insert` lost the membership fact it
+            had been reading straight off the old predicate. It needed
+            `broadcast use vstd::set::Set::lemma_map_contains`, an explicit witness
+            (`choose |ep| old_m.dom().contains(ep) && ep@ == ak`) and carrying that witness
+            across the insert. The `choose` then produced a *new* auto-chosen note, pinned
+            with `#![trigger ep@]` to hold the zero.
+            **The crate is now 0 warnings, 0 trigger notes, `1048 verified, 0 errors`.**
+            *(original item)* The template it comes from
             (`types_transpile.toml`, `LProposer.highest_seqno_requested_by_client_this_view`)
             **is fixed**, so this clears itself whenever the file is next regenerated.
             It cannot be regenerated now: fresh transpiler output differs from the checked-in

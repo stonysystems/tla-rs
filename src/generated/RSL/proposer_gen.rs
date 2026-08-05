@@ -213,7 +213,11 @@ fn hashmap_clear_seqno(hm: &mut HashMap<EndPoint, u64>)
 /// Matches the inline definition in CProposer.view().highest_seqno_requested_by_client_this_view.
 spec fn abstractify_endpoint_seqno_map(m: Map<EndPoint, u64>) -> Map<AbstractEndPoint, int> {
     Map::new(
-        Set::new_assuming_finite(|ak: AbstractEndPoint| exists |k: EndPoint| #![trigger k@] m.contains_key(k) && k@ == ak),
+        // The domain is the image of `m`'s keys under `@`. `Set::map` is total and
+        // finite by construction, so it needs no finiteness assumption -- unlike
+        // `Set::new_assuming_finite`, which vstd deprecates as "dangerous since it
+        // assumes the given function describes a finite set".
+        m.dom().map(|k: EndPoint| k@),
         |ak: AbstractEndPoint| {
             let k = choose |k: EndPoint| #![trigger k@] m.contains_key(k) && k@ == ak;
             m[k] as int
@@ -235,6 +239,10 @@ ensures
     abstractify_endpoint_seqno_map(new_m) =~= abstractify_endpoint_seqno_map(old_m).insert(k@, v as int),
 {
     broadcast use crate::common::native::io_s::axiom_endpoint_view;
+    // `Set::map` is `closed`, so its membership is invisible without this: the
+    // domain is now `m.dom().map(|k| k@)` rather than a `Set::new_assuming_finite`
+    // whose predicate the verifier could read directly.
+    broadcast use vstd::set::Set::lemma_map_contains;
 
     let lhs = abstractify_endpoint_seqno_map(new_m);
     let rhs = abstractify_endpoint_seqno_map(old_m).insert(k@, v as int);
@@ -257,10 +265,16 @@ ensures
         if ak == k@ {
             // k is in new_m, and k@ == ak
             assert(new_m.contains_key(k));
+            assert(new_m.dom().contains(k));
         } else {
-            // ak in abstractify_endpoint_seqno_map(old_m).dom()
-            // So exists ep in old_m with ep@ == ak
-            // ep is also in new_m (since new_m = old_m.insert(k, v) and ep != k)
+            // `ak` is in `abstractify(old_m).dom()`, which is now
+            // `old_m.dom().map(|e| e@)`. Pull a witness out of the map, then
+            // carry it across the insert -- `Set::map` hides the existential,
+            // so both steps have to be named.
+            assert(abstractify_endpoint_seqno_map(old_m).dom().contains(ak));
+            let ep = choose |ep: EndPoint| #![trigger ep@] old_m.dom().contains(ep) && ep@ == ak;
+            assert(old_m.dom().contains(ep) && ep@ == ak);
+            assert(new_m.dom().contains(ep));
         }
     };
 
