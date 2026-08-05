@@ -17076,9 +17076,30 @@ value per hour, not by phase number:
             `#[derive(Clone, Copy)]` makes the clone a copy and Verus can spec it directly.
             Unlike 54.12.b these are non-RSL protocols, which regenerate cleanly.
 
-- [ ] **54.14** The 5 `comparison is useless due to type limits`. Almost certainly `x >= 0`
-      on an unsigned type. Trivial, but each one is a guard that is not guarding anything —
-      check whether the intent was a different bound before deleting.
+- [ ] **54.14** The 5 `comparison is useless due to type limits`. The guess was right —
+      all five are `x >= 0` (or `x <= u64::MAX`) on a `u64` — but checking intent was worth
+      it, because the two classes have different causes and only one is a code smell.
+
+      - [x] **54.14.a** The 3 hand-written: `ElectionImpl.rs:252` (`0 <= lengthBound`),
+            `ProposerImpl.rs:602` (`opn >= 0`), `cconstants.rs:157` (`my_index >= 0`).
+            **DONE (2026-08-05)**, `1041 verified, 0 errors`, warnings 38 → 35.
+            These are *faithful* renderings of int-level spec bounds — `LReplicaConstantsValid`
+            really does say `0 <= my_index`. The conjunct is redundant only because the exec
+            type is `u64`, so deleting it loses nothing and the spec still states the bound;
+            each deletion is marked with a comment saying so, since it otherwise reads like
+            a missing check.
+      - [ ] **54.14.b** The 2 in `src/generated/Raft/raft_gen.rs` (856, 864). Unlike the
+            above these are **dead branches, not dead conjuncts**: the whole condition
+            `(*follower_id) < 0 || (*follower_id) > (u64::MAX as u64)` is constantly false,
+            so its arm — including a `proof { lemma_empty_msg_map(); }` — is unreachable.
+            The source is legitimate: `raft.rs:506` declares `follower_id: int`, where
+            `follower_id < 0 || follower_id > u64::MAX as int` is a real check. The transpiler
+            narrows `int` to `config.int_type` (`u64` here; see `translator/mod.rs:7846` and
+            `:8357`) and then translates the guard mechanically, at which point it cannot fire.
+            Fix belongs in the transpiler — elide a range guard that is vacuous under the
+            narrowed type — and wants a unit test, since it changes emitted output for every
+            protocol. `raft_gen.rs` regenerates cleanly (unlike 54.12.b's `proposer_gen.rs`),
+            so this is unblocked, just not a one-line edit.
 
 - [ ] **54.16** The 5 `broadcast functions should have explicit #[trigger] or #![trigger ...]`.
       Surfaced by 54.10; see the amendment on 54.4. The 5 are the injectivity axioms

@@ -249,7 +249,7 @@ impl CElectionState
     {
         let s_len = s.len() as u64;
         assert(s_len == s@.len() as u64);
-        if 0 <= lengthBound && lengthBound < s_len {
+        if lengthBound < s_len {  // lengthBound: u64, so the spec's `0 <=` is automatic
             let rc = truncate_vec(&s, 0, lengthBound as usize);
             assert(rc@.map(|i, r: CRequest| r@) == BoundRequestSequence(s@.map(|i, r: CRequest| r@), UpperBound::UpperBoundFinite{n: lengthBound as int}));
             rc
