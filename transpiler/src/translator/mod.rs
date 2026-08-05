@@ -195,6 +195,10 @@ pub struct TranslatorConfig {
     /// Exec type names whose functions should be emitted as `impl Type { &mut self }` methods.
     /// When the first input param's exec type matches, the function becomes a method.
     pub mut_self_types: HashSet<String>,
+    /// Spec names of *cross-module* helpers whose exec form is `&mut self`.
+    /// Their state output is mutated in place, so the call site must not bind it
+    /// nor write it back (Phase 42.8.c.2.iv.J.3.a).
+    pub mut_self_helpers: HashSet<String>,
     /// Exec names of functions that will be emitted as `&mut self` methods.
     /// Pre-populated by the caller so that internal dispatch calls can be
     /// converted from `CFoo(var, ...)` to `var.CFoo(...)` during body generation.
@@ -243,6 +247,7 @@ impl Default for TranslatorConfig {
             proven_functions: HashSet::new(),
             arc_wrap_fields: HashMap::new(),
             mut_self_types: HashSet::new(),
+            mut_self_helpers: HashSet::new(),
             method_names: HashSet::new(),
         }
     }
@@ -12782,8 +12787,16 @@ impl Translator {
         let mut output_names: Vec<String> = Vec::new();
 
         // Add field outputs: (output_var, field) -> "var_field"
-        for (var, field) in &info.output_fields {
-            output_names.push(format!("{}_{}", var.trim_end_matches('_'), field));
+        //
+        // Phase 42.8.c.2.iv.J.3.a: a `&mut self` callee mutates the receiver in
+        // place and returns only the value outputs, so binding its state output
+        // would destructure a value that is not there. `CAcceptorProcess1a` is
+        // `(&mut self, &CPacket) -> Vec<CPacket>`, and the pattern must be
+        // `sent_packets`, not `(s_acceptor, sent_packets)`.
+        if !self.config.mut_self_helpers.contains(&info.func_name) {
+            for (var, field) in &info.output_fields {
+                output_names.push(format!("{}_{}", var.trim_end_matches('_'), field));
+            }
         }
 
         // Add direct output params
@@ -12884,13 +12897,42 @@ impl Translator {
 
     /// Get the substitution map from helper call info
     /// Maps "s_.proposer" style access to variable name "s_proposer"
-    fn get_helper_substitutions(info: &HelperCallInfo) -> HashMap<(String, String), String> {
+    fn get_helper_substitutions(&self, info: &HelperCallInfo) -> HashMap<(String, String), String> {
         let mut map = HashMap::new();
+        let mutates_in_place = self.config.mut_self_helpers.contains(&info.func_name);
         for (var, field) in &info.output_fields {
-            let var_name = format!("{}_{}", var.trim_end_matches('_'), field);
+            // For a `&mut self` callee the post-state *is* the receiver, because
+            // the call already mutated it. Pointing the substitution at the input
+            // field makes the struct literal treat it exactly like an unchanged
+            // field (`acceptor: s.acceptor`), which the `&mut self` lift then
+            // renders as a self-assignment -- correct, and with no dangling
+            // reference to a binding that is no longer generated.
+            let var_name = if mutates_in_place {
+                Self::receiver_field_path(info, field)
+            } else {
+                format!("{}_{}", var.trim_end_matches('_'), field)
+            };
             map.insert((var.clone(), field.clone()), var_name);
         }
         map
+    }
+
+    /// `s.acceptor` for a call whose receiver argument is `&s.acceptor`.
+    ///
+    /// Falls back to the field name alone when the receiver is not a plain field
+    /// access, which keeps the substitution well-formed rather than emitting a
+    /// half-built path.
+    fn receiver_field_path(info: &HelperCallInfo, field: &str) -> String {
+        let receiver = info.input_args.first().map(|a| match a {
+            ExecExpr::Unary { op, expr } if op == "&" => expr.as_ref(),
+            other => other,
+        });
+        if let Some(ExecExpr::Field(base, f)) = receiver {
+            if let ExecExpr::Var(v) = base.as_ref() {
+                return format!("{}.{}", v, f);
+            }
+        }
+        field.to_string()
     }
 
     /// Transform a conditional field assignment pattern
@@ -12942,7 +12984,7 @@ impl Translator {
                 let_bindings.push(let_binding);
 
                 // Add substitutions from this helper call (for field accesses)
-                let subs = Self::get_helper_substitutions(&info);
+                let subs = self.get_helper_substitutions(&info);
                 combined_substitutions.extend(subs);
 
                 // Track which direct outputs were bound

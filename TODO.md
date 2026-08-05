@@ -15013,7 +15013,25 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
             So J.3 is blocked on two concrete codegen defects with line numbers, not on
             "structural Phase 48/49 work" and not on proofs — no proof was ever attempted,
             because the file does not reach the verifier. Both are now the leaf tasks.
-      - [ ] **J.3.a** Emit cross-module calls to `mut_self` types in method form.
+      - [x] **J.3.a** Emit cross-module calls to `mut_self` types in method form.
+            **DONE 2026-08-05.** New config key `mut_self_helpers` names spec functions in
+            *other* modules whose exec form is `&mut self`; `mut_self_types` only ever said
+            which of *this* module's functions become methods, and nothing said it of a
+            callee. With `mut_self_helpers = ["LAcceptorProcess1a"]` plus the existing
+            `[method_calls]` entry, `CReplicaNextProcess1a` now emits
+            `let sent_packets = self.acceptor.CAcceptorProcess1a(&received_packet);` with no
+            destructure and no write-back — matching the hand-written checked-in body.
+            Three changes: skip the state output in `generate_helper_let_binding`, point the
+            substitution at the receiver field in `get_helper_substitutions`, and drop the
+            resulting identity assignment in the printer's struct lift.
+            **The third was needed and is not obvious.** The spec literal *does* list
+            `acceptor: s_.acceptor`, so the substitution cannot simply be omitted or the
+            field name goes unresolved. Substituting the receiver path instead yields
+            `self.acceptor = self.acceptor`, a self-move that does not compile — and giving
+            it a `.clone()` would compile while deep-copying the sub-state on every action,
+            which is exactly the cost `&mut self` exists to avoid. So the lift drops identity
+            field assignments. Five tests; the other eight protocols' regen-matches guards
+            are unchanged, so the filter fires only on this new shape.
             **Diagnosed 2026-08-05, and it is two changes, not one.** The call *form* is
             already config: `[method_calls]` in the module TOML — an existing mechanism four
             RSL modules use. Adding

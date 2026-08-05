@@ -318,6 +318,14 @@ impl Printer {
                 // Convert each field to self.field = expr;
                 let assignments: Vec<ExecExpr> = fields
                     .iter()
+                    // Phase 42.8.c.2.iv.J.3.a: `self.acceptor = self.acceptor` is a
+                    // self-move and does not compile. It arises when a field is
+                    // updated by a `&mut self` callee: the call already mutated the
+                    // receiver, so that field's post-state *is* the field and the
+                    // struct literal's entry for it is an identity. A `.clone()`
+                    // would compile but deep-copy the sub-state on every action,
+                    // which is the cost `&mut self` exists to avoid.
+                    .filter(|(name, value)| !Self::is_identity_field_assignment(name, value))
                     .map(|(name, value)| ExecExpr::Binary {
                         lhs: Box::new(ExecExpr::Field(
                             Box::new(ExecExpr::Var("self".to_string())),
@@ -497,6 +505,20 @@ impl Printer {
             }
             // For other expressions (no struct at tail), leave unchanged
             other => other.clone(),
+        }
+    }
+
+    /// Whether assigning `value` to `self.<field>` would be `self.x = self.x`.
+    ///
+    /// Both spellings occur: the substitution machinery carries a field path as a
+    /// single dotted name, while ordinary translation produces a real field access.
+    fn is_identity_field_assignment(field: &str, value: &ExecExpr) -> bool {
+        match value {
+            ExecExpr::Var(v) => v == &format!("self.{}", field),
+            ExecExpr::Field(base, f) => {
+                f == field && matches!(base.as_ref(), ExecExpr::Var(v) if v == "self")
+            }
+            _ => false,
         }
     }
 
@@ -2416,6 +2438,78 @@ mod tests {
         assert!(
             !rendered.contains("Tuple"),
             "`result` still names the pre-lift tuple:\n{rendered}"
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.a. A field updated by a `&mut self` callee has already
+    /// been mutated by the call, so the struct literal's entry for it is an identity
+    /// and must not become an assignment: `self.acceptor = self.acceptor` is a
+    /// self-move that does not compile.
+    #[test]
+    fn test_identity_field_assignment_is_recognised_in_both_spellings() {
+        // dotted name, as the substitution machinery produces
+        assert!(Printer::is_identity_field_assignment(
+            "acceptor",
+            &ExecExpr::Var("self.acceptor".to_string())
+        ));
+        // real field access, as ordinary translation produces
+        assert!(Printer::is_identity_field_assignment(
+            "acceptor",
+            &ExecExpr::Field(
+                Box::new(ExecExpr::Var("self".to_string())),
+                "acceptor".to_string()
+            )
+        ));
+        // a different field is a real assignment
+        assert!(!Printer::is_identity_field_assignment(
+            "acceptor",
+            &ExecExpr::Var("self.learner".to_string())
+        ));
+        // a different receiver is a real assignment
+        assert!(!Printer::is_identity_field_assignment(
+            "acceptor",
+            &ExecExpr::Field(
+                Box::new(ExecExpr::Var("other".to_string())),
+                "acceptor".to_string()
+            )
+        ));
+        // the ordinary unchanged-field form keeps its assignment
+        assert!(!Printer::is_identity_field_assignment(
+            "constants",
+            &ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var("self".to_string())),
+                    "constants".to_string()
+                )),
+                method: "clone".to_string(),
+                args: vec![],
+            }
+        ));
+    }
+
+    #[test]
+    fn test_struct_lift_drops_only_the_identity_assignment() {
+        let st = ExecExpr::Struct {
+            name: "CReplica".to_string(),
+            fields: vec![
+                (
+                    "acceptor".to_string(),
+                    ExecExpr::Var("self.acceptor".to_string()),
+                ),
+                ("learner".to_string(), ExecExpr::Var("other".to_string())),
+            ],
+        };
+        let out = Printer::struct_to_field_assignments(&st, false);
+        let rendered = format!("{:?}", out);
+        assert!(
+            !rendered.contains("self.acceptor"),
+            "the identity assignment must not be emitted: {}",
+            rendered
+        );
+        assert!(
+            rendered.contains("learner"),
+            "a real assignment must survive: {}",
+            rendered
         );
     }
 

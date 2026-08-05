@@ -6807,6 +6807,7 @@ fn convert_file_config(
                 .map(|(k, v)| (k.clone(), v.iter().cloned().collect()))
                 .collect(),
             mut_self_types: file_config.mut_self_types.iter().cloned().collect(),
+            mut_self_helpers: file_config.mut_self_helpers.iter().cloned().collect(),
             method_names: HashSet::new(),
         },
         custom_imports: file_config.output.custom_imports,
