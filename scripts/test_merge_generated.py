@@ -18,6 +18,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import merge_generated as mg  # noqa: E402
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 FRESH = """use vstd::prelude::*;
 use crate::a::B;
@@ -231,6 +233,60 @@ class PreserveOverride(unittest.TestCase):
         # Typing the name wrong must not quietly produce the un-preserved merge.
         with self.assertRaises(ValueError):
             mg.merge(self.FRESH, self.EXISTING, ["helpr"])
+
+
+
+
+class PreserveListIsWiredUp(unittest.TestCase):
+    """Phase 42.8.c.2.iv.A: `--preserve` only helps if something passes it. The
+    list lives in scripts/rsl_merge_preserve.txt and regenerate_rsl.sh turns it
+    into flags; these check the list is real and that every name in it actually
+    exists in the file it claims to protect -- a stale entry would make
+    merge_generated.py raise mid-regeneration."""
+
+    LIST = os.path.join(REPO_ROOT, "scripts", "rsl_merge_preserve.txt")
+
+    def _entries(self):
+        out = []
+        with open(self.LIST) as fh:
+            for line in fh:
+                line = line.split("#", 1)[0].strip()
+                if line:
+                    parts = line.split()
+                    self.assertEqual(
+                        len(parts), 2, f"expected '<module> <fn>', got {line!r}"
+                    )
+                    out.append(tuple(parts))
+        return out
+
+    def test_list_exists_and_covers_the_known_collision(self):
+        self.assertIn(
+            ("learner", "filter_clearnerstate"),
+            self._entries(),
+            "filter_clearnerstate must stay protected: the transpiler synthesises a "
+            "naive version that would replace the hand-verified one",
+        )
+
+    def test_every_named_function_exists_in_its_generated_file(self):
+        for module, fn in self._entries():
+            path = os.path.join(REPO_ROOT, "src", "generated", "RSL", f"{module}_gen.rs")
+            self.assertTrue(os.path.exists(path), f"no generated file for {module}")
+            with open(path) as fh:
+                src = fh.read()
+            _, _, _ = mg.parse_items(src)
+            free, _, _ = mg.parse_items(src)
+            self.assertIn(
+                fn,
+                free,
+                f"{fn} is listed for {module} but is not a free function in "
+                f"{module}_gen.rs -- merge_generated.py would raise on it",
+            )
+
+    def test_regenerate_script_reads_the_list(self):
+        with open(os.path.join(REPO_ROOT, "scripts", "regenerate_rsl.sh")) as fh:
+            script = fh.read()
+        self.assertIn("rsl_merge_preserve.txt", script)
+        self.assertIn("--preserve", script)
 
 
 if __name__ == "__main__":

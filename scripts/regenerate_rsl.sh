@@ -194,8 +194,28 @@ echo "Backup: $BACKUP_DIR"
 echo "Output: $OUT_DIR"
 echo ""
 echo "Modules with skip_functions were NOT replaced (hand-written bodies preserved)."
-echo "To update transpiler-emitted code in those modules, manually diff and merge:"
-echo "  diff $FRESH_DIR/<module>_gen.rs $OUT_DIR/<module>_gen.rs"
+echo "To update transpiler-emitted code in those modules, merge with the tool rather"
+echo "than by hand -- it protects helpers the transpiler would otherwise overwrite:"
+echo ""
+PRESERVE_LIST="$REPO_ROOT/scripts/rsl_merge_preserve.txt"
+for MODULE in types broadcast acceptor learner executor election proposer replica; do
+    [ -f "$FRESH_DIR/${MODULE}_gen.rs" ] || continue
+    FLAGS=""
+    if [ -f "$PRESERVE_LIST" ]; then
+        while read -r PMOD PFN; do
+            case "$PMOD" in ''#''*|"") continue ;; esac
+            [ "$PMOD" = "$MODULE" ] && FLAGS="$FLAGS --preserve $PFN"
+        done < "$PRESERVE_LIST"
+    fi
+    echo "  python3 scripts/merge_generated.py \\"
+    echo "      $FRESH_DIR/${MODULE}_gen.rs $OUT_DIR/${MODULE}_gen.rs$FLAGS \\"
+    echo "      -o $OUT_DIR/${MODULE}_gen.rs && rustfmt --edition 2021 $OUT_DIR/${MODULE}_gen.rs"
+done
+echo ""
+echo "The --preserve flags come from scripts/rsl_merge_preserve.txt. Without them the"
+echo "merge silently replaces hand-verified helper bodies with naive transpiler output,"
+echo "and the parity check above will not notice: it compares \`pub exec fn\` *names*,"
+echo "so a body swap on a private \`fn\` is invisible to it."
 echo ""
 echo "After any changes, apply manual patches from transpiler/docs/REGEN_WORKFLOW.md:"
 echo "  - Arc-wrap for proposer_gen.rs (cb42869)"

@@ -1,0 +1,17 @@
+# Helpers whose EXISTING body must survive a merge, per RSL module.
+#
+# Phase 42.8.c.2.iv.A. The transpiler synthesises some helpers naively -- a `for`
+# loop over `m.iter()` -- where the checked-in file holds a hand-verified `while`
+# loop with invariants and `broadcast use`. Merging without protection replaces
+# the verified body with one that does not verify, and nothing catches it:
+# `regenerate_rsl.sh`'s parity check compares `pub exec fn` *names*, so a body
+# swap on a private `fn` is invisible to it.
+#
+# Consumed by `scripts/regenerate_rsl.sh`, which turns each line into a
+# `merge_generated.py --preserve <fn>` flag. `merge_generated.py` errors on a
+# name it cannot find, so a stale entry here fails loudly rather than silently
+# doing nothing.
+#
+# Format: <module> <free-function-name>, one per line. `#` comments allowed.
+
+learner filter_clearnerstate
