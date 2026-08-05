@@ -277,4 +277,52 @@ verus! {
         ||| exists|src: int, rb: int, rv: Set<Command>| L_HandlePrepareResp(s, s_, c, src, rb, rv)
         ||| exists|src: int| L_HandleAcceptResp(s, s_, c, src)
     }
+
+    /// Local safety invariant: what one replica's acceptor state always satisfies.
+    ///
+    /// **Scope, stated because the obvious reading is wrong.** Phase 51.11 asks
+    /// for *agreement* -- no two recoveries choose conflicting values. That
+    /// quantifies over replicas, and this spec is a single-process projection
+    /// ("this one replica's local state, not `[i \in Server |-> ...]`", `LInit`).
+    /// Agreement is not statable here at all; it belongs to a composed spec, the
+    /// way RSL states its global properties in the refinement layer. What *is*
+    /// statable, and what any agreement proof rests on, is the per-replica
+    /// acceptor discipline below.
+    ///
+    /// `accepted_ballot <= max_seen_ballot` is the Paxos acceptor invariant: a
+    /// replica never accepts at a ballot it has not also promised. It is what
+    /// makes a promise meaningful -- a Prepare response reporting
+    /// `accepted_ballot` is only useful to a proposer because the acceptor
+    /// cannot subsequently accept below `max_seen_ballot`.
+    pub open spec fn LInv(s: LState, c: LConstants) -> bool {
+        &&& s.jepoch >= 0
+        &&& s.max_seen_ballot >= 0
+        &&& s.accepted_ballot >= 0
+        &&& s.accepted_ballot <= s.max_seen_ballot
+    }
+
+    /// The initial state satisfies the invariant.
+    pub proof fn lemma_linit_establishes_linv(s: LState, c: LConstants)
+        requires
+            LInit(s, c),
+        ensures
+            LInv(s, c),
+    {
+    }
+
+    /// The invariant is inductive: every action preserves it.
+    ///
+    /// The two acceptor actions are the only ones that touch the triple. Prepare
+    /// raises `max_seen_ballot` to `req_ballot >= s.max_seen_ballot` and leaves
+    /// `accepted_ballot` alone, so the gap only widens; Accept sets both to the
+    /// same `req_ballot`, so it closes to equality. The five proposer-side
+    /// actions state the triple as an explicit frame condition.
+    pub proof fn lemma_lnext_preserves_linv(s: LState, s_: LState, c: LConstants)
+        requires
+            LInv(s, c),
+            LNext(s, s_, c),
+        ensures
+            LInv(s_, c),
+    {
+    }
 }

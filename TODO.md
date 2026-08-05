@@ -16816,7 +16816,27 @@ epoch; our fixed-membership slice must keep it or cross-recovery agreement break
 
 - [ ] **51.9** (DEFERRED — Phase 52 supersedes) Entry actions: trigger recovery + BeginRecovery. Decided A1 (assumed `base_says_recover` predicate as trigger guard) + B1 (keep all 4 BeginRecovery actions; ignore out-of-slice old_view/new_view/oepoch), but NOT pursued by hand.
 - [ ] **51.10** Complete `LNext` to include the entry actions.
-- [ ] **51.11** Safety invariant: agreement (no two recoveries choose conflicting values); prove it inductive.
+- [x] **51.11.a** Local safety invariant on `LState`, **DONE 2026-08-05**. `LInv` plus
+  `lemma_linit_establishes_linv` and `lemma_lnext_preserves_linv`: `1046 → 1048 verified,
+  0 errors`. The content is the Paxos acceptor discipline —
+  `accepted_ballot <= max_seen_ballot` (a replica never accepts at a ballot it has not also
+  promised), with the three non-negativity facts. Prepare raises `max_seen_ballot` and
+  leaves `accepted_ballot`, so the gap widens; Accept sets both to the same ballot, so it
+  closes to equality; the five proposer actions state the triple as an explicit frame
+  condition. Both proof bodies are empty because Verus discharges them, so
+  **non-vacuity was checked rather than assumed**: tightening the invariant to
+  `accepted_ballot < max_seen_ballot` makes both lemmas fail (`1046 verified, 2 errors`),
+  then reverted.
+- [ ] **51.11.b** Agreement — no two recoveries choose conflicting values. **Not statable on
+  the current spec, and that is the finding rather than a delay.** It quantifies over
+  replicas; `src/protocol/Jetpack/jetpack.rs` is a single-process projection, in its own
+  words "this one replica's local state, not `[i \in Server |-> ...]`". A global property
+  does not project onto a single node — the same reason `t0_01_simple`'s golden omits
+  `PCorrect`, and the reason RSL states its global properties in the refinement layer over
+  a distributed state rather than in the per-replica spec. So agreement needs either a
+  composed spec (a map from replica id to `LState`, plus the network) or the 51.14
+  implementation + refinement layer; it is not a proof that can be added to what exists.
+  51.11.a is the local half, and it is what a composed agreement proof would rest on.
 - [x] **51.12** ~~`finite` invariant for `prep_rcvd`/`accept_rcvd`~~ — **OBSOLETE, closed
   2026-08-05. The premise expired with the vstd upgrade; no invariant is needed.**
   The item's reason was "required by `.len()`-based quorum", which held when a `Set` could
