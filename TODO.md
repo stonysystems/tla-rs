@@ -14886,6 +14886,28 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [ ] **42.8.c.2.iv.E** **Executor is blocked by a transpiler bug, not by the merge.**
+        With the D fixes in, the executor merge produces a file that `rustfmt` parses and
+        that differs by 514 lines — and it still does not compile:
+
+            error[E0308]: mismatched types
+               --> executor_gen.rs:452:12
+            452 |         }; result }
+                |            ^^^^^^ expected `Vec<CPacket>`,
+                |                   found `(CExecutor, Vec<CPacket>)`
+
+        The malformed tail `…; proof { … }; result }` is present in **fresh transpiler
+        output** — checked directly, 3 occurrences — so the merge is not introducing it.
+        The `&mut self` lift (Phase 48) rewrites the *signature* from
+        `-> (CExecutor, Vec<CPacket>)` to `&mut self -> Vec<CPacket>` but leaves `result`
+        bound to the original tuple, so the body returns a pair where the signature promises
+        one element. It affects `CExecutorProcessAppStateRequest` and
+        `CExecutorProcessStartingPhase2` at least.
+        This is the same class `test_mut_self_method_drops_functional_output` guards for
+        `CLearnerForgetDecision`; that guard covers one shape and this one — a body whose
+        tail is `proof { … }; result` — slips past it. **Fix the lift, extend the guard to
+        this shape, then re-attempt executor.** Merge attempt reverted; nothing half-applied.
+
   - [ ] **42.8.c.2.iv.D** Two more merge defects, found by actually attempting the
         executor merge rather than trusting the clean drift report (2026-08-05). Both fixed;
         executor's merge still fails on something else, so it is **not** landed.
