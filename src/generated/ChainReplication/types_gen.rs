@@ -79,7 +79,7 @@ impl View for CState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct CConstants {
     pub node_id: u64,
     pub chain_len: u64,
@@ -131,7 +131,7 @@ impl View for CNodeRole {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CCRMessage {
     Forward {
         value: u64,
@@ -162,3 +162,4 @@ impl View for CCRMessage {
 }
 
 } // verus!
+

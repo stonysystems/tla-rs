@@ -136,7 +136,7 @@ impl View for CNodeState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CElectionMessage {
     Election {
         sender: u64,
@@ -172,3 +172,4 @@ impl View for CElectionMessage {
 }
 
 } // verus!
+

@@ -1351,6 +1351,81 @@ pub fn unreachable_value<T>() -> (result: T)
 }
 
 /// Generate all types from a type registry with all configuration options
+/// Phase 54.13.d: spec type names whose clone is genuinely a copy.
+///
+/// Iterates to a fixpoint, because Copy-ness composes: `CRaftPacket` is Copy
+/// only once `CRaftMessage` is, which is Copy only because its variant payloads
+/// are all `u64`. A struct is Copy when every field is, an enum when every
+/// variant payload is, and scalars are the base case.
+///
+/// Conservative by construction: anything the transpiler cannot see through --
+/// a `Seq`, `Set`, `Map`, or a named type absent from the registry -- is not
+/// Copy, so a type is marked only when it is provably safe to.
+fn compute_copy_spec_types(registry: &TypeRegistry) -> HashSet<String> {
+    fn is_copy_scalar(ty: &crate::ast::Type) -> bool {
+        // Spec scalars: these are what `int`/`nat`/`bool` narrow to in exec code.
+        if matches!(
+            ty,
+            crate::ast::Type::Bool | crate::ast::Type::Int | crate::ast::Type::Nat
+        ) {
+            return true;
+        }
+        match ty {
+            crate::ast::Type::Named(p) => matches!(
+                p.segments.last().map(|s| s.as_str()),
+                Some(
+                    "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
+                        | "isize" | "bool" | "char"
+                )
+            ),
+            _ => false,
+        }
+    }
+
+    fn named(ty: &crate::ast::Type) -> Option<String> {
+        match ty {
+            crate::ast::Type::Named(p) => p.segments.last().cloned(),
+            _ => None,
+        }
+    }
+
+    let mut copy: HashSet<String> = HashSet::new();
+    loop {
+        let before = copy.len();
+        let ok = |ty: &crate::ast::Type, copy: &HashSet<String>| {
+            is_copy_scalar(ty) || named(ty).map(|n| copy.contains(&n)).unwrap_or(false)
+        };
+
+        for (name, enum_def) in &registry.enums {
+            if copy.contains(name) {
+                continue;
+            }
+            let all_copy = enum_def.variants.iter().all(|v| match &v.fields {
+                VariantFields::Unit => true,
+                VariantFields::Tuple(tys) => tys.iter().all(|t| ok(t, &copy)),
+                VariantFields::Struct(fields) => fields.iter().all(|f| ok(&f.ty, &copy)),
+            });
+            if all_copy {
+                copy.insert(name.clone());
+            }
+        }
+
+        for (name, struct_def) in &registry.structs {
+            if copy.contains(name) || struct_def.fields.is_empty() {
+                continue;
+            }
+            if struct_def.fields.iter().all(|f| ok(&f.ty, &copy)) {
+                copy.insert(name.clone());
+            }
+        }
+
+        if copy.len() == before {
+            break;
+        }
+    }
+    copy
+}
+
 pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     let mut generator = TypeGenerator::new(cfg.naming.clone())
         .with_remapping(cfg.remapping.clone())
@@ -1364,19 +1439,22 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
     generator.set_skip_view_types(cfg.skip_view_types.iter().cloned().collect());
     generator.set_generate_clone_up_to_view_simple(cfg.generate_clone_up_to_view_simple);
 
-    // Detect unit enums (all variants have no fields) for Copy derive support
-    let mut unit_enums = HashSet::new();
-    for (name, enum_def) in &cfg.registry.enums {
-        let is_unit = enum_def
-            .variants
-            .iter()
-            .all(|v| matches!(v.fields, VariantFields::Unit));
-        if is_unit {
-            let exec_name = generator.get_exec_type(name);
-            unit_enums.insert(exec_name);
-        }
-    }
-    generator.set_unit_enums(unit_enums);
+    // Phase 54.13.d: work out which generated types can derive `Copy`.
+    //
+    // A `#[derive(Clone)]` whose clone is not a copy is one Verus cannot attach
+    // a specification to -- it warns, and `.clone()` stays opaque to every
+    // proof. When every field bottoms out in a Copy scalar the clone genuinely
+    // *is* a copy, and deriving `Copy` is strictly better than a hand-written or
+    // `external_body` impl: no extra code, nothing added to the trusted base,
+    // and Verus specifies it directly.
+    //
+    // Unit enums are the base case this generalises; they were already handled,
+    // but only they were.
+    let copy_types: HashSet<String> = compute_copy_spec_types(cfg.registry)
+        .iter()
+        .map(|spec_name| generator.get_exec_type(spec_name))
+        .collect();
+    generator.set_unit_enums(copy_types);
     generator.set_arc_wrap_types(cfg.arc_wrap_types.iter().cloned().collect());
     generator.set_arc_wrap_fields(cfg.arc_wrap_fields.clone());
 
@@ -1538,6 +1616,105 @@ pub fn generate_all_types_full(cfg: &TypeGenConfig<'_>) -> GeneratedCode {
 
 #[cfg(test)]
 mod tests {
+
+    /// Phase 54.13.d. The fixpoint must mark what is provably Copy and, more
+    /// importantly, must NOT mark anything it cannot see through -- deriving
+    /// Copy on a type holding a Seq/Set/Map would not compile, and deriving it
+    /// on an unknown named type would be a guess.
+    #[test]
+    fn test_compute_copy_spec_types_fixpoint() {
+        use crate::ast::{Path as AstPath, Type};
+        use crate::types::{EnumDef, FieldDef, StructDef, VariantDef, VariantFields};
+
+        fn named(n: &str) -> Type {
+            Type::Named(AstPath {
+                segments: vec![n.to_string()],
+            })
+        }
+        fn field(name: &str, ty: Type) -> FieldDef {
+            FieldDef {
+                name: name.to_string(),
+                ty,
+                is_public: true,
+            }
+        }
+        fn st(name: &str, fields: Vec<FieldDef>) -> StructDef {
+            StructDef {
+                name: name.to_string(),
+                generics: Default::default(),
+                fields,
+                is_spec: true,
+            }
+        }
+
+        let mut reg = TypeRegistry::new();
+
+        // base: all-scalar struct
+        reg.structs
+            .insert("LLogEntry".into(), st("LLogEntry", vec![
+                field("term", Type::Int),
+                field("value", Type::Nat),
+                field("flag", Type::Bool),
+            ]));
+        // base: unit enum -- the case this generalises
+        reg.enums.insert("LNodeRole".into(), EnumDef {
+            name: "LNodeRole".into(),
+            generics: Default::default(),
+            variants: vec![
+                VariantDef { name: "Primary".into(), fields: VariantFields::Unit },
+                VariantDef { name: "Backup".into(), fields: VariantFields::Unit },
+            ],
+            is_spec: true,
+        });
+        // enum with scalar payloads
+        reg.enums.insert("LRaftMessage".into(), EnumDef {
+            name: "LRaftMessage".into(),
+            generics: Default::default(),
+            variants: vec![
+                VariantDef { name: "Vote".into(), fields: VariantFields::Struct(vec![field("term", Type::Int)]) },
+                VariantDef { name: "Tuple".into(), fields: VariantFields::Tuple(vec![Type::Int]) },
+            ],
+            is_spec: true,
+        });
+        // transitive: Copy only once LRaftMessage is known Copy. This is what
+        // forces the fixpoint -- a single pass over a HashMap could visit it first.
+        reg.structs.insert("LRaftPacket".into(), st("LRaftPacket", vec![
+            field("src", Type::Int),
+            field("msg", named("LRaftMessage")),
+        ]));
+        // not Copy: a Seq field
+        reg.structs.insert("LWithSeq".into(), st("LWithSeq", vec![
+            field("log", Type::Seq(Box::new(Type::Int))),
+        ]));
+        // not Copy: names a type absent from the registry
+        reg.structs.insert("LWithUnknown".into(), st("LWithUnknown", vec![
+            field("x", named("SomethingElse")),
+        ]));
+        // not Copy: one bad field is enough
+        reg.structs.insert("LMixed".into(), st("LMixed", vec![
+            field("ok", Type::Int),
+            field("bad", Type::Seq(Box::new(Type::Int))),
+        ]));
+        // an enum is not Copy if any variant payload is not
+        reg.enums.insert("LBadEnum".into(), EnumDef {
+            name: "LBadEnum".into(),
+            generics: Default::default(),
+            variants: vec![
+                VariantDef { name: "Ok".into(), fields: VariantFields::Unit },
+                VariantDef { name: "Bad".into(), fields: VariantFields::Tuple(vec![Type::Seq(Box::new(Type::Int))]) },
+            ],
+            is_spec: true,
+        });
+
+        let copy = compute_copy_spec_types(&reg);
+
+        for good in ["LLogEntry", "LNodeRole", "LRaftMessage", "LRaftPacket"] {
+            assert!(copy.contains(good), "{good} should be Copy, got {copy:?}");
+        }
+        for bad in ["LWithSeq", "LWithUnknown", "LMixed", "LBadEnum"] {
+            assert!(!copy.contains(bad), "{bad} must not be Copy, got {copy:?}");
+        }
+    }
     use super::*;
     use crate::ast::{Generics, Path};
 

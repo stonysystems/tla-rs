@@ -17067,14 +17067,32 @@ value per hour, not by phase number:
               is exactly what the existing `eq_spec` already treats as this type's identity.
             - `COutstandingOperation` — an enum, so the body matches per variant;
               `CBallot` is `Copy` and the batch has `clone_request_batch_up_to_view`.
-      - [ ] **54.13.d** The 16 in `src/generated/` — **all that remain**, confirmed by
-            re-censusing the log after 54.13.c. The transpiler already emits spec'd
-            `impl Clone` blocks for some types (e.g. `Raft/types_gen.rs` `CState`), so this is
-            extending an existing emitter to the types it currently leaves on `#[derive]`,
-            then regenerating. Note `Raft/types_gen.rs` `CLogEntry` is the one case where the
-            best fix is different and cheaper: its fields are all `u64`, so
-            `#[derive(Clone, Copy)]` makes the clone a copy and Verus can spec it directly.
-            Unlike 54.12.b these are non-RSL protocols, which regenerate cleanly.
+      - [x] **54.13.d** The 16 in `src/generated/`. **DONE (2026-08-05)**,
+            `1041 verified, 0 errors`; the autoderive-`Clone` warning is now **0** and the
+            crate total is 27 → **11**.
+
+            The plan in this item was to extend the emitter to write `impl Clone` blocks for
+            the types it left on `#[derive]`. Classifying the 16 first showed something
+            better: **every one of them bottoms out in `u64`/`bool`**. The `CConstants` of five
+            protocols and Raft's `CLogEntry` are all-scalar structs; the eight message enums
+            carry only scalar payloads; `PrimaryBackup::CState` holds the unit enum
+            `CNodeRole`; `Raft::CRaftPacket` holds `CRaftMessage`. So the clone genuinely
+            *is* a copy in every case, and `#[derive(Clone, Copy)]` beats any impl —
+            no emitted code, nothing added to the trusted base, and Verus specifies it
+            directly. Had this been done as written it would have added 16 `external_body`
+            blocks to the trusted base for no reason.
+
+            Implemented as `compute_copy_spec_types` in `codegen/mod.rs`, generalising the
+            `unit_enums` mechanism that already existed (unit enums were the base case, and
+            only they were handled). It is a **fixpoint**, not a pass: `CRaftPacket` is Copy
+            only once `CRaftMessage` is, and a `HashMap` iteration could visit either first.
+            Conservative by construction — a `Seq`/`Set`/`Map` field, or a named type absent
+            from the registry, means not Copy. The unit test spends four of its eight
+            assertions on those negative cases, since deriving `Copy` where it does not hold
+            would not compile and deriving it on an unknown type would be a guess.
+
+            All 8 non-RSL protocols regenerated; every `*_types_regen_matches_checked_in`
+            test passes.
 
 - [ ] **54.14** The 5 `comparison is useless due to type limits`. The guess was right —
       all five are `x >= 0` (or `x <= u64::MAX`) on a `u64` — but checking intent was worth

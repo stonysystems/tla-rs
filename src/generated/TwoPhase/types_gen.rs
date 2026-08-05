@@ -87,7 +87,7 @@ impl View for CConstants {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum CTPCMessage {
     Prepare,
     PreparedVote {
@@ -183,3 +183,4 @@ impl View for CRMState {
 }
 
 } // verus!
+
