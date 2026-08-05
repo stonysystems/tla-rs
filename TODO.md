@@ -16814,8 +16814,32 @@ epoch; our fixed-membership slice must keep it or cross-recovery agreement break
 
 ### TODO (work queue)
 
-- [ ] **51.9** (DEFERRED — Phase 52 supersedes) Entry actions: trigger recovery + BeginRecovery. Decided A1 (assumed `base_says_recover` predicate as trigger guard) + B1 (keep all 4 BeginRecovery actions; ignore out-of-slice old_view/new_view/oepoch), but NOT pursued by hand.
-- [ ] **51.10** Complete `LNext` to include the entry actions.
+- [x] **51.9 / 51.10** (DEFERRED — Phase 52 supersedes) Entry actions: trigger recovery +
+  BeginRecovery, and completing `LNext`. Decided A1 + B1, but **NOT pursued by hand** —
+  **and the superseding path has now delivered them, verified 2026-08-05.**
+  Running the Phase 52 translator on `transpiler/tests/corpus/tier3/t3_01_jetpack/clean.tla`
+  emits all four BeginRecovery actions that decision B1 called for — `LSendBeginRecovery`,
+  `LHandleBeginRecoveryReq`, `LHandleBeginRecoveryResp`, `LCompleteBeginRecovery` — and the
+  generated `LNext` includes them (`LSendBeginRecovery` under its ballot quantifier,
+  `LCompleteBeginRecovery` directly, the two `Handle*` via `LHandleMessage`). 17 spec
+  functions in all. So these items are done by generation, not by hand, exactly as the
+  deferral intended.
+  The hand-written `src/protocol/Jetpack/jetpack.rs` still has only the 7 actions and still
+  says so in `LNext`'s doc comment. That is correct and stays: 51.1–51.8 are "kept as design
+  reference", not the deliverable.
+- [ ] **V1 corpus guard cannot run on this machine, and passes anyway.**
+  `corpus_v1_guard.rs` asserts every golden passes `verus`, but resolves the binary from
+  `$VERUS_PATH` or `~/verus-src/...`; neither exists here, so it prints
+  `SKIPPING V1: no verus binary found` and **returns green**. The pinned Verus *is* present
+  at `/tmp/verus-test/verus/<pin>/verus-x86-linux/`, but its released `verus` launcher does
+  not run here — `GLIBC_2.39 not found` — which is precisely why `scripts/verify_local.sh`
+  exists and calls `rust_verify` directly instead.
+  So a green local suite does **not** establish V1, and the phase's "all eight goldens pass
+  `verus`, enforced rather than asserted" holds only where a runnable launcher is installed.
+  Fix: resolve the same `rust_verify` + toolchain that `verify_local.sh` uses, so the guard
+  runs here rather than skipping. Not attempted in this iteration — replicating that env
+  inside a Rust test is fiddly and getting it wrong would produce false failures, which is
+  worse than a skip that announces itself.
 - [x] **51.11.a** Local safety invariant on `LState`, **DONE 2026-08-05**. `LInv` plus
   `lemma_linit_establishes_linv` and `lemma_lnext_preserves_linv`: `1046 → 1048 verified,
   0 errors`. The content is the Paxos acceptor discipline —
