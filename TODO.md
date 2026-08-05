@@ -14899,14 +14899,33 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         hand-written work" concept already lives: `--preserve FN` makes the existing file win
         for a named free function. An unknown name is an error, not a silent no-op, so a typo
         cannot quietly yield the un-preserved merge.
-  - [ ] **42.8.c.2.iv.B** Learner: the remaining 119 lines. Now characterised — it *is* the
-        by-value/by-reference drift this item originally recorded, and it is systematic
-        rather than per-function: fresh emits `old_m: CLearnerState` where the checked-in
-        file has `&CLearnerState`, across `lemma_abstractify_clearnerstate_{insert,remove}`,
-        `lemma_abstractify_{empty,singleton}_clearnerstate`, and the four `learnerstate_*`
-        helpers. Plus `CLearnerForgetDecision` (18 lines) and `CLearnerInit` (3).
-        Decide once whether the transpiler should emit `&T` for these, then apply — not
-        eight independent reconciliations.
+  - [ ] **42.8.c.2.iv.B** Learner: the remaining 119 lines. **Diagnosed 2026-08-05 — there
+        is no transpiler defect here, and this item's recorded direction is backwards.**
+
+        The record says *"the fresh `lemma_abstractify_clearnerstate_empty` takes
+        `m: &HashMap<..>` while the preserved caller passes by value"*. Measured, it is the
+        other way round: **fresh emits `m: CLearnerState`, the checked-in file has
+        `&CLearnerState`.**
+
+        The cause is not drift but a deliberate change. `generate_map_proof_lemmas`
+        (`lib.rs:1721`) emits `&ExecType` **only when the field is Arc-wrapped**, so
+        auto-deref from `&Arc<T>` works at call sites — otherwise it emits the bare type.
+        `learner_transpile.toml` says `# Phase 49.2: Arc-wrap removed — direct ownership with
+        &mut self`, from commit `b118f212`. So by-value is now *correct*, and the
+        checked-in `learner_gen.rs` is simply **stale relative to Phase 49.2**. (The
+        transpiler test at `lib.rs:3549` asserting `&CLearnerState` is valid, not stale — it
+        sets up `arc_wrap_fields` explicitly.)
+
+        So the work is not "reconcile eight signatures". It is: accept fresh's by-value
+        signatures and update the preserved bodies that call them. Those bodies live only in
+        `learner_gen.rs` (learner has no `manual_code`), so the policy-clean route is the one
+        that delivered acceptor's notes in 54.7.b — **move learner's two hand-written bodies
+        into a `learner_manual.rs` and set `manual_code`, as acceptor and executor already
+        do, then edit there and regenerate.** That also removes learner from the
+        copy-from-backup path permanently.
+
+        Not yet attributed: `CLearnerForgetDecision` (18 lines) and `CLearnerInit` (3) differ
+        for a separate reason — check before assuming they are the same cause.
 
   - [ ] **42.8.c.2.iv** **Measured 2026-08-05, and two bugs upstream of the recorded cause
         are now fixed.** "No predictable finish" was based on the signature mismatch below.
