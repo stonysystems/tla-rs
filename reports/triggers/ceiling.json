@@ -1,11 +1,11 @@
 {
   "schema": "trigger-ceiling/v1",
   "enforce": true,
-  "max_notes": 120,
+  "max_notes": 77,
   "mode": "selective",
-  "set_on": "2026-08-04",
-  "set_by": "Phase 54.2.b",
-  "rationale": "Measured on the pinned release 0.2026.08.02.b677dd5 over the whole crate (1044 verified, 0 errors) in Verus's default `selective` trigger mode: 534 notes. This is the ceiling, not the goal -- Phase 54 drives it to 0 or to a documented list of deliberate exceptions. Raise it only with a stated reason and a new measurement in `history`, never to make a red build green.",
+  "set_on": "2026-08-05",
+  "set_by": "Phase 42.8.c.2.iv.J.3.d",
+  "rationale": "Measured on the pinned release 0.2026.08.02.b677dd5 over the whole crate (1046 verified, 0 errors) in Verus's default `selective` trigger mode: 77 notes. Tightened from 120 now that all seven RSL modules are reconciled and scripts/classify_trigger_notes.py reports 0 notes deliverable by regeneration -- the codegen pipeline is drained, so the count cannot fall further without either new codegen work (13 notes, emitted but an unhandled shape) or the CLAUDE.md policy decision in 54.7.c/d (64 notes in hand-written or preserved bodies). Leaving it at 120 would have allowed 43 notes of silent regrowth. Raise it only with a stated reason and a new measurement in `history`, never to make a red build green.",
   "history": [
     {
       "date": "2026-08-04",
@@ -48,6 +48,12 @@
       "max_notes": 120,
       "verus": "0.2026.08.02.b677dd5",
       "note": "42.8.a: broadcast_gen regenerated, 2 generated notes removed via the 54.7.a codegen fix"
+    },
+    {
+      "date": "2026-08-05",
+      "max_notes": 77,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "42.8.c.2.iv.J: replica merged, the last of the seven RSL modules. 26 notes removed vs 103, assume(false) held at 0. Baseline refreshed at the same time: the 3 'changed triggers' the old 2026-08-04 baseline reported against proposer_gen.rs are line drift, not instability -- the same three trigger strings, rotated across three asserts that moved when the file was regenerated. Diffing by file:line cannot tell those apart."
     }
   ]
 }

@@ -24,11 +24,19 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 
 ## Current Status (last updated 2026-08-05)
 
-**🔝 CURRENT PRIORITY: Phase 42.8.c.2.iv.J — unblock the replica merge.** Measured below:
-it carries **all 36** of the trigger notes a regeneration can actually deliver, and no other
-module has any. 54.7.c/54.7.d, the previous priority, are **closed under current policy**
-rather than pending — `CLAUDE.md` forecloses both of their proposed answers, and the notes
-they cover (53) are unreachable by regeneration by construction.
+**🔝 42.8.c is COMPLETE (2026-08-05). All seven RSL modules are reconciled.**
+`1046 verified, 0 errors`; trigger notes **534 → 77**; `assume(false)` **0**.
+`scripts/classify_trigger_notes.py` reports **0 notes deliverable by regeneration** — the
+codegen pipeline this phase opened is drained, and the ceiling is tightened to 77 so it
+cannot silently regrow.
+
+**What is left, and it is only two things:**
+- **13 notes** are transpiler output carrying shapes 54.7.a does not annotate. Clearing them
+  needs *new codegen work*, one shape at a time — no dominant pattern remains.
+- **64 notes** sit in `skip_functions` or preserved hand-written bodies. `CLAUDE.md`
+  forecloses both answers 54.7.c/d proposed (editing in place, and extracting to
+  `*_manual.rs`), so the only compliant route is teaching the transpiler to generate those
+  functions. Recorded in `docs/rsl-skip-functions.md`.
 
 **42.8.c final (2026-08-05).** Six of seven RSL modules are reconciled and the crate is at
 `1046 verified, 0 errors`, notes 103, warnings 3.
@@ -43,7 +51,10 @@ they cover (53) are unreachable by regeneration by construction.
 **What the merges did not do is deliver trigger notes: three merges, 103 → 103.** That is
 the measured fact, and it outranks four successive estimates of the deliverable count (80,
 50, 3, 40) — see 54.7.b, where the "3" is retracted as the product of an unsound
-attribution. Notes are not going to fall out of regeneration.
+attribution.
+*(Updated 2026-08-05: the fourth merge — replica — did deliver, 103 → 77. The attribution
+in 54.7.c had said all 36 deliverable notes were in replica and none in the other three,
+which is exactly what the three no-op merges and this one together confirm.)*
 
 **Attribution, measured 2026-08-05 by `scripts/classify_trigger_notes.py` (21 tests).**
 The count has been estimated five times now — 80, 50, 3, 40, 72 — so this one is done by a
@@ -17326,6 +17337,18 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 The other 11 are pinned.** The remaining 2 need the enclosing expression restructured (hoist the inner
 quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
 they are the honest remainder of the "not mechanical" warning in this phase's premise.
+- [x] **54.9.b — ceiling tightened to 77 (2026-08-05)**, from the stale 120 that would have
+      allowed 43 notes of silent regrowth. Verified the guard actually bites: it passes at 77
+      and exits 1 at 78. The baseline was refreshed at the same time, which also resolved the
+      3 "changed triggers (instability)" the old 2026-08-04 baseline reported — those are
+      **line drift, not instability**: the same three trigger strings rotated across three
+      `proposer_gen.rs` asserts that moved when the file was regenerated. Diffing by
+      `file:line` cannot tell a rotation from a re-choice; the multiset is identical.
+      `reports/triggers/exceptions.md` regenerated (13 emitted + 64 preserved = 77), and both
+      of its reason narratives were stale and are corrected: the emitted group no longer
+      claims to be waiting on a blocked merge, and the preserved group no longer recommends
+      extracting to `*_manual.rs` — which `CLAUDE.md` forbids, and which mis-stated the facts
+      by claiming executor already does it (only acceptor does).
 - [x] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
       ceiling, so this does not silently regrow. **Mechanism DONE (2026-08-04); the number
       it enforces arrives with 54.2.b.** `trigger_inventory.py guard` + a new

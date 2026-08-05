@@ -122,25 +122,32 @@ RULES = [
         "hand-written body inside a generated file",
         "These sit in `skip_functions` bodies that regeneration copies through "
         "verbatim, so they are **not transpiler output** and regenerating will "
-        "never change them -- 54.7.b cannot clear these however 42.8.c lands. "
-        "They are still under `src/generated/`, so `CLAUDE.md` forbids editing "
-        "them in place; the real fix is either to teach the transpiler to "
-        "generate the function (see `docs/rsl-skip-functions.md` for which are "
-        "capability gaps versus a deliberate trust boundary) or to move the "
-        "hand-written body out to a `*_manual.rs`, as acceptor and executor "
-        "already do. That is the open 54.7.c decision.",
+        "never change them. 42.8.c has now landed in full -- all seven RSL "
+        "modules are reconciled -- and it cleared none of these, as predicted. "
+        "They are under `src/generated/`, so `CLAUDE.md` forbids editing them in "
+        "place, and it equally forbids the alternative this note used to "
+        "recommend: *\"Do NOT delegate to manual implementation code or use "
+        "'clone-delegate-extract' patterns in generated files.\"* (That "
+        "recommendation also mis-stated the facts -- it claimed acceptor *and "
+        "executor* already extract to a `*_manual.rs`; only acceptor does, and "
+        "`test_manual_code_footprint_is_empty` pins it that way.) The one "
+        "compliant route is to teach the transpiler to generate the function; "
+        "see `docs/rsl-skip-functions.md` for which are capability gaps versus a "
+        "deliberate trust boundary, and 54.7.c/d for the policy question.",
     ),
     (
         lambda e: e["file"].startswith("src/generated/"),
         "generated-emitted",
         "transpiler output",
-        "Cannot be hand-edited (`CLAUDE.md`). The codegen fix for the dominant "
-        "shape landed in 54.7.a, but delivering it needs a regeneration that is "
-        "blocked: the RSL modules with `skip_functions` cannot be replaced "
-        "wholesale, and merging them hits signature mismatches between the "
-        "preserved hand-written bodies and the current emitted API "
-        "(42.8.c.2.iv). Unlike the preserved notes, **these do clear once that "
-        "merge lands**.",
+        "Cannot be hand-edited (`CLAUDE.md`). These used to be the group that "
+        "would clear once the blocked regeneration landed. **It has landed** "
+        "(42.8.c.2.iv.J, 2026-08-05: all seven RSL modules reconciled), and it "
+        "removed the notes whose shape codegen knows -- `scripts/"
+        "classify_trigger_notes.py` now reports **0 deliverable by "
+        "regeneration**. What remains here is transpiler output carrying shapes "
+        "54.7.a does not annotate, so clearing it needs *new codegen work*, not "
+        "another merge. Each is a distinct shape rather than one dominant "
+        "pattern, which is why they were left to last.",
     ),
     (
         lambda e: True,
