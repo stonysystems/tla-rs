@@ -25,9 +25,10 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 ## Current Status (last updated 2026-05-28)
 
 **🔝 CURRENT PRIORITY (2026-08-05): Phase 54 — clear the whole warning + note surface.**
-A full pass on `0.2026.08.02` emits **881 warnings and 120 trigger notes**; drive both to zero
-or to a checked-in exceptions list. Start at **54.10** (one `#![allow(non_snake_case)]` removes
-876 of the 881 warnings, and until it lands the five that matter are buried), then 54.11–54.14,
+A full pass on `0.2026.08.02` emitted **1016 warnings and 120 trigger notes**; drive both to
+zero or to a checked-in exceptions list. **54.10 is done** — the crate-level
+`#![allow(non_snake_case)]` took warnings to **130**, and the per-warning census in that item
+is the remaining backlog. Next is **54.11–54.14 plus the newly visible 54.16**,
 then **54.7.d** — annotate the 76 transpiler-emitted notes with a post-processing pass rather
 than waiting on the 42.8.c merge, which is stuck at 42.8.c.2.iv with no predictable finish.
 **Phase 42 is not the path to this goal**; full regeneration of RSL is not even the right
@@ -16680,6 +16681,12 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       trigger Verus picks silently applies everywhere and can change between releases with
       no diagnostic at all. Finding them needs `--triggers-mode verbose` (1336 notes vs 534).
       The other 3 broadcast axioms (`*_key_model`) already carried `#[trigger]`.
+      **Amended 2026-08-05**: everything above holds — the inner `forall` is pinned and the
+      trigger diff is genuinely 0/0 — but 54.4 did *not* silence Verus's own
+      "broadcast functions should have explicit `#[trigger]`" warning, which still fires on
+      exactly these 5. That warning is about a different obligation (the trigger for the
+      broadcast lemma itself, not for the quantifier inside its ensures) and was invisible
+      under the 886 `non_snake_case` warnings until 54.10 cleared them. Tracked as **54.16**.
 - [x] **54.4.a** Timing methodology corrected — the 54.3 gate was measuring noise.
       Chasing a flagged module (`implementation::RSL::replicaimpl_no_receive_clock`, +30%)
       to its cause showed the **baseline itself was a single lucky run**: at the very commit
@@ -16869,12 +16876,27 @@ A full pass on `0.2026.08.02` currently emits **881 warnings and 120 trigger not
 goal is to get both to zero, or to a checked-in list of deliberate exceptions. Ordered by
 value per hour, not by phase number:
 
-- [ ] **54.10** One crate-level `#![allow(non_snake_case)]` in `src/lib.rs`. Kills **876 of
-      the 881 warnings** — 690 function + 99 method + 45 module + 30 variable + 12 field.
-      Do not rename: `LAcceptorProcess1a`, `CMessage`, `LReplicaConstants` deliberately mirror
-      the IronFleet Dafny identifiers, and that correspondence is what makes the port
-      auditable against the original. Ten minutes, and it is the precondition for everything
-      below — the five warnings that actually matter are currently buried under 876 that do not.
+- [x] **54.10** One crate-level `#![allow(non_snake_case)]` in `src/lib.rs`.
+      **DONE (2026-08-05).** Do not rename: `LAcceptorProcess1a`, `CMessage`,
+      `LReplicaConstants` deliberately mirror the IronFleet Dafny identifiers, and that
+      correspondence is what makes the port auditable against the original. The attribute
+      carries that rationale as a comment so the next reader does not "fix" it.
+      `1045 verified, 0 errors`; **1016 → 130 warning lines**.
+
+      Measured census before (a full pass emits more than the 881 this item was written
+      from — that figure came from a partial log): **886 non_snake_case** = 699 function
+      + 99 method + 46 module + 30 variable + 12 field. Exact remaining 130, which is the
+      real backlog for 54.11–54.14 and is now readable:
+
+      | count | warning | item |
+      |---|---|---|
+      | 68 | deprecated `.finite()` — "Every Set is always finite" | 54.11 |
+      | 20 | `Set::new_assuming_finite` | 54.12 |
+      | 18 | autoderive `Clone` "not a copy" | 54.13 |
+      | 12 | autoderive `Clone` "does not take the form Verus expects" | 54.13 |
+      |  5 | comparison is useless due to type limits | 54.14 |
+      |  5 | broadcast functions should have explicit `#[trigger]` | **54.16** |
+      |  2 | rustc's own "N warnings emitted" trailers | — |
 
 - [ ] **54.11** The 68 `use of deprecated method: Every Set is always finite, so this is
       always true` warnings. These are `.finite()` calls that the `0.2026.08` `Set` change
@@ -16897,6 +16919,21 @@ value per hour, not by phase number:
 - [ ] **54.14** The 5 `comparison is useless due to type limits`. Almost certainly `x >= 0`
       on an unsigned type. Trivial, but each one is a guard that is not guarding anything —
       check whether the intent was a different bound before deleting.
+
+- [ ] **54.16** The 5 `broadcast functions should have explicit #[trigger] or #![trigger ...]`.
+      Surfaced by 54.10; see the amendment on 54.4. The 5 are the injectivity axioms
+      `axiom_endpoint_view` (`io_s.rs:123`), `axiom_cmessage_view`/`axiom_cpacket_view`
+      (`cmessage.rs:222,294`), `axiom_cvote_view`/`axiom_clearner_tuple_view`
+      (`types_i.rs:377,550`). All five have the shape
+      `ensures forall |a, b| #![trigger a@, b@] a@ == b@ ==> a == b`, and all five still warn;
+      the 3 `*_key_model` axioms, whose ensures is unquantified with an inline `#[trigger]`,
+      do not. So Verus's check wants the trigger on the *ensures term itself* and does not
+      credit one attached to a nested binder. Highest-stakes item left in the warning
+      backlog: a broadcast axiom is in scope for every proof in the crate, so an
+      un-pinned one applies crate-wide on whatever term Verus picks. Fix is likely to lift
+      the binder into the function's own parameters (the vstd idiom) — confirm against vstd
+      before rewriting, and re-run the trigger diff, since changing a broadcast trigger can
+      move proofs anywhere.
 
 - [ ] **54.7.d** Annotate the **76 transpiler-emitted notes** on the checked-in artifacts
       with a post-processing pass, instead of waiting for the merge in 42.8.c.
