@@ -386,6 +386,393 @@ verus! {
             }
     }
 
+    /// A leader whose log reaches a certified log entry contains it.
+    ///
+    /// Works for either payload kind. Global Configuration Leader Completeness
+    /// supplies every earlier membership boundary — their terms are capped by
+    /// the target's, which is below the leader's — so the kind-neutral phase
+    /// core applies, and the saved election phase is within one legal step of
+    /// the governing phase in one direction or the other.
+    pub proof fn lemma_leader_holds_certified_log_entry_within_log(
+        ds: RaftDistributedState,
+        log_index: int,
+        leader_id: int,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogCommitCertificatesValid(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            AllRaftMembershipLogsWellFormed(ds),
+            UncommittedSuffixesHaveAtMostOneConfiguration(ds),
+            ElectionLogLenBounded(ds),
+            ElectionLogLenEntryTermBound(ds),
+            LeaderElectionSnapshotRecorded(ds),
+            LogTermsMonotonic(ds),
+            CertifiedConfigurationLeaderCompleteness(ds),
+            CertifiedLogEntryTransfersToVotedLeader(ds),
+            ds.log_commit_certificates.dom().contains(log_index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[log_index].entry.term,
+            forall |a: int, e: int|
+                #![trigger ds.server_constants[a], ds.server_constants[e]]
+                0 <= a < ds.num_servers && 0 <= e < ds.num_servers
+                ==> ds.server_constants[a].servers
+                    == ds.server_constants[e].servers,
+            ds.server_states[leader_id].commit_index <= log_index,
+            log_index <= ds.server_states[leader_id].log.len(),
+        ensures
+            ds.server_states[leader_id].log.len() > log_index,
+            ds.server_states[leader_id].log[log_index]
+                == ds.log_commit_certificates[log_index].entry,
+    {
+        let certificate = ds.log_commit_certificates[log_index];
+        let committer = certificate.committer;
+        let leader = ds.server_states[leader_id];
+        let constants = ds.server_constants[leader_id];
+        let initial_phase = MembershipPhase::Stable {
+            config: constants.servers,
+        };
+        let key: (int, int) = (leader_id, leader.current_term);
+
+        assert(LogCommitCertificatesValid(ds));
+        assert(0 <= committer < ds.num_servers);
+        assert(0 <= log_index < ds.server_states[committer].commit_index);
+        assert(ds.server_states[committer].commit_index
+            <= ds.server_states[committer].log.len());
+        assert(certificate.governing_phase
+            == active_membership_phase_from_raft_log(
+                ds.server_states[committer].log,
+                log_index,
+                initial_phase,
+            ));
+
+        // Every certified boundary below the target is older than it, hence
+        // older than the leader's term, hence held by the leader.
+        assert forall |m: int|
+            0 <= m < log_index
+            && ds.configuration_commit_certificates.dom().contains(m)
+            implies ds.server_states[leader_id].log.len() > m
+                && ds.server_states[leader_id].log[m]
+                    == ds.configuration_commit_certificates[m].entry
+        by {
+            lemma_configuration_certificate_term_below_log_certificate(
+                ds, log_index, m);
+            assert(CertifiedConfigurationLeaderCompleteness(ds));
+        };
+
+        lemma_governing_phase_progresses_from_cut_generic(
+            ds,
+            log_index,
+            committer,
+            certificate.governing_phase,
+            leader_id,
+            log_index,
+        );
+
+        assert(LeaderElectionSnapshotRecorded(ds));
+        assert(ds.election_log_len.dom().contains(key));
+        let snapshot = ds.election_log_len[key];
+        assert(ElectionLogLenBounded(ds));
+        assert(0 <= snapshot <= leader.log.len());
+
+        let saved_phase = active_membership_phase_from_raft_log(
+            leader.log, snapshot, initial_phase);
+        let committed_phase = active_membership_phase_from_raft_log(
+            leader.log, leader.commit_index, initial_phase);
+        let cut_phase = active_membership_phase_from_raft_log(
+            leader.log, log_index, initial_phase);
+        assert(leader.election_membership_phase == Some(saved_phase));
+
+        assert(AllRaftMembershipLogsWellFormed(ds));
+        assert(UncommittedSuffixesHaveAtMostOneConfiguration(ds));
+        assert forall |a: int, b: int|
+            leader.commit_index <= a < leader.log.len()
+            && leader.commit_index <= b < leader.log.len()
+            && leader.log[a].payload is Configuration
+            && leader.log[b].payload is Configuration
+            implies a == b
+        by {
+            assert(uncommitted_suffix_has_at_most_one_configuration(
+                leader.log, leader.commit_index));
+        };
+
+        if leader.commit_index <= snapshot {
+            if certificate.governing_phase == committed_phase {
+                lemma_bounded_boundary_interval_progresses_legally(
+                    leader.log, leader.commit_index, snapshot, initial_phase);
+                lemma_certified_log_entry_present_when_phases_are_related(
+                    ds, log_index, leader_id, saved_phase);
+            } else {
+                assert(certificate.governing_phase == cut_phase);
+                if log_index <= snapshot {
+                    lemma_bounded_boundary_interval_progresses_legally(
+                        leader.log, log_index, snapshot, initial_phase);
+                    lemma_certified_log_entry_present_when_phases_are_related(
+                        ds, log_index, leader_id, saved_phase);
+                } else {
+                    lemma_bounded_boundary_interval_progresses_legally(
+                        leader.log, snapshot, log_index, initial_phase);
+                    lemma_certified_log_entry_present_in_one_step_stale_leader(
+                        ds, log_index, leader_id, saved_phase);
+                }
+            }
+        } else {
+            lemma_older_log_certificate_makes_snapshot_to_commit_configuration_free(
+                ds, log_index, leader_id);
+            assert(saved_phase == committed_phase);
+
+            if certificate.governing_phase == committed_phase {
+                lemma_phase_progression_reflexive(saved_phase);
+                lemma_certified_log_entry_present_when_phases_are_related(
+                    ds, log_index, leader_id, saved_phase);
+            } else {
+                assert(certificate.governing_phase == cut_phase);
+                lemma_bounded_boundary_interval_progresses_legally(
+                    leader.log, leader.commit_index, log_index, initial_phase);
+                lemma_certified_log_entry_present_in_one_step_stale_leader(
+                    ds, log_index, leader_id, saved_phase);
+            }
+        }
+    }
+
+    /// All-entry analogue of the snapshot-to-commit Configuration-free helper.
+    ///
+    /// A Configuration between a leader's election snapshot and its commit
+    /// index would be committed, hence certified, hence — by the term ordering
+    /// against the target log certificate — no newer than the target entry.
+    /// But sitting at or beyond the snapshot it must carry at least the
+    /// leader's own term, which strictly exceeds the target's. Contradiction.
+    pub proof fn lemma_older_log_certificate_makes_snapshot_to_commit_configuration_free(
+        ds: RaftDistributedState,
+        log_index: int,
+        leader_id: int,
+    )
+        requires
+            LogCommitCertificatesValid(ds),
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            CommitIndexBounded(ds),
+            ElectionLogLenBounded(ds),
+            ElectionLogLenEntryTermBound(ds),
+            LeaderElectionSnapshotRecorded(ds),
+            LogTermsMonotonic(ds),
+            ds.log_commit_certificates.dom().contains(log_index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[log_index].entry.term,
+            ds.server_states[leader_id].commit_index <= log_index,
+        ensures
+            forall |j: int|
+                #![trigger ds.server_states[leader_id].log[j]]
+                ds.election_log_len[
+                    (leader_id, ds.server_states[leader_id].current_term)]
+                    <= j < ds.server_states[leader_id].commit_index
+                ==> !(ds.server_states[leader_id].log[j].payload
+                    is Configuration),
+            ds.election_log_len[
+                (leader_id, ds.server_states[leader_id].current_term)]
+                <= ds.server_states[leader_id].commit_index
+            ==> active_membership_phase_from_raft_log(
+                    ds.server_states[leader_id].log,
+                    ds.election_log_len[
+                        (leader_id,
+                         ds.server_states[leader_id].current_term)],
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[leader_id].servers,
+                    },
+                ) == active_membership_phase_from_raft_log(
+                    ds.server_states[leader_id].log,
+                    ds.server_states[leader_id].commit_index,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[leader_id].servers,
+                    },
+                ),
+    {
+        let leader = ds.server_states[leader_id];
+        let initial_phase = MembershipPhase::Stable {
+            config: ds.server_constants[leader_id].servers,
+        };
+        let key: (int, int) = (leader_id, leader.current_term);
+
+        assert(LeaderElectionSnapshotRecorded(ds));
+        assert(ds.election_log_len.dom().contains(key));
+        let snapshot = ds.election_log_len[key];
+        assert(ElectionLogLenBounded(ds));
+        assert(0 <= snapshot <= leader.log.len());
+        assert(CommitIndexBounded(ds));
+
+        assert forall |j: int|
+            snapshot <= j < leader.commit_index
+            implies !(leader.log[j].payload is Configuration)
+        by {
+            if leader.log[j].payload is Configuration {
+                assert(0 <= j);
+                assert(j < log_index);
+                assert(j < leader.log.len());
+                lemma_committed_prefix_configuration_is_certified(
+                    ds, leader_id, j);
+                lemma_configuration_certificate_term_below_log_certificate(
+                    ds, log_index, j);
+
+                assert(ElectionLogLenEntryTermBound(ds));
+                assert(ds.election_log_len[key] <= j);
+                assert(ds.election_log_len.dom().contains(key));
+                assert(0 <= key.0 < ds.num_servers);
+                assert(ds.server_states[key.0].log[j] == leader.log[j]);
+                assert(ds.server_states[key.0].log[j].term >= key.1);
+                assert(leader.log[j].term >= leader.current_term);
+                assert(false);
+            }
+        };
+
+        if snapshot <= leader.commit_index {
+            lemma_configuration_free_interval_preserves_active_phase(
+                leader.log,
+                snapshot,
+                leader.commit_index,
+                initial_phase,
+            );
+        }
+    }
+
+    /// All-entry analogue of
+    /// `lemma_certified_boundary_present_when_phases_are_related`: when the
+    /// certificate's governing phase legally progresses to the leader's saved
+    /// election phase, the quorums overlap and the entry transfers in.
+    pub proof fn lemma_certified_log_entry_present_when_phases_are_related(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        election_phase: MembershipPhase,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogCommitCertificatesValid(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CertifiedLogEntryTransfersToVotedLeader(ds),
+            ds.log_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[index].entry.term,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(election_phase),
+            is_legal_phase_progression(
+                ds.log_commit_certificates[index].governing_phase,
+                election_phase,
+            ),
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.log_commit_certificates[index].entry,
+    {
+        let certificate = ds.log_commit_certificates[index];
+
+        assert(has_recorded_election_quorum(ds.server_states[leader_id]));
+        assert(is_quorum_for_phase(
+            ds.server_states[leader_id].votes_granted,
+            election_phase,
+        ));
+        assert(LogCommitCertificatesValid(ds));
+        assert(is_quorum_for_phase(
+            certificate.quorum,
+            certificate.governing_phase,
+        ));
+
+        lemma_legal_phase_progression_quorums_intersect(
+            certificate.quorum,
+            ds.server_states[leader_id].votes_granted,
+            certificate.governing_phase,
+            election_phase,
+        );
+
+        let overlap_voter = choose |server: int|
+            certificate.quorum.contains(server)
+            && ds.server_states[leader_id].votes_granted.contains(server);
+
+        assert(ds.server_states[leader_id].votes_granted
+            .contains(overlap_voter));
+        assert(VotesGrantedAreServers(ds));
+        assert(0 <= overlap_voter < ds.num_servers);
+        assert(CertifiedLogEntryTransfersToVotedLeader(ds));
+    }
+
+    /// Stale direction of the same argument: quorum overlap is symmetric, so a
+    /// leader elected under a phase the certificate's governing phase legally
+    /// progresses *from* is covered too.
+    pub proof fn lemma_certified_log_entry_present_in_one_step_stale_leader(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        election_phase: MembershipPhase,
+    )
+        requires
+            WellFormedRaftDistributed(ds),
+            LogCommitCertificatesValid(ds),
+            LeaderHasRecordedElectionQuorum(ds),
+            VotesGrantedAreServers(ds),
+            CertifiedLogEntryTransfersToVotedLeader(ds),
+            ds.log_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_states[leader_id].role is Leader,
+            ds.server_states[leader_id].current_term
+                > ds.log_commit_certificates[index].entry.term,
+            ds.server_states[leader_id].election_membership_phase
+                == Some(election_phase),
+            is_legal_phase_progression(
+                election_phase,
+                ds.log_commit_certificates[index].governing_phase,
+            ),
+        ensures
+            ds.server_states[leader_id].log.len() > index,
+            ds.server_states[leader_id].log[index]
+                == ds.log_commit_certificates[index].entry,
+    {
+        let certificate = ds.log_commit_certificates[index];
+
+        assert(has_recorded_election_quorum(ds.server_states[leader_id]));
+        assert(is_quorum_for_phase(
+            ds.server_states[leader_id].votes_granted,
+            election_phase,
+        ));
+        assert(LogCommitCertificatesValid(ds));
+        assert(is_quorum_for_phase(
+            certificate.quorum,
+            certificate.governing_phase,
+        ));
+
+        lemma_legal_phase_progression_quorums_intersect(
+            ds.server_states[leader_id].votes_granted,
+            certificate.quorum,
+            election_phase,
+            certificate.governing_phase,
+        );
+
+        let overlap_voter = choose |server: int|
+            ds.server_states[leader_id].votes_granted.contains(server)
+            && certificate.quorum.contains(server);
+
+        assert(ds.server_states[leader_id].votes_granted
+            .contains(overlap_voter));
+        assert(VotesGrantedAreServers(ds));
+        assert(0 <= overlap_voter < ds.num_servers);
+        assert(CertifiedLogEntryTransfersToVotedLeader(ds));
+    }
+
     /// Certificate-kind-neutral phase core.
     ///
     /// Takes the target's committer and governing phase as parameters instead
