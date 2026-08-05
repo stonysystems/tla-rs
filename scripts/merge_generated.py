@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Merge fresh transpiler output with preserved hand-written bodies (Phase 42.8.c).
+
+`scripts/regenerate_rsl.sh` can only *replace* a generated file wholesale. Five
+of the eight RSL modules carry `skip_functions` — functions the transpiler
+deliberately does not emit, whose hand-written bodies live in the checked-in
+file — so the script keeps those files untouched and merely reports. The
+consequence is that **no codegen improvement can reach them**: the Phase 54.7.a
+trigger fix, the Phase 42.8.b import fix, and anything after them stop at the
+three modules that happen to have no hand-written content.
+
+This tool closes that gap. It takes the fresh output as the source of truth for
+everything the transpiler emits, and splices back exactly the items the
+transpiler did not emit:
+
+    fresh output              +  items only in the existing file
+    (all codegen improvements)   (skip_functions bodies, helpers, their imports)
+
+Placement matters: a preserved item may be a free function or a method inside
+an `impl` block, and putting a method at top level produces `&mut self` outside
+an impl, which does not compile. Items are therefore matched to the impl they
+came from, and free functions are emitted before the impls.
+
+Usage
+-----
+    scripts/merge_generated.py fresh.rs existing.rs -o merged.rs
+    scripts/merge_generated.py fresh.rs existing.rs --report
+"""
+
+import argparse
+import os
+import re
+import sys
+from collections import OrderedDict
+
+FN_RE = re.compile(
+    r"^(?P<indent>\s*)(?:pub\s+)?(?:open\s+|closed\s+)?"
+    r"(?:exec\s+|proof\s+|spec\s+)?fn\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)"
+)
+IMPL_RE = re.compile(r"^\s*impl(?:\s*<[^>]*>)?\s+(?P<name>[A-Za-z_][A-Za-z_0-9]*)")
+ATTR_RE = re.compile(r"^\s*(#\[|#!\[|///|//!)")
+IMPORT_RE = re.compile(r"^\s*(pub\s+)?use\s+")
+
+
+def _block_end(lines, start):
+    """Index of the line closing the brace-delimited block opened at `start`."""
+    depth = 0
+    seen = False
+    for i in range(start, len(lines)):
+        line = lines[i]
+        # Strip line comments so a `{` in a comment does not shift the depth.
+        code = re.sub(r"//.*$", "", line)
+        depth += code.count("{") - code.count("}")
+        if "{" in code:
+            seen = True
+        if seen and depth <= 0:
+            return i
+    return len(lines) - 1
+
+
+def _leading_attrs(lines, idx):
+    """Start index of the doc comments / attributes attached above `idx`."""
+    start = idx
+    while start > 0 and ATTR_RE.match(lines[start - 1]):
+        start -= 1
+    return start
+
+
+def parse_items(text):
+    """Top-level functions and impl-block methods, with their source text.
+
+    Returns (free_fns, impls, imports) where `impls` maps an impl name to an
+    OrderedDict of method name -> source text.
+    """
+    lines = text.split("\n")
+    free_fns = OrderedDict()
+    impls = OrderedDict()
+    imports = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if IMPORT_RE.match(line):
+            imports.append(line.strip())
+            i += 1
+            continue
+
+        impl_m = IMPL_RE.match(line)
+        if impl_m and "{" in line:
+            end = _block_end(lines, i)
+            methods = OrderedDict()
+            j = i + 1
+            while j < end:
+                fn_m = FN_RE.match(lines[j])
+                if fn_m:
+                    fn_start = _leading_attrs(lines, j)
+                    fn_end = _block_end(lines, j)
+                    methods[fn_m.group("name")] = "\n".join(lines[fn_start : fn_end + 1])
+                    j = fn_end + 1
+                    continue
+                j += 1
+            impls.setdefault(impl_m.group("name"), OrderedDict()).update(methods)
+            i = end + 1
+            continue
+
+        fn_m = FN_RE.match(line)
+        if fn_m and not line.startswith(" "):
+            fn_start = _leading_attrs(lines, i)
+            fn_end = _block_end(lines, i)
+            free_fns[fn_m.group("name")] = "\n".join(lines[fn_start : fn_end + 1])
+            i = fn_end + 1
+            continue
+        i += 1
+
+    return free_fns, impls, imports
+
+
+def plan_merge(fresh_text, existing_text):
+    """What would be carried over from `existing` into `fresh`."""
+    f_free, f_impls, f_imports = parse_items(fresh_text)
+    e_free, e_impls, e_imports = parse_items(existing_text)
+
+    carried_free = [n for n in e_free if n not in f_free]
+    carried_methods = OrderedDict()
+    for impl_name, methods in e_impls.items():
+        missing = [m for m in methods if m not in f_impls.get(impl_name, {})]
+        if missing:
+            carried_methods[impl_name] = missing
+    carried_imports = [
+        imp
+        for imp in e_imports
+        if imp not in f_imports and _import_path(imp) not in map(_import_path, f_imports)
+    ]
+    dropped_impls = [n for n in carried_methods if n not in f_impls]
+    return OrderedDict(
+        [
+            ("carried_free_fns", carried_free),
+            ("carried_methods", carried_methods),
+            ("carried_imports", carried_imports),
+            ("impls_absent_from_fresh", dropped_impls),
+        ]
+    )
+
+
+def _import_path(imp):
+    return re.sub(r"\s+", "", imp).rstrip(";")
+
+
+def merge(fresh_text, existing_text):
+    """Fresh output with the existing file's unemitted items spliced back."""
+    plan = plan_merge(fresh_text, existing_text)
+    if plan["impls_absent_from_fresh"]:
+        raise ValueError(
+            "cannot place preserved methods: fresh output has no impl block for "
+            + ", ".join(plan["impls_absent_from_fresh"])
+        )
+
+    e_free, e_impls, _ = parse_items(existing_text)
+    lines = fresh_text.split("\n")
+
+    # Methods go at the end of the impl block they came from, innermost-last so
+    # earlier insertions do not shift later line numbers.
+    insertions = []
+    for impl_name, method_names in plan["carried_methods"].items():
+        for i, line in enumerate(lines):
+            m = IMPL_RE.match(line)
+            if m and m.group("name") == impl_name and "{" in line:
+                end = _block_end(lines, i)
+                body = "\n".join(
+                    "\n" + e_impls[impl_name][name] for name in method_names
+                )
+                insertions.append((end, body))
+                break
+    for at, body in sorted(insertions, key=lambda x: -x[0]):
+        lines.insert(at, body)
+
+    text = "\n".join(lines)
+
+    # Free functions go before the first impl, or at the end of the verus block.
+    if plan["carried_free_fns"]:
+        block = "\n".join("\n" + e_free[name] for name in plan["carried_free_fns"])
+        m = re.search(r"^impl\b", text, re.M)
+        if m:
+            text = text[: m.start()] + block.strip("\n") + "\n\n" + text[m.start() :]
+        else:
+            text = text.rstrip() + "\n" + block + "\n"
+
+    # Imports the preserved code needs.
+    if plan["carried_imports"]:
+        last = None
+        out_lines = text.split("\n")
+        for i, line in enumerate(out_lines):
+            if IMPORT_RE.match(line):
+                last = i
+        if last is not None:
+            for imp in reversed(plan["carried_imports"]):
+                out_lines.insert(last + 1, imp)
+            text = "\n".join(out_lines)
+
+    return text
+
+
+def render_report(plan, fresh, existing):
+    out = ["merge plan: {} -> {}".format(os.path.basename(fresh), os.path.basename(existing))]
+    out.append(
+        "  free functions carried over : {}".format(
+            ", ".join(plan["carried_free_fns"]) or "(none)"
+        )
+    )
+    for impl_name, methods in plan["carried_methods"].items():
+        out.append("  methods carried into impl {}: {}".format(impl_name, ", ".join(methods)))
+    out.append(
+        "  imports carried over        : {}".format(len(plan["carried_imports"]))
+    )
+    if plan["impls_absent_from_fresh"]:
+        out.append(
+            "  ERROR: fresh output has no impl for: "
+            + ", ".join(plan["impls_absent_from_fresh"])
+        )
+    return "\n".join(out)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("fresh")
+    p.add_argument("existing")
+    p.add_argument("-o", "--out")
+    p.add_argument("--report", action="store_true", help="describe the merge only")
+    args = p.parse_args(argv)
+
+    fresh_text = open(args.fresh).read()
+    existing_text = open(args.existing).read()
+
+    if args.report:
+        print(render_report(plan_merge(fresh_text, existing_text), args.fresh, args.existing))
+        return 0
+
+    try:
+        merged = merge(fresh_text, existing_text)
+    except ValueError as e:
+        sys.stderr.write("error: {}\n".format(e))
+        return 1
+    if args.out:
+        with open(args.out, "w") as f:
+            f.write(merged)
+    else:
+        sys.stdout.write(merged)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
