@@ -152,5 +152,50 @@ class ImplMethodsAreCompared(unittest.TestCase):
         self.assertEqual(preserved, ["CExec::act"])
 
 
+
+
+class FreeFunctionToMethodMove(unittest.TestCase):
+    """Phase 42.8.c.2.iv.J. The `&mut self` conversion moves a function from a
+    free function to an impl method. Matching only on the qualified name made
+    `CReplicaNextProcess1a` and `CReplica::CReplicaNextProcess1a` look like
+    different functions, so 18 real implementations versus `assume(false)` stubs
+    reported as no drift."""
+
+    FRESH = (
+        "verus! {\nimpl CReplica {\n"
+        "pub exec fn act(&mut self) {\n    assume(false);\n}\n"
+        "}\n} // verus!\n"
+    )
+    EXISTING = (
+        "verus! {\n"
+        "pub exec fn act(s: &CReplica) {\n    real_implementation();\n}\n"
+        "} // verus!\n"
+    )
+
+    def test_move_between_forms_is_still_drift(self):
+        unreviewed, _, _ = cd.body_drift(self.FRESH, self.EXISTING)
+        self.assertEqual(unreviewed, ["act"])
+
+    def test_an_ambiguous_short_name_is_not_matched(self):
+        # Two fresh functions with the same short name: matching either would be
+        # a guess, so leave it to the qualified-name path rather than pick one.
+        fresh = (
+            "verus! {\nimpl A {\npub fn act() {\n    a();\n}\n}\n"
+            "impl B {\npub fn act() {\n    b();\n}\n}\n} // verus!\n"
+        )
+        existing = "verus! {\npub fn act() {\n    c();\n}\n} // verus!\n"
+        unreviewed, _, _ = cd.body_drift(fresh, existing)
+        self.assertEqual(unreviewed, [])
+
+    def test_exact_name_still_wins_over_short_match(self):
+        fresh = (
+            "verus! {\nimpl A {\npub fn act() {\n    same();\n}\n}\n} // verus!\n"
+        )
+        existing = (
+            "verus! {\nimpl A {\npub fn act() {\n    same();\n}\n}\n} // verus!\n"
+        )
+        self.assertEqual(cd.body_drift(fresh, existing), ([], [], []))
+
+
 if __name__ == "__main__":
     unittest.main()

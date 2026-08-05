@@ -99,11 +99,28 @@ def body_drift(fresh_text, existing_text, preserve=frozenset(), accept=frozenset
         # accept either `method` or `Impl::method` in the preserve list
         return name in names or name.split("::")[-1] in names
 
+    # A function can move between free-function and impl-method form -- the
+    # `&mut self` conversion did exactly that to replica's 18 actions, which
+    # exist as `CReplicaNextProcess1a` in the checked-in file and as
+    # `CReplica::CReplicaNextProcess1a` in fresh output. Matching only on the
+    # qualified name made those look like different functions and reported no
+    # drift, while fresh's version is an `assume(false)` stub.
+    fresh_by_short = {}
+    for name, body in fresh.items():
+        fresh_by_short.setdefault(name.split("::")[-1], []).append(body)
+
+    def fresh_body(name):
+        if name in fresh:
+            return fresh[name]
+        candidates = fresh_by_short.get(name.split("::")[-1], [])
+        return candidates[0] if len(candidates) == 1 else None
+
     unreviewed, preserved, accepted = [], [], []
     for name, e_body in existing.items():
-        if name not in fresh:
+        f_body = fresh_body(name)
+        if f_body is None:
             continue  # not emitted fresh; the merge carries the existing one
-        if _normalise(fresh[name]) == _normalise(e_body):
+        if _normalise(f_body) == _normalise(e_body):
             continue
         if listed(name, preserve):
             preserved.append(name)

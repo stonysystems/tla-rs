@@ -14886,6 +14886,23 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
+  - [ ] **42.8.c.2.iv.J** **Replica does not merge, and the reason is structural.**
+        (2026-08-05) Attempted; `assume(false)` in the merged file would go **0 → 18**, the
+        opposite direction from the other three. Reverted.
+        The 18 `CReplicaNextProcess*` / `CReplicaNextReadClock*` /
+        `CReplicaNextSpontaneous*` actions exist in the checked-in file as **free functions**
+        and in fresh output as **impl methods on `CReplica`** — the `&mut self` conversion
+        moved them. So the merge keeps both: fresh's stub method *and* the existing real free
+        function.
+        **The drift check missed this too**, and for a new reason: it matched on the
+        qualified name, so `CReplicaNextProcess1a` and `CReplica::CReplicaNextProcess1a`
+        looked like different functions. Now falls back to the short name when it is
+        unambiguous — replica reports all 18, and the other six modules are unchanged, so no
+        false positives.
+        `--preserve` **cannot** express this: it swaps a fresh body for the existing one of
+        the same kind, and here the kinds differ. Replica needs the free-function forms
+        retired in favour of the methods, which is Phase 48/49 work, not merge work.
+
   - [x] **42.8.c.2.iv.I** **Proposer merged. `1046 verified, 0 errors`.** (2026-08-05)
         `assume(false)` 9 → 0; 408 lines changed. One more import defect: fresh imports the
         same module on **several single-name lines** (`use X::a;` and `use X::b;`), and the
