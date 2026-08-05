@@ -15014,6 +15014,46 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
             "structural Phase 48/49 work" and not on proofs — no proof was ever attempted,
             because the file does not reach the verifier. Both are now the leaf tasks.
       - [ ] **J.3.a** Emit cross-module calls to `mut_self` types in method form.
+            **Diagnosed 2026-08-05, and it is two changes, not one.** The call *form* is
+            already config: `[method_calls]` in the module TOML — an existing mechanism four
+            RSL modules use. Adding
+            `"LAcceptorProcess1a" = { method_name = "CAcceptorProcess1a", receiver_arg_index = 0 }`
+            to replica turns
+            `crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&self.acceptor, p)`
+            into `self.acceptor.CAcceptorProcess1a(&p)`. Measured, it works.
+            **But the call-site *shape* is still functional, and that is the real defect.**
+            The emitted line stays
+            `let (s_acceptor, sent_packets) = self.acceptor.CAcceptorProcess1a(&p);` followed
+            by `self.acceptor = s_acceptor;`, while the callee is now
+            `CAcceptorProcess1a(&mut self, inp: &CPacket) -> Vec<CPacket>` — it mutates in
+            place and returns only the outputs. So the destructure binds a state value that
+            no longer exists and the write-back assigns it back. The hand-written checked-in
+            body is the target and is one line:
+            `s.acceptor.CAcceptorProcess1a(&received_packet)`.
+            **Why the transpiler cannot currently know this**: `method_names` — the set that
+            drives `convert_calls_to_methods` — is populated only for functions registered
+            while transpiling *this* module (`translator/mod.rs:1510`), so a callee in
+            another module is never in it. And it is consulted *only* in
+            `convert_calls_to_methods`, i.e. for the call form; nothing uses it to decide
+            that a callee's state output is mutated in place rather than returned.
+            **Design**: a config key naming external functions whose exec form is
+            `&mut self` (the same information `mut_self_types` carries for the local module),
+            consumed in two places — the existing call-form conversion, and the call-site
+            lift that must drop the state binding from the destructure and the matching
+            `self.field = s_field` write-back.
+            **Where the two changes go**, located 2026-08-05 so this does not need
+            re-deriving:
+            1. `generate_helper_let_binding` (`translator/mod.rs:~12780`) builds
+               `output_names` as the state-field outputs (`{var}_{field}`) followed by
+               `info.output_params`, and emits a tuple pattern when there is more than one.
+               For a `&mut self` callee the state-field entries must not be generated, which
+               leaves `sent_packets` alone and the pattern collapses to a single binding.
+            2. The `self.acceptor = s_acceptor;` write-back is not separate code — it comes
+               from the `s_ == LReplica { acceptor: .., .. }` conjunct being lifted into
+               field assignments. With the binding gone, that field must drop out of the
+               struct literal too, or it references a name that no longer exists.
+            This is also why the defect surfaces only now: replica is the only orchestrating
+            module, so it is the only one with cross-module calls into migrated modules.
       - [ ] **J.3.b** Rewrite tuple-index references in proof blocks when the lift drops the
             binding (`result.1` → the lifted output), extending E's fix to proof positions.
       - [ ] **J.4 — confirm the 36 notes land**, with
