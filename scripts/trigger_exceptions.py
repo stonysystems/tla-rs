@@ -27,19 +27,90 @@ import re
 import sys
 from collections import Counter, OrderedDict
 
+def _skip_functions_by_module(repo_root="."):
+    """`skip_functions` per RSL module, from the transpile configs.
+
+    A note inside one of these lives in a *hand-written* body that regeneration
+    preserves verbatim, so it is not transpiler output and no amount of
+    regenerating will change it -- a different disposition from the emitted
+    notes, and the reason this file distinguishes them.
+    """
+    out = {}
+    base = os.path.join(repo_root, "src", "protocol", "RSL")
+    for mod in (
+        "broadcast", "acceptor", "learner", "executor", "election", "proposer", "replica",
+    ):
+        path = os.path.join(base, "%s_transpile.toml" % mod)
+        try:
+            with open(path) as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        m = re.search(r"skip_functions\s*=\s*\[(.*?)\]", text, re.S)
+        out[mod] = set(re.findall(r'"([^"]+)"', m.group(1))) if m else set()
+    return out
+
+
+_FN_RE = re.compile(r"\s*(?:pub )?(?:exec |proof |open spec |spec )*fn ([A-Za-z0-9_]+)")
+
+
+def _enclosing_fn(path, line):
+    try:
+        with open(path) as fh:
+            lines = fh.read().split("\n")
+    except OSError:
+        return None
+    for i in range(min(line, len(lines)) - 1, -1, -1):
+        m = _FN_RE.match(lines[i])
+        if m:
+            return m.group(1)
+    return None
+
+
+def _in_preserved_body(entry, skip_by_module, repo_root="."):
+    path = entry["file"]
+    if "generated/RSL/" not in path:
+        return False
+    mod = os.path.basename(path).replace("_gen.rs", "")
+    fn = _enclosing_fn(os.path.join(repo_root, path), entry["line"])
+    if not fn:
+        return False
+    base = fn[1:] if fn.startswith("C") else fn
+    stem = base[:-4] if base.endswith("_mut") else base
+    candidates = {base, stem, "L" + base, "L" + stem}
+    return bool(candidates & skip_by_module.get(mod, set()))
+
+
 # Why a note is still here. Order matters: the first matching rule wins.
+_SKIP_BY_MODULE = _skip_functions_by_module()
+
 RULES = [
     (
+        lambda e: e["file"].startswith("src/generated/")
+        and _in_preserved_body(e, _SKIP_BY_MODULE),
+        "generated-preserved",
+        "hand-written body inside a generated file",
+        "These sit in `skip_functions` bodies that regeneration copies through "
+        "verbatim, so they are **not transpiler output** and regenerating will "
+        "never change them -- 54.7.b cannot clear these however 42.8.c lands. "
+        "They are still under `src/generated/`, so `CLAUDE.md` forbids editing "
+        "them in place; the real fix is either to teach the transpiler to "
+        "generate the function (see `docs/rsl-skip-functions.md` for which are "
+        "capability gaps versus a deliberate trust boundary) or to move the "
+        "hand-written body out to a `*_manual.rs`, as acceptor and executor "
+        "already do. That is the open 54.7.c decision.",
+    ),
+    (
         lambda e: e["file"].startswith("src/generated/"),
-        "generated",
+        "generated-emitted",
         "transpiler output",
         "Cannot be hand-edited (`CLAUDE.md`). The codegen fix for the dominant "
         "shape landed in 54.7.a, but delivering it needs a regeneration that is "
-        "blocked: the five RSL modules with `skip_functions` cannot be replaced "
+        "blocked: the RSL modules with `skip_functions` cannot be replaced "
         "wholesale, and merging them hits signature mismatches between the "
         "preserved hand-written bodies and the current emitted API "
-        "(42.8.c.2.iv). The remainder sit inside those preserved bodies, whose "
-        "disposition is the open 54.7.c decision.",
+        "(42.8.c.2.iv). Unlike the preserved notes, **these do clear once that "
+        "merge lands**.",
     ),
     (
         lambda e: True,
@@ -112,7 +183,7 @@ def render(inventory, groups):
         for f, n in sorted(by_file.items(), key=lambda kv: (-kv[1], kv[0])):
             out.append("| `{}` | {} |".format(f, n))
         out.append("")
-        if key != "generated":
+        if not key.startswith("generated"):
             out.append("<details><summary>Individual sites</summary>")
             out.append("")
             for e in sorted(g["entries"], key=lambda e: (e["file"], e["line"])):

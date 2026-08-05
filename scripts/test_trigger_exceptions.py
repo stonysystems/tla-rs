@@ -43,10 +43,48 @@ def inventory(entries):
     }
 
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _line_inside(path, needle):
+    """A line number a few lines into the function whose header contains `needle`."""
+    try:
+        with open(os.path.join(REPO_ROOT, path)) as fh:
+            lines = fh.read().split("\n")
+    except OSError:
+        return None
+    for i, line in enumerate(lines):
+        if needle in line:
+            return i + 3
+    return None
+
+
 class TestClassification(unittest.TestCase):
     def test_generated_files_are_their_own_reason(self):
+        # a line that is not inside any preserved body
         key, _, _ = te.classify(entry("src/generated/RSL/replica_gen.rs"))
-        self.assertEqual(key, "generated")
+        self.assertEqual(key, "generated-emitted")
+
+    def test_generated_notes_are_split_by_provenance(self):
+        """Phase 54: a note inside a `skip_functions` body is hand-written code
+        that regeneration copies through verbatim. Calling it "transpiler
+        output" gives it a reason -- "blocked on regeneration" -- that can never
+        come true, so the two must not share a category."""
+        emitted = te.classify(entry("src/generated/RSL/replica_gen.rs"))[0]
+        self.assertEqual(emitted, "generated-emitted")
+        # `LAcceptorProcess1a` is in acceptor's skip_functions, so a note inside
+        # `CAcceptorProcess1a` is preserved hand-written code.
+        line = _line_inside(
+            "src/generated/RSL/acceptor_gen.rs", "fn CAcceptorProcess1a"
+        )
+        if line is None:
+            self.skipTest("CAcceptorProcess1a not present in the checked-in file")
+        preserved = te.classify(entry("src/generated/RSL/acceptor_gen.rs", line))[0]
+        self.assertEqual(
+            preserved,
+            "generated-preserved",
+            "a note inside a skip_functions body must not be labelled transpiler output",
+        )
 
     def test_everything_else_is_the_nested_quantifier_case(self):
         key, _, _ = te.classify(entry("src/protocol/Raft/refinement_proof/invariants.rs"))
@@ -70,7 +108,7 @@ class TestRendering(unittest.TestCase):
         text = te.render(inv, te.build(inv))
         total, per = te.extract_counts(text)
         self.assertEqual(total, 2)
-        self.assertEqual(per, {"generated": 1, "nested-quantifier": 1})
+        self.assertEqual(per, {"generated-emitted": 1, "nested-quantifier": 1})
 
     def test_individual_sites_are_listed_for_actionable_groups(self):
         inv = inventory([entry("src/protocol/RSL/b.rs", 42, ["s.contains(p)"])])
