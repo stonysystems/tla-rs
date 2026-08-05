@@ -63,19 +63,19 @@ verus! {
 
     pub open spec fn LIsAfterLogTruncationPoint(opn:OperationNumber, received_1b_packets:Set<RslPacket>) -> bool
     {
-        (forall |p:RslPacket| received_1b_packets.contains(p) && p.msg is RslMessage1b ==> p.msg->log_truncation_point <= opn)
+        (forall |p:RslPacket| #![trigger received_1b_packets.contains(p)] received_1b_packets.contains(p) && p.msg is RslMessage1b ==> p.msg->log_truncation_point <= opn)
     }
 
 
     pub open spec fn LSetOfMessage1b(S:Set<RslPacket>) -> bool
     {
-        forall |p:RslPacket| S.contains(p) ==> p.msg is RslMessage1b
+        forall |p:RslPacket| #![trigger S.contains(p)] S.contains(p) ==> p.msg is RslMessage1b
     }
 
     pub open spec fn LSetOfMessage1bAboutBallot(S:Set<RslPacket>, b:Ballot) -> bool
     {
         &&& LSetOfMessage1b(S)
-        &&& (forall |p:RslPacket| S.contains(p) ==> p.msg->bal_1b == b)
+        &&& (forall |p:RslPacket| #![trigger S.contains(p)] S.contains(p) ==> p.msg->bal_1b == b)
     }
 
     pub open spec fn LExistVotesHasProposalLargeThanOpn(p:RslPacket, op:OperationNumber) -> bool
@@ -90,28 +90,28 @@ verus! {
             LSetOfMessage1b(S)
     {
         // exists p :: p in S && exists opn :: opn in p.msg.votes && opn > op
-        exists |p:RslPacket| S.contains(p) && LExistVotesHasProposalLargeThanOpn(p, op)
+        exists |p:RslPacket| #![trigger LExistVotesHasProposalLargeThanOpn(p, op)] S.contains(p) && LExistVotesHasProposalLargeThanOpn(p, op)
     }
 
     pub open spec fn LAllAcceptorsHadNoProposal(S:Set<RslPacket>, opn:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
     {
-        forall |p:RslPacket| S.contains(p) ==> !p.msg->votes.contains_key(opn)
+        forall |p:RslPacket| #![trigger S.contains(p)] S.contains(p) ==> !p.msg->votes.contains_key(opn)
     }
 
     pub open spec fn Lmax_balInS(c:Ballot, S:Set<RslPacket>, opn:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
     {
-        forall |p:RslPacket| S.contains(p) && p.msg->votes.contains_key(opn) ==> BalLeq(p.msg->votes[opn].max_value_bal, c)
+        forall |p:RslPacket| #![trigger S.contains(p)] S.contains(p) && p.msg->votes.contains_key(opn) ==> BalLeq(p.msg->votes[opn].max_value_bal, c)
     }
 
     pub open spec fn LExistsBallotInS(v:RequestBatch, c:Ballot, S:Set<RslPacket>, opn:OperationNumber) -> bool
     recommends
             LSetOfMessage1b(S)
     {
-        exists |p:RslPacket| S.contains(p)
+        exists |p:RslPacket| #![trigger S.contains(p)] S.contains(p)
                     && p.msg->votes.contains_key(opn)
                     && p.msg->votes[opn].max_value_bal==c
                     && p.msg->votes[opn].max_val==v
@@ -243,7 +243,7 @@ verus! {
             s.constants.all.config.replica_ids.contains(p.src),
             p.msg->bal_1b == s.max_ballot_i_sent_1a,
             s.current_state == 1,
-            forall |other_packet:RslPacket| s.received_1b_packets.contains(other_packet) ==> other_packet.src != p.src
+            forall |other_packet:RslPacket| #![trigger s.received_1b_packets.contains(other_packet)] s.received_1b_packets.contains(other_packet) ==> other_packet.src != p.src
     {
         s_ == LProposer{
             constants:s.constants,
@@ -339,7 +339,7 @@ verus! {
                  !LAllAcceptorsHadNoProposal(s.received_1b_packets, s.next_operation_number_to_propose)
     {
         let opn = s.next_operation_number_to_propose;
-        exists |p:RslPacket| s.received_1b_packets.contains(p)
+        exists |p:RslPacket| #![trigger s.received_1b_packets.contains(p)] s.received_1b_packets.contains(p)
                             && LValIsHighestNumberedProposal(p.msg->votes[opn].max_val, s.received_1b_packets, opn)
                             && s_ == LProposer{
                                 constants:s.constants,

@@ -1,0 +1,1157 @@
+{
+  "schema": "verus-timing/v1",
+  "label": "0.2026.08.02.b677dd5 full crate (min of 3 runs @ 06620bb8)",
+  "verus_version": "0.2026.08.02.b677dd5",
+  "source_log": "min of 3 runs",
+  "parsed_from": "output-json",
+  "runs_merged": 3,
+  "module_count": 142,
+  "total_verify_ms": 211512,
+  "totals": {
+    "total": 37601,
+    "estimated-cpu-time": 234498,
+    "total-verify": 219118,
+    "num-threads": 127,
+    "verification-time": 28022,
+    "rust-time": 8043,
+    "total-time": 37601
+  },
+  "modules": {
+    "implementation::RSL::cmessage": {
+      "module": "implementation::RSL::cmessage",
+      "verify_ms": 19131,
+      "air_ms": 481,
+      "smt_init_ms": 0,
+      "smt_run_ms": 17701,
+      "rlimit": 383549728
+    },
+    "protocol::RSL::refinement_proof::execution": {
+      "module": "protocol::RSL::refinement_proof::execution",
+      "verify_ms": 18576,
+      "air_ms": 871,
+      "smt_init_ms": 1,
+      "smt_run_ms": 17272,
+      "rlimit": 14129990
+    },
+    "protocol::Raft::refinement_proof::invariants": {
+      "module": "protocol::Raft::refinement_proof::invariants",
+      "verify_ms": 16578,
+      "air_ms": 1186,
+      "smt_init_ms": 8,
+      "smt_run_ms": 13813,
+      "rlimit": 51517393
+    },
+    "protocol::RSL::common_proof::message2b": {
+      "module": "protocol::RSL::common_proof::message2b",
+      "verify_ms": 16149,
+      "air_ms": 727,
+      "smt_init_ms": 0,
+      "smt_run_ms": 15044,
+      "rlimit": 11179926
+    },
+    "protocol::RSL::common_proof::message1b": {
+      "module": "protocol::RSL::common_proof::message1b",
+      "verify_ms": 15310,
+      "air_ms": 530,
+      "smt_init_ms": 0,
+      "smt_run_ms": 14287,
+      "rlimit": 9735137
+    },
+    "protocol::RSL::common_proof::message2a": {
+      "module": "protocol::RSL::common_proof::message2a",
+      "verify_ms": 11609,
+      "air_ms": 709,
+      "smt_init_ms": 1,
+      "smt_run_ms": 10490,
+      "rlimit": 8164216
+    },
+    "protocol::RSL::common_proof::learner_state": {
+      "module": "protocol::RSL::common_proof::learner_state",
+      "verify_ms": 10162,
+      "air_ms": 616,
+      "smt_init_ms": 0,
+      "smt_run_ms": 8824,
+      "rlimit": 7266320
+    },
+    "protocol::RSL::common_proof::chosen": {
+      "module": "protocol::RSL::common_proof::chosen",
+      "verify_ms": 10002,
+      "air_ms": 460,
+      "smt_init_ms": 0,
+      "smt_run_ms": 9039,
+      "rlimit": 7272628
+    },
+    "generated::RSL::replica_gen": {
+      "module": "generated::RSL::replica_gen",
+      "verify_ms": 9642,
+      "air_ms": 1126,
+      "smt_init_ms": 1,
+      "smt_run_ms": 7961,
+      "rlimit": 8500341
+    },
+    "protocol::RSL::common_proof::packet_sending": {
+      "module": "protocol::RSL::common_proof::packet_sending",
+      "verify_ms": 7995,
+      "air_ms": 348,
+      "smt_init_ms": 0,
+      "smt_run_ms": 7378,
+      "rlimit": 5740012
+    },
+    "protocol::RSL::refinement_proof::requests": {
+      "module": "protocol::RSL::refinement_proof::requests",
+      "verify_ms": 7956,
+      "air_ms": 504,
+      "smt_init_ms": 0,
+      "smt_run_ms": 7120,
+      "rlimit": 6016349
+    },
+    "protocol::RSL::common_proof::max_ballot_sent_1a": {
+      "module": "protocol::RSL::common_proof::max_ballot_sent_1a",
+      "verify_ms": 5812,
+      "air_ms": 249,
+      "smt_init_ms": 0,
+      "smt_run_ms": 5165,
+      "rlimit": 3861661
+    },
+    "protocol::RSL::common_proof::constants": {
+      "module": "protocol::RSL::common_proof::constants",
+      "verify_ms": 5660,
+      "air_ms": 406,
+      "smt_init_ms": 0,
+      "smt_run_ms": 4984,
+      "rlimit": 3363522
+    },
+    "protocol::RSL::common_proof::receive1b": {
+      "module": "protocol::RSL::common_proof::receive1b",
+      "verify_ms": 2985,
+      "air_ms": 167,
+      "smt_init_ms": 0,
+      "smt_run_ms": 2469,
+      "rlimit": 1684606
+    },
+    "generated::RSL::proposer_gen": {
+      "module": "generated::RSL::proposer_gen",
+      "verify_ms": 2937,
+      "air_ms": 459,
+      "smt_init_ms": 0,
+      "smt_run_ms": 2076,
+      "rlimit": 3084268
+    },
+    "protocol::RSL::common_proof::max_ballot": {
+      "module": "protocol::RSL::common_proof::max_ballot",
+      "verify_ms": 2716,
+      "air_ms": 172,
+      "smt_init_ms": 0,
+      "smt_run_ms": 2270,
+      "rlimit": 1502692
+    },
+    "protocol::RSL::refinement_proof::refinement": {
+      "module": "protocol::RSL::refinement_proof::refinement",
+      "verify_ms": 2575,
+      "air_ms": 262,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1987,
+      "rlimit": 3295158
+    },
+    "implementation::RSL::replicaimpl_no_receive_no_clock": {
+      "module": "implementation::RSL::replicaimpl_no_receive_no_clock",
+      "verify_ms": 2568,
+      "air_ms": 385,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1916,
+      "rlimit": 1426849
+    },
+    "implementation::RSL::replicaimpl_no_receive_clock": {
+      "module": "implementation::RSL::replicaimpl_no_receive_clock",
+      "verify_ms": 2372,
+      "air_ms": 351,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1799,
+      "rlimit": 1311257
+    },
+    "implementation::RSL::gen_helpers": {
+      "module": "implementation::RSL::gen_helpers",
+      "verify_ms": 2241,
+      "air_ms": 363,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1488,
+      "rlimit": 2492269
+    },
+    "implementation::common::marshalling": {
+      "module": "implementation::common::marshalling",
+      "verify_ms": 2024,
+      "air_ms": 226,
+      "smt_init_ms": 2,
+      "smt_run_ms": 1497,
+      "rlimit": 21631329
+    },
+    "implementation::RSL::types_i": {
+      "module": "implementation::RSL::types_i",
+      "verify_ms": 1998,
+      "air_ms": 311,
+      "smt_init_ms": 2,
+      "smt_run_ms": 1365,
+      "rlimit": 8949010
+    },
+    "protocol::RSL::common_proof::environment": {
+      "module": "protocol::RSL::common_proof::environment",
+      "verify_ms": 1775,
+      "air_ms": 185,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1317,
+      "rlimit": 775373
+    },
+    "implementation::RSL::replicaimpl_process_packet_no_clock": {
+      "module": "implementation::RSL::replicaimpl_process_packet_no_clock",
+      "verify_ms": 1337,
+      "air_ms": 466,
+      "smt_init_ms": 0,
+      "smt_run_ms": 640,
+      "rlimit": 647911
+    },
+    "protocol::RSL::common_proof::quorum": {
+      "module": "protocol::RSL::common_proof::quorum",
+      "verify_ms": 1326,
+      "air_ms": 88,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1104,
+      "rlimit": 3312076
+    },
+    "implementation::RSL::ReplicaImpl": {
+      "module": "implementation::RSL::ReplicaImpl",
+      "verify_ms": 1320,
+      "air_ms": 308,
+      "smt_init_ms": 0,
+      "smt_run_ms": 661,
+      "rlimit": 593985
+    },
+    "generated::RSL::election_gen": {
+      "module": "generated::RSL::election_gen",
+      "verify_ms": 1274,
+      "air_ms": 267,
+      "smt_init_ms": 0,
+      "smt_run_ms": 698,
+      "rlimit": 1768224
+    },
+    "protocol::RSL::common_proof::actions": {
+      "module": "protocol::RSL::common_proof::actions",
+      "verify_ms": 1098,
+      "air_ms": 175,
+      "smt_init_ms": 0,
+      "smt_run_ms": 695,
+      "rlimit": 443408
+    },
+    "protocol::Raft::refinement_proof::committed": {
+      "module": "protocol::Raft::refinement_proof::committed",
+      "verify_ms": 953,
+      "air_ms": 141,
+      "smt_init_ms": 0,
+      "smt_run_ms": 593,
+      "rlimit": 1856282
+    },
+    "generated::Raft::raft_gen": {
+      "module": "generated::Raft::raft_gen",
+      "verify_ms": 925,
+      "air_ms": 198,
+      "smt_init_ms": 1,
+      "smt_run_ms": 463,
+      "rlimit": 1389084
+    },
+    "generated::RSL::executor_gen": {
+      "module": "generated::RSL::executor_gen",
+      "verify_ms": 893,
+      "air_ms": 228,
+      "smt_init_ms": 0,
+      "smt_run_ms": 391,
+      "rlimit": 960847
+    },
+    "implementation::RSL::replicaimpl_class": {
+      "module": "implementation::RSL::replicaimpl_class",
+      "verify_ms": 836,
+      "air_ms": 121,
+      "smt_init_ms": 0,
+      "smt_run_ms": 464,
+      "rlimit": 412028
+    },
+    "implementation::RSL::ProposerImpl": {
+      "module": "implementation::RSL::ProposerImpl",
+      "verify_ms": 831,
+      "air_ms": 231,
+      "smt_init_ms": 0,
+      "smt_run_ms": 346,
+      "rlimit": 818080
+    },
+    "generated::RSL::learner_gen": {
+      "module": "generated::RSL::learner_gen",
+      "verify_ms": 796,
+      "air_ms": 210,
+      "smt_init_ms": 0,
+      "smt_run_ms": 328,
+      "rlimit": 810896
+    },
+    "protocol::RSL::refinement_proof::chosen": {
+      "module": "protocol::RSL::refinement_proof::chosen",
+      "verify_ms": 709,
+      "air_ms": 181,
+      "smt_init_ms": 0,
+      "smt_run_ms": 291,
+      "rlimit": 457861
+    },
+    "implementation::RSL::replicaimpl_main": {
+      "module": "implementation::RSL::replicaimpl_main",
+      "verify_ms": 609,
+      "air_ms": 180,
+      "smt_init_ms": 0,
+      "smt_run_ms": 267,
+      "rlimit": 304564
+    },
+    "generated::RSL::acceptor_gen": {
+      "module": "generated::RSL::acceptor_gen",
+      "verify_ms": 594,
+      "air_ms": 163,
+      "smt_init_ms": 0,
+      "smt_run_ms": 251,
+      "rlimit": 621952
+    },
+    "generated::EPaxos::epaxos_gen": {
+      "module": "generated::EPaxos::epaxos_gen",
+      "verify_ms": 577,
+      "air_ms": 186,
+      "smt_init_ms": 0,
+      "smt_run_ms": 211,
+      "rlimit": 660253
+    },
+    "implementation::RSL::appinterface": {
+      "module": "implementation::RSL::appinterface",
+      "verify_ms": 576,
+      "air_ms": 160,
+      "smt_init_ms": 0,
+      "smt_run_ms": 100,
+      "rlimit": 546029
+    },
+    "implementation::RSL::ExecutorImpl": {
+      "module": "implementation::RSL::ExecutorImpl",
+      "verify_ms": 512,
+      "air_ms": 157,
+      "smt_init_ms": 0,
+      "smt_run_ms": 174,
+      "rlimit": 422600
+    },
+    "protocol::RSL::distributed_system": {
+      "module": "protocol::RSL::distributed_system",
+      "verify_ms": 475,
+      "air_ms": 151,
+      "smt_init_ms": 0,
+      "smt_run_ms": 68,
+      "rlimit": 50294
+    },
+    "protocol::Raft::refinement_proof::induction": {
+      "module": "protocol::Raft::refinement_proof::induction",
+      "verify_ms": 459,
+      "air_ms": 112,
+      "smt_init_ms": 0,
+      "smt_run_ms": 151,
+      "rlimit": 475212
+    },
+    "protocol::Raft::refinement_proof::refinement": {
+      "module": "protocol::Raft::refinement_proof::refinement",
+      "verify_ms": 447,
+      "air_ms": 111,
+      "smt_init_ms": 0,
+      "smt_run_ms": 122,
+      "rlimit": 413873
+    },
+    "generated::PBFT::pbft_gen": {
+      "module": "generated::PBFT::pbft_gen",
+      "verify_ms": 428,
+      "air_ms": 151,
+      "smt_init_ms": 0,
+      "smt_run_ms": 128,
+      "rlimit": 390653
+    },
+    "generated::VerticalPaxos::vpaxos_gen": {
+      "module": "generated::VerticalPaxos::vpaxos_gen",
+      "verify_ms": 413,
+      "air_ms": 139,
+      "smt_init_ms": 0,
+      "smt_run_ms": 113,
+      "rlimit": 365747
+    },
+    "implementation::RSL::replicaimpl_read_clock": {
+      "module": "implementation::RSL::replicaimpl_read_clock",
+      "verify_ms": 403,
+      "air_ms": 143,
+      "smt_init_ms": 0,
+      "smt_run_ms": 67,
+      "rlimit": 69050
+    },
+    "implementation::RSL::acceptor_helpers": {
+      "module": "implementation::RSL::acceptor_helpers",
+      "verify_ms": 390,
+      "air_ms": 130,
+      "smt_init_ms": 0,
+      "smt_run_ms": 120,
+      "rlimit": 417127
+    },
+    "protocol::RSL::replica": {
+      "module": "protocol::RSL::replica",
+      "verify_ms": 375,
+      "air_ms": 141,
+      "smt_init_ms": 0,
+      "smt_run_ms": 38,
+      "rlimit": 110937
+    },
+    "generated::ChainReplication::chain_gen": {
+      "module": "generated::ChainReplication::chain_gen",
+      "verify_ms": 368,
+      "air_ms": 117,
+      "smt_init_ms": 0,
+      "smt_run_ms": 105,
+      "rlimit": 334807
+    },
+    "verus_extra::seq_lib_v": {
+      "module": "verus_extra::seq_lib_v",
+      "verify_ms": 367,
+      "air_ms": 118,
+      "smt_init_ms": 0,
+      "smt_run_ms": 110,
+      "rlimit": 495755
+    },
+    "implementation::RSL::CStateMachine": {
+      "module": "implementation::RSL::CStateMachine",
+      "verify_ms": 351,
+      "air_ms": 89,
+      "smt_init_ms": 0,
+      "smt_run_ms": 118,
+      "rlimit": 578767
+    },
+    "generated::TwoPhase::twophase_gen": {
+      "module": "generated::TwoPhase::twophase_gen",
+      "verify_ms": 350,
+      "air_ms": 123,
+      "smt_init_ms": 0,
+      "smt_run_ms": 66,
+      "rlimit": 210756
+    },
+    "common::native::io_s": {
+      "module": "common::native::io_s",
+      "verify_ms": 346,
+      "air_ms": 118,
+      "smt_init_ms": 0,
+      "smt_run_ms": 78,
+      "rlimit": 310560
+    },
+    "generated::LeaderElection::election_gen": {
+      "module": "generated::LeaderElection::election_gen",
+      "verify_ms": 346,
+      "air_ms": 114,
+      "smt_init_ms": 0,
+      "smt_run_ms": 90,
+      "rlimit": 291480
+    },
+    "protocol::Raft::refinement_proof::state_machine": {
+      "module": "protocol::Raft::refinement_proof::state_machine",
+      "verify_ms": 335,
+      "air_ms": 97,
+      "smt_init_ms": 0,
+      "smt_run_ms": 73,
+      "rlimit": 206222
+    },
+    "implementation::RSL::ElectionImpl": {
+      "module": "implementation::RSL::ElectionImpl",
+      "verify_ms": 330,
+      "air_ms": 111,
+      "smt_init_ms": 0,
+      "smt_run_ms": 67,
+      "rlimit": 193780
+    },
+    "verus_extra::set_lib_ext_v": {
+      "module": "verus_extra::set_lib_ext_v",
+      "verify_ms": 307,
+      "air_ms": 80,
+      "smt_init_ms": 0,
+      "smt_run_ms": 88,
+      "rlimit": 215226
+    },
+    "common::collections::count_matches": {
+      "module": "common::collections::count_matches",
+      "verify_ms": 300,
+      "air_ms": 62,
+      "smt_init_ms": 1,
+      "smt_run_ms": 115,
+      "rlimit": 569338
+    },
+    "implementation::RSL::cconfiguration": {
+      "module": "implementation::RSL::cconfiguration",
+      "verify_ms": 284,
+      "air_ms": 91,
+      "smt_init_ms": 0,
+      "smt_run_ms": 67,
+      "rlimit": 232513
+    },
+    "implementation::RSL::cbroadcast": {
+      "module": "implementation::RSL::cbroadcast",
+      "verify_ms": 282,
+      "air_ms": 100,
+      "smt_init_ms": 0,
+      "smt_run_ms": 38,
+      "rlimit": 178532
+    },
+    "common::collections::hashsets": {
+      "module": "common::collections::hashsets",
+      "verify_ms": 281,
+      "air_ms": 109,
+      "smt_init_ms": 0,
+      "smt_run_ms": 39,
+      "rlimit": 127752
+    },
+    "protocol::Raft::refinement_proof::message_invariants": {
+      "module": "protocol::Raft::refinement_proof::message_invariants",
+      "verify_ms": 280,
+      "air_ms": 82,
+      "smt_init_ms": 0,
+      "smt_run_ms": 56,
+      "rlimit": 132131
+    },
+    "generated::PrimaryBackup::primarybackup_gen": {
+      "module": "generated::PrimaryBackup::primarybackup_gen",
+      "verify_ms": 276,
+      "air_ms": 89,
+      "smt_init_ms": 0,
+      "smt_run_ms": 66,
+      "rlimit": 210088
+    },
+    "common::logic::rules_i": {
+      "module": "common::logic::rules_i",
+      "verify_ms": 275,
+      "air_ms": 59,
+      "smt_init_ms": 1,
+      "smt_run_ms": 106,
+      "rlimit": 349734
+    },
+    "protocol::Raft::raft_refinement": {
+      "module": "protocol::Raft::raft_refinement",
+      "verify_ms": 264,
+      "air_ms": 68,
+      "smt_init_ms": 0,
+      "smt_run_ms": 71,
+      "rlimit": 203273
+    },
+    "generated::RSL::broadcast_gen": {
+      "module": "generated::RSL::broadcast_gen",
+      "verify_ms": 263,
+      "air_ms": 97,
+      "smt_init_ms": 0,
+      "smt_run_ms": 43,
+      "rlimit": 164823
+    },
+    "implementation::RSL::replicaimpl_process_packet_x": {
+      "module": "implementation::RSL::replicaimpl_process_packet_x",
+      "verify_ms": 246,
+      "air_ms": 115,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 2630
+    },
+    "common::collections::seq_is_unique_v": {
+      "module": "common::collections::seq_is_unique_v",
+      "verify_ms": 222,
+      "air_ms": 76,
+      "smt_init_ms": 0,
+      "smt_run_ms": 49,
+      "rlimit": 222350
+    },
+    "protocol::RSL::common_proof::assumptions": {
+      "module": "protocol::RSL::common_proof::assumptions",
+      "verify_ms": 222,
+      "air_ms": 49,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::RSL::state_machine": {
+      "module": "protocol::RSL::state_machine",
+      "verify_ms": 216,
+      "air_ms": 45,
+      "smt_init_ms": 0,
+      "smt_run_ms": 62,
+      "rlimit": 292394
+    },
+    "generated::Paxos::paxos_gen": {
+      "module": "generated::Paxos::paxos_gen",
+      "verify_ms": 213,
+      "air_ms": 72,
+      "smt_init_ms": 0,
+      "smt_run_ms": 43,
+      "rlimit": 138460
+    },
+    "common::collections::sets": {
+      "module": "common::collections::sets",
+      "verify_ms": 208,
+      "air_ms": 64,
+      "smt_init_ms": 0,
+      "smt_run_ms": 57,
+      "rlimit": 6101659
+    },
+    "implementation::RSL::acceptorimpl": {
+      "module": "implementation::RSL::acceptorimpl",
+      "verify_ms": 204,
+      "air_ms": 81,
+      "smt_init_ms": 0,
+      "smt_run_ms": 32,
+      "rlimit": 71716
+    },
+    "implementation::RSL::learnerimpl": {
+      "module": "implementation::RSL::learnerimpl",
+      "verify_ms": 200,
+      "air_ms": 77,
+      "smt_init_ms": 0,
+      "smt_run_ms": 28,
+      "rlimit": 54449
+    },
+    "generated::Raft::types_gen": {
+      "module": "generated::Raft::types_gen",
+      "verify_ms": 198,
+      "air_ms": 85,
+      "smt_init_ms": 0,
+      "smt_run_ms": 2,
+      "rlimit": 10315
+    },
+    "implementation::RSL::netrsl_i": {
+      "module": "implementation::RSL::netrsl_i",
+      "verify_ms": 196,
+      "air_ms": 79,
+      "smt_init_ms": 0,
+      "smt_run_ms": 9,
+      "rlimit": 33136
+    },
+    "implementation::RSL::cconstants": {
+      "module": "implementation::RSL::cconstants",
+      "verify_ms": 189,
+      "air_ms": 68,
+      "smt_init_ms": 0,
+      "smt_run_ms": 38,
+      "rlimit": 104168
+    },
+    "common::collections::vecs": {
+      "module": "common::collections::vecs",
+      "verify_ms": 176,
+      "air_ms": 61,
+      "smt_init_ms": 0,
+      "smt_run_ms": 24,
+      "rlimit": 134287
+    },
+    "generated::ChainReplication::types_gen": {
+      "module": "generated::ChainReplication::types_gen",
+      "verify_ms": 165,
+      "air_ms": 64,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 188
+    },
+    "protocol::RSL::learner": {
+      "module": "protocol::RSL::learner",
+      "verify_ms": 164,
+      "air_ms": 61,
+      "smt_init_ms": 0,
+      "smt_run_ms": 15,
+      "rlimit": 35392
+    },
+    "protocol::RSL::executor": {
+      "module": "protocol::RSL::executor",
+      "verify_ms": 159,
+      "air_ms": 52,
+      "smt_init_ms": 0,
+      "smt_run_ms": 3,
+      "rlimit": 9849
+    },
+    "common::framework::environment_s": {
+      "module": "common::framework::environment_s",
+      "verify_ms": 157,
+      "air_ms": 48,
+      "smt_init_ms": 0,
+      "smt_run_ms": 8,
+      "rlimit": 25095
+    },
+    "implementation::common::cmd_line_parser_i": {
+      "module": "implementation::common::cmd_line_parser_i",
+      "verify_ms": 154,
+      "air_ms": 45,
+      "smt_init_ms": 0,
+      "smt_run_ms": 18,
+      "rlimit": 72609
+    },
+    "protocol::RSL::common_proof::requests": {
+      "module": "protocol::RSL::common_proof::requests",
+      "verify_ms": 154,
+      "air_ms": 38,
+      "smt_init_ms": 0,
+      "smt_run_ms": 14,
+      "rlimit": 42136
+    },
+    "implementation::RSL::replicaimpl_delivery": {
+      "module": "implementation::RSL::replicaimpl_delivery",
+      "verify_ms": 152,
+      "air_ms": 56,
+      "smt_init_ms": 0,
+      "smt_run_ms": 31,
+      "rlimit": 25173
+    },
+    "common::logic::time_s": {
+      "module": "common::logic::time_s",
+      "verify_ms": 150,
+      "air_ms": 54,
+      "smt_init_ms": 0,
+      "smt_run_ms": 15,
+      "rlimit": 54180
+    },
+    "common::logic::heuristics_i": {
+      "module": "common::logic::heuristics_i",
+      "verify_ms": 145,
+      "air_ms": 32,
+      "smt_init_ms": 0,
+      "smt_run_ms": 34,
+      "rlimit": 120193
+    },
+    "generated::VerticalPaxos::types_gen": {
+      "module": "generated::VerticalPaxos::types_gen",
+      "verify_ms": 145,
+      "air_ms": 45,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 1469
+    },
+    "common::collections::maps": {
+      "module": "common::collections::maps",
+      "verify_ms": 141,
+      "air_ms": 48,
+      "smt_init_ms": 0,
+      "smt_run_ms": 18,
+      "rlimit": 57538
+    },
+    "common::collections::seqs": {
+      "module": "common::collections::seqs",
+      "verify_ms": 136,
+      "air_ms": 39,
+      "smt_init_ms": 0,
+      "smt_run_ms": 11,
+      "rlimit": 24662
+    },
+    "generated::EPaxos::types_gen": {
+      "module": "generated::EPaxos::types_gen",
+      "verify_ms": 135,
+      "air_ms": 49,
+      "smt_init_ms": 0,
+      "smt_run_ms": 4,
+      "rlimit": 13814
+    },
+    "generated::PBFT::types_gen": {
+      "module": "generated::PBFT::types_gen",
+      "verify_ms": 132,
+      "air_ms": 44,
+      "smt_init_ms": 0,
+      "smt_run_ms": 3,
+      "rlimit": 8472
+    },
+    "implementation::RSL::host_s": {
+      "module": "implementation::RSL::host_s",
+      "verify_ms": 132,
+      "air_ms": 60,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 2
+    },
+    "protocol::RSL::broadcast": {
+      "module": "protocol::RSL::broadcast",
+      "verify_ms": 130,
+      "air_ms": 39,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1,
+      "rlimit": 3494
+    },
+    "common::framework::args_t": {
+      "module": "common::framework::args_t",
+      "verify_ms": 129,
+      "air_ms": 38,
+      "smt_init_ms": 0,
+      "smt_run_ms": 6,
+      "rlimit": 35858
+    },
+    "protocol::RSL::election": {
+      "module": "protocol::RSL::election",
+      "verify_ms": 127,
+      "air_ms": 46,
+      "smt_init_ms": 0,
+      "smt_run_ms": 3,
+      "rlimit": 9923
+    },
+    "common::logic::temporal_s": {
+      "module": "common::logic::temporal_s",
+      "verify_ms": 117,
+      "air_ms": 33,
+      "smt_init_ms": 0,
+      "smt_run_ms": 6,
+      "rlimit": 23132
+    },
+    "protocol::RSL::refinement_proof::handle_request_batch": {
+      "module": "protocol::RSL::refinement_proof::handle_request_batch",
+      "verify_ms": 117,
+      "air_ms": 49,
+      "smt_init_ms": 0,
+      "smt_run_ms": 3,
+      "rlimit": 12582
+    },
+    "implementation::Raft::helpers": {
+      "module": "implementation::Raft::helpers",
+      "verify_ms": 115,
+      "air_ms": 41,
+      "smt_init_ms": 0,
+      "smt_run_ms": 2,
+      "rlimit": 6749
+    },
+    "generated::TwoPhase::types_gen": {
+      "module": "generated::TwoPhase::types_gen",
+      "verify_ms": 113,
+      "air_ms": 42,
+      "smt_init_ms": 0,
+      "smt_run_ms": 2,
+      "rlimit": 7663
+    },
+    "generated::LeaderElection::types_gen": {
+      "module": "generated::LeaderElection::types_gen",
+      "verify_ms": 110,
+      "air_ms": 40,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1,
+      "rlimit": 4014
+    },
+    "generated::Paxos::types_gen": {
+      "module": "generated::Paxos::types_gen",
+      "verify_ms": 110,
+      "air_ms": 38,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1,
+      "rlimit": 3036
+    },
+    "verus_extra::choose_v": {
+      "module": "verus_extra::choose_v",
+      "verify_ms": 110,
+      "air_ms": 26,
+      "smt_init_ms": 0,
+      "smt_run_ms": 2,
+      "rlimit": 8990
+    },
+    "protocol::RSL::proposer": {
+      "module": "protocol::RSL::proposer",
+      "verify_ms": 106,
+      "air_ms": 13,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "generated::PrimaryBackup::types_gen": {
+      "module": "generated::PrimaryBackup::types_gen",
+      "verify_ms": 104,
+      "air_ms": 35,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 649
+    },
+    "generated::RSL::types_gen": {
+      "module": "generated::RSL::types_gen",
+      "verify_ms": 100,
+      "air_ms": 34,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1,
+      "rlimit": 3308
+    },
+    "protocol::RSL::environment": {
+      "module": "protocol::RSL::environment",
+      "verify_ms": 99,
+      "air_ms": 36,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 2628
+    },
+    "implementation::common::upper_bound": {
+      "module": "implementation::common::upper_bound",
+      "verify_ms": 94,
+      "air_ms": 23,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1,
+      "rlimit": 6295
+    },
+    "protocol::RSL::types": {
+      "module": "protocol::RSL::types",
+      "verify_ms": 92,
+      "air_ms": 30,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 1065
+    },
+    "protocol::Raft::raft": {
+      "module": "protocol::Raft::raft",
+      "verify_ms": 87,
+      "air_ms": 9,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "implementation::RSL::cparameters": {
+      "module": "implementation::RSL::cparameters",
+      "verify_ms": 80,
+      "air_ms": 26,
+      "smt_init_ms": 0,
+      "smt_run_ms": 1,
+      "rlimit": 3696
+    },
+    "protocol::EPaxos::epaxos": {
+      "module": "protocol::EPaxos::epaxos",
+      "verify_ms": 79,
+      "air_ms": 5,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::RSL::refinement_proof::state_machine": {
+      "module": "protocol::RSL::refinement_proof::state_machine",
+      "verify_ms": 79,
+      "air_ms": 10,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "verus_extra::clone_v": {
+      "module": "verus_extra::clone_v",
+      "verify_ms": 77,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::VerticalPaxos::vpaxos": {
+      "module": "protocol::VerticalPaxos::vpaxos",
+      "verify_ms": 76,
+      "air_ms": 5,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::TwoPhase::twophase": {
+      "module": "protocol::TwoPhase::twophase",
+      "verify_ms": 74,
+      "air_ms": 5,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::RSL::acceptor": {
+      "module": "protocol::RSL::acceptor",
+      "verify_ms": 71,
+      "air_ms": 8,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::ChainReplication::chain": {
+      "module": "protocol::ChainReplication::chain",
+      "verify_ms": 70,
+      "air_ms": 5,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::RSL::message": {
+      "module": "protocol::RSL::message",
+      "verify_ms": 67,
+      "air_ms": 6,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::VerticalPaxos::types": {
+      "module": "protocol::VerticalPaxos::types",
+      "verify_ms": 67,
+      "air_ms": 3,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::Raft::types": {
+      "module": "protocol::Raft::types",
+      "verify_ms": 66,
+      "air_ms": 5,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::common::upper_bound": {
+      "module": "protocol::common::upper_bound",
+      "verify_ms": 66,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "implementation::RSL::host_i": {
+      "module": "implementation::RSL::host_i",
+      "verify_ms": 65,
+      "air_ms": 10,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "services::RSL::main_i": {
+      "module": "services::RSL::main_i",
+      "verify_ms": 65,
+      "air_ms": 3,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "services::RSL::app_state_machine": {
+      "module": "services::RSL::app_state_machine",
+      "verify_ms": 63,
+      "air_ms": 3,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::ChainReplication::types": {
+      "module": "protocol::ChainReplication::types",
+      "verify_ms": 62,
+      "air_ms": 3,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "common::collections::maps2": {
+      "module": "common::collections::maps2",
+      "verify_ms": 60,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "implementation::common::upper_bound_i": {
+      "module": "implementation::common::upper_bound_i",
+      "verify_ms": 60,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::RSL::constants": {
+      "module": "protocol::RSL::constants",
+      "verify_ms": 59,
+      "air_ms": 3,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::LeaderElection::election": {
+      "module": "protocol::LeaderElection::election",
+      "verify_ms": 58,
+      "air_ms": 4,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::LeaderElection::types": {
+      "module": "protocol::LeaderElection::types",
+      "verify_ms": 58,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::PBFT::pbft": {
+      "module": "protocol::PBFT::pbft",
+      "verify_ms": 58,
+      "air_ms": 5,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::RSL::configuration": {
+      "module": "protocol::RSL::configuration",
+      "verify_ms": 58,
+      "air_ms": 4,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::PBFT::types": {
+      "module": "protocol::PBFT::types",
+      "verify_ms": 56,
+      "air_ms": 3,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::Paxos::paxos": {
+      "module": "protocol::Paxos::paxos",
+      "verify_ms": 56,
+      "air_ms": 4,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::TwoPhase::types": {
+      "module": "protocol::TwoPhase::types",
+      "verify_ms": 56,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "common::collections::comparable": {
+      "module": "common::collections::comparable",
+      "verify_ms": 54,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::EPaxos::types": {
+      "module": "protocol::EPaxos::types",
+      "verify_ms": 54,
+      "air_ms": 3,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::PrimaryBackup::primarybackup": {
+      "module": "protocol::PrimaryBackup::primarybackup",
+      "verify_ms": 52,
+      "air_ms": 4,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "implementation::RSL::cmd_line_parser": {
+      "module": "implementation::RSL::cmd_line_parser",
+      "verify_ms": 51,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::PrimaryBackup::types": {
+      "module": "protocol::PrimaryBackup::types",
+      "verify_ms": 49,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    },
+    "protocol::RSL::parameters": {
+      "module": "protocol::RSL::parameters",
+      "verify_ms": 41,
+      "air_ms": 2,
+      "smt_init_ms": 0,
+      "smt_run_ms": 0,
+      "rlimit": 0
+    }
+  }
+}

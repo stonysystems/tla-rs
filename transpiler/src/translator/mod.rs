@@ -4661,7 +4661,7 @@ impl Translator {
     /// in the body expression (a precondition pattern like `let log_ok = ...; &&& log_ok`).
     /// If so, the let binding can be skipped because the standalone conjunct will be
     /// filtered out during conjunction handling (it is neither an input nor an output).
-    fn is_precondition_only_let(&self, name: &str, body: &Expr, ctx: &TransformContext) -> bool {
+    fn is_precondition_only_let(name: &str, body: &Expr, ctx: &TransformContext) -> bool {
         // The variable must not be an input or output parameter
         if ctx.is_input(name) || ctx.is_output(name) {
             return false;
@@ -4686,7 +4686,7 @@ impl Translator {
                 true
             }
             // For nested lets, check the inner body recursively
-            Expr::Let { body: inner, .. } => self.is_precondition_only_let(name, inner, ctx),
+            Expr::Let { body: inner, .. } => Self::is_precondition_only_let(name, inner, ctx),
             // If the body is just the variable itself, it is a pure precondition
             Expr::Ident(n) if n == name => true,
             // Otherwise, the variable might be used for computation
@@ -5157,7 +5157,7 @@ impl Translator {
         // 3. Per-field invariants from the struct element expression
         if let Expr::Struct { fields, .. } = element_expr {
             for (field_name, field_value) in fields {
-                let source_str = self.field_expr_to_invariant_string(field_value, index_var, ctx);
+                let source_str = Self::field_expr_to_invariant_string(field_value, index_var, ctx);
                 invariants.push(format!(
                     "forall |j: int| 0 <= j < {} as int ==> (#[trigger] result@[j]).{}@ == {}",
                     index_var, field_name, source_str
@@ -5317,7 +5317,7 @@ impl Translator {
                 .iter()
                 .map(|(field_name, field_value)| {
                     let source_str =
-                        self.field_expr_to_invariant_string(field_value, index_var, ctx);
+                        Self::field_expr_to_invariant_string(field_value, index_var, ctx);
                     format!("{}: {}", field_name, source_str)
                 })
                 .collect();
@@ -5328,7 +5328,7 @@ impl Translator {
                 .iter()
                 .map(|(field_name, field_value)| {
                     let source_str =
-                        self.field_expr_to_invariant_string(field_value, index_var, ctx);
+                        Self::field_expr_to_invariant_string(field_value, index_var, ctx);
                     format!("assert(result@[j].{}@ == {});", field_name, source_str)
                 })
                 .collect();
@@ -5377,7 +5377,7 @@ impl Translator {
 
         let mut proof_stmts: Vec<ExecExpr> = Vec::new();
         for (field_name, field_value) in fields {
-            let source_str = self.field_expr_to_loop_string(field_value, index_var, ctx);
+            let source_str = Self::field_expr_to_loop_string(field_value, index_var, ctx);
             proof_stmts.push(ExecExpr::Assert(Box::new(ExecExpr::Literal(format!(
                 "pkt.{}@ == {}",
                 field_name, source_str
@@ -5431,7 +5431,6 @@ impl Translator {
     /// - Scalar params (int/nat): `*param as int`
     /// - Standalone non-scalar params: `param@`
     fn field_expr_to_invariant_string(
-        &self,
         expr: &Expr,
         index_var: &str,
         ctx: &TransformContext,
@@ -5439,8 +5438,8 @@ impl Translator {
         match expr {
             Expr::Index(base, idx) => {
                 // base@[idx]@ — view the vec/seq, index, view the element
-                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
-                let idx_str = self.field_expr_to_invariant_string(idx, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string(base, index_var, ctx);
+                let idx_str = Self::field_expr_to_invariant_string(idx, index_var, ctx);
                 format!("{}@[{}]@", base_str, idx_str)
             }
             Expr::Ident(name) if name == index_var => "j".to_string(),
@@ -5458,21 +5457,16 @@ impl Translator {
                 }
             }
             Expr::Field(base, field) => {
-                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
-            _ => self.expr_to_spec_string(expr, &[]),
+            _ => Self::expr_to_spec_string(expr, &[]),
         }
     }
 
     /// Convert a spec expression to a raw string WITHOUT adding `@` view to idents.
     /// Used for base expressions in field access chains (e.g., `c` in `c.replica_ids@[j]@`).
-    fn field_expr_to_raw_string(
-        &self,
-        expr: &Expr,
-        index_var: &str,
-        ctx: &TransformContext,
-    ) -> String {
+    fn field_expr_to_raw_string(expr: &Expr, index_var: &str, ctx: &TransformContext) -> String {
         match expr {
             Expr::Ident(name) if name == index_var => "j".to_string(),
             Expr::Ident(name) => {
@@ -5489,10 +5483,10 @@ impl Translator {
                 }
             }
             Expr::Field(base, field) => {
-                let base_str = self.field_expr_to_raw_string(base, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
-            _ => self.expr_to_spec_string(expr, &[]),
+            _ => Self::expr_to_spec_string(expr, &[]),
         }
     }
 
@@ -5500,16 +5494,11 @@ impl Translator {
     ///
     /// Similar to `field_expr_to_invariant_string`, but keeps the current loop index variable
     /// (e.g., `idx`) as `idx as int` instead of replacing it with the quantified `j`.
-    fn field_expr_to_loop_string(
-        &self,
-        expr: &Expr,
-        index_var: &str,
-        ctx: &TransformContext,
-    ) -> String {
+    fn field_expr_to_loop_string(expr: &Expr, index_var: &str, ctx: &TransformContext) -> String {
         match expr {
             Expr::Index(base, idx) => {
-                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
-                let idx_str = self.field_expr_to_loop_string(idx, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string_loop(base, index_var, ctx);
+                let idx_str = Self::field_expr_to_loop_string(idx, index_var, ctx);
                 format!("{}@[{}]@", base_str, idx_str)
             }
             Expr::Ident(name) if name == index_var => format!("{} as int", index_var),
@@ -5527,16 +5516,15 @@ impl Translator {
                 }
             }
             Expr::Field(base, field) => {
-                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string_loop(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
-            _ => self.expr_to_spec_string(expr, &[]),
+            _ => Self::expr_to_spec_string(expr, &[]),
         }
     }
 
     /// Raw-string variant for loop-body field expression conversion.
     fn field_expr_to_raw_string_loop(
-        &self,
         expr: &Expr,
         index_var: &str,
         ctx: &TransformContext,
@@ -5556,10 +5544,10 @@ impl Translator {
                 }
             }
             Expr::Field(base, field) => {
-                let base_str = self.field_expr_to_raw_string_loop(base, index_var, ctx);
+                let base_str = Self::field_expr_to_raw_string_loop(base, index_var, ctx);
                 format!("{}.{}", base_str, field)
             }
-            _ => self.expr_to_spec_string(expr, &[]),
+            _ => Self::expr_to_spec_string(expr, &[]),
         }
     }
 
@@ -6410,12 +6398,12 @@ impl Translator {
 
         // Transform combine expression, substituting seq[0] with seq[i]
         let combine_transformed = self.transform_expr(combine, &ctx)?;
-        let combine_expr = self.substitute_head_with_index(combine_transformed, seq_param);
+        let combine_expr = Self::substitute_head_with_index(combine_transformed, seq_param);
 
         // For fold, combine might reference __acc placeholder - substitute it
-        let mut combine_with_acc = self.substitute_acc_placeholder(combine_expr);
+        let mut combine_with_acc = Self::substitute_acc_placeholder(combine_expr);
         if let Expr::Ident(init_name) = init {
-            combine_with_acc = self.substitute_fold_acc_var(combine_with_acc, init_name);
+            combine_with_acc = Self::substitute_fold_acc_var(combine_with_acc, init_name);
         }
 
         // Build invariants
@@ -6506,7 +6494,7 @@ impl Translator {
     }
 
     /// Substitute __acc placeholder with actual acc variable
-    fn substitute_acc_placeholder(&self, expr: ExecExpr) -> ExecExpr {
+    fn substitute_acc_placeholder(expr: ExecExpr) -> ExecExpr {
         match expr {
             ExecExpr::Var(name) if name == "__acc" => ExecExpr::Var("acc".to_string()),
             ExecExpr::MethodCall {
@@ -6514,29 +6502,29 @@ impl Translator {
                 method,
                 args,
             } => ExecExpr::MethodCall {
-                receiver: Box::new(self.substitute_acc_placeholder(*receiver)),
+                receiver: Box::new(Self::substitute_acc_placeholder(*receiver)),
                 method,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_acc_placeholder(a))
+                    .map(Self::substitute_acc_placeholder)
                     .collect(),
             },
             ExecExpr::Call { func, args } => ExecExpr::Call {
                 func,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_acc_placeholder(a))
+                    .map(Self::substitute_acc_placeholder)
                     .collect(),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
-                lhs: Box::new(self.substitute_acc_placeholder(*lhs)),
+                lhs: Box::new(Self::substitute_acc_placeholder(*lhs)),
                 op,
-                rhs: Box::new(self.substitute_acc_placeholder(*rhs)),
+                rhs: Box::new(Self::substitute_acc_placeholder(*rhs)),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
                 stmts
                     .into_iter()
-                    .map(|s| self.substitute_acc_placeholder(s))
+                    .map(Self::substitute_acc_placeholder)
                     .collect(),
             ),
             other => other,
@@ -6545,7 +6533,7 @@ impl Translator {
 
     /// Substitute accumulator parameter references in fold-combine expressions
     /// with the loop accumulator local `acc`.
-    fn substitute_fold_acc_var(&self, expr: ExecExpr, acc_param_name: &str) -> ExecExpr {
+    fn substitute_fold_acc_var(expr: ExecExpr, acc_param_name: &str) -> ExecExpr {
         match expr {
             ExecExpr::Var(name) if name == acc_param_name => ExecExpr::Var("acc".to_string()),
             ExecExpr::MethodCall {
@@ -6553,33 +6541,33 @@ impl Translator {
                 method,
                 args,
             } => ExecExpr::MethodCall {
-                receiver: Box::new(self.substitute_fold_acc_var(*receiver, acc_param_name)),
+                receiver: Box::new(Self::substitute_fold_acc_var(*receiver, acc_param_name)),
                 method,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_fold_acc_var(a, acc_param_name))
+                    .map(|a| Self::substitute_fold_acc_var(a, acc_param_name))
                     .collect(),
             },
             ExecExpr::Call { func, args } => ExecExpr::Call {
                 func,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_fold_acc_var(a, acc_param_name))
+                    .map(|a| Self::substitute_fold_acc_var(a, acc_param_name))
                     .collect(),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
-                lhs: Box::new(self.substitute_fold_acc_var(*lhs, acc_param_name)),
+                lhs: Box::new(Self::substitute_fold_acc_var(*lhs, acc_param_name)),
                 op,
-                rhs: Box::new(self.substitute_fold_acc_var(*rhs, acc_param_name)),
+                rhs: Box::new(Self::substitute_fold_acc_var(*rhs, acc_param_name)),
             },
             ExecExpr::Unary { op, expr } => ExecExpr::Unary {
                 op,
-                expr: Box::new(self.substitute_fold_acc_var(*expr, acc_param_name)),
+                expr: Box::new(Self::substitute_fold_acc_var(*expr, acc_param_name)),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
                 stmts
                     .into_iter()
-                    .map(|s| self.substitute_fold_acc_var(s, acc_param_name))
+                    .map(|s| Self::substitute_fold_acc_var(s, acc_param_name))
                     .collect(),
             ),
             other => other,
@@ -6755,7 +6743,7 @@ impl Translator {
     }
 
     /// Convert an AST expression to a string suitable for spec invariants
-    fn expr_to_spec_string(&self, expr: &Expr, _extra_args: &[String]) -> String {
+    fn expr_to_spec_string(expr: &Expr, _extra_args: &[String]) -> String {
         match expr {
             Expr::Call { func, args } => {
                 let func_name = func
@@ -6765,7 +6753,7 @@ impl Translator {
                     .unwrap_or("unknown");
                 let args_str: Vec<String> = args
                     .iter()
-                    .map(|a| self.expr_to_spec_string(a, _extra_args))
+                    .map(|a| Self::expr_to_spec_string(a, _extra_args))
                     .collect();
                 format!("{}({})", func_name, args_str.join(", "))
             }
@@ -6774,10 +6762,10 @@ impl Translator {
                 method,
                 args,
             } => {
-                let recv_str = self.expr_to_spec_string(receiver, _extra_args);
+                let recv_str = Self::expr_to_spec_string(receiver, _extra_args);
                 let args_str: Vec<String> = args
                     .iter()
-                    .map(|a| self.expr_to_spec_string(a, _extra_args))
+                    .map(|a| Self::expr_to_spec_string(a, _extra_args))
                     .collect();
                 if args.is_empty() {
                     format!("{}.{}()", recv_str, method)
@@ -6787,20 +6775,20 @@ impl Translator {
             }
             Expr::Ident(name) => name.clone(),
             Expr::Index(base, idx) => {
-                let base_str = self.expr_to_spec_string(base, _extra_args);
-                let idx_str = self.expr_to_spec_string(idx, _extra_args);
+                let base_str = Self::expr_to_spec_string(base, _extra_args);
+                let idx_str = Self::expr_to_spec_string(idx, _extra_args);
                 format!("{}[{}]", base_str, idx_str)
             }
             Expr::Field(base, field) => {
-                let base_str = self.expr_to_spec_string(base, _extra_args);
+                let base_str = Self::expr_to_spec_string(base, _extra_args);
                 format!("{}.{}", base_str, field)
             }
             Expr::Arrow(base, field) => {
-                let base_str = self.expr_to_spec_string(base, _extra_args);
+                let base_str = Self::expr_to_spec_string(base, _extra_args);
                 format!("{}->{}", base_str, field)
             }
             Expr::Is(base, variant) => {
-                let base_str = self.expr_to_spec_string(base, _extra_args);
+                let base_str = Self::expr_to_spec_string(base, _extra_args);
                 format!("{} is {}", base_str, variant)
             }
             Expr::Literal(lit) => match lit {
@@ -6809,46 +6797,46 @@ impl Translator {
                 Literal::String(s) => format!("\"{}\"", s),
             },
             Expr::Not(inner) => {
-                let inner_str = self.expr_to_spec_string(inner, _extra_args);
+                let inner_str = Self::expr_to_spec_string(inner, _extra_args);
                 format!("!({})", inner_str)
             }
             Expr::Binary(l, op, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} {} {})", l_str, op.as_str(), r_str)
             }
             Expr::Eq(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} == {})", l_str, r_str)
             }
             Expr::Le(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} <= {})", l_str, r_str)
             }
             Expr::Lt(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} < {})", l_str, r_str)
             }
             Expr::Ge(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} >= {})", l_str, r_str)
             }
             Expr::Gt(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} > {})", l_str, r_str)
             }
             Expr::Ne(l, r) => {
-                let l_str = self.expr_to_spec_string(l, _extra_args);
-                let r_str = self.expr_to_spec_string(r, _extra_args);
+                let l_str = Self::expr_to_spec_string(l, _extra_args);
+                let r_str = Self::expr_to_spec_string(r, _extra_args);
                 format!("({} != {})", l_str, r_str)
             }
             Expr::Cast(inner, ty) => {
-                let inner_str = self.expr_to_spec_string(inner, _extra_args);
+                let inner_str = Self::expr_to_spec_string(inner, _extra_args);
                 let ty_str = match ty {
                     Type::Int => "int",
                     Type::Nat => "nat",
@@ -6872,7 +6860,7 @@ impl Translator {
         let transformed = self.transform_expr(predicate, ctx)?;
 
         // Then substitute seq[0] patterns with seq.index(i)
-        Ok(self.substitute_head_with_index(transformed, seq_param))
+        Ok(Self::substitute_head_with_index(transformed, seq_param))
     }
 
     /// Substitute s[0] patterns with s.index(i) for ALL iterated sequences.
@@ -6880,13 +6868,13 @@ impl Translator {
     fn substitute_heads_with_index(&self, expr: ExecExpr, iterated_seqs: &[String]) -> ExecExpr {
         let mut result = expr;
         for seq_param in iterated_seqs {
-            result = self.substitute_head_with_index(result, seq_param);
+            result = Self::substitute_head_with_index(result, seq_param);
         }
         result
     }
 
     /// Substitute s[0] patterns with s.index(i) in an ExecExpr
-    fn substitute_head_with_index(&self, expr: ExecExpr, seq_param: &str) -> ExecExpr {
+    fn substitute_head_with_index(expr: ExecExpr, seq_param: &str) -> ExecExpr {
         match expr {
             ExecExpr::MethodCall {
                 receiver,
@@ -6912,11 +6900,11 @@ impl Translator {
                 }
                 // Recurse into receiver and args
                 ExecExpr::MethodCall {
-                    receiver: Box::new(self.substitute_head_with_index(*receiver, seq_param)),
+                    receiver: Box::new(Self::substitute_head_with_index(*receiver, seq_param)),
                     method,
                     args: args
                         .into_iter()
-                        .map(|a| self.substitute_head_with_index(a, seq_param))
+                        .map(|a| Self::substitute_head_with_index(a, seq_param))
                         .collect(),
                 }
             }
@@ -6924,49 +6912,49 @@ impl Translator {
                 func,
                 args: args
                     .into_iter()
-                    .map(|a| self.substitute_head_with_index(a, seq_param))
+                    .map(|a| Self::substitute_head_with_index(a, seq_param))
                     .collect(),
             },
             ExecExpr::Binary { lhs, op, rhs } => ExecExpr::Binary {
-                lhs: Box::new(self.substitute_head_with_index(*lhs, seq_param)),
+                lhs: Box::new(Self::substitute_head_with_index(*lhs, seq_param)),
                 op,
-                rhs: Box::new(self.substitute_head_with_index(*rhs, seq_param)),
+                rhs: Box::new(Self::substitute_head_with_index(*rhs, seq_param)),
             },
             ExecExpr::Unary { op, expr } => ExecExpr::Unary {
                 op,
-                expr: Box::new(self.substitute_head_with_index(*expr, seq_param)),
+                expr: Box::new(Self::substitute_head_with_index(*expr, seq_param)),
             },
             ExecExpr::If {
                 cond,
                 then_branch,
                 else_branch,
             } => ExecExpr::If {
-                cond: Box::new(self.substitute_head_with_index(*cond, seq_param)),
-                then_branch: Box::new(self.substitute_head_with_index(*then_branch, seq_param)),
+                cond: Box::new(Self::substitute_head_with_index(*cond, seq_param)),
+                then_branch: Box::new(Self::substitute_head_with_index(*then_branch, seq_param)),
                 else_branch: else_branch
-                    .map(|e| Box::new(self.substitute_head_with_index(*e, seq_param))),
+                    .map(|e| Box::new(Self::substitute_head_with_index(*e, seq_param))),
             },
             ExecExpr::Block(stmts) => ExecExpr::Block(
                 stmts
                     .into_iter()
-                    .map(|s| self.substitute_head_with_index(s, seq_param))
+                    .map(|s| Self::substitute_head_with_index(s, seq_param))
                     .collect(),
             ),
             // Field access - need to recurse into base expression
             ExecExpr::Field(base, field) => ExecExpr::Field(
-                Box::new(self.substitute_head_with_index(*base, seq_param)),
+                Box::new(Self::substitute_head_with_index(*base, seq_param)),
                 field,
             ),
             // Clone - recurse into inner expression
-            ExecExpr::Clone(inner) => {
-                ExecExpr::Clone(Box::new(self.substitute_head_with_index(*inner, seq_param)))
-            }
+            ExecExpr::Clone(inner) => ExecExpr::Clone(Box::new(Self::substitute_head_with_index(
+                *inner, seq_param,
+            ))),
             // Struct - recurse into field values
             ExecExpr::Struct { name, fields } => ExecExpr::Struct {
                 name,
                 fields: fields
                     .into_iter()
-                    .map(|(f, e)| (f, self.substitute_head_with_index(e, seq_param)))
+                    .map(|(f, e)| (f, Self::substitute_head_with_index(e, seq_param)))
                     .collect(),
             },
             // Other cases pass through unchanged
@@ -6982,7 +6970,7 @@ impl Translator {
         ctx: &TransformContext,
     ) -> TranspileResult<ExecExpr> {
         let transformed = self.transform_expr(transform, ctx)?;
-        let substituted = self.substitute_head_with_index(transformed, seq_param);
+        let substituted = Self::substitute_head_with_index(transformed, seq_param);
         // Wrap in clone
         Ok(ExecExpr::Clone(Box::new(substituted)))
     }
@@ -7675,7 +7663,7 @@ impl Translator {
 
         // For each sequence param, check if it's used with drop_first/skip in any recursive call
         for seq_param in &seq_params {
-            if self.expr_has_drop_first_recursive(&func.spec_fn.body, func_name, seq_param) {
+            if Self::expr_has_drop_first_recursive(&func.spec_fn.body, func_name, seq_param) {
                 return Some(seq_param.clone());
             }
         }
@@ -7684,7 +7672,7 @@ impl Translator {
     }
 
     /// Check if an expression contains a recursive call with drop_first/skip on the given seq param
-    fn expr_has_drop_first_recursive(&self, expr: &Expr, func_name: &str, seq_param: &str) -> bool {
+    fn expr_has_drop_first_recursive(expr: &Expr, func_name: &str, seq_param: &str) -> bool {
         match expr {
             Expr::Call { func, args } => {
                 // Check if this is a recursive call
@@ -7696,36 +7684,36 @@ impl Translator {
                 }
                 // Recurse into arguments
                 args.iter()
-                    .any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
+                    .any(|a| Self::expr_has_drop_first_recursive(a, func_name, seq_param))
             }
             Expr::If {
                 cond,
                 then_branch,
                 else_branch,
             } => {
-                self.expr_has_drop_first_recursive(cond, func_name, seq_param)
-                    || self.expr_has_drop_first_recursive(then_branch, func_name, seq_param)
+                Self::expr_has_drop_first_recursive(cond, func_name, seq_param)
+                    || Self::expr_has_drop_first_recursive(then_branch, func_name, seq_param)
                     || else_branch.as_ref().is_some_and(|e| {
-                        self.expr_has_drop_first_recursive(e, func_name, seq_param)
+                        Self::expr_has_drop_first_recursive(e, func_name, seq_param)
                     })
             }
             Expr::Binary(l, _, r) => {
-                self.expr_has_drop_first_recursive(l, func_name, seq_param)
-                    || self.expr_has_drop_first_recursive(r, func_name, seq_param)
+                Self::expr_has_drop_first_recursive(l, func_name, seq_param)
+                    || Self::expr_has_drop_first_recursive(r, func_name, seq_param)
             }
             Expr::MethodCall { receiver, args, .. } => {
-                self.expr_has_drop_first_recursive(receiver, func_name, seq_param)
+                Self::expr_has_drop_first_recursive(receiver, func_name, seq_param)
                     || args
                         .iter()
-                        .any(|a| self.expr_has_drop_first_recursive(a, func_name, seq_param))
+                        .any(|a| Self::expr_has_drop_first_recursive(a, func_name, seq_param))
             }
             Expr::Let { value, body, .. } => {
-                self.expr_has_drop_first_recursive(value, func_name, seq_param)
-                    || self.expr_has_drop_first_recursive(body, func_name, seq_param)
+                Self::expr_has_drop_first_recursive(value, func_name, seq_param)
+                    || Self::expr_has_drop_first_recursive(body, func_name, seq_param)
             }
             Expr::Conjunction(exprs) | Expr::Disjunction(exprs) => exprs
                 .iter()
-                .any(|e| self.expr_has_drop_first_recursive(e, func_name, seq_param)),
+                .any(|e| Self::expr_has_drop_first_recursive(e, func_name, seq_param)),
             _ => false,
         }
     }
@@ -10173,9 +10161,10 @@ impl Translator {
                         format!("result.{}", i)
                     };
                     for pred in &self.config.vec_element_ensures {
+                        // Phase 54.7: emit the trigger explicitly (see lib.rs).
                         ensures.push(format!(
-                            "forall |i:int| 0 <= i < {}@.len() ==> {}@[i].{}()",
-                            accessor, accessor, pred
+                            "forall |i:int| #![trigger {}@[i]] 0 <= i < {}@.len() ==> {}@[i].{}()",
+                            accessor, accessor, accessor, pred
                         ));
                     }
                 }
@@ -10546,7 +10535,7 @@ impl Translator {
                     _ => None,
                 };
                 if let Some(name) = var_name {
-                    if self.is_precondition_only_let(name, body, ctx) {
+                    if Self::is_precondition_only_let(name, body, ctx) {
                         // Skip this let binding, just translate the body
                         return self.transform_expr(body, ctx);
                     }
@@ -15450,7 +15439,7 @@ impl Translator {
 
     /// Extract source map from a conditional value expression
     /// Handles: if cond { v1 } else { source[k] }
-    fn extract_source_from_conditional_value(&self, expr: &Expr, key_var: &str) -> Option<String> {
+    fn extract_source_from_conditional_value(expr: &Expr, key_var: &str) -> Option<String> {
         use crate::ast::Expr;
 
         match expr {
@@ -15477,7 +15466,7 @@ impl Translator {
                 // Recursively check then branch
                 if let Expr::If { then_branch, .. } = expr {
                     if let Some(source) =
-                        self.extract_source_from_conditional_value(then_branch, key_var)
+                        Self::extract_source_from_conditional_value(then_branch, key_var)
                     {
                         return Some(source);
                     }
@@ -15674,7 +15663,7 @@ impl Translator {
                 //
                 // Try to extract source map from the value expression
                 if let Some(source_map) =
-                    self.extract_source_from_conditional_value(value_expr, key_var)
+                    Self::extract_source_from_conditional_value(value_expr, key_var)
                 {
                     // Generate: source.iter().map(|(k, v)| (k.clone(), value_expr)).collect()
                     let value = self.transform_expr(value_expr, ctx)?;
@@ -16209,15 +16198,15 @@ mod tests {
     #[test]
     fn test_transform_cast_expr() {
         // Test: Cast(ident, Int) → "ident as int" in expr_to_spec_string
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         let expr = Expr::Cast(Box::new(Expr::Ident("follower".to_string())), Type::Int);
         let empty_args: Vec<String> = vec![];
-        let result = translator.expr_to_spec_string(&expr, &empty_args);
+        let result = Translator::expr_to_spec_string(&expr, &empty_args);
         assert_eq!(result, "follower as int");
 
         let expr_nat = Expr::Cast(Box::new(Expr::Ident("x".to_string())), Type::Nat);
-        let result_nat = translator.expr_to_spec_string(&expr_nat, &empty_args);
+        let result_nat = Translator::expr_to_spec_string(&expr_nat, &empty_args);
         assert_eq!(result_nat, "x as nat");
     }
 
@@ -16825,7 +16814,7 @@ mod tests {
 
     #[test]
     fn test_extract_source_from_conditional_value() {
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         // Test: if cond { new_value } else { source[k] }
         let source_index = Expr::Index(
@@ -16838,7 +16827,7 @@ mod tests {
             else_branch: Some(Box::new(source_index)),
         };
 
-        let result = translator.extract_source_from_conditional_value(&conditional, "k");
+        let result = Translator::extract_source_from_conditional_value(&conditional, "k");
         assert!(result.is_some());
         assert_eq!(result.unwrap(), "source");
     }
@@ -21591,32 +21580,32 @@ mod tests {
 
     #[test]
     fn test_expr_to_spec_string_function_call() {
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         // Test function call conversion
         let expr = func_call("RequestSatisfiedBy", vec![seq_head("s"), ident("r")]);
-        let result = translator.expr_to_spec_string(&expr, &[]);
+        let result = Translator::expr_to_spec_string(&expr, &[]);
         assert!(result.contains("RequestSatisfiedBy"));
         assert!(result.contains("s[0]") || result.contains("s.index(0)"));
     }
 
     #[test]
     fn test_expr_to_spec_string_method_call() {
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         // Test method call conversion
         let expr = method_call(ident("s"), "len", vec![]);
-        let result = translator.expr_to_spec_string(&expr, &[]);
+        let result = Translator::expr_to_spec_string(&expr, &[]);
         assert_eq!(result, "s.len()");
     }
 
     #[test]
     fn test_expr_to_spec_string_is_variant() {
-        let translator = Translator::default();
+        let _translator = Translator::default();
 
         // Test "is" expression (enum variant check)
         let expr = Expr::Is(Box::new(seq_head("ios")), "Send".to_string());
-        let result = translator.expr_to_spec_string(&expr, &[]);
+        let result = Translator::expr_to_spec_string(&expr, &[]);
         assert!(result.contains("is Send"));
     }
 

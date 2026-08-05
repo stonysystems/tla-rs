@@ -29,7 +29,7 @@ verus! {
 
     pub open spec fn RemoveVotesBeforeLogTruncationPoint(votes:Votes, votes_:Votes, log_truncation_point:OperationNumber) -> bool
     {
-        &&& (forall |opn:OperationNumber| votes_.contains_key(opn) ==> votes.contains_key(opn) && votes_[opn] == votes[opn])
+        &&& (forall |opn:OperationNumber| #![trigger votes_[opn]] #![trigger votes[opn]] votes_.contains_key(opn) ==> votes.contains_key(opn) && votes_[opn] == votes[opn])
         &&& (forall |opn:OperationNumber| opn < log_truncation_point ==> !votes_.contains_key(opn))
         &&& (forall |opn:OperationNumber| opn >= log_truncation_point && votes.contains_key(opn) ==> votes_.contains_key(opn))
     }
@@ -37,7 +37,7 @@ verus! {
     pub open spec fn LAddVoteAndRemoveOldOnes(votes:Votes, votes_:Votes, new_opn:OperationNumber, new_vote:Vote, log_truncation_point:OperationNumber) -> bool
     {
         &&& (forall |opn:OperationNumber| votes_.dom().contains(opn) <==> opn >= log_truncation_point && (votes.dom().contains(opn) || opn == new_opn))
-        &&& (forall |opn:OperationNumber| votes_.dom().contains(opn) ==> votes_[opn] == (if opn == new_opn {new_vote} else {votes[opn]}))
+        &&& (forall |opn:OperationNumber| #![trigger votes_[opn]] votes_.dom().contains(opn) ==> votes_[opn] == (if opn == new_opn {new_vote} else {votes[opn]}))
     }
 
     pub open spec fn LAcceptorInit(a:LAcceptor, c:LReplicaConstants) -> bool

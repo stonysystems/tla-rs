@@ -178,7 +178,7 @@ verus! {
             GetCommittedLog(ds)[k] == ds.server_states[server_id].log[k].value,
     {
         lemma_max_commit_index_witness(ds);
-        let chosen = choose |id: int| 0 <= id < ds.num_servers
+        let chosen = choose |id: int| #![trigger ds.server_states[id]] 0 <= id < ds.num_servers
             && ds.server_states[id].commit_index >= MaxCommitIndex(ds)
             && ds.server_states[id].log.len() >= MaxCommitIndex(ds);
         // GetCommittedLog(ds)[k] == chosen.log[k].value
@@ -199,7 +199,7 @@ verus! {
     {
         // Extract step parameters first (in this function where RaftDistributedNext is available)
         lemma_distributed_next_implies_legacy(ds, ds_);
-        let server_id = choose |sid: int| {
+        let server_id = choose |sid: int| #![trigger ds.server_states[sid]] #![trigger ds_.server_states[sid]] #![trigger ds.server_constants[sid]] {
             &&& 0 <= sid < ds.num_servers
             &&& LNext(ds.server_states[sid], ds_.server_states[sid],
                        ds.server_constants[sid])
@@ -242,7 +242,7 @@ verus! {
         let old_max = MaxCommitIndex(ds);
         if old_max > 0 {
             lemma_max_commit_index_witness(ds);
-            let s0 = choose |id: int| 0 <= id < ds.num_servers
+            let s0 = choose |id: int| #![trigger ds.server_states[id]] 0 <= id < ds.num_servers
                 && ds.server_states[id].commit_index >= old_max
                 && ds.server_states[id].log.len() >= old_max;
             if s0 != server_id {

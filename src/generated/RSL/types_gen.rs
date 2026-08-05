@@ -38,6 +38,7 @@ pub use crate::implementation::RSL::cbroadcast::*;
 pub use crate::implementation::RSL::cconfiguration::{CConfiguration, ReplicaIndexValid};
 pub use crate::implementation::RSL::cconstants::{CConstants, CReplicaConstants};
 pub use crate::implementation::RSL::cmessage::*;
+pub use crate::implementation::RSL::cparameters::CParameters;
 pub use crate::implementation::RSL::learnerimpl::CLearner;
 pub use crate::implementation::RSL::types_i::*;
 pub use crate::implementation::RSL::CStateMachine::*;
@@ -90,33 +91,6 @@ impl View for CClockReading {
         }
     }
 }
-
-#[derive(Clone, Copy)]
-pub struct CParameters {
-    pub max_log_length: u64,
-    pub baseline_view_timeout_period: u64,
-    pub heartbeat_period: u64,
-    pub max_integer_val: u64,
-    pub max_batch_size: u64,
-    pub max_batch_delay: u64,
-}
-
-impl CParameters {
-    pub fn clone_up_to_view(&self) -> (result: Self)
-    ensures
-        result@ == self@,
-    {
-        CParameters {
-            max_log_length: self.max_log_length,
-            baseline_view_timeout_period: self.baseline_view_timeout_period,
-            heartbeat_period: self.heartbeat_period,
-            max_integer_val: self.max_integer_val,
-            max_batch_size: self.max_batch_size,
-            max_batch_delay: self.max_batch_delay,
-        }
-    }
-}
-
 
 
 /// Helper for match arms that are provably unreachable.

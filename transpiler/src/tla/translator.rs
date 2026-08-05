@@ -1452,15 +1452,15 @@ impl<'a> ExprTranslator<'a> {
         None
     }
 
-    fn expr_is_tupleish(&self, expr: &TlaExpr) -> bool {
+    fn expr_is_tupleish(expr: &TlaExpr) -> bool {
         match expr {
             TlaExpr::Tuple(_) => true,
             TlaExpr::IfThenElse {
                 then_expr,
                 else_expr,
                 ..
-            } => self.expr_is_tupleish(then_expr) && self.expr_is_tupleish(else_expr),
-            TlaExpr::LetIn { body, .. } => self.expr_is_tupleish(body),
+            } => Self::expr_is_tupleish(then_expr) && Self::expr_is_tupleish(else_expr),
+            TlaExpr::LetIn { body, .. } => Self::expr_is_tupleish(body),
             _ => false,
         }
     }
@@ -2659,7 +2659,7 @@ impl<'a> ExprTranslator<'a> {
                 && self.expr_is_numericish(else_expr))
                 || (self.expr_is_numericish(then_expr) && self.expr_is_boolish(else_expr));
             let tupleish_branches =
-                self.expr_is_tupleish(then_expr) && self.expr_is_tupleish(else_expr);
+                Self::expr_is_tupleish(then_expr) && Self::expr_is_tupleish(else_expr);
             let then_mapish = rendered_looks_like_map_int_int(&then_str)
                 || self
                     .expr_type_hint(then_expr)
@@ -3442,7 +3442,7 @@ impl ModuleTranslator {
 
         // Walk all operator bodies to find Record expressions and RecordAccess on state vars
         for op in &module.operators {
-            self.collect_records_from_expr_fields(
+            Self::collect_records_from_expr_fields(
                 &op.body,
                 &mut all_field_names,
                 &mut per_record_keys,
@@ -4448,7 +4448,6 @@ impl ModuleTranslator {
     /// Walk an expression tree to collect record field names, per-record keys, and field types.
     /// Also collects field names from RecordAccess on state variables (state_var_names).
     fn collect_records_from_expr_fields(
-        &self,
         expr: &TlaExpr,
         all_fields: &mut std::collections::BTreeSet<String>,
         keys: &mut Vec<String>,
@@ -4472,7 +4471,7 @@ impl ModuleTranslator {
                     if Self::expr_is_string(value, string_ops) {
                         string_fields.insert(name.clone());
                     }
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         value,
                         all_fields,
                         keys,
@@ -4487,7 +4486,7 @@ impl ModuleTranslator {
             | TlaExpr::Enabled(inner)
             | TlaExpr::Always(inner)
             | TlaExpr::Eventually(inner) => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     inner,
                     all_fields,
                     keys,
@@ -4497,7 +4496,7 @@ impl ModuleTranslator {
                 );
             }
             TlaExpr::BinOp { left, right, .. } | TlaExpr::LeadsTo { left, right } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     left,
                     all_fields,
                     keys,
@@ -4505,7 +4504,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     right,
                     all_fields,
                     keys,
@@ -4515,7 +4514,7 @@ impl ModuleTranslator {
                 );
             }
             TlaExpr::OpApply { op, args } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     op,
                     all_fields,
                     keys,
@@ -4524,7 +4523,7 @@ impl ModuleTranslator {
                     state_var_names,
                 );
                 for arg in args {
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         arg,
                         all_fields,
                         keys,
@@ -4535,7 +4534,7 @@ impl ModuleTranslator {
                 }
             }
             TlaExpr::FnApply { func, arg } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     func,
                     all_fields,
                     keys,
@@ -4543,7 +4542,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     arg,
                     all_fields,
                     keys,
@@ -4557,7 +4556,7 @@ impl ModuleTranslator {
                 then_expr,
                 else_expr,
             } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     cond,
                     all_fields,
                     keys,
@@ -4565,7 +4564,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     then_expr,
                     all_fields,
                     keys,
@@ -4573,7 +4572,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     else_expr,
                     all_fields,
                     keys,
@@ -4586,7 +4585,7 @@ impl ModuleTranslator {
             | TlaExpr::Tuple(elements)
             | TlaExpr::Unchanged(elements) => {
                 for element in elements {
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         element,
                         all_fields,
                         keys,
@@ -4597,7 +4596,7 @@ impl ModuleTranslator {
                 }
             }
             TlaExpr::SetFilter { set, filter, .. } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     set,
                     all_fields,
                     keys,
@@ -4605,7 +4604,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     filter,
                     all_fields,
                     keys,
@@ -4615,7 +4614,7 @@ impl ModuleTranslator {
                 );
             }
             TlaExpr::SetMap { expr, set, .. } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     expr,
                     all_fields,
                     keys,
@@ -4623,7 +4622,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     set,
                     all_fields,
                     keys,
@@ -4633,7 +4632,7 @@ impl ModuleTranslator {
                 );
             }
             TlaExpr::FnConstruct { domain, body, .. } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     domain,
                     all_fields,
                     keys,
@@ -4641,7 +4640,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     body,
                     all_fields,
                     keys,
@@ -4651,7 +4650,7 @@ impl ModuleTranslator {
                 );
             }
             TlaExpr::FnExcept { func, updates } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     func,
                     all_fields,
                     keys,
@@ -4662,7 +4661,7 @@ impl ModuleTranslator {
                 for update in updates {
                     for path in &update.path {
                         if let TlaExceptPath::Index(index) = path {
-                            self.collect_records_from_expr_fields(
+                            Self::collect_records_from_expr_fields(
                                 index,
                                 all_fields,
                                 keys,
@@ -4672,7 +4671,7 @@ impl ModuleTranslator {
                             );
                         }
                     }
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         &update.value,
                         all_fields,
                         keys,
@@ -4683,7 +4682,7 @@ impl ModuleTranslator {
                 }
             }
             TlaExpr::FnSet { domain, range } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     domain,
                     all_fields,
                     keys,
@@ -4691,7 +4690,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     range,
                     all_fields,
                     keys,
@@ -4710,7 +4709,7 @@ impl ModuleTranslator {
                         all_fields.insert(field.clone());
                     }
                 }
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     record,
                     all_fields,
                     keys,
@@ -4722,7 +4721,7 @@ impl ModuleTranslator {
             TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
                 for quant_bound in vars {
                     if let Some(set_expr) = &quant_bound.set {
-                        self.collect_records_from_expr_fields(
+                        Self::collect_records_from_expr_fields(
                             set_expr,
                             all_fields,
                             keys,
@@ -4732,7 +4731,7 @@ impl ModuleTranslator {
                         );
                     }
                 }
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     body,
                     all_fields,
                     keys,
@@ -4743,7 +4742,7 @@ impl ModuleTranslator {
             }
             TlaExpr::Choose { set, body, .. } => {
                 if let Some(set_expr) = set {
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         set_expr,
                         all_fields,
                         keys,
@@ -4752,7 +4751,7 @@ impl ModuleTranslator {
                         state_var_names,
                     );
                 }
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     body,
                     all_fields,
                     keys,
@@ -4763,7 +4762,7 @@ impl ModuleTranslator {
             }
             TlaExpr::Case { arms, other } => {
                 for (condition, body) in arms {
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         condition,
                         all_fields,
                         keys,
@@ -4771,7 +4770,7 @@ impl ModuleTranslator {
                         string_ops,
                         state_var_names,
                     );
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         body,
                         all_fields,
                         keys,
@@ -4781,7 +4780,7 @@ impl ModuleTranslator {
                     );
                 }
                 if let Some(other_expr) = other {
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         other_expr,
                         all_fields,
                         keys,
@@ -4793,7 +4792,7 @@ impl ModuleTranslator {
             }
             TlaExpr::LetIn { defs, body } => {
                 for def in defs {
-                    self.collect_records_from_expr_fields(
+                    Self::collect_records_from_expr_fields(
                         &def.body,
                         all_fields,
                         keys,
@@ -4802,7 +4801,7 @@ impl ModuleTranslator {
                         state_var_names,
                     );
                 }
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     body,
                     all_fields,
                     keys,
@@ -4812,7 +4811,7 @@ impl ModuleTranslator {
                 );
             }
             TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     vars,
                     all_fields,
                     keys,
@@ -4820,7 +4819,7 @@ impl ModuleTranslator {
                     string_ops,
                     state_var_names,
                 );
-                self.collect_records_from_expr_fields(
+                Self::collect_records_from_expr_fields(
                     action,
                     all_fields,
                     keys,
@@ -5047,11 +5046,11 @@ impl ModuleTranslator {
                 );
             let kind = if op.name.eq_ignore_ascii_case("init") {
                 OperatorKind::Predicate
-            } else if self.operator_uses_primes(&op.body)
+            } else if Self::operator_uses_primes(&op.body)
                 || operator_has_explicit_next_state_param(op)
             {
                 OperatorKind::Action
-            } else if !self.operator_refs_declared_variables(
+            } else if !Self::operator_refs_declared_variables(
                 &op.body,
                 &op_param_names,
                 &module_var_names,
@@ -5077,7 +5076,7 @@ impl ModuleTranslator {
                 let current = config.operator_info.get(&op.name).cloned();
                 match current {
                     Some(OperatorKind::Predicate) => {
-                        if self.expr_refs_action_operators(
+                        if Self::expr_refs_action_operators(
                             &op.body,
                             &config.operator_info,
                             &op_names,
@@ -5090,7 +5089,7 @@ impl ModuleTranslator {
                     }
                     Some(OperatorKind::ConstantOp) => {
                         // Promote ConstantOp to Action if it references Action operators
-                        if self.expr_refs_action_operators(
+                        if Self::expr_refs_action_operators(
                             &op.body,
                             &config.operator_info,
                             &op_names,
@@ -5099,7 +5098,7 @@ impl ModuleTranslator {
                                 .operator_info
                                 .insert(op.name.clone(), OperatorKind::Action);
                             changed = true;
-                        } else if self.expr_refs_predicate_operators(
+                        } else if Self::expr_refs_predicate_operators(
                             &op.body,
                             &config.operator_info,
                             &op_names,
@@ -5121,8 +5120,11 @@ impl ModuleTranslator {
             let is_action = config.operator_info.get(&op.name) == Some(&OperatorKind::Action);
             let is_strict_init = op.name.eq_ignore_ascii_case("init");
             let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
-            let refs_vars =
-                self.operator_refs_declared_variables(&op.body, &op_param_names, &module_var_names);
+            let refs_vars = Self::operator_refs_declared_variables(
+                &op.body,
+                &op_param_names,
+                &module_var_names,
+            );
             let inferred_generated_d1_state_ref = self
                 .operator_uses_inferred_generated_d1_state_param(
                     op,
@@ -5275,7 +5277,7 @@ impl ModuleTranslator {
         // Add state parameter if operator references variables (directly or transitively)
         let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
         let refs_vars =
-            self.operator_refs_declared_variables(&op.body, &op_param_names, module_var_names);
+            Self::operator_refs_declared_variables(&op.body, &op_param_names, module_var_names);
         // Actions always get s and s_ params (they transitively reference state through
         // sub-operators). For variable-less generated modules, non-Init predicates may also
         // shadow the inferred state parameter name; recover that state parameter explicitly.
@@ -5369,7 +5371,7 @@ impl ModuleTranslator {
         let mut return_type = self.get_operator_return_type(&op.name);
         if module.variables.is_empty() {
             if let Some(inferred_return_ty) =
-                self.infer_generated_d1_return_type_from_expr(&op.body, &identifier_type_hints)
+                Self::infer_generated_d1_return_type_from_expr(&op.body, &identifier_type_hints)
             {
                 let should_override = return_type == "int"
                     || return_type == "()"
@@ -5594,69 +5596,73 @@ impl ModuleTranslator {
     }
 
     /// Check if an expression uses primed variables
-    fn operator_uses_primes(&self, expr: &TlaExpr) -> bool {
+    fn operator_uses_primes(expr: &TlaExpr) -> bool {
         match expr {
             TlaExpr::Prime(_) => true,
             TlaExpr::BinOp { left, right, .. } => {
-                self.operator_uses_primes(left) || self.operator_uses_primes(right)
+                Self::operator_uses_primes(left) || Self::operator_uses_primes(right)
             }
-            TlaExpr::UnaryOp { operand, .. } => self.operator_uses_primes(operand),
+            TlaExpr::UnaryOp { operand, .. } => Self::operator_uses_primes(operand),
             TlaExpr::OpApply { op, args } => {
-                self.operator_uses_primes(op) || args.iter().any(|a| self.operator_uses_primes(a))
+                Self::operator_uses_primes(op) || args.iter().any(Self::operator_uses_primes)
             }
             TlaExpr::FnApply { func, arg } => {
-                self.operator_uses_primes(func) || self.operator_uses_primes(arg)
+                Self::operator_uses_primes(func) || Self::operator_uses_primes(arg)
             }
-            TlaExpr::SetEnum(elements) => elements.iter().any(|e| self.operator_uses_primes(e)),
+            TlaExpr::SetEnum(elements) => elements.iter().any(Self::operator_uses_primes),
             TlaExpr::SetFilter { set, filter, .. } => {
-                self.operator_uses_primes(set) || self.operator_uses_primes(filter)
+                Self::operator_uses_primes(set) || Self::operator_uses_primes(filter)
             }
             TlaExpr::SetMap { expr, set, .. } => {
-                self.operator_uses_primes(expr) || self.operator_uses_primes(set)
+                Self::operator_uses_primes(expr) || Self::operator_uses_primes(set)
             }
             TlaExpr::FnConstruct { domain, body, .. } => {
-                self.operator_uses_primes(domain) || self.operator_uses_primes(body)
+                Self::operator_uses_primes(domain) || Self::operator_uses_primes(body)
             }
             TlaExpr::FnExcept { func, updates } => {
-                self.operator_uses_primes(func)
-                    || updates.iter().any(|u| self.operator_uses_primes(&u.value))
+                Self::operator_uses_primes(func)
+                    || updates.iter().any(|u| Self::operator_uses_primes(&u.value))
             }
-            TlaExpr::Record(fields) => fields.iter().any(|(_, e)| self.operator_uses_primes(e)),
-            TlaExpr::RecordAccess { record, .. } => self.operator_uses_primes(record),
-            TlaExpr::Tuple(elements) => elements.iter().any(|e| self.operator_uses_primes(e)),
+            TlaExpr::Record(fields) => fields.iter().any(|(_, e)| Self::operator_uses_primes(e)),
+            TlaExpr::RecordAccess { record, .. } => Self::operator_uses_primes(record),
+            TlaExpr::Tuple(elements) => elements.iter().any(Self::operator_uses_primes),
             TlaExpr::Forall { body, .. } | TlaExpr::Exists { body, .. } => {
-                self.operator_uses_primes(body)
+                Self::operator_uses_primes(body)
             }
             TlaExpr::Choose { body, set, .. } => {
-                self.operator_uses_primes(body)
-                    || set.as_ref().is_some_and(|s| self.operator_uses_primes(s))
+                Self::operator_uses_primes(body)
+                    || set.as_ref().is_some_and(|e| Self::operator_uses_primes(e))
             }
             TlaExpr::IfThenElse {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                self.operator_uses_primes(cond)
-                    || self.operator_uses_primes(then_expr)
-                    || self.operator_uses_primes(else_expr)
+                Self::operator_uses_primes(cond)
+                    || Self::operator_uses_primes(then_expr)
+                    || Self::operator_uses_primes(else_expr)
             }
             TlaExpr::Case { arms, other } => {
                 arms.iter()
-                    .any(|(c, e)| self.operator_uses_primes(c) || self.operator_uses_primes(e))
-                    || other.as_ref().is_some_and(|o| self.operator_uses_primes(o))
+                    .any(|(c, e)| Self::operator_uses_primes(c) || Self::operator_uses_primes(e))
+                    || other
+                        .as_ref()
+                        .is_some_and(|e| Self::operator_uses_primes(e))
             }
             TlaExpr::LetIn { defs, body } => {
-                defs.iter().any(|d| self.operator_uses_primes(&d.body))
-                    || self.operator_uses_primes(body)
+                defs.iter().any(|d| Self::operator_uses_primes(&d.body))
+                    || Self::operator_uses_primes(body)
             }
             TlaExpr::Unchanged(_) => true, // UNCHANGED implies action
-            TlaExpr::Enabled(inner) => self.operator_uses_primes(inner),
-            TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => self.operator_uses_primes(inner),
+            TlaExpr::Enabled(inner) => Self::operator_uses_primes(inner),
+            TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => {
+                Self::operator_uses_primes(inner)
+            }
             TlaExpr::LeadsTo { left, right } => {
-                self.operator_uses_primes(left) || self.operator_uses_primes(right)
+                Self::operator_uses_primes(left) || Self::operator_uses_primes(right)
             }
             TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => {
-                self.operator_uses_primes(action)
+                Self::operator_uses_primes(action)
             }
             _ => false,
         }
@@ -5664,12 +5670,11 @@ impl ModuleTranslator {
 
     /// Check if an expression references any operator classified as Action
     fn expr_refs_action_operators(
-        &self,
         expr: &TlaExpr,
         operator_info: &std::collections::HashMap<String, OperatorKind>,
         _op_names: &[String],
     ) -> bool {
-        let r = |e: &TlaExpr| self.expr_refs_action_operators(e, operator_info, _op_names);
+        let r = |e: &TlaExpr| Self::expr_refs_action_operators(e, operator_info, _op_names);
         match expr {
             TlaExpr::Ident(name) => operator_info.get(name) == Some(&OperatorKind::Action),
             TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
@@ -5712,12 +5717,11 @@ impl ModuleTranslator {
 
     /// Check if an expression references Predicate or Action operators (needs state params)
     fn expr_refs_predicate_operators(
-        &self,
         expr: &TlaExpr,
         operator_info: &std::collections::HashMap<String, OperatorKind>,
         _op_names: &[String],
     ) -> bool {
-        let r = |e: &TlaExpr| self.expr_refs_predicate_operators(e, operator_info, _op_names);
+        let r = |e: &TlaExpr| Self::expr_refs_predicate_operators(e, operator_info, _op_names);
         match expr {
             TlaExpr::Ident(name) => matches!(
                 operator_info.get(name),
@@ -5792,7 +5796,7 @@ impl ModuleTranslator {
             return true;
         }
         Self::expr_has_record_access_root_ident(&op.body, state_param_name)
-            || self.operator_uses_primes(&op.body)
+            || Self::operator_uses_primes(&op.body)
     }
 
     /// Whether an expression contains a record access rooted at `ident`
@@ -5912,7 +5916,6 @@ impl ModuleTranslator {
     /// Unlike `operator_refs_variables`, this does not treat every unknown
     /// non-local identifier as a state variable when type info is absent.
     fn operator_refs_declared_variables(
-        &self,
         expr: &TlaExpr,
         local_vars: &[String],
         module_vars: &std::collections::HashSet<String>,
@@ -5923,81 +5926,81 @@ impl ModuleTranslator {
             TlaExpr::Prime(_) => true, // Primed variables always reference state
             TlaExpr::Number(_) | TlaExpr::String(_) | TlaExpr::Bool(_) => false,
             TlaExpr::BinOp { left, right, .. } => {
-                self.operator_refs_declared_variables(left, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(right, local_vars, module_vars)
+                Self::operator_refs_declared_variables(left, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(right, local_vars, module_vars)
             }
             TlaExpr::UnaryOp { operand, .. } => {
-                self.operator_refs_declared_variables(operand, local_vars, module_vars)
+                Self::operator_refs_declared_variables(operand, local_vars, module_vars)
             }
             TlaExpr::OpApply { op, args } => {
                 let op_refs_vars = match op.as_ref() {
                     // Operator names are not module state variables.
                     TlaExpr::Ident(_) => false,
-                    _ => self.operator_refs_declared_variables(op, local_vars, module_vars),
+                    _ => Self::operator_refs_declared_variables(op, local_vars, module_vars),
                 };
                 op_refs_vars
                     || args
                         .iter()
-                        .any(|a| self.operator_refs_declared_variables(a, local_vars, module_vars))
+                        .any(|a| Self::operator_refs_declared_variables(a, local_vars, module_vars))
             }
             TlaExpr::FnApply { func, arg } => {
-                self.operator_refs_declared_variables(func, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(arg, local_vars, module_vars)
+                Self::operator_refs_declared_variables(func, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(arg, local_vars, module_vars)
             }
             TlaExpr::SetEnum(elems) => elems
                 .iter()
-                .any(|e| self.operator_refs_declared_variables(e, local_vars, module_vars)),
+                .any(|e| Self::operator_refs_declared_variables(e, local_vars, module_vars)),
             TlaExpr::SetFilter { var, set, filter } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
-                self.operator_refs_declared_variables(set, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(filter, &locals, module_vars)
+                Self::operator_refs_declared_variables(set, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(filter, &locals, module_vars)
             }
             TlaExpr::SetMap { expr: e, var, set } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
-                self.operator_refs_declared_variables(set, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(e, &locals, module_vars)
+                Self::operator_refs_declared_variables(set, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(e, &locals, module_vars)
             }
             TlaExpr::FnConstruct { var, domain, body } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
-                self.operator_refs_declared_variables(domain, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(body, &locals, module_vars)
+                Self::operator_refs_declared_variables(domain, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(body, &locals, module_vars)
             }
             TlaExpr::FnExcept { func, updates } => {
-                self.operator_refs_declared_variables(func, local_vars, module_vars)
+                Self::operator_refs_declared_variables(func, local_vars, module_vars)
                     || updates.iter().any(|u| {
-                        self.operator_refs_declared_variables(&u.value, local_vars, module_vars)
+                        Self::operator_refs_declared_variables(&u.value, local_vars, module_vars)
                     })
             }
             TlaExpr::Record(fields) => fields
                 .iter()
-                .any(|(_, v)| self.operator_refs_declared_variables(v, local_vars, module_vars)),
+                .any(|(_, v)| Self::operator_refs_declared_variables(v, local_vars, module_vars)),
             TlaExpr::RecordAccess { record, .. } => {
-                self.operator_refs_declared_variables(record, local_vars, module_vars)
+                Self::operator_refs_declared_variables(record, local_vars, module_vars)
             }
             TlaExpr::Enabled(inner) | TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => {
-                self.operator_refs_declared_variables(inner, local_vars, module_vars)
+                Self::operator_refs_declared_variables(inner, local_vars, module_vars)
             }
             TlaExpr::Tuple(elems) => elems
                 .iter()
-                .any(|e| self.operator_refs_declared_variables(e, local_vars, module_vars)),
+                .any(|e| Self::operator_refs_declared_variables(e, local_vars, module_vars)),
             TlaExpr::IfThenElse {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                self.operator_refs_declared_variables(cond, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(then_expr, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(else_expr, local_vars, module_vars)
+                Self::operator_refs_declared_variables(cond, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(then_expr, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(else_expr, local_vars, module_vars)
             }
             TlaExpr::Case { arms, other } => {
                 arms.iter().any(|(cond, body)| {
-                    self.operator_refs_declared_variables(cond, local_vars, module_vars)
-                        || self.operator_refs_declared_variables(body, local_vars, module_vars)
+                    Self::operator_refs_declared_variables(cond, local_vars, module_vars)
+                        || Self::operator_refs_declared_variables(body, local_vars, module_vars)
                 }) || other.as_ref().is_some_and(|e| {
-                    self.operator_refs_declared_variables(e, local_vars, module_vars)
+                    Self::operator_refs_declared_variables(e, local_vars, module_vars)
                 })
             }
             TlaExpr::Forall { vars, body } | TlaExpr::Exists { vars, body } => {
@@ -6007,16 +6010,16 @@ impl ModuleTranslator {
                 }
                 vars.iter().any(|qb| {
                     qb.set.as_ref().is_some_and(|s| {
-                        self.operator_refs_declared_variables(s, local_vars, module_vars)
+                        Self::operator_refs_declared_variables(s, local_vars, module_vars)
                     })
-                }) || self.operator_refs_declared_variables(body, &locals, module_vars)
+                }) || Self::operator_refs_declared_variables(body, &locals, module_vars)
             }
             TlaExpr::Choose { var, set, body } => {
                 let mut locals = local_vars.to_vec();
                 locals.push(var.clone());
                 set.as_ref().is_some_and(|s| {
-                    self.operator_refs_declared_variables(s, local_vars, module_vars)
-                }) || self.operator_refs_declared_variables(body, &locals, module_vars)
+                    Self::operator_refs_declared_variables(s, local_vars, module_vars)
+                }) || Self::operator_refs_declared_variables(body, &locals, module_vars)
             }
             TlaExpr::LetIn { defs, body } => {
                 let mut locals = local_vars.to_vec();
@@ -6024,20 +6027,20 @@ impl ModuleTranslator {
                     locals.push(def.name.clone());
                 }
                 defs.iter().any(|d| {
-                    self.operator_refs_declared_variables(&d.body, local_vars, module_vars)
-                }) || self.operator_refs_declared_variables(body, &locals, module_vars)
+                    Self::operator_refs_declared_variables(&d.body, local_vars, module_vars)
+                }) || Self::operator_refs_declared_variables(body, &locals, module_vars)
             }
             TlaExpr::LeadsTo { left, right } => {
-                self.operator_refs_declared_variables(left, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(right, local_vars, module_vars)
+                Self::operator_refs_declared_variables(left, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(right, local_vars, module_vars)
             }
             TlaExpr::WeakFairness { vars, action } | TlaExpr::StrongFairness { vars, action } => {
-                self.operator_refs_declared_variables(vars, local_vars, module_vars)
-                    || self.operator_refs_declared_variables(action, local_vars, module_vars)
+                Self::operator_refs_declared_variables(vars, local_vars, module_vars)
+                    || Self::operator_refs_declared_variables(action, local_vars, module_vars)
             }
             TlaExpr::Unchanged(vars) => vars
                 .iter()
-                .any(|v| self.operator_refs_declared_variables(v, local_vars, module_vars)),
+                .any(|v| Self::operator_refs_declared_variables(v, local_vars, module_vars)),
             _ => false,
         }
     }
@@ -6622,7 +6625,6 @@ impl ModuleTranslator {
     }
 
     fn infer_generated_d1_return_type_from_expr(
-        &self,
         expr: &TlaExpr,
         identifier_type_hints: &std::collections::HashMap<String, String>,
     ) -> Option<String> {
@@ -6632,17 +6634,21 @@ impl ModuleTranslator {
             | TlaExpr::Enabled(inner)
             | TlaExpr::Always(inner)
             | TlaExpr::Eventually(inner) => {
-                self.infer_generated_d1_return_type_from_expr(inner, identifier_type_hints)
+                Self::infer_generated_d1_return_type_from_expr(inner, identifier_type_hints)
             }
             TlaExpr::IfThenElse {
                 then_expr,
                 else_expr,
                 ..
             } => {
-                let lhs =
-                    self.infer_generated_d1_return_type_from_expr(then_expr, identifier_type_hints);
-                let rhs =
-                    self.infer_generated_d1_return_type_from_expr(else_expr, identifier_type_hints);
+                let lhs = Self::infer_generated_d1_return_type_from_expr(
+                    then_expr,
+                    identifier_type_hints,
+                );
+                let rhs = Self::infer_generated_d1_return_type_from_expr(
+                    else_expr,
+                    identifier_type_hints,
+                );
                 let then_is_empty_tuple =
                     matches!(then_expr.as_ref(), TlaExpr::Tuple(elements) if elements.is_empty());
                 let else_is_empty_tuple =
@@ -6673,7 +6679,7 @@ impl ModuleTranslator {
                 }
             }
             TlaExpr::LetIn { body, .. } => {
-                self.infer_generated_d1_return_type_from_expr(body, identifier_type_hints)
+                Self::infer_generated_d1_return_type_from_expr(body, identifier_type_hints)
             }
             TlaExpr::SetEnum(_) => Some("Set<int>".to_string()),
             TlaExpr::Tuple(_) => Some("Seq<int>".to_string()),
@@ -6684,9 +6690,11 @@ impl ModuleTranslator {
                 TlaBinOp::Cup | TlaBinOp::Cap | TlaBinOp::Setminus => Some("Set<int>".to_string()),
                 TlaBinOp::Plus => {
                     let lhs =
-                        self.infer_generated_d1_return_type_from_expr(left, identifier_type_hints);
-                    let rhs =
-                        self.infer_generated_d1_return_type_from_expr(right, identifier_type_hints);
+                        Self::infer_generated_d1_return_type_from_expr(left, identifier_type_hints);
+                    let rhs = Self::infer_generated_d1_return_type_from_expr(
+                        right,
+                        identifier_type_hints,
+                    );
                     if matches!(lhs.as_deref(), Some("Seq<int>"))
                         || matches!(rhs.as_deref(), Some("Seq<int>"))
                     {
@@ -6833,7 +6841,7 @@ impl ModeAnnotationGenerator {
         for op in &module.operators {
             let kind = if op.name.eq_ignore_ascii_case("init") {
                 OperatorKind::Predicate
-            } else if self.operator_uses_primes(&op.body)
+            } else if Self::operator_uses_primes(&op.body)
                 || operator_has_explicit_next_state_param(op)
             {
                 OperatorKind::Action
@@ -6968,7 +6976,7 @@ impl ModeAnnotationGenerator {
         let op_param_names: Vec<String> = op.params.iter().map(|p| p.name.clone()).collect();
         let module_var_names: std::collections::HashSet<String> =
             module.variables.iter().cloned().collect();
-        let refs_vars = refs_helper.operator_refs_declared_variables(
+        let refs_vars = ModuleTranslator::operator_refs_declared_variables(
             &op.body,
             &op_param_names,
             &module_var_names,
@@ -7079,69 +7087,73 @@ impl ModeAnnotationGenerator {
     }
 
     /// Check if an expression uses primed variables (same as ModuleTranslator)
-    fn operator_uses_primes(&self, expr: &TlaExpr) -> bool {
+    fn operator_uses_primes(expr: &TlaExpr) -> bool {
         match expr {
             TlaExpr::Prime(_) => true,
             TlaExpr::BinOp { left, right, .. } => {
-                self.operator_uses_primes(left) || self.operator_uses_primes(right)
+                Self::operator_uses_primes(left) || Self::operator_uses_primes(right)
             }
-            TlaExpr::UnaryOp { operand, .. } => self.operator_uses_primes(operand),
+            TlaExpr::UnaryOp { operand, .. } => Self::operator_uses_primes(operand),
             TlaExpr::OpApply { op, args } => {
-                self.operator_uses_primes(op) || args.iter().any(|a| self.operator_uses_primes(a))
+                Self::operator_uses_primes(op) || args.iter().any(Self::operator_uses_primes)
             }
             TlaExpr::FnApply { func, arg } => {
-                self.operator_uses_primes(func) || self.operator_uses_primes(arg)
+                Self::operator_uses_primes(func) || Self::operator_uses_primes(arg)
             }
-            TlaExpr::SetEnum(elements) => elements.iter().any(|e| self.operator_uses_primes(e)),
+            TlaExpr::SetEnum(elements) => elements.iter().any(Self::operator_uses_primes),
             TlaExpr::SetFilter { set, filter, .. } => {
-                self.operator_uses_primes(set) || self.operator_uses_primes(filter)
+                Self::operator_uses_primes(set) || Self::operator_uses_primes(filter)
             }
             TlaExpr::SetMap { expr, set, .. } => {
-                self.operator_uses_primes(expr) || self.operator_uses_primes(set)
+                Self::operator_uses_primes(expr) || Self::operator_uses_primes(set)
             }
             TlaExpr::FnConstruct { domain, body, .. } => {
-                self.operator_uses_primes(domain) || self.operator_uses_primes(body)
+                Self::operator_uses_primes(domain) || Self::operator_uses_primes(body)
             }
             TlaExpr::FnExcept { func, updates } => {
-                self.operator_uses_primes(func)
-                    || updates.iter().any(|u| self.operator_uses_primes(&u.value))
+                Self::operator_uses_primes(func)
+                    || updates.iter().any(|u| Self::operator_uses_primes(&u.value))
             }
-            TlaExpr::Record(fields) => fields.iter().any(|(_, e)| self.operator_uses_primes(e)),
-            TlaExpr::RecordAccess { record, .. } => self.operator_uses_primes(record),
-            TlaExpr::Tuple(elements) => elements.iter().any(|e| self.operator_uses_primes(e)),
+            TlaExpr::Record(fields) => fields.iter().any(|(_, e)| Self::operator_uses_primes(e)),
+            TlaExpr::RecordAccess { record, .. } => Self::operator_uses_primes(record),
+            TlaExpr::Tuple(elements) => elements.iter().any(Self::operator_uses_primes),
             TlaExpr::Forall { body, .. } | TlaExpr::Exists { body, .. } => {
-                self.operator_uses_primes(body)
+                Self::operator_uses_primes(body)
             }
             TlaExpr::Choose { body, set, .. } => {
-                self.operator_uses_primes(body)
-                    || set.as_ref().is_some_and(|s| self.operator_uses_primes(s))
+                Self::operator_uses_primes(body)
+                    || set.as_ref().is_some_and(|e| Self::operator_uses_primes(e))
             }
             TlaExpr::IfThenElse {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                self.operator_uses_primes(cond)
-                    || self.operator_uses_primes(then_expr)
-                    || self.operator_uses_primes(else_expr)
+                Self::operator_uses_primes(cond)
+                    || Self::operator_uses_primes(then_expr)
+                    || Self::operator_uses_primes(else_expr)
             }
             TlaExpr::Case { arms, other } => {
                 arms.iter()
-                    .any(|(c, e)| self.operator_uses_primes(c) || self.operator_uses_primes(e))
-                    || other.as_ref().is_some_and(|o| self.operator_uses_primes(o))
+                    .any(|(c, e)| Self::operator_uses_primes(c) || Self::operator_uses_primes(e))
+                    || other
+                        .as_ref()
+                        .is_some_and(|e| Self::operator_uses_primes(e))
             }
             TlaExpr::LetIn { defs, body } => {
-                defs.iter().any(|d| self.operator_uses_primes(&d.body))
-                    || self.operator_uses_primes(body)
+                defs.iter().any(|d| Self::operator_uses_primes(&d.body))
+                    || Self::operator_uses_primes(body)
             }
             TlaExpr::Unchanged(_) => true,
-            TlaExpr::Enabled(inner) => self.operator_uses_primes(inner),
-            TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => self.operator_uses_primes(inner),
+            TlaExpr::Enabled(inner) => Self::operator_uses_primes(inner),
+            TlaExpr::Always(inner) | TlaExpr::Eventually(inner) => {
+                Self::operator_uses_primes(inner)
+            }
             TlaExpr::LeadsTo { left, right } => {
-                self.operator_uses_primes(left) || self.operator_uses_primes(right)
+                Self::operator_uses_primes(left) || Self::operator_uses_primes(right)
             }
             TlaExpr::WeakFairness { action, .. } | TlaExpr::StrongFairness { action, .. } => {
-                self.operator_uses_primes(action)
+                Self::operator_uses_primes(action)
             }
             _ => false,
         }
@@ -10177,11 +10189,11 @@ mod tests {
 
     #[test]
     fn test_operator_uses_primes() {
-        let translator = ModuleTranslator::new();
+        let _translator = ModuleTranslator::new();
 
         // Expression without primes
         let expr1 = TlaExpr::binop(TlaBinOp::Eq, TlaExpr::ident("x"), TlaExpr::number(0));
-        assert!(!translator.operator_uses_primes(&expr1));
+        assert!(!ModuleTranslator::operator_uses_primes(&expr1));
 
         // Expression with primes
         let expr2 = TlaExpr::binop(
@@ -10189,11 +10201,11 @@ mod tests {
             TlaExpr::prime(TlaExpr::ident("x")),
             TlaExpr::number(1),
         );
-        assert!(translator.operator_uses_primes(&expr2));
+        assert!(ModuleTranslator::operator_uses_primes(&expr2));
 
         // UNCHANGED implies primes
         let expr3 = TlaExpr::Unchanged(vec![TlaExpr::ident("x")]);
-        assert!(translator.operator_uses_primes(&expr3));
+        assert!(ModuleTranslator::operator_uses_primes(&expr3));
     }
 
     #[test]

@@ -34,9 +34,9 @@ pub proof fn lemma_GetIndicesFromNodes(
             forall |node: AbstractEndPoint| nodes.contains(node) ==> config.replica_ids.contains(node),
             nodes.finite(),
         ensures
-            forall |idx: int| indices.contains(idx) ==>
+            forall |idx: int| #![trigger indices.contains(idx)] indices.contains(idx) ==>
                 0 <= idx < config.replica_ids.len() && nodes.contains(config.replica_ids[idx]),
-            forall |node: AbstractEndPoint| nodes.contains(node) ==> indices.contains(GetReplicaIndex(node, config)),
+            forall |node: AbstractEndPoint| #![trigger nodes.contains(node)] nodes.contains(node) ==> indices.contains(GetReplicaIndex(node, config)),
             indices.len() == nodes.len(),
     {
         let indices_out = Set::<int>::range(0, config.replica_ids.len() as int).filter(
@@ -61,7 +61,7 @@ pub proof fn lemma_GetIndicesFromNodes(
             assert(ReplicasDistinct(config.replica_ids, idx1, idx2));
         };
 
-        assert forall |node: AbstractEndPoint| nodes.contains(node)
+        assert forall |node: AbstractEndPoint| #![trigger nodes.contains(node)] nodes.contains(node)
             implies indices_out.contains(GetReplicaIndex(node, config))
         by {
             let idx = GetReplicaIndex(node, config);
@@ -98,14 +98,14 @@ pub proof fn lemma_GetIndicesFromPackets(
     ) -> (indices: Set<int>)
         requires
             WellFormedLConfiguration(config),
-            forall |p: RslPacket| packets.contains(p) ==> config.replica_ids.contains(p.src),
-            forall |p1: RslPacket, p2: RslPacket| packets.contains(p1) && packets.contains(p2) && p1 != p2 ==> p1.src != p2.src,
+            forall |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) ==> config.replica_ids.contains(p.src),
+            forall |p1: RslPacket, p2: RslPacket| #![trigger packets.contains(p1), packets.contains(p2)] packets.contains(p1) && packets.contains(p2) && p1 != p2 ==> p1.src != p2.src,
             packets.finite(),
         ensures
             forall |idx: int| indices.contains(idx)
                 ==> 0 <= idx < config.replica_ids.len() &&
-                    exists |p: RslPacket| packets.contains(p) && config.replica_ids.index(idx) == p.src,
-            forall |p: RslPacket| packets.contains(p) ==> indices.contains(GetReplicaIndex(p.src, config)),
+                    exists |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) && config.replica_ids.index(idx) == p.src,
+            forall |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) ==> indices.contains(GetReplicaIndex(p.src, config)),
             indices.len() == packets.len(),
     {
         // Construct the set of src nodes from the given packets.
@@ -122,7 +122,7 @@ pub proof fn lemma_GetIndicesFromPackets(
         lemma_MapSetCardinalityOver(packets, nodes, f);
 
         // Help Verus connect packets.contains(p) ==> nodes.contains(p.src) ==> indices.contains(GetReplicaIndex(p.src, config))
-        assert forall |p: RslPacket| packets.contains(p) implies indices_out.contains(GetReplicaIndex(p.src, config))
+        assert forall |p: RslPacket| #![trigger packets.contains(p)] packets.contains(p) implies indices_out.contains(GetReplicaIndex(p.src, config))
         by {
             assert(nodes.contains(p.src));
         };

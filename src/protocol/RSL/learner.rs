@@ -88,19 +88,19 @@ verus! {
         requires
             packet.msg is RslMessage2b,
             LLearnerProcess2b(s, s_, packet),
-            forall |k: OperationNumber|
+            forall |k: OperationNumber| #![trigger s.unexecuted_learner_state.contains_key(k)]
                 s.unexecuted_learner_state.contains_key(k) ==> s.unexecuted_learner_state[k].received_2b_message_senders.finite(),
-            forall |k: OperationNumber|
+            forall |k: OperationNumber| #![trigger s.unexecuted_learner_state.contains_key(k)]
                 s.unexecuted_learner_state.contains_key(k) ==> s.unexecuted_learner_state[k].received_2b_message_senders.len() > 0,
         ensures
-            forall |k: OperationNumber|
+            forall |k: OperationNumber| #![trigger s_.unexecuted_learner_state.contains_key(k)]
                 s_.unexecuted_learner_state.contains_key(k) ==> s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0,
     {
         let m = packet.msg;
         let opn = m->opn_2b;
         if !s.constants.all.config.replica_ids.contains(packet.src) || BalLt(m->bal_2b, s.max_ballot_seen) {
             assert(s_ == s);
-            assert forall |k: OperationNumber|
+            assert forall |k: OperationNumber| #![trigger s_.unexecuted_learner_state.contains_key(k)]
                 s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
                 assert(s.unexecuted_learner_state.contains_key(k));
             }
@@ -114,7 +114,7 @@ verus! {
                 max_ballot_seen: m->bal_2b,
                 unexecuted_learner_state: map![opn => tup_],
             });
-            assert forall |k: OperationNumber|
+            assert forall |k: OperationNumber| #![trigger s_.unexecuted_learner_state.contains_key(k)]
                 s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
                 if k != opn {
                     assert(!s_.unexecuted_learner_state.contains_key(k));
@@ -138,7 +138,7 @@ verus! {
                 max_ballot_seen: m->bal_2b,
                 unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_),
             });
-            assert forall |k: OperationNumber|
+            assert forall |k: OperationNumber| #![trigger s_.unexecuted_learner_state.contains_key(k)]
                 s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
                 if k == opn {
                     assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
@@ -156,7 +156,7 @@ verus! {
             }
         } else if s.unexecuted_learner_state[opn].received_2b_message_senders.contains(packet.src) {
             assert(s_ == s);
-            assert forall |k: OperationNumber|
+            assert forall |k: OperationNumber| #![trigger s_.unexecuted_learner_state.contains_key(k)]
                 s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
                 assert(s.unexecuted_learner_state.contains_key(k));
             }
@@ -171,7 +171,7 @@ verus! {
                 max_ballot_seen: s.max_ballot_seen,
                 unexecuted_learner_state: s.unexecuted_learner_state.insert(opn, tup_),
             });
-            assert forall |k: OperationNumber|
+            assert forall |k: OperationNumber| #![trigger s_.unexecuted_learner_state.contains_key(k)]
                 s_.unexecuted_learner_state.contains_key(k) implies s_.unexecuted_learner_state[k].received_2b_message_senders.len() > 0 by {
                 if k == opn {
                     assert(s_.unexecuted_learner_state[k].received_2b_message_senders.contains(packet.src));
@@ -215,7 +215,7 @@ verus! {
     ) -> bool
     {
         &&& (forall |k:OperationNumber| s_.unexecuted_learner_state.contains_key(k) <==> k >= ops_complete && s.unexecuted_learner_state.contains_key(k))
-        &&& (forall |k:OperationNumber| s_.unexecuted_learner_state.contains_key(k) ==> s_.unexecuted_learner_state[k] == s.unexecuted_learner_state[k])
+        &&& (forall |k:OperationNumber| #![trigger s_.unexecuted_learner_state[k]] #![trigger s.unexecuted_learner_state[k]] s_.unexecuted_learner_state.contains_key(k) ==> s_.unexecuted_learner_state[k] == s.unexecuted_learner_state[k])
         &&& s_ == LLearner{
             constants:s.constants,
             max_ballot_seen:s.max_ballot_seen,

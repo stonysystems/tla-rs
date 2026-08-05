@@ -1,0 +1,53 @@
+{
+  "schema": "trigger-ceiling/v1",
+  "enforce": true,
+  "max_notes": 120,
+  "mode": "selective",
+  "set_on": "2026-08-04",
+  "set_by": "Phase 54.2.b",
+  "rationale": "Measured on the pinned release 0.2026.08.02.b677dd5 over the whole crate (1044 verified, 0 errors) in Verus's default `selective` trigger mode: 534 notes. This is the ceiling, not the goal -- Phase 54 drives it to 0 or to a documented list of deliberate exceptions. Raise it only with a stated reason and a new measurement in `history`, never to make a red build green.",
+  "history": [
+    {
+      "date": "2026-08-04",
+      "max_notes": 534,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "initial measured baseline (54.2.b); reports/triggers/baseline.json"
+    },
+    {
+      "date": "2026-08-04",
+      "max_notes": 519,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.3 pilot: common/collections + verus_extra annotated, 15 notes removed, 0 added, 0 changed"
+    },
+    {
+      "date": "2026-08-04",
+      "max_notes": 519,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.4 broadcast axioms pinned; count unchanged (these emit no note in selective mode)"
+    },
+    {
+      "date": "2026-08-04",
+      "max_notes": 389,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.5 protocol/RSL: 130 sites annotated, 145 removed vs baseline, 0 added, 0 changed"
+    },
+    {
+      "date": "2026-08-04",
+      "max_notes": 289,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.6 implementation/RSL: 100 sites annotated, 245 removed vs baseline, 0 added, 0 changed"
+    },
+    {
+      "date": "2026-08-04",
+      "max_notes": 122,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "54.8 Raft + convergence pass: 412 removed vs baseline, 0 added, 0 changed; residual is 109 generated (54.7) + 13 nested-quantifier cases"
+    },
+    {
+      "date": "2026-08-05",
+      "max_notes": 120,
+      "verus": "0.2026.08.02.b677dd5",
+      "note": "42.8.a: broadcast_gen regenerated, 2 generated notes removed via the 54.7.a codegen fix"
+    }
+  ]
+}

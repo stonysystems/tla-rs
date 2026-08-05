@@ -44,7 +44,7 @@ verus! {
             states[0] == state,
             states.len() == batch.len() + 1,
             replies.len() == batch.len(),
-            forall |i: int| 0 <= i < batch.len() ==> {
+            forall |i: int| #![trigger replies[i]] #![trigger batch[i]] 0 <= i < batch.len() ==> {
                 replies[i] is Reply &&
                 (states[i + 1], replies[i].reply) == AppHandleRequest(states[i], batch[i].request) &&
                 replies[i].client == batch[i].client &&
@@ -56,7 +56,7 @@ verus! {
         if batch.len() == 0 {
             assert(states.len() == batch.len() + 1);
             assert(replies.len() == batch.len());
-            assert(forall |i: int| 0 <= i < batch.len() ==> (states[i + 1], replies[i].reply) == AppHandleRequest(states[i], batch[i].request));
+            assert(forall |i: int| #![trigger replies[i]] #![trigger batch[i]] 0 <= i < batch.len() ==> (states[i + 1], replies[i].reply) == AppHandleRequest(states[i], batch[i].request));
         } else {
             let rest_batch = HandleRequestBatchHidden(state, batch.subrange(0, batch.len() as int - 1));
             let rest_states = rest_batch.0;
@@ -78,7 +78,7 @@ verus! {
             states[0] == state,
             states.len() == batch.len() + 1,
             replies.len() == batch.len(),
-            forall |i: int| 0 <= i < batch.len() ==> {
+            forall |i: int| #![trigger replies[i]] #![trigger batch[i]] 0 <= i < batch.len() ==> {
                 replies[i] is Reply &&
                 (states[i + 1], replies[i].reply) == AppHandleRequest(states[i], batch[i].request) &&
                 replies[i].client == batch[i].client &&

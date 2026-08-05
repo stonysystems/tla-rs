@@ -49,7 +49,7 @@ verus! {
 
     pub open spec fn RslSystemRefinement(ps:RslState, rs:RSLSystemState) -> bool
     {
-        &&& (forall |p:RslPacket| ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.src) && p.msg is RslMessageReply
+        &&& (forall |p:RslPacket| #![trigger ps.environment.sentPackets.contains(p)] ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.src) && p.msg is RslMessageReply
                 ==> rs.replies.contains(Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply}))
         &&& (forall |req:Request| rs.requests.contains(req) ==> exists |p:RslPacket| ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.dst) && p.msg is RslMessageRequest
                                                 && req == Request{client:p.src, seqno:p.msg->seqno_req, request:p.msg->val})
@@ -58,7 +58,7 @@ verus! {
     pub open spec fn RslSystemBehaviorRefinementCorrect(server_addresses:Set<AbstractEndPoint>, low_level_behavior:Seq<RslState>, high_level_behavior:Seq<RSLSystemState>) -> bool
     {
         &&& high_level_behavior.len() == low_level_behavior.len()
-        &&& (forall |i:int| 0 <= i < low_level_behavior.len() ==> RslSystemRefinement(low_level_behavior[i], high_level_behavior[i]))
+        &&& (forall |i:int| #![trigger low_level_behavior[i]] #![trigger high_level_behavior[i]] 0 <= i < low_level_behavior.len() ==> RslSystemRefinement(low_level_behavior[i], high_level_behavior[i]))
         &&& high_level_behavior.len() > 0
         &&& RslSystemInit(high_level_behavior[0], server_addresses)
         &&& (forall |i:int| #![trigger high_level_behavior[i]] 0 <= i < high_level_behavior.len()-1 ==> RslSystemNext(high_level_behavior[i], high_level_behavior[i+1]))

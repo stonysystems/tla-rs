@@ -115,6 +115,67 @@ class TestParse(unittest.TestCase):
         self.assertEqual(set(inv["modules"]), {"alpha", "beta", vt.ROOT_MODULE})
 
 
+class TestJsonPayload(unittest.TestCase):
+    """`--output-json` is the preferred source: the text breakdown prints only
+    the top 3 modules per section, so a per-module gate built on it would cover
+    3 of 142 modules."""
+
+    def payload(self, entries, air=None):
+        return "some diagnostic line\n" + json.dumps(
+            {
+                "times-ms": {
+                    "total": 1000,
+                    "total-verify": sum(e["time"] for e in entries),
+                    "verification": {"total": 900},
+                    "rust": {"total": 100},
+                    "total-verify-module-times": entries,
+                    "air": {"module-times": air or []},
+                    "smt": {"smt-run-module-times": []},
+                },
+                "verus": {"version": "0.2026.08.02.b677dd5"},
+            },
+            indent=2,
+        )
+
+    def test_json_is_preferred_and_recorded(self):
+        inv = vt.build_inventory(self.payload([{"module": "a", "time": 10}]))
+        self.assertEqual(inv["parsed_from"], "output-json")
+        self.assertEqual(inv["module_count"], 1)
+
+    def test_version_comes_from_the_payload(self):
+        inv = vt.build_inventory(self.payload([{"module": "a", "time": 10}]))
+        self.assertEqual(inv["verus_version"], "0.2026.08.02.b677dd5")
+
+    def test_repeated_module_entries_are_summed(self):
+        # Verus emits one entry per verification chunk; the module's cost is
+        # their sum, and summing reproduces the reported total-verify.
+        inv = vt.build_inventory(
+            self.payload(
+                [
+                    {"module": "a", "time": 10},
+                    {"module": "a", "time": 5},
+                    {"module": "b", "time": 3},
+                ]
+            )
+        )
+        self.assertEqual(inv["modules"]["a"]["verify_ms"], 15)
+        self.assertEqual(inv["modules"]["b"]["verify_ms"], 3)
+        self.assertEqual(inv["total_verify_ms"], 18)
+
+    def test_unnamed_module_becomes_root(self):
+        inv = vt.build_inventory(self.payload([{"module": "", "time": 4}]))
+        self.assertIn(vt.ROOT_MODULE, inv["modules"])
+
+    def test_text_log_still_parses_when_no_json_present(self):
+        inv = vt.build_inventory(fixture("time_expanded_modules.log"))
+        self.assertEqual(inv["parsed_from"], "time-expanded-text")
+        self.assertEqual(inv["module_count"], 3)
+
+    def test_malformed_json_falls_back_to_text(self):
+        inv = vt.build_inventory(fixture("time_expanded_modules.log") + "\n{\nnot json\n")
+        self.assertEqual(inv["parsed_from"], "time-expanded-text")
+
+
 class TestDiff(unittest.TestCase):
     def inv(self, modules, label="x"):
         return vt.build_inventory(synthetic_log(modules), label=label)
@@ -179,6 +240,199 @@ class TestDiff(unittest.TestCase):
         new = self.inv({"a": 20000, "b": 6000})
         d = vt.diff_inventories(base, new)
         self.assertEqual([r["module"] for r in d["regressions"]], ["a", "b"])
+
+
+class TestMergeMin(unittest.TestCase):
+    """A single run is not a usable baseline.
+
+    Measured: the module `implementation::RSL::replicaimpl_no_receive_clock`
+    read 1967 ms in the original single-run baseline but 2372/2438/2490 ms
+    across three runs of that *same commit*. Comparing a later run against the
+    lucky 1967 produced a 30% "regression" in code that never touched it.
+    Min-of-N on both sides is the fix.
+    """
+
+    def inv(self, modules, label="r"):
+        return vt.build_inventory(synthetic_log(modules), label=label)
+
+    def test_minimum_is_taken_per_module(self):
+        m = vt.merge_min(
+            [self.inv({"a": 2490, "b": 100}), self.inv({"a": 2372, "b": 150})]
+        )
+        self.assertEqual(m["modules"]["a"]["verify_ms"], 2372)
+        self.assertEqual(m["modules"]["b"]["verify_ms"], 100)
+
+    def test_run_count_is_recorded(self):
+        m = vt.merge_min([self.inv({"a": 10})] * 3)
+        self.assertEqual(m["runs_merged"], 3)
+        self.assertIn("min of 3 runs", m["source_log"])
+
+    def test_modules_absent_from_one_run_are_kept(self):
+        m = vt.merge_min([self.inv({"a": 10}), self.inv({"b": 20})])
+        self.assertEqual(set(m["modules"]), {"a", "b"})
+
+    def test_merged_inventory_diffs_like_any_other(self):
+        base = vt.merge_min([self.inv({"a": 2372}), self.inv({"a": 2490})])
+        new = vt.merge_min([self.inv({"a": 2400}), self.inv({"a": 2571})])
+        d = vt.diff_inventories(base, new)
+        self.assertEqual(d["regressions"], [])
+
+    def test_empty_input_is_rejected(self):
+        with self.assertRaises(ValueError):
+            vt.merge_min([])
+
+    def test_schema_is_preserved(self):
+        m = vt.merge_min([self.inv({"a": 10})])
+        self.assertEqual(m["schema"], vt.SCHEMA)
+
+
+class TestNoiseFloor(unittest.TestCase):
+    def test_default_floor_is_the_measured_one(self):
+        # Below 1000 ms, identical-code runs on this crate already swing >20%.
+        self.assertEqual(vt.DEFAULT_MIN_MS, 1000)
+
+    def test_a_small_baseline_never_fails(self):
+        # The real case: base 953 ms (same-code spread 953-1168) vs 1213 ms
+        # after an unrelated change. "+27%" that a third sample dissolved to
+        # +12%. The percentage is relative to the base, so a base inside the
+        # noisy regime cannot support the claim.
+        base = vt.build_inventory(synthetic_log({"m": 953}))
+        new = vt.build_inventory(synthetic_log({"m": 1213}))
+        d = vt.diff_inventories(base, new)
+        self.assertEqual(d["regressions"], [])
+        self.assertEqual(len(d["below_noise_floor"]), 1)
+
+    def test_a_large_baseline_still_fails(self):
+        base = vt.build_inventory(synthetic_log({"m": 10000}))
+        new = vt.build_inventory(synthetic_log({"m": 13000}))
+        self.assertEqual(len(vt.diff_inventories(base, new)["regressions"]), 1)
+
+    def test_below_floor_rows_are_sorted_by_absolute_delta(self):
+        base = vt.build_inventory(synthetic_log({"small": 100, "mid": 900}))
+        new = vt.build_inventory(synthetic_log({"small": 5000, "mid": 1200}))
+        d = vt.diff_inventories(base, new)
+        # A 100ms -> 5000ms jump must not hide behind a smaller one.
+        self.assertEqual(d["below_noise_floor"][0]["module"], "small")
+
+
+class TestConfirmation(unittest.TestCase):
+    """A regression must reproduce against a second run of the same new code.
+
+    Measured during the 54.3 pilot: an *untouched* module read 1967 / 2448 /
+    2241 ms across three runs, because Verus verifies modules in parallel and
+    wall-clock moves with contention. Without confirmation the 20% gate flags
+    modules nobody edited, and a gate that cries wolf gets ignored.
+    """
+
+    def inv(self, modules, label="x"):
+        return vt.build_inventory(synthetic_log(modules), label=label)
+
+    def test_reproduced_regression_stays(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}), self.inv({"m": 2000}))
+        d = vt.confirm_regressions(d, self.inv({"m": 1900}, label="confirm"))
+        self.assertEqual(len(d["regressions"]), 1)
+        self.assertEqual(d["regressions"][0]["confirm_ms"], 1900)
+
+    def test_unreproduced_regression_is_demoted(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}), self.inv({"m": 2000}))
+        d = vt.confirm_regressions(d, self.inv({"m": 1050}, label="confirm"))
+        self.assertEqual(d["regressions"], [])
+        self.assertEqual(len(d["unconfirmed_regressions"]), 1)
+        self.assertEqual(d["unconfirmed_regressions"][0]["confirm_ms"], 1050)
+
+    def test_module_absent_from_the_confirmation_run_is_demoted(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}), self.inv({"m": 2000}))
+        d = vt.confirm_regressions(d, self.inv({"other": 10}, label="confirm"))
+        self.assertEqual(d["regressions"], [])
+        self.assertIsNone(d["unconfirmed_regressions"][0]["confirm_ms"])
+
+    def test_confirmation_respects_the_noise_floor(self):
+        # Base is above the floor, so the diff flags it; the confirmation run
+        # lands below the floor, which cannot support the claim either.
+        d = vt.diff_inventories(
+            self.inv({"m": 600}), self.inv({"m": 2000}), min_ms=500
+        )
+        self.assertEqual(len(d["regressions"]), 1)
+        d = vt.confirm_regressions(d, self.inv({"m": 400}, label="c"), min_ms=500)
+        self.assertEqual(d["regressions"], [])
+
+    def test_confirmation_source_is_recorded(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}), self.inv({"m": 2000}))
+        d = vt.confirm_regressions(d, self.inv({"m": 1900}, label="run-2"))
+        self.assertEqual(d["confirmed_against"], "run-2")
+
+
+class TestHardwareMismatch(unittest.TestCase):
+    """Per-module wall-clock is not comparable across machines.
+
+    Verus verifies modules in parallel, so both the absolute times and the
+    contention pattern track the core count. The committed baseline was
+    measured on a 127-thread box; a GitHub runner has a handful of cores.
+    Comparing them is a category error, and it turned CI red (54.9.a) in a way
+    no threshold could fix -- so the tool now says so and refuses to fail.
+    """
+
+    def inv(self, modules, threads, label="x"):
+        i = vt.build_inventory(synthetic_log(modules), label=label)
+        i["totals"] = dict(i.get("totals") or {})
+        i["totals"]["num-threads"] = threads
+        return i
+
+    def test_same_thread_count_is_not_flagged(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}, 8), self.inv({"m": 1100}, 8))
+        self.assertFalse(d["hardware_mismatch"])
+
+    def test_different_thread_count_is_flagged(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}, 127), self.inv({"m": 1100}, 4))
+        self.assertTrue(d["hardware_mismatch"])
+        self.assertEqual(d["base_threads"], 127)
+        self.assertEqual(d["new_threads"], 4)
+
+    def test_unknown_thread_counts_are_not_flagged(self):
+        # An older inventory without the field must not start failing.
+        a = vt.build_inventory(synthetic_log({"m": 1000}))
+        b = vt.build_inventory(synthetic_log({"m": 1100}))
+        self.assertFalse(vt.diff_inventories(a, b)["hardware_mismatch"])
+
+    def test_report_says_the_runs_are_not_comparable(self):
+        d = vt.diff_inventories(self.inv({"m": 1000}, 127), self.inv({"m": 5000}, 4))
+        text = vt.render_diff(d)
+        self.assertIn("not comparable", text)
+        self.assertIn("127", text)
+
+    def test_cli_refuses_to_fail_across_hardware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = os.path.join(tmp, "a.json")
+            b = os.path.join(tmp, "b.json")
+            with open(a, "w") as f:
+                json.dump(self.inv({"m": 1000}, 127), f)
+            with open(b, "w") as f:
+                json.dump(self.inv({"m": 9000}, 4), f)
+            result = run(["diff", a, b, "--fail-on-regression"], expect=0)
+            self.assertIn("cross-hardware", result.stderr)
+
+    def test_cli_still_fails_on_same_hardware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = os.path.join(tmp, "a.json")
+            b = os.path.join(tmp, "b.json")
+            with open(a, "w") as f:
+                json.dump(self.inv({"m": 1000}, 8), f)
+            with open(b, "w") as f:
+                json.dump(self.inv({"m": 9000}, 8), f)
+            run(["diff", a, b, "--fail-on-regression"], expect=1)
+
+
+class TestCiTimingIsReportOnly(unittest.TestCase):
+    def test_ci_does_not_gate_on_timing(self):
+        path = os.path.join(os.path.dirname(HERE), ".github", "workflows", "ci.yml")
+        with open(path) as f:
+            ci = f.read()
+        block = ci.split("verus_timing.py diff", 1)[1][:400]
+        self.assertNotIn(
+            "--fail-on-regression",
+            block,
+            "CI must not gate on a locally-captured timing baseline",
+        )
 
 
 class TestCli(unittest.TestCase):

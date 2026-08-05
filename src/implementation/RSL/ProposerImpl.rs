@@ -43,9 +43,9 @@ pub struct CProposer {
 impl CProposer{
     pub open spec fn abstractable(self) -> bool {
         &&& self.constants.abstractable()
-        &&& (forall |i:int| 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].abstractable())
+        &&& (forall |i:int| #![trigger self.request_queue@[i]] 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].abstractable())
         &&& self.max_ballot_i_sent_1a.abstractable()
-        &&& (forall |p:CPacket| self.received_1b_packets@.contains(p) ==> p.abstractable())
+        &&& (forall |p:CPacket| #![trigger p.abstractable()] self.received_1b_packets@.contains(p) ==> p.abstractable())
         &&& (forall |k:EndPoint| #[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k) ==> k.abstractable())
         &&& self.incomplete_batch_timer.abstractable()
         &&& self.election_state.abstractable()
@@ -54,9 +54,9 @@ impl CProposer{
     pub open spec fn valid(self) -> bool {
         &&& self.abstractable()
         &&& self.constants.valid()
-        &&& (forall |i:int| 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].valid())
+        &&& (forall |i:int| #![trigger self.request_queue@[i]] 0 <= i < self.request_queue@.len() ==> self.request_queue@[i].valid())
         &&& self.max_ballot_i_sent_1a.valid()
-        &&& (forall |p:CPacket| self.received_1b_packets@.contains(p) ==> p.valid())
+        &&& (forall |p:CPacket| #![trigger p.valid()] self.received_1b_packets@.contains(p) ==> p.valid())
         &&& (forall |k:EndPoint| #[trigger] self.highest_seqno_requested_by_client_this_view@.contains_key(k) ==> k.valid_public_key())
         &&& self.incomplete_batch_timer.valid()
         &&& self.election_state.valid()
@@ -217,7 +217,7 @@ impl CProposer{
         // All packets checked: for each Message1b, log_truncation_point <= opn
         proof {
             let f = |p: CPacket| p@;
-            assert forall |p: RslPacket| S@.map(f).contains(p) && p.msg is RslMessage1b
+            assert forall |p: RslPacket| #![trigger S@.map(f).contains(p)] S@.map(f).contains(p) && p.msg is RslMessage1b
                 implies p.msg->log_truncation_point <= opn as int by {
                 let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == p;
                 let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == cp;
@@ -275,7 +275,7 @@ impl CProposer{
         // All elements in vec are CMessage1b; prove the result is true
         proof {
             let f = |p: CPacket| p@;
-            assert forall |x: RslPacket| S@.map(f).contains(x) implies x.msg is RslMessage1b by {
+            assert forall |x: RslPacket| #![trigger S@.map(f).contains(x)] S@.map(f).contains(x) implies x.msg is RslMessage1b by {
                 // x is in S@.map(f), so there exists a CPacket cp in S@ with cp@ == x
                 let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == x;
                 // cp is in S@, so it appears in vec at some index j
@@ -338,7 +338,7 @@ impl CProposer{
         // All Message1b packets have ballot == b
         proof {
             let f = |p: CPacket| p@;
-            assert forall |p: RslPacket| S@.map(f).contains(p)
+            assert forall |p: RslPacket| #![trigger S@.map(f).contains(p)] S@.map(f).contains(p)
                 implies p.msg->bal_1b == b@ by {
                 let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == p;
                 let j = choose |j: int| 0 <= j < vec@.len() && vec@[j] == cp;
@@ -354,7 +354,7 @@ impl CProposer{
 
     pub fn CAllAcceptorsHadNoProposal(S:&HashSet<CPacket>, opn:COperationNumber) -> (result_CAllAcceptorsHadNoProposal:bool)
     requires
-        forall |p:CPacket| S@.contains(p) ==> p.valid(),
+        forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
         COperationNumberIsValid(opn),
         LSetOfMessage1b(S@.map(|p:CPacket| p@)),
     ensures
@@ -377,7 +377,7 @@ impl CProposer{
                 ),
                 forall |k: int| 0 <= k < vec@.len() ==> S@.contains(#[trigger] vec@[k]),
                 forall |x: CPacket| S@.contains(x) ==> (exists |k: int| 0 <= k < vec@.len() && vec@[k] == x),
-                forall |p:CPacket| S@.contains(p) ==> p.valid(),
+                forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
                 COperationNumberIsValid(opn),
                 LSetOfMessage1b(S@.map(|p: CPacket| p@)),
             decreases
@@ -404,7 +404,7 @@ impl CProposer{
         // LSetOfMessage1b guarantees all packets are RslMessage1b, so loop invariant covers all
         proof {
             let f = |p: CPacket| p@;
-            assert forall |p: RslPacket| S@.map(f).contains(p)
+            assert forall |p: RslPacket| #![trigger S@.map(f).contains(p)] S@.map(f).contains(p)
                 implies !p.msg->votes.contains_key(AbstractifyCOperationNumberToOperationNumber(opn)) by {
                 let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == p;
                 assert(cp.valid());
@@ -504,7 +504,7 @@ impl CProposer{
 
     pub fn CExistsAcceptorHasProposalLargeThanOpn(S:&HashSet<CPacket>, op:COperationNumber) -> (result_CExistsAcceptorHasProposalLargeThanOpn:bool)
     requires
-        forall |p:CPacket| S@.contains(p) ==> p.valid(),
+        forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
         COperationNumberIsValid(op),
         LSetOfMessage1b(S@.map(|p:CPacket| p@)),
     ensures
@@ -529,7 +529,7 @@ impl CProposer{
                 forall |k: int| 0 <= k < vec@.len() ==> S@.contains(#[trigger] vec@[k]),
                 forall |k: int| 0 <= k < vec@.len() ==> (#[trigger] vec@[k]).valid(),
                 forall |x: CPacket| S@.contains(x) ==> (exists |k: int| 0 <= k < vec@.len() && vec@[k] == x),
-                forall |p:CPacket| S@.contains(p) ==> p.valid(),
+                forall |p:CPacket| #![trigger p.valid()] S@.contains(p) ==> p.valid(),
                 COperationNumberIsValid(op),
                 LSetOfMessage1b(S@.map(|p: CPacket| p@)),
             decreases
@@ -556,7 +556,7 @@ impl CProposer{
         // LSetOfMessage1b guarantees all packets are RslMessage1b, so loop invariant covers all
         proof {
             let f = |p: CPacket| p@;
-            assert forall |p: RslPacket| S@.map(f).contains(p)
+            assert forall |p: RslPacket| #![trigger LExistVotesHasProposalLargeThanOpn(p, AbstractifyCOperationNumberToOperationNumber(op))] S@.map(f).contains(p)
                 implies !LExistVotesHasProposalLargeThanOpn(p, AbstractifyCOperationNumberToOperationNumber(op)) by {
                 let cp = choose |cp: CPacket| S@.contains(cp) && f(cp) == p;
                 assert(cp.valid());

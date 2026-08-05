@@ -104,7 +104,8 @@ verus! {
 
     proof fn lemma_filter_value_contains(s: Seq<int>, v: int)
         ensures
-            forall |x: int| x != v ==> (filter_value(s, v).contains(x) <==> s.contains(x)),
+            forall |x: int| #![trigger s.contains(x)]
+                x != v ==> (filter_value(s, v).contains(x) <==> s.contains(x)),
             forall |x: int| filter_value(s, v).contains(x) ==> x != v,
         decreases s.len()
     {

@@ -7,10 +7,15 @@ use crate::common::framework::environment_s::LPacket;
 use crate::common::native::io_s::EndPoint;
 use crate::generated::RSL::types_gen::*;
 use crate::implementation::common::upper_bound_i::*;
-use crate::implementation::RSL::acceptor_helpers::{CAddVoteAndRemoveOldOnes_mut, CRemoveVotesBeforeLogTruncationPoint_mut};
+use crate::implementation::RSL::acceptor_helpers::{
+    CAddVoteAndRemoveOldOnes, CAddVoteAndRemoveOldOnes_mut, CRemoveVotesBeforeLogTruncationPoint,
+    CRemoveVotesBeforeLogTruncationPoint_mut,
+};
 use crate::implementation::RSL::cbroadcast::*;
 use crate::implementation::RSL::cmessage::*;
-use crate::implementation::RSL::types_i::{abstractify_cvotes, clone_cvotes_up_to_view, clone_request_batch_up_to_view, cvotes_is_valid};
+use crate::implementation::RSL::types_i::{
+    abstractify_cvotes, clone_cvotes_up_to_view, clone_request_batch_up_to_view, cvotes_is_valid,
+};
 use crate::protocol::common::upper_bound::*;
 use crate::protocol::RSL::acceptor::*;
 use crate::protocol::RSL::constants::LReplicaConstantsValid;
@@ -62,11 +67,9 @@ ensures
 
 
 
-// Manual reference implementation for core acceptor action functions.
-// These protocol-specific proofs are retained as reference material.
-// acceptor_gen.rs now uses proof-fallback stubs instead of manual_code injection.
-// Adapted from acceptorimpl.rs method-style to functional style.
-// Uses clone_up_to_view() instead of clone() for Verus view preservation.
+// Manual proven implementations for core acceptor action functions.
+// Injected into acceptor_gen.rs via manual_code config.
+// Phase 48.6.b: converted to &mut self calling convention.
 
 pub exec fn CAcceptorInit(c: &CReplicaConstants) -> (result: CAcceptor)
 requires
@@ -122,7 +125,6 @@ ensures
     result
 }
 
-// Phase 47.3.a.1: All acceptor functions converted to &mut self
 impl CAcceptor {
 
 pub exec fn CAcceptorProcess1a(&mut self, inp: &CPacket) -> (sent_packets: Vec<CPacket>)
@@ -340,6 +342,6 @@ ensures
     }
 }
 
-} // impl CAcceptor (Phase 47.3.a.1)
+} // impl CAcceptor
 
 } // verus!

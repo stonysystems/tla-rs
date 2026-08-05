@@ -165,7 +165,7 @@ verus! {
             assert(IsValidLEnvStep(e, e.nextStep));
             let actor = e.nextStep->actor;
             assert(actor == c.config.replica_ids[idx]);
-            assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, actor, e));
+            assert(forall |io| #![trigger IsValidLIoOp(io, actor, e)] e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, actor, e));
             assert(LEnvironment_PerformIos(e, b[i].environment, actor, ios));
 
             let p = ios[0]->r;
@@ -177,7 +177,7 @@ verus! {
             assert(p.dst == c.config.replica_ids[idx]);
 
             // p was in sentPackets at i-1 (match_ios_recv)
-            assert(forall |io| ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
+            assert(forall |io| #![trigger ios.contains(io)] ios.contains(io) ==> match_ios_recv(io, e.sentPackets));
             assert(match_ios_recv(ios[0], e.sentPackets));
             assert(e.sentPackets.contains(p));
             lemma_PacketStaysInSentPackets(b, c, i-1, i, p);
@@ -491,7 +491,7 @@ verus! {
             assert(LEnvironment_Next(e, b[i].environment));
             assert(e.nextStep is LEnvStepHostIos);
             assert(IsValidLEnvStep(e, e.nextStep));
-            assert(forall |io| e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
+            assert(forall |io| #![trigger e.nextStep->ios.contains(io)] e.nextStep->ios.contains(io) ==> IsValidLIoOp(io, e.nextStep->actor, e));
             assert(IsValidLIoOp(ios[0], e.nextStep->actor, e));
             assert(e.nextStep->actor == c.config.replica_ids[idx]);
             assert(0 <= idx < c.config.replica_ids.len());
@@ -513,7 +513,7 @@ verus! {
             if sched_prev.replica.constants.all.config.replica_ids.contains(p.src)
                 && p.msg->bal_1b == sched_prev.replica.proposer.max_ballot_i_sent_1a
                 && sched_prev.replica.proposer.current_state == 1
-                && (forall |other_packet:RslPacket| sched_prev.replica.proposer.received_1b_packets.contains(other_packet) ==> other_packet.src != p.src)
+                && (forall |other_packet:RslPacket| #![trigger sched_prev.replica.proposer.received_1b_packets.contains(other_packet)] sched_prev.replica.proposer.received_1b_packets.contains(other_packet) ==> other_packet.src != p.src)
             {
                 assert(s_cur.request_queue == s_prev.request_queue);
             } else {
@@ -738,7 +738,7 @@ verus! {
         // From LValIsHighestNumberedProposal → LValIsHighestNumberedProposalAtBallot → LExistsBallotInS:
         // exists |p_1b| S.contains(p_1b) && p_1b.msg->votes.contains_key(opn) && p_1b.msg->votes[opn].max_val == v
         let bal: Ballot = choose |bal: Ballot| LValIsHighestNumberedProposalAtBallot(v, bal, s.received_1b_packets, opn);
-        let p_1b: RslPacket = choose |p_1b: RslPacket|
+        let p_1b: RslPacket = choose |p_1b: RslPacket| #![trigger s.received_1b_packets.contains(p_1b)]
             s.received_1b_packets.contains(p_1b)
             && p_1b.msg->votes.contains_key(opn)
             && p_1b.msg->votes[opn].max_val == v;

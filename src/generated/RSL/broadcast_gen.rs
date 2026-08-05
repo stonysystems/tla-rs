@@ -8,10 +8,32 @@ use crate::implementation::RSL::cmessage::*;
 use crate::protocol::RSL::broadcast::*;
 use crate::protocol::RSL::configuration::*;
 use crate::protocol::RSL::types::*;
+use std::collections::HashSet;
 use vstd::prelude::*;
 use vstd::seq::*;
+use vstd::set_lib::*;
 
 verus! {
+
+/// Helper proof: mapping an injective function over an empty set yields an empty set.
+proof fn lemma_empty_set_map()
+ensures
+    Set::<u64>::empty().map(|x: u64| x as int) =~= Set::<int>::empty(),
+{
+    let f = |x: u64| x as int;
+    let s = Set::<u64>::empty().map(f);
+    assert forall|y: int| !(#[trigger] s.contains(y)) by {
+    }
+}
+
+/// Helper: clone a HashSet (Verus doesn't support HashSet::clone).
+#[verifier(external_body)]
+fn clone_hashset<K: std::hash::Hash + Eq + Clone>(s: &HashSet<K>) -> (res: HashSet<K>)
+ensures
+    res@ == s@,
+{
+    s.clone()
+}
 
 /// Helper proof: mapping over an empty Seq yields an empty Seq.
 proof fn lemma_empty_seq_map()
@@ -34,8 +56,8 @@ requires
     m.valid(),
     ((0 <= *myidx) && (*myidx < c.replica_ids.len())),
 ensures
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].valid(),
-    forall |i:int| 0 <= i < result@.len() ==> result@[i].abstractable(),
+    forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].valid(),
+    forall |i:int| #![trigger result@[i]] 0 <= i < result@.len() ==> result@[i].abstractable(),
     LBroadcastToEveryone(c@, *myidx as int, m@, result@.map(|i, p: CPacket| p@)),
 {
     let mut result = Vec::<CPacket>::new();
@@ -56,7 +78,7 @@ ensures
     {
         let pkt = CPacket {
             dst: c.replica_ids[(idx as usize)].clone_up_to_view(),
-            src: c.replica_ids[(*myidx as usize)].clone_up_to_view(),
+            src: c.replica_ids[((*myidx) as usize)].clone_up_to_view(),
             msg: m.clone_up_to_view(),
         };
         proof {

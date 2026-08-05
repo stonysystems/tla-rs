@@ -13,7 +13,8 @@ verus! {
         ensures
             res@.len() == v@.len(),
             res@ == v@.update(idx as int, val@),
-            forall |i: int| 0 <= i < res@.len() ==> res@[i] == (if i == idx as int { val@ } else { v[i]@ }),
+            forall |i: int| #![trigger res@[i]]
+                0 <= i < res@.len() ==> res@[i] == (if i == idx as int { val@ } else { v[i]@ }),
     {
         let mut res = Vec::new();
         let mut i = 0;

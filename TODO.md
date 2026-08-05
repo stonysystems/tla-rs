@@ -28,9 +28,14 @@ Repo-of-record versions (README / `.github/workflows/ci.yml`):
 A full verification pass emits 534 `automatically chose triggers` notes, all in our own code.
 The Verus team raised this while evaluating tla-rs as a compatibility test target: an
 auto-chosen trigger can change between Verus releases, so a proof that verifies today can
-fail tomorrow as an uninformative `rlimit exceeded`. Work Phase 54 before Phases 52/53
-(clean-subset translator + corpus), which are on hold. See
+fail tomorrow as an uninformative `rlimit exceeded`. See
 [Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
+
+Phases 52/53 were sequenced behind this and are no longer waiting: both are
+**COMPLETE (2026-08-04)** — eight `clean.tla` specs translate, all eight goldens pass
+`verus` under a guard, five cases are `green`. See
+[Phase 52](#phase-52-clean-subset-tla--verus-translator--complete-2026-08-04) and
+`docs/clean_tla_translator_evidence.md`.
 
 
 **Phase 38 DPOR honest score: 20 real / 0 vacuous (2026-04-16).** After Phase 38.17 (direct-assignment solver optimization + DPOR reduction activation), the main `verus-transpile model-check` path is 5.7-19x faster on protocol cases (Paxos 511s → 77s, PBFT 87s → 4.6s, Raft 1115s → 195s). Sleep-set DPOR reduction now actively prunes transitions on all multi-process cases (5/5 reduction-gate hits: Paxos 82.9%, Raft 49.4%, PBFT 43.2%, Peterson 43.8%, counter 33.3%). With DPOR reduction enabled (`dpor-checker shadow-compare`), Paxos runs in 2.6s — a 29x end-to-end speedup from the pre-38.17 baseline with exact state parity preserved. See `transpiler/DPOR_based_model_tla_rs_checker/tests/reports/{latest.md,dpor_vs_tlc.md,sleep_set_reduction_table.md}` for full evidence. Remaining DPOR work is tracked in Phase 38.18 (explorer parallelism, helper-call inlining at IR, main-path DPOR reduction, Raft/PBFT internal-explorer parity).
@@ -102,7 +107,8 @@ The native tla-rs model checker is no longer missing its tutorial/evidence disci
 
 0. **🔝 Phase 54: Explicit Quantifier Triggers** — 534 auto-chosen triggers make our proofs
    sensitive to Verus version changes. Raised by the Verus team while evaluating tla-rs as a
-   compatibility test target. **Do this first.** Phases 52/53 are on hold until it lands.
+   compatibility test target. **Do this first.** (Phases 52/53 were sequenced behind it;
+   they completed independently on 2026-08-04 and are no longer waiting.)
    See [Phase 54](#phase-54-explicit-quantifier-triggers---top-priority-current-work).
 
 
@@ -11356,6 +11362,88 @@ Reported current state: the latest commit only has one of these five checks pass
 
 ### 37.2 Restore green CI without weakening checks
 
+- [x] **37.2.1.i** (2026-08-04) Local re-run of all 5 CI jobs after the Lint fix:
+  **Format PASS, Lint PASS, Test PASS (2608), Model-Check Evidence PASS, Verus Verification
+  not runnable here** (pinned release needs glibc >= 2.39; box has 2.35). 4/5 verified green.
+  Running the evidence job surfaced a separate problem it is structurally unable to catch:
+  **the checked-in model-check artifacts had drifted from what the code produces.**
+  Regenerating changed 16 files (+668/-132):
+  (a) telemetry fields added in Phase 36.3.2 / 36.3.7 (`deferred_constraint_evaluations`,
+  `direct_assigned_fields`, `eq_constraints`, `evaluator_calls`, `fallback_reason`,
+  `guard_pruned_assignments`, `predicate_constraints`) were missing from every artifact;
+  (b) `spec`/`types` paths were `../src/...`, i.e. generated from `transpiler/`, while the CI
+  job has no `working-directory` and runs from the repo root, so `src/...` is canonical;
+  (c) `OPTIMIZATION_DELTAS.md` still claimed `primarybackup_small.json` guard `3/3`, last
+  written 2599743b (March) — it predates and contradicts 6f9baf70 (May 24), which corrected
+  that case to 2 states after the Phase 38.17.2 inlining fix. Checked-in evidence was
+  disagreeing with itself for over two months.
+  Artifacts regenerated and committed; full suite re-run against them.
+  **Root cause of the rot, found while regenerating**:
+  `test_model_check_exact_mode_baseline_snapshot_matches_checked_in_artifacts` asserted that
+  every metric in the artifact — **including `elapsed_ms`** — appears verbatim in the baseline
+  table in `docs/model_checker_status.md`. That pins one host's wall-clock into a checked-in
+  document, so regenerating on any other machine fails the test (here: artifact `8` ms vs
+  table `1` ms). Refreshing the evidence honestly was therefore *guaranteed* to look like a
+  regression, which is why nobody did it for months. Fixed by dropping `elapsed_ms` from the
+  asserted tokens and marking that column indicative in the status doc; every structural
+  metric (`states`, `transitions`, `depth`, `pruned_by_por`, `symmetry_collapses`,
+  `hash_compaction_collisions`) stays pinned. This is the phase rule's "previous guard proven
+  incorrect" case, not a weakening: asserting timing equality across hosts carries no
+  correctness signal and actively blocked the evidence discipline it was meant to protect.
+- [x] **37.2.1.j** Normalized artifact-drift guard. **DONE (2026-08-04).**
+  `scripts/check_model_check_drift.py` + a `Guard against structural artifact drift` step
+  that runs immediately after the existing regeneration step in the evidence job. It
+  normalizes both sides (working tree vs `git show HEAD:<path>`) by dropping the volatile
+  keys, then compares exactly and names the changed key paths
+  (`~ /summary/states: 1 -> 42`). Proven both ways on the real tree: a +999 ms `elapsed_ms`
+  edit passes, while a changed state count plus a `../src/...` path — the exact 37.2.1.i
+  drift — fails with both differences pinpointed.
+  Design points: (a) the volatile set is an **explicit list, not a `_ms$` rule**, because
+  `timeout_ms` also ends in `_ms` but is a configuration input whose change must be caught —
+  a suffix heuristic would have silenced exactly the wrong thing; (b) `MANIFEST.txt`'s
+  `git_rev:` line is dropped, since it changes on every commit by construction;
+  (c) `.jsonl` parity exports are normalized per line; (d) a deleted artifact is reported as
+  `missing` rather than silently skipped; (e) `--warn-only` exists for local use but a test
+  asserts CI does **not** use it; (f) scope comes from `MANIFEST.txt`, i.e. only what the
+  matrix script actually generates — `reports/model_check/` also holds a hand-written
+  README and parity exports from other scripts, and a guard that goes red on a doc edit is
+  a guard someone deletes (caught while testing: the first version flagged this task's own
+  README edit). `--all-files` overrides. 29 tests, including an end-to-end suite against a
+  real throwaway git repository, since the guard shells out to git.
+
+  Original rationale: 37.2.1.f deliberately rejected a
+  git-diff check because `elapsed_ms` varies per runner — correct, but the consequence is
+  that structural drift (new telemetry fields, changed state counts, wrong-cwd paths) rots
+  silently, as 37.2.1.i shows. The fix is not to reinstate a raw diff but to diff
+  **normalized** artifacts: drop the volatile keys (`elapsed_ms`, timestamps, `git_rev`) and
+  compare the rest against git HEAD. That is a strictly stronger correct guard replacing a
+  weaker one, which the phase rules allow. Needs: normalizer + comparison script, tests over
+  fixture pairs (timing-only diff must pass, field/count/path diff must fail), and a CI step
+  after the existing regeneration step.
+
+- [x] **37.2.1.h** (2026-08-04) `CI / Lint` was red again: `cargo clippy --all-targets
+  --all-features -- -D warnings` reported **18 `clippy::only_used_in_recursion`** warnings
+  across `tla/translator.rs`, `tla/types.rs`, `translator/mod.rs`, `verus2tla/converter.rs`.
+  Fixed the code, not the check: each flagged method takes `&self` but never touches state —
+  it only passes the receiver along to its own recursive call — so the receiver was dropped
+  and the methods became associated functions, with ~280 call sites requalified
+  `self.f(..)` -> `Self::f(..)` (and `x.f(..)` -> `Type::f(..)` where the receiver was a
+  local). All 18 are private, so no public API moved.
+  Three things worth knowing for the next person:
+  (a) **it cascades** — while a method still calls a sibling that takes `&self`, the sibling
+  keeps `self` "used", so fixing one exposes the next. It took a fixpoint loop
+  (`field_expr_to_raw_string` -> `field_expr_to_invariant_string` -> `field_expr_to_loop_string`);
+  (b) removing receivers turns `|e| Self::f(e)` into a `redundant_closure` warning, but the
+  closure is still **required** where the argument needs deref coercion
+  (`Option<Box<TlaExpr>>::is_some_and`) — 4 of those had to be restored after the compiler
+  rejected the point-free form;
+  (c) `cargo clippy` caches, so a re-run after an edit prints nothing and looks clean —
+  `touch src/lib.rs` first or the fixpoint loop terminates on a lie.
+  Verified locally: `clippy --all-targets --all-features -- -D warnings` exit 0, `cargo fmt
+  --check` clean, full test suite green. **Caveat**: verified with clippy 1.91.0 (the newest
+  toolchain cached on this box); CI uses `dtolnay/rust-toolchain@stable`, which may be newer
+  and carry lints 1.91 does not have.
+
 - [x] **37.2.1**: Fix the current CI failures across all 5 push checks without deleting coverage. **Status**: 4/5 jobs fixed (Format, Lint, Test, Model-Check Evidence). Verus Verification has infrastructure fixed (--skip-dotnet, 45min timeout) but 1 rlimit proof failure remains — this is a proof gap (Phase 34), not a CI gap.
   - No `continue-on-error`.
   - No disabling entire jobs.
@@ -14677,6 +14765,103 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
 - [x] **42.4.b**: Run `regenerate_rsl.sh --validate-only` on HEAD. **Result**: all 8 modules transpile, validation PASSED. All function-level differences are exactly the skip_functions entries (15 total across 5 modules). Script rewritten to validation-first approach: modules with skip_functions keep existing files (hand-written bodies preserved); modules without skip_functions (types, broadcast, acceptor) can be safely replaced. Fixed pre-existing test `test_rsl_types_manual_helpers_component_part2_symbols_present` (expected `HashMap` but cb42869 changed to `Arc<HashMap>`).
 - [x] **42.4.c**: Confirm bench numbers post-regen match pre-regen (RSL ≥29K with cb42869-equivalent in place; ≥16K without). **Confirmed by Phase 41.3.a (2026-05-24): 32,663 ops/s avg with all 5 Arc-wrapped fields, exceeds 29K target.** The cb42869 single-field PoC is subsumed by Phase 41.1.b's full 5-field Arc-wrap.
 
+#### 42.8 Regenerating the RSL modules (2026-08-05)
+
+- [x] **42.8.a**: `broadcast_gen.rs` and `acceptor_gen.rs` regenerated from spec and
+      installed; both are now **idempotent** (regenerate → rustfmt → byte-identical).
+      `1045 verified, 0 errors` — one *more* than before, because the fresh broadcast output
+      carries a `lemma_empty_set_map` proof the checked-in file had lost. Trigger notes in
+      generated code: 109 → **107** (broadcast's 2, via the 54.7.a codegen fix, which this
+      confirms end-to-end: fix codegen → regenerate → notes gone).
+- [x] **42.8.b**: Transpiler bug found by doing it: the emitted `clone_hashset` helper
+      mentions `HashSet` in its signature but no `use std::collections::HashSet;` was
+      emitted, so regenerating `broadcast_gen.rs` produced code that **did not compile**
+      ("cannot find type `HashSet` in this scope"). The import is now emitted alongside the
+      helper, mirroring how `clone_hashset_u64` is already handled.
+- [x] **42.8.c.1**: Merge tool written — `scripts/merge_generated.py`. Takes fresh output as
+      the source of truth and splices back exactly the items the transpiler did not emit,
+      placing methods inside the `impl` they came from (a method emitted at top level becomes
+      `&mut self` outside an impl, which does not compile) and free functions before the
+      impls, carrying their imports. `--report` describes a merge without performing it.
+      10 tests, including that codegen improvements survive the merge and that a missing
+      `impl` in fresh output is an error rather than a silent drop.
+- [ ] **42.8.c.2**: **The five modules are blocked on a transpiler bug, not on merge
+      mechanics.** Regenerating `learner` emits `CLearnerForgetDecision` as a `&mut self`
+      method whose body still names the functional output: `result.unexecuted_learner_state`
+      inside a proof block and a bare `result` tail, with no such binding. It does not
+      compile, which is why these modules have always sat in the "keep existing" bucket.
+  - [x] **42.8.c.2.i** Mechanism located (2026-08-05). The lift already exists and mostly
+        works: `Printer::struct_to_field_assignments`
+        (`transpiler/src/printer/mod.rs:191`) recognises
+        `let result = Struct{..}; ..proofs..; result` and rewrites the struct into field
+        assignments on `self`. Three residues defeat it for this function, all inside that
+        same transform:
+        (a) **the trailing var is re-pushed unconditionally** (`// Keep trailing var for
+        return`, line ~247) even when the method's return type collapsed to `()`;
+        (b) **proof statements are only index-rewritten**, by
+        `rewrite_tuple_refs_in_expr`, so `result.field` survives where it should now read
+        `self.field`;
+        (c) when the `let` value is an **`if`/`else`** rather than a plain struct, the
+        branches lift asymmetrically: the then-branch becomes assignments (type `()`), the
+        else-branch stays `self.clone_up_to_view()` (type `Self`), so even fixing (a) and (b)
+        leaves a branch-type mismatch. The identity-clone branch has to become a no-op.
+  - [x] **42.8.c.2.ii** One approach tried and rejected (2026-08-05): renaming `result` →
+        `self` and dropping the tail *upstream*, in `translate_predicate` after
+        `maybe_apply_mut_self`. **Do not repeat this.** It looks right and is wrong twice
+        over: the printer's lift keys on finding a `Let` whose pattern equals the *tail
+        variable*, so removing the tail disables the lift entirely; and renaming while the
+        `let result = ..` binding still exists makes the proof block read the **old** state
+        instead of the new value. The fix belongs in the printer transform, which is the
+        only place that knows the struct was lifted into `self`'s fields.
+  - [x] **42.8.c.2.iii** Implemented (2026-08-05). `Printer::struct_to_field_assignments`
+        now takes `returns_unit`, threaded from `func.return_type` at the one call site where
+        it is in scope. With it: the trailing var is dropped, an identity-clone branch becomes
+        a no-op, and proof blocks are rewritten. `CLearnerForgetDecision` now emits correctly.
+        **The proof rewrite is a simultaneous swap, not a rename** — in the functional body
+        `self` is the pre state and `result` the post state, and the lift exchanges those
+        meanings, so `result.X -> self.X` and `self.X -> old_self.X` must happen at once.
+        Renaming only the first half collapses both arguments of
+        `lemma_abstractify_clearnerstate_remove(old_m, m2, k)` onto one value, and its
+        precondition `m2@ =~= old_m@.remove(k)` is then unprovable. Applying the swap in two
+        places produced `old_old_self`; it runs once, at the top of the method body. The swap
+        is confined to proof contexts because in exec position `self` before the assignments
+        really is the pre state and rewriting it to a ghost binding would not compile.
+        Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
+        file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
+        regeneration.
+  - [ ] **42.8.c.2.iv** Merging `learner` still fails, on a *different* mismatch: the
+        preserved hand-written bodies were written against older emitted signatures. The
+        fresh `lemma_abstractify_clearnerstate_empty` takes `m: &HashMap<..>` while the
+        preserved caller passes by value (`expected &HashMap<u64, CLearnerTuple>, found
+        HashMap<u64, CLearnerTuple>`). So the merge needs signature reconciliation, not just
+        splicing — each preserved body has to be checked against the current emitted API.
+        This is per-function work and belongs with the Phase 21 manual-code elimination.
+
+
+
+#### 42.7 Lossless `types_gen.rs` regeneration (2026-08-05)
+
+- [x] **42.7.a**: `types_gen.rs` regeneration is now **byte-identical** to the checked-in
+      file. Two causes, one of them a measurement error on my part:
+      (a) **ordering, not loss.** The transpiler emits `use` statements in TOML order while
+      the checked-in file is `rustfmt`-formatted, which sorts them. `git diff --stat` scored
+      that as ~53 deleted lines and it was recorded as "regen drops hand-added imports".
+      Comparing content shows 43 imports on both sides. `scripts/regenerate_rsl.sh` now runs
+      `rustfmt` on the emitted types so the two are comparable.
+      (b) **one genuinely hand-added block.** `CParameters` (struct + `clone_up_to_view`) was
+      written directly into the generated file, because `generate-types` reads `types.rs` and
+      `LParameters` lives in `parameters.rs`. It has moved to
+      `implementation/RSL/cparameters.rs` — the module whose own header already claimed to
+      own "CParameters validity/view semantics", and which previously re-exported the struct
+      *from* the generated file. That dependency is now the right way round, and
+      `types_gen.rs` re-exports it through `custom_imports`, so every existing path
+      (`generated::RSL::types_gen::CParameters`) still resolves.
+      `1044 verified, 0 errors`; `regenerate_rsl.sh --validate-only` passes; guarded by
+      `test_types_gen_regeneration_is_byte_identical`.
+      Note `generate-types` deliberately does **not** inject `manual_code` (there is a test
+      asserting it), so moving the block out was the only way to make the file pure
+      transpiler output rather than widening that escape hatch.
+
 #### 42.5 Phase 40 disposition (separate from 42.1–42.4)
 
 Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can bench. But it doesn't actively break anything either (the regen blocker hypothesis was wrong). Decide:
@@ -16054,6 +16239,24 @@ Plan: `docs/clean_tla_to_verus_translator_plan.md`. Extends `transpiler/src/tla/
 
 ---
 
+### Housekeeping from the second origin/main merge (2026-08-05)
+
+- [x] **`TODO.md` had a 1,652-line duplicated tail**, introduced upstream by
+  `513b4b1a` (Phase 54.9.a), which added 1,710 lines to this file with **zero
+  deletions** — Phases 41–54 appeared twice. Removed. Verified safe first: 9 of
+  the 13 duplicated phases were byte-identical to their earlier copy, and for
+  the other four the *earlier* copy was the current one (51.13 marked done there,
+  Phase 54 carrying a 2026-08-05 correction the tail lacked, and Phases 52/53
+  complete there and stale "PLANNED (on hold)" in the tail). All 58 non-blank
+  lines dropped came from those four, and `54.9.a` survives in its newer
+  `[x] FIXED` form.
+- [x] **A doctest in `transpiler/src/printer/mod.rs` did not compile**, from
+  Phase 42.8.c.2.iii — an indented block of pseudo-code that rustdoc read as
+  Rust. Confirmed pre-existing on pristine `origin/main`, so `cargo test` (which
+  CI runs) was red there. Fenced as ```text.
+- [x] **The "Phases 52/53 are on hold until Phase 54 lands" banners are gone.**
+  They are complete; the sequencing note is kept, past tense.
+
 ### Follow-up from the origin/main merge: soundness holes in our linter
 
 Found by adversarially reviewing our linter against the parallel Phase 52.M0
@@ -16358,11 +16561,20 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
         and asserts nothing, so it cannot change the job verdict. Guarded by
         `TestCiWiring` in `scripts/test_trigger_inventory.py` — a silently dropped step
         would otherwise look exactly like "no triggers left".
-  - [ ] **54.2.b** Commit the baseline: download the `trigger-inventory-<version>`
-        artifact from a `verify` run (it now carries both the trigger inventory and the
-        timing inventory), check both in under `reports/triggers/`, and update
-        `reports/triggers/README.md`. These are the numbers every later batch diffs
-        against. Blocked only on a CI run of the `verify` job publishing the artifact.
+  - [x] **54.2.b** Baseline committed. **DONE (2026-08-04).** Captured locally from the
+        pinned release, not from CI: `1044 verified, 0 errors` in ~40 s, **534 trigger
+        notes**, matching the phase's stated attribution exactly (Raft 177, generated/RSL
+        109, implementation/RSL 101, protocol/RSL 53+44+34=131, common/collections 11,
+        verus_extra 4, common/framework 1). Artifacts: `reports/triggers/baseline.{json,md}`
+        and `timing-baseline.{json,md}`; ceiling set to 534 with `enforce=true`, so 54.9's
+        guard is now live and the `changed`-trigger check has something to compare against.
+        **The "no verifier on this box" conclusion recorded in earlier notes was wrong**:
+        glibc 2.39 blocks only the `verus` *launcher*, not `rust_verify` (needs 2.34). The
+        launcher just sets `RUSTUP_TOOLCHAIN`, `LD_LIBRARY_PATH` and `VERUS_Z3_PATH` and
+        execs `rust_verify`; reproducing those three runs the real verifier. The bundled z3
+        4.16.0 wants glibc 2.38, but the PyPI `z3-solver==4.16.0` wheel is manylinux_2_27 and
+        passes Verus's version check. Wrapped as `scripts/verify_local.sh` so this is a
+        one-liner on any similarly-old host.
   - [x] **54.2.c** Per-module wall-clock. **DONE (2026-08-04).** `SConstruct` gained
         `--verus-extra-args` (shlex-split, appended to the verus command line; verified by
         `scons -n` dry run), CI passes `--verus-extra-args="--time-expanded"`, and
@@ -16381,21 +16593,237 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
       captures; `--triggers-mode all-modules` reports more, and counts across modes are not
       comparable (the mode is recorded in the label and file name so a diff cannot silently
       mix them).
-- [ ] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
-      Small, low-coupling, exercises the whole workflow. **Gate: do not proceed to 54.4 until
-      the pilot is green with no wall-clock regression.**
-- [ ] **54.4** The 5 `broadcast` functions. Small but high-leverage — these are in scope
-      crate-wide.
-- [ ] **54.5** `src/protocol/RSL/` (131). Ordered by module, each batch independently verified.
-- [ ] **54.6** `src/implementation/RSL/` (101). Note 43 are in `gen_helpers.rs`, which is a
-      hand-written companion to generated code — check whether they should move to 54.7 instead.
-- [ ] **54.7** Transpiler codegen emits explicit triggers; regenerate; confirm all 109
-      generated notes are gone and the regenerated tree still verifies.
-- [ ] **54.8** `src/protocol/Raft/` (177, of which 141 in `refinement_proof/invariants.rs`).
-      Deliberately last: this file also holds the 12 Phase 34 `assume`s and is the most
-      fragile proof in the tree.
-- [ ] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
-      ceiling, so this does not silently regrow.
+- [x] **54.1.b** Work-list scanner (added 2026-08-04, unplanned but needed):
+      `scripts/trigger_sites.py` statically inventories every `forall|`/`exists|` in the
+      tree and classifies it `annotated` / `auto` / `ambiguous` / `unannotated`, so the
+      annotation batches can be planned and split per file without waiting for a CI
+      verification run. Checked in at `reports/triggers/sites.md`. **This is an upper bound
+      on the work, NOT a prediction of note counts** — Verus's default `selective` mode only
+      reports the choices it finds ambiguous, so an unannotated quantifier need not produce
+      a note. Current scan: 1435 sites, 882 unannotated, 445 annotated, 72 `#![auto]`,
+      36 ambiguous. By directory the unannotated load is Raft/refinement_proof 239,
+      implementation/RSL ~150, generated/RSL 111, protocol/RSL 75 + common_proof 74,
+      common/collections 68 — consistent with the note attribution table above.
+      NOTE `src/generated_backup/RSL` (65 sites) is a stale backup tree; exclude it from any
+      batch. 23 tests. One real bug caught by spot-checking during development: a comma
+      between binders (`forall |x1: X, x2: X|`) truncated the scope scan, so annotations
+      after a multi-binder list were misreported as unannotated.
+- [x] **54.3** Pilot on `src/common/collections/` (11 notes) and `src/verus_extra/` (4).
+      **DONE (2026-08-04). Gate passed; 54.4 may proceed.** All 15 notes eliminated — both
+      directories are now at 0 — with `1044 verified, 0 errors` unchanged and the crate total
+      534 → 519. Evidence: `reports/triggers/54.3-pilot.{json,md}` plus the two diffs
+      (`54.3-pilot-trigger-diff.md`, `54.3-pilot-timing-diff.md`): 15 removed, **0 added,
+      0 changed**, total verify time −0.3%, and every touched module flat or slightly faster
+      (sets 200→196, hashsets 285→279, vecs 186→178, set_lib_ext_v 362→270, count_matches
+      344→349 ms).
+      Method: annotate with **exactly the trigger Verus already chose**, so behaviour is
+      preserved by construction and the diff's `changed` count stays 0. Three things learned
+      that 54.4+ will hit:
+      (a) **`#![trigger ...]` after the binder works on `choose` and `assert forall`**, not
+      just `forall`/`exists`;
+      (b) **a trigger may not contain a lambda** — Verus auto-chose
+      `s.map(<closure>).contains(op)` in `hashsets.rs`, then rejected both
+      `#![trigger ...]` and inline `#[trigger]` with *"triggers cannot contain
+      let/forall/exists/lambda/choose"*. It auto-chooses terms it forbids you to write. The
+      resolution was not an exception after all: annotating the **inner** quantifiers made
+      the outer note disappear on its own, so the site is now clean. Where that trick does
+      not work, hoisting the closure to a named `spec fn` is the fallback — but check the
+      callers first, since this lemma's only caller is generated code;
+      (c) nested `assert forall` needs the outer binder annotated too; annotating only the
+      inner one leaves the outer note in place.
+- [x] **54.3.a** Timing gate made usable (found by the pilot). The first gate run flagged
+      `implementation::RSL::replicaimpl_no_receive_clock` at +24.5% — a module the pilot never
+      touched. Verus verifies modules in parallel (127 threads here) so per-module wall-clock
+      tracks contention: that module measured 1967 / 2448 / 2241 ms across three runs of two
+      code states. A single-sample 20% threshold therefore flags untouched modules, and a
+      gate that cries wolf gets ignored. `verus_timing.py diff --confirm-with <second run of
+      the same code>` now demotes any regression that does not reproduce, reporting it under
+      "Not reproduced by the confirmation run" rather than dropping it. With confirmation the
+      pilot gate is clean. **Superseded by 54.4.a**: `--confirm-with` handles two samples,
+      but the correct procedure is min-of-3 on both sides (see 54.4.a) — the flagged module
+      turned out to be an artifact of a single-run *baseline*, not of the new code.
+- [x] **54.4** The 5 `broadcast` functions. **DONE (2026-08-04). Gate clean.** The
+      injectivity axioms `axiom_cmessage_view`, `axiom_cpacket_view`, `axiom_cvote_view`,
+      `axiom_clearner_tuple_view` (`cmessage.rs`, `types_i.rs`) and `axiom_endpoint_view`
+      (`io_s.rs`) now pin `#![trigger x1@, x2@]` — exactly the multi-trigger Verus was
+      already choosing, confirmed with `--triggers-mode verbose`. `1044 verified, 0 errors`;
+      trigger diff vs 54.3: **0 added, 0 changed**; timing +0.6% total, 0 regressions.
+      Evidence: `reports/triggers/54.4-broadcast.{json,md}`, `54.4-trigger-diff.md`,
+      `54.4-timing-diff.md`.
+      Note the **note count does not move** (519 → 519): these five emit no note in
+      `selective` mode, so they were invisible to the 534 inventory. Their risk is different
+      and larger — a broadcast axiom is in scope for every proof in the crate, so whatever
+      trigger Verus picks silently applies everywhere and can change between releases with
+      no diagnostic at all. Finding them needs `--triggers-mode verbose` (1336 notes vs 534).
+      The other 3 broadcast axioms (`*_key_model`) already carried `#[trigger]`.
+- [x] **54.4.a** Timing methodology corrected — the 54.3 gate was measuring noise.
+      Chasing a flagged module (`implementation::RSL::replicaimpl_no_receive_clock`, +30%)
+      to its cause showed the **baseline itself was a single lucky run**: at the very commit
+      the baseline documents, that module measures 2372 / 2438 / 2490 ms across three runs,
+      while the committed baseline recorded 1967. Every later comparison inherited that
+      error. Three fixes, each measured rather than guessed:
+      (a) `verus_timing.py merge` combines N runs by per-module minimum (least-contended
+      estimate); the baseline is now **min of 3 runs** and both sides of a gate must be
+      merged the same way. Two samples are not enough — a Raft module read "+27%" on two
+      samples and +12% on three;
+      (b) the noise floor moved 500 → **1000 ms**, chosen from data: across three
+      identical-code runs, modules ≥500 ms spread up to 22.6% (one exceeds the 20% gate)
+      while modules ≥1000 ms spread at most 16.8% and none exceed it. 1000 ms is the
+      smallest floor at which the gate cannot fire on noise, and it still covers 28 modules
+      including every expensive one;
+      (c) the floor applies to the **base** value, since the percentage is relative to it —
+      a baseline inside the noisy regime cannot support a ratio claim. Large absolute jumps
+      from a small base are not lost: the "below the noise floor" table is sorted by
+      absolute delta.
+      **Procedure for 54.5+**: 3 runs of the new code, `merge`, then `diff` against the
+      merged baseline.
+- [x] **54.5** `src/protocol/RSL/` (131 notes). **DONE (2026-08-04). Both gates clean.**
+      130 of 131 annotated across all 25 files in one batch; crate total 534 → **389**.
+      `1044 verified, 0 errors` on three independent runs. Trigger diff vs the 54.2 baseline:
+      **145 removed, 0 added, 0 changed**; timing (min-of-3 both sides) +0.8%, 0 regressions.
+      Evidence: `reports/triggers/54.5-protocol-rsl.{json,md}`, `54.5-trigger-diff.md`,
+      `54.5-timing-diff.md`.
+      One site skipped and left auto-triggered: `refinement_proof/state_machine.rs:54`, where
+      the chosen trigger belongs to a nested `exists |p|` while the note points at the outer
+      `forall |req|` — annotating the outer binder there is a compile error.
+- [x] **54.5.a** `scripts/apply_triggers.py` — annotates from an inventory, writing back
+      exactly what Verus chose. Built because 54.5–54.8 hold 400+ more sites and hand-editing
+      them would be neither reviewable nor uniform. It skips rather than guesses (already
+      annotated; closure in the term; no binder found; trigger belongs to a nested
+      quantifier), and every skip prints a reason. 15 tests.
+      **Two bugs it had, both caught by verification, both now pinned by tests:**
+      (a) it flattened *alternative* trigger groups into one multi-term trigger.
+      `#![trigger a] #![trigger b]` (either fires) and `#![trigger a, b]` (both needed) mean
+      different things; the flattened form is strictly more restrictive and broke
+      `state_machine.rs`'s postcondition and a `replica.rs` assertion. This is the
+      "too restrictive" failure mode the phase warns about, and it showed up on the first
+      run of the very first batch;
+      (b) its binder-variable check parsed `|opn: OperationNumber|` as binding *two* names,
+      so it rejected every typed binder as "nested". The check itself is sound and necessary
+      — it is what catches case (a)'s sibling, a trigger naming a variable bound by an inner
+      quantifier — but it has to split the binder list on top-level commas and take the name
+      before the colon.
+- [x] **54.5.c** Transpiler parser fix, found by the Rust suite after 54.5 landed. The RSL
+      protocol specs are not only Verus input — they are also **this transpiler's input**, so
+      annotating them broke `test_election_recursive_functions_generate_loop_code` and
+      `test_regenerate_rsl_validate_only_passes` with `Parse error: Expected identifier,
+      found '#'`. `parse_forall_expr` accepted `#![trigger ...]` but `parse_exists_expr` and
+      `parse_choose_expr` did not. Both now accept and discard them, matching what `forall`
+      already did in practice: `Trigger` is parsed and never emitted, because triggers are
+      proof-only and do not affect exec codegen. Adding a `triggers` field to `Expr::Exists`
+      would have touched 92 match sites for no downstream consumer.
+      Lesson for 54.6–54.8: **annotating a spec file can break the transpiler even when Verus
+      is happy**, and `scripts/regenerate_rsl.sh` uses the *release* binary, so a debug-only
+      rebuild leaves the old parser in place and the failure looks unfixed.
+- [x] **54.5.b** Inventory parser fix, found by the 54.5 diff reporting `1 changed`.
+      A trigger's terms can straddle several source lines, each with its own caret run; the
+      parser treated "more than one quoted line" as "no terms" and dropped **29 of the
+      crate's trigger groups**. An empty term list meeting a non-empty one then reported as
+      `changed` — the one diff category that is supposed to mean genuine instability, so a
+      false positive there costs exactly the trust the category exists to earn. Fixed by
+      pairing each quoted line with the marker line that follows it; the baseline was
+      re-parsed from the same log, and after the fix the 54.5 diff reads 0 changed.
+- [x] **54.6** `src/implementation/RSL/` (101 notes). **DONE (2026-08-04). Both gates clean.**
+      100 of 101 annotated across all 10 files; crate total 389 → **289**. `1044 verified,
+      0 errors` on three runs. Trigger diff vs the 54.2 baseline: **245 removed, 0 added,
+      0 changed**; timing (min-of-3 both sides) +1.0%, 0 regressions. Evidence:
+      `reports/triggers/54.6-implementation-rsl.{json,md}`, `54.6-trigger-diff.md`,
+      `54.6-timing-diff.md`.
+      **`gen_helpers.rs` (43 notes) belongs here, not in 54.7** — the open question in the
+      original 54.6 text. It is hand-written: its own header says "Shared helper functions
+      for generated RSL modules", no generator emits it (`regenerate_rsl.sh` does not name
+      it), and its history is ordinary hand edits. Only `src/generated/RSL/` is
+      transpiler-owned, and that is 54.7's scope.
+      One site skipped: `cconfiguration.rs:204`, trigger belongs to a nested quantifier.
+- [x] **54.7.a** Transpiler codegen emits explicit triggers for `vec_element_ensures`.
+      **DONE (2026-08-04).** The transpiler synthesises
+      `forall |i:int| 0 <= i < X@.len() ==> X@[i].pred()` for every entry in
+      `vec_element_ensures`; it now emits `#![trigger X@[i]]` — the term Verus was choosing
+      anyway. Two emission sites (`lib.rs:772`, `translator/mod.rs:10165`). This shape is
+      **60 of the 109** generated notes. Guarded by
+      `test_vec_element_ensures_emits_explicit_trigger`, which asserts the emitted text
+      rather than a regenerated file, for the reason in 54.7.b.
+- [ ] **54.7.b** Regenerate `src/generated/RSL/` and confirm the notes are gone.
+      **CORRECTION (2026-08-05): the blocker I recorded here was wrong, and is now much
+      smaller.** I wrote that regeneration "rewrites `types_gen.rs` with 53 lines deleted,
+      dropping hand-added imports". It does not. All **43 imports survive**; the 53-line
+      figure came from reading `git diff --stat`, which counts reordered lines as deletions
+      plus insertions. Compared as content, the fresh output differed from the checked-in
+      file only by (i) `use` ordering and line wrapping, which `rustfmt` normalises, and
+      (ii) one hand-written 27-line `CParameters` struct + `clone_up_to_view` impl.
+      Both are now fixed (Phase 42.7), so `types_gen.rs` regeneration is **byte-identical**.
+      `acceptor_gen.rs` differs in **13 lines**, all comment text plus one import listing two
+      extra names — cosmetic, not import loss.
+      **Second correction (same day): it is not a verification exercise either.** Measured
+      per module, the checked-in files are up to 2.7x larger than fresh output because they
+      carry `skip_functions` bodies and Arc-wrap patches, and `regenerate_rsl.sh` keeps those
+      five files untouched by design. So codegen fixes cannot reach them at all without a
+      merge step — see 42.8.c. Of the 109 generated notes, **2 are now gone** (broadcast,
+      regenerated in 42.8.a), 4 more sit in acceptor's preserved code, and the remaining 103
+      are behind that merge or behind the 54.7.c decision.
+- [ ] **54.7.c** The other **33** of the 109 generated notes are **not transpiler output**.
+      They sit inside `skip_functions` hand-written bodies that regeneration preserves
+      verbatim (`CRemoveExecutedRequestBatch`, the `lemma_*_bridge` proofs, and others across
+      election/executor/learner/proposer/replica). Classified by regenerating into a temp dir
+      and checking which functions the transpiler actually emits: 76 emitted / 33 preserved.
+      They live under `src/generated/` but are hand-maintained, so `CLAUDE.md`'s
+      "do not hand-edit generated files" rule does not obviously bind — that rule exists to
+      stop people patching transpiler *output* instead of the transpiler. Needs an explicit
+      decision before annotating; the honest options are (i) treat preserved bodies as
+      hand-written and annotate them in place, or (ii) move them out of `src/generated/`
+      into a companion module like `gen_helpers.rs`, which is where the equivalent RSL
+      helpers already live.
+- [x] **54.8** `src/protocol/Raft/` (177 notes, 141 in `refinement_proof/invariants.rs`).
+      **DONE (2026-08-04). Both gates clean.** Applied in two steps so a failure would be
+      attributable — the 36 notes in the four smaller files first (verified), then the 141 in
+      `invariants.rs`, the file that also holds the 12 deprecated Phase 34 `assume`s. 166 of
+      177 annotated, 11 skipped as nested-quantifier cases. `1044 verified, 0 errors` on
+      three runs. Timing **-4.4%** — the annotations made the crate *faster*, which is the
+      expected direction when the solver stops searching for triggers.
+      A convergence pass then followed: re-running the applier against the *current*
+      inventory attributed 109 further notes that only became attributable once inner
+      quantifiers were annotated (the effect first seen in 54.3). Final crate total:
+      **534 → 122**, with **412 removed, 0 added, 0 changed** against the 54.2 baseline.
+      Evidence: `reports/triggers/54.8-raft.{json,md}`, `54.8-trigger-diff.md`,
+      `54.8-timing-diff.md`.
+      **Note on the convergence pass**: run with `--filter src/`, it also edited
+      `src/generated/RSL/*.rs`, which `CLAUDE.md` forbids. Reverted — those 109 notes are
+      54.7's scope and their disposition (54.7.c) is an open decision, not something a broad
+      filter should settle. Scope future passes to the directory you mean.
+
+### Residual after 54.3–54.8: 122 notes
+
+| where | count | why it remains |
+|---|---:|---|
+| `src/generated/RSL/` | 109 | 54.7: 60 need a regeneration that is blocked on Phase 42 (lossy RSL regen); 49 sit in preserved hand-written bodies pending the 54.7.c decision |
+| `src/protocol/Raft/refinement_proof/invariants.rs` | 11 | trigger belongs to a nested quantifier; the note points at the outer binder |
+| `src/protocol/RSL/refinement_proof/state_machine.rs` | 1 | same nested-quantifier shape |
+| `src/implementation/RSL/cconfiguration.rs` | 1 | same |
+
+The 13 nested-quantifier cases need the enclosing expression restructured (hoist the inner
+quantifier, or annotate it so the outer note resolves) rather than a mechanical annotation;
+they are the honest remainder of the "not mechanical" warning in this phase's premise.
+- [x] **54.9** CI guard: fail the build if the trigger-note count rises above the agreed
+      ceiling, so this does not silently regrow. **Mechanism DONE (2026-08-04); the number
+      it enforces arrives with 54.2.b.** `trigger_inventory.py guard` + a new
+      `Guard trigger inventory` CI step. Design points:
+      (a) the ceiling lives in `reports/triggers/ceiling.json`, so raising it is a
+      reviewable diff with a stated reason rather than a workflow edit;
+      (b) it ships `enforce=false, max_notes=null` — the guard reports the measured count
+      and passes, because asserting a number nobody has measured on the pinned release
+      would be either vacuous or red-for-the-wrong-reason. 54.2.b sets it;
+      (c) with a committed baseline it also fails on **changed** trigger choices, not just
+      added notes — the count can stay identical while the solver instantiates different
+      terms, which is the whole reason this phase exists;
+      (d) a capture-mode mismatch (`selective` vs `all-modules`) exits 2 rather than
+      comparing incomparable numbers;
+      (e) an empty capture (verification failed early, so Verus printed no notes) is never
+      judged against a ceiling;
+      (f) `set -o pipefail` in the step, because the guards pipe into `tee` and would
+      otherwise exit 0 and silently stop guarding.
+      The timing half reuses `verus_timing.py diff --max-regression-pct 20
+      --fail-on-regression`, skipped with a message until `reports/triggers/timing-baseline.json`
+      exists. 21 new tests, incl. a guard that an `enforce=true` ceiling must carry a number.
 
 ### Acceptance
 
@@ -16405,17 +16833,89 @@ So each annotation needs re-verification, and a batch that verifies is not yet k
 - No module's verification wall-clock regresses more than 20% against the 54.2 baseline
 - CI guard from 54.9 in place
 
+- [x] **54.9.a** CI timing gate — **root cause was not the floor. FIXED (2026-08-05).**
+      The report was right that the gate was red and wrong about why, and the mistake was
+      mine to begin with. Two things had already changed before `e0241425`: 54.4.a raised the
+      noise floor 500 → **1000 ms** and made it apply to the *base* value, so the 36 modules
+      under 100 ms could not fire the gate at all.
+      The actual cause: **the committed baseline was measured on this 127-thread box and CI
+      compares it against a GitHub runner with a handful of cores.** Verus verifies modules
+      in parallel, so per-module wall-clock tracks the core count and the contention pattern;
+      a percentage between the two measures the hardware, not the proof. No threshold and no
+      absolute floor fixes a cross-hardware comparison — the suggested 250 ms floor would
+      have suppressed the symptom while leaving the numbers meaningless.
+      Fixes: (a) CI **reports** timing instead of gating on it, with the reason in the
+      workflow; the 20% criterion stays a *local* pre-merge gate, which is how 54.3–54.8
+      actually used it. (b) `verus_timing.py diff` now records `num-threads` for both sides,
+      prints "**These runs are not comparable**" when they differ, and **refuses to fail**
+      on a cross-hardware comparison even when asked — so the category error announces
+      itself instead of being silently absorbed by a bigger threshold. 7 tests, including
+      one asserting CI does not pass `--fail-on-regression` to the timing diff.
+      Older inventories without `num-threads` are unaffected.
+
 ### Non-goals
+- Reverting Phase 40 — there's no evidence it broke regen. Whether to keep its Arc-wrap codegen is a **separate** decision (see "Phase 40 disposition" below), not gated on Phase 42.
+- Replacing Phase 41's hand-edited RSL Arc-wrap (`cb42869`) — that's a measured +82 % win and survives regen since it's in `ProposerImpl.rs` (hand-written file) + a small `proposer_gen.rs` patch that 42.4 will need to make survive regen via TOML config.
+- Touching concurrent model-checker / DPOR / bytecode work (Phase 38).
 
-- Not fixing the 12 Raft `assume`s (Phase 34, deprecated) — but 54.8 touches the same file,
-  so the two should not run concurrently.
-- Not the 876 `non_snake_case` warnings. Those are noise from the deliberate `L*`/`C*`
-  naming that mirrors the IronFleet Dafny identifiers; suppress with one crate-level
-  `#![allow(non_snake_case)]` rather than renaming. Separate, ten-minute task.
-- Not the ~88 deprecated-API warnings from the `0.2026.08` `Set` change (68 always-true
-  `.finite()` calls, 20 `Set::new_assuming_finite`). Also separate.
+### Plan
 
-### Files
+#### 42.1 Triage (DONE)
 
-`src/protocol/{RSL,Raft}/`, `src/implementation/RSL/`, `src/common/`, `src/verus_extra/`,
-`transpiler/src/` (codegen), `scripts/regenerate_all.sh`, `reports/` (trigger inventory).
+- [x] **42.1.a**: Transpile RSL on HEAD and on c097da0, diff function names, classify each missing function as `skip_functions` (intentional) or true drop (transpiler gap). **Result**: 13 intentional skips + 2 true drops on both HEAD and c097da0 (identical lists). Phase 40 contributes zero regen breakage.
+
+#### 42.2 Handle the 2 true drops
+
+Two options for each unsupported pattern; pick per-function based on cost/benefit.
+
+- [x] **42.2.a**: Decide for `CLearnerForgetOperationsBefore` (quantified map filtering). **Decision: Option A** — added to `learner_transpile.toml` `skip_functions`. Options:
+  - **Option A**: Add to TOML `skip_functions` and document that `learner_gen.rs` carries a hand-written body for it. Codifies the existing reality; zero transpiler work. Continues the CLAUDE.md violation, but the violation is acknowledged.
+  - **Option B**: Implement transpiler support for the `forall ... map filter` pattern (translate to `iter().filter().collect()` for HashMap). Closes the gap properly; ~1 day work.
+  - Recommendation: **Option A short-term, Option B as a Phase 41.2 prerequisite if transpiler-emitted code must cover this pattern.**
+- [x] **42.2.b**: Decide for `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints` (existential `exists |opn|`). **Decision: Option A** — added to `replica_transpile.toml` `skip_functions`. Options:
+  - **Option A**: Same — `skip_functions` + acknowledge hand-written body.
+  - **Option B**: Implement existential-witness inference (substantially harder than 42.2.a; likely needs spec rewrite to a constructive form).
+  - Recommendation: **Option A**. This function is rarely on the hot path; transpiler-side existential resolution is out of scope for a quick unblock.
+
+#### 42.3 Make the cb42869 Arc-wrap survive regen
+
+The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once we set up a proper regen workflow, those edits will be wiped on each regen until Phase 41.2 lands. Two options:
+
+- [x] **42.3.a (preferred)**: Add a TOML config entry that tells the transpiler to emit `Arc<HashMap<EndPoint, u64>>` for `CProposer.highest_seqno_requested_by_client_this_view`, plus generate the `_arc_seqno_insert` helper + `assume_specification`. This is a **partial Phase 41.2.b implementation** scoped to one field, and survives regen by construction. **Done**: added `arc_wrap_fields = { CProposer = ["highest_seqno_requested_by_client_this_view"] }` to `proposer_transpile.toml` (inline table syntax to avoid TOML section header collision). Transpiler emits Arc::new at 3 init/mutation sites, .clone() at 5 unchanged-path sites. Validation passes (9 functions, matching existing).
+- [x] **42.3.b (fallback)**: Document the manual patch in `transpiler/docs/REGEN_WORKFLOW.md` so anyone running regen knows to re-apply the cb42869 patch. Stopgap until 42.3.a or full Phase 41.2 lands. Covers: Arc-wrap steps (a–i), skip_functions hand-written bodies, verification commands.
+
+#### 42.4 Establish a tested regen workflow
+
+- [x] **42.4.a**: Write `scripts/regenerate_rsl.sh` that:
+  - Transpiles all 8 RSL modules (including types) into `src/generated/RSL/*_gen.rs`.
+  - Verifies `cargo build` succeeds on the result.
+  - Verifies `--verify-only-module generated::RSL::*` passes the per-module verification counts that are currently green.
+- [x] **42.4.b**: Run `regenerate_rsl.sh --validate-only` on HEAD. **Result**: all 8 modules transpile, validation PASSED. All function-level differences are exactly the skip_functions entries (15 total across 5 modules). Script rewritten to validation-first approach: modules with skip_functions keep existing files (hand-written bodies preserved); modules without skip_functions (types, broadcast, acceptor) can be safely replaced. Fixed pre-existing test `test_rsl_types_manual_helpers_component_part2_symbols_present` (expected `HashMap` but cb42869 changed to `Arc<HashMap>`).
+- [x] **42.4.c**: Confirm bench numbers post-regen match pre-regen (RSL ≥29K with cb42869-equivalent in place; ≥16K without). **Confirmed by Phase 41.3.a (2026-05-24): 32,663 ops/s avg with all 5 Arc-wrapped fields, exceeds 29K target.** The cb42869 single-field PoC is subsumed by Phase 41.1.b's full 5-field Arc-wrap.
+
+#### 42.5 Phase 40 disposition (separate from 42.1–42.4)
+
+Phase 40's Arc-wrap codegen has zero measured benefit on the protocols we can bench. But it doesn't actively break anything either (the regen blocker hypothesis was wrong). Decide:
+
+- [x] **42.5.a**: Keep Phase 40 in place (status: "experimental, no measured benefit but no measured harm"). Allow Phase 41.2 to reuse the `arc_wrap_*` codegen infrastructure for field-level wrapping. **Recommended.** **Decision: ACCEPTED.** Phase 40 struct-level Arc code stays dormant; Phase 41.2 will reuse the infrastructure for field-level wrapping which has proven +82% benefit.
+- [ ] ~~**42.5.b**~~ (not chosen): Disable via TOML config.
+- [ ] ~~**42.5.c**~~ (not chosen): Revert Phase 40 commits.
+
+#### 42.6 Cleanup
+
+- [x] **42.6.a**: Mark Phase 40.3.g (RSL Arc-wrap deferred) as **WONTFIX**. The original goal (struct-level RSL Arc-wrap) is superseded by Phase 41 (field-level Arc-wrap, which actually works).
+- [x] **42.6.b**: Update `transpiler/docs/EFFICIENT_EMIT.md`: struct-level Arc-wrapping (Phase 40) has no measured benefit. Field-level Arc-wrapping (Phase 41) is the actual win.
+
+### Risk register
+
+- **R1**: Choosing Option A for both true drops perpetuates the hand-written-in-generated-file pattern. Mitigation: each entry must be `skip_functions` + a brief code comment naming the function and the unsupported spec pattern, so the violation is explicit and trackable.
+- **R2**: 42.3.a (per-field Arc TOML config) may require larger transpiler changes than the Phase 41 PoC suggests, because the codegen needs to thread the `Arc<>` wrapper through 5 sites (struct decl, init, clone helper, mutation helper, `assume_specification`). Mitigation: if this exceeds ~half a day, fall back to 42.3.b and bundle the work into Phase 41.2.
+- **R3**: The reverted assumption ("Phase 40 broke regen") means stakeholders/future agents may continue to believe it. Mitigation: this section's "Motivation" is the source of truth; any contradicting Phase 40 claim must cite measurements, not narrative.
+
+### Estimated effort
+
+- 42.2 + 42.4 (Option A everywhere): ~half a day.
+- Adding 42.3.a (per-field Arc): another half day.
+- If 42.5.c (revert Phase 40): +1-2 days for the revert + Phase 40.3.e salvage.
+
+---

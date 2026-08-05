@@ -16,7 +16,7 @@ verus! {
     {
         &&& sent_packets.len() == c.replica_ids.len()
         &&& 0 <= myidx < c.replica_ids.len()
-        &&& forall |idx: int| 0 <= idx < sent_packets.len() ==> sent_packets[idx] =~= LPacket {
+        &&& forall |idx: int| #![trigger sent_packets[idx]] 0 <= idx < sent_packets.len() ==> sent_packets[idx] =~= LPacket {
             dst: c.replica_ids[idx],
             src: c.replica_ids[myidx],
             msg: m,

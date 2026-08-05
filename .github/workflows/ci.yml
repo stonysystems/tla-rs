@@ -181,6 +181,47 @@ jobs:
             -o verus-timing.md
           cat verus-timing.md >> "$GITHUB_STEP_SUMMARY"
 
+      # Phase 54.9: keep the auto-chosen triggers from silently regrowing, and
+      # catch the case where Verus changes its mind about an expression nobody
+      # edited. The ceiling lives in reports/triggers/ceiling.json so raising it
+      # is a reviewable diff with a stated reason, not a workflow edit. Until a
+      # measured baseline is committed (54.2.b) the ceiling is unset and the
+      # guard reports without failing -- asserting an unmeasured number would
+      # either be vacuous or turn CI red for the wrong reason.
+      - name: Guard trigger inventory
+        if: always()
+        run: |
+          # pipefail: the guards below pipe into tee, and without it a failing
+          # guard would exit 0 and quietly stop guarding anything.
+          set -o pipefail
+          if [ ! -f trigger-inventory.json ]; then
+            echo "no inventory to guard (an earlier step failed)"
+            exit 0
+          fi
+          BASELINE=""
+          if [ -f reports/triggers/baseline.json ]; then
+            BASELINE="--baseline reports/triggers/baseline.json"
+          fi
+          python3 scripts/trigger_inventory.py guard trigger-inventory.json \
+            --ceiling reports/triggers/ceiling.json \
+            --capture-mode selective \
+            $BASELINE | tee -a "$GITHUB_STEP_SUMMARY"
+          # Timing is REPORTED here, not gated. The committed baseline was
+          # measured on a 127-thread developer box; a GitHub runner has a
+          # handful of cores. Verus verifies modules in parallel, so per-module
+          # wall-clock tracks the core count -- a percentage between the two
+          # measures the hardware, not the proof, and no threshold fixes that
+          # (Phase 54.9.a). The 20% criterion is a *local* pre-merge gate; the
+          # procedure is in docs/phase54-trigger-workflow.md 6b.
+          if [ -f reports/triggers/timing-baseline.json ] && [ -f verus-timing.json ]; then
+            python3 scripts/verus_timing.py diff \
+              reports/triggers/timing-baseline.json verus-timing.json \
+              --max-regression-pct 20 \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no committed timing baseline; nothing to report"
+          fi
+
       - name: Upload trigger inventory and timing
         if: always()
         uses: actions/upload-artifact@v4
@@ -218,6 +259,15 @@ jobs:
 
       - name: Rebuild source-first matrix artifacts
         run: ./scripts/run_model_check_matrix.sh
+
+      # Phase 37.2.1.j: the regeneration above proves the artifacts can be
+      # rebuilt; this proves the rebuild still matches what is committed.
+      # Volatile keys (elapsed_ms and the timing subtree) are ignored, so
+      # runner-to-runner timing noise cannot make it red -- which is what
+      # 37.2.1.f was worried about when it rejected a raw git diff. Everything
+      # else (state counts, telemetry fields, paths) is compared exactly.
+      - name: Guard against structural artifact drift
+        run: ./scripts/check_model_check_drift.py
 
       - name: Verify status-doc evidence paths
         run: ./scripts/verify_model_check_evidence_paths.sh

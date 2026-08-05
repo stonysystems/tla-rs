@@ -12,7 +12,7 @@
 | Artifact | Baseline guard | Observed guard | Policy status |
 | --- | --- | --- | --- |
 | `reports/model_check/paxos_small.json` | `1/2` | `1/2` | ok |
-| `reports/model_check/primarybackup_small.json` | `3/3` | `3/3` | ok |
+| `reports/model_check/primarybackup_small.json` | `2/2` | `2/2` | ok |
 | `reports/model_check/twophase_small.json` | `3/4` | `3/4` | ok |
 | `reports/model_check/leaderelection_small.json` | `4/3` | `4/3` | ok |
 | `reports/model_check/liveness_avoidable_cycle_violated.json` | `3/5` | `3/5` | ok |

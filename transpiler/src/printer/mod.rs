@@ -125,7 +125,22 @@ impl Printer {
             self.indent();
             self.write("let ghost old_self = *old(self);");
             self.newline();
-            let method_body = Self::struct_to_field_assignments(&func.body);
+            // Phase 42.8.c.2.iii: a method whose receiver-typed output collapsed
+            // the return type to `()` must not keep the functional tail, and its
+            // proof blocks must read the updated `self` rather than the vanished
+            // output binding.
+            let returns_unit = matches!(&func.return_type, ExecType::Named(n) if n == "()");
+            let method_body = Self::struct_to_field_assignments(&func.body, returns_unit);
+            // If nothing still binds the output name, every remaining mention of
+            // it refers to the state the assignments just wrote -- i.e. `self`.
+            // The guard matters: renaming while `let result = ..` is still live
+            // makes proof blocks read the *old* state, which is the mistake
+            // recorded in 42.8.c.2.ii.
+            let method_body = if returns_unit && !Self::binds_var(&method_body, "result") {
+                Self::fix_ghost_refs_in_proofs(&method_body, "result")
+            } else {
+                method_body
+            };
             self.print_expr(&method_body);
         } else {
             self.print_expr(&func.body);
@@ -156,7 +171,129 @@ impl Printer {
 
     /// Transform tail-position struct constructions into `self.field = expr;` assignments
     /// for `&mut self` method bodies. Recursively handles if/else branches and blocks.
-    fn struct_to_field_assignments(expr: &ExecExpr) -> ExecExpr {
+    /// Whether any statement still binds `name` with a `let`.
+    fn binds_var(expr: &ExecExpr, name: &str) -> bool {
+        match expr {
+            ExecExpr::Let { pattern, .. } => pattern == name,
+            ExecExpr::Block(stmts) => stmts.iter().any(|s| Self::binds_var(s, name)),
+            ExecExpr::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::binds_var(then_branch, name)
+                    || else_branch
+                        .as_ref()
+                        .is_some_and(|e| Self::binds_var(e, name))
+            }
+            _ => false,
+        }
+    }
+
+    /// Rewrite ghost references after the body was lifted to in-place updates.
+    ///
+    /// In the functional body the receiver param (already renamed to `self`)
+    /// denotes the **pre** state and the output binding denotes the **post**
+    /// state. Once the struct is lifted into field assignments those meanings
+    /// swap: `self` is the post state and `*old(self)` -- bound as `old_self`
+    /// -- is the pre state. So the substitution has to be simultaneous:
+    ///
+    /// ```text
+    /// result.X  ->  self.X        (post state keeps its meaning)
+    /// self.X    ->  old_self.X    (pre state moves to the ghost binding)
+    /// ```
+    ///
+    /// Doing only the first half silently collapses both arguments of a lemma
+    /// like `lemma_abstractify_clearnerstate_remove(old_m, m2, k)` onto the
+    /// same value, whose precondition `m2@ =~= old_m@.remove(k)` is then
+    /// unprovable.
+    ///
+    /// This applies **only inside proof contexts**. In exec position `self`
+    /// before the assignments is genuinely the pre state, and rewriting it to
+    /// the ghost `old_self` would not compile.
+    fn swap_ghost_state_refs(text: &str, output: &str) -> String {
+        const MARK: &str = "\u{0}post\u{0}";
+        let staged = text.replace(&format!("{}.", output), MARK);
+        let staged = staged.replace("self.", "old_self.");
+        staged.replace(MARK, "self.")
+    }
+
+    fn fix_ghost_refs_in_proofs(expr: &ExecExpr, output: &str) -> ExecExpr {
+        fn in_proof(expr: &ExecExpr, output: &str) -> ExecExpr {
+            match expr {
+                ExecExpr::Var(name) => ExecExpr::Var(Printer::swap_ghost_state_refs(name, output)),
+                ExecExpr::Block(stmts) => {
+                    ExecExpr::Block(stmts.iter().map(|s| in_proof(s, output)).collect())
+                }
+                ExecExpr::ProofBlock { stmts } => ExecExpr::ProofBlock {
+                    stmts: stmts.iter().map(|s| in_proof(s, output)).collect(),
+                },
+                ExecExpr::Assert(inner) => ExecExpr::Assert(Box::new(in_proof(inner, output))),
+                ExecExpr::Assume(inner) => ExecExpr::Assume(Box::new(in_proof(inner, output))),
+                ExecExpr::Call { func, args } => ExecExpr::Call {
+                    func: func.clone(),
+                    args: args.iter().map(|a| in_proof(a, output)).collect(),
+                },
+                ExecExpr::Field(base, field) => {
+                    ExecExpr::Field(Box::new(in_proof(base, output)), field.clone())
+                }
+                ExecExpr::If {
+                    cond,
+                    then_branch,
+                    else_branch,
+                } => ExecExpr::If {
+                    cond: Box::new(in_proof(cond, output)),
+                    then_branch: Box::new(in_proof(then_branch, output)),
+                    else_branch: else_branch.as_ref().map(|e| Box::new(in_proof(e, output))),
+                },
+                other => other.clone(),
+            }
+        }
+
+        match expr {
+            ExecExpr::ProofBlock { .. } | ExecExpr::Assert(_) | ExecExpr::Assume(_) => {
+                in_proof(expr, output)
+            }
+            ExecExpr::Block(stmts) => ExecExpr::Block(
+                stmts
+                    .iter()
+                    .map(|s| Self::fix_ghost_refs_in_proofs(s, output))
+                    .collect(),
+            ),
+            ExecExpr::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => ExecExpr::If {
+                cond: cond.clone(),
+                then_branch: Box::new(Self::fix_ghost_refs_in_proofs(then_branch, output)),
+                else_branch: else_branch
+                    .as_ref()
+                    .map(|e| Box::new(Self::fix_ghost_refs_in_proofs(e, output))),
+            },
+            other => other.clone(),
+        }
+    }
+
+    /// `self.clone_up_to_view()` / `self.clone()` as a whole branch: the state
+    /// is unchanged, which in a `&mut self` method means "do nothing".
+    fn is_identity_self_clone(expr: &ExecExpr) -> bool {
+        match expr {
+            ExecExpr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => {
+                args.is_empty()
+                    && (method == "clone_up_to_view" || method == "clone")
+                    && matches!(receiver.as_ref(), ExecExpr::Var(v) if v == "self")
+            }
+            ExecExpr::Block(stmts) => stmts.len() == 1 && Self::is_identity_self_clone(&stmts[0]),
+            _ => false,
+        }
+    }
+
+    fn struct_to_field_assignments(expr: &ExecExpr, returns_unit: bool) -> ExecExpr {
         match expr {
             ExecExpr::Struct { fields, .. } => {
                 // Convert each field to self.field = expr;
@@ -196,7 +333,8 @@ impl Printer {
                         |s| matches!(s, ExecExpr::Let { pattern, .. } if pattern == tail_var),
                     ) {
                         if let ExecExpr::Let { value, .. } = &stmts[let_idx] {
-                            let transformed = Self::struct_to_field_assignments(value);
+                            let transformed =
+                                Self::struct_to_field_assignments(value, returns_unit);
                             if !matches!(&transformed, v if Self::expr_eq(v, value)) {
                                 // The Let value was transformed — restructure the block:
                                 // 1. Statements before the Let (preserved)
@@ -236,15 +374,24 @@ impl Printer {
 
                                 // Add remaining statements (proof blocks etc.) with index rewriting
                                 for stmt in &stmts[let_idx + 1..stmts.len() - 1] {
-                                    new_stmts.push(Self::rewrite_tuple_refs_in_expr(
+                                    let rewritten = Self::rewrite_tuple_refs_in_expr(
                                         stmt,
                                         struct_idx,
                                         tail_var,
                                         remaining_count,
-                                    ));
+                                    );
+                                    // The struct was lifted into `self`'s fields, so
+                                    // anything still naming the output refers to the
+                                    // new state -- which is `self`.
+                                    // The ghost-reference swap happens once, at the
+                                    // top level of the method body; doing it here as
+                                    // well produced `old_old_self`.
+                                    new_stmts.push(rewritten);
                                 }
-                                // Keep trailing var for return
-                                new_stmts.push(stmts.last().unwrap().clone());
+                                // Keep trailing var only when it is still returned.
+                                if !returns_unit {
+                                    new_stmts.push(stmts.last().unwrap().clone());
+                                }
                                 return ExecExpr::Block(new_stmts);
                             }
                         }
@@ -252,7 +399,7 @@ impl Printer {
                 }
                 // Default: transform the last statement, keep the rest
                 let mut new_stmts = stmts[..stmts.len() - 1].to_vec();
-                let last = Self::struct_to_field_assignments(stmts.last().unwrap());
+                let last = Self::struct_to_field_assignments(stmts.last().unwrap(), returns_unit);
                 new_stmts.push(last);
                 ExecExpr::Block(new_stmts)
             }
@@ -264,10 +411,20 @@ impl Printer {
                 // Transform both branches
                 ExecExpr::If {
                     cond: cond.clone(),
-                    then_branch: Box::new(Self::struct_to_field_assignments(then_branch)),
-                    else_branch: else_branch
-                        .as_ref()
-                        .map(|e| Box::new(Self::struct_to_field_assignments(e))),
+                    then_branch: Box::new(
+                        if returns_unit && Self::is_identity_self_clone(then_branch) {
+                            ExecExpr::Block(Vec::new())
+                        } else {
+                            Self::struct_to_field_assignments(then_branch, returns_unit)
+                        },
+                    ),
+                    else_branch: else_branch.as_ref().map(|e| {
+                        Box::new(if returns_unit && Self::is_identity_self_clone(e) {
+                            ExecExpr::Block(Vec::new())
+                        } else {
+                            Self::struct_to_field_assignments(e, returns_unit)
+                        })
+                    }),
                 }
             }
             ExecExpr::Tuple(elems) => {
@@ -277,7 +434,8 @@ impl Printer {
                     matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
                 });
                 if let Some(idx) = struct_idx {
-                    let struct_assignments = Self::struct_to_field_assignments(&elems[idx]);
+                    let struct_assignments =
+                        Self::struct_to_field_assignments(&elems[idx], returns_unit);
                     let remaining: Vec<ExecExpr> = elems
                         .iter()
                         .enumerate()

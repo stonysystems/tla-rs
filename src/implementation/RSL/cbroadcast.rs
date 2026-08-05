@@ -32,7 +32,7 @@ verus! {
         {
             match self {
                 CBroadcast::CBroadcast{src, dsts, msg} =>
-                    self->src.abstractable() && (forall |i:int| 0 <= i < self->dsts.len() ==> self->dsts[i].abstractable()) && self->msg.abstractable(),
+                    self->src.abstractable() && (forall |i:int| #![trigger self->dsts[i]] 0 <= i < self->dsts.len() ==> self->dsts[i].abstractable()) && self->msg.abstractable(),
                 CBroadcast::CBroadcastNop{} => true
             }
         }
@@ -42,7 +42,7 @@ verus! {
             &&& self.abstractable()
             &&& match self {
                 CBroadcast::CBroadcast{src, dsts, msg} =>
-                    self->src.valid_public_key() && (forall |i:int| 0 <= i < self->dsts.len() ==> self->dsts[i].valid_public_key()) && self->msg.valid(),
+                    self->src.valid_public_key() && (forall |i:int| #![trigger self->dsts[i]] 0 <= i < self->dsts.len() ==> self->dsts[i].valid_public_key()) && self->msg.valid(),
                 CBroadcast::CBroadcastNop{} => true
             }
         }
@@ -113,12 +113,12 @@ verus! {
 
                         //Asserting all abstractable functions
                         assert(s.abstractable());
-                        assert(forall |i:int| 0 <= i < d.len() ==> d[i].abstractable());
+                        assert(forall |i:int| #![trigger d[i]] 0 <= i < d.len() ==> d[i].abstractable());
                         assert(res.abstractable());
 
                         //Asserting all valid functions
                         assert(s.valid_public_key());
-                        assert(forall |i:int| 0 <= i < d.len() ==> d[i].valid_public_key());
+                        assert(forall |i:int| #![trigger d[i]] 0 <= i < d.len() ==> d[i].valid_public_key());
                         assert(res.valid());
 
                         assert(s@ == config.replica_ids[my_index as int]@);
@@ -137,7 +137,7 @@ verus! {
                         }
                         assert(config.replica_ids@.len()==sent_packets.len());
                         assert(my_index < config.replica_ids.len());
-                        assert(forall |i:int| 0 <= i < sent_packets.len() ==> sent_packets[i] =~= LPacket{
+                        assert(forall |i:int| #![trigger sent_packets[i]] 0 <= i < sent_packets.len() ==> sent_packets[i] =~= LPacket{
                             dst: config.replica_ids@[i]@,
                             src: config.replica_ids@[my_index as int]@,
                             msg: msg@
@@ -161,14 +161,14 @@ verus! {
             ({
                 let b = BuildLBroadcast(src, dsts, m);
                 &&& b.len() == dsts.len()
-                &&& (forall |i:int| 0 <= i < dsts.len() ==> BuildLBroadcast(src, dsts, m)[i] == LPacket{dst:dsts[i], src:src, msg:m})
+                &&& (forall |i:int| #![trigger BuildLBroadcast(src, dsts, m)[i]] 0 <= i < dsts.len() ==> BuildLBroadcast(src, dsts, m)[i] == LPacket{dst:dsts[i], src:src, msg:m})
             })
         decreases dsts.len()
     {
         if dsts.len() == 0 {
             let b = BuildLBroadcast(src, dsts, m);
             assert(b.len() == 0);
-            assert(forall |i:int| 0 <= i < dsts.len() ==> BuildLBroadcast(src, dsts, m)[i] == LPacket{dst:dsts[i], src:src, msg:m});
+            assert(forall |i:int| #![trigger BuildLBroadcast(src, dsts, m)[i]] 0 <= i < dsts.len() ==> BuildLBroadcast(src, dsts, m)[i] == LPacket{dst:dsts[i], src:src, msg:m});
         } else {
             lemma_BuildBroadcast_ensures(src, dsts.drop_first(), m);
 
@@ -201,7 +201,7 @@ verus! {
                         Some(p_val) => p_val.abstractable(),
                         None => true,
                     },
-                OutboundPackets::PacketSequence{s} => (forall |i:int| 0 <= i < self->s.len() ==> self->s[i].abstractable()),
+                OutboundPackets::PacketSequence{s} => (forall |i:int| #![trigger self->s[i]] 0 <= i < self->s.len() ==> self->s[i].abstractable()),
             }
         }
 
@@ -215,7 +215,7 @@ verus! {
                         Some(p_val) => p_val.valid(),
                         None => true,
                     },
-                OutboundPackets::PacketSequence{s} => (forall |i:int| 0 <= i < self->s.len() ==> self->s[i].valid()),
+                OutboundPackets::PacketSequence{s} => (forall |i:int| #![trigger self->s[i]] 0 <= i < self->s.len() ==> self->s[i].valid()),
             }
         }
 
@@ -246,7 +246,7 @@ verus! {
                         Some(p_val) => p_val.src == me,
                         None => true,
                     },
-                OutboundPackets::PacketSequence{s} => (forall |i:int| 0 <= i < self->s.len() ==> self->s[i].src == me),
+                OutboundPackets::PacketSequence{s} => (forall |i:int| #![trigger self->s[i]] 0 <= i < self->s.len() ==> self->s[i].src == me),
             }
         }
     }

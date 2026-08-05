@@ -66,6 +66,7 @@ re_exports = [
     "crate::implementation::RSL::ReplicaImpl::{CReplica, CScheduler, abstractify_clpacket, abstractify_crslio, abstractify_crslio_seq}",
     # Broadcast helpers (CBroadcast, OutboundPackets with verified loops)
     "crate::implementation::RSL::cbroadcast::*",
+    "crate::implementation::RSL::cparameters::CParameters",
     # Upper bound helpers (CUpperBound has spec int field, CUpperBoundedAddition)
     "crate::implementation::common::upper_bound::*",
     "crate::implementation::common::upper_bound_i::*",

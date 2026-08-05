@@ -38,7 +38,7 @@ verus! {
         &&& ps.constants == con
         &&& LEnvironment_Init(ps.environment)
         &&& RslMapsComplete(ps)
-        &&& (forall |i:int| 0 <= i < con.config.replica_ids.len() ==> LSchedulerInit(ps.replicas[i], LReplicaConstants{my_index:i, all:con}))
+        &&& (forall |i:int| #![trigger ps.replicas[i]] 0 <= i < con.config.replica_ids.len() ==> LSchedulerInit(ps.replicas[i], LReplicaConstants{my_index:i, all:con}))
     }
 
     pub open spec fn RslNextCommon(ps:RslState, ps_:RslState) -> bool

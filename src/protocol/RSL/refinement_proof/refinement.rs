@@ -92,7 +92,7 @@ verus! {
     }
 
     pub open spec fn SystemRefinementRelation(ps: RslState, rs: RSLSystemState) -> bool {
-        exists |qs: Seq<QuorumOf2bs>|
+        exists |qs: Seq<QuorumOf2bs>| #![trigger IsMaximalQuorumOf2bsSequence(ps, qs)]
             IsMaximalQuorumOf2bsSequence(ps, qs) &&
             rs == ProduceAbstractState(GetServerAddresses(ps), GetSequenceOfRequestBatches(qs))
     }
@@ -117,7 +117,7 @@ verus! {
 
         lemma_ConstantsAllConsistent(b, c, i);
 
-        assert forall |p: RslPacket| ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.src) && p.msg is RslMessageReply
+        assert forall |p: RslPacket| #![trigger ps.environment.sentPackets.contains(p)] ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.src) && p.msg is RslMessageReply
             implies rs.replies.contains(Reply{client:p.dst, seqno:p.msg->seqno_reply, reply:p.msg->reply}) by {
             assert(GetServerAddresses(ps).contains(p.src));
             let (qs_prime, batches_prime, batch_num, req_num) = lemma_ReplySentIsAllowed(b, c, i, p);
@@ -126,7 +126,7 @@ verus! {
         }
 
         assert forall |req: Request| rs.requests.contains(req)
-            implies exists |p: RslPacket| ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.dst)
+            implies exists |p: RslPacket| #![trigger ps.environment.sentPackets.contains(p)] ps.environment.sentPackets.contains(p) && rs.server_addresses.contains(p.dst)
                 && p.msg is RslMessageRequest && req == Request{client:p.src, seqno:p.msg->seqno_req, request:p.msg->val} by {
             let (batch_num, req_num) = choose |batch_num: int, req_num: int|
                 0 <= batch_num < batches.len() && 0 <= req_num < batches[batch_num].len() && req == batches[batch_num][req_num];
@@ -291,7 +291,7 @@ verus! {
     pub proof fn lemma_ConvertBehaviorSeqToImap_ensures<T>(s:Seq<T>)
         requires s.len() > 0
         ensures imaptotal(ConvertBehaviorSeqToImap(s)),
-                forall |i:int| 0 <= i < s.len() ==> ConvertBehaviorSeqToImap(s)[i] == s[i]
+                forall |i:int| #![trigger s[i]] 0 <= i < s.len() ==> ConvertBehaviorSeqToImap(s)[i] == s[i]
     {
 
     }
@@ -303,7 +303,7 @@ verus! {
     ) -> bool {
         &&& imaptotal(b)
         &&& high_level_behavior.len() == prefix_len
-        &&& (forall|i: int| 0 <= i < prefix_len ==> RslSystemRefinement(b[i], high_level_behavior[i]))
+        &&& (forall|i: int| #![trigger b[i]] #![trigger high_level_behavior[i]] 0 <= i < prefix_len ==> RslSystemRefinement(b[i], high_level_behavior[i]))
         &&& high_level_behavior.len() > 0
         &&& RslSystemInit(high_level_behavior[0], b[0].constants.config.replica_ids.to_set())
         &&& (forall|i: int| #![trigger high_level_behavior[i]] 0 <= i < high_level_behavior.len() - 1 ==> RslSystemNext(high_level_behavior[i], high_level_behavior[i + 1]))
@@ -322,8 +322,8 @@ verus! {
         let mut qs: Seq<QuorumOf2bs> = Seq::empty();
         let rs = ProduceAbstractState(GetServerAddresses(b[0]), GetSequenceOfRequestBatches(qs));
 
-        if exists|q: QuorumOf2bs| IsValidQuorumOf2bs(b[0], q) && q.opn == 0 {
-            let q = choose|q: QuorumOf2bs| IsValidQuorumOf2bs(b[0], q) && q.opn == 0;
+        if exists|q: QuorumOf2bs| #![trigger IsValidQuorumOf2bs(b[0], q)] IsValidQuorumOf2bs(b[0], q) && q.opn == 0 {
+            let q = choose|q: QuorumOf2bs| #![trigger IsValidQuorumOf2bs(b[0], q)] IsValidQuorumOf2bs(b[0], q) && q.opn == 0;
             assert(q.indices.len() >= LMinQuorumSize(b[0].constants.config));
             assert(q.indices.len() > 0) by {
                 assert(WellFormedLConfiguration(b[0].constants.config));
@@ -334,7 +334,7 @@ verus! {
             let range_set = vstd::set_lib::set_int_range(0, n);
             vstd::set_lib::lemma_int_range(0, n);
             assert(range_set.finite());
-            assert forall |idx: int| q.indices.contains(idx) implies range_set.contains(idx) by {};
+            assert forall |idx: int| #![trigger range_set.contains(idx)] q.indices.contains(idx) implies range_set.contains(idx) by {};
             assert(q.indices.subset_of(range_set));
             vstd::set_lib::lemma_len_subset(q.indices, range_set);
             // Now Verus knows q.indices is finite with len > 0
@@ -486,7 +486,7 @@ verus! {
 
         let prev_high_level_behavior = lemma_GetBehaviorRefinementForPrefix(b, c, i-1);
         let prev_rs = prev_high_level_behavior.last();
-        let prev_qs = choose |prev_qs:Seq<QuorumOf2bs>| IsMaximalQuorumOf2bsSequence(b[i-1], prev_qs)
+        let prev_qs = choose |prev_qs:Seq<QuorumOf2bs>| #![trigger GetSequenceOfRequestBatches(prev_qs)] IsMaximalQuorumOf2bsSequence(b[i-1], prev_qs)
                                                         && prev_rs == ProduceAbstractState(server_addresses, GetSequenceOfRequestBatches(prev_qs));
 
         let prev_batches = GetSequenceOfRequestBatches(prev_qs);
@@ -534,7 +534,7 @@ verus! {
         // We need RslSystemBehaviorRefinementCorrect(..., low_level_behavior, high_level_behavior).
 
         // Bridge: b[i] == low_level_behavior[i] implies RslSystemRefinement on low_level_behavior
-        assert forall |i: int| 0 <= i < n
+        assert forall |i: int| #![trigger low_level_behavior[i]] #![trigger high_level_behavior[i]] 0 <= i < n
             implies RslSystemRefinement(low_level_behavior[i], high_level_behavior[i]) by {
             assert(b[i] == low_level_behavior[i]);
             assert(RslSystemRefinement(b[i], high_level_behavior[i]));

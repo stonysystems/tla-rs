@@ -188,7 +188,8 @@ verus! {
 
         // Derive ys.finite(): ys ⊆ xs.map(f) and xs.map(f) is finite
         assert(ys.subset_of(xs.map(f))) by {
-            assert forall |y: Y| ys.contains(y) implies xs.map(f).contains(y) by {
+            assert forall |y: Y| #![trigger ys.contains(y)]
+                ys.contains(y) implies xs.map(f).contains(y) by {
                 let x = choose |x: X| xs.contains(x) && y == f(x);
             };
         };
@@ -288,7 +289,8 @@ verus! {
             let x = choose |x: T| s2.contains(x) && !s1.contains(x);
             // s1 ⊆ s2.remove(x) since all of s1 is in s2 and x ∉ s1
             assert(s1.subset_of(s2.remove(x))) by {
-                assert forall |y: T| s1.contains(y) implies s2.remove(x).contains(y) by {
+                assert forall |y: T| #![trigger s1.contains(y)]
+                    s1.contains(y) implies s2.remove(x).contains(y) by {
                     assert(s2.contains(y));  // from s1 ⊆ s2
                     assert(y != x);          // x ∉ s1 but y ∈ s1
                 };
@@ -323,7 +325,8 @@ verus! {
 
         // a ∪ b ⊆ u
         assert((a + b).subset_of(u)) by {
-            assert forall |x: T| (a + b).contains(x) implies u.contains(x) by {};
+            assert forall |x: T| #![trigger u.contains(x)]
+                (a + b).contains(x) implies u.contains(x) by {};
         };
 
         // |a ∪ b| ≤ |u| and a ∪ b is finite
@@ -336,7 +339,8 @@ verus! {
 
         // a ∩ b is finite (subset of a)
         assert(a.intersect(b).subset_of(a)) by {
-            assert forall |x: T| a.intersect(b).contains(x) implies a.contains(x) by {};
+            assert forall |x: T| #![trigger a.contains(x)]
+                a.intersect(b).contains(x) implies a.contains(x) by {};
         };
         vstd::set_lib::lemma_len_subset(a.intersect(b), a);
 

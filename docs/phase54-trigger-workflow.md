@@ -1,8 +1,9 @@
 # Phase 54 — measuring and diffing Verus trigger choices
 
-Status: 54.1 (tooling), 54.2.a (CI trigger capture) and 54.2.c (per-module
-timing) complete. The baseline itself (54.2.b) lands once a `verify` run has
-published the artifact; see §5 and §7.
+Status: 54.1, 54.2 (a/b/c) and 54.9 complete. The baseline is measured and
+committed (534 notes at `0.2026.08.02.b677dd5`), the ceiling is enforced, and
+the annotation batches (54.3 onward) can proceed. §9 explains how to run the
+pinned verifier on a host whose glibc is too old for its launcher.
 
 ## 1. Why the tool exists before the edits
 
@@ -124,14 +125,13 @@ joined and flagged `multiline`; their trigger notes are still parsed exactly.
 
 Two real Verus logs are checked in at
 `scripts/fixtures/trigger_inventory/` and asserted against by
-`scripts/test_trigger_inventory.py` (34 tests). If a future Verus release
+`scripts/test_trigger_inventory.py` (55 tests). If a future Verus release
 changes the diagnostic shape, those tests fail loudly instead of the inventory
 quietly going empty.
 
 ## 5. How the baseline is actually captured (CI)
 
-The pinned verifier does not run on every development box (§7), but it already
-runs in CI on `ubuntu-24.04`. So the `verify` job captures the inventory as a
+CI runs the pinned verifier on `ubuntu-24.04`; §9 covers running it locally. So the `verify` job captures the inventory as a
 side effect of the verification it was already doing:
 
 ```yaml
@@ -218,7 +218,207 @@ the verifier command line, so it now accepts
 `scons ... --verus-extra-args="--time-expanded"`. The flag changes no verifier
 behaviour, only what is printed.
 
-## 7. Known constraint: the pinned verifier does not run everywhere
+## 6b. Measuring timing honestly
+
+Three corrections the pilot forced, each from measurement rather than taste.
+They matter because a timing gate that fires on noise gets switched off, and
+one that never fires is decoration.
+
+**A single run is not a baseline.** Verus verifies modules in parallel (127
+threads here), so a module's wall-clock depends on what was scheduled beside
+it. `implementation::RSL::replicaimpl_no_receive_clock` recorded 1967 ms in the
+first baseline run but 2372 / 2438 / 2490 ms across three runs of *that same
+commit*. Every later comparison inherited the lucky number and reported a ~30%
+regression in code that never touched it. Use `verus_timing.py merge` to
+combine N runs by per-module minimum — the least-contended estimate — and merge
+**both** sides of a comparison the same way. Two samples are not enough: a Raft
+module read "+27%" on two and +12% on three.
+
+**The noise floor is 1000 ms, and that number is measured.** Across three
+identical-code runs:
+
+| floor | modules | max spread | exceed 20% |
+|---:|---:|---:|---:|
+| 500 ms | 40 | 22.6% | 1 |
+| 1000 ms | 28 | 16.8% | 0 |
+| 5000 ms | 13 | 16.8% | 0 |
+
+1000 ms is the smallest floor at which a 20% threshold cannot fire on noise
+alone, and it still covers every module where a real regression would matter.
+
+**The floor applies to the base value**, because the percentage is computed
+relative to it: a baseline sitting inside the noisy regime cannot support a
+ratio claim. A large absolute jump from a small base is not lost — the "below
+the noise floor" table is sorted by absolute delta so it surfaces at the top.
+
+**Never compare across machines.** The tool records `num-threads` for both
+sides and prints "these runs are not comparable" when they differ, and
+`--fail-on-regression` refuses to fail in that case. This is why CI *reports*
+timing rather than gating on it: the committed baseline was measured on a
+127-thread box, and a GitHub runner has a handful of cores. A percentage
+between them measures the hardware. The 20% criterion is a local pre-merge
+gate.
+
+Procedure for an annotation batch:
+
+```bash
+for i in 1 2 3; do LOG=/tmp/r$i.log scripts/verify_local.sh --time-expanded --output-json; \
+  scripts/verus_timing.py parse /tmp/r$i.log -o /tmp/t$i.json; done
+scripts/verus_timing.py merge /tmp/t1.json /tmp/t2.json /tmp/t3.json -o new.json
+scripts/verus_timing.py diff reports/triggers/timing-baseline.json new.json --fail-on-regression
+```
+
+## 6c. Applying annotations in bulk
+
+`scripts/apply_triggers.py` reads an inventory and writes back **exactly the
+trigger Verus already chose**, so behaviour is preserved by construction and
+the diff's `changed` count stays 0. With 400+ sites left after 54.5, doing this
+by hand would be neither uniform nor reviewable.
+
+```bash
+scripts/apply_triggers.py reports/triggers/baseline.json \
+    --filter src/protocol/RSL/ --dry-run
+```
+
+It skips rather than guesses, printing a reason for each: already annotated; a
+closure in the term (Verus forbids writing those, even though it chose one);
+no binder found; or the trigger names a variable bound by a *nested*
+quantifier, which would not compile.
+
+Three traps it exists to avoid, all of which bit on the first batch:
+
+* **Alternative triggers are not a conjunction.** The inventory records
+  `[[a], [b]]` for "either may fire" and `[[a, b]]` for "both needed to bind
+  the variables". Flattening the first into `#![trigger a, b]` is strictly more
+  restrictive and broke a postcondition and an assertion — the "too
+  restrictive" failure mode this phase warns about, on the very first run.
+* **A binder list is not a comma-separated list of names.**
+  `|opn: OperationNumber|` binds one variable, not two; a regex that scans for
+  `name:` or `name|` also matches the type and rejects every typed binder.
+* **The spec files are also the transpiler's input.** Verus accepting an
+  annotation says nothing about `transpiler/src/parser`, which accepted
+  `#![trigger ...]` on `forall` but not on `exists`/`choose`. Note also that
+  `scripts/regenerate_rsl.sh` runs the **release** binary, so a debug-only
+  rebuild leaves the old parser in place.
+
+## 7. The guard (54.9)
+
+Progress has to be defended, or the auto-chosen triggers simply regrow. The
+`Guard trigger inventory` CI step does that:
+
+```bash
+scripts/trigger_inventory.py guard trigger-inventory.json \
+    --ceiling reports/triggers/ceiling.json \
+    --capture-mode selective \
+    [--baseline reports/triggers/baseline.json]
+```
+
+| exit | meaning |
+|---:|---|
+| 0 | at or under the ceiling (or the ceiling is not set yet) |
+| 1 | over the ceiling, or notes were added / trigger choices changed |
+| 2 | the comparison itself is invalid — the inventory and the ceiling come from different `--triggers-mode` settings |
+
+Deliberate choices:
+
+* **The ceiling is data, not YAML.** `reports/triggers/ceiling.json` carries
+  `max_notes`, the mode it was agreed in, and a `rationale`. Raising it is a
+  reviewable diff that has to say why — not a quiet edit to a workflow file.
+* **It ships unset.** `enforce: false, max_notes: null`. The guard prints the
+  measured count and passes. Asserting a number nobody has measured on the
+  pinned release would be vacuous at best and would turn CI red for the wrong
+  reason at worst; 54.2.b sets it from the real artifact.
+* **Changed choices fail too**, once a baseline exists. A count-only ceiling
+  cannot see the case where Verus keeps the same number of notes and picks
+  different terms — the exact instability this phase was raised about.
+* **An empty capture is never judged.** If verification died early, Verus
+  printed no notes; "0 notes" is missing data, not success.
+* **`set -o pipefail` in the step.** The guards pipe into `tee` for the job
+  summary, and without it a failing guard would exit 0 and silently stop
+  guarding — the failure mode most likely to go unnoticed for months.
+
+The timing half of the gate reuses `verus_timing.py diff
+--max-regression-pct 20 --fail-on-regression` and is skipped with an explicit
+message until `reports/triggers/timing-baseline.json` is committed.
+
+## 8. The work-list: which sites Phase 54 has to touch
+
+`scripts/trigger_inventory.py` answers "what is Verus guessing at?" but needs a
+verification log. `scripts/trigger_sites.py` answers "where are the quantifiers?"
+from the source alone, so the annotation batches (54.3 onwards) can be planned
+and split per file without waiting for CI:
+
+```bash
+scripts/trigger_sites.py src                       # Markdown, checked in as reports/triggers/sites.md
+scripts/trigger_sites.py src --json -o sites.json  # machine-readable
+```
+
+Each `forall|`/`exists|` is classified:
+
+| class | meaning |
+|---|---|
+| `annotated` | a `#[trigger]` / `#![trigger(...)]` governs it |
+| `auto` | `#![auto]` — automatic selection was asked for deliberately |
+| `ambiguous` | an annotation is in scope but only after a nested quantifier, so it may belong to the inner one |
+| `unannotated` | nothing in scope |
+
+**These are not note counts.** Verus's default `selective` mode reports only the
+choices it finds ambiguous, so an unannotated quantifier need not produce a
+note. Read the site count as the upper bound on the work and the inventory as
+what is actually being guessed at. The `ambiguous` bucket exists because the
+scanner is a heuristic, not a Rust parser: rather than credit a site with an
+annotation that may belong to a nested quantifier, it says so and leaves it for
+a human. It sits at ~2.5% of sites, and a test fails if it grows past 10% —
+that would mean the scope heuristic needs revisiting, not quiet acceptance.
+
+One bug this caught during development, worth recording because it is the kind
+that produces confident wrong numbers: a comma between binders
+(`forall |x1: X, x2: X|`) ended the scope scan, so a `#![trigger ...]` written
+after a multi-binder list was invisible and the site was reported as
+unannotated. The aggregate totals looked entirely plausible either way.
+
+## 9. Running the pinned verifier on an old host
+
+The release `verus` launcher is linked against **glibc 2.39**, so on an older
+host it aborts immediately. That is a property of the launcher, not of the
+verifier: `rust_verify` itself needs only 2.34. The launcher's job is to set
+three variables and exec it, so reproducing them runs the real thing:
+
+```
+RUSTUP_TOOLCHAIN=<toolchain rust_verify was built against>
+LD_LIBRARY_PATH=<that toolchain>/lib
+VERUS_Z3_PATH=<a z3 of the version Verus checks for>
+```
+
+The bundled z3 4.16.0 also wants glibc 2.38; the PyPI `z3-solver==4.16.0` wheel
+is `manylinux_2_27` and satisfies Verus's version check, so it drops in.
+
+`scripts/verify_local.sh` wraps all of this:
+
+```bash
+scripts/verify_local.sh                              # verify the working tree
+scripts/verify_local.sh --time-expanded --output-json # ... plus timings
+```
+
+On the 2.35-glibc box this repo was developed on, that gives
+`1044 verified, 0 errors` in about 40 s.
+
+Earlier revisions of this document claimed the pinned verifier could not run
+here at all and that 54.3 onward was blocked. That was wrong — the launcher was
+tested and the conclusion drawn without checking what it execs. The note is
+kept rather than quietly deleted because the same mistake is easy to repeat
+whenever a release binary fails to start.
+
+### Prefer `--output-json` for timings
+
+`--time-expanded` prints only the **top 3 modules per section**; the JSON
+report carries all 142. `verus_timing.py` parses the JSON when present and says
+which source it used in `parsed_from`. Note Verus emits one entry per
+verification chunk, so a module can appear several times — the tool sums them,
+which reproduces the reported `total-verify`; keeping a single entry would
+under-report exactly the expensive modules that got split.
+
+## 10. Known constraint: none currently blocking
 
 The baseline must come from the pinned verifier,
 `release/0.2026.08.02.b677dd5`. That binary requires **glibc ≥ 2.39**; the
@@ -230,10 +430,17 @@ verus: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found
 
 `docker` is installed there but the daemon refuses the user
 (`permission denied while trying to connect to ... docker.sock`), and `bwrap`
-alone would need a full newer-glibc rootfs to be useful. Older releases in the
-local cache (e.g. `0.2026.01.02.6f52890`) do run and were used to capture the
-fixtures, but their trigger choices are not the baseline we need: the whole
-point is to pin what *the pinned release* decides.
+alone would need a full newer-glibc rootfs to be useful.
+
+Older releases in the local cache do run, and were used to capture the parser
+fixtures — but they cannot stand in for the pinned one. Measured 2026-08-04:
+`0.2026.01.02.6f52890` with `--no-verify` over `src/lib.rs` aborts with **72
+errors** (`IMap` undeclared, `lemma_set_disjoint_iff_empty_intersection`
+renamed, and so on) because the tree targets 0.2026.08 vstd. It cannot compile
+the crate, let alone verify it. So trigger edits (54.3 onwards) cannot be
+validated on such a box at all, and committing unverified proof edits is not an
+option — the whole point of the phase is that adding `#[trigger]` changes
+solver behaviour in ways only verification can reveal.
 
 Hence §5: CI is the capture host. On a machine that does have a new enough
 glibc, the same inventory can be produced locally in one command:
@@ -247,11 +454,11 @@ two different Verus versions is precisely the measurement Phase 54 wants to
 make *deliberately*, and mislabelling one as "the baseline" would poison every
 later comparison.
 
-## 8. Where this fits
+## 11. Where this fits
 
-* Plan: `TODO.md` Phase 54; this covers **54.1**, **54.2.a** and **54.2.c**,
-  and leaves **54.2.b** (commit the published artifacts as the baseline) and
-  **54.9** (turn both captures into guards: `trigger_inventory.py diff
-  --fail-on-regression` / `--max-notes`, and `verus_timing.py diff
-  --fail-on-regression`).
+* Plan: `TODO.md` Phase 54; this covers **54.1**, **54.2.a**, **54.2.c** and
+  the **54.9** mechanism. What remains is **54.2.b** — commit the published
+  artifacts as the baseline and set `max_notes` / `enforce` in the ceiling —
+  after which 54.3 onwards can start editing triggers with a measurement to
+  answer to.
 * Artifacts: `reports/triggers/` (see the README there).
