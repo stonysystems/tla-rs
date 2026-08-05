@@ -20,7 +20,7 @@ verus! {
     pub fn replica_next_process_packet_request(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessageRequest,
     {
-        let outpackets = CReplica::CReplicaNextProcessRequest(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcessRequestOutbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -28,7 +28,7 @@ verus! {
     pub fn replica_next_process_packet_1a(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessage1a,
     {
-        let outpackets = CReplica::CReplicaNextProcess1a(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcess1aOutbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -36,7 +36,7 @@ verus! {
     pub fn replica_next_process_packet_1b(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessage1b,
     {
-        let outpackets = CReplica::CReplicaNextProcess1b(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcess1bOutbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -44,7 +44,7 @@ verus! {
     pub fn replica_next_process_packet_starting_phase2(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessageStartingPhase2,
     {
-        let outpackets = CReplica::CReplicaNextProcessStartingPhase2(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcessStartingPhase2Outbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -52,7 +52,7 @@ verus! {
     pub fn replica_next_process_packet_2a(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessage2a,
     {
-        let outpackets = CReplica::CReplicaNextProcess2a(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcess2aOutbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -60,7 +60,7 @@ verus! {
     pub fn replica_next_process_packet_2b(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessage2b,
     {
-        let outpackets = CReplica::CReplicaNextProcess2b(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcess2bOutbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -68,7 +68,7 @@ verus! {
     pub fn replica_next_process_packet_reply(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessageReply,
     {
-        let outpackets = CReplica::CReplicaNextProcessReply(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcessReplyOutbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -76,7 +76,7 @@ verus! {
     pub fn replica_next_process_packet_appstate_request(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessageAppStateRequest,
     {
-        let outpackets = CReplica::CReplicaNextProcessAppStateRequest(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcessAppStateRequestOutbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -84,7 +84,7 @@ verus! {
     pub fn replica_next_process_packet_appstate_supply(r:&mut ReplicaImpl, netc:&mut NetClient, pkt:CPacket) -> (ok:bool)
         requires old(r).valid(), pkt.valid(), pkt.msg is CMessageAppStateSupply,
     {
-        let outpackets = CReplica::CReplicaNextProcessAppStateSupply(&mut r.replica, pkt);
+        let outpackets = CReplica::CReplicaNextProcessAppStateSupplyOutbound(&mut r.replica, pkt);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }

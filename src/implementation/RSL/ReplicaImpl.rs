@@ -230,7 +230,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessInvalid(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessInvalidOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageInvalid,
         ensures self.valid(), res.valid(),
             LReplicaNextProcessInvalid(old(self)@, self@, received_packet@, res@)
@@ -240,7 +240,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessRequest(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessRequestOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageRequest,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -251,7 +251,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcess1a(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcess1aOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessage1a,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -262,7 +262,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcess1b(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcess1bOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessage1b,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -273,7 +273,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessStartingPhase2(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessStartingPhase2Outbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageStartingPhase2,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -284,7 +284,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcess2a(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcess2aOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessage2a,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -295,7 +295,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcess2b(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcess2bOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessage2b,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -306,7 +306,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessReply(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessReplyOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageReply,
         ensures self.valid(), res.valid(),
             LReplicaNextProcessReply(old(self)@, self@, received_packet@, res@)
@@ -316,7 +316,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessAppStateSupply(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessAppStateSupplyOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageAppStateSupply,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -327,7 +327,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessAppStateRequest(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessAppStateRequestOutbound(&mut self, received_packet: CPacket) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageAppStateRequest,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -338,7 +338,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextProcessHeartbeat(&mut self, received_packet: CPacket, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextProcessHeartbeatOutbound(&mut self, received_packet: CPacket, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(), received_packet.valid(), received_packet.msg is CMessageHeartbeat,
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions(old(self)@, *self, received_packet, res),
@@ -349,7 +349,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1a(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousMaybeEnterNewViewAndSend1aOutbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
@@ -360,7 +360,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousMaybeEnterPhase2(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousMaybeEnterPhase2Outbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
@@ -371,7 +371,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousMaybeMakeDecision(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousMaybeMakeDecisionOutbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
@@ -382,7 +382,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousMaybeExecute(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousMaybeExecuteOutbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
@@ -393,7 +393,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextReadClockMaybeSendHeartbeat(&mut self, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextReadClockMaybeSendHeartbeatOutbound(&mut self, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             LReplicaNextReadClockMaybeSendHeartbeat(old(self)@, self@, ClockReading{t: clock as int}, res@)
@@ -405,7 +405,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextReadClockCheckForViewTimeout(&mut self, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextReadClockCheckForViewTimeoutOutbound(&mut self, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             LReplicaNextReadClockCheckForViewTimeout(old(self)@, self@, ClockReading{t: clock as int}, res@)
@@ -417,7 +417,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&mut self, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextReadClockCheckForQuorumOfViewSuspicionsOutbound(&mut self, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             LReplicaNextReadClockCheckForQuorumOfViewSuspicions(old(self)@, self@, ClockReading{t: clock as int}, res@)
@@ -429,7 +429,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints(&mut self) -> (res: OutboundPackets)
+    pub fn CReplicaNextSpontaneousTruncateLogBasedOnCheckpointsOutbound(&mut self) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             Replica_Common_Postconditions_NoPacket(old(self)@, *self, res),
@@ -440,7 +440,7 @@ impl CReplica {
     }
 
     #[verifier::external_body]
-    pub fn CReplicaNextReadClockMaybeNominateValueAndSend2a(&mut self, clock: u64) -> (res: OutboundPackets)
+    pub fn CReplicaNextReadClockMaybeNominateValueAndSend2aOutbound(&mut self, clock: u64) -> (res: OutboundPackets)
         requires old(self).valid(),
         ensures self.valid(), res.valid(),
             LReplicaNextReadClockMaybeNominateValueAndSend2a(old(self)@, self@, ClockReading{t: clock as int}, res@)

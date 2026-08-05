@@ -16,7 +16,7 @@ verus! {
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let clock = read_clock(netc);
-        let outpackets = CReplica::CReplicaNextReadClockMaybeNominateValueAndSend2a(&mut r.replica, clock);
+        let outpackets = CReplica::CReplicaNextReadClockMaybeNominateValueAndSend2aOutbound(&mut r.replica, clock);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -26,7 +26,7 @@ verus! {
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let clock = read_clock(netc);
-        let outpackets = CReplica::CReplicaNextReadClockCheckForViewTimeout(&mut r.replica, clock);
+        let outpackets = CReplica::CReplicaNextReadClockCheckForViewTimeoutOutbound(&mut r.replica, clock);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -36,7 +36,7 @@ verus! {
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let clock = read_clock(netc);
-        let outpackets = CReplica::CReplicaNextReadClockCheckForQuorumOfViewSuspicions(&mut r.replica, clock);
+        let outpackets = CReplica::CReplicaNextReadClockCheckForQuorumOfViewSuspicionsOutbound(&mut r.replica, clock);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }
@@ -46,7 +46,7 @@ verus! {
         ensures r.nextActionIndex == old(r).nextActionIndex,
     {
         let clock = read_clock(netc);
-        let outpackets = CReplica::CReplicaNextReadClockMaybeSendHeartbeat(&mut r.replica, clock);
+        let outpackets = CReplica::CReplicaNextReadClockMaybeSendHeartbeatOutbound(&mut r.replica, clock);
         let ok = deliver_outbound_packets(r, netc, &outpackets);
         ok
     }

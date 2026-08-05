@@ -15090,8 +15090,25 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
             Both guarded, both verified failing-first.
             **Measured end to end: replica's 28 errors → 10, and the last 10 are a different
             problem entirely** (see J.2 below, reopened).
-      - [ ] **J.2 (reopened) — the caller migration is not mechanical, and my earlier
-            "20 uniform call sites" reading was wrong.** `ReplicaImpl.rs` already contains
+      - [x] **J.2 (reopened, then DONE 2026-08-05) — the caller migration is not mechanical,
+            and my earlier "20 uniform call sites" reading was wrong.**
+            **Resolved by renaming the wrappers**: the 20 `#[verifier::external_body]`
+            adapters in `ReplicaImpl.rs` now carry an `Outbound` suffix
+            (`CReplicaNextProcess1aOutbound`), which is what they actually are — the layer
+            that runs the action and returns `OutboundPackets` rather than `Vec<CPacket>`.
+            43 mentions across 6 files; the `replica_gen::` calls inside the wrapper bodies
+            are deliberately untouched, since those name the generated function, not the
+            wrapper. `1046 verified, 0 errors` with the rename alone, so it lands as an
+            independently-green prerequisite rather than inside the merge commit.
+            All 20 were renamed, including the 2 whose generated counterparts stay free
+            functions (`CReplicaNextProcess1b`,
+            `CReplicaNextSpontaneousTruncateLogBasedOnCheckpoints`) — splitting the naming of
+            one uniform adapter layer would be worse than the small extra churn.
+            **Keeping the method form is required, measured**: dropping `CReplica` from
+            `mut_self_types` removes the collision but regresses fresh output to the
+            functional `(s: &CReplica) -> (CReplica, Vec<CPacket>)`, i.e. the deep-clone
+            shape Phase 48/49 removed. So the rename is the right fix, not a workaround.
+            *(original analysis)* `ReplicaImpl.rs` already contains
             `impl CReplica { pub fn CReplicaNextProcessInvalid(&mut self, ..) }` — an
             `#[verifier::external_body]` adapter returning `OutboundPackets` — for each of
             the 18 actions, on the **same type and under the same name** as the method fresh
@@ -15104,6 +15121,22 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
             code, so this is ordinary work), which also changes the names their own callers
             use. That is the remaining leaf, and it is an API change rather than a
             mechanical substitution.
+      - [ ] **J.3.c — the last 3 errors (measured 2026-08-05: 28 → 10 → 4 → 3).** With
+            J.2's rename, J.3.a and J.3.b in place, the full experiment (20 functions in
+            `proven_functions`, 19 in `mut_self_helpers` and `[method_calls]`) reaches
+            `assume(false)` 0 and 3 compile errors. Each is understood:
+            - **2 × `CExecutorExecute`.** I classified it as "still a free function", which is
+              right, but it is a free function taking **`&mut CExecutor`** and returning
+              `Vec<CPacket>` — so it needs the `mut_self_helpers` binding treatment (drop the
+              state output) *without* the `[method_calls]` call-form change. The two knobs
+              are already separable; what is missing is that the receiver argument must be
+              passed `&mut` rather than `&`. Useful confirmation that the split between the
+              two config keys is the right factoring.
+            - **1 × `CReplicaInit`.** Emitted as `c.CReplicaInit()` where `c` is
+              `&CReplicaConstants`, but the function is
+              `CReplicaInit(c: &CReplicaConstants) -> CReplica` — a free function whose first
+              argument is *not* a receiver. Listing `LReplicaInit` in `proven_functions`
+              should not have made it a method call; find what did.
       - [ ] **J.4 — confirm the 36 notes land**, with
             `scripts/classify_trigger_notes.py` on a fresh verification log.
 
