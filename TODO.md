@@ -15013,9 +15013,23 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         whatever produced executor's `}; result }` is elsewhere — the lift not being applied
         to proof-fallback stubs at all, a different `returns_unit`, or a separate emission
         path for stub bodies.
-        The test is kept as a guard for a shape that matters. **E needs re-diagnosis, not the
-        fix I assumed**, and since it only damages stub bodies the preserve list replaces, it
-        stays low priority.
+        **Narrowed 2026-08-05 by contrast.** In the same file `CExecutorGetDecision` lifts
+        correctly and `CExecutorProcessAppStateRequest` does not. The difference is what sits
+        in the tuple's state slot: a struct literal in the working one, **`self.clone()`** in
+        the broken ones (`(self.clone(), vec![…])`). `struct_to_field_assignments` looked only
+        for `Struct`/`StructUpdate`, so an identity clone matched nothing, the guard fell
+        through, and `result` kept naming the tuple — and with a non-unit return the trailing
+        `result` is kept, so the body returns a pair.
+        **That gap is fixed and tested** (`test_lift_handles_identity_self_clone_as_the_state_element`,
+        which failed before and passes after; 0 diff across all 8 non-RSL protocols).
+        **It does not fix the real emission** — executor still emits 3 `; result }`. So the
+        Tuple arm was one real gap but not the whole path. Next suspects, in order:
+        `find_struct_in_expr` and `count_non_struct_in_expr` match only struct literals *and*
+        do not descend into an `If`, while the stubs put the tuple in both arms of one. I
+        tried extending both, and the emission still did not move, so I reverted that rather
+        than commit an unvalidated change — the two guard tests here are what made the
+        difference between a demonstrated fix and a guess.
+        Still low priority: it only damages stub bodies the preserve list replaces.
         With the D fixes in, the executor merge produces a file that `rustfmt` parses and
         that differs by 514 lines — and it still does not compile:
 

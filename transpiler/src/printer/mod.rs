@@ -430,12 +430,25 @@ impl Printer {
             ExecExpr::Tuple(elems) => {
                 // For multi-output methods: find the Struct/StructUpdate element,
                 // convert it to field assignments, and return the remaining elements.
-                let struct_idx = elems.iter().position(|e| {
-                    matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
-                });
+                // The state element is usually a struct literal. It can also be an
+                // identity `self.clone()` -- a no-op update, which the proof-fallback
+                // stubs emit as `(self.clone(), vec![..])`. Both mean "this element
+                // becomes `self`"; only the literal produces assignments. Missing the
+                // clone form left `result` naming the whole tuple, so the body returned
+                // a pair where the signature promised one element
+                // (Phase 42.8.c.2.iv.E).
+                let struct_idx = elems
+                    .iter()
+                    .position(|e| {
+                        matches!(e, ExecExpr::Struct { .. } | ExecExpr::StructUpdate { .. })
+                    })
+                    .or_else(|| elems.iter().position(Self::is_identity_self_clone));
                 if let Some(idx) = struct_idx {
-                    let struct_assignments =
-                        Self::struct_to_field_assignments(&elems[idx], returns_unit);
+                    let struct_assignments = if Self::is_identity_self_clone(&elems[idx]) {
+                        ExecExpr::Block(vec![]) // no-op update: nothing to assign
+                    } else {
+                        Self::struct_to_field_assignments(&elems[idx], returns_unit)
+                    };
                     let remaining: Vec<ExecExpr> = elems
                         .iter()
                         .enumerate()
@@ -2250,6 +2263,86 @@ mod tests {
         assert!(
             !rendered.contains("Tuple"),
             "the tuple must not survive: the signature returns only the second element\n{rendered}"
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.E, second shape. executor's broken stubs bind `result`
+    /// to a block whose tail is an `if/else` returning tuples in each branch,
+    /// and the method has a non-unit return so the trailing `result` is kept.
+    #[test]
+    fn test_lift_projects_a_tuple_behind_an_if_else() {
+        let tup = |n: &str| {
+            ExecExpr::Tuple(vec![
+                ExecExpr::Struct {
+                    name: "CExecutor".to_string(),
+                    fields: vec![("ops".to_string(), ExecExpr::Var(n.to_string()))],
+                },
+                ExecExpr::Var("packets".to_string()),
+            ])
+        };
+        let value = ExecExpr::Block(vec![ExecExpr::If {
+            cond: Box::new(ExecExpr::Var("c".to_string())),
+            then_branch: Box::new(tup("a")),
+            else_branch: Some(Box::new(tup("b"))),
+        }]);
+        let body = ExecExpr::Block(vec![ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(value),
+            },
+            ExecExpr::ProofBlock {
+                stmts: vec![ExecExpr::Call {
+                    func: "lemma_empty_seq_map".to_string(),
+                    args: vec![],
+                }],
+            },
+            ExecExpr::Var("result".to_string()),
+        ])]);
+
+        // returns_unit = false: the method returns Vec<CPacket>, so the trailing
+        // `result` is kept -- and must therefore name only the second element.
+        let lifted = Printer::struct_to_field_assignments(&body, false);
+        let rendered = format!("{:?}", lifted);
+        assert!(
+            !rendered.contains("Tuple"),
+            "`result` still names the pre-lift tuple; the signature returns only its \
+             second element:\n{rendered}"
+        );
+    }
+
+    /// Phase 42.8.c.2.iv.E, the actual cause. The lift recognises a *struct
+    /// literal* as the new state. executor's stubs return `(self.clone(), vec![..])`
+    /// -- an identity clone, no struct literal -- so nothing converts, the guard
+    /// falls through, and `result` keeps naming the tuple. With a non-unit return
+    /// the trailing `result` is kept, and the body returns
+    /// `(CExecutor, Vec<CPacket>)` where the signature promised `Vec<CPacket>`.
+    #[test]
+    fn test_lift_handles_identity_self_clone_as_the_state_element() {
+        let value = ExecExpr::Tuple(vec![
+            ExecExpr::MethodCall {
+                receiver: Box::new(ExecExpr::Var("self".to_string())),
+                method: "clone".to_string(),
+                args: vec![],
+            },
+            ExecExpr::Var("packets".to_string()),
+        ]);
+        let body = ExecExpr::Block(vec![ExecExpr::Block(vec![
+            ExecExpr::Let {
+                pattern: "result".to_string(),
+                ty: None,
+                value: Box::new(value),
+            },
+            ExecExpr::Var("result".to_string()),
+        ])]);
+
+        let lifted = Printer::struct_to_field_assignments(&body, false);
+        let rendered = format!("{:?}", lifted);
+        assert!(
+            !rendered.contains("Tuple"),
+            "`result` still names the pre-lift tuple -- an identity `self.clone()` state \
+             element is a no-op update, so the lift should drop it and return only the \
+             second element:\n{rendered}"
         );
     }
 
