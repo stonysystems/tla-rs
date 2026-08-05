@@ -14965,7 +14965,16 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
             `test_proven_functions_restores_recommends_under_assume_postconditions` — the
             pre-existing recommends test ran with the default config and covered neither
             half of this interaction.
-      - [ ] **J.2 — migrate the callers.** 20 call sites in
+      - [x] **J.2 — migrate the callers. Tooling done 2026-08-05.** The merge itself can now
+            express the kind change this item said `--preserve` could not:
+            `merge_generated.py` drops an existing free function when fresh emits a method of
+            the same name, and reports it as `free fn -> impl method (existing free form
+            dropped)` rather than doing it silently. Four tests, including one that a free
+            function fresh does *not* emit is still carried (the `skip_functions` bodies).
+            On replica the plan is exactly right: 18 migrated, 10 carried. The caller rewrite
+            is 18 mechanical sites and was verified to apply cleanly; it is not committed
+            because it cannot compile until J.3's two codegen defects are fixed.
+            *(original analysis)* 20 call sites in
             `src/implementation/RSL/ReplicaImpl.rs`, all the uniform shape
             `crate::generated::RSL::replica_gen::CReplicaNextX(self, args..)` →
             `self.CReplicaNextX(args..)`. Two of the 20 must stay free functions
@@ -14979,6 +14988,34 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
             go through comes back out of `proven_functions` and keeps its existing body. The
             8 `Spontaneous*`/`ReadClock*` actions are the likely holdouts — they gain no
             precondition from a `recommends`, so nothing has changed in their favour.
+            **Attempted end-to-end 2026-08-05. It does not compile, and the two reasons are
+            not what this item predicted — neither is about proofs.** With all 18 actions
+            plus both Inits in `proven_functions`, fresh replica reaches **`assume(false)`
+            0**, the merge is clean (10 items carried: 7 `skip_functions` + 3 lemmas, 18
+            migrated to methods), the merged file parses under `rustfmt`, and the 18 caller
+            sites in `ReplicaImpl.rs` rewrite mechanically. Then `verus` reports **28 errors,
+            all pre-verification**:
+            - **19 × cross-module calls emitted in free-function form.** Fresh replica emits
+              `crate::generated::RSL::acceptor_gen::CAcceptorProcess1a(&self.acceptor, ..)`,
+              but acceptor/proposer/learner/executor were themselves migrated to `&mut self`
+              methods by the earlier merges, so that free function no longer exists. Replica
+              is generated against the *pre-migration* shape of its own dependencies.
+              **Not a config gap** — measured: adding `CAcceptor`, `CProposer`, `CLearner`,
+              `CExecutor`, `CElectionState` to replica's `mut_self_types` changes nothing
+              (22 free-form calls before and after, 0 method-form). It is a codegen gap in
+              how cross-module calls are emitted. Do not re-try the config route.
+            - **9 × `result` used after the lift removed its binding**, e.g.
+              `assert(result.1@.map(..) =~= Seq::empty())` and a trailing bare `result`.
+              This is the E-family lift bug in a case E did not cover: E fixed the *tuple
+              tail*, this is a **proof block still holding a tuple index** into a binding
+              that no longer exists. `rewrite_tuple_refs_in_expr` is the code that should
+              have rewritten it.
+            So J.3 is blocked on two concrete codegen defects with line numbers, not on
+            "structural Phase 48/49 work" and not on proofs — no proof was ever attempted,
+            because the file does not reach the verifier. Both are now the leaf tasks.
+      - [ ] **J.3.a** Emit cross-module calls to `mut_self` types in method form.
+      - [ ] **J.3.b** Rewrite tuple-index references in proof blocks when the lift drops the
+            binding (`result.1` → the lifted output), extending E's fix to proof positions.
       - [ ] **J.4 — confirm the 36 notes land**, with
             `scripts/classify_trigger_notes.py` on a fresh verification log.
 

@@ -427,5 +427,54 @@ class BodyBraceIsTopLevel(unittest.TestCase):
         self.assertEqual(mg._block_end(lines, 0), 11)
 
 
+class FreeFunctionMigratedToMethod(unittest.TestCase):
+    """Phase 42.8.c.2.iv.J. The `&mut self` conversion turns a free function into
+    an impl method. Comparing free-function names only made the existing free
+    form look absent from fresh, so the merge carried it over and the file ended
+    up with both forms under one name -- which is what put replica's merged
+    `assume(false)` count at 0 -> 18."""
+
+    FRESH = (
+        "verus! {\nimpl CReplica {\n"
+        "pub exec fn act(&mut self) {\n    fresh_body();\n}\n"
+        "}\n} // verus!\n"
+    )
+    EXISTING = (
+        "verus! {\n"
+        "pub exec fn act(s: &mut CReplica) {\n    old_free_body();\n}\n"
+        "} // verus!\n"
+    )
+
+    def test_the_existing_free_form_is_not_carried_over(self):
+        plan = mg.plan_merge(self.FRESH, self.EXISTING)
+        self.assertEqual(plan["carried_free_fns"], [])
+        self.assertEqual(plan["migrated_to_method"], ["act"])
+
+    def test_merged_file_holds_only_the_method(self):
+        merged = mg.merge(self.FRESH, self.EXISTING)
+        self.assertIn("fresh_body()", merged)
+        self.assertNotIn("old_free_body()", merged)
+        self.assertEqual(merged.count("fn act"), 1)
+
+    def test_a_free_function_fresh_does_not_emit_is_still_carried(self):
+        # The skip_functions bodies must keep working -- they are free functions
+        # absent from fresh in *both* forms.
+        existing = (
+            "verus! {\n"
+            "pub exec fn skipped() {\n    hand_written();\n}\n"
+            "} // verus!\n"
+        )
+        plan = mg.plan_merge(self.FRESH, existing)
+        self.assertEqual(plan["carried_free_fns"], ["skipped"])
+        self.assertEqual(plan["migrated_to_method"], [])
+        self.assertIn("hand_written()", mg.merge(self.FRESH, existing))
+
+    def test_report_names_the_dropped_form(self):
+        plan = mg.plan_merge(self.FRESH, self.EXISTING)
+        report = mg.render_report(plan, "fresh.rs", "existing.rs")
+        self.assertIn("act", report)
+        self.assertIn("dropped", report)
+
+
 if __name__ == "__main__":
     unittest.main()

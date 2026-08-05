@@ -155,7 +155,21 @@ def plan_merge(fresh_text, existing_text, preserve=()):
     f_free, f_impls, f_imports = parse_items(fresh_text)
     e_free, e_impls, e_imports = parse_items(existing_text)
 
-    carried_free = [n for n in e_free if n not in f_free]
+    # Phase 42.8.c.2.iv.J. The `&mut self` conversion moves a function from a
+    # free function to an impl method. Comparing free-function names only makes
+    # the existing free form look absent from fresh, so it gets carried over and
+    # the merged file ends up holding *both* -- the pre-migration free function
+    # and fresh's method, under one name. That is what put replica's merged
+    # `assume(false)` count at 0 -> 18: the existing real bodies stayed and
+    # fresh's stubs were added beside them.
+    #
+    # A free function that fresh emits as a method is a completed migration, so
+    # fresh's form wins and the existing one is dropped. It is reported
+    # separately rather than silently: dropping a body is exactly the class of
+    # change this script exists to make visible.
+    fresh_methods = {m for ms in f_impls.values() for m in ms}
+    migrated = [n for n in e_free if n not in f_free and n in fresh_methods]
+    carried_free = [n for n in e_free if n not in f_free and n not in fresh_methods]
     carried_methods = OrderedDict()
     for impl_name, methods in e_impls.items():
         missing = [m for m in methods if m not in f_impls.get(impl_name, {})]
@@ -216,6 +230,7 @@ def plan_merge(fresh_text, existing_text, preserve=()):
     return OrderedDict(
         [
             ("carried_free_fns", carried_free),
+            ("migrated_to_method", migrated),
             ("carried_methods", carried_methods),
             ("carried_imports", carried_imports),
             ("overridden_free_fns", overridden),
@@ -365,6 +380,12 @@ def render_report(plan, fresh, existing):
             ", ".join(plan["carried_free_fns"]) or "(none)"
         )
     )
+    if plan.get("migrated_to_method"):
+        out.append(
+            "  free fn -> impl method      : {} (existing free form dropped)".format(
+                ", ".join(plan["migrated_to_method"])
+            )
+        )
     for impl_name, methods in plan["carried_methods"].items():
         out.append("  methods carried into impl {}: {}".format(impl_name, ", ".join(methods)))
     out.append(
