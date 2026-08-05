@@ -20,7 +20,7 @@ use vstd::{set::*, set_lib::*};
 verus! {
 
     define_enum_and_derive_marshalable! {
-        #[derive(Clone , Eq, /*Hash,*/ PartialEq)]
+        #[derive(Eq, /*Hash,*/ PartialEq)]
         #[verus::trusted]
         pub enum CMessage {
             #[tag = 0]
@@ -82,6 +82,23 @@ verus! {
             },
         }
         [rlimit attr = verifier::rlimit(100)]
+    }
+
+    // Verus cannot specify a derived Clone here, so `#[derive(Clone)]` left
+    // `.clone()` opaque to every proof. The marshalling macro forwards its
+    // attributes but never reads them, so dropping Clone from the derive list is
+    // safe; delegating to the spec'd `clone_up_to_view` adds no trusted code.
+    verus! {
+    impl Clone for CMessage {
+        fn clone(&self) -> (result: Self)
+        ensures
+            result@ == self@,
+            result.valid() == self.valid(),
+            result.abstractable() == self.abstractable(),
+        {
+            self.clone_up_to_view()
+        }
+    }
     }
 
     impl CMessage{

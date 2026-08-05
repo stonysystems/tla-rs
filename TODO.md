@@ -17040,12 +17040,17 @@ value per hour, not by phase number:
             `clone_up_to_view`: `CAcceptor`, `CReplica`, `CConstants`, `CConfiguration`,
             `CPacket`. **DONE (2026-08-05)**, `1040 verified, 0 errors`, warnings 52 → 47,
             zero new trusted code.
-      - [ ] **54.13.b** The 5 macro-wrapped types: `CRequest`, `CReply`, `CVote` (inside
+      - [x] **54.13.b** The 5 macro-wrapped types: `CRequest`, `CReply`, `CVote` (inside
             `define_struct_and_derive_marshalable!`) and `CAppMessage`, `CMessage` (inside
-            `define_enum_and_derive_marshalable!`). All have `clone_up_to_view`, so the impl
-            body is settled; the open question is whether removing `Clone` from a derive list
-            that a marshalling macro consumes is safe, which needs reading the macro rather
-            than guessing. Do not attempt this by pattern-substitution.
+            `define_enum_and_derive_marshalable!`). **DONE (2026-08-05)**,
+            `1040 verified, 0 errors`, warnings 47 → 42.
+            The macro question resolved cleanly: both `define_*_and_derive_marshalable!`
+            capture `$( #[$attr:meta] )*` and forward it to two places — the regenerated type
+            definition, where the derive list matters, and `derive_marshalable_for_{struct,enum}!`,
+            which **never expands `$attr` at all** and contains no `clone`/`Clone` anywhere.
+            The attributes are matched only so the pattern binds. So dropping `Clone` from the
+            derive list cannot affect marshalling, and the `impl Clone` goes after the macro
+            invocation in its own `verus!` block.
       - [ ] **54.13.c** The 4 types with **no** spec'd clone helper to delegate to:
             `CRequestHeader`, `CScheduler` (structs), `COutstandingOperation`,
             `CIncompleteBatchTimer` (enums). Each needs its `clone_up_to_view` written first —
