@@ -17096,14 +17096,27 @@ merely annoys.
   messages (`msgs' = msgs \cup {Prepared(s, d)}`); deeper is left alone.
   Corpus impact: none — all counts back to their pinned values. Three tests, including the
   `mdest` case that the hardcoded version failed.
-- [ ] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally**, with
-  no inspection of its body. This is what blesses `t0_01_simple`'s
-  `Terminating`, whose guard `\A i \in Proc : pc[i] = "Done"` reads every
-  node's `pc` — and whose own golden header already documents it as *"one node
-  cannot observe that, so the guard is not projectable"*. That is exactly the
-  unchecked prose a linter exists to replace. Fixing it will newly reject
-  `t0_01_simple/clean.tla`, and the right response is to fix the spec, not relax
-  the rule.
+- [x] **A bare-`Ident` disjunct in `Next` is whitelisted unconditionally.** — **DONE
+  2026-08-05, and the prediction held exactly.** A parameterless action has no `self`, so
+  no index into per-node state is the legitimate one; C2 now walks these disjuncts and
+  reports any node state they touch. Reported as C2 rather than C5 because the defect is
+  the cross-node read, not the disjunct's shape.
+  **Only `t0_01_simple` was affected, as this item predicted** — `clean.tla` 0 → 1 and
+  `original.tla` 1 → 2; the other nine cases are unchanged.
+  **The spec was fixed, not the rule.** `Terminating` is now guarded on `pc[self]` and sits
+  under the existing `\E self \in Proc`. Behaviour is unchanged: `[][Next]_vars` already
+  permits a stuttering step, so an explicit stuttering action adds nothing to the behaviour
+  set — its only effect is on TLC's deadlock check, which is why the original has one, and
+  once every process is `"Done"` every node can still take it. Recorded in `rewrite.md`.
+  The golden's header asserted this guard "is not projectable"; that was true of the old
+  spec and is now stale, so it says what changed and why the golden still has no
+  counterpart (stuttering is what the runtime does when a node has nothing to do).
+  Three tests, including that a genuine environment action — message loss, touching only
+  the network — stays permitted, since rejecting those would break the contract's own
+  allowance for delivery, loss and crash.
+  *Not verified here*: TLC was not run, so the no-deadlock claim rests on the
+  `[][Next]_vars` argument plus the guard being satisfiable by every node once all are
+  `"Done"`. The corpus V2 fidelity script is what would confirm it.
 - [x] **`clean_distance` degrades to silence.** — **FIXED 2026-08-05.** C1/C2/C3 all
   return early when the node set is unknown, so a spec the linter understands *less*
   scores *lower*. The report now carries `skipped_rules` (rule + why), and all three

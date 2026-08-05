@@ -30,10 +30,13 @@
 //! Two things in `clean.tla` deliberately have **no counterpart** here, and a
 //! translator that emitted something for them would be wrong:
 //!
-//! - `Terminating` — a stuttering step guarded by "every process is Done". One
-//!   node cannot observe that, so the guard is not projectable. Termination
-//!   handling belongs to the runtime, exactly as `LNext` in the hand-written
-//!   specs omits it.
+//! - `Terminating` — a stuttering step. It *was* guarded by "every process is
+//!   Done", which no single node can observe; Phase 52 taught the linter to
+//!   reject a `Next` disjunct with no node parameter that reads node state, and
+//!   this is the case it caught. `clean.tla` now guards it on `pc[self]`, so it
+//!   is projectable — but it still has no counterpart here, because stuttering
+//!   is what the runtime does when a node has nothing to do, exactly as `LNext`
+//!   in the hand-written specs omits it.
 //! - `PCorrect` — `(\A i : pc[i] = "Done") => (\E i : y[i] = 1)` quantifies
 //!   over all nodes. A global property does not project onto a single node; it
 //!   is a statement about the composed system and belongs to the refinement

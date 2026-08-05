@@ -1080,6 +1080,7 @@ impl<'a> LintContext<'a> {
             };
             let mut writes = Vec::new();
             self.collect_whole_array_writes(&op.body, &per_node, &node_set_name, &mut writes);
+            let _ = &node_set_name;
             writes.sort();
             writes.dedup();
             for var in writes {
@@ -1123,6 +1124,68 @@ impl<'a> LintContext<'a> {
                          `{var}[{node_param}]`. Decide which message carries \
                          `{var}` from that node, who sends it and when, and what \
                          this action does with a stale copy."
+                    ),
+                ));
+            }
+        }
+
+        let owned: Vec<String> = per_node.iter().map(|v| v.to_string()).collect();
+        drop(per_node);
+        self.check_parameterless_disjuncts(&owned, report);
+    }
+
+    /// A `Next` disjunct that is a bare name -- `\/ Terminating` -- is permitted
+    /// as an environment action the framework performs. C5 accepted it without
+    /// looking inside, which is the unchecked prose a linter exists to replace.
+    ///
+    /// A parameterless action has no `self`, so **no** index into per-node state
+    /// is the legitimate one: `\A i \in Proc : pc[i] = "Done"` asks every node
+    /// at once, and no single node can evaluate it. Frame conditions are exempt
+    /// as everywhere else, which is what keeps `UNCHANGED <<..>>` clean.
+    fn check_parameterless_disjuncts(
+        &self,
+        per_node_owned: &[String],
+        report: &mut CleanSubsetReport,
+    ) {
+        let per_node: BTreeSet<&str> = per_node_owned.iter().map(|v| v.as_str()).collect();
+        let per_node = &per_node;
+        let Some(next) = self.next_relation() else {
+            return;
+        };
+        let expanded = self.expand_action_groups(&next.body);
+        for disjunct in flatten_disjunction(&expanded) {
+            let TlaExpr::Ident(name) = disjunct else {
+                continue;
+            };
+            let Some(op) = self.operator(name) else {
+                continue;
+            };
+            if !op.params.is_empty() {
+                continue;
+            }
+            let mut touched = Vec::new();
+            self.collect_whole_array_reads(&op.body, per_node, &mut touched);
+            let mut indexed = Vec::new();
+            // No parameter names a node here, so every index is foreign.
+            self.collect_foreign_reads(&op.body, "", per_node, &mut indexed);
+            touched.extend(
+                indexed
+                    .into_iter()
+                    .map(|(var, index)| format!("{var}[{index}]")),
+            );
+            touched.sort();
+            touched.dedup();
+            for what in touched {
+                report.findings.push(self.finding(
+                    CleanRule::C2,
+                    Some(op),
+                    format!(
+                        "`{name}` is a `Next` disjunct with no node parameter, so the \
+                         framework performs it -- but it reads `{what}`, which is some \
+                         node's state. There is no `self` here for the read to be about, \
+                         and no single node can evaluate it. Either give the action a node \
+                         parameter, or state the condition in something a node can observe \
+                         locally."
                     ),
                 ));
             }
@@ -1868,6 +1931,80 @@ Next == clock' = clock + 1
         // a consumer reading only `violations` cannot tell the difference; the
         // two lists are what make the number interpretable
         assert!(json.contains(r#""rule":"C1","reason":"#), "{json}");
+    }
+
+    /// Phase 52: a bare-`Ident` disjunct in `Next` was whitelisted with no
+    /// inspection of its body. That is what blessed `t0_01_simple`'s
+    /// `Terminating`, whose guard `\A i \in Proc : pc[i] = "Done"` reads every
+    /// node's `pc` -- and whose own golden header already documented it as *"one
+    /// node cannot observe that, so the guard is not projectable"*. Unchecked
+    /// prose is exactly what a linter exists to replace.
+    #[test]
+    fn rejects_a_parameterless_disjunct_that_reads_node_state() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES pc
+TypeOK == pc \in [Proc -> Nat]
+Step(p) == pc' = [pc EXCEPT ![p] = 1]
+Terminating == /\ \A i \in Proc : pc[i] = 1
+               /\ UNCHANGED <<pc>>
+Next == \/ \E p \in Proc : Step(p)
+        \/ Terminating
+===="#;
+        let report = lint(source);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.rule == CleanRule::C2 && f.message.contains("no node parameter")),
+            "a parameterless disjunct reading node state must be reported: {:?}",
+            report.findings
+        );
+    }
+
+    /// The same disjunct guarded on its own node is projectable, which is the
+    /// rewrite `t0_01_simple/clean.tla` now carries. Behaviour is unchanged:
+    /// `[][Next]_vars` already permits stuttering.
+    #[test]
+    fn a_per_node_stuttering_action_is_fine() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES pc
+TypeOK == pc \in [Proc -> Nat]
+Step(p) == pc' = [pc EXCEPT ![p] = 1]
+Terminating(self) == /\ pc[self] = 1
+                     /\ UNCHANGED <<pc>>
+Next == \E p \in Proc : Step(p) \/ Terminating(p)
+===="#;
+        let report = lint(source);
+        assert!(report.is_clean(), "got {:?}", report.findings);
+    }
+
+    /// A genuine environment action -- one the framework performs, touching no
+    /// node state -- must stay permitted. Rejecting these would break the
+    /// contract's own allowance for message delivery, loss and crash.
+    #[test]
+    fn a_parameterless_action_touching_no_node_state_stays_permitted() {
+        let source = r#"---- MODULE Test ----
+EXTENDS Naturals
+VARIABLES pc, msgs
+TypeOK == pc \in [Proc -> Nat]
+Step(p) == /\ pc' = [pc EXCEPT ![p] = 1]
+           /\ msgs' = msgs \cup {[dst |-> p]}
+Recv(p) == \E m \in msgs : m.dst = p /\ msgs' = msgs \ {m} /\ UNCHANGED <<pc>>
+DropMessage == \E m \in msgs : msgs' = msgs \ {m} /\ UNCHANGED <<pc>>
+Next == \/ \E p \in Proc : Step(p) \/ Recv(p)
+        \/ DropMessage
+===="#;
+        let report = lint(source);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("no node parameter")),
+            "message loss touches only the network: {:?}",
+            report.findings
+        );
     }
 
     /// Phase 52: "each message carries enough addressing to say who it is for"
