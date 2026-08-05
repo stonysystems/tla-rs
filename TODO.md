@@ -14794,10 +14794,29 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         `let result = ..` binding still exists makes the proof block read the **old** state
         instead of the new value. The fix belongs in the printer transform, which is the
         only place that knows the struct was lifted into `self`'s fields.
-  - [ ] **42.8.c.2.iii** Implement (a)+(b)+(c) in `struct_to_field_assignments`. It needs to
-        know the method returns `()`; that is not currently threaded into the printer at that
-        point, so the first step is deciding how to pass it (a flag on `ExecFunction`, or
-        performing the lift in the translator where `return_type` is in scope).
+  - [x] **42.8.c.2.iii** Implemented (2026-08-05). `Printer::struct_to_field_assignments`
+        now takes `returns_unit`, threaded from `func.return_type` at the one call site where
+        it is in scope. With it: the trailing var is dropped, an identity-clone branch becomes
+        a no-op, and proof blocks are rewritten. `CLearnerForgetDecision` now emits correctly.
+        **The proof rewrite is a simultaneous swap, not a rename** — in the functional body
+        `self` is the pre state and `result` the post state, and the lift exchanges those
+        meanings, so `result.X -> self.X` and `self.X -> old_self.X` must happen at once.
+        Renaming only the first half collapses both arguments of
+        `lemma_abstractify_clearnerstate_remove(old_m, m2, k)` onto one value, and its
+        precondition `m2@ =~= old_m@.remove(k)` is then unprovable. Applying the swap in two
+        places produced `old_old_self`; it runs once, at the top of the method body. The swap
+        is confined to proof contexts because in exec position `self` before the assignments
+        really is the pre state and rewriting it to a ghost binding would not compile.
+        Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
+        file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
+        regeneration.
+  - [ ] **42.8.c.2.iv** Merging `learner` still fails, on a *different* mismatch: the
+        preserved hand-written bodies were written against older emitted signatures. The
+        fresh `lemma_abstractify_clearnerstate_empty` takes `m: &HashMap<..>` while the
+        preserved caller passes by value (`expected &HashMap<u64, CLearnerTuple>, found
+        HashMap<u64, CLearnerTuple>`). So the merge needs signature reconciliation, not just
+        splicing — each preserved body has to be checked against the current emitted API.
+        This is per-function work and belongs with the Phase 21 manual-code elimination.
 
 
 

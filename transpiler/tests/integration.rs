@@ -24082,3 +24082,86 @@ fn test_types_gen_regeneration_is_byte_identical() {
     );
     let _ = std::fs::remove_file(&tmp);
 }
+
+/// Phase 42.8.c.2.iii: `&mut self` methods must not keep the functional output.
+///
+/// When a receiver-typed output collapses the return type to `()`, the printer
+/// lifts `let result = Struct{..}` into field assignments on `self`. Three
+/// things used to survive that lift and made the emitted module uncompilable,
+/// which is why the five `skip_functions` RSL modules could never be
+/// regenerated:
+///
+///   * a trailing `result` in a method that returns `()`;
+///   * `result.field` inside proof blocks, naming a binding that no longer
+///     exists;
+///   * an `else` branch left as `self.clone_up_to_view()` (type `Self`) against
+///     a then-branch of assignments (type `()`).
+///
+/// The proof-block rewrite is a *simultaneous* swap, not a rename: in the
+/// functional body `self` is the pre state and `result` the post state, and
+/// after the lift those meanings exchange. Renaming only `result -> self`
+/// collapses both arguments of
+/// `lemma_abstractify_clearnerstate_remove(old_m, m2, k)` onto one value, whose
+/// precondition `m2@ =~= old_m@.remove(k)` is then unprovable.
+#[test]
+fn test_mut_self_method_drops_functional_output() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let out = std::env::temp_dir().join("phase42_8_learner_gen.rs");
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_verus-transpile"))
+        .args([
+            "--input",
+            repo_root
+                .join("src/protocol/RSL/learner.rs")
+                .to_str()
+                .unwrap(),
+            "--annotations",
+            repo_root
+                .join("src/protocol/RSL/learner.automan")
+                .to_str()
+                .unwrap(),
+            "--config",
+            repo_root
+                .join("src/protocol/RSL/learner_transpile.toml")
+                .to_str()
+                .unwrap(),
+            "--output",
+            out.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run transpiler");
+    assert!(
+        status.status.success(),
+        "transpiler failed: {}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+
+    let emitted = std::fs::read_to_string(&out).expect("read generated output");
+    let start = emitted
+        .find("pub exec fn CLearnerForgetDecision")
+        .expect("CLearnerForgetDecision should be emitted");
+    let body: String = emitted[start..].chars().take(1400).collect();
+
+    assert!(
+        !body.contains("result"),
+        "a &mut self method must not name the functional output:\n{}",
+        body
+    );
+    assert!(
+        !body.contains("} else {\n            self.clone_up_to_view()"),
+        "an identity-clone else branch must become a no-op:\n{}",
+        body
+    );
+    // The pre state moves to the ghost binding, the post state stays `self`.
+    assert!(
+        body.contains(
+            "lemma_abstractify_clearnerstate_remove(old_self.unexecuted_learner_state, \
+             self.unexecuted_learner_state"
+        ),
+        "proof args must be (old_self, self), not both the same state:\n{}",
+        body
+    );
+    let _ = std::fs::remove_file(&out);
+}
