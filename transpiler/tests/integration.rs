@@ -1129,27 +1129,27 @@ fn test_rsl_skip_function_classification_matches_configs() {
     );
     assert_eq!(stub_emitted, 15, "stub-emitted skip_functions changed");
 
-    // The README and the classification note quote these numbers; if the configs
-    // move, they must move too rather than quietly becoming wrong.
-    let readme = std::fs::read_to_string(repo_root.join("README.md")).expect("read README");
-    for fragment in [
-        "30 entries",
-        "10 are a deliberate trust boundary",
-        "15 have proven hand-written",
-        "8 are a genuine",
-    ] {
-        assert!(
-            readme.contains(fragment),
-            "README no longer states the classification fragment `{fragment}` -- \
-             update it (and docs/rsl-skip-functions.md) to match the configs"
-        );
-    }
+    // The classification note quotes these numbers; if the configs move, it must
+    // move too rather than quietly becoming wrong.
+    //
+    // The README deliberately does *not* quote them. It used to, and this guard used
+    // to pin four fragments of its prose -- which is how the three copies drifted
+    // apart unnoticed: the configs grew 30 -> 36 while the pinned text still said 30,
+    // so the guard was enforcing a number it could itself prove wrong. The README now
+    // links here instead, leaving exactly one place where the counts live.
     let note = std::fs::read_to_string(repo_root.join("docs/rsl-skip-functions.md"))
         .expect("read docs/rsl-skip-functions.md");
-    assert!(
-        note.contains("15 of the 30 are in both"),
-        "the classification note no longer matches the configs"
-    );
+    for fragment in [
+        "The 36 RSL",
+        "21 of the 36 are in both",
+        "10 of the 36 are a",
+    ] {
+        assert!(
+            note.contains(fragment),
+            "docs/rsl-skip-functions.md no longer states `{fragment}` -- \
+             update it to match the configs"
+        );
+    }
 }
 
 /// Phase 54.18: build the release binary once, then invoke it directly.
