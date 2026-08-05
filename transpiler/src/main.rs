@@ -752,6 +752,26 @@ fn collect_called_functions_from_spec_file(spec_file: &Path) -> HashSet<String> 
     called
 }
 
+/// Whether a function signature line declares a `self` receiver.
+///
+/// Conservative: a signature whose parameter list wraps onto the next line reads
+/// as "no receiver", so no `method_calls` entry is inferred. Not inferring is
+/// safe -- the call stays a free function call; inferring wrongly emits a method
+/// call on whatever happens to be the first argument.
+fn takes_self_receiver(line: &str) -> bool {
+    let Some(idx) = line.find("fn ") else {
+        return false;
+    };
+    let Some(open) = line[idx..].find('(') else {
+        return false;
+    };
+    let params = line[idx + open + 1..].trim_start();
+    params.starts_with("self")
+        || params.starts_with("&self")
+        || params.starts_with("&mut self")
+        || params.starts_with("mut self")
+}
+
 fn extract_c_function_name(line: &str) -> Option<String> {
     let idx = line.find("fn C")?;
     let rest = &line[idx + 3..];
@@ -1181,7 +1201,15 @@ fn collect_implementation_method_symbols(
                 }
             }
 
-            if let Some(method_name) = extract_c_function_name(code) {
+            // An associated function is not a method: `impl CReplica {
+            // pub fn CReplicaInit(c: CReplicaConstants) -> Self }` takes no
+            // receiver, so inferring a `method_calls` entry for it emitted
+            // `c.CReplicaInit()` against `c: &CReplicaConstants` -- a method that
+            // does not exist, on the wrong type (Phase 42.8.c.2.iv.J.3.c).
+            // Matching on the name alone cannot tell the two apart.
+            if let Some(method_name) =
+                extract_c_function_name(code).filter(|_| takes_self_receiver(code))
+            {
                 let current_impl = impl_stack
                     .iter()
                     .rev()
@@ -6839,6 +6867,30 @@ fn convert_file_config(
 
 #[cfg(test)]
 mod tests {
+    /// Phase 42.8.c.2.iv.J.3.c. An associated function inside an `impl` block is
+    /// not a method. `impl CReplica { pub fn CReplicaInit(c: CReplicaConstants) }`
+    /// takes no receiver, and inferring a `method_calls` entry for it emitted
+    /// `c.CReplicaInit()` -- a method that does not exist, on the wrong type.
+    #[test]
+    fn test_takes_self_receiver_distinguishes_methods_from_associated_fns() {
+        assert!(takes_self_receiver(
+            "    pub fn act(&mut self, p: &CPacket) -> u64"
+        ));
+        assert!(takes_self_receiver("    pub fn view(&self) -> u64"));
+        assert!(takes_self_receiver("    pub fn into_inner(self) -> u64"));
+        // the case that caused the bug: an associated function
+        assert!(!takes_self_receiver(
+            "    pub fn CReplicaInit(c: CReplicaConstants) -> (result: Self)"
+        ));
+        assert!(!takes_self_receiver(
+            "    pub fn helper(a: u64, b: u64) -> u64"
+        ));
+        // a wrapped signature reads as "no receiver", which is the safe answer:
+        // no entry is inferred and the call stays a free function call.
+        assert!(!takes_self_receiver("    pub fn act("));
+        assert!(!takes_self_receiver("not a function at all"));
+    }
+
     use super::*;
 
     #[test]

@@ -12840,6 +12840,26 @@ impl Translator {
                     args: info.input_args.clone(),
                 }
             }
+        } else if self.config.mut_self_helpers.contains(&info.func_name) {
+            // A `&mut self` callee that stays a *free* function -- `CExecutorExecute`
+            // is `(s: &mut CExecutor) -> Vec<CPacket>`. It needs the state argument
+            // passed mutably; only the call *form* is unchanged, which is why the
+            // two config keys are separate (Phase 42.8.c.2.iv.J.3.c).
+            let mut args = info.input_args.clone();
+            if let Some(first) = args.first_mut() {
+                if let ExecExpr::Unary { op, expr } = first {
+                    if op == "&" {
+                        *first = ExecExpr::Unary {
+                            op: "&mut ".to_string(),
+                            expr: expr.clone(),
+                        };
+                    }
+                }
+            }
+            ExecExpr::Call {
+                func: self.translate_name(&info.func_name),
+                args,
+            }
         } else {
             ExecExpr::Call {
                 func: self.translate_name(&info.func_name),
@@ -25041,6 +25061,42 @@ mod tests {
         config.assume_postconditions = assume_postconditions;
         config.proven_functions = proven.iter().map(|s| s.to_string()).collect();
         Translator::new(config)
+    }
+
+    /// Phase 42.8.c.2.iv.J.3.c. A `&mut self` callee that stays a *free* function
+    /// -- `CExecutorExecute(s: &mut CExecutor) -> Vec<CPacket>` -- needs its state
+    /// argument passed mutably. Only the binding shape changes, not the call form,
+    /// which is why `mut_self_helpers` and `[method_calls]` are separate keys.
+    #[test]
+    fn test_free_mut_self_helper_gets_a_mutable_receiver_argument() {
+        let mut config = TranslatorConfig::default();
+        config.mut_self_helpers = ["LExecutorExecute".to_string()].into_iter().collect();
+        let translator = Translator::new(config);
+        let info = HelperCallInfo {
+            func_name: "LExecutorExecute".to_string(),
+            input_args: vec![ExecExpr::Unary {
+                op: "&".to_string(),
+                expr: Box::new(ExecExpr::Field(
+                    Box::new(ExecExpr::Var("self".to_string())),
+                    "executor".to_string(),
+                )),
+            }],
+            output_fields: vec![("s_".to_string(), "executor".to_string())],
+            output_params: vec!["sent_packets".to_string()],
+        };
+        let binding = translator.generate_helper_let_binding(&info);
+        let rendered = format!("{:?}", binding);
+        assert!(
+            rendered.contains("&mut "),
+            "the state argument must be passed mutably: {}",
+            rendered
+        );
+        // the state output is mutated in place, so only `sent_packets` is bound
+        assert!(
+            rendered.contains("pattern: \"sent_packets\""),
+            "no tuple destructure for a &mut self callee: {}",
+            rendered
+        );
     }
 
     #[test]

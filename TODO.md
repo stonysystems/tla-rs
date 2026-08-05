@@ -15121,7 +15121,34 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
             code, so this is ordinary work), which also changes the names their own callers
             use. That is the remaining leaf, and it is an API change rather than a
             mechanical substitution.
-      - [ ] **J.3.c — the last 3 errors (measured 2026-08-05: 28 → 10 → 4 → 3).** With
+      - [x] **J.3.c — DONE 2026-08-05. Replica now compiles and reaches the verifier, and
+            the 36 trigger notes landed: 103 → 66.** Both causes fixed:
+            - `mut_self_helpers` now passes the state argument **mutably** for a callee that
+              stays a free function (`CExecutorExecute(&mut self.executor)`). Only the
+              binding shape changes, not the call form — confirming the split between
+              `mut_self_helpers` and `[method_calls]` is the right factoring.
+            - Method-call inference now requires a **`self` receiver**. `infer_method_calls_
+              from_spec_paths` scans `src/implementation/` for `C*` functions inside `impl`
+              blocks and matched on the *name alone*, so
+              `impl CReplica { pub fn CReplicaInit(c: CReplicaConstants) -> Self }` — an
+              associated function, not a method — produced `c.CReplicaInit()` against
+              `c: &CReplicaConstants`. Three other hypotheses were ruled out first and are
+              recorded so they are not re-tried: it is **not** `method_names` /
+              `convert_calls_to_methods` (that pass runs only inside method bodies, and
+              `CSchedulerInit` is not one), **not** `maybe_apply_mut_self`, and **not** a
+              hand-written `[method_calls]` entry.
+      - [ ] **J.3.d — back off the `proven_functions` claims that do not hold.** The merged
+            replica reaches `1040 verified, **6 errors**`, and for the first time these are
+            genuine *proof* failures rather than compile errors — which is exactly what
+            listing a function in `proven_functions` asserts. The failures cluster in
+            `CReplicaNextProcessRequest`, `CReplicaNextProcess2a`,
+            `CReplicaNextSpontaneousMaybeMakeDecision`, `CReplicaNextSpontaneousMaybeExecute`,
+            `CReplicaNextReadClockMaybeSendHeartbeat`, and `CReplicaInit`'s precondition at
+            `ReplicaImpl.rs:217`. Each comes back out of `proven_functions` (regaining its
+            `assume(false)`) unless the proof can be made to go through; that is the last
+            step before the merge can land. Note the trade: every function backed off keeps
+            its `assume(false)`, so J.4's final note count depends on this.
+            *(superseded analysis of the 3 compile errors)* With
             J.2's rename, J.3.a and J.3.b in place, the full experiment (20 functions in
             `proven_functions`, 19 in `mut_self_helpers` and `[method_calls]`) reaches
             `assume(false)` 0 and 3 compile errors. Each is understood:
