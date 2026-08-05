@@ -1753,6 +1753,30 @@ verus! {
                     ds.server_constants[leader_id],
                 ),
             ),
+            // Every branch pins the governing phase to the leader's own phase
+            // at one of two prefixes: its commit index (when the leader has no
+            // pending boundary below `index`, or a divergent one) or `index`
+            // itself (when its pending boundary is the committer's). Exposing
+            // this lets the result be re-derived at any later prefix — notably
+            // a leader's election snapshot — without redoing the case analysis.
+            ({
+                ||| ds.configuration_commit_certificates[index].governing_phase
+                    == active_membership_phase_from_raft_log(
+                        ds.server_states[leader_id].log,
+                        ds.server_states[leader_id].commit_index,
+                        MembershipPhase::Stable {
+                            config: ds.server_constants[leader_id].servers,
+                        },
+                    )
+                ||| ds.configuration_commit_certificates[index].governing_phase
+                    == active_membership_phase_from_raft_log(
+                        ds.server_states[leader_id].log,
+                        index,
+                        MembershipPhase::Stable {
+                            config: ds.server_constants[leader_id].servers,
+                        },
+                    )
+            }),
     {
         let certificate = ds.configuration_commit_certificates[index];
         let committer = certificate.committer;
@@ -1979,6 +2003,116 @@ verus! {
                 assert(certificate.governing_phase
                     == active_membership_phase_for_state(leader, constants));
             }
+        }
+    }
+
+    /// The governing phase of a certificate progresses legally to the leader's
+    /// phase at *any* prefix from `index` up to its log length — in particular
+    /// to its election snapshot, which is the prefix its saved membership phase
+    /// and hence its vote quorum are measured against.
+    ///
+    /// Follows from the two-prefix postcondition above plus the interval
+    /// progression lemma: whichever prefix pins the governing phase, the
+    /// stretch from there to the target lies inside the leader's uncommitted
+    /// suffix and so carries at most one boundary.
+    pub proof fn lemma_governing_phase_progresses_to_prefix(
+        ds: RaftDistributedState,
+        index: int,
+        leader_id: int,
+        target_len: int,
+    )
+        requires
+            ConfigurationCommitCertificatesValid(ds),
+            ConfigurationCommittersRetainCertifiedPrefixes(ds),
+            CommittedConfigurationsHaveCertificates(ds),
+            CommittedEntriesHaveLogCertificates(ds),
+            CommitIndexNonnegative(ds),
+            raft_membership_log_is_well_formed(
+                ds.server_states[leader_id].log,
+                MembershipPhase::Stable {
+                    config: ds.server_constants[leader_id].servers,
+                },
+            ),
+            uncommitted_suffix_has_at_most_one_configuration(
+                ds.server_states[leader_id].log,
+                ds.server_states[leader_id].commit_index,
+            ),
+            ds.configuration_commit_certificates.dom().contains(index),
+            0 <= leader_id < ds.num_servers,
+            ds.server_constants[leader_id].servers
+                == ds.server_constants[
+                    ds.configuration_commit_certificates[index].committer
+                ].servers,
+            forall |m: int|
+                #![trigger ds.configuration_commit_certificates[m]]
+                0 <= m < index
+                && ds.configuration_commit_certificates.dom().contains(m)
+                ==> ds.server_states[leader_id].log.len() > m
+                    && ds.server_states[leader_id].log[m]
+                        == ds.configuration_commit_certificates[m].entry,
+            0 <= ds.server_states[leader_id].commit_index <= index,
+            index <= target_len <= ds.server_states[leader_id].log.len(),
+        ensures
+            is_legal_phase_progression(
+                ds.configuration_commit_certificates[index].governing_phase,
+                active_membership_phase_from_raft_log(
+                    ds.server_states[leader_id].log,
+                    target_len,
+                    MembershipPhase::Stable {
+                        config: ds.server_constants[leader_id].servers,
+                    },
+                ),
+            ),
+    {
+        let leader = ds.server_states[leader_id];
+        let initial_phase = MembershipPhase::Stable {
+            config: ds.server_constants[leader_id].servers,
+        };
+
+        lemma_minimal_missing_governing_phase_progresses_to_election(
+            ds, index, leader_id);
+
+        // Both candidate prefixes sit at or above the commit index, so the
+        // stretch up to the target lies in the uncommitted suffix and carries
+        // at most one boundary.
+        assert forall |a: int, b: int|
+            leader.commit_index <= a < target_len
+            && leader.commit_index <= b < target_len
+            && leader.log[a].payload is Configuration
+            && leader.log[b].payload is Configuration
+            implies a == b
+        by {
+            assert(uncommitted_suffix_has_at_most_one_configuration(
+                leader.log, leader.commit_index));
+        };
+
+        if ds.configuration_commit_certificates[index].governing_phase
+            == active_membership_phase_from_raft_log(
+                leader.log, leader.commit_index, initial_phase)
+        {
+            lemma_bounded_boundary_interval_progresses_legally(
+                leader.log,
+                leader.commit_index,
+                target_len,
+                initial_phase,
+            );
+        } else {
+            assert forall |a: int, b: int|
+                index <= a < target_len
+                && index <= b < target_len
+                && leader.log[a].payload is Configuration
+                && leader.log[b].payload is Configuration
+                implies a == b
+            by {
+                assert(uncommitted_suffix_has_at_most_one_configuration(
+                    leader.log, leader.commit_index));
+            };
+            lemma_bounded_boundary_interval_progresses_legally(
+                leader.log,
+                index,
+                target_len,
+                initial_phase,
+            );
         }
     }
 
