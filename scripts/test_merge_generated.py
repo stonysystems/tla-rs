@@ -134,5 +134,59 @@ class TestMerge(unittest.TestCase):
         self.assertIn("#![trigger x]", merged)
 
 
+
+
+class MultiLineConstructs(unittest.TestCase):
+    """Phase 42.8.c: two parser bugs that made merged output fail to *parse*,
+    upstream of the signature mismatches 42.8.c.2.iv records. Both were found by
+    running the merge over all seven RSL modules and feeding the result to
+    rustfmt, not by any existing test."""
+
+    def test_rustfmt_wrapped_import_is_captured_whole(self):
+        # rustfmt wraps long imports. Capturing only the first line leaves
+        # `use crate::x::{` dangling -- an unclosed delimiter.
+        existing = (
+            "use crate::x::{\n"
+            "    alpha, beta,\n"
+            "};\n"
+            "use crate::solo::Thing;\n"
+        )
+        _, _, imports = mg.parse_items(existing)
+        self.assertEqual(len(imports), 2, f"expected 2 imports, got {imports!r}")
+        self.assertTrue(
+            any(i.count("{") == i.count("}") for i in imports if "{" in i),
+            f"wrapped import was not captured whole: {imports!r}",
+        )
+
+    def test_wrapped_and_flat_imports_compare_equal(self):
+        flat = "use crate::x::{alpha, beta};"
+        wrapped = "use crate::x::{\n    beta, alpha,\n};"
+        self.assertEqual(
+            mg._import_path(flat),
+            mg._import_path(wrapped),
+            "a wrapped import must not be carried over as a duplicate of its flat form",
+        )
+
+    def test_block_end_does_not_stop_inside_an_open_paren(self):
+        # Braces balance on the `=~= (` line while the paren is still open;
+        # stopping there truncates the body mid-expression.
+        lines = [
+            "pub proof fn f() {",
+            "    assert(g(s.push(x), r) =~= (",
+            "        h(a) + h(b)",
+            "    ));",
+            "}",
+            "pub proof fn next() {}",
+        ]
+        end = mg._block_end(lines, 0)
+        self.assertEqual(
+            end, 4, f"block ended at line {end} ({lines[end]!r}), truncating the body"
+        )
+
+    def test_block_end_still_handles_a_plain_body(self):
+        lines = ["fn f() {", "    let x = 1;", "}", "fn g() {}"]
+        self.assertEqual(mg._block_end(lines, 0), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

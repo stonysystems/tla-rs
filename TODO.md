@@ -14854,7 +14854,36 @@ The Phase 41 PoC `cb42869` hand-edited `src/generated/RSL/proposer_gen.rs`. Once
         Guarded by `test_mut_self_method_drops_functional_output`. No checked-in generated
         file changes (all `*_regen_matches_checked_in` tests still pass), so nothing needed
         regeneration.
-  - [ ] **42.8.c.2.iv** Merging `learner` still fails, on a *different* mismatch: the
+  - [ ] **42.8.c.2.iv** **Measured 2026-08-05, and two bugs upstream of the recorded cause
+        are now fixed.** "No predictable finish" was based on the signature mismatch below.
+        Running the merge over all seven RSL modules and feeding each result to `rustfmt`
+        shows something more basic was wrong first: **the merged files did not parse.**
+        - `parse_items` captured only the first line of a `rustfmt`-wrapped `use`, leaving
+          `use crate::x::{` dangling. Every module was affected.
+        - `_block_end` counted braces only, so a body whose braces balance while a paren is
+          still open (`… =~= (`) was truncated mid-expression. This hit `election`.
+        Both fixed, both with regression tests that were **checked to fail when the fix is
+        reverted**. All 7 modules now produce parseable output.
+        **What the measurement does not support is any claim that this unblocks the merge.**
+        The diffs barely moved, so the bulk is genuine divergence, not formatting:
+
+        | module | merged-vs-checked-in diff | trigger notes it would deliver |
+        |---|---:|---:|
+        | broadcast | **0** | 0 |
+        | acceptor | **9** | 4 |
+        | learner | 183 | 7 |
+        | executor | 623 | 10 |
+        | replica | 708 | 44 |
+        | proposer | 761 | 25 |
+        | election | 712 | 17 |
+
+        So the merge is **per-module, not all-or-nothing**: `broadcast` already merges
+        byte-identically and `acceptor` is 9 lines away — but the notes are concentrated in
+        exactly the modules that have diverged most, so a cheap partial win on 54.7.b is
+        worth **4 notes at best** (acceptor). The remaining diff is the hand-applied Arc-wrap
+        and `&mut self` work, which is the real content of this item.
+
+  - [ ] **42.8.c.2.iv (original)** Merging `learner` still fails, on a *different* mismatch: the
         preserved hand-written bodies were written against older emitted signatures. The
         fresh `lemma_abstractify_clearnerstate_empty` takes `m: &HashMap<..>` while the
         preserved caller passes by value (`expected &HashMap<u64, CLearnerTuple>, found

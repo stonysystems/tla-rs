@@ -43,17 +43,33 @@ IMPORT_RE = re.compile(r"^\s*(pub\s+)?use\s+")
 
 
 def _block_end(lines, start):
-    """Index of the line closing the brace-delimited block opened at `start`."""
-    depth = 0
+    """Index of the line closing the brace-delimited block opened at `start`.
+
+    Parens and brackets are tracked too, not just braces. A spec body can have
+    its braces balance while a parenthesised expression is still open --
+
+        RemoveAllSatisfiedRequestsInSequence(s.push(x), r) =~= (
+            ...
+        )
+
+    -- and closing the block there truncates the body mid-expression, so the
+    merged file does not parse.
+    """
+    depth = {"{": 0, "(": 0, "[": 0}
+    close = {"}": "{", ")": "(", "]": "["}
     seen = False
     for i in range(start, len(lines)):
         line = lines[i]
-        # Strip line comments so a `{` in a comment does not shift the depth.
+        # Strip line comments so a bracket in a comment does not shift the depth.
         code = re.sub(r"//.*$", "", line)
-        depth += code.count("{") - code.count("}")
-        if "{" in code:
-            seen = True
-        if seen and depth <= 0:
+        for ch in code:
+            if ch in depth:
+                depth[ch] += 1
+                if ch == "{":
+                    seen = True
+            elif ch in close:
+                depth[close[ch]] -= 1
+        if seen and all(d <= 0 for d in depth.values()):
             return i
     return len(lines) - 1
 
@@ -81,8 +97,21 @@ def parse_items(text):
     while i < len(lines):
         line = lines[i]
         if IMPORT_RE.match(line):
-            imports.append(line.strip())
-            i += 1
+            # A rustfmt-wrapped import spans several lines:
+            #     use crate::x::{
+            #         a, b,
+            #     };
+            # Capturing only the first line yields `use crate::x::{` on its own,
+            # which is an unclosed delimiter -- the merged file then does not
+            # parse at all, so rustc and rustfmt fail before any real
+            # signature mismatch is even reached.
+            stmt = [line.rstrip()]
+            j = i
+            while not stmt[-1].rstrip().endswith(";") and j + 1 < len(lines):
+                j += 1
+                stmt.append(lines[j].rstrip())
+            imports.append("\n".join(stmt).strip())
+            i = j + 1
             continue
 
         impl_m = IMPL_RE.match(line)
@@ -143,7 +172,19 @@ def plan_merge(fresh_text, existing_text):
 
 
 def _import_path(imp):
-    return re.sub(r"\s+", "", imp).rstrip(";")
+    """Normalise an import for identity comparison.
+
+    A wrapped import and its single-line form denote the same thing, so
+    whitespace is stripped and the brace-list is sorted -- otherwise a fresh
+    `use x::{a, b};` and a preserved `use x::{\n b, a,\n};` look distinct and
+    both get emitted.
+    """
+    flat = re.sub(r"\s+", "", imp).rstrip(";")
+    m = re.match(r"^(.*?\{)(.*)\}$", flat)
+    if m:
+        items = sorted(x for x in m.group(2).split(",") if x)
+        return m.group(1) + ",".join(items) + "}"
+    return flat
 
 
 def merge(fresh_text, existing_text):
